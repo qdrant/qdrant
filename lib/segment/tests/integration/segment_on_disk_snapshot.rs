@@ -8,7 +8,6 @@ use std::sync::atomic::AtomicBool;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
-use fs_err::File;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
@@ -166,8 +165,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         .unwrap();
 
     // snapshotting!
-    let tar =
-        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(parent_snapshot_tar.path()).unwrap();
     segment
         .take_snapshot(temp_dir.path(), &tar, format, None)
         .unwrap();

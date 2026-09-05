@@ -99,8 +99,14 @@ impl SnapshotEntry for Segment {
             SnapshotFormat::Regular => {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
-                    let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, include_if)
+                    snapshot_files(
+                        self,
+                        temp_path,
+                        &tar.descend(Path::new(SNAPSHOT_PATH))?,
+                        include_if,
+                    )?;
+                    tar.blocking_finish()?;
+                    OperationResult::Ok(())
                 })??;
             }
             SnapshotFormat::Streamable => {

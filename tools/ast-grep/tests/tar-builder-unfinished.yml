@@ -1,0 +1,67 @@
+id: tar-builder-unfinished
+valid:
+  # Bound builder, sync finish.
+  - |
+    fn pack(path: &Path) -> io::Result<()> {
+        let tar = tar_ext::BuilderExt::new_file(path)?;
+        tar.blocking_append_data(b"foo", Path::new("foo"))?;
+        tar.blocking_finish()
+    }
+  # Bound builder, async finish.
+  - |
+    async fn pack(path: &Path) -> io::Result<()> {
+        let tar = BuilderExt::new_file(path).unwrap();
+        tar.append_data(data, Path::new("foo")).await?;
+        tar.finish().await
+    }
+  # Unbound builder, chained finish.
+  - |
+    fn pack(path: &Path) -> io::Result<()> {
+        BuilderExt::new_file(path)?.blocking_finish()
+    }
+  # Finish inside a macro body.
+  - |
+    async fn pack(path: &Path) {
+        let tar = BuilderExt::new_file(path).unwrap();
+        assert!(tar.finish().await.is_ok());
+    }
+  # Finish inside a nested async block, still within the same fn.
+  - |
+    fn pack(temp_file: &NamedTempFile) -> CollectionResult<impl Future> {
+        let tar = BuilderExt::new_file(temp_file.path())?;
+        shard.create_snapshot(tar.clone())?;
+        Ok(async move {
+            tar.finish().await?;
+            Ok(())
+        })
+    }
+  # Same method name on a type other than BuilderExt.
+  - |
+    fn pack(path: &Path) -> io::Result<()> {
+        let writer = zip::Writer::new_file(path)?;
+        writer.blocking_append_data(b"foo", Path::new("foo"))
+    }
+invalid:
+  # Bound builder, never finished.
+  - |
+    fn pack(path: &Path) -> io::Result<()> {
+        let tar = tar_ext::BuilderExt::new_file(path)?;
+        tar.blocking_append_data(b"foo", Path::new("foo"))
+    }
+  # Streaming builder, never finished.
+  - |
+    fn pack(output: impl Write) {
+        let tar = BuilderExt::new_streaming_owned(output);
+        tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
+    }
+  # The builder in the closure is not finished; finishing the outer builder
+  # does not help.
+  - |
+    fn pack(tar: &tar_ext::BuilderExt, writer: &mut dyn Write) -> io::Result<()> {
+        tar.blocking_write_fn(Path::new("inner.tar"), |writer| {
+            let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
+            let tar = tar.descend(Path::new("snapshot"))?;
+            snapshot_files(&tar)
+        })??;
+        tar.blocking_finish()
+    }
