@@ -6498,6 +6498,9 @@ pub struct ContextInput {
     pub pairs: ::prost::alloc::vec::Vec<ContextInputPair>,
 }
 #[derive(validator::Validate)]
+#[validate(
+    schema(function = "crate::grpc::validate::validate_relevance_feedback_input")
+)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelevanceFeedbackInput {

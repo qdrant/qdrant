@@ -400,6 +400,11 @@ fn configure_validation(builder: Builder) -> Builder {
         ], &[
             "SparseVectorCreationConfig",
         ])
+        // Cross-field SEFR rule: strategy alone cannot see the feedback length.
+        .type_attribute(
+            "RelevanceFeedbackInput",
+            "#[validate(schema(function = \"crate::grpc::validate::validate_relevance_feedback_input\"))]",
+        )
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
