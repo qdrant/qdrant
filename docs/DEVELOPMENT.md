@@ -188,7 +188,7 @@ You can also generate coverage reports locally with the following commands
 ```bash
 cd qdrant
 cargo install cargo-llvm-cov
-./tools/coverage.sh
+./tools/unit-test-coverage.sh
 
 cd target/llvm-cov/html
 python -m http.server
