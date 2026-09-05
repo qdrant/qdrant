@@ -1,6 +1,9 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ext::aligned_vec::ACow;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(not(target_os = "linux"))]
 use common::universal_io::MmapFile;
@@ -15,12 +18,22 @@ use super::graph_layers::{GraphLayers, SearchAlgorithm};
 use super::graph_layers_batched::GraphLayersBatched;
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
 use super::point_scorer::{FilteredScorer, ScorerFilters};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::types::IoBackend;
 
 #[derive(Debug)]
 pub enum HnswGraph<S: UniversalRead> {
-    Direct(GraphLayers),
-    Batched(Box<GraphLayersBatched<S>>),
+    Direct(Arc<GraphLayers>),
+    Batched(Arc<GraphLayersBatched<S>>),
+}
+
+impl<S: UniversalRead> Clone for HnswGraph<S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Direct(graph) => Self::Direct(Arc::clone(graph)),
+            Self::Batched(graph) => Self::Batched(Arc::clone(graph)),
+        }
+    }
 }
 
 /// Backend the writable [`HNSWIndex`][1] reads its graph links through.
@@ -57,12 +70,12 @@ impl HnswGraph<HnswLinksStorage> {
             #[cfg(target_os = "linux")]
             if Self::is_batched(&IoUringFs, dir, residency)? {
                 let graph = GraphLayersBatched::open(&IoUringFs, dir, residency)?;
-                return Ok(HnswGraph::Batched(Box::new(graph)));
+                return Ok(HnswGraph::Batched(Arc::new(graph)));
             }
         }
 
         let graph = GraphLayers::load(dir, residency, do_convert)?;
-        Ok(HnswGraph::Direct(graph))
+        Ok(HnswGraph::Direct(Arc::new(graph)))
     }
 }
 
@@ -98,13 +111,13 @@ impl<S: UniversalRead> HnswGraph<S> {
         S: 'static,
     {
         Ok(if Self::is_batched(fs, dir, residency)? {
-            HnswGraph::Batched(Box::new(GraphLayersBatched::open(fs, dir, residency)?))
+            HnswGraph::Batched(Arc::new(GraphLayersBatched::open(fs, dir, residency)?))
         } else {
             // Note that on non-borrowable backends this materializes the
             // links into heap RAM whatever the residency: `Plain` is not
             // supported by the batched view, and `Pinned` asks for
             // materialization explicitly.
-            HnswGraph::Direct(GraphLayers::load_universal(fs, dir, residency)?)
+            HnswGraph::Direct(Arc::new(GraphLayers::load_universal(fs, dir, residency)?))
         })
     }
 
@@ -215,11 +228,71 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    pub fn has_inline_vectors(&self) -> bool {
+    /// Return an error if this graph doesn't provide base vectors of said layout.
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn check_base_vector_layout_compatibility(
+        &self,
+        expected_size: usize,
+        expected_align: usize,
+    ) -> OperationResult<()> {
+        let layout = match self {
+            HnswGraph::Direct(graph) => graph.links.base_vector_layout(),
+            HnswGraph::Batched(graph) => graph.links.base_vector_layout(),
+        };
+        if let Some(layout) = layout
+            && layout.size() == expected_size
+            && layout.align() >= expected_align
+        {
+            return Ok(());
+        };
+        Err(OperationError::service_error(format!(
+            "Inline graph vector layout mismatch: expected \
+             size={expected_size} align={expected_align}, found={layout:?}",
+        )))
+    }
+
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn for_each_base_vector_in_batch<T>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: impl FnMut(usize, &[T]),
+    ) -> OperationResult<()>
+    where
+        T: bytemuck::Pod,
+    {
         match self {
-            HnswGraph::Direct(graph) => graph.links.format().is_with_vectors(),
-            HnswGraph::Batched(graph) => graph.links.is_with_vectors(),
+            HnswGraph::Direct(graph) => {
+                for (position, &point_id) in keys.iter().enumerate() {
+                    let (bytes, _links) = graph.links.links_with_vectors(point_id, 0);
+                    f(position, &cast_vector::<T>(ACow::Borrowed(bytes))?);
+                }
+                Ok(())
+            }
+            HnswGraph::Batched(graph) => graph.links.read_base_vectors(
+                &stumpalo::Arena::new(),
+                keys,
+                align_of::<T>(),
+                |position, bytes| {
+                    f(position, &cast_vector::<T>(bytes)?);
+                    Ok(())
+                },
+            ),
         }
+    }
+
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn base_vector<T>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>>
+    where
+        T: bytemuck::Pod,
+    {
+        cast_vector(match self {
+            HnswGraph::Direct(graph) => ACow::Borrowed(graph.links.links_with_vectors(key, 0).0),
+            HnswGraph::Batched(graph) => graph.links.read_base_vector(key, align_of::<T>())?,
+        })
+    }
+
+    pub fn has_inline_vectors(&self) -> bool {
+        self.format().is_with_vectors()
     }
 
     pub(super) fn as_direct(&self) -> Option<&GraphLayers> {
@@ -233,6 +306,26 @@ impl<S: UniversalRead> HnswGraph<S> {
         match self {
             HnswGraph::Direct(graph) => graph.links.num_points(),
             HnswGraph::Batched(graph) => graph.num_points(),
+        }
+    }
+
+    pub fn format(&self) -> GraphLinksFormat {
+        match self {
+            HnswGraph::Direct(graph) => graph.links.format(),
+            HnswGraph::Batched(graph) => graph.links.format(),
+        }
+    }
+
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn io_backend(&self) -> Option<IoBackend> {
+        match self {
+            HnswGraph::Direct(_) => {
+                // Ambiguity: the graph probably *was loaded* from an mmap,
+                // but *right now* it can be either mmap or `Vec<>`.
+                // Arbitrary choice: report the former.
+                Some(IoBackend::Mmap)
+            }
+            HnswGraph::Batched(_) => IoBackend::from_universal_kind(S::kind()),
         }
     }
 
@@ -266,4 +359,11 @@ impl<S: UniversalRead> HnswGraph<S> {
             HnswGraph::Batched(graph) => graph.links.clear_cache(),
         }
     }
+}
+
+#[expect(dead_code, reason = "would be used in combined-storage")]
+fn cast_vector<T: bytemuck::Pod>(bytes: ACow<'_>) -> OperationResult<Cow<'_, [T]>> {
+    bytes.try_cast_bytemuck().map_err(|err| {
+        OperationError::service_error(format!("Misplaced inline-graph vector: {err}"))
+    })
 }
