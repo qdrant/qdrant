@@ -1,32 +1,52 @@
 use std::time::Duration;
 
+use collection::collection::Collection;
 use collection::operations::CollectionUpdateOperations;
-use collection::operations::block_hashes::{BlockHashesRequest, BlockHashesResponse};
+use collection::operations::block_hashes::BlockHashesRequest;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
 };
+use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::types::PointIdType;
 use serde_json::json;
 
 use crate::common::{TEST_OPTIMIZERS_CONFIG, collection_fixture};
 
-#[derive(serde::Deserialize)]
-struct TestRecord {
-    id: segment::types::ExtendedPointId,
-    payload: Option<segment::types::Payload>,
+fn point(id: PointIdType, value: Option<&str>) -> PointStructPersisted {
+    PointStructPersisted {
+        id,
+        vector: VectorStructPersisted::Single(vec![0.0; 4]),
+        payload: value
+            .map(|v| serde_json::from_value(json!({"sync": {"fingerprint": v}})).unwrap()),
+    }
+}
+
+async fn upsert(collection: &Collection, points: Vec<PointStructPersisted>) {
+    collection
+        .update_from_client_simple(
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(points),
+            )),
+            true,
+            None,
+            WriteOrdering::default(),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn block_hashes_across_shards_and_segment_layouts() {
     let vectors: serde_json::Value =
-        serde_json::from_str(include_str!("../../../../docs/block-hashes-v1.json")).unwrap();
-    let case = &vectors["cases"][1];
-    let expected: BlockHashesResponse = serde_json::from_value(case["expected"].clone()).unwrap();
-    let request: BlockHashesRequest =
-        serde_json::from_value(json!({"payload_key": "sync.fingerprint", "block_count": 16}))
-            .unwrap();
-
+        serde_json::from_str(include_str!("../../../../tests/fixtures/block_hashes.json")).unwrap();
+    let request = BlockHashesRequest {
+        payload_key: "sync.fingerprint".parse().unwrap(),
+        block_count: 1,
+        filter: None,
+    };
     for (shards, segments) in [(1, 1), (1, 3), (3, 1), (3, 3)] {
         let dir = tempfile::tempdir().unwrap();
         let config = collection::optimizers_builder::OptimizersConfig {
@@ -34,7 +54,16 @@ async fn block_hashes_across_shards_and_segment_layouts() {
             ..TEST_OPTIMIZERS_CONFIG.clone()
         };
         let collection = collection_fixture(dir.path(), shards, config).await;
-        let mut records: Vec<TestRecord> = serde_json::from_value(case["points"].clone()).unwrap();
+        let scan = |timeout| {
+            collection.block_hashes(
+                request.clone(),
+                None,
+                None,
+                timeout,
+                HwMeasurementAcc::new(),
+            )
+        };
+        let mut records = vectors["records"].as_array().unwrap().clone();
         if segments == 3 {
             records.reverse();
         }
@@ -42,107 +71,48 @@ async fn block_hashes_across_shards_and_segment_layouts() {
         for version in 0..2 {
             let points = records
                 .iter()
-                .map(|p| PointStructPersisted {
-                    id: p.id,
-                    vector: VectorStructPersisted::Single(vec![1.0, 2.0, 3.0, 4.0]),
-                    payload: if version == 0 {
-                        Some(
-                            serde_json::from_value(json!({"sync": {"fingerprint": "stale"}}))
-                                .unwrap(),
-                        )
-                    } else {
-                        p.payload.clone()
-                    },
+                .map(|record| {
+                    point(
+                        serde_json::from_value(record["id"].clone()).unwrap(),
+                        Some(if version == 0 {
+                            "stale"
+                        } else {
+                            record["value"].as_str().unwrap()
+                        }),
+                    )
                 })
                 .collect();
-            collection
-                .update_from_client_simple(
-                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                        PointInsertOperationsInternal::PointsList(points),
-                    )),
-                    true,
-                    None,
-                    WriteOrdering::default(),
-                    HwMeasurementAcc::new(),
-                )
-                .await
-                .unwrap();
+            upsert(&collection, points).await;
         }
-        let result = collection
-            .block_hashes(request.clone(), None, None, None, HwMeasurementAcc::new())
-            .await
-            .unwrap();
-        assert_eq!(result, expected, "shards={shards}, segments={segments}");
+        let expected = scan(None).await.unwrap();
+        assert_eq!(expected.blocks[0].point_count, records.len() as u64);
+        assert_eq!(
+            expected.blocks[0].hash,
+            vectors["one_block_hash"].as_str().unwrap()
+        );
 
-        // Dropping a pending audit releases its state and cannot publish a result.
+        // Cancel a pending audit, then verify another request can complete.
         let holder = collection.shards_holder();
         let guard = holder.write().await;
-        let mut pending = Box::pin(collection.block_hashes(
-            request.clone(),
-            None,
-            None,
-            None,
-            HwMeasurementAcc::new(),
-        ));
+        let mut pending = Box::pin(scan(None));
         assert!(futures::poll!(pending.as_mut()).is_pending());
         drop(pending);
         drop(guard);
-        assert_eq!(
-            collection
-                .block_hashes(request.clone(), None, None, None, HwMeasurementAcc::new())
-                .await
-                .unwrap(),
-            expected
-        );
-
-        // A deadline covers the entire operation, including ready futures.
-        let result = collection
-            .block_hashes(
-                request.clone(),
-                None,
-                None,
-                Some(Duration::ZERO),
-                HwMeasurementAcc::new(),
-            )
-            .await;
+        assert_eq!(scan(None).await.unwrap(), expected);
         assert!(matches!(
-            result,
-            Err(collection::operations::types::CollectionError::Timeout { .. })
+            scan(Some(Duration::ZERO)).await,
+            Err(CollectionError::Timeout { .. })
         ));
 
-        // A failure must discard work already accumulated in earlier pages.
-        let points = (100..1300)
-            .map(|id| PointStructPersisted {
-                id: id.into(),
-                vector: VectorStructPersisted::Single(vec![0.0; 4]),
-                payload: Some(
-                    serde_json::from_value(json!({"sync": {"fingerprint": "valid"}})).unwrap(),
-                ),
-            })
-            .chain(std::iter::once(PointStructPersisted {
-                id: 1300.into(),
-                vector: VectorStructPersisted::Single(vec![0.0; 4]),
-                payload: None,
-            }))
-            .collect();
-        collection
-            .update_from_client_simple(
-                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                    PointInsertOperationsInternal::PointsList(points),
-                )),
-                true,
-                None,
-                WriteOrdering::default(),
-                HwMeasurementAcc::new(),
-            )
-            .await
-            .unwrap();
-        let result = collection
-            .block_hashes(request.clone(), None, None, None, HwMeasurementAcc::new())
-            .await;
+        // Failure on a later page must discard already accumulated hashes.
+        let mut points = (100..1300)
+            .map(|id| point(id.into(), Some("valid")))
+            .collect::<Vec<_>>();
+        points.push(point(1300.into(), None));
+        upsert(&collection, points).await;
         assert!(matches!(
-            result,
-            Err(collection::operations::types::CollectionError::BadRequest { .. })
+            scan(None).await,
+            Err(CollectionError::BadRequest { .. })
         ));
     }
 }

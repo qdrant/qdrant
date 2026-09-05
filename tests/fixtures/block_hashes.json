@@ -1,0 +1,69 @@
+{
+  "records": [
+    {
+      "id": 0,
+      "value": "",
+      "slice_hash": "16738165381834614119",
+      "point_digest": "c8ff21a1418b4f46510ad7c87d3f9ab4c9c8f6cca2b75c6014d333def3d94231"
+    },
+    {
+      "id": 42,
+      "value": "abc",
+      "slice_hash": "1135563785245924819",
+      "point_digest": "054abc1ab02e6ed856aff2c294a4594f2e988e3373aaed1b3f9f717e857d0c35"
+    },
+    {
+      "id": 18446744073709551615,
+      "value": "é\u0000雪",
+      "slice_hash": "9246102839527854430",
+      "point_digest": "fba5b1675c9d2e6b603bbfa1118da72db7b098d9d68dccdc53ae31e94aec0dcd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "value": "é",
+      "slice_hash": "3659997967308761462",
+      "point_digest": "53b38185849931a40b4e2b3e1d8b70256429c40a77c6436b622fd9907080063a"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "value": "sha256:deadbeef",
+      "slice_hash": "17712879580654916868",
+      "point_digest": "fb3d475d77aaa68b8caa664aaaa953efc560e9207bc472252d709dc9ece54b9a"
+    },
+    {
+      "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "value": "😀",
+      "slice_hash": "8560908848243617172",
+      "point_digest": "64d8383ed91837439dc3a8eaac5e0baa0997544d09a375ef56ccdcca184d0161"
+    }
+  ],
+  "empty_hash": "051fd05467e63a94ef3a80b1a1b31f2a28c475473d22e3a172f77dc22e25c80e",
+  "one_block_hash": "a5576bf18474673e4a58136b0ed0a2b6fb47c1dd47de73248ad08206b11a673b",
+  "nonempty_blocks": [
+    {
+      "block_id": 3,
+      "point_count": 1,
+      "hash": "8ee0f2251454f8fc25954c097f981e335a5888f03ae685d545e11477dda621a6"
+    },
+    {
+      "block_id": 4,
+      "point_count": 2,
+      "hash": "7d3d73011ba7a0210ac7f4adefede83893241d5c4dacd7cf19b1341df8abeb85"
+    },
+    {
+      "block_id": 6,
+      "point_count": 1,
+      "hash": "d1d35b723df36f323e9e2bb6a09f7507417226db8df81060f1dddd1011d47a10"
+    },
+    {
+      "block_id": 7,
+      "point_count": 1,
+      "hash": "49aeca28afe5f8a365243946599baafa7a8324fdba60c99e023f512f656a887e"
+    },
+    {
+      "block_id": 14,
+      "point_count": 1,
+      "hash": "1d014968157bfa73cf73252119ca045e181013795a50d9bc1fa26ebef6a3653f"
+    }
+  ]
+}

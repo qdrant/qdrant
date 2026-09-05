@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
-"""Dependency-free reference for docs/block-hashes.md (Python 3.10+).
+"""Block-hashes v1 contract and dependency-free reference client (Python 3.10+).
+
+All hashes are SHA-256; lengths/counts are unsigned big-endian u64 byte encodings.
+Encode numeric IDs as 0x00 || u64be(id), UUIDs as 0x01 || 16 RFC 4122 bytes.
+Encode the selected string as exact UTF-8, without Unicode normalization.
+R = SHA256(b"qdrant:point-fingerprint:v1" || NUL || encoded_id || u64be(len(s)) || s)
+B = SHA256(b"qdrant:block-hashes:v1" || NUL || R1 || ... || Rn || u64be(n))
+Within each block, order numeric IDs ascending first, then UUID bytes ascending.
+R1..Rn are raw 32-byte digests; return B as lowercase hexadecimal. Empty blocks
+use the block domain and eight zero bytes. The path and block number are not hashed.
+
+Membership is Qdrant's existing slice_point_id_hash(id) % block_count, using
+zero-key SipHash-2-4 over u64 LITTLE-endian numeric IDs or RFC 4122 UUID bytes.
+Object paths (including quoted keys) must select a string; missing fields,
+non-strings, array traversal and duplicate source IDs are errors. Preserve u64
+IDs exactly when decoding JSON. Counts must be in 1..65536.
 
 Input: JSON array of {"id": integer-or-UUID, "payload": {...}} records.
-Apply the same Qdrant filter to your source before passing records here. This
-module intentionally does not implement Qdrant's general filter language.
+Apply the same Qdrant filter to your source before passing records here.
+Refine using --slice TOTAL INDEX and a block count that is a multiple of TOTAL;
+retain the original scope filters, then scroll the mismatched slices with
+with_payload=[payload_key], with_vector=false. This is a live audit, not a
+snapshot: repeat comparisons and revalidate before destructive repairs.
+Run --self-test for the shared Rust/Python test vectors in tests/fixtures.
 """
 
 import argparse
@@ -137,13 +156,16 @@ def block_hashes(records, payload_key, block_count):
 
 
 def self_test():
-    vectors = json.loads((Path(__file__).resolve().parents[1] / "docs/block-hashes-v1.json").read_text())
+    vectors = json.loads((Path(__file__).resolve().parents[1] / "tests/fixtures/block_hashes.json").read_text())
     for record in vectors["records"]:
         assert slice_point_id_hash(record["id"]) == int(record["slice_hash"])
         value = record["value"].encode("utf-8")
         assert point_digest(record["id"], value).hex() == record["point_digest"]
-    for case in vectors["cases"]:
-        assert block_hashes(case["points"], case["payload_key"], case["block_count"]) == case["expected"], case["name"]
+    points = [{"id": r["id"], "payload": {"sync": {"fingerprint": r["value"]}}} for r in vectors["records"]]
+    result = block_hashes(points[::-1], "sync.fingerprint", 16)["blocks"]
+    assert [b for b in result if b["point_count"]] == vectors["nonempty_blocks"]
+    assert all(b["hash"] == vectors["empty_hash"] for b in result if not b["point_count"])
+    assert block_hashes(points, "sync.fingerprint", 1)["blocks"][0]["hash"] == vectors["one_block_hash"]
 
 
 if __name__ == "__main__":

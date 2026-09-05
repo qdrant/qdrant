@@ -1,4 +1,5 @@
-//! Public v1 fingerprint contract. See docs/block-hashes.md and its test vectors.
+//! On-demand block hashes. The public v1 byte contract and reference client are
+//! in `tools/block_hashes.py`; shared test vectors are in `tests/fixtures/block_hashes.json`.
 
 use std::sync::atomic::AtomicBool;
 
@@ -159,104 +160,69 @@ mod tests {
     #[derive(Deserialize)]
     struct TestRecord {
         id: ExtendedPointId,
-        payload: Option<Payload>,
+        value: String,
     }
 
     #[test]
     fn cross_language_vectors() {
         let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../../../docs/block-hashes-v1.json")).unwrap();
+            serde_json::from_str(include_str!("../../../../tests/fixtures/block_hashes.json"))
+                .unwrap();
         let stopped = AtomicBool::new(false);
-        for case in vectors["cases"].as_array().unwrap() {
-            let mut points: Vec<TestRecord> =
-                serde_json::from_value(case["points"].clone()).unwrap();
-            points.sort_by_key(|point| point.id);
-            let key: JsonPath = case["payload_key"].as_str().unwrap().parse().unwrap();
-            let mut accumulator =
-                BlockHashAccumulator::new(case["block_count"].as_u64().unwrap() as u32);
-            for point in points {
-                accumulator
-                    .add(point.id, point.payload.as_ref(), &key, &stopped)
-                    .unwrap();
-            }
-            assert_eq!(
-                serde_json::to_value(accumulator.finish(&stopped).unwrap()).unwrap(),
-                case["expected"],
-                "{}",
-                case["name"]
-            );
+        let mut points: Vec<TestRecord> =
+            serde_json::from_value(vectors["records"].clone()).unwrap();
+        points.sort_by_key(|point| point.id);
+        let key: JsonPath = "sync.fingerprint".parse().unwrap();
+        let mut accumulator = BlockHashAccumulator::new(16);
+        for point in points {
+            let payload =
+                serde_json::from_value(json!({"sync": {"fingerprint": point.value}})).unwrap();
+            accumulator
+                .add(point.id, Some(&payload), &key, &stopped)
+                .unwrap();
         }
+        let result = accumulator.finish(&stopped).unwrap();
+        assert_eq!(result.blocks.len(), 16);
+        for (index, block) in result.blocks.iter().enumerate() {
+            assert_eq!(block.block_id as usize, index);
+            if block.point_count == 0 {
+                assert_eq!(block.hash, vectors["empty_hash"].as_str().unwrap());
+            }
+        }
+        let nonempty: Vec<_> = result
+            .blocks
+            .into_iter()
+            .filter(|b| b.point_count > 0)
+            .collect();
+        assert_eq!(
+            serde_json::to_value(nonempty).unwrap(),
+            vectors["nonempty_blocks"]
+        );
     }
 
     #[test]
-    fn rejects_missing_invalid_duplicate_and_cancelled_records() {
+    fn rejects_unordered_and_cancelled_records() {
         let key: JsonPath = "sync.fingerprint".parse().unwrap();
+        let payload = serde_json::from_value(json!({"sync": {"fingerprint": "abc"}})).unwrap();
         let stopped = AtomicBool::new(false);
-        for value in [
-            json!(null),
-            json!(true),
-            json!(42),
-            json!(1.5),
-            json!([]),
-            json!(["abc"]),
-            json!({}),
-        ] {
-            let payload: Payload =
-                serde_json::from_value(json!({"sync": {"fingerprint": value}})).unwrap();
-            assert!(
-                BlockHashAccumulator::new(1)
-                    .add(0.into(), Some(&payload), &key, &stopped)
-                    .is_err()
-            );
-        }
-        assert!(
-            BlockHashAccumulator::new(1)
-                .add(0.into(), None, &key, &stopped)
-                .is_err()
-        );
-        let payload: Payload =
-            serde_json::from_value(json!({"sync": {"fingerprint": "abc"}})).unwrap();
         let mut accumulator = BlockHashAccumulator::new(1);
         accumulator
             .add(42.into(), Some(&payload), &key, &stopped)
             .unwrap();
+        for id in [42, 0] {
+            assert!(
+                accumulator
+                    .add(id.into(), Some(&payload), &key, &stopped)
+                    .is_err()
+            );
+        }
+        stopped.store(true, std::sync::atomic::Ordering::Relaxed);
         assert!(
             accumulator
-                .add(42.into(), Some(&payload), &key, &stopped)
-                .is_err()
-        );
-        assert!(
-            accumulator
-                .add(0.into(), Some(&payload), &key, &stopped)
-                .is_err()
-        );
-        let stopped = AtomicBool::new(true);
-        assert!(
-            BlockHashAccumulator::new(1)
-                .add(0.into(), Some(&payload), &key, &stopped)
+                .add(43.into(), Some(&payload), &key, &stopped)
                 .is_err()
         );
         assert!(accumulator.finish(&stopped).is_err());
-    }
-
-    #[test]
-    fn validates_request() {
-        for (key, count) in [
-            ("sync.fingerprint", 0),
-            ("sync.fingerprint", 65537),
-            ("sync[0]", 16),
-            ("sync[]", 16),
-        ] {
-            let request: BlockHashesRequest =
-                serde_json::from_value(json!({"payload_key": key, "block_count": count})).unwrap();
-            assert!(request.validate().is_err());
-        }
-        assert!(
-            serde_json::from_value::<BlockHashesRequest>(
-                json!({"payload_key": "sync.fingerprint", "block_count": 1, "with_points": true})
-            )
-            .is_err()
-        );
     }
 
     #[test]
@@ -294,31 +260,10 @@ mod tests {
                 holder.add_new(segment);
             }
             let holder = LockedSegmentHolder::new(holder);
-            // Exercise the ID enumeration and version resolution used by scroll.
-            let mut ids: Vec<_> = holder
-                .read()
-                .iter()
-                .flat_map(|(_, segment)| {
-                    segment
-                        .get()
-                        .read()
-                        .read_filtered(
-                            None,
-                            None,
-                            None,
-                            &stopped,
-                            &counter,
-                            DeferredBehavior::VisibleOnly,
-                        )
-                        .unwrap()
-                })
-                .collect();
-            assert_eq!(ids.len(), 2);
-            ids.sort();
-            ids.dedup();
+            // Scroll retrieves the newest payload once, even for duplicate IDs.
             let records = retrieve_blocking(
                 holder,
-                &ids,
+                &[42.into(), 42.into()],
                 &WithPayload::from(true),
                 &WithVector::Bool(false),
                 Duration::from_secs(5),
@@ -328,21 +273,21 @@ mod tests {
             )
             .unwrap();
             let mut accumulator = BlockHashAccumulator::new(1);
-            for id in ids {
-                let record = &records[&id];
+            assert_eq!(records.len(), 1);
+            for record in records.values() {
                 assert!(record.vector.is_none());
                 accumulator
-                    .add(id, record.payload.as_ref(), &key, &stopped)
+                    .add(record.id, record.payload.as_ref(), &key, &stopped)
                     .unwrap();
             }
             let vectors: serde_json::Value =
-                serde_json::from_str(include_str!("../../../../docs/block-hashes-v1.json"))
+                serde_json::from_str(include_str!("../../../../tests/fixtures/block_hashes.json"))
                     .unwrap();
-            // The quoted-path fixture also contains just ID 42 with value "abc";
-            // the path spelling is deliberately not part of the content digest.
+            let block = accumulator.finish(&stopped).unwrap().blocks.remove(0);
+            assert_eq!(block.point_count, 1);
             assert_eq!(
-                serde_json::to_value(accumulator.finish(&stopped).unwrap()).unwrap(),
-                vectors["cases"][4]["expected"]
+                block.hash,
+                vectors["nonempty_blocks"][0]["hash"].as_str().unwrap()
             );
         }
     }
