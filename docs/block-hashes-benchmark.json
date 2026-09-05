@@ -1,0 +1,364 @@
+{
+  "metadata": {
+    "date": "2026-09-05",
+    "build": "cargo build --features service_debug (dev profile, Rust 1.97.1)",
+    "dataset": {
+      "point_count": 20000,
+      "ids": "integers 0..19999",
+      "vectors": "32-dimensional Dot, component (id % 19) / 19.0",
+      "payload": "sync.fingerprint = lowercase SHA256 of decimal ID; unrelated = 256 ASCII x bytes",
+      "on_disk_payload": true,
+      "shard_number": 3,
+      "indexing_threshold": 0
+    },
+    "workload": {
+      "query": {
+        "query": [
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "limit": 10,
+        "with_payload": false,
+        "with_vector": false
+      },
+      "query_interval_seconds": 0.02,
+      "trial_seconds_per_mode": 3,
+      "block_count": 16,
+      "refine_factor": 4,
+      "mismatches": 1
+    },
+    "notes": [
+      "Warm-cache local single-node trials; payload disk read_bytes were zero.",
+      "JSON byte totals include audit request/response bodies only, excluding HTTP headers, internal RPC, preparation and concurrent queries.",
+      "CPU and process I/O include concurrent queries/background work.",
+      "Debug build with indexing disabled; not a production capacity measurement.",
+      "Source comparisons were precomputed outside timed trials."
+    ]
+  },
+  "trials": [
+    {
+      "points": 20000,
+      "simulated_changes": 1,
+      "block_count": 16,
+      "refined_block_count": 64,
+      "query_only": {
+        "elapsed_seconds": 3.003253914999732,
+        "audits": 0,
+        "audit_seconds_mean": 0.0,
+        "json_bytes_per_audit": 0.0,
+        "http_requests_per_audit": 0.0,
+        "audit_usage_per_audit": {},
+        "server_process_delta": {
+          "cpu_seconds": 3.200000000000003,
+          "read_bytes": 0,
+          "rchar": 683
+        },
+        "query_samples": 116,
+        "query_p50_ms": 5.753261000791099,
+        "query_p95_ms": 7.484424000722356,
+        "query_errors": []
+      },
+      "scroll": {
+        "elapsed_seconds": 3.8677094180002314,
+        "audits": 3,
+        "audit_seconds_mean": 1.2887885123333642,
+        "json_bytes_per_audit": 2296186.3333333335,
+        "http_requests_per_audit": 20.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 5.339999999999989,
+          "read_bytes": 0,
+          "rchar": 684
+        },
+        "query_samples": 145,
+        "query_p50_ms": 6.1656310008402215,
+        "query_p95_ms": 9.121835999394534,
+        "query_errors": []
+      },
+      "block_hashes": {
+        "elapsed_seconds": 3.0816763050006557,
+        "audits": 7,
+        "audit_seconds_mean": 0.44008364671442124,
+        "json_bytes_per_audit": 2041.857142857143,
+        "http_requests_per_audit": 1.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.590000000000003,
+          "read_bytes": 0,
+          "rchar": 342
+        },
+        "query_samples": 110,
+        "query_p50_ms": 6.40145599936659,
+        "query_p95_ms": 12.870192000264069,
+        "query_errors": []
+      },
+      "reconcile": {
+        "elapsed_seconds": 3.324265129000196,
+        "audits": 6,
+        "audit_seconds_mean": 0.5538344328330519,
+        "json_bytes_per_audit": 44580.0,
+        "http_requests_per_audit": 3.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7235199.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.290000000000006,
+          "read_bytes": 0,
+          "rchar": 685
+        },
+        "query_samples": 120,
+        "query_p50_ms": 6.363287999192835,
+        "query_p95_ms": 12.676791000558296,
+        "query_errors": []
+      }
+    },
+    {
+      "points": 20000,
+      "simulated_changes": 1,
+      "block_count": 16,
+      "refined_block_count": 64,
+      "query_only": {
+        "elapsed_seconds": 3.0059010749992012,
+        "audits": 0,
+        "audit_seconds_mean": 0.0,
+        "json_bytes_per_audit": 0.0,
+        "http_requests_per_audit": 0.0,
+        "audit_usage_per_audit": {},
+        "server_process_delta": {
+          "cpu_seconds": 1.5100000000000051,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 116,
+        "query_p50_ms": 5.974273000902031,
+        "query_p95_ms": 6.677190000118571,
+        "query_errors": []
+      },
+      "scroll": {
+        "elapsed_seconds": 3.8616184189995693,
+        "audits": 3,
+        "audit_seconds_mean": 1.2867171346673179,
+        "json_bytes_per_audit": 2296187.0,
+        "http_requests_per_audit": 20.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 5.029999999999987,
+          "read_bytes": 0,
+          "rchar": 343
+        },
+        "query_samples": 145,
+        "query_p50_ms": 6.120993999502389,
+        "query_p95_ms": 10.076261998619884,
+        "query_errors": []
+      },
+      "block_hashes": {
+        "elapsed_seconds": 3.0944142389998888,
+        "audits": 7,
+        "audit_seconds_mean": 0.44193445371378665,
+        "json_bytes_per_audit": 2041.857142857143,
+        "http_requests_per_audit": 1.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.63000000000001,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 112,
+        "query_p50_ms": 6.257609000385855,
+        "query_p95_ms": 12.706727000477258,
+        "query_errors": []
+      },
+      "reconcile": {
+        "elapsed_seconds": 3.309072144000311,
+        "audits": 6,
+        "audit_seconds_mean": 0.551405331500367,
+        "json_bytes_per_audit": 44579.833333333336,
+        "http_requests_per_audit": 3.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7235199.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.209999999999994,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 121,
+        "query_p50_ms": 6.098579999161302,
+        "query_p95_ms": 12.664673000472249,
+        "query_errors": []
+      }
+    },
+    {
+      "points": 20000,
+      "simulated_changes": 1,
+      "block_count": 16,
+      "refined_block_count": 64,
+      "query_only": {
+        "elapsed_seconds": 3.003422537998631,
+        "audits": 0,
+        "audit_seconds_mean": 0.0,
+        "json_bytes_per_audit": 0.0,
+        "http_requests_per_audit": 0.0,
+        "audit_usage_per_audit": {},
+        "server_process_delta": {
+          "cpu_seconds": 1.5200000000000102,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 118,
+        "query_p50_ms": 5.525479000425548,
+        "query_p95_ms": 6.144019000203116,
+        "query_errors": []
+      },
+      "scroll": {
+        "elapsed_seconds": 3.8005966330001684,
+        "audits": 3,
+        "audit_seconds_mean": 1.2666313753325085,
+        "json_bytes_per_audit": 2296187.0,
+        "http_requests_per_audit": 20.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 4.900000000000006,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 145,
+        "query_p50_ms": 5.6993400012288475,
+        "query_p95_ms": 10.259647000566474,
+        "query_errors": []
+      },
+      "block_hashes": {
+        "elapsed_seconds": 3.0521224770000117,
+        "audits": 7,
+        "audit_seconds_mean": 0.43583120214316295,
+        "json_bytes_per_audit": 2041.857142857143,
+        "http_requests_per_audit": 1.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7007676.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.489999999999981,
+          "read_bytes": 0,
+          "rchar": 343
+        },
+        "query_samples": 111,
+        "query_p50_ms": 6.059322000510292,
+        "query_p95_ms": 12.917613999889,
+        "query_errors": []
+      },
+      "reconcile": {
+        "elapsed_seconds": 3.268161718000556,
+        "audits": 6,
+        "audit_seconds_mean": 0.5445429831670481,
+        "json_bytes_per_audit": 44579.666666666664,
+        "http_requests_per_audit": 3.0,
+        "audit_usage_per_audit": {
+          "cpu": 0.0,
+          "payload_io_read": 7235199.0,
+          "payload_io_write": 0.0,
+          "payload_index_io_read": 0.0,
+          "payload_index_io_write": 0.0,
+          "vector_io_read": 0.0,
+          "vector_io_write": 0.0
+        },
+        "server_process_delta": {
+          "cpu_seconds": 7.110000000000014,
+          "read_bytes": 0,
+          "rchar": 686
+        },
+        "query_samples": 122,
+        "query_p50_ms": 5.642254000122193,
+        "query_p95_ms": 12.003819001620286,
+        "query_errors": []
+      }
+    }
+  ]
+}

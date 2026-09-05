@@ -7,6 +7,7 @@ use api::rest::{
     QueryResponse, Record, ScoredPoint, SearchMatrixOffsetsResponse, SearchMatrixPairsResponse,
     SearchMatrixRequest, UpdateVectors,
 };
+use collection::operations::block_hashes::{BlockHashesRequest, BlockHashesResponse};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -41,6 +42,8 @@ mod tracing;
 
 #[derive(Serialize, JsonSchema)]
 struct AllDefinitions {
+    block_hashes_request: BlockHashesRequest,
+    block_hashes_response: BlockHashesResponse,
     a1: CollectionsResponse,
     a2: CollectionInfo,
     // a3: CollectionMetaOperations,

@@ -5,6 +5,7 @@ use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::lookup::WithLookup;
 use collection::operations::CollectionUpdateOperations;
+use collection::operations::block_hashes::BlockHashesRequest;
 use collection::operations::types::{
     CoreSearchRequest, CountRequestInternal, DiscoverRequestInternal, PointRequestInternal,
     RecommendRequestInternal,
@@ -229,6 +230,16 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
             manage: false,
             extras: false,
         }
+    }
+
+    fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
+impl CheckableCollectionOperation for BlockHashesRequest {
+    fn access_requirements(&self) -> AccessRequirements {
+        AccessRequirements::new()
     }
 
     fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
@@ -538,6 +549,24 @@ mod tests_ops {
         assert_allowed(
             &op,
             &AccessCollectionBuilder::new().add("col", false).into(),
+        );
+    }
+
+    #[test]
+    fn test_block_hashes_read_access() {
+        let op = BlockHashesRequest {
+            payload_key: "sync.fingerprint".parse().unwrap(),
+            block_count: 16,
+            filter: None,
+        };
+        assert_allowed(&op, &Access::Global(GlobalAccessMode::Read));
+        assert_allowed(
+            &op,
+            &AccessCollectionBuilder::new().add("col", false).into(),
+        );
+        assert_forbidden(
+            &op,
+            &AccessCollectionBuilder::new().add("other", false).into(),
         );
     }
 

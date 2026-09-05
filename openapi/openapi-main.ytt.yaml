@@ -253,6 +253,44 @@ tags:
     description: Beta features, do not depend on these yet.
 
 paths:
+  /collections/{collection_name}/points/block-hashes:
+    post:
+      tags:
+        - Points
+      summary: Compute block hashes
+      description: >-
+        Read-only live audit of point IDs and a stored string fingerprint at an object payload path.
+        Returns all blocks, including empty blocks, using the block-hashes v1 SHA-256 contract.
+        Filtering precedes slice-compatible partitioning. Missing or non-string fingerprints fail the entire request.
+        This operation scans the participating dataset without reading vectors and does not provide a snapshot.
+      operationId: block_hashes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockHashesRequest"
+      parameters:
+        - name: collection_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for each internal read
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: Overrides the global timeout for the whole audit, in seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("BlockHashesResponse"))
+
   /collections/{collection_name}/points/scroll:
     post:
       tags:
