@@ -2749,11 +2749,95 @@ impl Validate for PayloadSchemaParams {
     }
 }
 
-#[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl<'de> Deserialize<'de> for PayloadFieldSchema {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // `PayloadFieldSchema` is an untagged enum whose `FieldParams`
+        // variant is itself an untagged enum of structs. When a JSON
+        // array reaches the inner deserializer, serde matches its
+        // elements positionally against the first struct variant's
+        // fields and silently produces a misconfigured schema
+        // (qdrant/qdrant#10372). Reject sequence inputs upfront so the
+        // invalid shape produces a 4xx diagnostic instead of a created
+        // index.
+        //
+        // The array rejection only applies to human-readable formats.
+        // The non-human-readable path (rmp-serde, used by the WAL and
+        // the consensus state machine) encodes `FieldParams` as a
+        // tuple array; if the shadow used here carried the `FieldArray`
+        // sentinel the untagged deserializer would match the tuple
+        // array first and the `FieldParams` struct match would never
+        // run, breaking shard recovery and consensus replay. So the
+        // sentinel is added only to the human-readable shadow.
+        if deserializer.is_human_readable() {
+            let shadow = PayloadFieldSchemaShadowHuman::deserialize(deserializer)?;
+            match shadow {
+                PayloadFieldSchemaShadowHuman::FieldArray(_) => Err(serde::de::Error::custom(
+                    "field_schema must be a string identifier (e.g. \"keyword\") \
+                     or an object with `type` and parameters, not a JSON array",
+                )),
+                PayloadFieldSchemaShadowHuman::FieldType(t) => Ok(Self::FieldType(t)),
+                PayloadFieldSchemaShadowHuman::FieldParams(p) => Ok(Self::FieldParams(p)),
+            }
+        } else {
+            PayloadFieldSchemaShadowNonHuman::deserialize(deserializer)
+                .map(PayloadFieldSchema::from)
+        }
+    }
+}
+
+/// Shadow enum for human-readable formats (REST JSON, etc.). The
+/// `FieldArray` sentinel catches JSON array inputs first under the
+/// untagged deserializer; the manual `Deserialize` impl then rejects
+/// that match with a 4xx diagnostic.
+#[derive(Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+enum PayloadFieldSchemaShadowHuman {
+    FieldType(PayloadSchemaType),
+    FieldArray(Vec<serde_json::Value>),
+    FieldParams(PayloadSchemaParams),
+}
+
+/// Shadow enum for non-human-readable formats (rmp-serde MessagePack
+/// for the WAL and consensus state machine). Lacks the `FieldArray`
+/// sentinel so the untagged deserializer matches the `FieldParams`
+/// struct variant for tuple-encoded inputs.
+#[derive(Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+enum PayloadFieldSchemaShadowNonHuman {
+    FieldType(PayloadSchemaType),
+    FieldParams(PayloadSchemaParams),
+}
+
+impl From<PayloadFieldSchemaShadowHuman> for PayloadFieldSchema {
+    fn from(shadow: PayloadFieldSchemaShadowHuman) -> Self {
+        match shadow {
+            PayloadFieldSchemaShadowHuman::FieldType(t) => Self::FieldType(t),
+            // `FieldArray` is handled in the manual `Deserialize` impl
+            // before reaching this `From`, so the variant is unreachable
+            // here. Mark it explicitly so future readers see the
+            // invariant.
+            PayloadFieldSchemaShadowHuman::FieldArray(_) => {
+                unreachable!("FieldArray is rejected by the manual Deserialize impl")
+            }
+            PayloadFieldSchemaShadowHuman::FieldParams(p) => Self::FieldParams(p),
+        }
+    }
+}
+
+impl From<PayloadFieldSchemaShadowNonHuman> for PayloadFieldSchema {
+    fn from(shadow: PayloadFieldSchemaShadowNonHuman) -> Self {
+        match shadow {
+            PayloadFieldSchemaShadowNonHuman::FieldType(t) => Self::FieldType(t),
+            PayloadFieldSchemaShadowNonHuman::FieldParams(p) => Self::FieldParams(p),
+        }
+    }
 }
 
 impl PartialEq for PayloadFieldSchema {
@@ -6397,5 +6481,127 @@ impl Display for ShardKey {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod field_schema_tests {
+    use super::*;
+    use crate::data_types::index::KeywordIndexType;
+
+    /// A bare string identifier deserialises into the `FieldType` variant.
+    #[test]
+    fn accepts_bare_string_identifier() {
+        let schema: PayloadFieldSchema = serde_json::from_str(r#""keyword""#).unwrap();
+        assert!(matches!(
+            schema,
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+        ));
+    }
+
+    /// An object with `type` and parameters deserialises into the
+    /// `FieldParams` variant.
+    #[test]
+    fn accepts_object_with_type_and_params() {
+        let schema: PayloadFieldSchema =
+            serde_json::from_str(r#"{"type": "keyword", "is_tenant": true}"#).unwrap();
+        match schema {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(params)) => {
+                assert_eq!(params.is_tenant, Some(true));
+            }
+            other => panic!("expected FieldParams(Keyword), got {other:?}"),
+        }
+    }
+
+    /// `null` deserialises into the inner `Option::None` of the REST DTO.
+    /// At the type level, this is a deserialisation error (the type is
+    /// not optional), so we exercise it via `Option<PayloadFieldSchema>`.
+    #[test]
+    fn null_in_option_is_none() {
+        let schema: Option<PayloadFieldSchema> = serde_json::from_str("null").unwrap();
+        assert!(schema.is_none());
+    }
+
+    /// Regression for qdrant/qdrant#10372: `["keyword"]` (a JSON array)
+    /// used to be silently deserialised into `FieldParams(Keyword(...))`
+    /// via positional matching against the struct's first field. The
+    /// custom `Deserialize` impl rejects it with a diagnostic.
+    #[test]
+    fn rejects_array_of_strings() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"["keyword"]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// An empty array is also rejected (the untagged deserializer would
+    /// otherwise fall through to the `Integer` variant and produce a
+    /// equally wrong schema).
+    #[test]
+    fn rejects_empty_array() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"[]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// A nested array is also rejected; the rejection happens at the
+    /// outermost layer, before the inner untagged deserializer runs.
+    #[test]
+    fn rejects_nested_array() {
+        let err = serde_json::from_str::<PayloadFieldSchema>(r#"[["keyword"]]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// Array rejection also applies when the field is wrapped in
+    /// `Option`, which is how the REST DTO exposes `field_schema`.
+    #[test]
+    fn rejects_array_in_option() {
+        let err = serde_json::from_str::<Option<PayloadFieldSchema>>(r#"["keyword"]"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field_schema") || msg.contains("array"),
+            "expected diagnostic to mention `field_schema` or `array`, got: {msg}",
+        );
+    }
+
+    /// Regression: `rmp-serde` (used by the WAL and consensus state
+    /// machine) encodes `FieldParams(KeywordIndexParams { ... })` as a
+    /// MessagePack tuple array. The custom `Deserialize` impl must
+    /// round-trip the binary form correctly without applying the
+    /// human-readable-only array rejection (qdrant/qdrant#10372,
+    /// CodeRabbit review on PR #10388).
+    #[test]
+    fn rmp_serde_field_params_roundtrip() {
+        let original =
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                r#type: KeywordIndexType::Keyword,
+                is_tenant: Some(true),
+                ..Default::default()
+            }));
+
+        // rmp-serde uses non-human-readable format.
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: PayloadFieldSchema = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(original, restored);
+    }
+
+    /// Same for the bare-`FieldType` variant — the non-human-readable
+    /// path must still resolve a unit enum correctly.
+    #[test]
+    fn rmp_serde_field_type_roundtrip() {
+        let original = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: PayloadFieldSchema = rmp_serde::from_slice(&binary).expect("deserialize");
+        assert_eq!(original, restored);
     }
 }
