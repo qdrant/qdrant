@@ -79,7 +79,7 @@ fix: ""
 # Inline package versions.
 # Why: these are significant for migration logic.
 # Before: `env!("CARGO_PKG_VERSION")`
-# After:  `"0.8.0"`
+# After:  `"0.9.0"`
 ---
 id: replace-pkg-version
 language: rust
