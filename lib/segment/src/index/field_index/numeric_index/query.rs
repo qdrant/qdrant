@@ -51,6 +51,7 @@ where
     }
 
     let range = match range {
+        RangeInterface::Integer(int_range) => T::from_i64_range(*int_range),
         RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
@@ -162,6 +163,7 @@ where
     };
 
     let (start_bound, end_bound) = match range_cond {
+        RangeInterface::Integer(int_range) => T::from_i64_range(*int_range),
         RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
@@ -335,6 +337,7 @@ where
     // float-range conversion rounds each bound *away* from the matching
     // set so fractional bounds keep their `f64`-comparison semantics.
     let typed_range = match range {
+        RangeInterface::Integer(int_range) => T::from_i64_range(*int_range),
         RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
@@ -454,6 +457,7 @@ where
     I: NumericIndexRead<T>,
 {
     let range = match range {
+        RangeInterface::Integer(int_range) => T::from_i64_range(*int_range),
         RangeInterface::Float(float_range) => T::from_f64_range(*float_range),
         RangeInterface::DateTime(datetime_range) => {
             datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))

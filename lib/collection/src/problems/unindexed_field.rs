@@ -257,6 +257,9 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
                 required_indexes.push(FieldIndexType::FloatRange);
                 required_indexes.push(FieldIndexType::IntRange);
             }
+            RangeInterface::Integer(_) => {
+                required_indexes.push(FieldIndexType::IntRange);
+            }
         }
     }
     if geo_bounding_box.is_some() || geo_radius.is_some() || geo_polygon.is_some() {

@@ -10,9 +10,9 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
-    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
-    MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants,
-    ValuesCount,
+    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept,
+    MatchPhrase, MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface,
+    ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -134,6 +134,7 @@ impl ValueChecker for FieldCondition {
             || range
                 .as_ref()
                 .is_some_and(|range_interface| match range_interface {
+                    RangeInterface::Integer(condition) => condition.check_match(payload),
                     RangeInterface::Float(condition) => condition.check_match(payload),
                     RangeInterface::DateTime(condition) => condition.check_match(payload),
                 })
@@ -298,6 +299,38 @@ impl ValueChecker for Match {
                 (Value::Number(_), _) => true,
                 (Value::String(_), _) => true,
             },
+        }
+    }
+}
+
+impl ValueChecker for Range<IntPayloadType> {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Number(num) => {
+                if let Some(number) = num.as_i64() {
+                    // value fits in i64
+                    self.check_range(number)
+                } else if let Some(number) = num.as_u64() {
+                    // Value is > i64::MAX. Compare exactly as u64 to avoid f64 precision loss.
+                    // Negative i64 bounds are always < u64 payload
+                    let Self { lt, gt, gte, lte } = self;
+                    lt.is_none_or(|x| x > 0 && number < x as u64)
+                        && gt.is_none_or(|x| x < 0 || number > x as u64)
+                        && lte.is_none_or(|x| x > 0 && number <= x as u64)
+                        && gte.is_none_or(|x| x < 0 || number >= x as u64)
+                } else if let Some(number) = num.as_f64() {
+                    // non-integer float, fall back to f64 comparison
+                    self.map(|x| OrderedFloat(x as f64))
+                        .check_range(OrderedFloat(number))
+                } else {
+                    false
+                }
+            }
+            Value::Null
+            | Value::Bool(_)
+            | Value::String(_)
+            | Value::Array(_)
+            | Value::Object(_) => false,
         }
     }
 }
