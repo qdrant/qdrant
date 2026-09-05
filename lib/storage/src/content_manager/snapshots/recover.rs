@@ -1,29 +1,115 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::PayloadIndexSchema;
 use collection::common::sha_256::hashes_equal;
-use collection::config::CollectionConfigInternal;
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::replica_set_state::{
-    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
+    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaSetState, ReplicaState,
 };
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
+use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
+use segment::types::ShardKey;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
+    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex, CreateShardKey,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::content_manager::snapshots::download_result::DownloadResult;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{AccessRequirements, Auth, CollectionPass};
 use crate::{StorageError, TableOfContent};
+
+#[derive(serde::Deserialize)]
+struct SnapshotShardKeyMappingEntry {
+    key: ShardKey,
+    shard_ids: HashSet<ShardId>,
+}
+
+struct SnapshotShardKeyPlan {
+    shard_key: ShardKey,
+    placement: Vec<Vec<PeerId>>,
+}
+
+async fn snapshot_shard_placement(
+    snapshot_collection_dir: &std::path::Path,
+    shard_ids: &[ShardId],
+) -> Result<Vec<Vec<PeerId>>, StorageError> {
+    let mut placement = Vec::with_capacity(shard_ids.len());
+
+    for shard_id in shard_ids {
+        let shard_path = check_shard_path(snapshot_collection_dir, *shard_id).await?;
+        let replica_state_path = shard_path.join("replica_state.json");
+
+        let replica_state: SaveOnDisk<ReplicaSetState> =
+            SaveOnDisk::load_or_init_default(&replica_state_path).map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to load snapshot replica state from {}: {err}",
+                    replica_state_path.display(),
+                ))
+            })?;
+        let mut replicas: Vec<_> = replica_state.read().peers().keys().copied().collect();
+        replicas.sort_unstable();
+
+        if replicas.is_empty() {
+            return Err(StorageError::service_error(format!(
+                "Snapshot shard {shard_id} has no replicas in replica_state.json",
+            )));
+        }
+
+        placement.push(replicas);
+    }
+
+    Ok(placement)
+}
+
+async fn snapshot_shard_key_plan(
+    snapshot_collection_dir: &std::path::Path,
+) -> Result<Vec<SnapshotShardKeyPlan>, StorageError> {
+    let snapshot_mapping_path = snapshot_collection_dir.join(SHARD_KEY_MAPPING_FILE);
+    if !snapshot_mapping_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let snapshot_shard_mapping: Vec<SnapshotShardKeyMappingEntry> =
+        read_json(&snapshot_mapping_path)?;
+
+    let mut shard_keys: Vec<_> = snapshot_shard_mapping
+        .iter()
+        .map(|entry| {
+            let shard_key = entry.key.clone();
+            let mut shard_ids = entry.shard_ids.iter().copied().collect::<Vec<_>>();
+            shard_ids.sort_unstable();
+            (shard_key, shard_ids)
+        })
+        .collect();
+    shard_keys.sort_by_key(|(_, shard_ids)| shard_ids.first().copied().unwrap_or(0));
+
+    let mut plans = Vec::with_capacity(shard_keys.len());
+    for (shard_key, shard_ids) in shard_keys {
+        if shard_ids.is_empty() {
+            return Err(StorageError::service_error(format!(
+                "Snapshot shard mapping for key {shard_key} has no shard ids",
+            )));
+        }
+
+        let placement = snapshot_shard_placement(snapshot_collection_dir, &shard_ids).await?;
+        plans.push(SnapshotShardKeyPlan {
+            shard_key,
+            placement,
+        });
+    }
+
+    Ok(plans)
+}
 
 pub async fn activate_shard(
     toc: &TableOfContent,
@@ -213,7 +299,45 @@ async fn _do_recover_from_snapshot(
         }
     };
 
-    let state = collection.state().await;
+    let mut state = collection.state().await;
+
+    // For custom sharding, initialize or reconcile shard keys from snapshot metadata.
+    // The whole plan is validated first (mapping + placements), then missing keys are created.
+    if snapshot_config.params.sharding_method.unwrap_or_default() == ShardingMethod::Custom {
+        let shard_key_plan = snapshot_shard_key_plan(tmp_collection_dir.path()).await?;
+        let snapshot_keys: HashSet<_> = shard_key_plan
+            .iter()
+            .map(|plan| plan.shard_key.clone())
+            .collect();
+        let existing_keys: HashSet<_> = state.shards_key_mapping.keys().cloned().collect();
+
+        let unexpected_keys: Vec<_> = existing_keys.difference(&snapshot_keys).cloned().collect();
+        if !unexpected_keys.is_empty() {
+            return Err(StorageError::bad_input(format!(
+                "Snapshot is not compatible with existing collection: extra custom shard keys in target collection: {unexpected_keys:?}",
+            )));
+        }
+
+        let missing_keys = shard_key_plan
+            .into_iter()
+            .filter(|plan| !existing_keys.contains(&plan.shard_key))
+            .collect::<Vec<_>>();
+
+        for plan in missing_keys {
+            let consensus_op = CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: collection_pass.to_string(),
+                shard_key: plan.shard_key,
+                placement: plan.placement,
+                initial_state: None,
+            });
+
+            dispatcher
+                .submit_collection_meta_op(consensus_op, auth.clone(), None)
+                .await?;
+        }
+
+        state = collection.state().await;
+    }
 
     // Check config compatibility
     // Check vectors config
