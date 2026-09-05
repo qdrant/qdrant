@@ -143,6 +143,12 @@ mod tests {
         assert_eq!(default_cpu_budget_unallocated(49), -3);
         assert_eq!(default_cpu_budget_unallocated(64), -3);
 
+        assert_eq!(default_cpu_budget_unallocated(65), -4);
+        assert_eq!(default_cpu_budget_unallocated(96), -4);
+
+        assert_eq!(default_cpu_budget_unallocated(97), -6);
+        assert_eq!(default_cpu_budget_unallocated(128), -6);
+
         // Dynamic scaling beyond 128 CPUs (num_cpu / 16)
         assert_eq!(default_cpu_budget_unallocated(129), -8);
         assert_eq!(default_cpu_budget_unallocated(160), -10);
