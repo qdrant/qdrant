@@ -910,6 +910,7 @@ pub struct FeedbackItem {
 #[serde(untagged)]
 pub enum FeedbackStrategy {
     Naive(NaiveFeedbackStrategy),
+    Sefr(SefrFeedbackStrategy),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -924,6 +925,34 @@ pub struct NaiveFeedbackStrategyParams {
     #[validate(range(min = 0.0))]
     pub b: f32,
     pub c: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct SefrFeedbackStrategy {
+    #[validate(nested)]
+    pub sefr: SefrFeedbackStrategyParams,
+}
+
+/// Fits a SEFR classifier on the feedback and searches with the learned
+/// direction. Requires dense vectors and a `Dot` or `Cosine` distance.
+///
+/// The classifier is fit on the feedback items alone, so it needs roughly eight
+/// of them before it ranks well; with fewer, blend in the original query via
+/// `target_weight`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct SefrFeedbackStrategyParams {
+    /// Feedback items scoring above this value form the positive class.
+    /// Defaults to the mean of the feedback scores.
+    #[serde(default)]
+    pub threshold: Option<f32>,
+
+    /// Relative influence of the original query vector against the learned
+    /// direction, which is matched in magnitude first so that a given weight
+    /// means the same thing across queries. Defaults to `0`, which uses the
+    /// learned direction alone. Useful values run from about `0.01` to `1`.
+    #[serde(default)]
+    pub target_weight: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

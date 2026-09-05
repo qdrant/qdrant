@@ -15679,6 +15679,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/NaiveFeedbackStrategy"
+          },
+          {
+            "$ref": "#/components/schemas/SefrFeedbackStrategy"
           }
         ]
       },
@@ -15713,6 +15716,35 @@
           "c": {
             "type": "number",
             "format": "float"
+          }
+        }
+      },
+      "SefrFeedbackStrategy": {
+        "type": "object",
+        "required": [
+          "sefr"
+        ],
+        "properties": {
+          "sefr": {
+            "$ref": "#/components/schemas/SefrFeedbackStrategyParams"
+          }
+        }
+      },
+      "SefrFeedbackStrategyParams": {
+        "description": "Fits a SEFR classifier on the feedback and searches with the learned direction. Requires dense vectors and a `Dot` or `Cosine` distance.\n\nThe classifier is fit on the feedback items alone, so it needs roughly eight of them before it ranks well; with fewer, blend in the original query via `target_weight`.",
+        "type": "object",
+        "properties": {
+          "threshold": {
+            "description": "Feedback items scoring above this value form the positive class. Defaults to the mean of the feedback scores.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "target_weight": {
+            "description": "Relative influence of the original query vector against the learned direction, which is matched in magnitude first so that a given weight means the same thing across queries. Defaults to `0`, which uses the learned direction alone. Useful values run from about `0.01` to `1`.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
           }
         }
       },

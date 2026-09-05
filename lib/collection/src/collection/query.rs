@@ -486,6 +486,8 @@ impl Collection {
         // update timeout
         let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
+        let collection_params = self.collection_config.read().await.params.clone();
+
         // Check we actually fetched all referenced vectors from the resolver requests
         for (resolver_req, _) in &resolver_requests {
             for point_id in resolver_req.get_referenced_point_ids() {
@@ -507,7 +509,7 @@ impl Collection {
             requests_batch,
             |(_req, shard)| shard,
             |(req, _), acc| {
-                req.try_into_shard_request(&self.id, &ids_to_vectors)
+                req.try_into_shard_request(&self.id, &ids_to_vectors, &collection_params)
                     .map(|shard_req| {
                         acc.push(shard_req);
                     })

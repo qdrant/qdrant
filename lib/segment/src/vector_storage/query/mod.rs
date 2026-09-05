@@ -7,6 +7,7 @@ mod context_query;
 mod discover_query;
 mod feedback_query;
 mod reco_query;
+mod sefr;
 
 pub use context_query::{ContextPair, ContextQuery};
 pub use discover_query::DiscoverQuery;
@@ -14,6 +15,7 @@ pub use feedback_query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQ
 pub use reco_query::{
     RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, avg_vector_for_recommendation,
 };
+pub use sefr::{SefrModel, SefrParams, fit_sefr, sefr_query_vector};
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.

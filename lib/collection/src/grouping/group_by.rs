@@ -118,7 +118,13 @@ impl GroupRequest {
                     hw_measurement_acc.clone(),
                 )
                 .await?;
-                query_req.try_into_shard_request(&collection.id, &referenced_vectors)?
+
+                let collection_params = collection.collection_config.read().await.params.clone();
+                query_req.try_into_shard_request(
+                    &collection.id,
+                    &referenced_vectors,
+                    &collection_params,
+                )?
             }
         };
 

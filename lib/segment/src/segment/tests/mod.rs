@@ -50,7 +50,9 @@ use crate::types::{
     WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
-use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
+use crate::vector_storage::query::{
+    FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery, SefrParams, sefr_query_vector,
+};
 
 fn init_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -2801,4 +2803,129 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // at version 3. A cancelled (aborted) flush would have left the persisted
     // version at 0.
     assert_eq!(segment.persistent_version(), 3);
+}
+
+/// The `sefr` relevance feedback strategy reduces to a single vector, so it is
+/// searched through the plain nearest-neighbor path. This checks the whole chain
+/// against a real segment: fit on feedback, then search and get the relevant
+/// cluster back.
+#[test]
+fn test_sefr_feedback_retrieves_relevant_cluster() {
+    init_logger();
+
+    const DIM: usize = 8;
+    const HALF_DIM: usize = DIM / 2;
+    const POINTS_PER_CLUSTER: u64 = 50;
+
+    let dir = Builder::new().prefix("sefr_segment").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let mut rng = StdRng::seed_from_u64(42);
+
+    // Two well separated clusters, both inside the [0, 1] range SEFR expects.
+    // The relevant one carries its mass in the leading dimensions.
+    let mut make_vector = |relevant: bool| -> Vec<f32> {
+        (0..DIM)
+            .map(|i| {
+                if (i < HALF_DIM) == relevant {
+                    rng.random_range(0.5..1.0)
+                } else {
+                    rng.random_range(0.0..0.3)
+                }
+            })
+            .collect()
+    };
+
+    let mut relevant_vectors = Vec::new();
+    let mut irrelevant_vectors = Vec::new();
+    for point_id in 0..POINTS_PER_CLUSTER * 2 {
+        let relevant = point_id < POINTS_PER_CLUSTER;
+        let vector = make_vector(relevant);
+        segment
+            .upsert_point(
+                100,
+                point_id.into(),
+                only_default_vector(&vector),
+                &hw_counter,
+            )
+            .unwrap();
+        if relevant {
+            relevant_vectors.push(vector);
+        } else {
+            irrelevant_vectors.push(vector);
+        }
+    }
+
+    // Feedback: a few points from each cluster, scored by the oracle.
+    let feedback: Vec<FeedbackItem<VectorInternal>> = relevant_vectors
+        .iter()
+        .take(3)
+        .map(|vector| FeedbackItem {
+            vector: VectorInternal::from(vector.clone()),
+            score: OrderedFloat(1.0),
+        })
+        .chain(
+            irrelevant_vectors
+                .iter()
+                .take(3)
+                .map(|vector| FeedbackItem {
+                    vector: VectorInternal::from(vector.clone()),
+                    score: OrderedFloat(0.0),
+                }),
+        )
+        .collect();
+
+    // A deliberately unhelpful original query, sitting between the clusters, so
+    // that success can only come from the feedback.
+    let target = VectorInternal::from(vec![0.5; DIM]);
+
+    let query_vector =
+        sefr_query_vector(&target, &feedback, &SefrParams::default(), Distance::Dot).unwrap();
+
+    let top = 10;
+    let results = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &QueryVector::Nearest(query_vector),
+            &WithPayload::default(),
+            &WithVector::Bool(false),
+            None,
+            top,
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(results.len(), top);
+    for point in &results {
+        let ExtendedPointId::NumId(id) = point.id else {
+            panic!("expected numeric ids, got {:?}", point.id);
+        };
+        assert!(
+            id < POINTS_PER_CLUSTER,
+            "point {id} comes from the down-voted cluster, scored {}",
+            point.score,
+        );
+    }
+
+    // The unhelpful target on its own cannot tell the clusters apart, which is
+    // what the feedback is there to fix.
+    let target_results = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &QueryVector::Nearest(target),
+            &WithPayload::default(),
+            &WithVector::Bool(false),
+            None,
+            top,
+            None,
+        )
+        .unwrap();
+    let relevant_from_target = target_results
+        .iter()
+        .filter(|point| matches!(point.id, ExtendedPointId::NumId(id) if id < POINTS_PER_CLUSTER))
+        .count();
+    assert!(
+        relevant_from_target < top,
+        "the target alone already separated the clusters, so the fixture proves nothing",
+    );
 }

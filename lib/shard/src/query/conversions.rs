@@ -554,6 +554,13 @@ impl QueryEnum {
                         };
                         QueryEnum::FeedbackNaive(named)
                     }
+                    // SEFR is fit at the collection level and reduces to a plain
+                    // nearest query, so it never reaches the internal protocol.
+                    grpc::feedback_strategy::Variant::Sefr(_) => {
+                        return Err(tonic::Status::invalid_argument(
+                            "the `sefr` feedback strategy is resolved before the shard request",
+                        ));
+                    }
                 }
             }
         };

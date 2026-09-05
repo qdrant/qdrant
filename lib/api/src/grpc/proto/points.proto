@@ -907,6 +907,8 @@ message FeedbackStrategy {
   oneof variant {
     // a * score + sim(confidence^b * c * delta)
     NaiveFeedbackStrategy naive = 1;
+    // Fit a SEFR classifier on the feedback and search with the learned direction
+    SefrFeedbackStrategy sefr = 2;
   }
 }
 
@@ -914,6 +916,15 @@ message NaiveFeedbackStrategy {
   float a = 1;
   float b = 2;
   float c = 3;
+}
+
+// Requires dense vectors and a Dot or Cosine distance. Needs roughly eight feedback
+// items before it ranks well; with fewer, blend in the original query via target_weight.
+message SefrFeedbackStrategy {
+  // Feedback items scoring above this value form the positive class. Defaults to the mean of the feedback scores.
+  optional float threshold = 1;
+  // Relative influence of the original query vector against the learned direction, matched in magnitude first. Defaults to 0. Useful values run from about 0.01 to 1.
+  optional float target_weight = 2;
 }
 
 enum Fusion {

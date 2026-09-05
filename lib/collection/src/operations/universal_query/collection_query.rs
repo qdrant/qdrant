@@ -13,7 +13,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::{
     ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
-    avg_vector_for_recommendation,
+    SefrParams, avg_vector_for_recommendation, sefr_query_vector,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -23,6 +23,7 @@ use super::shard_query::{
     FusionInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
 use crate::common::fetch_vectors::ReferencedVectors;
+use crate::config::CollectionParams;
 use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
@@ -112,6 +113,7 @@ impl Query {
         lookup_collection: Option<&String>,
         using: VectorNameBuf,
         request_limit: usize,
+        collection_params: &CollectionParams,
     ) -> CollectionResult<ScoringQuery> {
         let scoring_query = match self {
             Query::Vector(vector_query) => {
@@ -120,7 +122,7 @@ impl Query {
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
                     .preprocess_vectors()
                     // Turn into QueryEnum
-                    .into_scoring_query(using, request_limit)?
+                    .into_scoring_query(using, request_limit, collection_params)?
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
@@ -216,7 +218,17 @@ impl<T> FeedbackInternal<T> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FeedbackStrategy {
-    Naive { a: f32, b: f32, c: f32 },
+    Naive {
+        a: f32,
+        b: f32,
+        c: f32,
+    },
+    /// Fit a SEFR classifier on the feedback and search with the learned
+    /// direction. See [`segment::vector_storage::query::sefr_query_vector`].
+    Sefr {
+        threshold: Option<f32>,
+        target_weight: f32,
+    },
 }
 
 impl VectorQuery<VectorInputInternal> {
@@ -448,6 +460,7 @@ impl VectorQuery<VectorInternal> {
         self,
         using: VectorNameBuf,
         request_limit: usize,
+        collection_params: &CollectionParams,
     ) -> CollectionResult<ScoringQuery> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => QueryEnum::Nearest(NamedQuery::new(vector, using)),
@@ -499,6 +512,23 @@ impl VectorQuery<VectorInternal> {
                     },
                     using,
                 )),
+                FeedbackStrategy::Sefr {
+                    threshold,
+                    target_weight,
+                } => {
+                    // SEFR reduces the feedback to a single weight vector, so the
+                    // search runs through the regular nearest-neighbor path.
+                    let search_vector = sefr_query_vector(
+                        &target,
+                        &feedback,
+                        &SefrParams {
+                            threshold,
+                            target_weight,
+                        },
+                        collection_params.get_distance(&using)?,
+                    )?;
+                    QueryEnum::Nearest(NamedQuery::new(search_vector, using))
+                }
             },
         };
 
@@ -569,6 +599,7 @@ impl CollectionPrefetch {
     fn try_into_shard_prefetch(
         self,
         ids_to_vectors: &ReferencedVectors,
+        collection_params: &CollectionParams,
     ) -> CollectionResult<ShardPrefetch> {
         CollectionQueryRequest::validation(
             &self.query,
@@ -590,6 +621,7 @@ impl CollectionPrefetch {
                     lookup_collection.as_ref(),
                     using,
                     self.limit,
+                    collection_params,
                 )
             })
             .transpose()?;
@@ -597,7 +629,7 @@ impl CollectionPrefetch {
         let prefetches = self
             .prefetch
             .into_iter()
-            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors, collection_params))
             .try_collect()?;
 
         Ok(ShardPrefetch {
@@ -678,6 +710,7 @@ impl CollectionQueryRequest {
         self,
         collection_name: &str,
         ids_to_vectors: &ReferencedVectors,
+        collection_params: &CollectionParams,
     ) -> CollectionResult<ShardQueryRequest> {
         Self::validation(
             &self.query,
@@ -713,6 +746,7 @@ impl CollectionQueryRequest {
                     query_lookup_collection.as_ref(),
                     using,
                     self.limit,
+                    collection_params,
                 )
             })
             .transpose()?;
@@ -720,7 +754,7 @@ impl CollectionQueryRequest {
         let prefetches = self
             .prefetch
             .into_iter()
-            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors, collection_params))
             .try_collect()?;
 
         Ok(ShardQueryRequest {

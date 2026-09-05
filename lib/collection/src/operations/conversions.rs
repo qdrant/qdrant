@@ -2021,6 +2021,16 @@ impl From<rest::FeedbackStrategy> for FeedbackStrategy {
             rest::FeedbackStrategy::Naive(rest::NaiveFeedbackStrategy {
                 naive: rest::NaiveFeedbackStrategyParams { a, b, c },
             }) => FeedbackStrategy::Naive { a, b, c },
+            rest::FeedbackStrategy::Sefr(rest::SefrFeedbackStrategy {
+                sefr:
+                    rest::SefrFeedbackStrategyParams {
+                        threshold,
+                        target_weight,
+                    },
+            }) => FeedbackStrategy::Sefr {
+                threshold,
+                target_weight: target_weight.unwrap_or(0.0),
+            },
         }
     }
 }
@@ -2039,6 +2049,13 @@ impl TryFrom<grpc::FeedbackStrategy> for FeedbackStrategy {
             Variant::Naive(grpc::NaiveFeedbackStrategy { a, b, c }) => {
                 FeedbackStrategy::Naive { a, b, c }
             }
+            Variant::Sefr(grpc::SefrFeedbackStrategy {
+                threshold,
+                target_weight,
+            }) => FeedbackStrategy::Sefr {
+                threshold,
+                target_weight: target_weight.unwrap_or(0.0),
+            },
         };
 
         Ok(strategy)

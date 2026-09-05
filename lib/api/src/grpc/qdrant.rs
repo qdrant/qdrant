@@ -6530,7 +6530,7 @@ pub struct FeedbackItem {
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct FeedbackStrategy {
-    #[prost(oneof = "feedback_strategy::Variant", tags = "1")]
+    #[prost(oneof = "feedback_strategy::Variant", tags = "1, 2")]
     #[validate(nested)]
     pub variant: ::core::option::Option<feedback_strategy::Variant>,
 }
@@ -6542,6 +6542,9 @@ pub mod feedback_strategy {
         /// a * score + sim(confidence^b * c * delta)
         #[prost(message, tag = "1")]
         Naive(super::NaiveFeedbackStrategy),
+        /// Fit a SEFR classifier on the feedback and search with the learned direction
+        #[prost(message, tag = "2")]
+        Sefr(super::SefrFeedbackStrategy),
     }
 }
 #[derive(validator::Validate)]
@@ -6555,6 +6558,18 @@ pub struct NaiveFeedbackStrategy {
     pub b: f32,
     #[prost(float, tag = "3")]
     pub c: f32,
+}
+/// Requires dense vectors and a Dot or Cosine distance. Needs roughly eight feedback
+/// items before it ranks well; with fewer, blend in the original query via target_weight.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct SefrFeedbackStrategy {
+    /// Feedback items scoring above this value form the positive class. Defaults to the mean of the feedback scores.
+    #[prost(float, optional, tag = "1")]
+    pub threshold: ::core::option::Option<f32>,
+    /// Relative influence of the original query vector against the learned direction, matched in magnitude first. Defaults to 0. Useful values run from about 0.01 to 1.
+    #[prost(float, optional, tag = "2")]
+    pub target_weight: ::core::option::Option<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

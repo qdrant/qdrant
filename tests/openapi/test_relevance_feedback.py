@@ -122,3 +122,27 @@ def test_feedback_pair_requirement(collection_name):
     query_results = response.json()["result"]
 
     assert feedback_results == query_results
+
+
+def test_sefr_requires_two_feedback_items(collection_name):
+    # SEFR needs both classes; a single feedback item can never form them.
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "relevance_feedback": {
+                    "target": [0.1, 0.2, 0.3, 0.4],
+                    "feedback": [{"example": [0.42, 0.42, 0.42, 0.42], "score": 0.85}],
+                    "strategy": {"sefr": {}},
+                }
+            },
+            "limit": 3,
+        },
+    )
+    assert not response.ok, response.text
+    assert (
+        "the `sefr` strategy needs at least two feedback elements to separate"
+        in response.json()["status"]["error"]
+    )

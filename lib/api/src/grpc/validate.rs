@@ -486,6 +486,8 @@ impl Validate for grpc::feedback_strategy::Variant {
             grpc::feedback_strategy::Variant::Naive(naive_feedback_strategy) => {
                 naive_feedback_strategy.validate()
             }
+            // Neither SEFR parameter is range-constrained.
+            grpc::feedback_strategy::Variant::Sefr(_) => Ok(()),
         }
     }
 }
