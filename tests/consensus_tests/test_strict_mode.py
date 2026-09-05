@@ -1,7 +1,7 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode
+from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode, delete_points_by_filter, set_payload_by_filter
 from .utils import *
 
 logging.basicConfig(level=logging.DEBUG)
@@ -245,3 +245,110 @@ def test_write_rate_limiting_across_node(tmp_path: pathlib.Path):
             return
 
     raise AssertionError("rate limiter was never triggered")
+
+
+def test_max_update_by_filter_limit(tmp_path: pathlib.Path):
+    """`max_update_by_filter_limit` is enforced by every shard on the point set
+    its own filter scan resolved to, before anything is written."""
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
+
+    # Two shards: each one gates its own share of the request, so the limit is
+    # a per-shard bound rather than a bound on the whole request.
+    create_collection(
+        peer_urls[0],
+        collection=COLLECTION_NAME,
+        shard_number=2,
+        replication_factor=N_REPLICAS,
+    )
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME, peer_api_uris=peer_urls
+    )
+
+    point_count = 60
+    limit = 10
+    points = [
+        {"id": i, "vector": random_dense_vector(), "payload": {"city": "Berlin"}}
+        for i in range(point_count)
+    ]
+    berlin_filter = {"must": [{"key": "city", "match": {"value": "Berlin"}}]}
+
+    def upsert_all():
+        upsert_points(peer_urls[0], points, collection_name=COLLECTION_NAME).raise_for_status()
+
+    def count_all():
+        res = requests.post(
+            f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points/count",
+            json={"exact": True},
+        )
+        assert_http_ok(res)
+        return res.json()["result"]["count"]
+
+    upsert_all()
+
+    set_strict_mode(
+        peer_urls[0],
+        COLLECTION_NAME,
+        {"enabled": True, "max_update_by_filter_limit": limit},
+    )
+    # The gate runs on whichever peer holds the shard, so every peer must have
+    # the new config before the update is sent.
+    for peer_url in peer_urls:
+        wait_for_strict_mode_enabled(peer_url, COLLECTION_NAME)
+
+    # Each shard resolves ~30 of the 60 points, over its limit of 10.
+    res = delete_points_by_filter(peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME)
+    assert res.status_code == 400
+    error = res.json()["status"]["error"]
+    assert f"more points in one shard than the limit of {limit}" in error, error
+    # The error nudges the user towards splitting the scan with `slice`.
+    assert '"slice"' in error, error
+
+    # The rejection happens before the WAL append on every shard, so nothing
+    # was deleted anywhere.
+    assert count_all() == point_count
+
+    # A set-payload by filter scans the same way and is rejected too.
+    res = set_payload_by_filter(
+        peer_urls[0], {"visited": True}, berlin_filter, collection_name=COLLECTION_NAME
+    )
+    assert res.status_code == 400
+    assert (
+        f"more points in one shard than the limit of {limit}"
+        in res.json()["status"]["error"]
+    )
+
+    # Following the nudge: 16 disjoint slices bring every shard's share of each
+    # request well under the limit, and together they cover all the points.
+    slices = 16
+    for index in range(slices):
+        sliced = {"must": berlin_filter["must"] + [{"slice": {"total": slices, "index": index}}]}
+        res = delete_points_by_filter(peer_urls[0], sliced, collection_name=COLLECTION_NAME)
+        assert_http_ok(res)
+    assert count_all() == 0
+
+    # An explicit id list is not a filter scan, so it is never gated.
+    upsert_all()
+    res = requests.post(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points/delete?wait=true",
+        json={"points": list(range(point_count))},
+    )
+    assert_http_ok(res)
+    assert count_all() == 0
+
+    # `update_filter` only trims the point list the client sent, so its size is
+    # a batch size rather than a scan and the limit must not apply.
+    res = requests.put(
+        f"{peer_urls[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+        json={"points": points, "update_filter": berlin_filter},
+    )
+    assert_http_ok(res)
+
+    # With strict mode disabled the unsliced delete goes through again.
+    upsert_all()
+    set_strict_mode(peer_urls[0], COLLECTION_NAME, {"enabled": False})
+    for peer_url in peer_urls:
+        wait_for_strict_mode_disabled(peer_url, COLLECTION_NAME)
+
+    res = delete_points_by_filter(peer_urls[0], berlin_filter, collection_name=COLLECTION_NAME)
+    assert_http_ok(res)
+    assert count_all() == 0

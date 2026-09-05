@@ -7603,6 +7603,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "max_update_by_filter_limit": {
+            "description": "Max number of points, per shard, that an update operation selecting its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. Every shard counts the points its own filter scan matched and rejects the request when that count exceeds the limit, without applying it there. Shards and replicas are gated independently, so a rejected request may still have been applied by those that matched fewer points. Split larger updates with a `slice` filter condition.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "max_resident_memory_percent": {
             "description": "Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
             "deprecated": true,
@@ -10017,6 +10024,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "max_update_by_filter_limit": {
+            "description": "Max number of points, per shard, that an update operation selecting its targets by filter (e.g. delete by filter, set payload by filter, delete vectors by filter) may affect. Every shard counts the points its own filter scan matched and rejects the request when that count exceeds the limit, without applying it there. Shards and replicas are gated independently, so a rejected request may still have been applied by those that matched fewer points. Split larger updates with a `slice` filter condition.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
             "nullable": true
           },
           "max_resident_memory_percent": {

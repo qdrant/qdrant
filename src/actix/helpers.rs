@@ -236,6 +236,7 @@ impl HttpError {
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
             StorageError::InsufficientStorage { .. } => {}
+            StorageError::StrictMode { .. } => {}
         }
         headers
     }
@@ -260,6 +261,7 @@ impl ResponseError for HttpError {
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
             StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
             StorageError::InsufficientStorage { .. } => http::StatusCode::INSUFFICIENT_STORAGE,
+            StorageError::StrictMode { .. } => http::StatusCode::BAD_REQUEST,
         }
     }
 }

@@ -25,9 +25,29 @@
 //! the filter matched: it reuses the incoming operation's single clock tag,
 //! and one tag can cover only one record — untagged or tag-sharing records
 //! break WAL-delta recovery. Splitting oversized resolutions is a follow-up.
+//!
+//! `max_update_by_filter_limit` (strict mode) is enforced here, on the point
+//! set the scan resolved to. The limit is also the scan's budget: the resolver
+//! reads one point past it per segment and stops, so refusing an oversized
+//! update costs what the limit allows rather than what the filter matches.
+//!
+//! The verdict is local to this shard, and it is not atomic for the request
+//! that carried the operation. The check runs before the WAL append, so a
+//! rejection leaves no trace *here*, but every shard gates the point set it
+//! resolved on its own, so another shard of the collection may have applied its
+//! share before this one refused (the client sees `InconsistentShardFailure`).
+//! Replicas of one shard can disagree the same way when their point sets have
+//! drifted apart; that divergence is the accepted cost of a per-shard limit,
+//! and a refusal is never a reason to deactivate a replica (see
+//! `handle_failed_replicas`), which would trade it for a full resync.
+//!
+//! Only the replica taking the client write gates: `submit_update`'s
+//! `enforce_strict_mode` is off for a replica that is catching up, which is
+//! also how the operations that reach one arrive unresolved (a forward proxy
+//! relays the original operation to a transfer target).
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use shard::resolve::resolve_operation;
+use shard::resolve::{ResolvedOperation, resolve_operation};
 use tokio::sync::oneshot;
 
 use crate::operations::OperationWithClockTag;
@@ -72,6 +92,7 @@ impl LocalShard {
         &self,
         operation: OperationWithClockTag,
         wait: WaitUntil,
+        enforce_strict_mode: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
         let OperationWithClockTag {
@@ -80,6 +101,12 @@ impl LocalShard {
         } = operation;
 
         self.check_wal_disk_space().await?;
+
+        let update_by_filter_limit = if enforce_strict_mode {
+            self.max_update_by_filter_limit().await
+        } else {
+            None
+        };
 
         // 1. Fence: block new submits; in-flight ones (holding `read`) have
         // already appended and enqueued by the time `write` is granted.
@@ -103,11 +130,29 @@ impl LocalShard {
         // operation to its id-based form.
         let segments = self.segments.clone();
         let hw_acc = hw_measurement_acc.clone();
-        let resolved = tokio::task::spawn_blocking(move || {
+        let ResolvedOperation {
+            operation: resolved,
+            scanned_points,
+        } = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
+            resolve_operation(
+                &segments,
+                operation,
+                update_by_filter_limit,
+                &hw_acc.get_counter_cell(),
+            )
         })
         .await??;
+
+        // Gate on the points the scan selected in this shard, before anything
+        // is written. Over the limit the resolved operation is truncated, so
+        // this rejection is the only sound thing to do with it.
+        if let Some(limit) = update_by_filter_limit
+            && let Some(matched) = scanned_points
+            && matched > limit
+        {
+            return Err(update_by_filter_limit_error(limit));
+        }
 
         // Guard against `is_filter_resolving` and `resolve_operation` drifting
         // apart: a resolved operation must never classify as filter-resolving,
@@ -126,4 +171,39 @@ impl LocalShard {
         )
         .await
     }
+
+    /// Configured `max_update_by_filter_limit`, if strict mode is enabled.
+    async fn max_update_by_filter_limit(&self) -> Option<usize> {
+        self.collection_config
+            .read()
+            .await
+            .strict_mode_config
+            .as_ref()
+            .filter(|config| config.enabled == Some(true))
+            .and_then(|config| config.max_update_by_filter_limit)
+    }
+}
+
+/// Reject an update whose filter scan selected more points than strict mode
+/// allows, pointing at the `slice` condition as the way to split it up.
+fn update_by_filter_limit_error(limit: usize) -> CollectionError {
+    // The scan stops one point past the limit, so how far over it the filter
+    // really goes is unknown here. Start at the smallest split that can change
+    // anything and let the user double from there, which is also what an
+    // unbalanced slice or a bigger share on another shard asks for.
+    let slices = 2;
+
+    CollectionError::strict_mode(
+        format!("Update by filter matches more points in one shard than the limit of {limit}"),
+        format!(
+            "Split the update into disjoint slices and send one request per slice: add \
+             `{{\"slice\": {{\"total\": {slices}, \"index\": 0}}}}` to the `must` clause of \
+             your filter and repeat it for every index in `0..{slices}`. Together the slices \
+             cover all matching points. Raise `total` and repeat while a slice is still \
+             rejected: each doubling halves what one slice matches. Alternatively, raise \
+             `max_update_by_filter_limit` in the strict mode config. Each shard and each replica \
+             applies this limit to the points it resolved on its own, so parts of this request \
+             may have been applied already.",
+        ),
+    )
 }
