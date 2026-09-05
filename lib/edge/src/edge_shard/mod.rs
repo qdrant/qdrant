@@ -108,7 +108,15 @@ impl EdgeShard {
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
-        let resolved = resolve_initial_config(path, config)?;
+        // Reading existing on-disk state can fail in ways that all mean "present
+        // but won't open": a persisted `edge_config.json` that exists but can't be
+        // read or parsed (corrupt, or inaccessible — permission/`ENOTDIR`/`ELOOP`),
+        // and segments that won't load. Tag both so the FFI surfaces `Unreadable`
+        // and the caller refuses to recreate over recoverable data. The WAL open
+        // between them is left untagged here because the `wal` crate stringifies
+        // its error — the FFI classifies it (a held lock -> `ShardLocked`, a
+        // corrupt WAL -> `Unreadable`).
+        let resolved = resolve_initial_config(path, config).map_err(mark_unreadable)?;
 
         let wal_options = resolved
             .as_ref()
@@ -116,17 +124,27 @@ impl EdgeShard {
             .unwrap_or_default();
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
-        let (mut segments, derived) = load_segments(&segments_path)?;
+        let (mut segments, derived) = load_segments(&segments_path).map_err(mark_unreadable)?;
 
         let config = match (resolved, derived) {
             (Some(resolved), Some(derived)) => {
                 let merged = resolved.fill_unspecified_from(&derived);
                 // The tunables converge to the merged config via the optimizers, but the vector
                 // definitions must actually match the stored data.
+                //
+                // Category: the data reads fine — it's the provided `config` that
+                // contradicts what's stored, so this is a bad-argument case ("fix
+                // your config"), NOT `Unreadable`. Do-not-overwrite would be the
+                // wrong advice here, but so is a generic error: a consumer following
+                // the "recreate unless `Unreadable`" contract would clobber intact,
+                // readable data on a mere config typo. Carried as a typed
+                // `ValidationError` so the FFI classifies it by variant into
+                // `InvalidArgument` ("fix your input, retry"), symmetric to the
+                // `InconsistentStorage`->`Unreadable` mapping.
                 merged
                     .check_compatible_with_segment_config(&derived.plain_segment_config())
                     .map_err(|err| {
-                        OperationError::service_error(format!(
+                        OperationError::validation_error(format!(
                             "config is incompatible with existing segments: {err}"
                         ))
                     })?;
@@ -343,6 +361,19 @@ fn ensure_dirs_and_open_wal(
     }
 
     Ok((wal, segments_path))
+}
+
+/// Tag an error from reading existing on-disk shard data so the FFI boundary
+/// classifies it as `EdgeError::Unreadable` — the caller must not recreate over
+/// data it cannot read. Covers both corrupt/unparseable data and the case where
+/// the path exists but cannot be accessed (permission, `ENOTDIR`, `ELOOP`, …):
+/// either way, overwriting would be the wrong reaction.
+///
+/// Carried as a typed [`OperationError::InconsistentStorage`] (not a marker
+/// string) so the FFI classifies it by variant and surfaces the underlying
+/// cause as the `reason`, with no internal sentinel text leaking to hosts.
+fn mark_unreadable(err: OperationError) -> OperationError {
+    OperationError::inconsistent_storage(err.to_string())
 }
 
 /// The provided → persisted layers of the config fallback chain (the derived-from-segments layer
