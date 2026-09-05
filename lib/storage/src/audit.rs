@@ -77,6 +77,11 @@ pub struct AuditConfig {
     /// to the internal operation name.  Default: true.
     #[serde(default = "default_log_api")]
     pub log_api: bool,
+
+    /// If true, write every audit event to stdout in addition to the log file.
+    /// Default: false.
+    #[serde(default)]
+    pub stdout: bool,
 }
 
 fn default_audit_dir() -> PathBuf {
@@ -151,6 +156,7 @@ pub struct AuditEvent {
 
 struct AuditLogger {
     writer: Mutex<NonBlocking>,
+    stdout: bool,
 }
 
 impl AuditLogger {
@@ -162,6 +168,7 @@ impl AuditLogger {
             max_log_files,
             trust_forwarded_headers: _,
             log_api: _,
+            stdout,
         } = config;
 
         fs_err::create_dir_all(dir)?;
@@ -188,6 +195,7 @@ impl AuditLogger {
         Ok((
             Self {
                 writer: Mutex::new(non_blocking),
+                stdout: *stdout,
             },
             guard,
         ))
@@ -205,6 +213,14 @@ impl AuditLogger {
             }
         };
         buf.push(b'\n');
+
+        if self.stdout {
+            // `Stdout` is line-buffered and `buf` ends with a newline, so the
+            // event is flushed as a whole line.
+            if let Err(err) = std::io::stdout().write_all(&buf) {
+                log::error!("Failed to write audit log entry to stdout: {err}");
+            }
+        }
 
         let mut writer = self.writer.lock();
         if let Err(err) = writer.write_all(&buf) {
@@ -236,6 +252,7 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         max_log_files: _,
         trust_forwarded_headers,
         log_api,
+        stdout: _,
     } = config;
 
     if !enabled {
@@ -298,6 +315,17 @@ mod tests {
             out.len()
         );
         assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn stdout_flag_is_off_by_default() {
+        let config: AuditConfig = serde_json::from_str("{}").expect("empty config is valid");
+        assert!(!config.stdout);
+        assert!(
+            serde_json::from_str::<AuditConfig>(r#"{"stdout": true}"#)
+                .expect("config is valid")
+                .stdout
+        );
     }
 
     #[test]

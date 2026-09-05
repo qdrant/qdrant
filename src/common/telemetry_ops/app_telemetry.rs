@@ -75,6 +75,7 @@ pub struct AuditTelemetry {
     pub max_log_files: usize,
     pub trust_forwarded_headers: bool,
     pub log_api: bool,
+    pub stdout: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dir_size_bytes: Option<usize>,
 }
@@ -161,6 +162,7 @@ fn collect_audit_telemetry(
         max_log_files: config.max_log_files,
         trust_forwarded_headers: config.trust_forwarded_headers,
         log_api: config.log_api,
+        stdout: config.stdout,
         dir_size_bytes,
     })
 }
