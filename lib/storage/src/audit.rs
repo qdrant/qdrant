@@ -1,13 +1,11 @@
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_appender::non_blocking::WorkerGuard;
 
+use crate::audit_sink::{AuditSink, AuditSinkKind, OnFull, build_sinks};
 use crate::rbac::AuthType;
 
 /// Maximum length for a tracing ID extracted from request headers.
@@ -47,7 +45,7 @@ static LOG_API: OnceLock<bool> = OnceLock::new();
 // Configuration
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AuditConfig {
     /// Enable audit logging.
     #[serde(default)]
@@ -77,6 +75,68 @@ pub struct AuditConfig {
     /// to the internal operation name.  Default: true.
     #[serde(default = "default_log_api")]
     pub log_api: bool,
+
+    /// If true, write audit records to rotating files in [`Self::dir`].
+    ///
+    /// This is the only sink the `/audit/logs` query API can read (for now?), so
+    /// disabling it makes audit records unqueryable through Qdrant, they are
+    /// only available wherever the other enabled sinks send them.
+    ///
+    /// Default: true
+    #[serde(default = "default_write_to_file")]
+    pub write_to_file: bool,
+
+    /// If true, write audit records to the process' stdout, so that a log
+    /// collector consuming stdout receives them.  Intended for stdout shipping
+    /// (i.e. hybrid) esp. containerized deployments.
+    ///
+    /// Note that audit records are always JSON, so with the default
+    /// `logger.format: text` the stdout stream mixes text log lines with JSON
+    /// audit lines.  Set `logger.format: json` for a uniform stream.
+    ///
+    /// Default: false
+    #[serde(default)]
+    pub write_to_stdout: bool,
+
+    /// What the file sink does when its 128k-record queue is full because the
+    /// disk cannot keep up: `drop` (default) or `block`.
+    ///
+    /// `drop` never blocks but can lose audit records under sustained load.
+    /// `block` loses nothing to a full queue, but applies backpressure to the
+    /// request path: an indefinitely stalled disk stalls writes to the
+    /// database.
+    ///
+    /// Default: `drop`
+    #[serde(default)]
+    pub on_file_full: OnFull,
+
+    /// What the stdout sink does when its 128k-record queue is full because
+    /// the consumer cannot keep up: `drop` (default) or `block`.
+    ///
+    /// Note that `block` here makes the stdout consumer, typically a log
+    /// collector, a liveness dependency of the database. While it is not
+    /// reading, writes stall.
+    ///
+    /// Default: `drop`
+    #[serde(default)]
+    pub on_stdout_full: OnFull,
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: default_audit_dir(),
+            rotation: AuditRotation::default(),
+            max_log_files: default_max_log_files(),
+            trust_forwarded_headers: false,
+            log_api: default_log_api(),
+            write_to_file: default_write_to_file(),
+            write_to_stdout: false,
+            on_file_full: OnFull::default(),
+            on_stdout_full: OnFull::default(),
+        }
+    }
 }
 
 fn default_audit_dir() -> PathBuf {
@@ -88,6 +148,10 @@ const fn default_max_log_files() -> usize {
 }
 
 const fn default_log_api() -> bool {
+    true
+}
+
+const fn default_write_to_file() -> bool {
     true
 }
 
@@ -150,53 +214,20 @@ pub struct AuditEvent {
 // ---------------------------------------------------------------------------
 
 struct AuditLogger {
-    writer: Mutex<NonBlocking>,
+    /// Every enabled destination. each record is fanned out to all of them.
+    sinks: Vec<AuditSink>,
 }
 
 impl AuditLogger {
-    fn new(config: &AuditConfig) -> anyhow::Result<(Self, WorkerGuard)> {
-        let AuditConfig {
-            enabled: _,
-            dir,
-            rotation,
-            max_log_files,
-            trust_forwarded_headers: _,
-            log_api: _,
-        } = config;
-
-        fs_err::create_dir_all(dir)?;
-
-        let rotation = match rotation {
-            AuditRotation::Daily => Rotation::DAILY,
-            AuditRotation::Hourly => Rotation::HOURLY,
-        };
-
-        let appender = RollingFileAppender::builder()
-            .rotation(rotation)
-            .filename_prefix("audit")
-            .filename_suffix("log")
-            .max_log_files((*max_log_files).max(1))
-            .build(dir)
-            .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
-
-        // Wrap the appender in a non-blocking writer.  The actual file I/O is
-        // performed by a dedicated worker thread.  The returned `WorkerGuard`
-        // **must** be kept alive for the lifetime of the program – dropping it
-        // flushes remaining buffered events and shuts down the worker thread.
-        let (non_blocking, guard) = tracing_appender::non_blocking(appender);
-
-        Ok((
-            Self {
-                writer: Mutex::new(non_blocking),
-            },
-            guard,
-        ))
+    fn new(config: &AuditConfig) -> anyhow::Result<(Self, Vec<WorkerGuard>)> {
+        let (sinks, guards) = build_sinks(config)?;
+        Ok((Self { sinks }, guards))
     }
 
     fn write(&self, event: &AuditEvent) {
-        // Serialize to a buffer first so the entire event is sent as one
-        // atomic message to the non-blocking writer (avoids interleaved
-        // partial writes from concurrent callers).
+        // Serialize once, then hand the same bytes to every sink, sending
+        // whole record in a single write should keep concurrent callers from
+        // interleaving partial JSON
         let mut buf = match serde_json::to_vec(event) {
             Ok(buf) => buf,
             Err(err) => {
@@ -206,10 +237,13 @@ impl AuditLogger {
         };
         buf.push(b'\n');
 
-        let mut writer = self.writer.lock();
-        if let Err(err) = writer.write_all(&buf) {
-            log::error!("Failed to write audit log entry: {err}");
+        for sink in &self.sinks {
+            sink.write(&buf);
         }
+    }
+
+    fn sink(&self, kind: AuditSinkKind) -> Option<&AuditSink> {
+        self.sinks.iter().find(|sink| sink.kind() == kind)
     }
 }
 
@@ -221,12 +255,12 @@ impl AuditLogger {
 /// most once (from `main`).  If the config is `None` or `enabled` is `false`,
 /// no logger is created and all `audit_log` calls are no‑ops.
 ///
-/// Returns a [`WorkerGuard`] that **must** be held alive (typically in
-/// `main`) until the program exits.  Dropping the guard flushes any
-/// remaining buffered audit events to disk.
-pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<WorkerGuard>> {
+/// Returns the per-sink [`WorkerGuard`]s, which **must** be held alive
+/// (typically in `main`) until the program exits.  Dropping them flushes any
+/// remaining buffered audit events.
+pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Vec<WorkerGuard>> {
     let Some(config) = config else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
 
     let AuditConfig {
@@ -236,10 +270,14 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         max_log_files: _,
         trust_forwarded_headers,
         log_api,
+        write_to_file,
+        write_to_stdout,
+        on_file_full: _,
+        on_stdout_full: _,
     } = config;
 
     if !enabled {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     // Persist flags so they are available globally even outside the audit
@@ -247,14 +285,31 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
     let _ = TRUST_FORWARDED_HEADERS.set(*trust_forwarded_headers);
     let _ = LOG_API.set(*log_api);
 
-    let (logger, guard) = AuditLogger::new(config)?;
+    let (logger, guards) = AuditLogger::new(config)?;
     AUDIT_LOGGER
         .set(logger)
         .map_err(|_| anyhow::anyhow!("Audit logger already initialised"))?;
 
-    log::info!("Audit logging enabled, writing to {}", dir.display());
+    let mut destinations = Vec::with_capacity(2);
+    if *write_to_file {
+        destinations.push(dir.display().to_string());
+    }
+    if *write_to_stdout {
+        destinations.push("stdout".to_string());
+    }
+    log::info!(
+        "Audit logging enabled, writing to {}",
+        destinations.join(" and ")
+    );
 
-    Ok(Some(guard))
+    if !*write_to_file {
+        log::warn!(
+            "Audit logging has no file sink (`audit.write_to_file` is false), \
+             so the `/audit/logs` API cannot return records from this peer",
+        );
+    }
+
+    Ok(guards)
 }
 
 /// Write an audit event.  If the audit logger was not initialised this is a
@@ -279,6 +334,13 @@ pub fn audit_trust_forwarded_headers() -> bool {
 /// Returns `true` if the audit logger is configured to log API method paths.
 pub fn audit_log_api() -> bool {
     LOG_API.get().copied().unwrap_or(false)
+}
+
+/// Number of audit records discarded by the given sink because its queue was
+/// full.  Returns `None` when audit logging is disabled or the sink is not
+/// enabled.
+pub fn audit_dropped_records(kind: AuditSinkKind) -> Option<u64> {
+    Some(AUDIT_LOGGER.get()?.sink(kind)?.dropped_records())
 }
 
 #[cfg(test)]

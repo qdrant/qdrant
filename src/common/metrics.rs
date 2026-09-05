@@ -212,16 +212,26 @@ impl MetricsProvider for AppBuildTelemetry {
             .iter()
             .for_each(|f| f.add_metrics(metrics, prefix));
 
-        if let Some(audit) = &self.audit
-            && let Some(size) = audit.dir_size_bytes
-        {
-            metrics.push_metric(metric_family(
-                "audit_log_dir_size_bytes",
-                "size of the audit log directory on disk in bytes",
-                MetricType::GAUGE,
-                vec![gauge(size as f64, &[])],
-                prefix,
-            ));
+        if let Some(audit) = &self.audit {
+            if let Some(size) = audit.dir_size_bytes {
+                metrics.push_metric(metric_family(
+                    "audit_log_dir_size_bytes",
+                    "size of the audit log directory on disk in bytes",
+                    MetricType::GAUGE,
+                    vec![gauge(size as f64, &[])],
+                    prefix,
+                ));
+            }
+
+            if let Some(dropped) = audit.stdout_dropped_records {
+                metrics.push_metric(metric_family(
+                    "audit_log_dropped_records_total",
+                    "audit records discarded because a sink queue was full",
+                    MetricType::COUNTER,
+                    vec![counter(dropped as f64, &[("sink", "stdout")])],
+                    prefix,
+                ));
+            }
         }
 
         if let Some(system) = &self.system

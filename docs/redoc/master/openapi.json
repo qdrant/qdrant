@@ -12036,8 +12036,12 @@
           "dir",
           "log_api",
           "max_log_files",
+          "on_file_full",
+          "on_stdout_full",
           "rotation",
-          "trust_forwarded_headers"
+          "trust_forwarded_headers",
+          "write_to_file",
+          "write_to_stdout"
         ],
         "properties": {
           "dir": {
@@ -12057,7 +12061,28 @@
           "log_api": {
             "type": "boolean"
           },
+          "write_to_file": {
+            "type": "boolean"
+          },
+          "write_to_stdout": {
+            "type": "boolean"
+          },
+          "on_file_full": {
+            "description": "What the file sink does when its queue is full: `drop` or `block`. Always reported when audit logging is enabled, so fleet tooling can find peers whose audit trail is lossy without scraping startup logs.",
+            "type": "string"
+          },
+          "on_stdout_full": {
+            "description": "What the stdout sink does when its queue is full: `drop` or `block`.",
+            "type": "string"
+          },
           "dir_size_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "stdout_dropped_records": {
+            "description": "Records the stdout sink discarded because its queue was full.  Only present when `write_to_stdout` is enabled.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

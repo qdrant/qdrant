@@ -12,6 +12,7 @@ use types::ClusterStatus;
 
 pub mod audit;
 pub mod audit_reader;
+pub mod audit_sink;
 mod common;
 pub mod content_manager;
 #[cfg(feature = "dial9")]
