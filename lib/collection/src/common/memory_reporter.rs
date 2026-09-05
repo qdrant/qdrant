@@ -84,6 +84,17 @@ impl CollectionMemoryReport {
     /// Merge multiple reports (from different shards) into one.
     pub fn merge_all(reports: Vec<CollectionMemoryReport>) -> CollectionMemoryReport {
         let mut result = CollectionMemoryReport::default();
+        let CollectionMemoryReport {
+            total: result_total,
+            vectors: result_vectors,
+            sparse_vectors: result_sparse_vectors,
+            payload: result_payload,
+            payload_index: result_payload_index,
+            other: OtherMemoryReport {
+                id_tracker: result_id_tracker,
+            },
+            warnings: result_warnings,
+        } = &mut result;
 
         for report in reports {
             let CollectionMemoryReport {
@@ -96,7 +107,7 @@ impl CollectionMemoryReport {
                 warnings,
             } = report;
 
-            result.total.merge(&total);
+            result_total.merge(&total);
 
             // Merge vectors by name
             for vec_report in vectors {
@@ -107,7 +118,7 @@ impl CollectionMemoryReport {
                     quantized,
                 } = &vec_report;
 
-                if let Some(existing) = result.vectors.iter_mut().find(|v| v.name == *name) {
+                if let Some(existing) = result_vectors.iter_mut().find(|v| v.name == *name) {
                     existing.storage.merge(storage);
                     existing.index.merge(index);
                     match (&mut existing.quantized, quantized) {
@@ -116,7 +127,7 @@ impl CollectionMemoryReport {
                         _ => {}
                     }
                 } else {
-                    result.vectors.push(vec_report);
+                    result_vectors.push(vec_report);
                 }
             }
 
@@ -128,28 +139,28 @@ impl CollectionMemoryReport {
                     index,
                 } = &sv_report;
 
-                if let Some(existing) = result.sparse_vectors.iter_mut().find(|v| v.name == *name) {
+                if let Some(existing) = result_sparse_vectors.iter_mut().find(|v| v.name == *name) {
                     existing.storage.merge(storage);
                     existing.index.merge(index);
                 } else {
-                    result.sparse_vectors.push(sv_report);
+                    result_sparse_vectors.push(sv_report);
                 }
             }
 
-            result.payload.merge(&payload);
+            result_payload.merge(&payload);
 
             for pi_report in payload_index {
                 let NamedPayloadIndexMemoryReport { name, usage } = &pi_report;
 
-                if let Some(existing) = result.payload_index.iter_mut().find(|p| p.name == *name) {
+                if let Some(existing) = result_payload_index.iter_mut().find(|p| p.name == *name) {
                     existing.usage.merge(usage);
                 } else {
-                    result.payload_index.push(pi_report);
+                    result_payload_index.push(pi_report);
                 }
             }
 
-            result.other.id_tracker.merge(&id_tracker);
-            result.warnings.extend(warnings);
+            result_id_tracker.merge(&id_tracker);
+            result_warnings.extend(warnings);
         }
 
         result
