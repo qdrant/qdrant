@@ -45,6 +45,14 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: jq
+          in: query
+          description: "Optional jq-like path selecting a subset of telemetry JSON. Changes the shape of `result` from `TelemetryData` to the selected JSON value. Supports key traversal and `*`/`[]` iteration (e.g. `.collections.collections[].transfers`). An optional `result.` prefix is accepted."
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
         - name: timeout
           in: query
           description: "Timeout for this request"

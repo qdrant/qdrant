@@ -112,6 +112,39 @@ def test_telemetry():
         "per_collection_responses should not appear when per_collection is not requested"
 
 
+def test_telemetry_jq():
+    """jq returns a subset of telemetry in `result` (shape is no longer TelemetryData)."""
+    import requests
+    from .helpers.helpers import qdrant_host_headers
+    from .helpers.settings import QDRANT_HOST
+
+    unfiltered = request_with_validation(
+        api="/telemetry",
+        method="GET",
+    )
+    assert unfiltered.ok, unfiltered.text
+    expected = unfiltered.json()["result"]["collections"]["number_of_collections"]
+
+    # Optional `result.` prefix (as seen in the full API envelope) is accepted.
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={"jq": "result.collections.number_of_collections"},
+        headers=qdrant_host_headers(),
+    )
+    assert response.ok, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["result"] == expected
+
+    # Invalid path syntax → 400
+    response = requests.get(
+        f"{QDRANT_HOST}/telemetry",
+        params={"jq": ".foo..bar"},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 400
+
+
 @pytest.mark.parametrize("level", [0, 1, 2, 3, 10])
 def test_telemetry_detail(level: int):
     response = request_with_validation(
