@@ -101,3 +101,56 @@ pub fn search_thread_count(max_search_threads: usize) -> usize {
 
     cpu::get_num_cpus().max(1) * CPU_OVERCOMMIT_FACTOR
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thread_count_for_hnsw_bounds_and_transitions() {
+        // Enforces minimum bound of 1 thread for 0 CPUs
+        assert_eq!(thread_count_for_hnsw(0), 1);
+
+        // Linear scaling below 8 CPUs
+        assert_eq!(thread_count_for_hnsw(4), 4);
+
+        // Cap of 8 threads at upper bound of first threshold (48 CPUs)
+        assert_eq!(thread_count_for_hnsw(48), 8);
+
+        // Step up to 12 threads at transition boundary (49 CPUs)
+        assert_eq!(thread_count_for_hnsw(49), 12);
+        assert_eq!(thread_count_for_hnsw(64), 12);
+
+        // Cap at 16 threads for high-CPU systems (>= 65 CPUs)
+        assert_eq!(thread_count_for_hnsw(65), 16);
+        assert_eq!(thread_count_for_hnsw(128), 16);
+        assert_eq!(thread_count_for_hnsw(256), 16);
+    }
+
+    #[test]
+    fn test_default_cpu_budget_unallocated_thresholds() {
+        // Low CPU systems reserve 0 CPUs
+        assert_eq!(default_cpu_budget_unallocated(0), 0);
+        assert_eq!(default_cpu_budget_unallocated(2), 0);
+
+        // Step thresholds
+        assert_eq!(default_cpu_budget_unallocated(3), -1);
+        assert_eq!(default_cpu_budget_unallocated(32), -1);
+
+        assert_eq!(default_cpu_budget_unallocated(33), -2);
+        assert_eq!(default_cpu_budget_unallocated(48), -2);
+
+        assert_eq!(default_cpu_budget_unallocated(49), -3);
+        assert_eq!(default_cpu_budget_unallocated(64), -3);
+
+        assert_eq!(default_cpu_budget_unallocated(65), -4);
+        assert_eq!(default_cpu_budget_unallocated(96), -4);
+
+        assert_eq!(default_cpu_budget_unallocated(97), -6);
+        assert_eq!(default_cpu_budget_unallocated(128), -6);
+
+        // Dynamic scaling beyond 128 CPUs (num_cpu / 16)
+        assert_eq!(default_cpu_budget_unallocated(129), -8);
+        assert_eq!(default_cpu_budget_unallocated(160), -10);
+    }
+}
