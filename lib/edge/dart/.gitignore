@@ -1,0 +1,23 @@
+# Dart tooling
+/.dart_tool/
+/example/.dart_tool/
+/build/
+.packages
+pubspec.lock
+example/pubspec.lock
+
+# Prebuilt native cdylibs: per-platform build outputs (25–30 MB each), produced
+# on demand by hook/build.dart's source path, by the device CI, or (for a
+# release) a download step. A local cache, never committed.
+/native/prebuilt/
+
+# e2e harness (Flutter app): commit app sources + integration_test, ignore the
+# app-local resolved lockfile.
+/e2e/pubspec.lock
+
+# The generated UniFFI binding is NOT committed — it is ~17k lines of machine
+# output. `./build.sh` regenerates it for local dev, CI, and (present in the
+# working tree at publish) it is shipped INSIDE the pub.dev archive because
+# .pubignore — which replaces .gitignore for pub — does not exclude it. Run
+# `./build.sh` once after a fresh checkout before `dart test` / `dart analyze`.
+/lib/src/qdrant_edge_ffi.dart
