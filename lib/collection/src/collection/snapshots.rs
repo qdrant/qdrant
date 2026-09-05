@@ -316,6 +316,23 @@ impl Collection {
         ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir).await
     }
 
+    /// Bucketed-transfer counterpart to stream_shard_snapshot:
+    /// streams only `entries` (relative paths under the shard's data
+    /// directory) as their own self-contained tar, live.
+    pub async fn stream_shard_snapshot_bucket(
+        &self,
+        shard_id: ShardId,
+        entries: Vec<String>,
+    ) -> CollectionResult<SnapshotStream> {
+        let shard = OwnedRwLockReadGuard::try_map(
+            self.shards_holder.clone().read_owned().await,
+            |shard_holder| shard_holder.get_shard(shard_id),
+        )
+        .map_err(|_| shard_not_found_error(shard_id))?;
+
+        ShardHolder::stream_shard_snapshot_bucket(shard, shard_id, entries).await
+    }
+
     /// # Cancel safety
     ///
     /// This method is cancel safe.
