@@ -49,6 +49,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
+use segment::pending_changes::PersistedProxyChanges;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
@@ -370,6 +371,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         rebuild_payload_index: bool,
+        persisted_proxy_changes: PersistedProxyChanges,
         update_runtime: Handle,
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
@@ -453,6 +455,17 @@ impl LocalShard {
                     )?;
 
                     segment.check_consistency_and_repair()?;
+
+                    // Replay pending changes persisted by proxy segment, then remove them.
+                    // Buffered proxy state that made it to disk doesn't hold back the WAL
+                    // acknowledge, so it must be recovered here before WAL replay to create a
+                    // consistent view of the segment.
+                    // Skipped when loading a mirror of another writer's segment files, such as a
+                    // recovered partial snapshot, which must not diverge from the writer's.
+                    segment::pending_changes::recover_pending_changes(
+                        &mut segment,
+                        persisted_proxy_changes,
+                    )?;
 
                     if rebuild_payload_index {
                         segment.update_all_field_indices(

@@ -137,6 +137,17 @@ pub fn unwrap_proxy(
                     log::warn!("Attempt to unwrap raw segment! Should not happen.");
                 }
                 LockedSegment::Proxy(proxy_segment) => {
+                    // The wrapped segment is put back into the segment holder, so all changes
+                    // buffered in the proxy must be propagated into it first. Failing to
+                    // propagate loses in-memory state, but is recovered on restart: the
+                    // persisted pending changes log stays behind and is replayed then, and
+                    // everything past it is replayed from the WAL.
+                    if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+                        log::error!(
+                            "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+                        );
+                    }
+
                     let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
                     segments_lock.replace(proxy_id, wrapped_segment)?;
                 }
@@ -651,13 +662,15 @@ fn finish_optimization(
     // `SegmentHolder::register_post_flush_action`.
     //
     // This cap has to be tracked at the holder level because the proxy can no longer
-    // impose it. While a proxy was a member of the holder it pinned the WAL acknowledge for
-    // free: its `persistent_version` reported the wrapped source's durable point while its
-    // `version` climbed with every propagated change, so `flush_all` saw unsaved work and
-    // capped the ack there. The `swap_new` above evicted the proxies, so that contribution is
-    // gone from the holder's flush accounting even though the source files it protected are
-    // still on disk. `register_segment_drop` re-expresses the same pin independently of segment
-    // membership, snapshotting each proxy's final `persistent_version` as `ack_pin`.
+    // impose it. While a proxy was a member of the holder, `flush_all` accounted for it like any
+    // other segment: its `persistent_version` covers the wrapped source's durable point plus
+    // whatever the proxy persisted into its pending changes log, and anything buffered past that
+    // showed up as unsaved work capping the ack. The `swap_new` above evicted the proxies, so
+    // that contribution is gone from the holder's flush accounting even though the source files
+    // (and their pending changes logs) it protected are still on disk, while the optimized
+    // segment holding the same operations is not durable yet. `register_segment_drop`
+    // re-expresses the same pin independently of segment membership, snapshotting each proxy's
+    // final `persistent_version` as `ack_pin`.
     for proxy in proxies {
         let ack_pin = proxy.get().read().persistent_version();
         read_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);
@@ -836,7 +849,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let mut proxies = Vec::new();
     for sg in input_segments.iter() {
-        let proxy = UnsyncedProxySegment::new(sg.clone());
+        let proxy = UnsyncedProxySegment::new(sg.clone())?;
         // Wrapped segment is fresh, so it has no operations
         // Operation with number 0 will be applied
         if let Some(extra_cow_segment) = &extra_cow_segment_opt {

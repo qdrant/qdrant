@@ -15,6 +15,7 @@ use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
+use segment::pending_changes::PersistedProxyChanges;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
@@ -450,6 +451,20 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
         segment.check_consistency_and_repair().map_err(|err| {
             OperationError::service_error(format!(
                 "failed to repair segment {}: {err}",
+                segment_path.display(),
+            ))
+        })?;
+
+        // Replay pending changes persisted by proxy segments onto this segment, then remove
+        // them. Buffered proxy state that made it to disk does not hold back the WAL
+        // acknowledge, so it must be recovered here, before WAL replay.
+        segment::pending_changes::recover_pending_changes(
+            &mut segment,
+            PersistedProxyChanges::Replay,
+        )
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to recover pending proxy changes of segment {}: {err}",
                 segment_path.display(),
             ))
         })?;
