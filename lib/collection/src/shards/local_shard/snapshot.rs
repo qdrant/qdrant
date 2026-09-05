@@ -94,6 +94,10 @@ impl LocalShard {
         // to include every operation reflected in the captured clocks, so the archived clocks are
         // never ahead of the snapshot data.
         let (plunger_notify, pinned_clocks) = if !save_wal {
+            // Fence against concurrent updates so that any operation holding `update_lock.read()`
+            // finishes writing to WAL and enqueuing to update_sender before we capture clocks and plunge.
+            let _update_fence = self.update_lock.write().await;
+
             // Capture oldest before newest, so that a concurrent cutoff update (which advances newest
             // before oldest) can never make the captured oldest exceed the captured newest.
             let oldest_clocks = self.wal.oldest_clocks.lock().await.clone();
