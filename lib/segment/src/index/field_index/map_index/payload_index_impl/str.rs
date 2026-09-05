@@ -23,7 +23,6 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
 };
-use crate::index::query_estimator::combine_disjoint_should_estimations;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchValue,
     PayloadKeyType, ValueVariants,
@@ -180,8 +179,8 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
 
 fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
-    condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
+    condition: &'a FieldCondition,
+    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     let estimation = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
@@ -197,18 +196,25 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
         },
         Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
             AnyVariants::Strings(keywords) => {
-                let estimations = keywords
-                    .iter()
-                    .map(|keyword| index.match_cardinality(keyword.as_str(), hw_counter))
-                    .collect::<Vec<_>>();
-                let estimation = if estimations.is_empty() {
+                let estimation = if keywords.is_empty() {
                     CardinalityEstimation::exact(0)
                 } else {
-                    // `match_any` on a single keyword field — values are
-                    // mutually exclusive (each point has at most one value
-                    // per keyword field), so the count is the sum, not the
-                    // independence-OR formula. qdrant/qdrant#10127.
-                    combine_disjoint_should_estimations(&estimations, index.get_indexed_points())
+                    // Count the deduplicated union of points matching any of
+                    // the values. Exact for both single-value fields (where
+                    // values are mutually exclusive, so the count equals the
+                    // sum) and array-valued fields (where the same point can
+                    // appear in multiple value lists — `iter_for_values`
+                    // dedupes via `itertools::unique`).
+                    //
+                    // The previous independence-OR formula
+                    // `(1 - ∏(1-pᵢ)) * total` under-counted for the common
+                    // single-value case (qdrant/qdrant#10127). A plain sum
+                    // would over-count for array-valued fields, so we go
+                    // straight to the deduplicated iter.
+                    let count = index
+                        .iter_for_values(keywords.iter().map(AsRef::as_ref), hw_counter)?
+                        .count();
+                    CardinalityEstimation::exact(count)
                 };
                 Some(
                     estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(

@@ -153,44 +153,6 @@ pub fn combine_should_estimations(
     }
 }
 
-/// Combine cardinality of multiple estimations in an OR fashion, assuming
-/// the conditions are mutually exclusive (no point matches more than one).
-///
-/// The expected count is the sum of the individual counts, capped at
-/// `total` because the same point can match at most one branch. The
-/// `min`/`max` fields are summed the same way. The result is exact when
-/// all sub-estimations are exact, which is the case for `match_any` on a
-/// single keyword field (each per-value `match_cardinality` returns
-/// `CardinalityEstimation::exact`, and a point has at most one keyword
-/// value per field).
-///
-/// Use this instead of `combine_should_estimations` only when the
-/// conditions are guaranteed disjoint; for independent conditions the OR
-/// formula `(1 - ∏(1-pᵢ)) * total` is the right model.
-pub fn combine_disjoint_should_estimations(
-    estimations: &[CardinalityEstimation],
-    total: usize,
-) -> CardinalityEstimation {
-    let clauses: Vec<PrimaryCondition> = if estimations.iter().any(|e| e.primary_clauses.is_empty())
-    {
-        vec![]
-    } else {
-        estimations
-            .iter()
-            .flat_map(|e| e.primary_clauses.iter().cloned())
-            .collect()
-    };
-    let min_sum: usize = estimations.iter().map(|e| e.min).sum();
-    let exp_sum: usize = estimations.iter().map(|e| e.exp).sum();
-    let max_sum: usize = estimations.iter().map(|e| e.max).sum();
-    CardinalityEstimation {
-        primary_clauses: clauses,
-        min: min_sum.min(total),
-        exp: exp_sum.min(total),
-        max: max_sum.min(total),
-    }
-}
-
 /// Estimate cardinality for `min_should` (at least `min_count` conditions).
 ///
 /// Returns zero immediately when `min_count` exceeds the number of
@@ -398,7 +360,7 @@ mod tests {
     use super::*;
     use crate::index::field_index::ResolvedHasId;
     use crate::json_path::JsonPath;
-    use crate::types::{FieldCondition, HasIdCondition, Match};
+    use crate::types::{FieldCondition, HasIdCondition};
 
     const TOTAL: usize = 1000;
 
@@ -724,84 +686,5 @@ mod tests {
         assert_eq!(new_estimation.min, 0);
         assert_eq!(new_estimation.exp, 16);
         assert_eq!(new_estimation.max, 50);
-    }
-
-    /// Regression for qdrant/qdrant#10127: `match_any` cardinality on a
-    /// single keyword field is the SUM of per-value counts (capped at
-    /// total), not the independence-OR formula. The combiner must use
-    /// sum-based semantics for mutually exclusive conditions.
-    #[test]
-    fn combine_disjoint_sums_exact_and_caps_at_total() {
-        let total = 500usize;
-        // Per-keyword counts from the keyword map_index's
-        // `match_cardinality` are all exact (min=exp=max).
-        let estimations = vec![
-            CardinalityEstimation::exact(107), // red
-            CardinalityEstimation::exact(106), // blue
-            CardinalityEstimation::exact(71),  // green
-            CardinalityEstimation::exact(107), // yellow
-            CardinalityEstimation::exact(109), // purple
-        ];
-
-        // Two values: 107 + 106 = 213 (well under total).
-        let two = combine_disjoint_should_estimations(&estimations[..2], total);
-        assert_eq!(two.min, 213);
-        assert_eq!(two.exp, 213);
-        assert_eq!(two.max, 213);
-
-        // All five: 107 + 106 + 71 + 107 + 109 = 500 (exactly at cap).
-        let all = combine_disjoint_should_estimations(&estimations, total);
-        assert_eq!(all.exp, 500);
-        assert_eq!(all.max, 500);
-    }
-
-    /// When sub-estimations are non-exact, the sum-based combiner still
-    /// sums each field individually and caps at total.
-    #[test]
-    fn combine_disjoint_sums_non_exact_and_caps_at_total() {
-        let total = 100usize;
-        let estimations = vec![
-            CardinalityEstimation {
-                primary_clauses: vec![],
-                min: 30,
-                exp: 40,
-                max: 60,
-            },
-            CardinalityEstimation {
-                primary_clauses: vec![],
-                min: 20,
-                exp: 30,
-                max: 70,
-            },
-        ];
-
-        let combined = combine_disjoint_should_estimations(&estimations, total);
-        assert_eq!(combined.min, 50);
-        assert_eq!(combined.exp, 70);
-        // 60 + 70 = 130, capped at 100.
-        assert_eq!(combined.max, 100);
-    }
-
-    /// `combine_disjoint_should_estimations` clears primary_clauses if any
-    /// sub-estimation has no primary clause (mirrors the OR combiner).
-    #[test]
-    fn combine_disjoint_clears_primary_clauses_when_any_sub_is_empty() {
-        let total = 100usize;
-        let with_clause = CardinalityEstimation {
-            primary_clauses: vec![PrimaryCondition::Condition(Box::new(
-                FieldCondition::new_match(
-                    crate::json_path::JsonPath::new("kw"),
-                    Match::new_text("a"),
-                ),
-            ))],
-            min: 10,
-            exp: 10,
-            max: 10,
-        };
-        let without_clause = CardinalityEstimation::exact(5);
-
-        let combined = combine_disjoint_should_estimations(&[with_clause, without_clause], total);
-        assert!(combined.primary_clauses.is_empty());
-        assert_eq!(combined.exp, 15);
     }
 }
