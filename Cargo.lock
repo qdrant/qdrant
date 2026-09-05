@@ -1344,6 +1344,7 @@ dependencies = [
  "proptest",
  "rand 0.10.2",
  "rand_distr",
+ "rayon",
  "ringbuffer",
  "rmp-serde",
  "rstest",

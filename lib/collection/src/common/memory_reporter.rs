@@ -1,3 +1,10 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+use rayon::prelude::*;
+use segment::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
+use segment::segment::memory::SegmentMemoryReport;
 use serde::{Deserialize, Serialize};
 
 /// Memory usage stats for a single component, after page-cache measurement.
@@ -69,8 +76,7 @@ pub struct CollectionMemoryReport {
     pub payload: MemoryUsageReport,
     pub payload_index: Vec<NamedPayloadIndexMemoryReport>,
     pub other: OtherMemoryReport,
-    /// Non-fatal issues encountered while building the report (e.g. a remote
-    /// shard timed out). Present only when the response is partial.
+    /// Files or shards that could not be fully measured.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
 }
@@ -158,214 +164,128 @@ struct FileProbe {
     resident_bytes: u64,
 }
 
-/// Convert a `ComponentMemoryUsage` into a `MemoryUsageReport` using
-/// precomputed file probes (and optional disk-only fallback on non-unix).
-fn measure_component_with_probes(
-    usage: segment::common::memory_usage::ComponentMemoryUsage,
-    probes: &std::collections::HashMap<std::path::PathBuf, FileProbe>,
+/// Apply file probes and heap estimates to a component.
+fn measure_component(
+    usage: ComponentMemoryUsage,
+    probes: &HashMap<PathBuf, FileProbe>,
 ) -> MemoryUsageReport {
-    use segment::common::memory_usage::{
-        ComponentFileEntry, ComponentMemoryUsage, FileStorageIntent,
+    let mut report = MemoryUsageReport {
+        ram_bytes: usage.extra_ram_bytes.unwrap_or(0),
+        ..Default::default()
     };
-
-    let ComponentMemoryUsage {
-        files,
-        extra_ram_bytes,
-    } = usage;
-
-    let ram_bytes = extra_ram_bytes.unwrap_or(0);
-    let mut disk_bytes = 0u64;
-    let mut cached_bytes = 0u64;
-    let mut expected_cache_bytes = 0u64;
-
-    for entry in &files {
-        let ComponentFileEntry { path, intent } = entry;
-        let (file_disk, file_resident) = match probes.get(path) {
-            Some(probe) => (probe.disk_bytes, probe.resident_bytes),
-            None => {
-                // Non-unix / failed probe: disk size from metadata when possible.
-                match fs_err::metadata(path) {
-                    Ok(meta) => (meta.len(), 0),
-                    Err(_) => continue,
-                }
-            }
-        };
-        disk_bytes += file_disk;
-        match intent {
-            FileStorageIntent::Cached => {
-                expected_cache_bytes += file_disk;
-                cached_bytes += file_resident;
-            }
-            FileStorageIntent::OnDisk => {
-                cached_bytes += file_resident;
-            }
+    for entry in usage.files {
+        let probe = &probes[&entry.path];
+        report.disk_bytes += probe.disk_bytes;
+        report.cached_bytes += probe.resident_bytes;
+        if entry.intent == FileStorageIntent::Cached {
+            report.expected_cache_bytes += probe.disk_bytes;
         }
     }
-
-    MemoryUsageReport {
-        disk_bytes,
-        ram_bytes,
-        cached_bytes,
-        expected_cache_bytes,
-    }
+    report
 }
 
-/// Probe many files concurrently. Failures become warnings; successful probes
-/// are returned in the map.
-///
-/// Concurrency is capped to `available_parallelism`. Each worker probes one
-/// whole file at a time, so this is the only thread fan-out layer.
-#[cfg(unix)]
-fn parallel_probe_files(
-    paths: &[std::path::PathBuf],
-    warnings: &mut Vec<String>,
-) -> std::collections::HashMap<std::path::PathBuf, FileProbe> {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use common::universal_io::MmapFile;
-
-    if paths.is_empty() {
-        return HashMap::new();
+/// Reuse workers across segments, shards and requests.
+static FILE_PROBE_POOL: LazyLock<Option<rayon::ThreadPool>> = LazyLock::new(|| {
+    // Bound scheduling overhead while retaining parallelism for large files.
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(32);
+    if threads == 1 {
+        return None;
     }
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .thread_name(|i| format!("memory-probe-{i}"))
+        .build()
+        .ok()
+});
 
-    if paths.len() == 1 {
-        let path = &paths[0];
-        return match MmapFile::probe_memory_stats(path) {
-            Ok((disk_bytes, resident_bytes)) => HashMap::from([(
-                path.clone(),
+/// Probe each path once, retaining disk sizes when residency is unavailable.
+fn probe_files(paths: &[&Path], warnings: &mut Vec<String>) -> HashMap<PathBuf, FileProbe> {
+    let probe = |path: &&Path| {
+        #[cfg(unix)]
+        let result = common::universal_io::MmapFile::probe_memory_stats(path);
+        #[cfg(not(unix))]
+        let result = fs_err::metadata(path).map(|meta| (meta.len(), 0));
+
+        match result {
+            Ok((disk_bytes, resident_bytes)) => (
                 FileProbe {
                     disk_bytes,
                     resident_bytes,
                 },
-            )]),
-            Err(err) => {
-                warnings.push(format!(
+                None,
+            ),
+            Err(err) => (
+                FileProbe {
+                    disk_bytes: fs_err::metadata(path).map_or(0, |meta| meta.len()),
+                    resident_bytes: 0,
+                },
+                Some(format!(
                     "Failed to probe memory stats for {}: {err}",
                     path.display()
-                ));
-                HashMap::new()
-            }
-        };
-    }
-
-    let next = AtomicUsize::new(0);
-    let successes = Mutex::new(HashMap::new());
-    let failures = Mutex::new(Vec::new());
-
-    let workers = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .clamp(1, paths.len());
-
-    std::thread::scope(|scope| {
-        for _ in 0..workers {
-            scope.spawn(|| {
-                loop {
-                    let idx = next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= paths.len() {
-                        break;
-                    }
-                    let path = &paths[idx];
-                    match MmapFile::probe_memory_stats(path) {
-                        Ok((disk_bytes, resident_bytes)) => {
-                            successes.lock().unwrap().insert(
-                                path.clone(),
-                                FileProbe {
-                                    disk_bytes,
-                                    resident_bytes,
-                                },
-                            );
-                        }
-                        Err(err) => {
-                            failures.lock().unwrap().push(format!(
-                                "Failed to probe memory stats for {}: {err}",
-                                path.display()
-                            ));
-                        }
-                    }
-                }
-            });
+                )),
+            ),
         }
-    });
-
-    warnings.extend(failures.into_inner().unwrap());
-    successes.into_inner().unwrap()
-}
-
-#[cfg(not(unix))]
-fn parallel_probe_files(
-    _paths: &[std::path::PathBuf],
-    _warnings: &mut Vec<String>,
-) -> std::collections::HashMap<std::path::PathBuf, FileProbe> {
-    std::collections::HashMap::new()
-}
-
-/// Collect every file path referenced by a segment memory report.
-fn collect_segment_paths(
-    segment_report: &segment::segment::memory::SegmentMemoryReport,
-) -> Vec<std::path::PathBuf> {
-    use segment::segment::memory::{
-        PayloadIndexMemoryReport, SegmentMemoryReport, VectorMemoryReport,
     };
-
-    let mut paths = Vec::new();
-    let SegmentMemoryReport {
-        vectors,
-        sparse_vectors,
-        payload,
-        payload_index,
-        id_tracker,
-    } = segment_report;
-
-    for vr in vectors.values() {
-        let VectorMemoryReport {
-            storage,
-            index,
-            quantized,
-        } = vr;
-        paths.extend(storage.files.iter().map(|f| f.path.clone()));
-        paths.extend(index.files.iter().map(|f| f.path.clone()));
-        if let Some(q) = quantized {
-            paths.extend(q.files.iter().map(|f| f.path.clone()));
-        }
-    }
-    for vr in sparse_vectors.values() {
-        let VectorMemoryReport {
-            storage,
-            index,
-            quantized: _,
-        } = vr;
-        paths.extend(storage.files.iter().map(|f| f.path.clone()));
-        paths.extend(index.files.iter().map(|f| f.path.clone()));
-    }
-    paths.extend(payload.files.iter().map(|f| f.path.clone()));
-    for pi in payload_index.values() {
-        let PayloadIndexMemoryReport { usage } = pi;
-        paths.extend(usage.files.iter().map(|f| f.path.clone()));
-    }
-    paths.extend(id_tracker.files.iter().map(|f| f.path.clone()));
-
-    paths.sort();
-    paths.dedup();
+    // Avoid initializing the pool for empty and single-file reports. If worker
+    // creation fails, measuring sequentially still produces a complete report.
+    let results: Vec<_> = if paths.len() > 1
+        && let Some(pool) = &*FILE_PROBE_POOL
+    {
+        pool.install(|| paths.par_iter().map(probe).collect())
+    } else {
+        paths.iter().map(probe).collect()
+    };
     paths
+        .iter()
+        .zip(results)
+        .map(|(path, (probe, warning))| {
+            warnings.extend(warning);
+            (path.to_path_buf(), probe)
+        })
+        .collect()
+}
+
+fn segment_paths(report: &SegmentMemoryReport) -> impl Iterator<Item = &Path> {
+    report
+        .vectors
+        .values()
+        .chain(report.sparse_vectors.values())
+        .flat_map(|vector| {
+            [&vector.storage, &vector.index]
+                .into_iter()
+                .chain(&vector.quantized)
+        })
+        .chain([&report.payload, &report.id_tracker])
+        .chain(report.payload_index.values().map(|index| &index.usage))
+        .flat_map(|usage| usage.files.iter().map(|file| file.path.as_path()))
+}
+
+/// Measure all segment files after the caller has released segment locks.
+pub fn report_from_segments(segment_reports: Vec<SegmentMemoryReport>) -> CollectionMemoryReport {
+    let mut paths: Vec<_> = segment_reports.iter().flat_map(segment_paths).collect();
+    paths.sort_unstable();
+    paths.dedup();
+    let mut warnings = Vec::new();
+    let probes = probe_files(&paths, &mut warnings);
+    let reports = segment_reports
+        .into_iter()
+        .map(|report| report_from_segment(report, &probes))
+        .collect();
+    let mut report = CollectionMemoryReport::merge_all(reports);
+    report.warnings = warnings;
+    report
 }
 
 /// Build a `CollectionMemoryReport` from a segment-level report.
-///
-/// Callers must invoke this **outside** segment locks: it performs page-cache
-/// probing I/O that can take a long time on large files.
-pub fn report_from_segment(
-    segment_report: segment::segment::memory::SegmentMemoryReport,
+fn report_from_segment(
+    segment_report: SegmentMemoryReport,
+    probes: &HashMap<PathBuf, FileProbe>,
 ) -> CollectionMemoryReport {
     use segment::segment::memory::{
         PayloadIndexMemoryReport, SegmentMemoryReport, VectorMemoryReport,
     };
-
-    let mut warnings = Vec::new();
-    let paths = collect_segment_paths(&segment_report);
-    let probes = parallel_probe_files(&paths, &mut warnings);
 
     let SegmentMemoryReport {
         vectors,
@@ -385,9 +305,9 @@ pub fn report_from_segment(
             } = vr;
             NamedVectorMemoryReport {
                 name,
-                storage: measure_component_with_probes(storage, &probes),
-                index: measure_component_with_probes(index, &probes),
-                quantized: quantized.map(|q| measure_component_with_probes(q, &probes)),
+                storage: measure_component(storage, probes),
+                index: measure_component(index, probes),
+                quantized: quantized.map(|q| measure_component(q, probes)),
             }
         })
         .collect::<Vec<_>>();
@@ -402,8 +322,8 @@ pub fn report_from_segment(
             } = vr;
             NamedSparseVectorMemoryReport {
                 name,
-                storage: measure_component_with_probes(storage, &probes),
-                index: measure_component_with_probes(index, &probes),
+                storage: measure_component(storage, probes),
+                index: measure_component(index, probes),
             }
         })
         .collect::<Vec<_>>();
@@ -414,14 +334,14 @@ pub fn report_from_segment(
             let PayloadIndexMemoryReport { usage } = pi;
             NamedPayloadIndexMemoryReport {
                 name,
-                usage: measure_component_with_probes(usage, &probes),
+                usage: measure_component(usage, probes),
             }
         })
         .collect::<Vec<_>>();
 
-    let payload = measure_component_with_probes(payload, &probes);
+    let payload = measure_component(payload, probes);
     let other = OtherMemoryReport {
-        id_tracker: measure_component_with_probes(id_tracker, &probes),
+        id_tracker: measure_component(id_tracker, probes),
     };
 
     let mut total = MemoryUsageReport::default();
@@ -462,6 +382,9 @@ pub fn report_from_segment(
         payload,
         payload_index,
         other,
-        warnings,
+        warnings: Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests;
