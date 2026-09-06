@@ -25,7 +25,7 @@
 
 **Qdrant**（发音为 *quadrant*）是一款向量相似度搜索引擎与向量数据库。
 它提供生产级服务和便捷的 API，用于存储、检索与管理数据点（Points——包含附加载荷 Payload 的向量）。
-Qdrant 专门针对强大的扩展过滤支持进行了优化，非常适用于各类基于神经网络或语义的匹配、分面检索以及其他 AI 应用场景。
+Qdrant 专门针对强大的过滤扩展能力进行了优化，非常适用于各类基于神经网络或语义的匹配、分面检索以及其他 AI 应用场景。
 
 Qdrant 采用 Rust 🦀 编写，即使在高并发高负载下也能保持极高的性能与可靠性。详见[性能基准测试](https://qdrant.tech/benchmarks/)。
 
@@ -163,7 +163,7 @@ Qdrant 全面支持用于语义相似度的稠密向量（Dense Vectors）、用
 * **查询规划与载荷索引 (Query Planning and Payload Indexes)** - 充分利用存储的载荷元数据信息智能优化查询执行计划。
 * **SIMD 硬件加速** - 深度适配现代 x86-64 CPU 与 ARM Neon 架构指令集以提供极致计算性能。
 * **GPU 加速支持** - 支持 NVIDIA 与 AMD GPU，大幅加速向量索引构建。
-* **异步 I/O (Async I/O)** - 基于 `io_uring` 最大化利用磁盘吞吐量，即使在网络挂载存储（NAS）上也能保持高并发吞吐。
+* **异步 I/O (Async I/O)** - 基于 `io_uring` 提升磁盘 I/O 吞吐；生产环境应优先使用本地 NVMe/SSD，并避免使用网络挂载存储（NAS）。
 * **预写日志 (Write-Ahead Logging / WAL)** - 确保持久化存储与写入确认，即使遭遇断电或异常崩溃也能保障数据完整。
 
 ### Web 控制台 (Web UI)
