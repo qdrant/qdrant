@@ -117,16 +117,16 @@ const WINDOWS_RESERVED_DEVICE_NAMES: [&str; 22] = [
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-/// Check if a name (or its file stem before any extension) matches a reserved Windows device name.
+/// Check if a name (or its file stem before any extension or colon delimiter) matches a reserved Windows device name.
 ///
 /// Under Win32 path normalization, device names such as `CON`, `NUL`, `AUX`, `COM1..9`, and `LPT1..9`
-/// (including variants with extensions like `NUL.json` or case-insensitively like `con`) refer to legacy
-/// DOS devices and cannot be safely used as directory names on Windows filesystems.
+/// (including variants with extensions like `NUL.json`, trailing colons like `CON:`, or colon-qualified forms
+/// like `NUL:foo`) refer to legacy DOS devices and cannot be safely used as directory names on Windows filesystems.
 fn is_windows_reserved_name(value: &str) -> bool {
-    let stem = match value.split_once('.') {
-        Some((stem, _)) => stem,
-        None => value,
-    };
+    let stem = value
+        .split(['.', ':'])
+        .next()
+        .unwrap_or(value);
     WINDOWS_RESERVED_DEVICE_NAMES
         .iter()
         .any(|&r| r.eq_ignore_ascii_case(stem))
@@ -520,6 +520,10 @@ mod tests {
             "aux.json",
             "com1",
             "lpt1",
+            "NUL:foo",
+            "CON:foo",
+            "con:",
+            "com1:stream",
         ];
 
         for name in TRAVERSING_NAMES {
