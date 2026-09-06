@@ -10,6 +10,10 @@
     <b>Vector Search Engine for the next generation of AI applications</b>
 </p>
 
+<p align="center">
+    <b>English</b> · <a href="README.zh.md">简体中文</a>
+</p>
+
 <p align=center>
     <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/qdrant/qdrant/rust.yml?style=flat-square" alt="Tests status"></a>
     <a href="https://api.qdrant.tech/"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success?style=flat-square" alt="OpenAPI Docs"></a>
