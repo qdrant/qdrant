@@ -108,11 +108,33 @@ fn check_invalid_name_chars(value: &str, kind: &str) -> Result<(), ValidationErr
     Err(err)
 }
 
-/// Reject names that are not a plain, single path component.
+/// Windows reserved device names (CON, PRN, AUX, NUL, COM1..9, LPT1..9).
+///
+/// On Windows filesystems, these names (and variants with extensions like `NUL.json`)
+/// refer to legacy system devices rather than valid directories, causing OS errors or hangs.
+const WINDOWS_RESERVED_DEVICE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+fn is_windows_reserved_name(value: &str) -> bool {
+    let stem = match value.split_once('.') {
+        Some((stem, _)) => stem,
+        None => value,
+    };
+    WINDOWS_RESERVED_DEVICE_NAMES
+        .iter()
+        .any(|&r| r.eq_ignore_ascii_case(stem))
+}
+
+/// Reject names that are not a plain, single path component or are unsafe on disk.
 ///
 /// Name is used as the name of a storage directory on disk.
-/// It must not contain path separators or dot-segments (`.`, `..`),
-/// so that it won't be interpreted as a path.
+/// It must not contain path separators, dot-segments (`.`, `..`),
+/// trailing periods or spaces (which Windows Win32 API strips, causing
+/// dot-only strings like `...` to resolve to the parent directory itself,
+/// and trailing dots/spaces to alias existing directories),
+/// or Windows-reserved device names.
 ///
 /// `Path::file_name` is a simple way to check this: it returns the whole path
 /// only when it's a simple name with no restricted components.
@@ -126,6 +148,32 @@ fn check_plain_dir_name(value: &str, kind: &str) -> Result<(), ValidationError> 
         );
         return Err(err);
     }
+
+    // Windows strips trailing periods and spaces during path normalization.
+    // This causes strings consisting solely of dots ("...", "....") to normalize
+    // directly to the parent directory itself, as well as causing silent collisions
+    // ("name." -> "name").
+    if value.ends_with('.') || value.ends_with(' ') {
+        let mut err = ValidationError::new("trailing_dot_or_space");
+        err.add_param(Cow::from("value"), &value);
+        err.message.replace(
+            format!(
+                "{kind} cannot end with a period or space, it is used as a directory name on disk"
+            )
+            .into(),
+        );
+        return Err(err);
+    }
+
+    // Reject reserved Windows device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
+    if is_windows_reserved_name(value) {
+        let mut err = ValidationError::new("reserved_name");
+        err.add_param(Cow::from("value"), &value);
+        err.message
+            .replace(format!("{kind} cannot be a reserved device name {value:?}").into());
+        return Err(err);
+    }
+
     Ok(())
 }
 
@@ -454,6 +502,19 @@ mod tests {
             "..",
             ".",
             "",
+            "...",
+            "....",
+            "test.",
+            "test..",
+            "test ",
+            " ",
+            "con",
+            "CON",
+            "nul",
+            "NUL",
+            "aux.json",
+            "com1",
+            "lpt1",
         ];
 
         for name in TRAVERSING_NAMES {
@@ -495,7 +556,7 @@ mod tests {
 
         // Names merely containing dots do not traverse and must stay valid, so existing
         // collections with such names remain reachable.
-        for name in ["v1.2", ".hidden", "..dots", "..."] {
+        for name in ["v1.2", ".hidden", "..dots"] {
             assert!(
                 validate_collection_name(name).is_ok(),
                 "collection name {name:?} does not traverse and must stay valid",
