@@ -14,7 +14,7 @@ workspace = true
 [features]
 default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
-gpu = ["gpu/gpu"]
+gpu = ["dep:gpu", "gpu/gpu"]
 
 [build-dependencies]
 cc = { workspace = true }
@@ -116,7 +116,7 @@ macros = { path = "../macros" }
 posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
 sparse = { path = "../sparse" }
-gpu = { path = "../gpu" }
+gpu = { path = "../gpu", optional = true }
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.2"
