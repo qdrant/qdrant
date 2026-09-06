@@ -483,7 +483,10 @@ mod unit_tests {
 
         let groups = aggregator.distill();
         let ids: Vec<_> = groups[0].hits.iter().map(|point| point.id).collect();
-        assert_eq!(ids, vec![1.into(), 2.into()]);
+        assert_eq!(
+            ids,
+            vec![ExtendedPointId::from(1), ExtendedPointId::from(2)]
+        );
     }
 
     /// Regression test for issue #8406: a client-supplied huge `limit` (number of groups) and
