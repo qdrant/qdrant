@@ -3,7 +3,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::prefetch::{
     MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
     prefetch_windows,
@@ -105,7 +105,7 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         self.vectors.len()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
 

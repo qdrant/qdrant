@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UniversalRead;
 use quantization::turboquant::EncodedQueryTQ;
@@ -35,7 +35,7 @@ pub trait TurboVectorBlob {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn flusher(&self) -> MmapFlusher;
+    fn flusher(&self) -> Flusher;
 
     fn score_query_batch(
         &self,
@@ -83,7 +83,7 @@ impl<S: UniversalRead> TurboVectorBlob for QuantizedStorage<S> {
         EncodedStorage::files(self)
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         EncodedStorageWrite::flusher(self)
     }
 

@@ -36,7 +36,9 @@ use crate::bitvec::BitSlice;
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
 
-pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
+/// Deferred flush callback. Used by mmap-backed storages and other backends that
+/// share the same flush contract (including no-op flushers for RAM storages).
+pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 /// Type `T` on a memory mapped file
 ///
@@ -159,7 +161,7 @@ where
     T: ?Sized + 'static,
 {
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         // TODO: if we explicitly flush when dropping this type, we can switch to a weak reference
         // here to only flush if it hasn't been done already
         Box::new({
@@ -282,7 +284,7 @@ impl<T> MmapSlice<T> {
     }
 
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         self.mmap.flusher()
     }
 
@@ -392,7 +394,7 @@ impl MmapBitSlice {
     }
 
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         self.mmap.flusher()
     }
 

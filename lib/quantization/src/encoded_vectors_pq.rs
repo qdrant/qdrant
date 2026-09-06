@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
@@ -643,7 +643,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         self.encoded_vectors.vectors_count()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         self.encoded_vectors.flusher()
     }
 

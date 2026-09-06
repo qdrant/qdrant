@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use common::typelevel::True;
@@ -698,7 +698,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
 
     /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
     /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         self.encoded_vectors.flusher()
     }
 }
@@ -1009,7 +1009,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         self.encoded_vectors.vectors_count()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         self.encoded_vectors.flusher()
     }
 
