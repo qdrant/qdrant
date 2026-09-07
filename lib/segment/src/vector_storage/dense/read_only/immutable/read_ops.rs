@@ -3,23 +3,24 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UserData};
+use common::universal_io::UserData;
 
 use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, VectorStorageDatatype};
+use crate::vector_storage::dense::dense_vectors::DenseVectorBlob;
 use crate::vector_storage::{DenseVectorStorageRead, VectorStorageRead};
 
-impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
-    for ReadOnlyImmutableDenseVectorStorage<T, S>
+impl<B: DenseVectorBlob> DenseVectorStorageRead<B::Element>
+    for ReadOnlyImmutableDenseVectorStorage<B>
 {
     fn vector_dim(&self) -> usize {
-        self.vectors.dim
+        self.vectors.dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [B::Element]> {
         self.vectors
             .get_vector_opt::<P>(key)
             .expect("vector not found")
@@ -38,7 +39,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         })
     }
 
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+    fn for_each_in_dense_batch<F: FnMut(usize, &[B::Element])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
@@ -47,11 +48,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
     }
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
-    for ReadOnlyImmutableDenseVectorStorage<T, S>
-{
+impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStorage<B> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<B::Element>()
     }
 
     fn distance(&self) -> Distance {
@@ -59,21 +58,21 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        T::datatype()
+        B::Element::datatype()
     }
 
     fn is_on_disk(&self) -> bool {
-        !self.populate.to_bool::<S>()
+        !self.populate.to_bool::<B::File>()
     }
 
     fn total_vector_count(&self) -> usize {
-        self.vectors.num_vectors
+        self.vectors.num_vectors()
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| CowVector::from(B::Element::slice_to_float_cow(vector)))
             .expect("Vector not found")
     }
 
@@ -88,7 +87,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 
         self.vectors
             .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                let vector = CowVector::from(B::Element::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
             })
             .expect("read vectors");
@@ -97,7 +96,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector).into())
+            .map(|vector| CowVector::from(B::Element::slice_to_float_cow(vector)))
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
