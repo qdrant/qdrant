@@ -255,12 +255,11 @@ impl ProxySegment {
         // Point deletions bump the segment version, can cause index changes to be ignored
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
-            let op_num = wrapped_segment.version();
             if !self.changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (field_name, change) in self.changed_indexes.iter_ordered() {
                         debug_assert!(
-                            change.version() >= op_num,
+                            change.version() >= wrapped_segment.version(),
                             "proxied index change should have newer version than segment",
                         );
                         match change {
