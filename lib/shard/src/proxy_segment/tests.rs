@@ -716,6 +716,8 @@ fn test_proxy_deferred() {
 /// `propagate_to_wrapped` must apply all pending proxy changes to the wrapped segment: a queued
 /// named vector creation and a queued payload index creation, each recorded with a higher
 /// version than the last.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/10507>
 #[test]
 fn test_propagate_to_wrapped_vector_name_and_index() {
     use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};

@@ -289,16 +289,18 @@ impl ProxySegment {
         }
 
         // Propagate vector name changes (between index changes and point deletions)
+        //
+        // This artificially bumps the operation version to be at least as high as the current
+        // segment version. This way we make sure the segment does not ignore the operation.
+        // Alternatively we can interleave index, vectorname and deletion changes and apply them in
+        // exactly the same order they arrive, but that requires more complex changes.
         {
             if !self.changed_vector_names.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (vector_name, intent) in self.changed_vector_names.iter_ordered() {
                         match intent {
                             IntendedVector::Absent { version } => {
-                                // Raise operation version to at least segment version, otherwise
-                                // the operation will be ignored by segment version handling
                                 let op_num = max(*version, wrapped_segment.version());
-
                                 wrapped_segment.delete_vector_name(op_num, vector_name)?;
                             }
                             IntendedVector::Present {
@@ -306,10 +308,7 @@ impl ProxySegment {
                                 version,
                                 supersedes_wrapped,
                             } => {
-                                // Raise operation version to at least segment version, otherwise
-                                // the operation will be ignored by segment version handling
                                 let op_num = max(*version, wrapped_segment.version());
-
                                 if *supersedes_wrapped {
                                     // `create_vector_name_impl` is idempotent and would
                                     // silently keep the wrapped's stale storage. Clear it
