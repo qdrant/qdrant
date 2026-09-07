@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use common::universal_io::{
@@ -29,6 +29,21 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {
 impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
         Self { inner, runtime }
+    }
+
+    pub(crate) fn runtime(&self) -> &BridgeRuntime {
+        &self.runtime
+    }
+}
+
+impl<A: AsyncWrite> BlobFs<A> {
+    /// The single-put save as a future, for callers batching several saves.
+    pub async fn save_async(&self, path: PathBuf, bytes: Vec<u8>) -> UioResult<()> {
+        self.inner.save(&path, Bytes::from(bytes)).await
+    }
+
+    pub async fn remove_async(&self, path: PathBuf) -> UioResult<()> {
+        self.inner.remove(&path).await
     }
 }
 

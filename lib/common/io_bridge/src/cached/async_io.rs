@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync};
+use common::universal_io::{
+    OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync,
+};
 
 use super::CachedBlobFile;
 use super::fs::CachedBlobFs;
@@ -48,5 +50,31 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
+    }
+}
+
+impl<A: AsyncAppend + Clone> UniversalWriteFsAsync for CachedBlobFs<A>
+where
+    A::Config: Clone,
+{
+    fn create_dir_async(&self, _path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
+        // No materialized directories.
+        std::future::ready(Ok(()))
+    }
+
+    fn atomic_save_async(
+        &self,
+        path: PathBuf,
+        bytes: Vec<u8>,
+    ) -> impl Future<Output = UioResult<()>> + Send + '_ {
+        self.blob_fs.save_async(path, bytes)
+    }
+
+    fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
+        self.blob_fs.remove_async(path)
+    }
+
+    fn block_on<F: Future>(&self, fut: F) -> F::Output {
+        self.blob_fs.runtime().block_on(fut)
     }
 }

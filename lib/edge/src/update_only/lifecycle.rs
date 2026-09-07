@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::AdviceSetting;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, UniversalAppend, UniversalAppendFs, UniversalFlush as _,
-    UniversalWriteFileOps,
+    MmapFs, UioResult, UniversalAppendFs, UniversalWriteFsAsync,
 };
+use futures::StreamExt as _;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -99,7 +98,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
 impl<Fs> UpdateOnlyEdgeShard<Fs>
 where
-    Fs: UniversalAppendFs,
+    Fs: UniversalAppendFs + UniversalWriteFsAsync,
 {
     /// [`create_appendable`](Self::create_appendable) with `source`'s config.
     #[cfg(test)]
@@ -149,7 +148,7 @@ where
         drop(segment);
 
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
-        copy_dir_via(&self.fs, &local, &remote)?;
+        self.fs.block_on(copy_dir(&self.fs, &local, &remote))?;
 
         let lookup = LookupSegment::<Fs>::open(self.fs.clone(), &remote, None)?;
         let writer = UpdateOnlySegmentEnum::open(
@@ -164,43 +163,75 @@ where
     }
 }
 
-fn copy_dir_via<F: UniversalWriteFileOps>(
+/// Saves in flight at once while a segment directory is copied to the backend.
+pub(crate) const COPY_CONCURRENCY: usize = 8;
+
+/// Copy a locally built segment directory to the backend: directories first,
+/// then every file as one whole-object save, [`COPY_CONCURRENCY`] at a time.
+///
+/// Every save is awaited even after one fails, so nothing is left in flight and
+/// the cleanup covers every object that landed. Sized for a fresh appendable:
+/// the files are read into memory up front.
+pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     fs: &F,
     local: &Path,
     remote: &Path,
 ) -> OperationResult<()> {
-    let mut created = std::collections::HashSet::new();
+    let mut dirs = vec![remote.to_path_buf()];
+    let mut files = Vec::new();
     for entry in walkdir::WalkDir::new(local) {
         let entry = entry.map_err(|err| {
             OperationError::service_error(format!("walk {}: {err}", local.display()))
         })?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
         let path = entry.path();
         let rel = path.strip_prefix(local).map_err(|err| {
             OperationError::service_error(format!("relativize {}: {err}", path.display()))
         })?;
-        let bytes = fs_err::read(path).map_err(|err| {
-            OperationError::service_error(format!("read {}: {err}", path.display()))
-        })?;
-        let target = remote.join(rel);
-        if let Some(parent) = target.parent()
-            && created.insert(parent.to_path_buf())
-        {
-            fs.create_dir(parent)?;
+        if entry.file_type().is_dir() {
+            if !rel.as_os_str().is_empty() {
+                dirs.push(remote.join(rel));
+            }
+        } else if entry.file_type().is_file() {
+            let bytes = fs_err::read(path).map_err(|err| {
+                OperationError::service_error(format!("read {}: {err}", path.display()))
+            })?;
+            files.push((remote.join(rel), bytes));
         }
-        // Length 0: a pre-sized file would conflict with the offset-0 append.
-        fs.create(&target, 0)?;
-        let options = OpenOptions {
-            writeable: true,
-            need_sequential: true,
-            populate: Populate::No,
-            advice: AdviceSetting::Global,
-        };
-        let mut file = fs.open_append(&target, options.for_append())?;
-        file.append(0, bytes.as_slice())?;
-        file.flusher()()?;
+    }
+
+    // Parents before children: walkdir yields pre-order, the root goes first.
+    for dir in dirs {
+        fs.create_dir_async(dir.clone()).await.map_err(|err| {
+            OperationError::service_error(format!("create dir {}: {err}", dir.display()))
+        })?;
+    }
+
+    let saved: Vec<(std::path::PathBuf, UioResult<()>)> = futures::stream::iter(files)
+        .map(|(path, bytes)| async move {
+            let result = fs.atomic_save_async(path.clone(), bytes).await;
+            (path, result)
+        })
+        .buffer_unordered(COPY_CONCURRENCY)
+        .collect()
+        .await;
+
+    let mut first_error = None;
+    let mut landed = Vec::with_capacity(saved.len());
+    for (path, result) in saved {
+        match result {
+            Ok(()) => landed.push(path),
+            Err(err) if first_error.is_none() => first_error = Some((path, err)),
+            Err(_) => {}
+        }
+    }
+    if let Some((path, err)) = first_error {
+        for object in landed {
+            let _ = fs.remove_async(object).await;
+        }
+        return Err(OperationError::service_error(format!(
+            "save {}: {err}",
+            path.display()
+        )));
     }
     Ok(())
 }

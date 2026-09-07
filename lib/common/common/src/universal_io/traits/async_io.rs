@@ -44,3 +44,32 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         extra: Self::OpenExtra,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
 }
+
+/// The async whole-file write surface, mirroring the same operations on
+/// [`UniversalWriteFileOps`].
+///
+/// A batch of saves runs as one concurrent wave on the backend's own IO
+/// runtime instead of a thread per file; synchronous callers drive the wave
+/// through [`Self::block_on`]. Local backends resolve inline, as they do for
+/// [`UniversalReadFsAsync`].
+///
+/// [`UniversalWriteFileOps`]: crate::universal_io::UniversalWriteFileOps
+pub trait UniversalWriteFsAsync: Send + Sync {
+    /// Create a directory. Backends without materialized directories may
+    /// treat this as a no-op.
+    fn create_dir_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;
+
+    /// Atomically save `bytes` at `path` in a single write.
+    fn atomic_save_async(
+        &self,
+        path: PathBuf,
+        bytes: Vec<u8>,
+    ) -> impl Future<Output = UioResult<()>> + Send + '_;
+
+    /// Remove the file at `path`.
+    fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;
+
+    /// Drive a future built from this filesystem's async operations to
+    /// completion from synchronous code, on the executor those operations need.
+    fn block_on<F: Future>(&self, fut: F) -> F::Output;
+}
