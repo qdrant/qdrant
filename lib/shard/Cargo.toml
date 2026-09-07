@@ -33,7 +33,6 @@ log = { workspace = true }
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-rmp-serde = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
