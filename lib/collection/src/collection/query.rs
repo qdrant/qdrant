@@ -756,7 +756,9 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             // Otherwise, we expect the root result
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),
-                take: request.offset + request.limit,
+                // Use saturating_add so an unbounded user-supplied limit/offset cannot overflow
+                // (debug panic / release wraparound to a tiny take) — it clamps to usize::MAX instead.
+                take: request.offset.saturating_add(request.limit),
             }]
         }
     }

@@ -325,7 +325,11 @@ impl Collection {
                     .take(request.limit)
                     .collect()
             } else {
-                merged_iter.take(request.offset + request.limit).collect()
+                // Use saturating_add so an unbounded user-supplied limit/offset cannot overflow
+                // (debug panic / release wraparound to a tiny take) — it clamps to usize::MAX instead.
+                merged_iter
+                    .take(request.offset.saturating_add(request.limit))
+                    .collect()
             };
 
             top_results.push(top_res);

@@ -248,6 +248,65 @@ async fn test_limit_offset_with_prefetch() {
     assert_eq!(points.len(), 5, "expected 5 points, got {}", points.len());
 }
 
+/// Regression test for <https://github.com/qdrant/qdrant/issues/10501>.
+///
+/// `offset + limit` must not overflow `usize` when a client sends an
+/// (almost) unbounded `limit` alongside a non-zero `offset`. Before the fix,
+/// `offset.wrapping_add(limit)` wrapped around to a tiny value, so the
+/// collection-level merge silently returned an empty page instead of the
+/// remaining points.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_offset_limit_does_not_overflow() {
+    let collection = fixture().await;
+
+    let do_query = async |offset, limit| {
+        collection
+            .query(
+                ShardQueryRequest {
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                        NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4]),
+                    ))),
+                    prefetches: vec![],
+                    filter: None,
+                    params: None,
+                    offset,
+                    limit,
+                    with_payload: WithPayloadInterface::Bool(false),
+                    with_vector: WithVector::Bool(false),
+                    score_threshold: None,
+                },
+                None,
+                None,
+                ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("failed to query")
+    };
+
+    // `offset=1, limit=usize::MAX` used to overflow `offset + limit` and
+    // silently return an empty page. It must instead return the remaining
+    // `POINT_COUNT - 1` points.
+    let points = do_query(1, usize::MAX).await;
+    assert_eq!(
+        points.len(),
+        POINT_COUNT - 1,
+        "expected {} points, got {}",
+        POINT_COUNT - 1,
+        points.len()
+    );
+
+    // `offset=0` with an unbounded limit must still be clamped by the
+    // collection size, not by an overflowed take count.
+    let points = do_query(0, usize::MAX).await;
+    assert_eq!(points.len(), POINT_COUNT);
+
+    // Normal, non-overflowing offset/limit pagination must still work.
+    let points = do_query(10, 15).await;
+    assert_eq!(points.len(), 15, "expected 15 points, got {}", points.len());
+}
+
 fn dummy_on_replica_failure() -> ChangePeerFromState {
     Arc::new(move |_peer_id, _shard_id, _from_state| {})
 }
