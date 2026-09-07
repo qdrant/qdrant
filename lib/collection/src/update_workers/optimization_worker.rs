@@ -106,6 +106,15 @@ impl UpdateWorkers {
                 Ok(None | Some(OptimizerSignal::Stop)) => break,
             };
 
+            // Staging-only: hold optimizations so a test can copy a shard while its
+            // deferred points are still unpromoted.
+            #[cfg(feature = "staging")]
+            if let Ok(secs) = std::env::var("QDRANT_STAGING_OPTIMIZER_DELAY_SEC")
+                && let Ok(secs) = secs.parse::<f64>()
+            {
+                tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
+            }
+
             has_triggered_optimizers.store(true, Ordering::Relaxed);
 
             // Ensure we have at least one appendable segment with enough capacity
