@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
-use common::mmap::{AdviceSetting, MmapFlusher, advice};
+use common::mmap::{AdviceSetting, Flusher, advice};
 use common::prefetch::{
     MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
     prefetch_windows,
@@ -275,7 +275,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
         self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
     }

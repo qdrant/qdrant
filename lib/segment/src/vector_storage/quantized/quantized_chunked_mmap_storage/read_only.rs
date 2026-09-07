@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
-use common::mmap::{AdviceSetting, MmapFlusher};
+use common::mmap::{AdviceSetting, Flusher};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
@@ -105,7 +105,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedSto
         self.data.len()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         // Read-only storage is never dirty.
         Box::new(|| Ok(()))
     }

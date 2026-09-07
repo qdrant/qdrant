@@ -8,7 +8,7 @@ use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
+use common::mmap::{AdviceSetting, Flusher, MmapBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, OpenOptions as UniversalOpenOptions, Populate, ReadOnly, ReadRange,
@@ -281,7 +281,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         self.data.num_vectors
     }
 
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         self.deleted.flusher()
     }
 

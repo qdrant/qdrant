@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::typelevel::TBool;
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
@@ -112,7 +112,7 @@ pub trait EncodedVectors: Sized {
 
     fn vectors_count(&self) -> usize;
 
-    fn flusher(&self) -> MmapFlusher;
+    fn flusher(&self) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
 

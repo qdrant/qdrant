@@ -5,7 +5,7 @@ mod ops;
 
 pub use advice::{Advice, AdviceSetting, Madviseable};
 pub use mmap_readonly::{MmapSliceReadOnly, MmapTypeReadOnly};
-pub use mmap_rw::{Error, MmapBitSlice, MmapFlusher, MmapSlice, MmapType};
+pub use mmap_rw::{Error, Flusher, MmapBitSlice, MmapSlice, MmapType};
 pub use ops::{
     MULTI_MMAP_IS_SUPPORTED, MULTI_MMAP_SUPPORT_CHECK_RESULT, TEMP_FILE_EXTENSION,
     create_and_ensure_length, open_read_mmap, open_write_mmap,
