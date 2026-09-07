@@ -9,7 +9,7 @@ use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Order, ScoredPoint, WithVector};
+use segment::types::{Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::time::Instant;
 
@@ -258,7 +258,7 @@ impl Collection {
             let mut without_payload_requests = Vec::with_capacity(requests_batch.len());
             for query in &requests_batch {
                 let mut without_payload_request = query.clone();
-                without_payload_request.with_payload = false.into();
+                without_payload_request.with_payload = WithPayload::from(false);
                 without_payload_request.with_vector = WithVector::Bool(false);
                 without_payload_requests.push(without_payload_request);
             }
@@ -279,7 +279,7 @@ impl Collection {
                 |(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
-                        Some(req.with_payload.into()),
+                        Some(WithPayloadInterface::from(req.with_payload)),
                         req.with_vector,
                         read_consistency,
                         routing_token,

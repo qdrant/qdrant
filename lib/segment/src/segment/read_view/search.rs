@@ -593,7 +593,7 @@ mod tests {
                 .retrieve(
                     &[1.into()],
                     options,
-                    &false.into(),
+                    &WithVector::from(false),
                     hw,
                     &AtomicBool::new(false),
                     DeferredBehavior::VisibleOnly,
@@ -627,7 +627,7 @@ mod tests {
             .retrieve(
                 &[1.into(), 2.into()],
                 &with_payload,
-                &false.into(),
+                &WithVector::from(false),
                 &indexed_hw,
                 &AtomicBool::new(false),
                 DeferredBehavior::VisibleOnly,
@@ -672,10 +672,9 @@ mod tests {
         for selector in [
             WithPayloadInterface::Bool(true),
             WithPayloadInterface::Bool(false),
-            PayloadSelectorExclude {
+            WithPayloadInterface::from(PayloadSelectorExclude {
                 exclude: vec!["city".parse().unwrap()],
-            }
-            .into(),
+            }),
         ] {
             let exact = WithPayload::from(selector);
             let hinted = WithPayload {

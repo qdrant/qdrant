@@ -414,7 +414,7 @@ fn leaf_source_from_scoring_query(
                 limit,
                 offset: 0,
                 with_vector: Some(with_vector),
-                with_payload: Some(with_payload.into()),
+                with_payload: Some(WithPayloadInterface::from(with_payload)),
                 score_threshold,
             };
 
@@ -474,7 +474,7 @@ fn leaf_source_from_scoring_query(
                 filter,
                 score_threshold,
                 with_vector: Some(with_vector),
-                with_payload: Some(with_payload.into()),
+                with_payload: Some(WithPayloadInterface::from(with_payload)),
                 offset: 0,
                 params,
                 limit: candidates_limit,

@@ -242,7 +242,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             offset,
             params,
             with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default().into(),
+            with_payload: WithPayload::from(with_payload.unwrap_or_default()),
         }
     }
 }

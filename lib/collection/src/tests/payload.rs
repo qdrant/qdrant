@@ -11,7 +11,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, GeoPoint, GeoRadius, PayloadFieldSchema, PayloadSchemaType,
-    Range, WithPayload,
+    Range, WithPayload, WithVector,
 };
 use serde_json::json;
 use shard::scroll::ScrollRequestInternal;
@@ -84,7 +84,7 @@ async fn test_internal_scroll_prefers_payload_index() {
                 .internal_scroll_by_field(
                     1,
                     &with_payload,
-                    &false.into(),
+                    &WithVector::from(false),
                     None,
                     &runtime,
                     &OrderBy::from(order_by),
@@ -100,7 +100,7 @@ async fn test_internal_scroll_prefers_payload_index() {
                     None,
                     1,
                     &with_payload,
-                    &false.into(),
+                    &WithVector::from(false),
                     None,
                     &runtime,
                     Duration::from_secs(30),

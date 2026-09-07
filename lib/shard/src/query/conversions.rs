@@ -9,7 +9,9 @@ use segment::data_types::vectors::{
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DecayKind, ParsedFormula,
 };
-use segment::types::{Filter, SearchParams, VectorNameBuf, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, SearchParams, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
+};
 use segment::vector_storage::query::{
     ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery,
     RecoQuery,
@@ -45,7 +47,7 @@ impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
             offset: offset.unwrap_or_default(),
             params,
             with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default().into(),
+            with_payload: WithPayload::from(with_payload.unwrap_or_default()),
         }
     }
 }
@@ -68,6 +70,14 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             prefer_payload_index,
         } = value;
 
+        let mut with_payload = WithPayload::from(
+            with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?
+                .unwrap_or(WithPayloadInterface::Bool(true)),
+        );
+        with_payload.prefer_payload_index = prefer_payload_index;
+
         let request = Self {
             prefetches: prefetch
                 .into_iter()
@@ -84,14 +94,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             with_vector: with_vectors
                 .map(WithVector::from)
                 .unwrap_or(WithVector::Bool(false)),
-            with_payload: segment::types::WithPayload {
-                prefer_payload_index,
-                ..with_payload
-                    .map(WithPayloadInterface::try_from)
-                    .transpose()?
-                    .unwrap_or(WithPayloadInterface::Bool(true))
-                    .into()
-            },
+            with_payload,
         };
 
         Ok(request)
@@ -919,7 +922,7 @@ mod payload_index_tests {
         ]));
         let wire = grpc::QueryShardPoints {
             limit: 10,
-            with_payload: Some(selector.into()),
+            with_payload: Some(grpc::WithPayloadSelector::from(selector)),
             ..Default::default()
         };
         let mut request = ShardQueryRequest::try_from(wire).unwrap();

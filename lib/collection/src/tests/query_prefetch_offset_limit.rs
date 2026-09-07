@@ -7,7 +7,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
-use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
+use segment::types::{Distance, ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
 use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 
@@ -162,7 +162,7 @@ async fn test_limit_offset_with_prefetch() {
                     params: None,
                     offset,
                     limit,
-                    with_payload: WithPayloadInterface::Bool(false).into(),
+                    with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
                     with_vector: WithVector::Bool(false),
                     score_threshold: None,
                 },
@@ -220,7 +220,7 @@ async fn test_limit_offset_with_prefetch() {
                     params: None,
                     offset,
                     limit,
-                    with_payload: WithPayloadInterface::Bool(false).into(),
+                    with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
                     with_vector: WithVector::Bool(false),
                     score_threshold: None,
                 },

@@ -9,7 +9,7 @@ use rand::distr::Uniform;
 use rand::rngs::ThreadRng;
 use segment::data_types::vectors::DenseVector;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, WithPayloadInterface, WithVector};
+use segment::types::{Filter, WithPayload, WithPayloadInterface, WithVector};
 use serde_json::json;
 
 use crate::common::simple_collection_fixture;
@@ -96,7 +96,7 @@ mod group_by {
                 (true, None),
                 (false, Some(ReadConsistency::Type(ReadConsistencyType::All))),
             ] {
-                source.with_payload = with_payload.into();
+                source.with_payload = WithPayload::from(with_payload);
                 let hw = HwMeasurementAcc::new();
                 request.source = source.clone();
                 let groups = group_by(
@@ -136,7 +136,8 @@ mod group_by {
         source.query = None;
         source.limit = 1;
         source.offset = 10;
-        source.with_payload = WithPayloadInterface::Fields(vec!["docId".parse().unwrap()]).into();
+        source.with_payload =
+            WithPayload::from(WithPayloadInterface::Fields(vec!["docId".parse().unwrap()]));
         source.with_payload.prefer_payload_index = true;
         let hw = HwMeasurementAcc::new();
         let points = collection
@@ -183,7 +184,7 @@ mod group_by {
         let SourceRequest::Search(search) = &mut request.source else {
             unreachable!()
         };
-        search.with_payload = Some(true.into());
+        search.with_payload = Some(WithPayloadInterface::Bool(true));
 
         for indexed in [false, true] {
             if indexed {

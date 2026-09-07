@@ -27,7 +27,7 @@ use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, Match,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, SegmentConfig, ValueVariants,
-    VectorDataConfig, VectorStorageType, WithPayload,
+    VectorDataConfig, VectorStorageType, WithPayload, WithVector,
 };
 
 const DIM: usize = 8;
@@ -250,7 +250,7 @@ fn read_only_segment_prefers_payload_index() {
             .retrieve(
                 &points,
                 &options,
-                &false.into(),
+                &WithVector::from(false),
                 &hw,
                 &AtomicBool::new(false),
                 DeferredBehavior::VisibleOnly,

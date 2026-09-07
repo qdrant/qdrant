@@ -2,7 +2,7 @@ use ahash::AHashSet;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{
-    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint,
+    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use shard::query::query_enum::QueryEnum;
@@ -47,7 +47,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             offset: 0,
             params: None,
             with_vector: WithVector::Selector(vec![using.clone()]),
-            with_payload: WithPayloadInterface::Bool(false).into(),
+            with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
         };
         let mut sampled = self.query(sampling)?;
         if sampled.len() < 2 {
@@ -88,7 +88,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     offset: 0,
                     params: None,
                     with_vector: WithVector::Bool(false),
-                    with_payload: WithPayloadInterface::Bool(false).into(),
+                    with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
                 })
             })
             .collect::<OperationResult<Vec<_>>>()?;

@@ -1,4 +1,5 @@
 use ordered_float::OrderedFloat;
+use segment::types::WithPayload;
 use shard::query::{ShardPrefetch, ShardQueryRequest};
 
 use crate::requests::query::{Prefetch, QueryRequest};
@@ -25,7 +26,7 @@ impl From<QueryRequest> for ShardQueryRequest {
             offset,
             params,
             with_vector,
-            with_payload: with_payload.into(),
+            with_payload: WithPayload::from(with_payload),
         }
     }
 }

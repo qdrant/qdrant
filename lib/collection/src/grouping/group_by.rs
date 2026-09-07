@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
-use segment::types::WithVector;
+use segment::types::{WithPayloadInterface, WithVector};
 use shard::grouping::{GroupByDriver, RequestBudget};
 
 use super::types::QueryGroupRequest;
@@ -341,7 +341,7 @@ pub async fn group_by(
     let enriched_points: AHashMap<_, _> = collection
         .fill_search_result_with_payload(
             bare_points,
-            Some(with_payload.into()),
+            Some(WithPayloadInterface::from(with_payload)),
             with_vector,
             read_consistency,
             routing_token,

@@ -34,7 +34,7 @@ fn payload_index_projection_propagates_read_error() {
 
     let dir = Builder::new().prefix("bad_projection").tempdir().unwrap();
     save_map_index::<IntPayloadType>(&[vec![42]], dir.path(), IndexType::Mmap, |value| {
-        (*value).into()
+        Value::from(*value)
     });
 
     // Point the range table past EOF, without truncating an active mmap.
