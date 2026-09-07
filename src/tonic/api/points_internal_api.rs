@@ -906,7 +906,6 @@ impl PointsInternal for PointsInternalService {
         let ScrollPointsInternal {
             scroll_points,
             shard_id,
-            prefer_payload_index,
         } = request.into_inner();
 
         let mut scroll_points =
@@ -921,7 +920,6 @@ impl PointsInternal for PointsInternalService {
         scroll(
             UncheckedTocProvider::new_unchecked(&self.toc),
             scroll_points,
-            prefer_payload_index,
             shard_id,
             auth,
             // Internal node-to-node call: routing is resolved by the coordinator.

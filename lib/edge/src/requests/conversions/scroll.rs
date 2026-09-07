@@ -13,7 +13,6 @@ impl From<ScrollRequest> for ScrollRequestInternal {
             order_by,
         } = request;
         ScrollRequestInternal {
-            prefer_payload_index: false,
             offset,
             limit,
             filter,

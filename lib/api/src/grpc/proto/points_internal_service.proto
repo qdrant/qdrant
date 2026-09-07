@@ -328,8 +328,6 @@ message CoreSearchBatchPointsInternal {
 message ScrollPointsInternal {
   ScrollPoints scroll_points = 1;
   optional uint32 shard_id = 2;
-  // Internal hint: selected fields may use indexed values; exact payload is an allowed fallback.
-  bool prefer_payload_index = 3;
 }
 
 message RecommendPointsInternal {

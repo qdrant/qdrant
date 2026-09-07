@@ -450,7 +450,6 @@ async fn assert_nearest_size_invariant(
     let probe_scroll = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: optional_read_filter(filter_num, filter_url_prefix),
@@ -914,7 +913,6 @@ pub(super) async fn apply_scroll_filtered_by_num(collection: &Collection, model:
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: Some(match_num_filter(num)),
@@ -970,7 +968,6 @@ pub(super) async fn apply_scroll_filtered_by_tag(
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: Some(match_tag_filter(tag)),
@@ -1030,7 +1027,6 @@ pub(super) async fn apply_scroll_filtered_by_url_prefix(
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: Some(match_url_prefix_filter(prefix)),
@@ -1125,7 +1121,6 @@ pub(super) async fn apply_scroll_paged(
         let scroll = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset,
                     limit: Some(limit),
                     filter: engine_filter.clone(),
@@ -1182,7 +1177,6 @@ pub(super) async fn apply_scroll_ordered(
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: None,

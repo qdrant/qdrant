@@ -40,47 +40,6 @@ const PEER_ID: u64 = 1;
 const SHARD_COUNT: u32 = 4;
 const DUPLICATE_POINT_ID: ExtendedPointId = ExtendedPointId::NumId(100);
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_scroll_prefers_payload_index() {
-    use segment::types::WithPayloadInterface;
-
-    use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
-
-    let collection = fixture().await;
-    for order_by in [None, Some(OrderByInterface::Key("num".parse().unwrap()))] {
-        for (consistency, indexed) in [
-            (None, true),
-            (Some(ReadConsistency::Factor(1)), true),
-            (Some(ReadConsistency::Type(ReadConsistencyType::All)), false),
-        ] {
-            let result = collection
-                .scroll_by(
-                    ScrollRequestInternal {
-                        limit: Some(2),
-                        with_payload: Some(WithPayloadInterface::Fields(vec![
-                            "num".parse().unwrap(),
-                        ])),
-                        prefer_payload_index: true,
-                        order_by: order_by.clone(),
-                        ..Default::default()
-                    },
-                    consistency,
-                    None,
-                    &ShardSelectorInternal::All,
-                    None,
-                    HwMeasurementAcc::new(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(result.points.len(), 2);
-            for point in &result.points {
-                assert_eq!(point.payload.as_ref().unwrap().0["num"].is_array(), indexed);
-            }
-            assert_eq!(result.next_page_offset.is_some(), order_by.is_none());
-        }
-    }
-}
-
 /// Create the collection used for deduplication tests.
 async fn fixture() -> Collection {
     let wal_config = WalConfig {
@@ -204,7 +163,6 @@ async fn test_scroll_dedup() {
     let result = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: None,
@@ -234,7 +192,6 @@ async fn test_scroll_dedup() {
     let result = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: None,

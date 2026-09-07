@@ -264,15 +264,13 @@ impl ShardOperation for LocalShard {
             limit,
             filter,
             with_payload,
-            prefer_payload_index,
             with_vector,
             order_by,
         } = request.as_ref();
 
         let default_with_payload = ScrollRequestInternal::default_with_payload();
-        let mut with_payload =
+        let with_payload =
             WithPayload::from(with_payload.as_ref().unwrap_or(&default_with_payload));
-        with_payload.prefer_payload_index = *prefer_payload_index;
 
         // Validate user did not try to use an id offset with order_by
         if order_by.is_some() && offset.is_some() {

@@ -28,16 +28,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             limit,
             filter,
             with_payload,
-            prefer_payload_index,
             with_vector,
             order_by,
         } = request;
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
-        let mut with_payload = WithPayload::from(
-            with_payload.unwrap_or(ScrollRequestInternal::default_with_payload()),
-        );
-        with_payload.prefer_payload_index = prefer_payload_index;
+        let with_payload = with_payload.unwrap_or(ScrollRequestInternal::default_with_payload());
 
         match order_by.map(OrderBy::from) {
             None => {
@@ -90,9 +86,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             with_payload,
         } = request;
 
-        let with_payload = WithPayload::from(with_payload);
-        let with_payload = &with_payload;
-
         let records = match scroll_order {
             ScrollOrder::ById => self.scroll_by_id(
                 None,
@@ -139,7 +132,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload: &WithPayload,
+        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -166,7 +159,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let mut points = retrieve_over(
             self.segment_arcs(),
             &point_ids,
-            with_payload,
+            &WithPayload::from(with_payload_interface),
             with_vector,
             &AtomicBool::new(false),
             hw_measurement_acc,
@@ -184,7 +177,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     fn scroll_by_field(
         &self,
         limit: usize,
-        with_payload: &WithPayload,
+        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         order_by: &OrderBy,
@@ -214,7 +207,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let points = retrieve_over(
             self.segment_arcs(),
             &point_ids,
-            with_payload,
+            &WithPayload::from(with_payload_interface),
             with_vector,
             &AtomicBool::new(false),
             hw_measurement_acc,
@@ -237,7 +230,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     fn scroll_randomly(
         &self,
         limit: usize,
-        with_payload: &WithPayload,
+        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -316,7 +309,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let random_points = retrieve_over(
             self.segment_arcs(),
             &random_point_ids,
-            with_payload,
+            &WithPayload::from(with_payload_interface),
             with_vector,
             &AtomicBool::new(false),
             hw_measurement_acc,

@@ -76,7 +76,6 @@ impl LocalShard {
         } = request;
 
         let with_payload = WithPayload::from(with_payload);
-        let with_payload = &with_payload;
 
         let limit = *limit;
 
@@ -87,7 +86,7 @@ impl LocalShard {
                 self.internal_scroll_by_id(
                     offset_id,
                     limit,
-                    with_payload,
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
@@ -100,7 +99,7 @@ impl LocalShard {
             ScrollOrder::ByField(order_by) => {
                 self.internal_scroll_by_field(
                     limit,
-                    with_payload,
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
@@ -114,7 +113,7 @@ impl LocalShard {
             ScrollOrder::Random => {
                 self.scroll_randomly(
                     limit,
-                    with_payload,
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,

@@ -491,7 +491,6 @@ impl Points for PointsService {
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             inner_request,
-            false, // Public requests always retrieve exact payloads.
             None,
             auth,
             routing_token,

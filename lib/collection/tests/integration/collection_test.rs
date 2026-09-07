@@ -486,7 +486,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
     let result = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(2),
                 filter: None,
@@ -556,7 +555,6 @@ async fn test_scroll_without_payload_or_vectors() {
         let scroll = |with_payload| {
             collection.scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset: None,
                     limit: Some(4),
                     filter: None,
@@ -710,7 +708,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         let result_asc = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset: None,
                     limit: Some(3),
                     filter: None,
@@ -744,7 +741,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         let result_desc = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset: None,
                     limit: Some(5),
                     filter: None,
@@ -785,7 +781,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         let asc_second_page = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset: None,
                     limit: Some(5),
                     filter: Some(Filter::new_must_not(Condition::HasId(
@@ -827,7 +822,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         let desc_second_page = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    prefer_payload_index: false,
                     offset: None,
                     limit: Some(4),
                     filter: Some(Filter::new_must_not(Condition::HasId(
@@ -872,7 +866,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     let result_multi = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(100),
                 filter: None,
@@ -980,7 +973,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     let result = collection
         .scroll_by(
             ScrollRequestInternal {
-                prefer_payload_index: false,
                 offset: None,
                 limit: Some(10),
                 filter: None,
