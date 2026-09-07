@@ -295,6 +295,19 @@ impl<S: UniversalRead> HnswGraph<S> {
         self.format().is_with_vectors()
     }
 
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn residency(&self) -> GraphLinksResidency {
+        match self {
+            HnswGraph::Direct(graph) => graph.residency,
+            HnswGraph::Batched(graph) => graph.residency,
+        }
+    }
+
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub fn is_on_disk(&self) -> bool {
+        self.residency() == GraphLinksResidency::Cold
+    }
+
     pub(super) fn as_direct(&self) -> Option<&GraphLayers> {
         match self {
             HnswGraph::Direct(graph) => Some(graph),

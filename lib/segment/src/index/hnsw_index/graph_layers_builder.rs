@@ -250,6 +250,7 @@ impl GraphLayersBuilder {
             links,
             entry_points,
             visited_pool: self.visited_pool,
+            residency,
         })
     }
 
@@ -261,6 +262,7 @@ impl GraphLayersBuilder {
             links: GraphLinks::new_from_edges(edges, format_param, self.hnsw_m).unwrap(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
+            residency: GraphLinksResidency::Pinned,
         }
     }
 
