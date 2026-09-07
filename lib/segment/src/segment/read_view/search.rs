@@ -212,8 +212,23 @@ where
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ExtendedPointId, Payload)>> {
-        if !with_payload.enable {
+        if !with_payload.enable || resolved_ids.is_empty() {
             return Ok(Vec::new());
+        }
+
+        if with_payload.prefer_payload_index
+            && let Some(crate::types::PayloadSelector::Include(selector)) =
+                &with_payload.payload_selector
+            && let Some(retriever) = self
+                .payload_index
+                .indexed_payload_retriever(&selector.include, hw_counter)?
+        {
+            let mut payloads = Vec::with_capacity(resolved_ids.len());
+            for (&id, &offset) in resolved_ids.iter().zip(resolved_offsets) {
+                check_stopped(is_stopped)?;
+                payloads.push((id, retriever(offset)?));
+            }
+            return Ok(payloads);
         }
 
         let mut payloads = Vec::with_capacity(resolved_ids.len());
@@ -511,6 +526,184 @@ mod tests {
     const SPARSE_NAME: &str = "sparse";
     const DIM: usize = 4;
 
+    #[test]
+    fn test_retrieve_prefers_payload_index_without_storage_reads() {
+        use serde_json::json;
+
+        use crate::entry::entry_point::NonAppendableSegmentEntry as _;
+        use crate::id_tracker::IdTrackerRead as _;
+        use crate::index::PayloadIndexRead;
+        use crate::types::{PayloadFieldSchema, PayloadSchemaType, WithPayloadInterface};
+
+        let dir = Builder::new().prefix("indexed_payload").tempdir().unwrap();
+        let (mut segment, _) = build_two_point_segment(dir.path());
+        let hw = HardwareCounterCell::new();
+        let payload: Payload = serde_json::from_value(json!({
+            "city": "Berlin", "count": [3, "ignored"], "price": [1.5, 2.5],
+            "flag": [false, true, true],
+            "uuid": "550E8400-E29B-41D4-A716-446655440000",
+            "date": "2024-01-01T01:00:00+01:00",
+            "geo": {"lat": 10.0, "lon": 20.0},
+            "a.b": "literal key", "empty": [], "null": null,
+            "items": [{"city": "Berlin"}, {"city": "Paris"}],
+            "text": "The original text", "unindexed": 42
+        }))
+        .unwrap();
+        segment
+            .set_full_payload(103, 1.into(), &payload, &hw)
+            .unwrap();
+        let schemas = [
+            ("city", PayloadSchemaType::Keyword),
+            ("count", PayloadSchemaType::Integer),
+            ("price", PayloadSchemaType::Float),
+            ("flag", PayloadSchemaType::Bool),
+            ("uuid", PayloadSchemaType::Uuid),
+            ("date", PayloadSchemaType::Datetime),
+            ("geo", PayloadSchemaType::Geo),
+            ("\"a.b\"", PayloadSchemaType::Keyword),
+            ("empty", PayloadSchemaType::Keyword),
+            ("null", PayloadSchemaType::Keyword),
+            ("items[].city", PayloadSchemaType::Keyword),
+            ("text", PayloadSchemaType::Text),
+        ];
+        for (i, (field, schema)) in schemas.iter().enumerate() {
+            segment
+                .create_field_index(
+                    104 + i as u64,
+                    &field.parse().unwrap(),
+                    Some(&PayloadFieldSchema::FieldType(*schema)),
+                    &hw,
+                )
+                .unwrap();
+        }
+        let fields: Vec<_> = schemas[..10]
+            .iter()
+            .map(|(field, _)| field.parse().unwrap())
+            .collect();
+        let mut with_payload = WithPayload::from(WithPayloadInterface::Fields(fields.clone()));
+        with_payload.prefer_payload_index = true;
+        let expected: Payload = serde_json::from_value(json!({
+            "city": ["Berlin"], "count": [3], "price": [1.5, 2.5], "flag": [true, false],
+            "uuid": ["550e8400-e29b-41d4-a716-446655440000"], "date": ["2024-01-01T00:00:00Z"],
+            "geo": [{"lat": 10.0, "lon": 20.0}], "a.b": ["literal key"]
+        }))
+        .unwrap();
+
+        // An exclusive borrow makes any attempt to consult payload storage fail.
+        // The index view itself holds only the storage handle, not a storage read.
+        {
+            let _unavailable_storage = segment.payload_storage.borrow_mut();
+            segment.payload_index.borrow().with_view(|index| {
+                let retrieve = index
+                    .indexed_payload_retriever(&fields, &hw)
+                    .unwrap()
+                    .unwrap();
+                let offset = segment
+                    .id_tracker
+                    .borrow()
+                    .internal_id_with_behavior(1.into(), DeferredBehavior::VisibleOnly)
+                    .unwrap();
+                assert_eq!(retrieve(offset).unwrap(), expected);
+            });
+        }
+
+        let indexed_hw = HardwareCounterCell::new();
+        let records = segment
+            .retrieve(
+                &[1.into(), 2.into()],
+                &with_payload,
+                &false.into(),
+                &indexed_hw,
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        assert_eq!(records[&1.into()].payload.as_ref(), Some(&expected));
+        assert_eq!(records[&2.into()].payload, Some(Payload::default()));
+        assert_eq!(indexed_hw.payload_io_read_counter().get(), 0);
+
+        // Exact retrieval still preserves mixed types, scalar shape, and duplicates.
+        with_payload.prefer_payload_index = false;
+        let exact_hw = HardwareCounterCell::new();
+        let records = segment
+            .retrieve(
+                &[1.into()],
+                &with_payload,
+                &false.into(),
+                &exact_hw,
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        assert_eq!(
+            records[&1.into()].payload.as_ref().unwrap().0["city"],
+            json!("Berlin")
+        );
+        assert_eq!(
+            records[&1.into()].payload.as_ref().unwrap().0["count"],
+            json!([3, "ignored"])
+        );
+        assert!(exact_hw.payload_io_read_counter().get() > 0);
+
+        // Missing/unsupported indexes and nested paths fall back for the whole projection.
+        for field in ["unindexed", "text", "items[].city"] {
+            let selector =
+                WithPayloadInterface::Fields(vec!["city".parse().unwrap(), field.parse().unwrap()]);
+            let exact = WithPayload::from(&selector);
+            let hinted = WithPayload {
+                prefer_payload_index: true,
+                ..exact.clone()
+            };
+            let read = |options: &WithPayload| {
+                segment
+                    .retrieve(
+                        &[1.into()],
+                        options,
+                        &false.into(),
+                        &hw,
+                        &AtomicBool::new(false),
+                        DeferredBehavior::VisibleOnly,
+                    )
+                    .unwrap()
+                    .remove(&1.into())
+                    .unwrap()
+                    .payload
+            };
+            assert_eq!(read(&hinted), read(&exact));
+        }
+
+        for selector in [
+            WithPayloadInterface::Bool(true),
+            WithPayloadInterface::Bool(false),
+            crate::types::PayloadSelectorExclude {
+                exclude: vec!["city".parse().unwrap()],
+            }
+            .into(),
+        ] {
+            let exact = WithPayload::from(selector);
+            let hinted = WithPayload {
+                prefer_payload_index: true,
+                ..exact.clone()
+            };
+            let read = |options: &WithPayload| {
+                segment
+                    .retrieve(
+                        &[1.into()],
+                        options,
+                        &false.into(),
+                        &hw,
+                        &AtomicBool::new(false),
+                        DeferredBehavior::VisibleOnly,
+                    )
+                    .unwrap()
+                    .remove(&1.into())
+                    .unwrap()
+                    .payload
+            };
+            assert_eq!(read(&hinted), read(&exact));
+        }
+    }
+
     /// Two-point segment for the retrieve equivalence tests: point 1 has the
     /// dense + sparse vectors and a payload, point 2 only the dense vector and
     /// no payload. Returns the segment and point 1's payload.
@@ -721,6 +914,7 @@ mod tests {
 
         let point_ids = [1.into()];
         let with_payload = WithPayload {
+            prefer_payload_index: false,
             enable: false,
             payload_selector: None,
         };
@@ -767,6 +961,7 @@ mod tests {
 
         let point_ids = [1.into(), 2.into()];
         let with_payload = WithPayload {
+            prefer_payload_index: false,
             enable: false,
             payload_selector: None,
         };

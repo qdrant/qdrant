@@ -128,6 +128,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let res = collection
         .scroll_by(
             ScrollRequestInternal {
+                prefer_payload_index: false,
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -222,6 +223,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequestInternal {
+                prefer_payload_index: false,
                 offset: None,
                 limit: Some(10),
                 filter: None,
@@ -262,6 +264,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequestInternal {
+                prefer_payload_index: false,
                 offset: None,
                 limit: Some(10),
                 filter: None,

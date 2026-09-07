@@ -13,7 +13,6 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
@@ -23,6 +22,7 @@ use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
+use crate::index::{IndexedPayloadRetriever, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -38,6 +38,48 @@ where
     V: VectorStorageRead,
     F: FieldIndexRead,
 {
+    fn indexed_payload_retriever<'b>(
+        &'b self,
+        fields: &[JsonPath],
+        hw_counter: &'b HardwareCounterCell,
+    ) -> OperationResult<Option<IndexedPayloadRetriever<'b>>> {
+        // Only top-level fields can be represented without synthesizing a JSON
+        // hierarchy. In particular, never invent correlations in nested arrays.
+        if fields.iter().any(|field| !field.rest.is_empty()) {
+            return Ok(None);
+        }
+        let mut retrievers = Vec::with_capacity(fields.len());
+        for field in fields {
+            let Some(indexes) = self.field_indexes.get(field) else {
+                return Ok(None);
+            };
+            let mut retriever = None;
+            for index in indexes {
+                if let Some(candidate) = index.payload_value_retriever(hw_counter)? {
+                    retriever = Some(candidate);
+                    break;
+                }
+            }
+            let Some(retriever) = retriever else {
+                return Ok(None);
+            };
+            retrievers.push((field.first_key.clone(), retriever));
+        }
+        Ok(Some(Box::new(move |point_id| {
+            let mut payload = Payload::default();
+            for (key, retriever) in &retrievers {
+                let values = retriever(point_id)?;
+                if !values.is_empty() {
+                    payload.0.insert(
+                        key.clone(),
+                        serde_json::Value::Array(values.into_iter().collect()),
+                    );
+                }
+            }
+            Ok(payload)
+        })))
+    }
+
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.config.indices.to_schemas()
     }

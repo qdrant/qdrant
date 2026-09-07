@@ -4318,6 +4318,7 @@ impl From<bool> for WithPayload {
         WithPayload {
             enable: x,
             payload_selector: None,
+            prefer_payload_index: false,
         }
     }
 }
@@ -4328,14 +4329,17 @@ impl From<WithPayloadInterface> for WithPayload {
             WithPayloadInterface::Bool(enable) => WithPayload {
                 enable,
                 payload_selector: None,
+                prefer_payload_index: false,
             },
             WithPayloadInterface::Fields(fields) => WithPayload {
                 enable: true,
                 payload_selector: Some(PayloadSelector::new_include(fields)),
+                prefer_payload_index: false,
             },
             WithPayloadInterface::Selector(selector) => WithPayload {
                 enable: true,
                 payload_selector: Some(selector),
+                prefer_payload_index: false,
             },
         }
     }
@@ -4436,6 +4440,12 @@ pub struct WithPayload {
     pub enable: bool,
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
+    /// Internal optimization hint. The caller accepts indexed values as arrays,
+    /// including their loss of original representation, order, and multiplicity.
+    /// Unsupported projections fall back to the original payload.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub prefer_payload_index: bool,
 }
 
 #[derive(

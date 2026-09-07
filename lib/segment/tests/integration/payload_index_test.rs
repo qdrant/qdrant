@@ -1225,6 +1225,7 @@ fn test_struct_payload_index_nested_fields() {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload {
+                    prefer_payload_index: false,
                     enable: true,
                     payload_selector: None,
                 },
@@ -1239,6 +1240,7 @@ fn test_struct_payload_index_nested_fields() {
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
                 &WithPayload {
+                    prefer_payload_index: false,
                     enable: true,
                     payload_selector: None,
                 },

@@ -264,11 +264,15 @@ impl ShardOperation for LocalShard {
             limit,
             filter,
             with_payload,
+            prefer_payload_index,
             with_vector,
             order_by,
         } = request.as_ref();
 
         let default_with_payload = ScrollRequestInternal::default_with_payload();
+        let mut with_payload =
+            WithPayload::from(with_payload.as_ref().unwrap_or(&default_with_payload));
+        with_payload.prefer_payload_index = *prefer_payload_index;
 
         // Validate user did not try to use an id offset with order_by
         if order_by.is_some() && offset.is_some() {
@@ -294,7 +298,7 @@ impl ShardOperation for LocalShard {
                 self.internal_scroll_by_id(
                     *offset,
                     limit,
-                    with_payload.as_ref().unwrap_or(&default_with_payload),
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
@@ -307,7 +311,7 @@ impl ShardOperation for LocalShard {
             Some(order_by) => {
                 self.internal_scroll_by_field(
                     limit,
-                    with_payload.as_ref().unwrap_or(&default_with_payload),
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
@@ -347,7 +351,7 @@ impl ShardOperation for LocalShard {
         self.internal_scroll_by_id(
             offset,
             limit,
-            with_payload_interface,
+            &WithPayload::from(with_payload_interface),
             with_vector,
             filter,
             search_runtime_handle,

@@ -20,13 +20,20 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 impl ShardReplicaSet {
     pub async fn scroll_by(
         &self,
-        request: Arc<ScrollRequestInternal>,
+        mut request: Arc<ScrollRequestInternal>,
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        // Replica resolution compares payloads. An indexed projection and an
+        // exact fallback may differ even when stored documents are identical.
+        if request.prefer_payload_index
+            && read_consistency.unwrap_or_default() != ReadConsistency::Factor(1)
+        {
+            Arc::make_mut(&mut request).prefer_payload_index = false;
+        }
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();

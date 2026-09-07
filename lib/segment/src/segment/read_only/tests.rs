@@ -228,6 +228,44 @@ fn read_only_segment_matches_mutable() {
     assert_query_equivalence(&mutable, &read_only);
 }
 
+#[test]
+fn read_only_segment_prefers_payload_index() {
+    use crate::types::WithPayloadInterface;
+
+    let segments_dir = Builder::new().prefix("ro_projection").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .unwrap();
+    let mut options = WithPayload::from(WithPayloadInterface::Fields(vec![
+        "kw".parse().unwrap(),
+        "num".parse().unwrap(),
+    ]));
+    options.prefer_payload_index = true;
+    let hw = HardwareCounterCell::new();
+    let points = [1.into(), 2.into(), 3.into()];
+    let read = |segment: &dyn ReadSegmentEntry| {
+        segment
+            .retrieve(
+                &points,
+                &options,
+                &false.into(),
+                &hw,
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+    let actual = read(&read_only);
+    let expected = read(&mutable);
+    for id in points {
+        assert_eq!(actual[&id].payload, expected[&id].payload);
+        assert!(actual[&id].payload.as_ref().unwrap().0["kw"].is_array());
+    }
+    assert_eq!(hw.payload_io_read_counter().get(), 0);
+}
+
 /// A request-specific [`LoadProfile`] only demotes placement, never disables a
 /// component: whatever the profile, every query the segment can serve must
 /// still answer identically to the mutable reference.

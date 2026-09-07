@@ -669,6 +669,7 @@ mod tests_ops {
     #[test]
     fn test_scroll_request_internal() {
         let op = ScrollRequestInternal {
+            prefer_payload_index: false,
             offset: Some(ExtendedPointId::NumId(12345)),
             limit: Some(100),
             filter: None,

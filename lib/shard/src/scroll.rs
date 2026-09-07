@@ -23,6 +23,13 @@ pub struct ScrollRequestInternal {
     /// Select which payload to return with the response. Default is true.
     pub with_payload: Option<WithPayloadInterface>,
 
+    /// Internal optimization hint; never accepted from or exposed through REST.
+    /// Explicitly selected top-level indexed fields may be returned as arrays of
+    /// indexed values. Other projections retain exact payload retrieval.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub prefer_payload_index: bool,
+
     /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
@@ -38,6 +45,7 @@ impl Default for ScrollRequestInternal {
             limit: Some(Self::default_limit()),
             filter: None,
             with_payload: Some(Self::default_with_payload()),
+            prefer_payload_index: false,
             with_vector: Self::default_with_vector(),
             order_by: None,
         }
@@ -54,6 +62,7 @@ impl ScrollRequestInternal {
             limit: _,
             filter,
             with_payload,
+            prefer_payload_index,
             with_vector: _,
             order_by,
         } = self;
@@ -65,7 +74,20 @@ impl ScrollRequestInternal {
         // The `with_payload` default of a scroll is `true`.
         let with_payload = with_payload.as_ref().is_none_or(|wp| wp.is_required());
 
-        LoadProfile::for_scroll(filter.as_ref(), order_by_key, with_payload)
+        let mut profile = LoadProfile::for_scroll(filter.as_ref(), order_by_key, with_payload);
+        if *prefer_payload_index {
+            let fields = match &self.with_payload {
+                Some(WithPayloadInterface::Fields(fields)) => Some(fields),
+                Some(WithPayloadInterface::Selector(segment::types::PayloadSelector::Include(
+                    selector,
+                ))) => Some(&selector.include),
+                _ => None,
+            };
+            if let Some(fields) = fields {
+                profile.include_payload_fields(fields.iter().cloned());
+            }
+        }
+        profile
     }
 
     pub const fn default_limit() -> usize {
@@ -78,5 +100,88 @@ impl ScrollRequestInternal {
 
     pub const fn default_with_vector() -> WithVector {
         WithVector::Bool(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::Populate;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn payload_index_hint_is_internal_only() {
+        let request: ScrollRequestInternal = serde_json::from_value(json!({
+            "with_payload": ["city"], "prefer_payload_index": true
+        }))
+        .unwrap();
+        assert!(!request.prefer_payload_index);
+        let mut internal = request;
+        internal.prefer_payload_index = true;
+        assert!(
+            serde_json::to_value(&internal)
+                .unwrap()
+                .get("prefer_payload_index")
+                .is_none()
+        );
+        let schema = serde_json::to_value(schemars::schema_for!(ScrollRequestInternal)).unwrap();
+        assert!(schema["properties"].get("prefer_payload_index").is_none());
+        let schema =
+            serde_json::to_value(schemars::schema_for!(segment::types::WithPayload)).unwrap();
+        assert!(schema["properties"].get("prefer_payload_index").is_none());
+    }
+
+    #[test]
+    fn payload_index_hint_keeps_projected_index_placement() {
+        let field: segment::json_path::JsonPath = "city".parse().unwrap();
+        let mut request = ScrollRequestInternal {
+            with_payload: Some(WithPayloadInterface::Fields(vec![field.clone()])),
+            ..Default::default()
+        };
+        assert_eq!(
+            request.load_profile().payload_index_placement(&field),
+            Some(Populate::No)
+        );
+        request.prefer_payload_index = true;
+        assert_eq!(request.load_profile().payload_index_placement(&field), None);
+        assert_eq!(request.load_profile().payload_storage_placement(), None);
+    }
+
+    #[test]
+    fn payload_index_hint_internal_wire_compatibility() {
+        use api::grpc::qdrant::{ScrollPoints, ScrollPointsInternal};
+        use prost::Message;
+
+        #[derive(Clone, PartialEq, Message)]
+        struct LegacyScrollPointsInternal {
+            #[prost(message, optional, tag = "1")]
+            scroll_points: Option<ScrollPoints>,
+            #[prost(uint32, optional, tag = "2")]
+            shard_id: Option<u32>,
+        }
+
+        let request = ScrollPointsInternal {
+            scroll_points: Some(ScrollPoints {
+                collection_name: "test".into(),
+                with_payload: Some(
+                    WithPayloadInterface::Fields(vec!["city".parse().unwrap()]).into(),
+                ),
+                ..Default::default()
+            }),
+            shard_id: Some(1),
+            prefer_payload_index: true,
+        };
+        let bytes = request.encode_to_vec();
+        assert_eq!(
+            ScrollPointsInternal::decode(bytes.as_slice()).unwrap(),
+            request
+        );
+        let legacy = LegacyScrollPointsInternal::decode(bytes.as_slice()).unwrap();
+        assert_eq!(legacy.scroll_points, request.scroll_points);
+        let bytes = legacy.encode_to_vec();
+        let upgraded = ScrollPointsInternal::decode(bytes.as_slice()).unwrap();
+        assert!(!upgraded.prefer_payload_index);
+        assert_eq!(upgraded.scroll_points, request.scroll_points);
     }
 }

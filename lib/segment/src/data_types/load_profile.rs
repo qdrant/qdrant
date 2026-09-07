@@ -47,6 +47,11 @@ pub struct LoadProfile {
 }
 
 impl LoadProfile {
+    /// Keep the configured placement of indexes used to project payload values.
+    pub fn include_payload_fields(&mut self, fields: impl IntoIterator<Item = PayloadKeyType>) {
+        self.warm_payload_fields.extend(fields);
+    }
+
     /// Profile of a scroll: no scoring, so every vector component loads cold; only the
     /// field indexes the filter and `order_by` read stay warm.
     pub fn for_scroll(

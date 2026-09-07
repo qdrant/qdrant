@@ -441,6 +441,7 @@ mod test {
 
         // Default limit (10) exceeds max_query_limit (4), so omitted limit should error
         let request_omitted_limit = ScrollRequestInternal {
+            prefer_payload_index: false,
             offset: None,
             limit: None,
             filter: None,
@@ -452,6 +453,7 @@ mod test {
 
         // Explicit limit (10) exceeds max_query_limit (4)
         let request_explicit_exceeding_limit = ScrollRequestInternal {
+            prefer_payload_index: false,
             offset: None,
             limit: Some(10),
             filter: None,
@@ -463,6 +465,7 @@ mod test {
 
         // Explicit limit (4) matches max_query_limit (4)
         let request_valid_limit = ScrollRequestInternal {
+            prefer_payload_index: false,
             offset: None,
             limit: Some(4),
             filter: None,

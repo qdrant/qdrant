@@ -218,6 +218,7 @@ impl AuthKeys {
         routing_token: Option<RoutingToken>,
     ) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
+            prefer_payload_index: false,
             offset: None,
             limit: Some(1),
             filter: Some(value_exists.to_filter()),

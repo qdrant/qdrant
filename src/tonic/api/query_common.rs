@@ -590,6 +590,7 @@ pub async fn discover_batch(
 pub async fn scroll(
     toc_provider: impl CheckedTocProvider,
     scroll_points: ScrollPoints,
+    prefer_payload_index: bool,
     shard_selection: Option<ShardId>,
     auth: Auth,
     routing_token: Option<RoutingToken>,
@@ -609,6 +610,7 @@ pub async fn scroll(
     } = scroll_points;
 
     let scroll_request = ScrollRequestInternal {
+        prefer_payload_index,
         offset: offset.map(|o| o.try_into()).transpose()?,
         limit: limit.map(|l| l as usize),
         filter: filter.map(|f| f.try_into()).transpose()?,

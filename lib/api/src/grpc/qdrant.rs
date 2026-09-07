@@ -11140,6 +11140,9 @@ pub struct ScrollPointsInternal {
     pub scroll_points: ::core::option::Option<ScrollPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    /// Internal hint: selected fields may use indexed values; exact payload is an allowed fallback.
+    #[prost(bool, tag = "3")]
+    pub prefer_payload_index: bool,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]

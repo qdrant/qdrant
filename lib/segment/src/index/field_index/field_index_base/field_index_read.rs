@@ -1,12 +1,18 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use serde_json::Value;
 
 use super::payload_field_index::PayloadFieldIndexRead;
 use crate::common::operation_error::OperationResult;
+use crate::common::utils::MultiValue;
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
+
+/// Unlike formula variables, retrieved payload values must propagate read errors.
+pub type PayloadValueRetriever<'a> =
+    Box<dyn Fn(PointOffsetType) -> OperationResult<MultiValue<Value>> + 'a>;
 
 /// Read-only access surface of [`FieldIndex`](super::FieldIndex).
 ///
@@ -30,6 +36,15 @@ use crate::telemetry::PayloadIndexTelemetry;
 ///
 /// [`StructPayloadIndexReadView`]: crate::index::struct_payload_index::StructPayloadIndexReadView
 pub trait FieldIndexRead: PayloadFieldIndexRead {
+    /// Fallible retrieval for internal payload projections. `None` requests
+    /// exact payload fallback; it does not mean that this point has no values.
+    fn payload_value_retriever<'a>(
+        &'a self,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<PayloadValueRetriever<'a>>> {
+        Ok(None)
+    }
+
     /// Per-index telemetry snapshot.
     ///
     /// Fallible for the same reason as

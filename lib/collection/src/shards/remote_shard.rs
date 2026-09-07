@@ -1213,6 +1213,7 @@ impl ShardOperation for RemoteShard {
             offset,
             limit,
             with_payload,
+            prefer_payload_index,
             with_vector,
             order_by,
         } = request.as_ref();
@@ -1241,6 +1242,7 @@ impl ShardOperation for RemoteShard {
         let scroll_request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
             shard_id: Some(self.id),
+            prefer_payload_index: *prefer_payload_index,
         };
 
         let scroll_response = self

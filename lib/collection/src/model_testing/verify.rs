@@ -17,6 +17,7 @@ pub(super) async fn collect_model_from_collection(collection: &Collection) -> Mo
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
+                prefer_payload_index: false,
                 offset: None,
                 limit: Some(usize::MAX),
                 filter: None,

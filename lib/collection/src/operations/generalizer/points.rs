@@ -10,6 +10,7 @@ impl Generalizer for ScrollRequestInternal {
             limit,
             filter,
             with_payload,
+            prefer_payload_index,
             with_vector,
             order_by,
         } = self;
@@ -21,6 +22,7 @@ impl Generalizer for ScrollRequestInternal {
             with_payload: with_payload.clone(),
             with_vector: with_vector.clone(),
             order_by: order_by.clone(),
+            prefer_payload_index: *prefer_payload_index,
         }
     }
 }
