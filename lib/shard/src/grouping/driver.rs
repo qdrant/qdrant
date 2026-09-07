@@ -233,7 +233,7 @@ mod tests {
             offset: 0,
             params: None,
             with_vector: WithVector::Bool(false),
-            with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
+            with_payload: WithPayload::from(false),
         }
     }
 

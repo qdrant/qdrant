@@ -188,9 +188,7 @@ impl Loggable for PointRequestInternal {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::{
-        Condition, Filter, HasIdCondition, WithPayload, WithPayloadInterface, WithVector,
-    };
+    use segment::types::{Condition, Filter, HasIdCondition, WithPayload, WithVector};
     use serde_json::json;
 
     use super::*;
@@ -236,7 +234,7 @@ mod tests {
             offset: 0,
             params: None,
             with_vector: WithVector::Bool(false),
-            with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
+            with_payload: WithPayload::from(false),
         };
         let batch = vec![request; MAX_LOGGED_ARRAY_LEN + 100];
 

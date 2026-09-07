@@ -625,7 +625,7 @@ pub(super) async fn apply_query(
                         ..Default::default()
                     }),
                     with_vector: WithVector::Bool(false),
-                    with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
+                    with_payload: WithPayload::from(false),
                 },
                 None,
                 None,
@@ -724,7 +724,7 @@ pub(super) async fn apply_query_fusion(
                 offset: 0,
                 params: None,
                 with_vector: WithVector::Bool(false),
-                with_payload: WithPayload::from(WithPayloadInterface::Bool(false)),
+                with_payload: WithPayload::from(false),
             },
             None,
             None,
