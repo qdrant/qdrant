@@ -216,8 +216,19 @@ impl GroupsAggregator {
                     // the retained N are the smallest ids in the
                     // tie pool — same set the previous
                     // collect+sort+truncate produced, in O(n log k).
+                    //
+                    // `max_group_size` is client-controlled and not
+                    // capped in `new()` (mirrors `limit` in
+                    // `SearchResultAggregator`), so we cap the heap
+                    // preallocation with `LARGEST_REASONABLE_ALLOCATION_SIZE`
+                    // and use `saturating_add(1)` to avoid the
+                    // `usize::MAX + 1` overflow path.
+                    let heap_capacity = self
+                        .max_group_size
+                        .min(LARGEST_REASONABLE_ALLOCATION_SIZE)
+                        .saturating_add(1);
                     let mut retained: BinaryHeap<(PointIdType, ScoredPoint)> =
-                        BinaryHeap::with_capacity(self.max_group_size + 1);
+                        BinaryHeap::with_capacity(heap_capacity);
                     for hit in scored_points_iter {
                         retained.push((hit.id, hit));
                         if retained.len() > self.max_group_size {
