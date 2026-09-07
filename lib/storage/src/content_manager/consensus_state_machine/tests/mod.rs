@@ -1,4 +1,7 @@
-//! Common test fixtures
+//! Common test fixtures.
+//!
+//! `consensus_shadow` builds collection states out of these too, so the two sides of a compare
+//! are the same shape.
 
 mod ops;
 mod prop;
@@ -16,7 +19,7 @@ use shard::operations::VectorNameConfig;
 
 use super::*;
 
-const PEER_ID: u64 = 42;
+pub(crate) const PEER_ID: u64 = 42;
 const OTHER_PEER_ID: u64 = 43;
 
 fn state_machine(state: ClusterState) -> ConsensusStateMachine {
@@ -61,7 +64,9 @@ fn create_collection_request() -> CreateCollection {
     }
 }
 
-fn collection_state(vectors: Vec<(VectorNameBuf, VectorNameConfig)>) -> collection_state::State {
+pub(crate) fn collection_state(
+    vectors: Vec<(VectorNameBuf, VectorNameConfig)>,
+) -> collection_state::State {
     let mut params = collection_params(VectorsConfig::Multi(Default::default()));
 
     for (name, config) in vectors {

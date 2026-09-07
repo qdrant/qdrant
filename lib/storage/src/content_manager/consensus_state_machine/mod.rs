@@ -25,7 +25,7 @@ pub mod action;
 pub mod state;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::num::NonZeroU32;
 
