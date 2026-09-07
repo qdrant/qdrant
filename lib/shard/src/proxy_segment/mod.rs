@@ -256,9 +256,8 @@ impl ProxySegment {
     /// - deleted payload indexes
     /// - created payload indexes
     ///
-    /// This is required if making both the wrapped segment and the writable segment available in a
-    /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
-    /// required.
+    /// Required before making the wrapped segment available in the shard holder. If the wrapped
+    /// segment is thrown away, propagating is not needed.
     ///
     /// The pending changes log file is deliberately left in place: deleting it before the wrapped
     /// segment has flushed the propagated changes would not be crash safe. It is cleaned up on
