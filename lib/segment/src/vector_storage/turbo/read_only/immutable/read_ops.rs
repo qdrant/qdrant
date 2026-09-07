@@ -3,9 +3,8 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
-use common::universal_io::{UniversalRead, UserData};
+use common::universal_io::UserData;
 use quantization::turboquant::EncodedQueryTQ;
-use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::ReadOnlyImmutableTurboVectorStorage;
 use crate::common::operation_error::OperationResult;
@@ -13,10 +12,11 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::DenseVector;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::turbo::shared;
+use crate::vector_storage::turbo::turbo_vectors::TurboVectorBlob;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
 use crate::vector_storage::{DenseTQVectorStorageRead, TurboScoring};
 
-impl<S: UniversalRead> VectorStorageRead for ReadOnlyImmutableTurboVectorStorage<S> {
+impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStorage<B> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.quantized_vector_size()
     }
@@ -30,7 +30,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyImmutableTurboVectorStorage
     }
 
     fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+        self.on_disk
     }
 
     fn total_vector_count(&self) -> usize {
@@ -86,7 +86,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyImmutableTurboVectorStorage
     }
 }
 
-impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyImmutableTurboVectorStorage<S> {
+impl<B: TurboVectorBlob> DenseTQVectorStorageRead for ReadOnlyImmutableTurboVectorStorage<B> {
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -134,7 +134,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyImmutableTurboVector
     }
 }
 
-impl<S: UniversalRead> TurboScoring for ReadOnlyImmutableTurboVectorStorage<S> {
+impl<B: TurboVectorBlob> TurboScoring for ReadOnlyImmutableTurboVectorStorage<B> {
     fn preprocess_query(&self, query: DenseVector) -> EncodedQueryTQ {
         shared::preprocess_query(&self.quantizer, self.distance, query)
     }
@@ -149,14 +149,8 @@ impl<S: UniversalRead> TurboScoring for ReadOnlyImmutableTurboVectorStorage<S> {
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
     ) {
-        shared::score_query_batch(
-            &self.storage,
-            &self.quantizer,
-            self.distance,
-            query,
-            ids,
-            scores,
-        )
+        self.storage
+            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
     }
 
     fn score_internal_encoded(

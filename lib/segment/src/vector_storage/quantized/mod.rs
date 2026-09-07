@@ -6,6 +6,6 @@ pub mod quantized_multivector_storage;
 pub mod quantized_query_scorer;
 pub(crate) mod quantized_ram_storage;
 mod quantized_scorer_builder;
-pub(crate) mod quantized_storage;
+pub mod quantized_storage;
 pub mod quantized_vectors;
 pub(crate) mod update_only;

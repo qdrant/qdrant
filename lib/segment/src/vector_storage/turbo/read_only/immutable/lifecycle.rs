@@ -9,7 +9,7 @@ use crate::types::Distance;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::turbo::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 
-impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
+impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// Absent files are skipped rather than reported: the subsequent open is
@@ -49,6 +49,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<S> {
             storage,
             quantizer,
             deleted,
+            on_disk: true,
             distance,
             dim,
         })

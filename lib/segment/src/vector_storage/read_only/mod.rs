@@ -9,6 +9,7 @@ use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
 };
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::vector_storage::turbo::read_only::{
@@ -37,7 +38,7 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseChunked(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementType, S>>),
     MultiDenseChunkedByte(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeByte, S>>),
     MultiDenseChunkedHalf(Box<ReadOnlyChunkedMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<S>>),
+    DenseTurbo(Box<ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>>>),
     DenseTurboChunked(Box<ReadOnlyChunkedTurboVectorStorage<S>>),
     MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
@@ -665,13 +666,14 @@ mod tests {
             // matching read-only variant.
             match storage_type {
                 VectorStorageType::Mmap => {
-                    let mut target = TurboVectorStorageImpl::<MmapFile>::open_mmap(
-                        dir.path(),
-                        DIM,
-                        Distance::Dot,
-                        false,
-                    )
-                    .unwrap();
+                    let mut target =
+                        TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+                            dir.path(),
+                            DIM,
+                            Distance::Dot,
+                            false,
+                        )
+                        .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {

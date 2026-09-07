@@ -38,6 +38,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, IoBackend, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
+use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 
 /// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
 /// But in case of multivectors, it requires an additional lookup.
@@ -636,9 +637,9 @@ pub enum VectorStorageEnum {
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmapByte(Box<AppendableMmapDenseVectorStorage<VectorElementTypeByte>>),
     DenseAppendableMemmapHalf(Box<AppendableMmapDenseVectorStorage<VectorElementTypeHalf>>),
-    DenseTurboMemmap(Box<TurboVectorStorageImpl<MmapFile>>),
+    DenseTurboMemmap(Box<TurboVectorStorageImpl<QuantizedStorage<MmapFile>>>),
     #[cfg(target_os = "linux")]
-    DenseTurboUring(Box<TurboVectorStorageImpl<IoUringFile>>),
+    DenseTurboUring(Box<TurboVectorStorageImpl<QuantizedStorage<IoUringFile>>>),
     DenseTurboAppendableMemmap(Box<AppendableMmapTurboVectorStorage>),
     SparseVolatile(VolatileSparseVectorStorage),
     SparseMmap(MmapSparseVectorStorage),
