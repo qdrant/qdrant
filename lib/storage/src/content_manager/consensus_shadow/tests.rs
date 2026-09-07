@@ -15,13 +15,14 @@ use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use raft::eraftpb::Entry as RaftEntry;
+use segment::types::PayloadSchemaType;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, DropPayloadIndex, SetShardReplicaState,
+    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_manager::ConsensusManager;
@@ -35,6 +36,8 @@ const COLLECTION: &str = "books";
 const ALIAS: &str = "novels";
 const OTHER_ALIAS: &str = "crime";
 const METADATA_KEY: &str = "owner";
+/// Collection neither side holds
+const MISSING: &str = "outis";
 
 /// Both sides record the same cluster metadata key: the machine in its own state, the apply
 /// path in `Persistent`, which the compare reads back. Needs the manager, since the applied
@@ -66,6 +69,45 @@ fn diverged_collection() {
     shadow.container.add_shard(0);
 
     assert!(shadow.apply(&drop_payload_index()).is_some());
+}
+
+/// Both sides reject a missing collection, and with the same error class
+#[test]
+fn matching_rejection() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    let rejection = Err(StorageError::not_found(format!(
+        "Collection `{MISSING}` doesn't exist!"
+    )));
+
+    assert_eq!(
+        shadow.apply_with(&create_payload_index(MISSING), &rejection),
+        None,
+    );
+}
+
+/// The machine rejects a missing collection as not-found, the apply path as bad-request. The
+/// class reaches the client, so the two have to agree on it.
+#[test]
+fn differing_rejection() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+    let rejection = Err(StorageError::bad_request("no"));
+
+    assert!(
+        shadow
+            .apply_with(&create_payload_index(MISSING), &rejection)
+            .is_some()
+    );
+}
+
+/// The machine accepts what the apply path rejected, which no state compare catches: a
+/// rejection leaves the state alone on both sides
+#[test]
+fn rejected_by_apply_only() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+    let rejection = Err(StorageError::bad_request("no"));
+
+    assert!(shadow.apply_with(&nop(), &rejection).is_some());
 }
 
 /// An operation the machine does not model leaves state it cannot predict
@@ -219,6 +261,19 @@ fn entry(operation: &ConsensusOperations) -> RaftEntry {
 
 fn nop() -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop { token: 0 }))
+}
+
+/// Covered operation naming `collection`, for a collection no side holds
+fn create_payload_index(collection: &str) -> ConsensusOperations {
+    let operation = CreatePayloadIndex {
+        collection_name: collection.to_string(),
+        field_name: "city".parse().expect("valid field name"),
+        field_schema: PayloadSchemaType::Keyword.into(),
+    };
+
+    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::CreatePayloadIndex(
+        operation,
+    )))
 }
 
 /// Covered operation naming the collection, so the compare after it reads that collection

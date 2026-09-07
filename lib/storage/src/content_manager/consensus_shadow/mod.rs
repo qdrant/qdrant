@@ -98,13 +98,18 @@ impl ShadowStateMachine {
         }
 
         let actual = scrape_cluster_state(toc, persistent);
-        let report = diff::cluster(machine.state(), &actual);
+        let answer = diff::outcome(outcome, result);
+        let state = diff::cluster(machine.state(), &actual);
 
-        if report.is_some() {
-            self.machine = None;
+        let report: Vec<_> = [answer, state].into_iter().flatten().collect();
+
+        if report.is_empty() {
+            return None;
         }
 
-        report
+        self.machine = None;
+
+        Some(report.join("; "))
     }
 }
 
