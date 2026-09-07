@@ -161,12 +161,9 @@ fn check_plain_dir_name(value: &str, kind: &str) -> Result<(), ValidationError> 
     if value.ends_with('.') || value.ends_with(' ') {
         let mut err = ValidationError::new("trailing_dot_or_space");
         err.add_param(Cow::from("value"), &value);
-        err.message.replace(
-            format!(
-                "{kind} cannot end with a period or space, it is used as a directory name on disk"
-            )
-            .into(),
-        );
+        err.message.replace(Cow::from(format!(
+            "{kind} cannot end with a period or space, it is used as a directory name on disk"
+        )));
         return Err(err);
     }
 
@@ -175,7 +172,7 @@ fn check_plain_dir_name(value: &str, kind: &str) -> Result<(), ValidationError> 
         let mut err = ValidationError::new("reserved_name");
         err.add_param(Cow::from("value"), &value);
         err.message
-            .replace(format!("{kind} cannot be a reserved device name {value:?}").into());
+            .replace(Cow::from(format!("{kind} cannot be a reserved device name {value:?}")));
         return Err(err);
     }
 
