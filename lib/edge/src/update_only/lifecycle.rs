@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{
-    MmapFs, UioResult, UniversalAppendFs, UniversalWriteFsAsync,
+    MmapFs, UniversalAppendFs, UniversalWriteFsAsync,
 };
 use futures::StreamExt as _;
 use parking_lot::RwLock;
@@ -170,8 +170,7 @@ pub(crate) const COPY_CONCURRENCY: usize = 8;
 /// then every file as one whole-object save, [`COPY_CONCURRENCY`] at a time.
 ///
 /// Every save is awaited even after one fails, so nothing is left in flight and
-/// the cleanup covers every object that landed. Sized for a fresh appendable:
-/// the files are read into memory up front.
+/// the cleanup covers every object that landed.
 pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     fs: &F,
     local: &Path,
@@ -192,24 +191,33 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
                 dirs.push(remote.join(rel));
             }
         } else if entry.file_type().is_file() {
-            let bytes = fs_err::read(path).map_err(|err| {
-                OperationError::service_error(format!("read {}: {err}", path.display()))
-            })?;
-            files.push((remote.join(rel), bytes));
+            files.push((path.to_path_buf(), remote.join(rel)));
         }
     }
 
-    // Parents before children: walkdir yields pre-order, the root goes first.
+    // walkdir is pre-order, so parents precede children.
     for dir in dirs {
         fs.create_dir_async(dir.clone()).await.map_err(|err| {
             OperationError::service_error(format!("create dir {}: {err}", dir.display()))
         })?;
     }
 
-    let saved: Vec<(std::path::PathBuf, UioResult<()>)> = futures::stream::iter(files)
-        .map(|(path, bytes)| async move {
-            let result = fs.atomic_save_async(path.clone(), bytes).await;
-            (path, result)
+    // Read inside the wave: at most COPY_CONCURRENCY files are in memory.
+    let saved: Vec<(PathBuf, OperationResult<()>)> = futures::stream::iter(files)
+        .map(|(source, target)| async move {
+            let result = match fs_err::read(&source) {
+                Ok(bytes) => fs
+                    .atomic_save_async(target.clone(), bytes)
+                    .await
+                    .map_err(|err| {
+                        OperationError::service_error(format!("save {}: {err}", target.display()))
+                    }),
+                Err(err) => Err(OperationError::service_error(format!(
+                    "read {}: {err}",
+                    source.display()
+                ))),
+            };
+            (target, result)
         })
         .buffer_unordered(COPY_CONCURRENCY)
         .collect()
@@ -220,18 +228,20 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     for (path, result) in saved {
         match result {
             Ok(()) => landed.push(path),
-            Err(err) if first_error.is_none() => first_error = Some((path, err)),
+            Err(err) if first_error.is_none() => first_error = Some(err),
             Err(_) => {}
         }
     }
-    if let Some((path, err)) = first_error {
+    if let Some(err) = first_error {
         for object in landed {
-            let _ = fs.remove_async(object).await;
+            if let Err(cleanup) = fs.remove_async(object.clone()).await {
+                log::warn!(
+                    "failed segment copy left {} behind: {cleanup}",
+                    object.display()
+                );
+            }
         }
-        return Err(OperationError::service_error(format!(
-            "save {}: {err}",
-            path.display()
-        )));
+        return Err(err);
     }
     Ok(())
 }

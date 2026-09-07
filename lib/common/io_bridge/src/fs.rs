@@ -37,7 +37,6 @@ impl<A: AsyncRead> BlobFs<A> {
 }
 
 impl<A: AsyncWrite> BlobFs<A> {
-    /// The single-put save as a future, for callers batching several saves.
     pub async fn save_async(&self, path: PathBuf, bytes: Vec<u8>) -> UioResult<()> {
         self.inner.save(&path, Bytes::from(bytes)).await
     }
