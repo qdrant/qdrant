@@ -1754,9 +1754,7 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data
-            .values()
-            .any(|config| config.storage_type.is_on_disk())
+        self.vector_data.values().any(|config| config.is_on_disk())
             || self
                 .sparse_vector_data
                 .values()
@@ -2122,14 +2120,6 @@ impl VectorStorageType {
             Self::InRamChunkedMmap | Self::InRamMmap => Memory::Cached,
         }
     }
-
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            Self::Memory | Self::InRamChunkedMmap | Self::InRamMmap => false,
-            Self::Mmap | Self::ChunkedMmap => true,
-        }
-    }
 }
 
 /// Config of single vector data storage
@@ -2257,6 +2247,14 @@ impl VectorDataConfig {
             );
         }
         Ok(true)
+    }
+
+    pub fn storage_memory(&self) -> Memory {
+        self.storage_type.memory()
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.storage_memory().is_on_disk()
     }
 }
 

@@ -888,9 +888,7 @@ mod tests {
                 .filter(|segment| segment.total_point_count() > 0)
                 .for_each(|segment| {
                     assert!(
-                        !segment.config().vector_data[DEFAULT_VECTOR_NAME]
-                            .storage_type
-                            .is_on_disk(),
+                        !segment.config().vector_data[DEFAULT_VECTOR_NAME].is_on_disk(),
                         "segment must not be on disk with mmap",
                     );
                 });
@@ -950,9 +948,7 @@ mod tests {
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert!(
-                    segment.config().vector_data[DEFAULT_VECTOR_NAME]
-                        .storage_type
-                        .is_on_disk(),
+                    segment.config().vector_data[DEFAULT_VECTOR_NAME].is_on_disk(),
                     "segment must be on disk with mmap",
                 );
             });
