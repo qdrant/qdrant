@@ -125,7 +125,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                     S,
                 >::preopen(fs, path, populate),
                 VectorStorageDatatype::Turbo4 => {
-                    ReadOnlyImmutableTurboVectorStorage::<S>::preopen(fs, path, populate)
+                    ReadOnlyImmutableTurboVectorStorage::preopen(fs, path, populate)
                 }
             }
         }
