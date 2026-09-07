@@ -1328,7 +1328,6 @@ dependencies = [
  "env_logger",
  "fnv",
  "fs-err",
- "fs4 1.1.0",
  "fs_extra",
  "futures",
  "hashring",
