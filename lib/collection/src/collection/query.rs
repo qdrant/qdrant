@@ -397,19 +397,13 @@ impl Collection {
                 fused
             }
             Some(ScoringQuery::Mmr(mmr)) => {
-                let available_points = intermediates
-                    .iter()
-                    .map(Vec::len)
-                    .fold(0usize, usize::saturating_add);
                 let points_with_vector = intermediates.into_iter().flatten();
 
                 let collection_params = self.collection_config.read().await.params.clone();
                 let search_runtime_handle = &self.search_runtime;
                 let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
-                // MMR is finalized before the collection-level offset is applied below.
-                // Select enough points to cover both the offset and the requested page, but
-                // never reserve more capacity than the number of points available to MMR.
-                let mmr_limit = limit.saturating_add(*offset).min(available_points);
+                // MMR runs before the offset is applied below, so it must select the whole page.
+                let mmr_limit = limit.saturating_add(*offset);
 
                 let mut mmr_result = mmr_from_points_with_vector(
                     &collection_params,
