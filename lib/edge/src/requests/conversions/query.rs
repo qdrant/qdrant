@@ -25,7 +25,7 @@ impl From<QueryRequest> for ShardQueryRequest {
             offset,
             params,
             with_vector,
-            with_payload,
+            with_payload: with_payload.into(),
         }
     }
 }

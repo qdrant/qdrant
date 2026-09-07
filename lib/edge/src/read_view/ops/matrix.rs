@@ -47,7 +47,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             offset: 0,
             params: None,
             with_vector: WithVector::Selector(vec![using.clone()]),
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false).into(),
         };
         let mut sampled = self.query(sampling)?;
         if sampled.len() < 2 {
@@ -88,7 +88,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     offset: 0,
                     params: None,
                     with_vector: WithVector::Bool(false),
-                    with_payload: WithPayloadInterface::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false).into(),
                 })
             })
             .collect::<OperationResult<Vec<_>>>()?;

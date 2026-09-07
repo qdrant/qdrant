@@ -63,7 +63,7 @@ fn test_try_from_double_rescore() {
             ..Default::default()
         }),
         with_vector: WithVector::Bool(true),
-        with_payload: WithPayloadInterface::Bool(true),
+        with_payload: WithPayloadInterface::Bool(true).into(),
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -93,7 +93,7 @@ fn test_try_from_double_rescore() {
         planned_query.root_plans,
         vec![RootPlan {
             with_vector: WithVector::Bool(true),
-            with_payload: WithPayloadInterface::Bool(true),
+            with_payload: WithPayloadInterface::Bool(true).into(),
             merge_plan: MergePlan {
                 sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
@@ -145,7 +145,7 @@ fn test_try_from_limit_offset_saturates_on_overflow() {
         offset: 10,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -169,7 +169,7 @@ fn test_try_from_no_prefetch() {
         offset: 12,
         params: Some(SearchParams::default()),
         with_vector: WithVector::Bool(true),
-        with_payload: WithPayloadInterface::Bool(true),
+        with_payload: WithPayloadInterface::Bool(true).into(),
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -194,7 +194,7 @@ fn test_try_from_no_prefetch() {
     assert_eq!(
         planned_query.root_plans,
         vec![RootPlan {
-            with_payload: WithPayloadInterface::Bool(true),
+            with_payload: WithPayloadInterface::Bool(true).into(),
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
@@ -222,7 +222,7 @@ fn test_try_from_no_prefetch_mmr() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
+        with_payload: WithPayloadInterface::Bool(true).into(),
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
@@ -240,7 +240,10 @@ fn test_try_from_no_prefetch_mmr() {
         root_plan.with_vector,
         WithVector::Selector(vec!["dense".to_owned()])
     );
-    assert_eq!(root_plan.with_payload, WithPayloadInterface::Bool(true));
+    assert_eq!(
+        root_plan.with_payload,
+        WithPayloadInterface::Bool(true).into()
+    );
 }
 
 #[test]
@@ -295,7 +298,7 @@ fn test_try_from_hybrid_query() {
         limit: 50,
         offset: 0,
         params: None,
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
         with_vector: WithVector::Bool(true),
     };
 
@@ -336,7 +339,7 @@ fn test_try_from_hybrid_query() {
     assert_eq!(
         planned_query.root_plans,
         vec![RootPlan {
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false).into(),
             with_vector: WithVector::Bool(true),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
@@ -368,7 +371,7 @@ fn test_try_from_rrf_without_source() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(true),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let planned_query = PlannedQuery::try_from(vec![request]);
@@ -418,7 +421,7 @@ fn test_base_params_mapping_in_try_from() {
 
         // these params will be ignored because we have a prefetch
         params: top_level_params.clone(),
-        with_payload: WithPayloadInterface::Bool(true),
+        with_payload: WithPayloadInterface::Bool(true).into(),
         with_vector: WithVector::Bool(false),
     };
 
@@ -427,7 +430,7 @@ fn test_base_params_mapping_in_try_from() {
     assert_eq!(
         planned_query.root_plans,
         vec![RootPlan {
-            with_payload: WithPayloadInterface::Bool(true),
+            with_payload: WithPayloadInterface::Bool(true).into(),
             with_vector: WithVector::Bool(false),
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
@@ -514,7 +517,7 @@ fn test_detect_max_depth() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(true),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
     assert_eq!(request.prefetches_depth(), 0);
 
@@ -611,7 +614,7 @@ fn test_from_batch_of_requests() {
             limit: 10,
             offset: 0,
             params: None,
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false).into(),
             with_vector: WithVector::Bool(false),
         },
         // A no-prefetch scroll query
@@ -623,7 +626,7 @@ fn test_from_batch_of_requests() {
             limit: 20,
             offset: 0,
             params: None,
-            with_payload: WithPayloadInterface::Bool(true),
+            with_payload: WithPayloadInterface::Bool(true).into(),
             with_vector: WithVector::Bool(false),
         },
         // A double fusion query
@@ -651,7 +654,7 @@ fn test_from_batch_of_requests() {
             limit: 10,
             offset: 0,
             params: None,
-            with_payload: WithPayloadInterface::Bool(true),
+            with_payload: WithPayloadInterface::Bool(true).into(),
             with_vector: WithVector::Bool(true),
         },
     ];
@@ -664,7 +667,7 @@ fn test_from_batch_of_requests() {
     // The no-prefetch scroll fetches its own payload.
     assert_eq!(
         planned_query.scrolls[0].with_payload,
-        WithPayloadInterface::Bool(true)
+        WithPayloadInterface::Bool(true).into()
     );
 
     assert_eq!(
@@ -672,7 +675,7 @@ fn test_from_batch_of_requests() {
         vec![
             RootPlan {
                 with_vector: WithVector::Bool(false),
-                with_payload: WithPayloadInterface::Bool(false),
+                with_payload: WithPayloadInterface::Bool(false).into(),
                 merge_plan: MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_stages: None,
@@ -680,7 +683,7 @@ fn test_from_batch_of_requests() {
             },
             RootPlan {
                 with_vector: WithVector::Bool(false),
-                with_payload: WithPayloadInterface::Bool(false),
+                with_payload: WithPayloadInterface::Bool(false).into(),
                 merge_plan: MergePlan {
                     sources: vec![Source::ScrollsIdx(0)],
                     rescore_stages: None,
@@ -688,7 +691,7 @@ fn test_from_batch_of_requests() {
             },
             RootPlan {
                 with_vector: WithVector::Bool(true),
-                with_payload: WithPayloadInterface::Bool(true),
+                with_payload: WithPayloadInterface::Bool(true).into(),
                 merge_plan: MergePlan {
                     sources: vec![
                         Source::Prefetch(Box::from(MergePlan {

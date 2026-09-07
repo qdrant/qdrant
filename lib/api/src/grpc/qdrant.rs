@@ -11308,6 +11308,9 @@ pub struct QueryShardPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     #[prost(message, optional, tag = "10")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Internal candidate retrieval may return arrays of indexed field values.
+    #[prost(bool, tag = "11")]
+    pub prefer_payload_index: bool,
 }
 /// Nested message and enum types in `QueryShardPoints`.
 pub mod query_shard_points {

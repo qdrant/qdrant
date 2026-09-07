@@ -234,7 +234,7 @@ mod tests {
             offset: 0,
             params: None,
             with_vector: WithVector::Bool(false),
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false).into(),
         };
         let batch = vec![request; MAX_LOGGED_ARRAY_LEN + 100];
 

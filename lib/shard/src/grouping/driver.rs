@@ -233,7 +233,7 @@ mod tests {
             offset: 0,
             params: None,
             with_vector: WithVector::Bool(false),
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false).into(),
         }
     }
 
@@ -274,7 +274,7 @@ mod tests {
         assert!(request.filter.is_some());
         assert_eq!(
             request.with_payload,
-            WithPayloadInterface::Fields(vec!["g".parse().unwrap()])
+            WithPayloadInterface::Fields(vec!["g".parse().unwrap()]).into()
         );
 
         // One incomplete group left after the response, but the budget is spent.

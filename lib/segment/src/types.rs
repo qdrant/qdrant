@@ -4351,6 +4351,16 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
+impl From<WithPayload> for WithPayloadInterface {
+    fn from(with_payload: WithPayload) -> Self {
+        match (with_payload.enable, with_payload.payload_selector) {
+            (false, _) => Self::Bool(false),
+            (true, Some(selector)) => Self::Selector(selector),
+            (true, None) => Self::Bool(true),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct PayloadSelectorInclude {
@@ -4433,7 +4443,7 @@ impl PayloadSelector {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct WithPayload {
     /// Enable return payloads or not

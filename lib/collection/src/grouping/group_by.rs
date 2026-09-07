@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
-use segment::types::WithVector;
+use segment::types::{PayloadSchemaType, WithVector};
 use shard::grouping::{GroupByDriver, RequestBudget};
 
 use super::types::QueryGroupRequest;
@@ -288,6 +288,14 @@ pub async fn group_by(
     let with_vector = source.with_vector.clone();
     source.with_vector = WithVector::Bool(false);
 
+    // Leave unsupported projections on the ordinary query path, including its
+    // optimization for retrieving payloads after merging many shards.
+    let group_field = group_by.strip_wildcard_suffix();
+    let prefer_payload_index = group_field.rest.is_empty()
+        && collection
+            .payload_key_index_schema(&group_field)
+            .is_some_and(|schema| schema.kind() != PayloadSchemaType::Text);
+
     let mut driver = GroupByDriver::new(
         source,
         group_by,
@@ -297,7 +305,8 @@ pub async fn group_by(
         RequestBudget::default(),
     );
 
-    while let Some(query) = driver.next_request() {
+    while let Some(mut query) = driver.next_request() {
+        query.with_payload.prefer_payload_index = prefer_payload_index;
         // update timeout
         let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
 
@@ -332,7 +341,7 @@ pub async fn group_by(
     let enriched_points: AHashMap<_, _> = collection
         .fill_search_result_with_payload(
             bare_points,
-            Some(with_payload),
+            Some(with_payload.into()),
             with_vector,
             read_consistency,
             routing_token,

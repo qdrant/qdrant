@@ -452,6 +452,8 @@ message QueryShardPoints {
   uint64 offset = 8;
   WithPayloadSelector with_payload = 9;
   WithVectorsSelector with_vectors = 10;
+  // Internal candidate retrieval may return arrays of indexed field values.
+  bool prefer_payload_index = 11;
 }
 
 message QueryBatchPointsInternal {

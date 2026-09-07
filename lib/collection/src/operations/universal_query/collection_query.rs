@@ -732,7 +732,7 @@ impl CollectionQueryRequest {
             offset,
             params: self.params,
             with_vector: self.with_vector,
-            with_payload: self.with_payload,
+            with_payload: self.with_payload.into(),
         })
     }
 

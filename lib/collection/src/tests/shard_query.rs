@@ -77,7 +77,7 @@ async fn test_shard_query_rrf_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -116,7 +116,7 @@ async fn test_shard_query_rrf_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -166,7 +166,7 @@ async fn test_shard_query_rrf_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -213,7 +213,7 @@ async fn test_shard_query_rrf_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -301,7 +301,7 @@ async fn test_shard_query_vector_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -328,7 +328,7 @@ async fn test_shard_query_vector_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -358,7 +358,7 @@ async fn test_shard_query_vector_rescoring() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false).into(),
     };
 
     let hw_acc = HwMeasurementAcc::new();
@@ -435,7 +435,7 @@ async fn test_shard_query_payload_vector() {
         offset: 0,
         params: None,
         with_vector: WithVector::Bool(true), // requesting vector
-        with_payload: WithPayloadInterface::Bool(true), // requesting payload
+        with_payload: WithPayloadInterface::Bool(true).into(), // requesting payload
     };
 
     let hw_acc = HwMeasurementAcc::new();

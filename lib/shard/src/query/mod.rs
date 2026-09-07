@@ -47,7 +47,7 @@ pub struct ShardQueryRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
-    pub with_payload: WithPayloadInterface,
+    pub with_payload: WithPayload,
 }
 
 impl ShardQueryRequest {
@@ -242,7 +242,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
             offset,
             params,
             with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default(),
+            with_payload: with_payload.unwrap_or_default().into(),
         }
     }
 }

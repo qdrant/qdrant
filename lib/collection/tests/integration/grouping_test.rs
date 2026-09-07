@@ -31,9 +31,200 @@ mod group_by {
 
     use super::*;
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn indexed_candidates_keep_final_payloads_exact() {
+        use collection::grouping::group_by::group_by;
+        use collection::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
+        use collection::operations::shard_selector_internal::ShardSelectorInternal;
+        use segment::data_types::order_by::{OrderBy, OrderByInterface};
+        use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+        use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch};
+
+        let resources = setup(6, 2).await;
+        let collection = &resources.collection;
+        collection
+            .create_payload_index_with_wait(
+                "docId".parse().unwrap(),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+                true,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap();
+        let mut request = resources
+            .request
+            .into_query_group_request(
+                collection,
+                |_| async { unreachable!() },
+                None,
+                None,
+                ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap();
+        request.group_size = 2;
+        request.groups = 2;
+        let base = request.source.clone();
+        let ordered = ScoringQuery::OrderBy(OrderBy::from(OrderByInterface::Key(
+            "docId".parse().unwrap(),
+        )));
+        for query in [
+            None,
+            base.query.clone(),
+            Some(ordered),
+            Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                k: 2,
+                weights: None,
+            })),
+        ] {
+            let mut source = base.clone();
+            if matches!(query, Some(ScoringQuery::Fusion(_))) {
+                source.prefetches.push(ShardPrefetch {
+                    prefetches: vec![],
+                    query: base.query.clone(),
+                    limit: 6,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                });
+            }
+            source.query = query;
+            for (with_payload, consistency) in [
+                (false, None),
+                (true, None),
+                (false, Some(ReadConsistency::Type(ReadConsistencyType::All))),
+            ] {
+                source.with_payload = with_payload.into();
+                let hw = HwMeasurementAcc::new();
+                request.source = source.clone();
+                let groups = group_by(
+                    request.clone(),
+                    collection,
+                    consistency,
+                    None,
+                    ShardSelectorInternal::All,
+                    None,
+                    hw.clone(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(groups.len(), 2);
+                assert_eq!(
+                    hw.get_payload_io_read() == 0,
+                    !with_payload && consistency.is_none()
+                );
+                for group in groups {
+                    assert_eq!(group.hits.len(), 2);
+                    for hit in group.hits {
+                        if with_payload {
+                            let payload = hit.payload.unwrap();
+                            assert!(payload.0["docId"].is_number());
+                            assert!(payload.0["other_stuff"].is_string());
+                        } else {
+                            assert!(hit.payload.is_none());
+                        }
+                    }
+                }
+            }
+        }
+
+        // A large offset ordinarily triggers a second, exact payload fetch.
+        // Indexed projections must stay on the shard even on this path.
+        let mut source = base;
+        source.query = None;
+        source.limit = 1;
+        source.offset = 10;
+        source.with_payload = WithPayloadInterface::Fields(vec!["docId".parse().unwrap()]).into();
+        source.with_payload.prefer_payload_index = true;
+        let hw = HwMeasurementAcc::new();
+        let points = collection
+            .query(
+                source,
+                None,
+                None,
+                ShardSelectorInternal::All,
+                None,
+                hw.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(points.len(), 1);
+        assert!(points[0].payload.as_ref().unwrap().0["docId"].is_array());
+        assert_eq!(hw.get_payload_io_read(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn indexed_candidates_use_indexed_group_values() {
+        use segment::data_types::groups::GroupId;
+        use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+        let resources = setup(1, 1).await;
+        let collection = &resources.collection;
+        collection
+            .update_from_client_simple(
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                    serde_json::from_value(json!({"points": [
+                        {"id": 0, "vector": [0.5, 0.5, 0.5, 0.5], "payload": {"docId": ["a", 1]}}
+                    ]}))
+                    .unwrap(),
+                )),
+                true,
+                None,
+                WriteOrdering::default(),
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap();
+        let mut request = resources.request;
+        request.limit = 2;
+        request.group_size = 1;
+        let SourceRequest::Search(search) = &mut request.source else {
+            unreachable!()
+        };
+        search.with_payload = Some(true.into());
+
+        for indexed in [false, true] {
+            if indexed {
+                collection
+                    .create_payload_index_with_wait(
+                        "docId".parse().unwrap(),
+                        PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+                        true,
+                        HwMeasurementAcc::new(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            let groups = GroupBy::new(
+                request.clone(),
+                collection,
+                |_| async { unreachable!() },
+                HwMeasurementAcc::new(),
+            )
+            .execute()
+            .await
+            .unwrap();
+            assert_eq!(groups.len(), if indexed { 1 } else { 2 });
+            assert!(groups.iter().any(|group| group.id == GroupId::from("a")));
+            assert_eq!(
+                groups.iter().any(|group| group.id == GroupId::from(1_u64)),
+                !indexed
+            );
+            for group in groups {
+                assert_eq!(
+                    group.hits[0].payload.as_ref().unwrap().0["docId"],
+                    json!(["a", 1])
+                );
+            }
+        }
+    }
+
     struct Resources {
         request: GroupRequest,
         collection: Collection,
+        _collection_dir: tempfile::TempDir,
     }
 
     async fn setup(docs: u64, chunks: u64) -> Resources {
@@ -97,6 +288,7 @@ mod group_by {
         Resources {
             request,
             collection,
+            _collection_dir: collection_dir,
         }
     }
 

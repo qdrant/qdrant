@@ -45,7 +45,7 @@ impl From<rest::schema::SearchRequestInternal> for ShardQueryRequest {
             offset: offset.unwrap_or_default(),
             params,
             with_vector: with_vector.unwrap_or_default(),
-            with_payload: with_payload.unwrap_or_default(),
+            with_payload: with_payload.unwrap_or_default().into(),
         }
     }
 }
@@ -65,6 +65,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             offset,
             with_payload,
             with_vectors,
+            prefer_payload_index,
         } = value;
 
         let request = Self {
@@ -83,10 +84,14 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             with_vector: with_vectors
                 .map(WithVector::from)
                 .unwrap_or(WithVector::Bool(false)),
-            with_payload: with_payload
-                .map(WithPayloadInterface::try_from)
-                .transpose()?
-                .unwrap_or(WithPayloadInterface::Bool(true)),
+            with_payload: segment::types::WithPayload {
+                prefer_payload_index,
+                ..with_payload
+                    .map(WithPayloadInterface::try_from)
+                    .transpose()?
+                    .unwrap_or(WithPayloadInterface::Bool(true))
+                    .into()
+            },
         };
 
         Ok(request)
@@ -121,7 +126,10 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
             score_threshold: score_threshold.map(OrderedFloat::into_inner),
             limit: limit as u64,
             offset: offset as u64,
-            with_payload: Some(grpc::WithPayloadSelector::from(with_payload)),
+            prefer_payload_index: with_payload.prefer_payload_index,
+            with_payload: Some(grpc::WithPayloadSelector::from(WithPayloadInterface::from(
+                with_payload,
+            ))),
             with_vectors: Some(grpc::WithVectorsSelector::from(with_vector)),
         }
     }
@@ -895,6 +903,34 @@ fn try_from_decay_params(
         midpoint,
         scale,
     })
+}
+
+#[cfg(test)]
+mod payload_index_tests {
+    use prost::Message;
+    use segment::types::PayloadSelector;
+
+    use super::*;
+
+    #[test]
+    fn internal_query_preserves_payload_index_preference() {
+        let selector = WithPayloadInterface::Selector(PayloadSelector::new_include(vec![
+            "group".parse().unwrap(),
+        ]));
+        let wire = grpc::QueryShardPoints {
+            limit: 10,
+            with_payload: Some(selector.into()),
+            ..Default::default()
+        };
+        let mut request = ShardQueryRequest::try_from(wire).unwrap();
+        assert!(!request.with_payload.prefer_payload_index);
+        request.with_payload.prefer_payload_index = true;
+        let expected = request.with_payload.clone();
+        let bytes = grpc::QueryShardPoints::from(request).encode_to_vec();
+        let decoded = grpc::QueryShardPoints::decode(bytes.as_slice()).unwrap();
+        let restored = ShardQueryRequest::try_from(decoded).unwrap();
+        assert_eq!(restored.with_payload, expected);
+    }
 }
 
 #[cfg(test)]
