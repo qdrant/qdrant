@@ -6,6 +6,7 @@ mod vector_name_changes;
 mod tests;
 
 use std::borrow::Cow;
+use std::cmp::max;
 
 use ahash::AHashMap;
 use common::bitvec::BitVec;
@@ -294,24 +295,28 @@ impl ProxySegment {
                     for (vector_name, intent) in self.changed_vector_names.iter_ordered() {
                         match intent {
                             IntendedVector::Absent { version } => {
-                                wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                // Raise operation version to at least segment version, otherwise
+                                // the operation will be ignored by segment version handling
+                                let op_num = max(*version, wrapped_segment.version());
+
+                                wrapped_segment.delete_vector_name(op_num, vector_name)?;
                             }
                             IntendedVector::Present {
                                 config,
                                 version,
                                 supersedes_wrapped,
                             } => {
+                                // Raise operation version to at least segment version, otherwise
+                                // the operation will be ignored by segment version handling
+                                let op_num = max(*version, wrapped_segment.version());
+
                                 if *supersedes_wrapped {
                                     // `create_vector_name_impl` is idempotent and would
                                     // silently keep the wrapped's stale storage. Clear it
                                     // first so the new schema actually takes effect.
-                                    wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                    wrapped_segment.delete_vector_name(op_num, vector_name)?;
                                 }
-                                wrapped_segment.create_vector_name(
-                                    *version,
-                                    vector_name,
-                                    config,
-                                )?;
+                                wrapped_segment.create_vector_name(op_num, vector_name, config)?;
                             }
                         }
                     }
