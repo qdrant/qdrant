@@ -116,16 +116,23 @@ impl AliasPersistence {
         self.alias_mapping.get(alias).cloned()
     }
 
-    pub fn insert(&mut self, alias: String, collection_name: String) -> Result<(), StorageError> {
-        self.alias_mapping.insert(alias, collection_name);
-        self.alias_mapping.save(&self.data_path)?;
+    fn persist_state(&mut self, alias_mapping: AliasMapping) -> Result<(), StorageError> {
+        alias_mapping.save(&self.data_path)?;
+        self.alias_mapping = alias_mapping;
         Ok(())
+    }
+
+    pub fn insert(&mut self, alias: String, collection_name: String) -> Result<(), StorageError> {
+        let mut alias_mapping = self.alias_mapping.clone();
+        alias_mapping.insert(alias, collection_name);
+        self.persist_state(alias_mapping)
     }
 
     /// Removes all aliases for a given collection.
     pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
-        if self.alias_mapping.remove_collection(collection_name) {
-            self.alias_mapping.save(&self.data_path)?;
+        let mut alias_mapping = self.alias_mapping.clone();
+        if alias_mapping.remove_collection(collection_name) {
+            self.persist_state(alias_mapping)?;
         }
 
         Ok(())
@@ -142,12 +149,65 @@ impl AliasPersistence {
     }
 
     pub fn apply_state(&mut self, alias_mapping: AliasMapping) -> Result<(), StorageError> {
-        self.alias_mapping = alias_mapping;
-        self.alias_mapping.save(&self.data_path)?;
-        Ok(())
+        self.persist_state(alias_mapping)
     }
 
     pub fn check_alias_exists(&self, alias: &str) -> bool {
         self.alias_mapping.get(alias).is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn persistence_with_unwritable_path() -> (AliasPersistence, AliasMapping) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let original = AliasMapping(HashMap::from([(
+            "alias".to_string(),
+            "old_collection".to_string(),
+        )]));
+        let data_path = temp_dir
+            .path()
+            .join("missing")
+            .join(ALIAS_MAPPING_CONFIG_FILE);
+
+        (
+            AliasPersistence {
+                data_path,
+                alias_mapping: original.clone(),
+            },
+            original,
+        )
+    }
+
+    #[test]
+    fn apply_state_keeps_memory_state_when_persistence_fails() {
+        let (mut persistence, original) = persistence_with_unwritable_path();
+        let candidate = AliasMapping(HashMap::from([(
+            "alias".to_string(),
+            "new_collection".to_string(),
+        )]));
+
+        assert!(persistence.apply_state(candidate).is_err());
+        assert_eq!(persistence.state(), &original);
+    }
+
+    #[test]
+    fn insert_keeps_memory_state_when_persistence_fails() {
+        let (mut persistence, original) = persistence_with_unwritable_path();
+
+        assert!(persistence
+            .insert("new_alias".to_string(), "new_collection".to_string())
+            .is_err());
+        assert_eq!(persistence.state(), &original);
+    }
+
+    #[test]
+    fn remove_collection_keeps_memory_state_when_persistence_fails() {
+        let (mut persistence, original) = persistence_with_unwritable_path();
+
+        assert!(persistence.remove_collection("old_collection").is_err());
+        assert_eq!(persistence.state(), &original);
     }
 }
