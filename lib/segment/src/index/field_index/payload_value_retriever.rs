@@ -9,7 +9,7 @@ use super::map_index::read_ops::MapIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::PayloadValueRetriever;
-use crate::types::{IntPayloadType, UuidIntType, UuidPayloadType};
+use crate::types::IntPayloadType;
 
 /// Visit every value through the fallible checker. The legacy `get_values`
 /// accessors can turn an underlying I/O error into a missing value.
@@ -47,22 +47,6 @@ pub(crate) fn integer<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
         collect(
             |visit| index.check_values_any(point_id, hw_counter, visit),
             |value| Some(Value::from(*value)),
-        )
-    })
-}
-
-pub(crate) fn uuid<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
-    index: &'a T,
-    hw_counter: &'a HardwareCounterCell,
-) -> PayloadValueRetriever<'a> {
-    Box::new(move |point_id| {
-        collect(
-            |visit| index.check_values_any(point_id, hw_counter, visit),
-            |value| {
-                Some(Value::String(
-                    UuidPayloadType::from_u128(*value).to_string(),
-                ))
-            },
         )
     })
 }

@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
-use segment::types::{PayloadSchemaType, WithVector};
+use segment::types::WithVector;
 use shard::grouping::{GroupByDriver, RequestBudget};
 
 use super::types::QueryGroupRequest;
@@ -294,7 +294,7 @@ pub async fn group_by(
     let prefer_payload_index = group_field.rest.is_empty()
         && collection
             .payload_key_index_schema(&group_field)
-            .is_some_and(|schema| schema.kind() != PayloadSchemaType::Text);
+            .is_some_and(|schema| schema.kind().keeps_values_verbatim());
 
     let mut driver = GroupByDriver::new(
         source,

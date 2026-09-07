@@ -38,12 +38,14 @@ pub type PayloadValueRetriever<'a> =
 pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// Fallible retrieval for internal payload projections. `None` requests
     /// exact payload fallback; it does not mean that this point has no values.
+    ///
+    /// Only indexes that store their values verbatim serve a retriever: a
+    /// projection has to agree with the exact payload that a segment without
+    /// this index returns for the same point.
     fn payload_value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<Option<PayloadValueRetriever<'a>>> {
-        Ok(None)
-    }
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<PayloadValueRetriever<'a>>>;
 
     /// Per-index telemetry snapshot.
     ///

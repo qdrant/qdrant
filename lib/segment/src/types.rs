@@ -2649,6 +2649,19 @@ impl PayloadSchemaType {
             Self::Uuid => PayloadSchemaParams::Uuid(UuidIndexParams::default()),
         }
     }
+
+    /// Whether an index of this type can serve [`WithPayload::prefer_payload_index`].
+    /// Only indexes that store values verbatim can: the others normalize what
+    /// they index, so a projection would disagree with the exact payload that
+    /// a segment without this index returns.
+    pub fn keeps_values_verbatim(&self) -> bool {
+        match self {
+            Self::Keyword | Self::Integer => true,
+            Self::Float | Self::Geo | Self::Text | Self::Bool | Self::Datetime | Self::Uuid => {
+                false
+            }
+        }
+    }
 }
 
 /// Payload type with parameters
