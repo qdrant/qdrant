@@ -5,6 +5,7 @@
 
 use std::io;
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Opens `path` and returns `(disk_bytes, resident_bytes)`.
