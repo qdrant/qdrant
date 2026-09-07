@@ -1,12 +1,7 @@
 import pathlib
 import random
-import time
 from typing import Literal
 
-import pytest
-import requests
-
-from .assertions import assert_http_ok
 from .utils import *
 
 N_PEERS = 3
@@ -128,6 +123,16 @@ def commit_write_hashring(peer_url):
 def finish_resharding(peer_url):
     return requests.post(f"{peer_url}/collections/{COLLECTION_NAME}/cluster", json={
         "finish_resharding": {}
+    })
+
+
+def finish_migrating_points(peer_url, peer_id, shard_id):
+    """Activate a replica that has finished receiving migrated points."""
+    return requests.post(f"{peer_url}/collections/{COLLECTION_NAME}/cluster", json={
+        "finish_migrating_points": {
+            "peer_id": peer_id,
+            "shard_id": shard_id,
+        }
     })
 
 
@@ -282,15 +287,7 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
     if direction == "up":
         # Activate the new shard's replica before committing hash rings.
         # Without this, the replica stays in "Resharding" state and can't serve reads.
-        resp = requests.post(
-            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
-            json={
-                "finish_migrating_points": {
-                    "peer_id": target_peer_id,
-                    "shard_id": target_shard_id,
-                }
-            },
-        )
+        resp = finish_migrating_points(peer_api_uris[0], target_peer_id, target_shard_id)
         assert_http_ok(resp)
         time.sleep(1)
     else:
@@ -298,15 +295,7 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
         for shard_id in range(target_shard_id):
             peer_id, _ = find_replica(shard_id, info, peer_api_uris, peer_ids)
 
-            resp = requests.post(
-                f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster",
-                json={
-                    "finish_migrating_points": {
-                        "peer_id": peer_id,
-                        "shard_id": shard_id,
-                    }
-                },
-            )
+            resp = finish_migrating_points(peer_api_uris[0], peer_id, shard_id)
             assert_http_ok(resp)
         time.sleep(1)
 
@@ -405,4 +394,71 @@ def test_resharding_transfer_deferred_points(tmp_path: pathlib.Path, direction: 
     assert scrolled_ids == expected_ids, (
         f"All original point IDs should be present after resharding. "
         f"Missing: {expected_ids - scrolled_ids}"
+    )
+
+
+def replica_visible_counts(peer_api_uris, shard_id):
+    """Visible point count of each local replica of `shard_id`, keyed by peer uri."""
+    counts = {}
+    for uri in peer_api_uris:
+        info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        if any(s["shard_id"] == shard_id for s in info["local_shards"]):
+            counts[uri] = count_local_points(uri, shard_id, exact=True)
+    return counts
+
+
+def test_replicas_of_a_copied_shard_agree(tmp_path: pathlib.Path):
+    """Two Active replicas of one shard must not disagree on how many points they hold.
+
+    A shard is copied while its optimizer is still working through the points just
+    written to it. The source finishes that work and its points become visible; the
+    copy carries the same unoptimized state but has no queued work of its own, and
+    nothing writes to it afterwards to schedule any.
+    """
+    assert_project_root()
+
+    optimizer_delay_sec = 25
+    peer_api_uris, _, _ = start_cluster(
+        tmp_path, N_PEERS,
+        extra_env={"QDRANT_STAGING_OPTIMIZER_DELAY_SEC": str(optimizer_delay_sec)},
+    )
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_api_uris]
+
+    # One shard, one replica: everything below concerns that shard and its copy.
+    create_deferred_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
+    update_collection_config(peer_api_uris[0], {
+        "optimizers_config": {"max_optimization_threads": "auto"},
+    })
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    total_points = 1500
+    upsert_points(peer_api_uris[0], start_id=1, count=total_points, wait=False)
+
+    info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    source_peer_id, source_uri = find_replica(0, info, peer_api_uris, peer_ids)
+
+    # The optimizer is held, so the points just written are not visible yet.
+    before = count_local_points(source_uri, 0, exact=True)
+    assert before < total_points, (
+        f"setup: the optimizer must still be holding points, saw {before}/{total_points}"
+    )
+
+    # Copy the shard while it is in that state.
+    copy_peer_id = next(pid for pid in peer_ids if pid != source_peer_id)
+    replicate_shard(peer_api_uris[0], COLLECTION_NAME, 0, source_peer_id, copy_peer_id)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(peer_api_uris[0], COLLECTION_NAME)
+
+    # Nothing is written from here on. Let the held optimization finish and settle.
+    time.sleep(optimizer_delay_sec + 15)
+
+    counts = replica_visible_counts(peer_api_uris, 0)
+    assert len(counts) == 2, f"setup: shard 0 must have two replicas, got {counts}"
+    assert len(set(counts.values())) == 1, (
+        f"replicas of shard 0 disagree on how many points they can see: {counts}"
     )
