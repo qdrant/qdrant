@@ -597,6 +597,21 @@ mod tests {
         assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
+    /// The consensus test suite turns the shadow run on through this variable, so a rename here
+    /// leaves that suite testing nothing.
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn shadow_state_machine_from_env() {
+        unsafe { env::set_var("QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE", "panic") };
+
+        let settings = Settings::new(None).expect("failed to load config");
+
+        assert_eq!(
+            settings.cluster.consensus.shadow_state_machine,
+            ShadowMode::Panic,
+        );
+    }
+
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test]
     fn test_no_config_files() {
