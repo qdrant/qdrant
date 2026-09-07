@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
@@ -396,7 +396,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
         Ok(())
     }
 
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         match self {
             ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.flusher(),
             ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.flusher(),

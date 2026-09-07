@@ -14,7 +14,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::mmap::MmapFlusher;
+    use common::mmap::Flusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
         EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, TestEncodedStorage,
@@ -53,7 +53,7 @@ mod tests {
             inner.vectors_count()
         }
 
-        fn flusher(&self) -> MmapFlusher {
+        fn flusher(&self) -> Flusher {
             let Self(inner) = self;
             inner.flusher()
         }

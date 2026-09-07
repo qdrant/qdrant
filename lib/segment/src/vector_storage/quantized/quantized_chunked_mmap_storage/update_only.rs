@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppend;
 use quantization::{EncodedStorageBuilder, EncodedStorageWrite};
@@ -83,7 +83,7 @@ impl<S: UniversalAppend + 'static> EncodedStorageWrite for UpdateOnlyQuantizedCh
         self.vectors.stored_len().unwrap_or(0)
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         // `append_many` persists synchronously before returning, so there is nothing left to
         // flush — the same contract `UpdateOnlyDenseVectorStorage` relies on for raw vectors.
         Box::new(|| Ok(()))

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(feature = "testing")]
 use common::fs::OneshotFile;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::types::PointOffsetType;
 #[cfg(feature = "testing")]
 use fs_err as fs;
@@ -53,7 +53,7 @@ pub trait EncodedStorageWrite {
 
     fn vectors_count(&self) -> usize;
 
-    fn flusher(&self) -> MmapFlusher;
+    fn flusher(&self) -> Flusher;
 
     /// Additional heap memory used by this storage beyond what's tracked in files.
     /// RAM-based storages should report their in-memory data size here.
@@ -350,7 +350,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         self.data.len() / self.quantized_vector_size.get()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
 

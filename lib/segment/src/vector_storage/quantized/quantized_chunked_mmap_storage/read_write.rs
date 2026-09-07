@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
-use common::mmap::{Advice, AdviceSetting, MmapFlusher};
+use common::mmap::{Advice, AdviceSetting, Flusher};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalWrite, UserData};
 
@@ -102,7 +102,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
         self.data.len()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         let flusher = self.data.flusher();
         Box::new(move || {
             Ok(flusher().map_err(|e| {

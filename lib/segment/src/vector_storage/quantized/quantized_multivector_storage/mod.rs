@@ -4,7 +4,7 @@ use std::slice;
 
 use ahash::HashMapExt as _;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
@@ -64,7 +64,7 @@ pub trait MultivectorOffsetsStorage: Sized {
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
 
-    fn flusher(&self) -> MmapFlusher;
+    fn flusher(&self) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -517,7 +517,7 @@ where
         self.offsets.len()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         let quantized_storage_flusher = self.quantized_storage.flusher();
         let offsets_flusher = self.offsets.flusher();
         Box::new(move || {

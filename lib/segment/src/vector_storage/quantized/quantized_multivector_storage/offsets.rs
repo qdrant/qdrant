@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
+use common::mmap::{Advice, AdviceSetting, Flusher, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
@@ -123,7 +123,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         Ok(())
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -260,7 +260,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         ))
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
         Box::new(|| Ok(()))
     }
@@ -362,7 +362,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
         self.data.len()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         let flusher = ChunkedVectors::flusher(&self.data);
         Box::new(move || {
             flusher().map_err(|e| {
@@ -487,7 +487,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
         ))
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
     }
 

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
@@ -364,7 +364,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
     /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> MmapFlusher {
+    pub fn flusher(&self) -> Flusher {
         self.encoded_vectors.flusher()
     }
 }
@@ -570,7 +570,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.encoded_vectors.vectors_count()
     }
 
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         self.encoded_vectors.flusher()
     }
 
