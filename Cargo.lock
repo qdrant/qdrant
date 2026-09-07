@@ -1346,12 +1346,12 @@ dependencies = [
  "rand_distr",
  "rayon",
  "ringbuffer",
- "rmp-serde",
  "rstest",
  "schemars",
  "segment",
  "semver",
  "serde",
+ "serde_cbor",
  "serde_json",
  "sha2 0.11.0",
  "shard",
@@ -6662,25 +6662,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
-name = "rmp"
-version = "0.8.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ba8be72d372b2c9b35542551678538b562e7cf86c3315773cae48dfbfe7790c"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "rmp-serde"
-version = "1.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f81bee8c8ef9b577d1681a70ebbc962c232461e397b22c208c43c04b67a155"
-dependencies = [
- "rmp",
- "serde",
-]
-
-[[package]]
 name = "roaring"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7186,7 +7167,6 @@ dependencies = [
  "rand 0.10.2",
  "rand_distr",
  "rayon",
- "rmp-serde",
  "roaring",
  "rstest",
  "schemars",
@@ -7499,7 +7479,6 @@ dependencies = [
  "proptest",
  "prost 0.14.4",
  "rand 0.10.2",
- "rmp-serde",
  "rstest",
  "schemars",
  "segment",

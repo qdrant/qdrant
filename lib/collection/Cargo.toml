@@ -22,8 +22,8 @@ criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rand_distr = { workspace = true }
-rmp-serde = { workspace = true }
 rstest = { workspace = true }
+serde_cbor = { workspace = true }
 tar = { workspace = true }
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }

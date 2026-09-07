@@ -266,7 +266,6 @@ prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost u
 raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }
 rand = "0.10.1"
 rand_distr = "0.6.0"
-rmp-serde = "~1.3"
 roaring = "0.11.4"
 reqwest = { version = "0.13.4", default-features = false, features = [
     "json",
