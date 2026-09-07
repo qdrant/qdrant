@@ -27,7 +27,7 @@ fn state_machine(state: ClusterState) -> ConsensusStateMachine {
 }
 
 /// Node config is fixed, except for the parts used in tests. Extend it as needed.
-fn node_context() -> NodeContext {
+pub(crate) fn node_context() -> NodeContext {
     NodeContext {
         peer_id: PEER_ID,
         is_distributed: true,
