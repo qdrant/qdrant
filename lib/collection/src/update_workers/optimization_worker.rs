@@ -125,8 +125,18 @@ impl UpdateWorkers {
             // Backstop: reconcile the segment manifest with the live segment set. Registration
             // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
             // the recovery path that picks up any registration that was skipped (e.g. an ignored
-            // token). No-op if already in sync.
-            if let Err(err) = segments.read().sync_segment_manifest(None) {
+            // token). No-op if already in sync.Manifest write uses fsync — keep it off the
+            // async worker.
+            let segments_for_sync = segments.clone();
+            if let Err(err) = tokio::task::spawn_blocking(move || {
+                segments_for_sync.read().sync_segment_manifest(None)
+            })
+            .await
+            .unwrap_or_else(|err| {
+                Err(OperationError::service_error(format!(
+                    "sync_segment_manifest task panicked: {err}"
+                )))
+            }) {
                 log::error!("Failed to write segment manifest: {err}");
             }
 
