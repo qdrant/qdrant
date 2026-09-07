@@ -18,11 +18,6 @@ fn serde_formats_bench(c: &mut Criterion) {
         .map(|p| serde_cbor::to_vec(p).unwrap())
         .collect_vec();
 
-    let rmp_bytes = payloads
-        .iter()
-        .map(|p| rmp_serde::to_vec(p).unwrap())
-        .collect_vec();
-
     group.bench_function("serde-serialize-cbor", |b| {
         b.iter(|| {
             for payload in &payloads {
@@ -36,23 +31,6 @@ fn serde_formats_bench(c: &mut Criterion) {
         b.iter(|| {
             for bytes in &cbor_bytes {
                 let _payload: Payload = serde_cbor::from_slice(bytes).unwrap();
-            }
-        });
-    });
-
-    group.bench_function("serde-serialize-rmp", |b| {
-        b.iter(|| {
-            for payload in &payloads {
-                let vec = rmp_serde::to_vec(payload);
-                vec.unwrap();
-            }
-        });
-    });
-
-    group.bench_function("serde-deserialize-rmp", |b| {
-        b.iter(|| {
-            for bytes in &rmp_bytes {
-                let _payload: Payload = rmp_serde::from_slice(bytes).unwrap();
             }
         });
     });

@@ -38,7 +38,6 @@ pub struct WalRawRecord<R> {
 
 impl<R: DeserializeOwned + Serialize> WalRawRecord<R> {
     pub fn new(record: &R) -> Result<Self> {
-        // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
         let record = serde_cbor::to_vec(record).map_err(|err| {
             WalError::WriteWalError(format!(
                 "Can't serialize entry, probably corrupted WAL or version mismatch: {err:?}"
@@ -61,16 +60,11 @@ impl<R: DeserializeOwned + Serialize> WalRawRecord<R> {
     where
         R: DeserializeOwned,
     {
-        let record: R = serde_cbor::from_slice(record)
-            .or_else(|cbor_err| match rmp_serde::from_slice(record) {
-                Ok(record) => Ok(record),
-                Err(_err) => Err(cbor_err), // ignore fallback error
-            })
-            .map_err(|err| {
-                WalError::ReadWalError(format!(
-                    "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
-                ))
-            })?;
+        let record: R = serde_cbor::from_slice(record).map_err(|err| {
+            WalError::ReadWalError(format!(
+                "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+            ))
+        })?;
         Ok(record)
     }
 }

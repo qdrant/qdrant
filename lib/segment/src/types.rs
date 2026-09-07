@@ -5004,16 +5004,6 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    #[ignore]
-    fn test_rmp_vs_cbor_deserialize() {
-        let payload = payload_json! {"payload_key": "payload_value"};
-        let raw = rmp_serde::to_vec(&payload).unwrap();
-        let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
-        eprintln!("payload = {payload:#?}");
-        eprintln!("de_record = {de_record:#?}");
-    }
-
     #[rstest]
     #[case::rfc_3339("2020-03-01T00:00:00Z")]
     #[case::rfc_3339_custom_tz("2020-03-01T00:00:00-09:00")]
@@ -5088,9 +5078,9 @@ mod tests {
     fn test_datetime_payload_type_binary_roundtrip() {
         let original = DateTimePayloadType::from_str("2024-06-15T12:30:45Z").unwrap();
 
-        // rmp-serde uses non-human-readable format
-        let binary = rmp_serde::to_vec(&original).expect("serialize");
-        let restored: DateTimePayloadType = rmp_serde::from_slice(&binary).expect("deserialize");
+        // serde_cbor uses non-human-readable format
+        let binary = serde_cbor::to_vec(&original).expect("serialize");
+        let restored: DateTimePayloadType = serde_cbor::from_slice(&binary).expect("deserialize");
 
         assert_eq!(original, restored);
     }
@@ -5109,9 +5099,9 @@ mod tests {
             lte: Some(dt_lte),
         });
 
-        // rmp-serde uses non-human-readable format
-        let binary = rmp_serde::to_vec(&range).expect("serialize");
-        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+        // serde_cbor uses non-human-readable format
+        let binary = serde_cbor::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = serde_cbor::from_slice(&binary).expect("deserialize");
 
         assert_eq!(range, restored);
     }
