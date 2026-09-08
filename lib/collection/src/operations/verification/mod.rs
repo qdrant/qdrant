@@ -512,6 +512,21 @@ mod test {
 
         // Prefetch within the limit passes
         assert_strict_mode_success(groups_request(4), collection).await;
+
+        // Nested prefetch above the limit must also be rejected, even when the
+        // outer prefetch is within it
+        let mut nested_request = groups_request(2);
+        nested_request.prefetch[0].prefetch = vec![CollectionPrefetch {
+            prefetch: vec![],
+            query: None,
+            using: Default::default(),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            params: None,
+            lookup_from: None,
+        }];
+        assert_strict_mode_error(nested_request, collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
