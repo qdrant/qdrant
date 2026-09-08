@@ -55,9 +55,4 @@ impl UniversalWriteFsAsync for MmapFs {
     async fn remove_async(&self, path: PathBuf) -> UioResult<()> {
         self.remove(&path)
     }
-
-    /// Local saves complete inline, so a wave gains nothing over a loop.
-    fn max_concurrent_saves(&self) -> usize {
-        1
-    }
 }

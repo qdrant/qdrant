@@ -50,14 +50,9 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         self.spawn_write(async move { inner.remove(&path).await })
     }
 
-    pub fn max_concurrent_saves(&self) -> usize {
-        self.runtime.max_concurrent_writes()
-    }
-
     /// Like the async reads, the write rides the [`BridgeRuntime`] rather than
     /// the caller's executor, so the returned future needs no ambient reactor.
-    /// It spawns on first poll, under one of the runtime's write permits, which
-    /// cap these spawned writes across every caller.
+    /// It spawns on first poll.
     fn spawn_write<F>(
         &self,
         op: F,
@@ -66,15 +61,7 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         F: Future<Output = UioResult<()>> + Send + 'static,
     {
         let handle = self.runtime.handle().clone();
-        let permit = self.runtime.acquire_write_permit();
-        async move {
-            handle
-                .spawn(async move {
-                    let _permit = permit.await;
-                    op.await
-                })
-                .await?
-        }
+        async move { handle.spawn(op).await? }
     }
 }
 

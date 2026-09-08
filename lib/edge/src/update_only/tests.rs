@@ -685,10 +685,7 @@ mod copy_dir {
 
     use common::universal_io::{MmapFs, UioResult, UniversalIoError, UniversalWriteFsAsync};
 
-    use crate::update_only::lifecycle::copy_dir;
-
-    /// The save queue depth `RecordingFs` advertises to the wave.
-    const SAVE_CONCURRENCY: usize = 4;
+    use crate::update_only::lifecycle::{COPY_CONCURRENCY, copy_dir};
 
     /// Records every call and the peak number of saves in flight. Saves yield
     /// once before completing, so the wave is observable.
@@ -766,10 +763,6 @@ mod copy_dir {
             self.0.lock().unwrap().removed.push(path);
             std::future::ready(Ok(()))
         }
-
-        fn max_concurrent_saves(&self) -> usize {
-            SAVE_CONCURRENCY
-        }
     }
 
     fn segment_like_dir(files: usize) -> tempfile::TempDir {
@@ -815,8 +808,8 @@ mod copy_dir {
         assert_eq!(log.saves.len(), 12, "one save per file, no duplicates");
         assert_eq!(saved, tree(local.path()), "same tree, same bytes");
         assert_eq!(
-            log.peak_in_flight, SAVE_CONCURRENCY,
-            "the wave fills the depth the backend asked for"
+            log.peak_in_flight, COPY_CONCURRENCY,
+            "the wave fills the bound"
         );
         assert_eq!(
             log.dirs.first().map(PathBuf::as_path),

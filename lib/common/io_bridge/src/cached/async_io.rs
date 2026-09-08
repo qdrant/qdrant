@@ -73,8 +73,4 @@ where
     fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
         self.blob_fs.remove_async(path)
     }
-
-    fn max_concurrent_saves(&self) -> usize {
-        self.blob_fs.max_concurrent_saves()
-    }
 }

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{
-    MmapFs, UniversalAppendFs, UniversalWriteFsAsync,
-};
+use common::universal_io::{MmapFs, UniversalAppendFs, UniversalWriteFsAsync};
 use futures::StreamExt as _;
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -163,9 +161,12 @@ where
     }
 }
 
+/// Files in flight at once while a segment directory is copied: bounds the
+/// buffers held in memory as much as the saves in progress.
+pub(crate) const COPY_CONCURRENCY: usize = 8;
+
 /// Copy a locally built segment directory to the backend: directories first,
-/// then every file as one whole-object save, as many at a time as the backend
-/// takes ([`UniversalWriteFsAsync::max_concurrent_saves`]).
+/// then every file as one whole-object save, [`COPY_CONCURRENCY`] at a time.
 ///
 /// Every save is awaited even after one fails, so nothing is left in flight and
 /// the cleanup covers every object that landed.
@@ -217,7 +218,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
             };
             (target, result)
         })
-        .buffer_unordered(fs.max_concurrent_saves().max(1))
+        .buffer_unordered(COPY_CONCURRENCY)
         .collect()
         .await;
 
