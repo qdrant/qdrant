@@ -3,6 +3,7 @@
 //! `consensus_shadow` builds collection states out of these too, so the two sides of a compare
 //! are the same shape.
 
+mod context;
 mod ops;
 mod prop;
 mod replay;

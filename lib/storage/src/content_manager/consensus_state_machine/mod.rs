@@ -178,7 +178,7 @@ impl ConsensusStateMachine {
 ///
 /// These come from this node's config, not from consensus, so two peers can read different values
 /// for the same operation. Values scraped from `StorageConfig` keep the names they have there.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeContext {
     pub peer_id: PeerId,
     pub is_distributed: bool,
