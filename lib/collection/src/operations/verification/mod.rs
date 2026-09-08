@@ -423,6 +423,7 @@ mod test {
 
         test_query_limit(&collection).await;
         test_scroll_query_limit(&collection).await;
+        test_facet_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -479,6 +480,28 @@ mod test {
 
         let filter = filter_fixture(INDEXED_KEY);
         assert_strict_mode_success(discover_fixture(None, Some(filter), None), collection).await;
+    }
+
+    async fn test_facet_query_limit(collection: &Collection) {
+        use api::rest::FacetRequestInternal;
+
+        fn facet_request(limit: Option<usize>) -> FacetRequestInternal {
+            FacetRequestInternal {
+                key: "price".parse().unwrap(),
+                limit,
+                filter: None,
+                exact: None,
+            }
+        }
+
+        // Omitted limit defaults to 10, which exceeds max_query_limit (4)
+        assert_strict_mode_error(facet_request(None), collection).await;
+
+        // Explicit limit (10) exceeds max_query_limit (4)
+        assert_strict_mode_error(facet_request(Some(10)), collection).await;
+
+        // Explicit limit (4) matches max_query_limit (4)
+        assert_strict_mode_success(facet_request(Some(4)), collection).await;
     }
 
     async fn test_search_params(collection: &Collection) {

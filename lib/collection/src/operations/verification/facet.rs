@@ -6,7 +6,7 @@ use super::StrictModeVerification;
 
 impl StrictModeVerification for FacetRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        self.limit
+        Some(self.limit.unwrap_or(FacetParams::DEFAULT_LIMIT))
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
