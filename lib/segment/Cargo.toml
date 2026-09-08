@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 default = []
-testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
+testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing", "dep:exhaustive"]
 gpu = ["gpu/gpu"]
 
 [build-dependencies]
@@ -123,6 +123,7 @@ nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
 duplicate = { workspace = true }
+exhaustive = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18", default-features = false }
