@@ -22,6 +22,11 @@ pub trait UniversalReadAsync: UniversalRead {
         access_pattern: P,
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
+
+    /// Warm the cache for a range of bytes.
+    /// No-op on backends without caching.
+    fn populate_range_async(&self, range: Range<u64>)
+    -> impl Future<Output = UioResult<()>> + Send;
 }
 
 /// Async-capable extension of [`UniversalReadFs`]: filesystems whose opens

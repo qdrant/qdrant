@@ -151,4 +151,10 @@ where
             }
         }
     }
+
+    async fn populate_range_async(&self, range: Range<u64>) -> UioResult<()> {
+        // Fetch will mirror the block locally.
+        _ = self.read_bytes_async(range, Sequential, 1).await?;
+        Ok(())
+    }
 }

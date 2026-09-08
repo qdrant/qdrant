@@ -63,4 +63,11 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         );
         Ok(ACow::Owned(buf))
     }
+
+    fn populate_range_async(
+        &self,
+        _range: Range<u64>,
+    ) -> impl Future<Output = UioResult<()>> + Send {
+        std::future::ready(Ok(()))
+    }
 }
