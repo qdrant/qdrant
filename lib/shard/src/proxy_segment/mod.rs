@@ -292,8 +292,8 @@ impl ProxySegment {
         //
         // This artificially bumps the operation version to be at least as high as the current
         // segment version. This way we make sure the segment does not ignore the operation.
-        // Alternatively we can interleave index, vectorname and deletion changes and apply them in
-        // exactly the same order they arrive, but that requires more complex changes.
+        // Alternatively we can interleave index, vector name and deletion changes and apply them
+        // in exactly the same order they arrive, but that requires more complex changes.
         {
             if !self.changed_vector_names.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
