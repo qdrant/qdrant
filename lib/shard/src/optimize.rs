@@ -615,6 +615,13 @@ fn finish_optimization(
             .unwrap();
     }
 
+    // Force flush propagated changes in segment
+    // Up until here all proxied changes are only durably persisted in the associated proxy
+    // segment, but we will drop this last source of persisted data a bit further down. We must
+    // therefore flush this segment to persist the changes in a new location. WAL recovery would
+    // not help us here, because all proapgated changes are already acknowledged in the WAL.
+    optimized_segment.flush(true)?;
+
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
     let optimized_segment_version = optimized_segment.version();
