@@ -423,6 +423,7 @@ mod test {
 
         test_query_limit(&collection).await;
         test_scroll_query_limit(&collection).await;
+        test_matrix_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -479,6 +480,31 @@ mod test {
 
         let filter = filter_fixture(INDEXED_KEY);
         assert_strict_mode_success(discover_fixture(None, Some(filter), None), collection).await;
+    }
+
+    async fn test_matrix_query_limit(collection: &Collection) {
+        use api::rest::SearchMatrixRequestInternal;
+
+        fn matrix_request(
+            sample: Option<usize>,
+            limit: Option<usize>,
+        ) -> SearchMatrixRequestInternal {
+            SearchMatrixRequestInternal {
+                filter: None,
+                sample,
+                limit,
+                using: None,
+            }
+        }
+
+        // Omitted sample/limit default to 10 * 3 = 30, exceeding max_query_limit (4)
+        assert_strict_mode_error(matrix_request(None, None), collection).await;
+
+        // Explicit values exceeding the limit are rejected
+        assert_strict_mode_error(matrix_request(Some(10), Some(3)), collection).await;
+
+        // sample * limit (2 * 2 = 4) matches max_query_limit (4)
+        assert_strict_mode_success(matrix_request(Some(2), Some(2)), collection).await;
     }
 
     async fn test_search_params(collection: &Collection) {
