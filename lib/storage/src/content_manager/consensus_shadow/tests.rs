@@ -69,7 +69,10 @@ fn diverged_collection() {
 
     shadow.container.add_shard(0);
 
-    assert!(shadow.apply(&drop_payload_index()).is_some());
+    assert_eq!(
+        shadow.apply(&drop_payload_index()).as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
 }
 
 /// Both sides reject a missing collection, and with the same error class
@@ -162,7 +165,7 @@ fn snapshot_invalidates() {
 
 /// The peer dies on a divergence in panic mode, which is what the consensus test suite runs
 #[test]
-#[should_panic]
+#[should_panic(expected = "aliases")]
 fn manager_panics_on_divergence() {
     let container = Arc::new(container());
     let dir = tempdir();

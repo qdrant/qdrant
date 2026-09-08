@@ -103,10 +103,16 @@ impl ShadowStateMachine {
         }
 
         let actual = scrape_cluster_state(toc, persistent);
-        let answer = diff::outcome(outcome, result);
-        let state = diff::cluster(machine.state(), &actual);
 
-        let report: Vec<_> = [answer, state].into_iter().flatten().collect();
+        let mut report = Vec::from_iter(diff::outcome(outcome, result));
+        report.extend(diff::cluster(machine.state(), &actual));
+
+        // A collection only one side holds is reported by `diff::cluster`
+        for (name, shadow) in &machine.state().collections {
+            if let Some(actual) = actual.collection(name) {
+                report.extend(diff::collection(name, shadow, actual));
+            }
+        }
 
         if report.is_empty() {
             return None;
@@ -114,7 +120,7 @@ impl ShadowStateMachine {
 
         self.machine = None;
 
-        Some(report.join("; "))
+        Some(report.join(", "))
     }
 }
 
