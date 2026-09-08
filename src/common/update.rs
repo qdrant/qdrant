@@ -41,7 +41,19 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde_as(as = "Option<DurationSeconds<String>>")]
+    #[validate(custom(function = "validate_update_timeout"))]
     pub timeout: Option<Duration>,
+}
+
+/// The OpenAPI schema declares `minimum: 1` for write operation timeouts,
+/// so reject a zero timeout instead of silently accepting it.
+fn validate_update_timeout(timeout: &Duration) -> Result<(), validator::ValidationError> {
+    if timeout.is_zero() {
+        return Err(validator::ValidationError::new(
+            "timeout must be at least 1 second",
+        ));
+    }
+    Ok(())
 }
 
 impl UpdateParams {
@@ -1345,5 +1357,33 @@ fn get_shard_selector_for_update(
         }
         (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
         (None, None) => ShardSelectorInternal::Empty,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_params_reject_zero_timeout() {
+        // Regression for <https://github.com/qdrant/qdrant/issues/9869>
+        let zero = UpdateParams {
+            wait: false,
+            ordering: WriteOrdering::default(),
+            timeout: Some(Duration::ZERO),
+        };
+        assert!(zero.validate().is_err());
+
+        let one_second = UpdateParams {
+            timeout: Some(Duration::from_secs(1)),
+            ..zero
+        };
+        assert!(one_second.validate().is_ok());
+
+        let unset = UpdateParams {
+            timeout: None,
+            ..zero
+        };
+        assert!(unset.validate().is_ok());
     }
 }
