@@ -14,7 +14,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use raft::eraftpb::Entry as RaftEntry;
+use raft::eraftpb::{ConfState, Entry as RaftEntry, Snapshot, SnapshotMetadata};
 use segment::types::PayloadSchemaType;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
@@ -25,12 +25,13 @@ use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::consensus_manager::ConsensusManager;
+use crate::content_manager::consensus_manager::{ConsensusManager, SnapshotData};
 use crate::content_manager::consensus_state_machine::NodeContext;
 use crate::content_manager::consensus_state_machine::tests::{
     PEER_ID, collection_state, node_context,
 };
 use crate::quota::QuotaConfig;
+use crate::types::{PeerAddressById, PeerMetadataById};
 
 const COLLECTION: &str = "books";
 const ALIAS: &str = "novels";
@@ -138,6 +139,25 @@ fn invalidates(operation: &ConsensusOperations, result: &StorageResult<bool>) {
     assert_eq!(shadow.apply_with(operation, result), None);
 
     assert_eq!(shadow.apply(&nop()), None);
+}
+
+/// Snapshot recovery leaves state no operation asked for, so the machine goes and the next
+/// entry builds a new one. Here the snapshot empties the container while the machine still
+/// holds a collection and its alias.
+#[test]
+fn snapshot_invalidates() {
+    let container = Arc::new(container());
+    let dir = tempdir();
+    let manager = manager(container, ShadowMode::Panic, dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    manager
+        .apply_snapshot(&snapshot())
+        .expect("snapshot applied")
+        .expect("snapshot applied");
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
 }
 
 /// The peer dies on a divergence in panic mode, which is what the consensus test suite runs
@@ -256,6 +276,31 @@ fn entry(operation: &ConsensusOperations) -> RaftEntry {
     RaftEntry {
         data: serde_cbor::to_vec(operation).expect("operation serialized"),
         ..Default::default()
+    }
+}
+
+/// Snapshot of an empty cluster, with this peer as its only voter
+fn snapshot() -> Snapshot {
+    let data = SnapshotData {
+        collections_data: CollectionsSnapshot::default(),
+        address_by_id: PeerAddressById::new(),
+        metadata_by_id: PeerMetadataById::new(),
+        cluster_metadata: HashMap::new(),
+        quota_config: None,
+    };
+
+    let conf_state = ConfState {
+        voters: vec![PEER_ID],
+        ..Default::default()
+    };
+
+    Snapshot {
+        data: serde_cbor::to_vec(&data).expect("snapshot serialized"),
+        metadata: Some(SnapshotMetadata {
+            conf_state: Some(conf_state),
+            index: 1,
+            term: 1,
+        }),
     }
 }
 
@@ -394,11 +439,19 @@ impl CollectionContainer for Container {
         Ok(true)
     }
 
-    // Never reached: no test recovers a snapshot, removes a peer or writes a quota config
+    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError> {
+        let CollectionsSnapshot {
+            collections,
+            aliases,
+        } = data;
 
-    fn apply_collections_snapshot(&self, _data: CollectionsSnapshot) -> Result<(), StorageError> {
-        unimplemented!()
+        *self.collections.lock() = collections;
+        *self.aliases.lock() = aliases;
+
+        Ok(())
     }
+
+    // Never reached: no test removes a peer or writes a quota config
 
     fn remove_peer(&self, _peer_id: PeerId) -> Result<(), StorageError> {
         unimplemented!()
