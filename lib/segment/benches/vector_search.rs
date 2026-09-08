@@ -53,6 +53,7 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
 
     let result = match &mut storage {
         VectorStorageEnum::DenseMemmap(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
+        VectorStorageEnum::DenseGraphInline(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
         _ => panic!("unexpected dense vector storage variant"),
