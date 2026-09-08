@@ -287,7 +287,7 @@ mod test {
 
     use super::{avg_vector_for_recommendation, avg_vectors};
     use crate::common::operation_error::OperationError;
-    use crate::data_types::vectors::{VectorInternal, VectorRef};
+    use crate::data_types::vectors::{TypedMultiDenseVector, VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
     enum Chosen {
@@ -510,6 +510,36 @@ mod test {
 
         // Mismatched dimensions are rejected, not zero-padded.
         let vectors: Vec<VectorInternal> = vec![vec![1.0, 2.0].into(), vec![3.0, 4.0, 5.0].into()];
+        assert!(matches!(
+            avg_vectors(vectors.iter().map(VectorRef::from)),
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_avg_vectors_mismatched_multidense_dims() {
+        // Same-dimension multi vectors average as before.
+        let vectors: Vec<VectorInternal> = vec![
+            VectorInternal::MultiDense(TypedMultiDenseVector::new(vec![1.0, 2.0, 3.0, 4.0], 2)),
+            VectorInternal::MultiDense(TypedMultiDenseVector::new(vec![5.0, 6.0], 2)),
+        ];
+        let avg = avg_vectors(vectors.iter().map(VectorRef::from)).unwrap();
+        match avg {
+            VectorInternal::MultiDense(multi) => {
+                assert_eq!(multi.dim, 2);
+                assert_eq!(multi.flattened_vectors, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+            }
+            _ => panic!("expected multi-dense vector"),
+        }
+
+        // Mismatched multi-vector dimensions are rejected, not merged.
+        let vectors: Vec<VectorInternal> = vec![
+            VectorInternal::MultiDense(TypedMultiDenseVector::new(vec![1.0, 2.0], 2)),
+            VectorInternal::MultiDense(TypedMultiDenseVector::new(vec![1.0, 2.0, 3.0], 3)),
+        ];
         assert!(matches!(
             avg_vectors(vectors.iter().map(VectorRef::from)),
             Err(OperationError::WrongVectorDimension {
