@@ -8,7 +8,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
-use rayon::iter::{IntoParallelRefMutIterator as _, ParallelIterator as _};
+use rayon::iter::{
+    IntoParallelRefIterator, IntoParallelRefMutIterator as _, ParallelIterator as _,
+};
 
 use super::AppendableIdTrackerState;
 use crate::common::operation_error::OperationResult;
@@ -106,32 +108,73 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
 }
 
 impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
-    fn open(fs: &Fs, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Self> {
-        let payload_storage = UpdateOnlyPayloadStorage::open(fs, segment_path)?;
-        let payload_indexes = UpdateOnlyStructPayloadIndex::open(fs, segment_path)?;
+    fn open(
+        fs: &Fs,
+        pool: &rayon::ThreadPool,
+        segment_path: &Path,
+        config: &SegmentConfig,
+    ) -> OperationResult<Self> {
+        let mut payload_storage = None;
+        let mut payload_indexes = None;
+        let mut dense_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
+        let mut sparse_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
+        pool.scope(|s| {
+            s.spawn(|_| {
+                payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
+            });
+            s.spawn(|_| {
+                payload_indexes = Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
+            });
 
-        let mut vectors =
-            Vec::with_capacity(config.vector_data.len() + config.sparse_vector_data.len());
-        for (vector_name, vector_config) in &config.vector_data {
-            let path = get_vector_storage_path(segment_path, vector_name);
-            let components = VectorComponents {
-                storage: UpdateOnlyVectorStorage::open(fs, &path, vector_config)?,
-                quantized: UpdateOnlyQuantizedVectors::open(fs.clone(), &path, vector_config)?,
-            };
-            vectors.push((vector_name.clone(), components));
-        }
-        for vector_name in config.sparse_vector_data.keys() {
-            let path = get_vector_storage_path(segment_path, vector_name);
-            let components = VectorComponents {
-                storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
-                quantized: None,
-            };
-            vectors.push((vector_name.clone(), components));
-        }
+            s.spawn(|_| {
+                dense_vectors = config
+                    .vector_data
+                    .par_iter()
+                    .map(|(vector_name, vector_config)| {
+                        let path = get_vector_storage_path(segment_path, vector_name);
+
+                        let (original, quantized) = rayon::join(
+                            || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
+                            || {
+                                UpdateOnlyQuantizedVectors::<Fs>::open(
+                                    fs.clone(),
+                                    &path,
+                                    vector_config,
+                                )
+                            },
+                        );
+
+                        let components = VectorComponents {
+                            storage: original?,
+                            quantized: quantized?,
+                        };
+                        Ok((vector_name.clone(), components))
+                    })
+                    .collect();
+            });
+
+            s.spawn(|_| {
+                sparse_vectors = config
+                    .sparse_vector_data
+                    .par_iter()
+                    .map(|(vector_name, _config)| {
+                        let path = get_vector_storage_path(segment_path, vector_name);
+                        let components = VectorComponents {
+                            storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                            quantized: None,
+                        };
+                        Ok((vector_name.clone(), components))
+                    })
+                    .collect();
+            });
+        });
+
+        let mut vectors = dense_vectors?;
+        vectors.extend(sparse_vectors?);
 
         Ok(Self {
-            payload_storage,
-            payload_indexes,
+            payload_storage: payload_storage.expect("rayon finished")?,
+            payload_indexes: payload_indexes.expect("rayon finished")?,
             vectors,
         })
     }
@@ -179,10 +222,12 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// borrow can still pass it down per call.
     fn store_components(
         &mut self,
+        pool: &rayon::ThreadPool,
     ) -> OperationResult<(&CachedFs<Fs>, &mut StoreComponents<CachedFs<Fs>>)> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
                 &self.fs,
+                pool,
                 &self.segment_path,
                 &self.config,
             )?);
@@ -213,7 +258,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
-        let (fs, store) = self.store_components()?;
+        let (fs, store) = self.store_components(pool)?;
 
         // One cell per task, off the accumulator: the cell itself is not Sync
         let hw_acc = hw_counter.new_accumulator();
