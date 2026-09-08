@@ -1591,6 +1591,12 @@ mod tests {
             unimplemented!()
         }
 
+        fn take_dirty_collections(
+            &self,
+        ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
+            std::collections::BTreeSet::new()
+        }
+
         fn apply_collections_snapshot(
             &self,
             _data: super::CollectionsSnapshot,

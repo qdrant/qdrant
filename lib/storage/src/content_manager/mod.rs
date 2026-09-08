@@ -229,6 +229,9 @@ pub trait CollectionContainer {
     /// Node-local values operations read, from this node's storage config
     fn node_context(&self) -> NodeContext;
 
+    /// Collections that changed without a consensus operation asking for it, clearing the record
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId>;
+
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;

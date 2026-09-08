@@ -51,6 +51,10 @@ impl ShadowStateMachine {
         persistent: &Persistent,
         operation: &ConsensusOperations,
     ) -> ApplyOutcome {
+        // Planning reads the state of every collection it touches, so what something other
+        // than consensus wrote since the last entry is read back first
+        self.resync(toc, toc.take_dirty_collections());
+
         let machine = self.machine.get_or_insert_with(|| {
             let state = scrape_cluster_state(toc, persistent);
             ConsensusStateMachine::new(state, toc.node_context())
@@ -119,6 +123,14 @@ impl ShadowStateMachine {
             return None;
         }
 
+        // Something other than consensus may have changed a collection while the entry was
+        // being applied, and what it wrote is not a divergence
+        self.resync(toc, toc.take_dirty_collections());
+
+        let Some(machine) = &self.machine else {
+            return None;
+        };
+
         let actual = scrape_actual_state(toc, persistent);
 
         let mut report = Vec::from_iter(diff::outcome(outcome, result));
@@ -145,7 +157,11 @@ impl ShadowStateMachine {
     }
 
     /// Read the state of `collections` back into the machine
-    fn resync(&mut self, toc: &impl CollectionContainer, collections: Vec<CollectionId>) {
+    fn resync(
+        &mut self,
+        toc: &impl CollectionContainer,
+        collections: impl IntoIterator<Item = CollectionId>,
+    ) {
         let Some(machine) = &mut self.machine else {
             return;
         };

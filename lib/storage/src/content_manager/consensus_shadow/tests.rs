@@ -168,6 +168,37 @@ fn not_covered_keeps_the_rest() {
     assert_eq!(shadow.apply(&nop()).as_deref(), Some("aliases"));
 }
 
+/// Recovering a partial shard snapshot rewrites the payload index schema of a collection
+/// without a consensus operation. The collection is read back, rather than reported.
+#[test]
+fn dirty_collection_resync() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+    shadow.container.mark_dirty();
+
+    // Names the collection, so its state is compared
+    assert_eq!(shadow.apply(&drop_payload_index(COLLECTION)), None);
+}
+
+/// Recovery runs next to the apply, so a collection can be dirtied after the machine planned
+/// the entry and before the compare reads it back
+#[test]
+fn dirty_collection_resync_mid_apply() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    let report = shadow.apply_between(&drop_payload_index(COLLECTION), &Ok(true), |container| {
+        container.add_shard(0);
+        container.mark_dirty();
+    });
+
+    assert_eq!(report, None);
+}
+
 /// A service error kills the consensus thread, and what the failed apply wrote before it gave
 /// up is not something the machine predicts
 #[test]
@@ -317,8 +348,21 @@ impl Shadow {
         operation: &ConsensusOperations,
         result: &StorageResult<bool>,
     ) -> Option<String> {
+        self.apply_between(operation, result, |_| ())
+    }
+
+    /// Plan `operation`, let `between` change the container the way something running next to
+    /// the apply would, then compare
+    fn apply_between(
+        &self,
+        operation: &ConsensusOperations,
+        result: &StorageResult<bool>,
+        between: impl FnOnce(&Container),
+    ) -> Option<String> {
         let mut machine = self.machine.lock();
         let outcome = machine.apply(&self.container, &self.persistent, operation);
+
+        between(&self.container);
 
         machine.diff(
             &self.container,
@@ -466,6 +510,7 @@ fn container() -> Container {
             ..Default::default()
         },
         snapshots: AtomicUsize::new(0),
+        dirty_collections: Mutex::new(BTreeSet::new()),
     }
 }
 
@@ -479,11 +524,19 @@ struct Container {
     quota_config: QuotaConfig,
     /// How many times the whole state was read back, to tell a resync from a rebuild
     snapshots: AtomicUsize,
+    /// Collections changed without a consensus operation asking for it
+    dirty_collections: Mutex<BTreeSet<CollectionId>>,
 }
 
 impl Container {
     fn snapshots(&self) -> usize {
         self.snapshots.load(Ordering::Relaxed)
+    }
+
+    /// Record that the collection changed without a consensus operation, as recovering a
+    /// partial shard snapshot does
+    fn mark_dirty(&self) {
+        self.dirty_collections.lock().insert(COLLECTION.to_string());
     }
 
     /// Point another alias at the collection, as an operation the machine never saw would
@@ -526,6 +579,10 @@ impl CollectionContainer for Container {
 
     fn alias_mapping(&self) -> AliasMapping {
         self.aliases.lock().clone()
+    }
+
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+        std::mem::take(&mut self.dirty_collections.lock())
     }
 
     fn node_context(&self) -> NodeContext {
