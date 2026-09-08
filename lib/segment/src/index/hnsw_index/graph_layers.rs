@@ -73,7 +73,6 @@ pub struct GraphLayers {
     pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
     pub(super) visited_pool: VisitedPool,
-    #[expect(dead_code, reason = "would be used in combined-storage")]
     pub(super) residency: GraphLinksResidency,
 }
 

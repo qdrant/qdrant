@@ -90,7 +90,7 @@ pub(super) fn preprocess_query(
 /// Asymmetric score of a precomputed query against already-fetched encoded
 /// `bytes`, applying the metric sign convention. Pure: no IO, no hardware
 /// accounting.
-pub(super) fn score_query_bytes(
+pub(crate) fn score_query_bytes(
     quantizer: &TurboQuantizer,
     distance: Distance,
     query: &EncodedQueryTQ,
