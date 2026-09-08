@@ -60,4 +60,9 @@ where
     {
         self.0.read_from_into_async(from, init)
     }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.0.populate_range_async(range)
+    }
 }

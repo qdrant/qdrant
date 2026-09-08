@@ -23,6 +23,11 @@ pub trait UniversalReadAsync: UniversalRead {
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
 
+    /// Warm the cache for a range of bytes.
+    /// No-op on backends without caching.
+    fn populate_range_async(&self, range: Range<u64>)
+    -> impl Future<Output = UioResult<()>> + Send;
+
     /// Read the file from byte `from` to its end into a sink: `init` receives the total length
     /// of the file as read and returns the sink, which then gets the bytes from `from` onwards
     /// as `(offset, bytes)` chunks at their absolute file offsets as they arrive, each byte
