@@ -7,12 +7,15 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
     fn query_limit(&self) -> Option<usize> {
         // Mirror `CollectionSearchMatrixRequest::from`: unset parameters fall back
         // to their defaults, so the effective query size always has a value.
+        // Saturate instead of wrapping: an overflowing product must read as a huge
+        // effective size so it is rejected whenever max_query_limit is set.
         Some(
             self.limit
                 .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE)
-                * self
-                    .sample
-                    .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_SAMPLE),
+                .saturating_mul(
+                    self.sample
+                        .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_SAMPLE),
+                ),
         )
     }
 

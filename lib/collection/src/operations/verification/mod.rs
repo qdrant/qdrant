@@ -519,6 +519,14 @@ mod test {
 
         // Explicitly small enough: 1 * 2 = 2 <= max_query_limit (4)
         assert_strict_mode_success(matrix_request(Some(2), Some(1)), collection).await;
+
+        // Overflowing product (2^33 * 2^33 wraps to 0 in release mode) must
+        // still be rejected, not bypass the check
+        assert_strict_mode_error(
+            matrix_request(Some(1 << 33), Some(1 << 33)),
+            collection,
+        )
+        .await;
     }
 
     async fn test_filter_read(collection: &Collection) {
