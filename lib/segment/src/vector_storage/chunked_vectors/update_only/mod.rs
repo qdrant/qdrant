@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, UniversalAppend, UniversalReadFileOps, UniversalReadFs,
-    UniversalWriteFileOps,
+    OpenOptions, Populate, UniversalAppend, UniversalFlush as _, UniversalRead as _,
+    UniversalReadFs, UniversalWriteFileOps,
 };
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -24,10 +24,9 @@ use crate::vector_storage::chunked_vectors::config::{
 /// touched chunks, appends, and persists the vector count, so a batch is
 /// durable when it returns and there is nothing to flush.
 #[derive(Debug)]
-pub struct UpdateOnlyChunkedVectors<T, S: UniversalAppend> {
+pub struct UpdateOnlyChunkedVectors<T> {
     directory: PathBuf,
     config: ChunkedVectorsConfig,
-    fs: S::Fs,
     _t: PhantomData<T>,
 }
 
@@ -41,13 +40,16 @@ fn append_options() -> OpenOptions {
     }
 }
 
-impl<T, S> UpdateOnlyChunkedVectors<T, S>
+impl<T> UpdateOnlyChunkedVectors<T>
 where
     T: bytemuck::Pod + Send,
-    S: UniversalAppend + 'static,
 {
     /// Open a chunked-vectors directory for appending, creating it if missing.
-    pub fn open(fs: S::Fs, directory: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        directory: &Path,
+        dim: usize,
+    ) -> OperationResult<Self> {
         let status_path = status_file(directory);
         // An absent status file marks the first open. Writing it eagerly keeps
         // the directory readable even if no batch ever lands.
@@ -55,12 +57,11 @@ where
             fs.create_dir(directory)?;
             fs.atomic_save(&status_path, bytemuck::bytes_of(&Status { len: 0 }))?;
         }
-        let config = ensure_config::<T, _>(&fs, directory, dim, false)?;
+        let config = ensure_config::<T, _>(fs, directory, dim, false)?;
 
         Ok(Self {
             directory: directory.to_owned(),
             config,
-            fs,
             _t: PhantomData,
         })
     }
@@ -71,13 +72,13 @@ where
     ///
     /// Needed where a storage's rows are not indexed by point slot — the
     /// multivector ones — so a batch knows where the row space ends.
-    pub fn stored_len(&self) -> OperationResult<usize> {
-        Ok(read_status_len(&self.fs, &status_file(&self.directory))?)
+    pub fn stored_len<Fs: UniversalReadFs>(&self, fs: &Fs) -> OperationResult<usize> {
+        Ok(read_status_len(fs, &status_file(&self.directory))?)
     }
 
     /// Replace the stored vector count.
-    fn save_len(&self, len: usize) -> OperationResult<()> {
-        self.fs.atomic_save(
+    fn save_len<Fs: UniversalWriteFileOps>(&self, fs: &Fs, len: usize) -> OperationResult<()> {
+        fs.atomic_save(
             &status_file(&self.directory),
             bytemuck::bytes_of(&Status { len }),
         )?;
@@ -87,11 +88,14 @@ where
     /// Compare every chunk file's length against an external total length.
     ///
     /// Ensures every file is at the expected length by truncating or filling with zeroes.
-    fn ensure_chunk_lengths(&self, target_len: usize) -> OperationResult<()> {
+    fn ensure_chunk_lengths<Fs>(&self, fs: &Fs, target_len: usize) -> OperationResult<()>
+    where
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
+    {
         let total_bytes = target_len * self.config.dim * size_of::<T>();
         let num_chunks = target_len.div_ceil(self.config.chunk_size_vectors);
 
-        let mut listed = list_chunk_files(&self.fs, &self.directory)?;
+        let mut listed = list_chunk_files(fs, &self.directory)?;
 
         for chunk_id in 0..num_chunks {
             let expected = self
@@ -111,15 +115,14 @@ where
                                 "Expected larger chunk, filling chunk {chunk_id} with zeroes"
                             );
                             let data = vec![0u8; (expected - file_info.size) as usize];
-                            let mut file =
-                                self.fs.open_append(&file_info.path, append_options())?;
+                            let mut file = fs.open_append(&file_info.path, append_options())?;
                             file.append(file_info.size, &data)?;
                             file.flusher()()?;
                         }
                         std::cmp::Ordering::Greater => {
                             // truncate
                             log::warn!("Expected smaller chunk, truncating chunk {chunk_id}");
-                            let file = self.fs.open_append(&file_info.path, append_options())?;
+                            let file = fs.open_append(&file_info.path, append_options())?;
                             let content = file.read_whole::<u8>()?;
                             let Some(truncated) = content.get(..expected as usize) else {
                                 return Err(OperationError::service_error(format!(
@@ -130,7 +133,7 @@ where
                             };
                             let truncated = truncated.to_vec();
                             drop(file);
-                            self.fs.atomic_save(&file_info.path, &truncated)?;
+                            fs.atomic_save(&file_info.path, &truncated)?;
                         }
                     }
                 }
@@ -139,7 +142,7 @@ where
                     log::warn!(
                         "Expected non-existing chunk {chunk_id}, creating and filling with zeroes"
                     );
-                    let mut file = self.open_chunk_for_append(chunk_id, true)?;
+                    let mut file = self.open_chunk_for_append(fs, chunk_id, true)?;
                     file.append(0, &vec![0u8; expected as usize])?;
                     file.flusher()()?;
                 }
@@ -152,10 +155,10 @@ where
                 "Chunk {chunk_id} past the target vector count ({} bytes). Removing.",
                 file.size,
             );
-            self.fs.remove(&file.path)?;
+            fs.remove(&file.path)?;
         }
 
-        self.save_len(target_len)?;
+        self.save_len(fs, target_len)?;
 
         Ok(())
     }
@@ -168,8 +171,9 @@ where
     /// match the argument
     // Takes &mut self to enforce the single-writer contract the appends rest on
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn append_many<'a, I>(
+    pub fn append_many<'a, I, Fs>(
         &mut self,
+        fs: &Fs,
         start_key: VectorOffsetType,
         vectors: I,
         hw_counter: &HardwareCounterCell,
@@ -177,8 +181,9 @@ where
     where
         I: IntoIterator<Item = &'a [T]>,
         I::IntoIter: ExactSizeIterator,
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
     {
-        self.ensure_chunk_lengths(start_key)?;
+        self.ensure_chunk_lengths(fs, start_key)?;
 
         let mut vectors = vectors.into_iter();
         let count = vectors.len();
@@ -196,7 +201,8 @@ where
             }
             let batch_bytes = batch.len() * self.config.dim * size_of::<T>();
 
-            let mut chunk = self.open_chunk_for_append(part.chunk_idx, part.element_offset == 0)?;
+            let mut chunk =
+                self.open_chunk_for_append(fs, part.chunk_idx, part.element_offset == 0)?;
             chunk.append_batch(
                 (part.element_offset * size_of::<T>()) as u64,
                 batch.iter().copied(),
@@ -208,18 +214,26 @@ where
         }
 
         // Persist the watermark only after the data landed
-        self.save_len(start_key + count)?;
+        self.save_len(fs, start_key + count)?;
 
         Ok(())
     }
 
     /// Open the chunk for appending; a `new` chunk is past the watermark, so
     /// it is created, truncating any leftover from a crashed writer.
-    fn open_chunk_for_append(&self, chunk_idx: usize, new: bool) -> OperationResult<S> {
+    fn open_chunk_for_append<Fs>(
+        &self,
+        fs: &Fs,
+        chunk_idx: usize,
+        new: bool,
+    ) -> OperationResult<Fs::File>
+    where
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
+    {
         let path = chunk_name(&self.directory, chunk_idx);
         if new {
-            self.fs.create(&path, 0)?;
+            fs.create(&path, 0)?;
         }
-        Ok(self.fs.open(&path, append_options(), Default::default())?)
+        Ok(fs.open(&path, append_options(), Default::default())?)
     }
 }

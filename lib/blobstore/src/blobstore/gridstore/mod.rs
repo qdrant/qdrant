@@ -42,7 +42,6 @@ pub struct Gridstore<V, S>
 where
     S: UniversalWrite + 'static,
 {
-    pub(super) fs: S::Fs,
     pub(super) config: GridstoreConfig,
     pub(super) tracker: Arc<RwLock<Tracker<S>>>,
     pub(super) pages: Arc<RwLock<Pages<S>>>,
@@ -104,17 +103,16 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: S::Fs, base_path: PathBuf, config: GridstoreConfig) -> Result<Self> {
+    pub(super) fn new(fs: &S::Fs, base_path: PathBuf, config: GridstoreConfig) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = Bitmask::create(&fs, &base_path, config.clone())?;
+        let bitmask = Bitmask::create(fs, &base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(&fs, &base_path, None)?)),
+            tracker: Arc::new(RwLock::new(Tracker::new(fs, &base_path, None)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
-            fs,
             _value_type: std::marker::PhantomData,
             bitmask: Arc::new(RwLock::new(bitmask)),
             is_alive_flush_lock: IsAliveLock::new(),
@@ -123,14 +121,11 @@ where
 
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
-        storage.create_page_file(&path)?;
-        storage
-            .pages
-            .write()
-            .attach_page(&storage.fs, &path, Populate::No)?;
+        storage.create_page_file(fs, &path)?;
+        storage.pages.write().attach_page(fs, &path, Populate::No)?;
 
         let config_bytes = serde_json::to_vec(&StorageConfig::Mutable(storage.config.clone()))?;
-        storage.fs.atomic_save(&config_path, &config_bytes)?;
+        fs.atomic_save(&config_path, &config_bytes)?;
 
         Ok(storage)
     }
@@ -139,17 +134,17 @@ where
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub(super) fn open(
-        fs: S::Fs,
+        fs: &S::Fs,
         base_path: PathBuf,
         config: GridstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let tracker = Tracker::open(&fs, &base_path, populate, true)?;
-        let mut bitmask = Bitmask::open(&fs, &base_path, config.clone())?;
+        let tracker = Tracker::open(fs, &base_path, populate, true)?;
+        let mut bitmask = Bitmask::open(fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(&fs, &base_path, true, populate)?;
+        let pages = Pages::open(fs, &base_path, true, populate)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -170,12 +165,11 @@ where
                 "Detected region gaps length mismatch for Gridstore bitmask at {base_path:?}, rebuilding gaps from the bitmask",
             );
             // Replaces the gaps file, which must happen before anything else can map it.
-            bitmask = bitmask.into_rebuilt_gaps(&fs)?;
+            bitmask = bitmask.into_rebuilt_gaps(fs)?;
             gaps_rebuilt = true;
         }
 
         Ok(Self {
-            fs,
             config,
             tracker: Arc::new(RwLock::new(tracker)),
             pages: Arc::new(RwLock::new(pages)),
@@ -189,31 +183,30 @@ where
 
     /// Create a new page and return its id.
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn create_new_page(&mut self) -> Result<u32> {
+    pub(super) fn create_new_page(&mut self, fs: &S::Fs) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
-        self.create_page_file(&path)?;
-        self.pages
-            .write()
-            .attach_page(&self.fs, &path, Populate::No)?;
+        self.create_page_file(fs, &path)?;
+        self.pages.write().attach_page(fs, &path, Populate::No)?;
 
         self.bitmask.write().cover_new_page()?;
 
         Ok(new_page_id)
     }
 
-    fn create_page_file(&self, path: &std::path::Path) -> Result<()> {
-        self.fs.create(path, self.config.page_size_bytes)?;
+    fn create_page_file(&self, fs: &S::Fs, path: &std::path::Path) -> Result<()> {
+        fs.create(path, self.config.page_size_bytes)?;
         Ok(())
     }
 
     fn find_or_create_available_blocks(
         &mut self,
+        fs: &S::Fs,
         num_blocks: u32,
     ) -> Result<(PageId, BlockOffset)> {
         debug_assert!(num_blocks > 0, "num_blocks must be greater than 0");
 
-        if let Some(available) = self.try_find_or_create_available_blocks(num_blocks)? {
+        if let Some(available) = self.try_find_or_create_available_blocks(fs, num_blocks)? {
             return Ok(available);
         }
 
@@ -236,7 +229,7 @@ where
         self.bitmask.write().rebuild_gaps()?;
 
         Ok(self
-            .try_find_or_create_available_blocks(num_blocks)?
+            .try_find_or_create_available_blocks(fs, num_blocks)?
             .expect("New page has just been created and gaps have just been rebuilt"))
     }
 
@@ -246,6 +239,7 @@ where
     /// region gaps are inconsistent with the bitmask.
     fn try_find_or_create_available_blocks(
         &mut self,
+        fs: &S::Fs,
         num_blocks: u32,
     ) -> Result<Option<(PageId, BlockOffset)>> {
         let bitmask_guard = self.bitmask.read();
@@ -261,7 +255,7 @@ where
         let num_pages =
             (missing_blocks * self.config.block_size_bytes).div_ceil(self.config.page_size_bytes);
         for _ in 0..num_pages {
-            self.create_new_page()?;
+            self.create_new_page(fs)?;
         }
 
         self.bitmask.read().find_available_blocks(num_blocks)
@@ -286,11 +280,12 @@ where
     /// Returns true if the value existed previously and was updated, false if it was newly inserted.
     pub(super) fn put_value(
         &mut self,
+        fs: &S::Fs,
         point_offset: PointOffset,
         value: &V,
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
-        self.put_value_bytes(point_offset, value.to_bytes(), hw_counter)
+        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
     }
 
     /// Put an already serialized value in the storage.
@@ -301,6 +296,7 @@ where
     /// Returns true if the value existed previously and was updated, false if it was newly inserted.
     pub(super) fn put_value_bytes(
         &mut self,
+        fs: &S::Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
         hw_counter: HwMetricRefCounter,
@@ -360,7 +356,7 @@ where
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
-            self.find_or_create_available_blocks(required_blocks)?;
+            self.find_or_create_available_blocks(fs, required_blocks)?;
 
         self.write_into_pages(&comp_value, start_page_id, block_offset)?;
 
@@ -399,14 +395,14 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it with a single empty page.
-    pub(super) fn clear(&mut self) -> Result<()> {
+    pub(super) fn clear(&mut self, fs: &S::Fs) -> Result<()> {
         self.is_alive_flush_lock.blocking_mark_dead();
         self.pages.write().clear();
 
-        self.fs.remove_dir(&self.base_path)?;
-        self.fs.create_dir(&self.base_path)?;
+        fs.remove_dir(&self.base_path)?;
+        fs.create_dir(&self.base_path)?;
 
-        *self = Self::new(self.fs.clone(), self.base_path.clone(), self.config.clone())?;
+        *self = Self::new(fs, self.base_path.clone(), self.config.clone())?;
 
         Ok(())
     }
@@ -415,9 +411,8 @@ where
     ///
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
     /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
-    pub(super) fn wipe(self) -> Result<()> {
+    pub(super) fn wipe(self, fs: &S::Fs) -> Result<()> {
         let Self {
-            fs,
             tracker,
             pages,
             bitmask,
@@ -689,7 +684,6 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     /// Drop disk cache.
     pub(super) fn clear_cache(&self) -> crate::Result<()> {
         let Self {
-            fs: _,
             config: _,
             tracker: _,
             pages,

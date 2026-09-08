@@ -65,8 +65,7 @@ mod tests {
         let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
@@ -102,8 +101,7 @@ mod tests {
         let dir = Builder::new().prefix("chunked_preload").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
@@ -148,8 +146,7 @@ mod tests {
         let dir = Builder::new().prefix("chunked_boundary").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..4096, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
@@ -201,8 +198,7 @@ mod tests {
         let dir = Builder::new().prefix("chunked_shrink").tempdir().unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         // Crash leftover: a chunk file past the committed watermark.
@@ -269,8 +265,7 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, &dir, DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
@@ -322,8 +317,7 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..4000, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
@@ -370,8 +364,7 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM, &hw);
 
         let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(

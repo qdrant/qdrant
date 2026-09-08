@@ -35,7 +35,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     /// its file format is not one this writer can append to.
     ///
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
-    pub fn open(fs: S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
         let storage =
             UpdateOnlyBlobstore::open(fs, &storage_dir(segment_path), LogstoreConfig::DEFAULT)?;
 
@@ -54,6 +54,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     /// an unwritten slot already reads back as an empty payload.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
@@ -63,6 +64,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
             }
 
             self.storage.put(
+                fs,
                 internal_id,
                 payload,
                 hw_counter.ref_payload_io_write_counter(),

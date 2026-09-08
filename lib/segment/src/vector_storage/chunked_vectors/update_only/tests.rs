@@ -39,8 +39,7 @@ fn write_both() -> (TempDir, TempDir) {
 
     for range in [0..COUNT / 2, COUNT / 2..COUNT] {
         let mut writer =
-            UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, appended_dir.path(), DIM)
-                .unwrap();
+            UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, appended_dir.path(), DIM).unwrap();
         append_range(&mut writer, range.start, range, DIM, &hw);
     }
 
@@ -147,8 +146,7 @@ fn repairs_preallocated_chunks() {
         "chunk must be preallocated past the single stored vector",
     );
 
-    let mut writer =
-        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
 
     // Appends continue after it
     append_range(&mut writer, 1, 1..3, DIM, &hw);
@@ -187,8 +185,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_replay").tempdir().unwrap();
 
-    let mut writer =
-        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
     append_range(&mut writer, 0, 0..100, DIM, &hw);
 
     // Replay offsets 50..100 with different vectors than landed the first
@@ -236,8 +233,7 @@ fn extends_across_a_gap_with_zeroes() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_gap").tempdir().unwrap();
 
-    let mut writer =
-        UpdateOnlyChunkedVectors::<f32, MmapFile>::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
     append_range(&mut writer, 0, 0..10, DIM, &hw);
     // Offsets 10..15 are skipped; the next batch picks up at 15.
     append_range(&mut writer, 15, 15..20, DIM, &hw);
