@@ -16,10 +16,14 @@ pub struct SparseMetricQueryScorer<'a> {
 
 impl<'a> SparseMetricQueryScorer<'a> {
     pub fn new(
-        query: SparseVector,
+        mut query: SparseVector,
         vector_storage: &'a VolatileSparseVectorStorage,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self {
+        if !query.is_sorted() {
+            query.sort_by_indices();
+        }
+
         // We will count the number of intersections per pair of vectors.
         hardware_counter.set_cpu_multiplier(1);
         // We don't measure `vector_io_read` because we are dealing with a volatile storage,
@@ -86,5 +90,41 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
     type SupportsBytes = False;
     fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
         match enabled {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vector_storage::VectorStorage;
+    use crate::vector_storage::query_scorer::QueryScorer;
+
+    #[test]
+    fn unsorted_sparse_query_keeps_score() {
+        let mut vector_storage = VolatileSparseVectorStorage::default();
+        let stored = SparseVector::new(vec![1, 3], vec![5.0, 7.0]).unwrap();
+        vector_storage
+            .insert_vector(0, (&stored).into(), &HardwareCounterCell::new())
+            .unwrap();
+
+        let sorted = SparseVector::new(vec![1, 3], vec![5.0, 7.0]).unwrap();
+        let unsorted = SparseVector::new(vec![3, 1], vec![7.0, 5.0]).unwrap();
+
+        let sorted_score =
+            SparseMetricQueryScorer::new(sorted, &vector_storage, HardwareCounterCell::new())
+                .score_stored(0);
+        let unsorted_score =
+            SparseMetricQueryScorer::new(unsorted, &vector_storage, HardwareCounterCell::new())
+                .score_stored(0);
+        let mut batch_scores = [0.0];
+        SparseMetricQueryScorer::new(
+            SparseVector::new(vec![3, 1], vec![7.0, 5.0]).unwrap(),
+            &vector_storage,
+            HardwareCounterCell::new(),
+        )
+        .score_stored_batch(&[0], &mut batch_scores);
+
+        assert_eq!(sorted_score, unsorted_score);
+        assert_eq!(sorted_score, batch_scores[0]);
     }
 }
