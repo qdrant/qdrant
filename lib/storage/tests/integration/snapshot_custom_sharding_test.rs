@@ -256,3 +256,167 @@ fn test_snapshot_restore_recreates_custom_shard_keys() {
     assert_eq!(count.count, 2, "restored points must survive the restore");
 }
 
+
+/// Restoring into an existing custom-sharded collection whose shard keys do
+/// not match the snapshot's must fail loudly instead of restoring the data
+/// under the wrong keys.
+#[test]
+fn test_snapshot_restore_rejects_mismatched_shard_keys() {
+    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+
+    let config = StorageConfig {
+        storage_path: storage_dir.path().to_path_buf(),
+        snapshots_path: storage_dir.path().join("snapshots"),
+        snapshots_config: Default::default(),
+        temp_path: None,
+        on_disk_payload: false,
+        payload: None,
+        optimizers: OptimizersConfig {
+            deleted_threshold: 0.5,
+            vacuum_min_vector_number: 100,
+            default_segment_number: 2,
+            max_segment_size: None,
+            #[expect(deprecated)]
+            memmap_threshold: Some(100),
+            indexing_threshold: Some(100),
+            flush_interval_sec: 2,
+            max_optimization_threads: Some(2),
+            prevent_unoptimized: None,
+        },
+        optimizers_overwrite: None,
+        wal: Default::default(),
+        performance: PerformanceConfig {
+            max_search_threads: 1,
+            max_optimization_runtime_threads: 1,
+            optimizer_cpu_budget: 0,
+            optimizer_io_budget: 0,
+            update_rate_limit: None,
+            search_timeout_sec: None,
+            incoming_shard_transfers_limit: Some(1),
+            outgoing_shard_transfers_limit: Some(1),
+            async_scorer: None,
+            io_uring: None,
+            load_concurrency: LoadConcurrencyConfig::default(),
+        },
+        hnsw_index: Default::default(),
+        hnsw_global_config: Default::default(),
+        mmap_advice: mmap::Advice::Random,
+        low_memory_mode: Default::default(),
+        node_type: Default::default(),
+        update_queue_size: Default::default(),
+        handle_collection_load_errors: false,
+        recovery_mode: None,
+        update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
+        shard_transfer_method: None,
+        collection: None,
+        max_collections: None,
+        quotas: Default::default(),
+    };
+
+    let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
+    let propose_operation_sender = OperationSender::new(propose_sender);
+
+    let toc = Arc::new(
+        TableOfContent::new(
+            &config,
+            ResourceBudget::default(),
+            ChannelService::new(6334, false, None, None),
+            0,
+            Some(propose_operation_sender),
+        )
+        .unwrap(),
+    );
+    let handle = toc.general_runtime_handle().clone();
+    let dispatcher = Dispatcher::new(toc.clone());
+
+    let create_collection = || {
+        dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::CreateCollection(
+                CreateCollectionOperation::new(
+                    "test".to_string(),
+                    CreateCollection {
+                        vectors: VectorParamsBuilder::new(4, Distance::Cosine)
+                            .build()
+                            .into(),
+                        sparse_vectors: None,
+                        hnsw_config: None,
+                        wal_config: None,
+                        optimizers_config: None,
+                        shard_number: Some(1.try_into().unwrap()),
+                        on_disk_payload: None,
+                        payload: None,
+                        replication_factor: None,
+                        write_consistency_factor: None,
+                        quantization_config: None,
+                        sharding_method: Some(collection::config::ShardingMethod::Custom),
+                        strict_mode_config: None,
+                        uuid: None,
+                        metadata: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            FULL_ACCESS,
+            None,
+        )
+    };
+
+    let create_shard_key = |key: &str| {
+        dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: "test".to_string(),
+                shard_key: ShardKey::Keyword(key.into()),
+                placement: vec![vec![0]],
+                initial_state: None,
+            }),
+            FULL_ACCESS,
+            None,
+        )
+    };
+
+    // Snapshot a collection sharded by "k1"
+    handle.block_on(create_collection()).unwrap();
+    handle.block_on(create_shard_key("k1")).unwrap();
+
+    let snapshot_name = {
+        let multipass = FULL_ACCESS
+            .check_global_access(AccessRequirements::new().manage(), "snapshot test")
+            .unwrap();
+        let pass = multipass.issue_pass("test");
+        handle.block_on(toc.create_snapshot(&pass)).unwrap().name
+    };
+    let snapshot_path = config.snapshots_path.join("test").join(&snapshot_name);
+
+    handle
+        .block_on(dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
+                "test".to_string(),
+            )),
+            FULL_ACCESS,
+            None,
+        ))
+        .unwrap();
+
+    // Recreate the collection sharded by "k2" instead
+    handle.block_on(create_collection()).unwrap();
+    handle.block_on(create_shard_key("k2")).unwrap();
+
+    let location = reqwest::Url::parse(&format!("file://{}", snapshot_path.display())).unwrap();
+    let result = handle.block_on(do_recover_from_snapshot(
+        &dispatcher,
+        "test",
+        SnapshotRecover {
+            location,
+            priority: None,
+            checksum: None,
+            api_key: None,
+        },
+        FULL_ACCESS,
+        reqwest::Client::new(),
+    ));
+
+    assert!(
+        result.is_err(),
+        "restoring a snapshot with shard key k1 into a collection keyed by k2 must fail"
+    );
+}

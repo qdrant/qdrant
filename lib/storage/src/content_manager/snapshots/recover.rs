@@ -285,13 +285,14 @@ async fn _do_recover_from_snapshot(
     // the collection's shard layout must match the snapshot's exactly. Fail loudly
     // instead of restoring nothing.
     if let Some(mapping) = &snapshot_shard_key_mapping {
-        let expected: std::collections::HashSet<ShardId> =
-            mapping.shard_ids().into_iter().collect();
-        let actual: std::collections::HashSet<ShardId> =
-            state.shards.keys().copied().collect();
-        if actual != expected {
+        // Compare the complete key-to-shard-ids mapping, not just the shard id
+        // set: a pre-existing collection whose keys map to the same ids would
+        // otherwise pass, leaving the restored data unreachable under the
+        // snapshot's keys.
+        let actual = &state.shards_key_mapping;
+        if actual != mapping {
             return Err(StorageError::bad_input(format!(
-                "Snapshot shard layout {expected:?} cannot be reproduced in collection \
+                "Snapshot shard layout {mapping:?} cannot be reproduced in collection \
                  {collection_pass} (has {actual:?})"
             )));
         }
