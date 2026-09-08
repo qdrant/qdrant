@@ -30,19 +30,51 @@ impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
         Self { inner, runtime }
     }
-
-    pub(crate) fn runtime(&self) -> &BridgeRuntime {
-        &self.runtime
-    }
 }
 
-impl<A: AsyncWrite> BlobFs<A> {
-    pub async fn save_async(&self, path: PathBuf, bytes: Vec<u8>) -> UioResult<()> {
-        self.inner.save(&path, Bytes::from(bytes)).await
+impl<A: AsyncWrite + Clone> BlobFs<A> {
+    pub fn save_async(
+        &self,
+        path: PathBuf,
+        bytes: Vec<u8>,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        self.spawn_write(async move { inner.save(&path, Bytes::from(bytes)).await })
     }
 
-    pub async fn remove_async(&self, path: PathBuf) -> UioResult<()> {
-        self.inner.remove(&path).await
+    pub fn remove_async(
+        &self,
+        path: PathBuf,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        self.spawn_write(async move { inner.remove(&path).await })
+    }
+
+    pub fn max_concurrent_saves(&self) -> usize {
+        self.runtime.max_concurrent_writes()
+    }
+
+    /// Like the async reads, the write rides the [`BridgeRuntime`] rather than
+    /// the caller's executor, so the returned future needs no ambient reactor.
+    /// It spawns on first poll, under one of the runtime's write permits, which
+    /// cap these spawned writes across every caller.
+    fn spawn_write<F>(
+        &self,
+        op: F,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A, F>
+    where
+        F: Future<Output = UioResult<()>> + Send + 'static,
+    {
+        let handle = self.runtime.handle().clone();
+        let permit = self.runtime.acquire_write_permit();
+        async move {
+            handle
+                .spawn(async move {
+                    let _permit = permit.await;
+                    op.await
+                })
+                .await?
+        }
     }
 }
 

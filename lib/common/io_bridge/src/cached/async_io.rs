@@ -74,7 +74,7 @@ where
         self.blob_fs.remove_async(path)
     }
 
-    fn block_on<F: Future>(&self, fut: F) -> F::Output {
-        self.blob_fs.runtime().block_on(fut)
+    fn max_concurrent_saves(&self) -> usize {
+        self.blob_fs.max_concurrent_saves()
     }
 }

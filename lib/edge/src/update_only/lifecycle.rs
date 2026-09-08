@@ -148,7 +148,7 @@ where
         drop(segment);
 
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
-        self.fs.block_on(copy_dir(&self.fs, &local, &remote))?;
+        futures::executor::block_on(copy_dir(&self.fs, &local, &remote))?;
 
         let lookup = LookupSegment::<Fs>::open(self.fs.clone(), &remote, None)?;
         let writer = UpdateOnlySegmentEnum::open(
@@ -163,11 +163,9 @@ where
     }
 }
 
-/// Saves in flight at once while a segment directory is copied to the backend.
-pub(crate) const COPY_CONCURRENCY: usize = 8;
-
 /// Copy a locally built segment directory to the backend: directories first,
-/// then every file as one whole-object save, [`COPY_CONCURRENCY`] at a time.
+/// then every file as one whole-object save, as many at a time as the backend
+/// takes ([`UniversalWriteFsAsync::max_concurrent_saves`]).
 ///
 /// Every save is awaited even after one fails, so nothing is left in flight and
 /// the cleanup covers every object that landed.
@@ -202,7 +200,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
         })?;
     }
 
-    // Read inside the wave: at most COPY_CONCURRENCY files are in memory.
+    // Read inside the wave, so only the in-flight files are in memory.
     let saved: Vec<(PathBuf, OperationResult<()>)> = futures::stream::iter(files)
         .map(|(source, target)| async move {
             let result = match fs_err::read(&source) {
@@ -219,7 +217,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
             };
             (target, result)
         })
-        .buffer_unordered(COPY_CONCURRENCY)
+        .buffer_unordered(fs.max_concurrent_saves().max(1))
         .collect()
         .await;
 

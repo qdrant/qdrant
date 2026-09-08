@@ -685,7 +685,10 @@ mod copy_dir {
 
     use common::universal_io::{MmapFs, UioResult, UniversalIoError, UniversalWriteFsAsync};
 
-    use crate::update_only::lifecycle::{COPY_CONCURRENCY, copy_dir};
+    use crate::update_only::lifecycle::copy_dir;
+
+    /// The save queue depth `RecordingFs` advertises to the wave.
+    const SAVE_CONCURRENCY: usize = 4;
 
     /// Records every call and the peak number of saves in flight. Saves yield
     /// once before completing, so the wave is observable.
@@ -764,8 +767,8 @@ mod copy_dir {
             std::future::ready(Ok(()))
         }
 
-        fn block_on<F: Future>(&self, fut: F) -> F::Output {
-            futures::executor::block_on(fut)
+        fn max_concurrent_saves(&self) -> usize {
+            SAVE_CONCURRENCY
         }
     }
 
@@ -801,7 +804,7 @@ mod copy_dir {
         let fs = RecordingFs::default();
         let remote = Path::new("shard/segments/uuid");
 
-        fs.block_on(copy_dir(&fs, local.path(), remote)).unwrap();
+        futures::executor::block_on(copy_dir(&fs, local.path(), remote)).unwrap();
 
         let log = fs.0.lock().unwrap();
         let saved: BTreeMap<PathBuf, Vec<u8>> = log
@@ -812,8 +815,8 @@ mod copy_dir {
         assert_eq!(log.saves.len(), 12, "one save per file, no duplicates");
         assert_eq!(saved, tree(local.path()), "same tree, same bytes");
         assert_eq!(
-            log.peak_in_flight, COPY_CONCURRENCY,
-            "the wave fills the bound"
+            log.peak_in_flight, SAVE_CONCURRENCY,
+            "the wave fills the depth the backend asked for"
         );
         assert_eq!(
             log.dirs.first().map(PathBuf::as_path),
@@ -835,8 +838,7 @@ mod copy_dir {
         fs.0.lock().unwrap().fail_save_at = Some(5);
         let remote = Path::new("shard/segments/uuid");
 
-        let err = fs
-            .block_on(copy_dir(&fs, local.path(), remote))
+        let err = futures::executor::block_on(copy_dir(&fs, local.path(), remote))
             .expect_err("the injected failure surfaces");
 
         assert!(err.to_string().contains("injected save failure"), "{err}");
@@ -857,9 +859,7 @@ mod copy_dir {
         let remote = tempfile::tempdir().unwrap();
         let target = remote.path().join("segments/uuid");
 
-        MmapFs
-            .block_on(copy_dir(&MmapFs, local.path(), &target))
-            .unwrap();
+        futures::executor::block_on(copy_dir(&MmapFs, local.path(), &target)).unwrap();
 
         assert_eq!(tree(&target), tree(local.path()));
     }

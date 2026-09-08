@@ -3,6 +3,13 @@ use std::sync::{Arc, LazyLock};
 
 use aligned_vec::{AVec, RuntimeAlign};
 use common::universal_io::UniversalIoError;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// Spawned whole-object saves and removes one execution domain keeps in flight,
+/// across every caller sharing it. The blocking single-shot writes (create,
+/// append, the sync `atomic_save`) stay uncounted: queuing an append behind a
+/// segment copy would only add head-of-line blocking.
+const MAX_CONCURRENT_WRITES: usize = 8;
 
 /// Reply produced by a spawned read task and shipped back to the originating
 /// pipeline over its reply channel. The slot is the correlation id; the
@@ -34,7 +41,11 @@ impl BridgeResponse {
     }
 }
 
-pub(crate) struct BridgeRuntimeInner(tokio::runtime::Runtime);
+pub(crate) struct BridgeRuntimeInner {
+    runtime: tokio::runtime::Runtime,
+    write_permits: Arc<Semaphore>,
+    max_concurrent_writes: usize,
+}
 
 /// Cheap-to-clone owner of a dedicated Tokio runtime. Construct one explicitly
 /// with [`Self::new`] for an isolated execution domain, or call [`Self::global`]
@@ -45,7 +56,10 @@ pub(crate) struct BridgeRuntimeInner(tokio::runtime::Runtime);
 /// Work reaches the runtime in one of two ways, both routed through the runtime
 /// [`Handle`](tokio::runtime::Handle):
 /// - single reads / metadata block the caller via [`Self::block_on`];
-/// - batched reads are dispatched with [`Handle::spawn`] (see [`Self::handle`]).
+/// - batched reads and whole-object writes are dispatched with
+///   [`Handle::spawn`](tokio::runtime::Handle::spawn) (see [`Self::handle`]),
+///   so the futures handed to a caller carry no reactor requirement of their
+///   own.
 #[derive(Clone)]
 pub struct BridgeRuntime(Arc<BridgeRuntimeInner>);
 
@@ -68,7 +82,11 @@ impl BridgeRuntime {
                 description: format!("build tokio runtime: {err}"),
             })?;
 
-        Ok(Self(Arc::new(BridgeRuntimeInner(runtime))))
+        Ok(Self(Arc::new(BridgeRuntimeInner {
+            runtime,
+            write_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_WRITES)),
+            max_concurrent_writes: MAX_CONCURRENT_WRITES,
+        })))
     }
 
     pub fn global() -> Self {
@@ -79,12 +97,34 @@ impl BridgeRuntime {
     /// the reactor/executor. Used for the synchronous single-read and metadata
     /// paths. Must not be called from within the runtime's own worker threads.
     pub fn block_on<F: Future>(&self, fut: F) -> F::Output {
-        self.0.0.block_on(fut)
+        self.0.runtime.block_on(fut)
     }
 
     /// Runtime handle for spawning detached tasks (the batched-read path).
     pub(crate) fn handle(&self) -> &tokio::runtime::Handle {
-        self.0.0.handle()
+        self.0.runtime.handle()
+    }
+
+    /// Spawned saves and removes this domain keeps in flight at once.
+    pub fn max_concurrent_writes(&self) -> usize {
+        self.0.max_concurrent_writes
+    }
+
+    /// Hold the returned permit for as long as a write is in flight.
+    ///
+    /// Owns only the semaphore, never the runtime: a task on this runtime must
+    /// not hold what could be the runtime's last reference, since dropping a
+    /// Tokio runtime from one of its own workers panics.
+    pub(crate) fn acquire_write_permit(
+        &self,
+    ) -> impl Future<Output = OwnedSemaphorePermit> + Send + 'static + use<> {
+        let permits = Arc::clone(&self.0.write_permits);
+        async move {
+            permits
+                .acquire_owned()
+                .await
+                .expect("the write semaphore is never closed")
+        }
     }
 }
 

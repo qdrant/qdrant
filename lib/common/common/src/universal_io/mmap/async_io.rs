@@ -41,24 +41,23 @@ impl UniversalReadAsync for MmapFile {
     }
 }
 
+/// Unlike the reads above, the writes are deferred to first poll, as
+/// [`UniversalWriteFsAsync`] requires.
 impl UniversalWriteFsAsync for MmapFs {
-    fn create_dir_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
-        ready(self.create_dir(&path))
+    async fn create_dir_async(&self, path: PathBuf) -> UioResult<()> {
+        self.create_dir(&path)
     }
 
-    fn atomic_save_async(
-        &self,
-        path: PathBuf,
-        bytes: Vec<u8>,
-    ) -> impl Future<Output = UioResult<()>> + Send + '_ {
-        ready(self.atomic_save(&path, &bytes))
+    async fn atomic_save_async(&self, path: PathBuf, bytes: Vec<u8>) -> UioResult<()> {
+        self.atomic_save(&path, &bytes)
     }
 
-    fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
-        ready(self.remove(&path))
+    async fn remove_async(&self, path: PathBuf) -> UioResult<()> {
+        self.remove(&path)
     }
 
-    fn block_on<F: Future>(&self, fut: F) -> F::Output {
-        futures::executor::block_on(fut)
+    /// Local saves complete inline, so a wave gains nothing over a loop.
+    fn max_concurrent_saves(&self) -> usize {
+        1
     }
 }

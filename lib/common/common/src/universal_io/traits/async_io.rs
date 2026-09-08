@@ -46,8 +46,15 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
 }
 
 /// The async whole-file write surface, mirroring the same operations on
-/// [`UniversalWriteFileOps`]: a batch of saves runs as one concurrent wave on
-/// the backend's own IO runtime instead of a thread per file.
+/// [`UniversalWriteFileOps`]: a batch of saves runs as one concurrent wave
+/// instead of a thread per file.
+///
+/// As with [`UniversalReadFsAsync::open_async`], the futures must not depend on
+/// ambient async context, so any executor can drive them — including
+/// `futures::executor::block_on` from synchronous code. Nothing runs before the
+/// first poll, so a caller that sizes its wave by
+/// [`max_concurrent_saves`](Self::max_concurrent_saves) really does bound the
+/// in-flight saves, however it collects the futures.
 ///
 /// [`UniversalWriteFileOps`]: crate::universal_io::UniversalWriteFileOps
 pub trait UniversalWriteFsAsync: Send + Sync {
@@ -62,7 +69,8 @@ pub trait UniversalWriteFsAsync: Send + Sync {
 
     fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;
 
-    /// Drive a wave of these operations from synchronous code, on the executor
-    /// they need.
-    fn block_on<F: Future>(&self, fut: F) -> F::Output;
+    /// The backend's own save queue depth, which a caller uses to size its
+    /// wave — and with it, how many buffers it holds in memory. Backends
+    /// enforce their total in-flight saves themselves, across all callers.
+    fn max_concurrent_saves(&self) -> usize;
 }
