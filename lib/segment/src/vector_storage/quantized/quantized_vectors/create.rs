@@ -84,6 +84,30 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            VectorStorageEnum::DenseGraphInline(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(v) => Self::create_impl(
                 v.as_ref(),
@@ -136,6 +160,14 @@ impl QuantizedVectors {
                 stopped,
             ),
             VectorStorageEnum::DenseTurboMemmap(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseTurboGraphInline(v) => Self::create_turbo_impl(
                 v.as_ref(),
                 quantization_config,
                 storage_type,

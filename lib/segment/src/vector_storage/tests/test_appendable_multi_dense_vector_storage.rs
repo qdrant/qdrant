@@ -75,7 +75,10 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             | VectorStorageEnum::DenseVolatileByte(_)
             | VectorStorageEnum::DenseVolatileHalf(_) => unreachable!(),
             VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseGraphInline(_)
             | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseGraphInlineByte(_)
+            | VectorStorageEnum::DenseGraphInlineHalf(_)
             | VectorStorageEnum::DenseMemmapHalf(_) => unreachable!(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(_)
@@ -85,6 +88,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             | VectorStorageEnum::DenseAppendableMemmapByte(_)
             | VectorStorageEnum::DenseAppendableMemmapHalf(_)
             | VectorStorageEnum::DenseTurboMemmap(_)
+            | VectorStorageEnum::DenseTurboGraphInline(_)
             | VectorStorageEnum::DenseTurboAppendableMemmap(_) => unreachable!(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(_) => unreachable!(),
