@@ -325,7 +325,7 @@ impl Collection {
                     .take(request.limit)
                     .collect()
             } else {
-                merged_iter.take(request.offset + request.limit).collect()
+                merged_iter.take(request.offset.saturating_add(request.limit)).collect()
             };
 
             top_results.push(top_res);

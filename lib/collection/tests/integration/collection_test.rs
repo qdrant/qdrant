@@ -20,13 +20,14 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err::File;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{NamedQuery, VectorStructInternal};
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
 use shard::query::{SampleInternal, ScoringQuery, ShardQueryRequest};
+use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 
 use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
@@ -1107,4 +1108,79 @@ async fn test_random_sample_huge_limit_does_not_abort() {
     // Bounded by the points actually available; the request completes instead of
     // aborting.
     assert_eq!(result.len(), 3);
+}
+
+/// Regression for <https://github.com/qdrant/qdrant/issues/10501>
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_pagination_huge_limit_does_not_wrap() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let batch = BatchPersisted {
+        ids: vec![1, 2, 3].into_iter().map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 3.0, 0.0, 0.0],
+            vec![4.0, 0.0, 0.0, 0.0],
+        ]),
+        payloads: None,
+    };
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(batch),
+    ));
+    collection
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    let make_request = |limit, offset| ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+            NamedQuery::default_dense(vec![1.0, 0.0, 0.0, 0.0]),
+        ))),
+        filter: None,
+        score_threshold: None,
+        limit,
+        offset,
+        params: None,
+        with_vector: false.into(),
+        with_payload: false.into(),
+    };
+
+    let control = collection
+        .query(
+            make_request(2, 1),
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 2);
+
+    // offset + limit overflows usize without saturating arithmetic, wrapping the
+    // internal take to 0 and returning an empty page
+    let huge_limit = collection
+        .query(
+            make_request(usize::MAX, 1),
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    let expected = control.iter().map(|point| point.id).collect_vec();
+    let actual = huge_limit.iter().map(|point| point.id).collect_vec();
+    assert_eq!(actual, expected);
 }
