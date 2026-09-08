@@ -98,12 +98,24 @@ impl ShadowStateMachine {
 
         // A service error kills the consensus thread and the entry is applied again after
         // restart. What the failed apply wrote before it gave up is not something the machine
-        // predicts, and an operation it does not model leaves its state behind entirely.
-        let comparable = !matches!(result, Err(StorageError::ServiceError { .. }))
-            && !matches!(outcome, ApplyOutcome::NotCovered);
-
-        if !comparable {
+        // predicts.
+        if matches!(result, Err(StorageError::ServiceError { .. })) {
             self.machine = None;
+            return None;
+        }
+
+        let collections = compared_collections(operation, machine.state());
+
+        // An operation the machine does not model leaves the state of the collections it names
+        // behind, so those are read back instead of compared. One that names none, `RemovePeer`
+        // above all, can have changed any of them.
+        if matches!(outcome, ApplyOutcome::NotCovered) {
+            if collections.is_empty() {
+                self.machine = None;
+            } else {
+                self.resync(toc, collections);
+            }
+
             return None;
         }
 
@@ -114,7 +126,7 @@ impl ShadowStateMachine {
 
         // Reading a collection's state is the expensive part, so only the ones this operation
         // could have changed are read. A collection only one side holds is already reported.
-        for collection in compared_collections(operation, machine.state()) {
+        for collection in collections {
             let shadow = machine.state().collection(&collection);
             let actual = toc.collection_state(&collection);
 
@@ -130,6 +142,18 @@ impl ShadowStateMachine {
         self.machine = None;
 
         Some(report.join(", "))
+    }
+
+    /// Read the state of `collections` back into the machine
+    fn resync(&mut self, toc: &impl CollectionContainer, collections: Vec<CollectionId>) {
+        let Some(machine) = &mut self.machine else {
+            return;
+        };
+
+        for collection in collections {
+            let state = toc.collection_state(&collection);
+            machine.resync_collection(&collection, state);
+        }
     }
 }
 

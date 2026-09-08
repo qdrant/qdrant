@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use collection::collection_state;
@@ -130,10 +131,41 @@ fn rejected_by_apply_only() {
     assert!(shadow.apply_with(&nop(), &rejection).is_some());
 }
 
-/// An operation the machine does not model leaves state it cannot predict
+/// An operation the machine does not model, naming no collection, can have changed any of them
 #[test]
 fn not_covered_invalidates() {
-    invalidates(&set_replica_state(), &Ok(true));
+    invalidates(&remove_peer(), &Ok(true));
+}
+
+/// An operation the machine does not model reads the collections it names back, rather than
+/// rebuilding the machine from every collection
+#[test]
+fn not_covered_resync() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    // Builds the machine, the one full read of the state this test expects
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+    assert_eq!(shadow.apply(&set_replica_state()), None);
+
+    // Names the collection, so its state is compared: the shard has to be in both by now
+    assert_eq!(shadow.apply(&drop_payload_index(COLLECTION)), None);
+
+    assert_eq!(shadow.container.snapshots(), 1);
+}
+
+/// Reading one collection back does not paper over a divergence somewhere else
+#[test]
+fn not_covered_keeps_the_rest() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_alias(OTHER_ALIAS);
+    assert_eq!(shadow.apply(&set_replica_state()), None);
+
+    assert_eq!(shadow.apply(&nop()).as_deref(), Some("aliases"));
 }
 
 /// A service error kills the consensus thread, and what the failed apply wrote before it gave
@@ -381,7 +413,12 @@ fn drop_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
-/// Operation the machine does not model yet
+/// Operation the machine does not model, and which names no collection
+fn remove_peer() -> ConsensusOperations {
+    ConsensusOperations::RemovePeer(PEER_ID)
+}
+
+/// Operation the machine does not model yet, naming the collection it changes
 fn set_replica_state() -> ConsensusOperations {
     let operation = SetShardReplicaState {
         collection_name: COLLECTION.to_string(),
@@ -428,6 +465,7 @@ fn container() -> Container {
             enabled: true,
             ..Default::default()
         },
+        snapshots: AtomicUsize::new(0),
     }
 }
 
@@ -439,9 +477,15 @@ struct Container {
     collections: Mutex<HashMap<CollectionId, collection_state::State>>,
     aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
+    /// How many times the whole state was read back, to tell a resync from a rebuild
+    snapshots: AtomicUsize,
 }
 
 impl Container {
+    fn snapshots(&self) -> usize {
+        self.snapshots.load(Ordering::Relaxed)
+    }
+
     /// Point another alias at the collection, as an operation the machine never saw would
     fn add_alias(&self, alias: &str) {
         self.aliases
@@ -464,6 +508,8 @@ impl Container {
 
 impl CollectionContainer for Container {
     fn collections_snapshot(&self) -> CollectionsSnapshot {
+        self.snapshots.fetch_add(1, Ordering::Relaxed);
+
         CollectionsSnapshot {
             collections: self.collections.lock().clone(),
             aliases: self.aliases.lock().clone(),
