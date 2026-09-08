@@ -6,6 +6,7 @@ mod vector_name_changes;
 mod tests;
 
 use std::borrow::Cow;
+use std::cmp::max;
 
 use ahash::AHashMap;
 use common::bitvec::BitVec;
@@ -255,12 +256,11 @@ impl ProxySegment {
         // Point deletions bump the segment version, can cause index changes to be ignored
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
-            let op_num = wrapped_segment.version();
             if !self.changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (field_name, change) in self.changed_indexes.iter_ordered() {
                         debug_assert!(
-                            change.version() >= op_num,
+                            change.version() >= wrapped_segment.version(),
                             "proxied index change should have newer version than segment",
                         );
                         match change {
@@ -289,30 +289,33 @@ impl ProxySegment {
         }
 
         // Propagate vector name changes (between index changes and point deletions)
+        //
+        // This artificially bumps the operation version to be at least as high as the current
+        // segment version. This way we make sure the segment does not ignore the operation.
+        // Alternatively we can interleave index, vectorname and deletion changes and apply them in
+        // exactly the same order they arrive, but that requires more complex changes.
         {
             if !self.changed_vector_names.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (vector_name, intent) in self.changed_vector_names.iter_ordered() {
                         match intent {
                             IntendedVector::Absent { version } => {
-                                wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                let op_num = max(*version, wrapped_segment.version());
+                                wrapped_segment.delete_vector_name(op_num, vector_name)?;
                             }
                             IntendedVector::Present {
                                 config,
                                 version,
                                 supersedes_wrapped,
                             } => {
+                                let op_num = max(*version, wrapped_segment.version());
                                 if *supersedes_wrapped {
                                     // `create_vector_name_impl` is idempotent and would
                                     // silently keep the wrapped's stale storage. Clear it
                                     // first so the new schema actually takes effect.
-                                    wrapped_segment.delete_vector_name(*version, vector_name)?;
+                                    wrapped_segment.delete_vector_name(op_num, vector_name)?;
                                 }
-                                wrapped_segment.create_vector_name(
-                                    *version,
-                                    vector_name,
-                                    config,
-                                )?;
+                                wrapped_segment.create_vector_name(op_num, vector_name, config)?;
                             }
                         }
                     }
