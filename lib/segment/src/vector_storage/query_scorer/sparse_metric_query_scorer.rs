@@ -96,6 +96,7 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::vectors::VectorRef;
     use crate::vector_storage::VectorStorage;
     use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -104,7 +105,7 @@ mod tests {
         let mut vector_storage = VolatileSparseVectorStorage::default();
         let stored = SparseVector::new(vec![1, 3], vec![5.0, 7.0]).unwrap();
         vector_storage
-            .insert_vector(0, (&stored).into(), &HardwareCounterCell::new())
+            .insert_vector(0, VectorRef::from(&stored), &HardwareCounterCell::new())
             .unwrap();
 
         let sorted = SparseVector::new(vec![1, 3], vec![5.0, 7.0]).unwrap();
