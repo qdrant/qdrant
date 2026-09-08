@@ -428,13 +428,19 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
     segment_dirs.sort_unstable_by_key(|(segment_uuid, _)| *segment_uuid);
 
     for (segment_uuid, segment_path) in segment_dirs {
-        let mut segment = load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false))
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to load segment {}: {err}",
-                    segment_path.display(),
-                ))
-            })?;
+        let mut segment = load_segment(
+            &segment_path,
+            segment_uuid,
+            None,
+            &AtomicBool::new(false),
+            false,
+        )
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to load segment {}: {err}",
+                segment_path.display(),
+            ))
+        })?;
 
         let segment_cfg = segment.config();
         if let Some(acc) = derived.as_ref() {

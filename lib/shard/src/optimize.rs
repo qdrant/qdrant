@@ -405,6 +405,9 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         segments_path,
         output_segment_uuid,
         deferred_internal_id,
+        // Don't mark segment as ready after building. This function is only used in the optimizer.
+        // We must first propagate proxied changes into the optimized segment before marking ready.
+        false,
         indexing_permit,
         stopped,
         &mut rng,
@@ -615,6 +618,7 @@ fn finish_optimization(
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
     let optimized_segment_version = optimized_segment.version();
+    let optimized_segment_path = optimized_segment.segment_path.clone();
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
     let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
@@ -657,6 +661,9 @@ fn finish_optimization(
     // as we don't want to have a situation, where new segment is not yet registered, but
     // old segment data is already dropped.
     read_segment_holder.sync_segment_manifest(None)?;
+
+    // All pending proxy changes are now applied — safe to make loadable on restart.
+    SegmentVersion::save(&optimized_segment_path)?;
 
     // Don't destroy the replaced segments' data yet. Points were copy-on-write moved out of them
     // (and out of the optimized segment's in-memory state, which the next optimization bakes into

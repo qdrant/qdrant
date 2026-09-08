@@ -536,6 +536,7 @@ impl SegmentBuilder {
             segments_path,
             Uuid::new_v4(),
             None,
+            true,
             ResourcePermit::dummy(get_num_indexing_threads(0) as u32),
             &AtomicBool::new(false),
             &mut rand::rng(),
@@ -545,12 +546,18 @@ impl SegmentBuilder {
         .unwrap()
     }
 
+    /// Build the segment.
+    ///
+    /// If `ready` is false, the version will not be stored, so the segment is skipped on
+    /// restart. The caller is then responsible for saving the version manually, once it is
+    /// safe to do so, to make the segment ready.
     #[allow(clippy::too_many_arguments)]
     pub fn build<R: Rng + ?Sized>(
         self,
         segments_path: &Path,
         segment_uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
+        ready: bool,
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
@@ -812,8 +819,10 @@ impl SegmentBuilder {
                 temp_dir.path(),
             )?;
 
-            // After version is saved, segment can be loaded on restart
-            SegmentVersion::save(temp_dir.path())?;
+            // Postpone until ready: this segment may still be missing pending proxy changes
+            if ready {
+                SegmentVersion::save(temp_dir.path())?;
+            }
             // All temp data is evicted from RAM
             temp_dir
         };
@@ -828,6 +837,7 @@ impl SegmentBuilder {
             segment_uuid,
             deferred_internal_id,
             stopped,
+            true, // ignore_missing_version: reloaded here before the version save above, if postponed
         )
     }
 

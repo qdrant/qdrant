@@ -452,6 +452,7 @@ impl LocalShard {
                         uuid,
                         deferred_internal_id,
                         &AtomicBool::new(false),
+                        false,
                     )?;
 
                     segment.check_consistency_and_repair()?;

@@ -445,8 +445,14 @@ fn payload_index_files_are_immutable_after_build() {
     // an index state that still answers queries correctly given the runtime
     // deletion bitvec.
     drop(segment);
-    let mut reloaded =
-        load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false)).unwrap();
+    let mut reloaded = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
     let after_reload = snapshot_dir(&payload_index_dir);
     assert_snapshots_equal(&baseline, &after_reload, "after reload");
     assert_query_counts(&reloaded, &live, &queries, "after reload");
@@ -558,6 +564,7 @@ fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types
         uuid::Uuid::nil(),
         None,
         &AtomicBool::new(false),
+        false,
     )
     .unwrap();
 

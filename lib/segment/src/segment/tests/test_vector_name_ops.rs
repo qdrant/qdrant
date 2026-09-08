@@ -421,7 +421,7 @@ fn test_persistence_after_create_with_data() {
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
 
     // Config persisted
     assert_eq!(loaded.segment_config.vector_data["persisted"].size, new_dim);
@@ -525,7 +525,7 @@ fn check_recreate_does_not_resurrect(
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
     let v2 = loaded.vector("v2", new_point, &hw).unwrap();
     assert!(
         v2.is_none(),
@@ -575,7 +575,7 @@ fn test_persistence_after_delete_with_data() {
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
 
     assert!(!loaded.segment_config.vector_data.contains_key("temp"));
     assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);

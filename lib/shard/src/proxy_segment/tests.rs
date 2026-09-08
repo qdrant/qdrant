@@ -756,6 +756,7 @@ fn test_pending_changes_recovered_on_restart() {
         uuid::Uuid::nil(),
         None,
         &std::sync::atomic::AtomicBool::new(false),
+        false,
     )
     .unwrap();
 
@@ -886,6 +887,7 @@ fn test_double_proxy_pending_changes_levels() {
         uuid::Uuid::nil(),
         None,
         &std::sync::atomic::AtomicBool::new(false),
+        false,
     )
     .unwrap();
 

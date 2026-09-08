@@ -285,8 +285,14 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment =
-        load_segment(&entry.path(), Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let restored_segment = load_segment(
+        &entry.path(),
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(
@@ -392,8 +398,14 @@ fn test_snapshot_streamable_without_files_wrapper() {
 
     assert!(segment_path.is_dir());
 
-    let restored_segment =
-        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let restored_segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     assert_eq!(
         segment.total_point_count(),
@@ -2076,7 +2088,8 @@ fn test_dense_deferred_points() {
     drop(segment);
 
     // Reopen segment to ensure deferred points are loaded correctly from disk
-    let segment = load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false)).unwrap();
+    let segment =
+        load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false), false).unwrap();
 
     // Deferred points should still be the same after reopening
     assert!(
