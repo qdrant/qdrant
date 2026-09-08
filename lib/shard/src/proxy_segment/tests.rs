@@ -712,3 +712,80 @@ fn test_proxy_deferred() {
 
     assert_eq!(proxy_segment.available_point_count_without_deferred(), 2);
 }
+
+/// `propagate_to_wrapped` must apply all pending proxy changes to the wrapped segment: a queued
+/// named vector creation and a queued payload index creation, each recorded with a higher
+/// version than the last.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/10507>
+#[test]
+fn test_propagate_to_wrapped_vector_name_and_index() {
+    use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+    use segment::types::Distance;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let wrapped_segment = LockedSegment::new(empty_segment(dir.path()));
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut proxy_segment = ProxySegment::new(wrapped_segment.clone());
+
+    // Queue a named vector creation, then a payload index creation, each with a higher version.
+    let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+        size: 4,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    });
+    proxy_segment
+        .create_vector_name(10, "extra_vector", &vector_config)
+        .unwrap();
+
+    let field_name: PayloadKeyType = "color".parse().unwrap();
+    let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+    proxy_segment
+        .create_field_index(20, &field_name, Some(&field_schema), &hw_counter)
+        .unwrap();
+
+    // Both changes are pending on the proxy, not yet visible on the wrapped segment.
+    assert!(!proxy_segment.get_vector_name_changes().is_empty());
+    assert!(!proxy_segment.get_index_changes().is_empty());
+    assert!(
+        !wrapped_segment
+            .get()
+            .read()
+            .config()
+            .vector_data
+            .contains_key("extra_vector")
+    );
+    assert!(
+        !wrapped_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .contains_key(&field_name)
+    );
+
+    proxy_segment.propagate_to_wrapped().unwrap();
+
+    // The proxy has drained its pending changes...
+    assert!(proxy_segment.get_vector_name_changes().is_empty());
+    assert!(proxy_segment.get_index_changes().is_empty());
+
+    // ...and both changes actually landed on the wrapped segment.
+    assert!(
+        wrapped_segment
+            .get()
+            .read()
+            .config()
+            .vector_data
+            .contains_key("extra_vector")
+    );
+    assert_eq!(
+        wrapped_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .get(&field_name),
+        Some(&field_schema),
+    );
+}
