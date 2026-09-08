@@ -3,21 +3,24 @@ use std::collections::HashMap;
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::PayloadIndexSchema;
 use collection::common::sha_256::hashes_equal;
-use collection::config::CollectionConfigInternal;
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::replica_set_state::{
     MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
 };
-use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
+use collection::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardKeyMapping};
 use common::save_on_disk::SaveOnDisk;
+use common::fs::read_json;
 use fs_err::tokio as tokio_fs;
+use segment::types::ShardKey;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
+    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex, CreateShardKey,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::content_manager::snapshots::download_result::DownloadResult;
@@ -180,6 +183,21 @@ async fn _do_recover_from_snapshot(
 
     let schema = payload_schema.read().schema.clone();
 
+    // Custom sharding keeps its shard keys in `shard_key_mapping.json`, not in the
+    // collection params. A collection recreated from the snapshot config alone would
+    // have no shards, and the shard recovery below would silently restore nothing.
+    let snapshot_shard_key_mapping: Option<ShardKeyMapping> =
+        if snapshot_config.params.sharding_method == Some(ShardingMethod::Custom) {
+            let mapping_path = tmp_collection_dir.path().join(SHARD_KEY_MAPPING_FILE);
+            Some(read_json(&mapping_path).map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to load shard key mapping from {mapping_path:?}: {err}"
+                ))
+            })?)
+        } else {
+            None
+        };
+
     let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
@@ -209,6 +227,38 @@ async fn _do_recover_from_snapshot(
                     .await?;
             }
 
+            // Recreate the snapshot's shard keys ordered by their original shard ids:
+            // shard ids are assigned sequentially, so this reproduces the snapshot's
+            // shard layout for the recovery below.
+            if let Some(mapping) = &snapshot_shard_key_mapping {
+                let mut keys: Vec<(ShardKey, Vec<ShardId>)> = mapping
+                    .iter()
+                    .map(|(shard_key, shard_ids)| {
+                        let mut shard_ids: Vec<ShardId> = shard_ids.iter().copied().collect();
+                        shard_ids.sort_unstable();
+                        (shard_key.clone(), shard_ids)
+                    })
+                    .collect();
+                keys.sort_by_key(|(_, shard_ids)| shard_ids.first().copied().unwrap_or(0));
+
+                for (shard_key, shard_ids) in keys {
+                    let placement: ShardsPlacement =
+                        shard_ids.iter().map(|_| vec![this_peer_id]).collect();
+                    dispatcher
+                        .submit_collection_meta_op(
+                            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                                collection_name: collection_pass.to_string(),
+                                shard_key,
+                                placement,
+                                initial_state: None,
+                            }),
+                            auth.clone(),
+                            None,
+                        )
+                        .await?;
+                }
+            }
+
             toc.get_collection(&collection_pass).await?
         }
     };
@@ -229,6 +279,22 @@ async fn _do_recover_from_snapshot(
             "Snapshot is not compatible with existing collection: Collection shard number: {:?} Snapshot shard number: {:?}",
             state.config.params.shard_number, snapshot_config.params.shard_number
         )));
+    }
+
+    // Shard recovery below looks the snapshot's shard directories up by shard id, so
+    // the collection's shard layout must match the snapshot's exactly. Fail loudly
+    // instead of restoring nothing.
+    if let Some(mapping) = &snapshot_shard_key_mapping {
+        let expected: std::collections::HashSet<ShardId> =
+            mapping.shard_ids().into_iter().collect();
+        let actual: std::collections::HashSet<ShardId> =
+            state.shards.keys().copied().collect();
+        if actual != expected {
+            return Err(StorageError::bad_input(format!(
+                "Snapshot shard layout {expected:?} cannot be reproduced in collection \
+                 {collection_pass} (has {actual:?})"
+            )));
+        }
     }
 
     let is_manual_recovery_state_supported = toc
