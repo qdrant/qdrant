@@ -73,6 +73,8 @@ pub struct GraphLayers {
     pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
     pub(super) visited_pool: VisitedPool,
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub(super) residency: GraphLinksResidency,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -651,6 +653,7 @@ impl GraphLayers {
             links: Self::load_links_universal(fs, dir, residency)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
+            residency,
         })
     }
 
@@ -867,6 +870,7 @@ mod tests {
             links: GraphLinks::new_from_edges(graph_links.clone(), format_param, hnsw_m).unwrap(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
+            residency: GraphLinksResidency::Pinned,
         };
 
         let linking_idx: PointOffsetType = 7;

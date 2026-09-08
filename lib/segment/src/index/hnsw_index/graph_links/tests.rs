@@ -113,6 +113,11 @@ fn check_links(
         assert_eq!(links.is_empty(), right.links_empty(point_id, level));
         links
     });
+    if let Some(vectors) = vectors {
+        for point_id in 0..right.num_points() as PointOffsetType {
+            vectors.assert_base_vector(point_id, 0, right.base_vector(point_id));
+        }
+    }
     for links in [&mut left, &mut right_links].iter_mut() {
         links.iter_mut().for_each(|levels| {
             levels
@@ -252,6 +257,13 @@ fn test_links_file_links<F: UniversalReadFs>(
                 )
                 .unwrap();
             }
+        }
+    }
+
+    if let Some(vectors) = &vectors {
+        for point_id in 0..links.len() as PointOffsetType {
+            let base_vector = view.read_base_vector(point_id, 1).unwrap();
+            vectors.assert_base_vector(point_id, 0, &base_vector);
         }
     }
 }

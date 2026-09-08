@@ -27,6 +27,8 @@ pub struct GraphLayersBatched<S: UniversalRead> {
     pub(super) links: GraphLinksFile<S>,
     pub(super) entry_points: EntryPoints,
     visited_pool: VisitedPool,
+    #[expect(dead_code, reason = "would be used in combined-storage")]
+    pub(super) residency: GraphLinksResidency,
 }
 
 impl<S: UniversalRead> std::fmt::Debug for GraphLayersBatched<S> {
@@ -54,6 +56,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             links: GraphLinksFile::open(file, format)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
+            residency,
         })
     }
 

@@ -295,6 +295,32 @@ impl GraphLinksView<'_> {
         }
     }
 
+    /// Base vector of a point.
+    ///
+    /// # Panics
+    ///
+    /// Panics when using a format that does not support vectors.
+    pub(super) fn base_vector(&self, point_id: PointOffsetType) -> &[u8] {
+        let idx = self.offset_idx(point_id, 0);
+        match self.compression {
+            CompressionInfo::Uncompressed { .. } => unimplemented!(),
+            CompressionInfo::Compressed { .. } => unimplemented!(),
+            CompressionInfo::CompressedWithVectors {
+                neighbors,
+                ref offsets,
+                hnsw_m: _,
+                bits_per_unsorted: _,
+                base_vector_layout,
+                link_vector_size: _,
+                link_vector_alignment: _,
+            } => {
+                let (start, _end) = offsets.read_pair(idx).unwrap();
+                let end = start as usize + base_vector_layout.size();
+                &neighbors[start as usize..end]
+            }
+        }
+    }
+
     pub(super) fn point_level(&self, point_id: PointOffsetType) -> usize {
         find_level(
             u64::from(self.reindex[point_id as usize]),

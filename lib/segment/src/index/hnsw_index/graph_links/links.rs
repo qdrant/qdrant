@@ -6,6 +6,7 @@
 //! through the parsed view and never touch the owning storage, so the search
 //! hot path involves no dynamic dispatch even for the `Universal` backend.
 
+use std::alloc::Layout;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -150,6 +151,22 @@ impl GraphLinks {
         }
     }
 
+    pub fn base_vector_layout(&self) -> Option<Layout> {
+        match &self.view().compression {
+            CompressionInfo::Uncompressed { .. } => None,
+            CompressionInfo::Compressed { .. } => None,
+            CompressionInfo::CompressedWithVectors {
+                neighbors: _,
+                offsets: _,
+                hnsw_m: _,
+                bits_per_unsorted: _,
+                base_vector_layout,
+                link_vector_size: _,
+                link_vector_alignment: _,
+            } => Some(*base_vector_layout),
+        }
+    }
+
     pub fn num_points(&self) -> usize {
         self.view().reindex.len()
     }
@@ -181,6 +198,12 @@ impl GraphLinks {
     ) -> (&[u8], LinksWithVectorsIterator<'_>) {
         let (base_vector, links, vectors) = self.view().links_with_vectors(point_id, level);
         (base_vector, links.zip(vectors))
+    }
+
+    /// See [`GraphLinksView::base_vector`].
+    #[inline]
+    pub fn base_vector(&self, point_id: PointOffsetType) -> &[u8] {
+        self.view().base_vector(point_id)
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
