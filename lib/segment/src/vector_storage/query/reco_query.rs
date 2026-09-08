@@ -169,6 +169,12 @@ fn avg_vectors<'a>(
     for vector in vectors {
         match vector {
             VectorRef::Dense(vector) => {
+                if dense_count > 0 && vector.len() != avg_dense.len() {
+                    return Err(OperationError::WrongVectorDimension {
+                        expected_dim: avg_dense.len(),
+                        received_dim: vector.len(),
+                    });
+                }
                 dense_count += 1;
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
@@ -184,15 +190,21 @@ fn avg_vectors<'a>(
             }
             VectorRef::MultiDense(vector) => {
                 multi_count += 1;
-                avg_multi = Some(avg_multi.map_or_else(
-                    || vector.to_owned(),
-                    |mut avg_multi| {
+                avg_multi = Some(match avg_multi {
+                    None => vector.to_owned(),
+                    Some(mut avg_multi) => {
+                        if avg_multi.dim != vector.dim {
+                            return Err(OperationError::WrongVectorDimension {
+                                expected_dim: avg_multi.dim,
+                                received_dim: vector.dim,
+                            });
+                        }
                         avg_multi
                             .flattened_vectors
                             .extend_from_slice(vector.flattened_vectors);
                         avg_multi
-                    },
-                ));
+                    }
+                });
             }
         }
     }
@@ -464,6 +476,42 @@ mod test {
         );
         assert!(matches!(
             result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
+
+        // Positive vectors with different dimensions are rejected, not
+        // silently zero-padded into the average.
+        let mismatched_positives: Vec<VectorInternal> =
+            vec![vec![1.0, 0.0].into(), vec![0.0, 1.0, 2.0].into()];
+        let result = avg_vector_for_recommendation(
+            mismatched_positives.iter().map(VectorRef::from),
+            std::iter::empty().peekable(),
+        );
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_avg_vectors_mismatched_dense_dims() {
+        // Same-dimension dense vectors average as before.
+        let vectors: Vec<VectorInternal> = vec![vec![1.0, 2.0].into(), vec![3.0, 4.0].into()];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            vec![2.0, 3.0].into(),
+        );
+
+        // Mismatched dimensions are rejected, not zero-padded.
+        let vectors: Vec<VectorInternal> = vec![vec![1.0, 2.0].into(), vec![3.0, 4.0, 5.0].into()];
+        assert!(matches!(
+            avg_vectors(vectors.iter().map(VectorRef::from)),
             Err(OperationError::WrongVectorDimension {
                 expected_dim: 2,
                 received_dim: 3,
