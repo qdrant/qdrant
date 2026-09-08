@@ -423,6 +423,8 @@ mod test {
 
         test_query_limit(&collection).await;
         test_scroll_query_limit(&collection).await;
+        test_facet_query_limit(&collection).await;
+        test_matrix_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -471,6 +473,52 @@ mod test {
             order_by: None,
         };
         assert_strict_mode_success(request_valid_limit, collection).await;
+    }
+
+    async fn test_facet_query_limit(collection: &Collection) {
+        use api::rest::FacetRequestInternal;
+        use segment::json_path::JsonPath;
+
+        let facet_request = |limit: Option<usize>| FacetRequestInternal {
+            key: JsonPath::new(INDEXED_KEY),
+            limit,
+            filter: None,
+            exact: None,
+        };
+
+        // Omitted limit falls back to the default (10), which exceeds max_query_limit (4)
+        assert_strict_mode_error(facet_request(None), collection).await;
+
+        // Explicit limit (10) exceeds max_query_limit (4)
+        assert_strict_mode_error(facet_request(Some(10)), collection).await;
+
+        // Explicit limit (4) matches max_query_limit (4)
+        assert_strict_mode_success(facet_request(Some(4)), collection).await;
+    }
+
+    async fn test_matrix_query_limit(collection: &Collection) {
+        use api::rest::SearchMatrixRequestInternal;
+
+        let matrix_request =
+            |sample: Option<usize>, limit: Option<usize>| SearchMatrixRequestInternal {
+                filter: None,
+                sample,
+                limit,
+                using: None,
+            };
+
+        // Both parameters omitted: effective size is the product of the
+        // defaults (3 * 10 = 30), which exceeds max_query_limit (4)
+        assert_strict_mode_error(matrix_request(None, None), collection).await;
+
+        // Only limit given: the omitted sample still defaults to 10 (2 * 10 = 20 > 4)
+        assert_strict_mode_error(matrix_request(None, Some(2)), collection).await;
+
+        // Only sample given: the omitted limit defaults to 3 (3 * 10 = 30 > 4)
+        assert_strict_mode_error(matrix_request(Some(10), None), collection).await;
+
+        // Explicitly small enough: 1 * 2 = 2 <= max_query_limit (4)
+        assert_strict_mode_success(matrix_request(Some(2), Some(1)), collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
