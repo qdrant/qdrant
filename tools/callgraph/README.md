@@ -1,8 +1,8 @@
 # callgraph
 
-Interactive call-graph reports for one function of the Qdrant workspace,
-viewable in a browser: pan/zoom graph, per-node docs and source snippets,
-exact call sites, GitHub/editor links.
+Interactive call-graph reports for one function or type of the Qdrant
+workspace, viewable in a browser: pan/zoom graph, per-node docs and source
+snippets, exact call sites, GitHub/editor links.
 
 ![callgraph report](screenshot.png)
 
@@ -10,6 +10,7 @@ exact call sites, GitHub/editor links.
 tools/callgraph/callgraph.py read_bytes_async                        # by name
 tools/callgraph/callgraph.py universal_io::traits::read_bytes_async  # :: segments disambiguate
 tools/callgraph/callgraph.py lib/common/common/src/universal_io/traits/read.rs:113
+tools/callgraph/callgraph.py common::universal_io::traits::append::UniversalAppendFs  # trait/struct/enum/type/const
 ```
 
 Prints a `file://…/target/callgraph/<fn>.html` link when done. Requires
@@ -22,6 +23,11 @@ Prints a `file://…/target/callgraph/<fn>.html` link when done. Requires
 - Trait declarations and their impls are bridged via goto-implementation /
   goto-declaration, so a walk doesn't dead-end when a call dispatches through
   a trait (dashed edges in the graph).
+- The call hierarchy is function-only, so a struct/trait root is walked via
+  find-references instead: each mention is attributed to its enclosing
+  function, or — for mentions in type definitions and impl headers — to the
+  enclosing type / the impl block's self type (square nodes, teal edges).
+  A type's "callees" are its methods (trait body + impl blocks, dotted edges).
 - Test code is excluded for real: rust-analyzer runs with `cfg(test)` off,
   and `tests/`, `benches/`, `examples/` targets are filtered by path.
 - Layout by graphviz at generation time; the report itself is one
