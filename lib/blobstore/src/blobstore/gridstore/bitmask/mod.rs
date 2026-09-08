@@ -82,11 +82,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create(
-        fs: &impl UniversalReadFs<File = S>,
-        dir: &Path,
-        config: GridstoreConfig,
-    ) -> Result<Self> {
+    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes

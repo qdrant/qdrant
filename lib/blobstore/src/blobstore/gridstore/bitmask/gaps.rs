@@ -94,7 +94,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
     }
 
     pub fn create(
-        fs: &impl UniversalReadFs<File = S>,
+        fs: &S::Fs,
         dir: &Path,
         iter: impl ExactSizeIterator<Item = RegionGaps>,
         config: GridstoreConfig,
