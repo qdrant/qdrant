@@ -46,6 +46,10 @@ impl UniversalReadAsync for MmapFile {
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         ready(self.read_bytes(range, access_pattern, align))
     }
+
+    fn populate_range_async(&self, _range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        std::future::ready(Ok(()))
+    }
 }
 
 /// Unlike the reads above, the writes are deferred to first poll, as

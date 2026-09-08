@@ -60,6 +60,11 @@ where
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
     }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.cache.populate_range_async(range)
+    }
 }
 
 impl<A: AsyncAppend + Clone> UniversalWriteFsAsync for CachedBlobFs<A>

@@ -40,4 +40,9 @@ where
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.0.read_bytes_async(range, access_pattern, align)
     }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.0.populate_range_async(range)
+    }
 }

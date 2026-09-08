@@ -1360,6 +1360,10 @@ mod tests_async {
             }
             self.inner.read_bytes(range, access_pattern, align)
         }
+
+        async fn populate_range_async(&self, _range: Range<u64>) -> UioResult<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
