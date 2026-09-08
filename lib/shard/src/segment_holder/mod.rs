@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -985,8 +985,10 @@ impl SegmentHolder {
     fn aloha_lock_segment_read(
         segment: &'_ RwLock<dyn StorageSegmentEntry>,
     ) -> RwLockReadGuard<'_, dyn StorageSegmentEntry> {
+        let start = Instant::now();
         let mut interval = Duration::from_nanos(100);
-        loop {
+
+        for i in 0u64.. {
             if let Some(guard) = segment.try_read_for(interval) {
                 return guard;
             }
@@ -994,10 +996,14 @@ impl SegmentHolder {
             interval = interval.saturating_mul(2);
             if interval.as_secs() >= 10 {
                 log::warn!(
-                    "Trying to read-lock a segment is taking a long time. This could be a deadlock and may block new updates.",
+                    "Trying to read-lock a segment is taking a long time. This could be a deadlock and may block new updates. (waited: {:?}, attempt: {})",
+                    start.elapsed(),
+                    i + 1,
                 );
             }
         }
+
+        unreachable!("above loop is practically infinite");
     }
 
     /// Try to acquire write lock over random segment with increasing wait time.
