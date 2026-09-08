@@ -123,9 +123,22 @@ mod tests {
     #[test]
     fn from_bytes_reports_error_on_malformed_ecostring_blob() {
         // A bare CBOR-encoded integer, not the expected sequence: mirrors the
-        // "invalid type: integer `0`, expected a sequence" panic from the issue.
+        // "invalid type: integer `0`, expected a sequence" panic from the issue. This
+        // is byte-for-byte the shape @yudelevi found in the real corrupted field index
+        // attached to #9857: 256 tracker pointers referencing a page region that was
+        // zeroed out post-flush, so the first byte read back is always 0x00.
         let malformed = [0x00u8];
         assert!(Vec::<ecow::EcoString>::from_bytes(&malformed).is_err());
+    }
+
+    /// The second real-world failure mode from #9857: a tracker pointer with
+    /// `length == 0` (a single corrupted pointer in a second affected shard, per
+    /// @yudelevi's report) hands `from_bytes` an empty slice, which must error as
+    /// `EofWhileParsingValue` rather than panic — distinct from the truncated-value
+    /// case below, which still has some bytes to parse before running out.
+    #[test]
+    fn from_bytes_reports_error_on_empty_blob() {
+        assert!(Vec::<ecow::EcoString>::from_bytes(&[]).is_err());
     }
 
     #[test]

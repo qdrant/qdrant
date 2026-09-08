@@ -408,6 +408,7 @@ fn test_delete_value_preserves_pointer_on_deserialize_error() {
     // Overwrite the stored bytes in place with something that isn't valid JSON.
     let garbage = vec![0xFFu8; pointer.length as usize];
     storage
+        .as_gridstore_mut()
         .write_into_pages(&garbage, pointer.page_id, pointer.block_offset)
         .unwrap();
 
@@ -442,10 +443,11 @@ fn test_read_values_reports_error_on_deserialize_error() {
     let pointer = storage.get_pointer(0).unwrap();
     let garbage = vec![0xFFu8; pointer.length as usize];
     storage
+        .as_gridstore_mut()
         .write_into_pages(&garbage, pointer.page_id, pointer.block_offset)
         .unwrap();
 
-    let result = storage.read_values::<Random, _, GridstoreError>(
+    let result = storage.read_values::<Random, _, BlobstoreError>(
         std::iter::once((0usize, 0u32)),
         |_, _, _| Ok(()),
         hw_counter.payload_io_read_counter(),

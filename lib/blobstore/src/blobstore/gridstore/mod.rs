@@ -263,7 +263,7 @@ where
 
     /// Write value into a new cell, considering that it can span more than one page.
     #[allow(clippy::needless_pass_by_ref_mut)]
-    fn write_into_pages(
+    pub(super) fn write_into_pages(
         &mut self,
         value: &[u8],
         start_page_id: PageId,

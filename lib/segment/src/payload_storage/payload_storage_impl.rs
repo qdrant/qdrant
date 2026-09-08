@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use blobstore::config::CreateOptions;
+use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};
-use blobstore::error::BlobstoreError;
 use fs_err as fs;
 use serde_json::Value;
 
