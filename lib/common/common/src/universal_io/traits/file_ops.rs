@@ -5,6 +5,7 @@ use futures::future::BoxFuture;
 
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
+use crate::universal_io::traits::async_io::UniversalReadFsAsync;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
@@ -142,7 +143,7 @@ pub trait UniversalWriteFs: UniversalReadFs {
 /// Component-level preload helpers bound on `impl CachedFs<File = S>` are
 /// only callable when the caller opens through a caching filesystem;
 /// plain-`UniversalReadFs` open paths never see these methods.
-pub trait CachedReadFs: UniversalReadFs {
+pub trait CachedReadFs: UniversalReadFsAsync {
     /// Take the file listing snapshot. From this point on, listing and
     /// existence checks are answered locally and opens of unlisted paths
     /// fail with `NotFound` without touching the underlying filesystem.
