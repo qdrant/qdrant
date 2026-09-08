@@ -56,15 +56,15 @@ pub enum UpdateOnlyFieldIndex<S: UniversalAppend + 'static> {
     UuidMapIndex(UpdateOnlyValueIndex<UpdateOnlyMapKind<UuidIntType>, S>),
     GeoIndex(UpdateOnlyValueIndex<UpdateOnlyGeoKind, S>),
     FullTextIndex(UpdateOnlyValueIndex<UpdateOnlyTextKind, S>),
-    BoolIndex(UpdateOnlyBoolIndex<S>),
-    NullIndex(UpdateOnlyNullIndex<S>),
+    BoolIndex(UpdateOnlyBoolIndex),
+    NullIndex(UpdateOnlyNullIndex),
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// Open the writer for `field`'s index of type `index_type`, under the
     /// payload index root `dir`, creating its storage if it is not there yet.
     pub fn open(
-        fs: S::Fs,
+        fs: &S::Fs,
         dir: &Path,
         field: &JsonPath,
         schema: &PayloadFieldSchema,
@@ -116,19 +116,20 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// [`flush`](Self::flush).
     pub fn add_point(
         &mut self,
+        fs: &S::Fs,
         slot: PointOffsetType,
         values: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::IntIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::DatetimeIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::FloatIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::IntMapIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::KeywordIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::UuidMapIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::GeoIndex(index) => index.add_point(slot, values, hw_counter),
-            Self::FullTextIndex(index) => index.add_point(slot, values, hw_counter),
+            Self::IntIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::DatetimeIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::FloatIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::IntMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::KeywordIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::UuidMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::GeoIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::FullTextIndex(index) => index.add_point(fs, slot, values, hw_counter),
             Self::BoolIndex(index) => index.add_point(slot, values),
             Self::NullIndex(index) => index.add_point(slot, values),
         }
@@ -138,7 +139,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     ///
     /// `hw_counter` is charged only by the bitmask-backed indexes, which do
     /// their writing here; the rest charge each value as it is put.
-    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn flush(&mut self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             Self::IntIndex(index) => index.flush(),
             Self::DatetimeIndex(index) => index.flush(),
@@ -148,8 +149,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::UuidMapIndex(index) => index.flush(),
             Self::GeoIndex(index) => index.flush(),
             Self::FullTextIndex(index) => index.flush(),
-            Self::BoolIndex(index) => index.flush(hw_counter),
-            Self::NullIndex(index) => index.flush(hw_counter),
+            Self::BoolIndex(index) => index.flush(fs, hw_counter),
+            Self::NullIndex(index) => index.flush(fs, hw_counter),
         }
     }
 }

@@ -4,7 +4,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFs;
 use tempfile::TempDir;
 
 use super::UpdateOnlyDenseVectorStorage;
@@ -14,7 +14,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendab
 use crate::vector_storage::update_only::VectorToStore;
 use crate::vector_storage::{DenseVectorStorageRead, VectorStorageRead};
 
-type Writer = UpdateOnlyDenseVectorStorage<VectorElementType, MmapFile>;
+type Writer = UpdateOnlyDenseVectorStorage<VectorElementType>;
 
 const DIM: usize = 4;
 
@@ -41,9 +41,10 @@ fn decoded_vectors_round_trip() {
         vec![9.0, 10.0, 11.0, 12.0],
     ];
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             vectors
                 .iter()
@@ -72,9 +73,10 @@ fn missing_vectors_take_their_slot_and_are_flagged() {
     let hw_counter = HardwareCounterCell::new();
 
     let present = vec![1.0, 2.0, 3.0, 4.0];
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [
                 VectorToStore::Decoded(VectorRef::from(present.as_slice())),
@@ -107,9 +109,9 @@ fn raw_bytes_round_trip() {
     let vector: Vec<VectorElementType> = vec![1.5, 2.5, 3.5, 4.5];
     let bytes = bytemuck::cast_slice(&vector).to_vec();
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
-        .append_many(0, [VectorToStore::Raw(&bytes)], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)], &hw_counter)
         .unwrap();
     drop(writer);
 
@@ -126,9 +128,10 @@ fn batches_resume() {
     let first = vec![1.0, 1.0, 1.0, 1.0];
     let second = vec![2.0, 2.0, 2.0, 2.0];
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(first.as_slice()))],
             &hw_counter,
@@ -136,9 +139,10 @@ fn batches_resume() {
         .unwrap();
     drop(writer);
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
         .append_many(
+            &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(second.as_slice()))],
             &hw_counter,
@@ -159,9 +163,9 @@ fn malformed_raw_bytes_are_rejected() {
     let dir = TempDir::with_prefix("update_only_dense").unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut writer = Writer::open(MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     let err = writer
-        .append_many(0, [VectorToStore::Raw(&[1, 2, 3])], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&[1, 2, 3])], &hw_counter)
         .unwrap_err();
     assert!(
         format!("{err}").contains("Malformed dense vector blob"),

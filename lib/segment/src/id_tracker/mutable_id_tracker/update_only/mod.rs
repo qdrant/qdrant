@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    IsNotFound as _, OkNotFound as _, OpenOptions, Populate, UniversalAppend,
-    UniversalWriteFileOps as _,
+    IsNotFound as _, OkNotFound as _, OpenOptions, Populate, UniversalAppend, UniversalFlush as _,
+    UniversalWriteFileOps,
 };
 
 use super::change::{MappingChange, write_entry};
@@ -50,7 +50,7 @@ pub enum MappingOperation {
 /// [`heal_versions`](Self::heal_versions) and [`heal_mappings`](Self::heal_mappings).
 ///
 /// [`Flusher`]: common::universal_io::Flusher
-pub struct UpdateOnlyAppendableIdTracker<S: UniversalAppend> {
+pub struct UpdateOnlyAppendableIdTracker {
     segment_path: PathBuf,
     /// Highest slot the mappings log has claimed, `None` while it has claimed none; advanced only
     /// once the entries claiming the new slots are durable.
@@ -65,11 +65,9 @@ pub struct UpdateOnlyAppendableIdTracker<S: UniversalAppend> {
     /// about where its last one ends. Appending here rather than at the end of the file makes a
     /// file that ends elsewhere a conflict.
     mappings_end: u64,
-    /// Opens the two files, each created on its first write.
-    fs: S::Fs,
 }
 
-impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
+impl UpdateOnlyAppendableIdTracker {
     /// All three of `max_claimed_internal_id`, `pending_inserts` and `mappings_end` must come from
     /// one and the same read of the mappings log, as exposed by the read-only tracker. A segment
     /// with no log yet starts at `(None, [], 0)`.
@@ -87,8 +85,8 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// `mappings_end` is not a hint: the first append cuts the file back to it (see
     /// [`heal_mappings`](Self::heal_mappings)), which drops a torn entry, or good data if it lags
     /// for any other reason.
-    pub fn new(
-        fs: S::Fs,
+    pub fn new<Fs: UniversalWriteFileOps>(
+        fs: &Fs,
         segment_path: impl Into<PathBuf>,
         max_claimed_internal_id: Option<PointOffsetType>,
         pending_inserts: impl IntoIterator<Item = PointIdType>,
@@ -98,9 +96,8 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             segment_path: segment_path.into(),
             max_claimed_internal_id,
             mappings_end,
-            fs,
         };
-        tracker.retire_pending_inserts(pending_inserts)?;
+        tracker.retire_pending_inserts(fs, pending_inserts)?;
 
         Ok(tracker)
     }
@@ -120,8 +117,9 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     /// opened.
     ///
     /// [`DELETED_POINT_VERSION`]: crate::id_tracker::DELETED_POINT_VERSION
-    pub fn set_internal_versions(
+    pub fn set_internal_versions<Fs: UniversalWriteFileOps>(
         &mut self,
+        fs: &Fs,
         internal_ids: &[PointOffsetType],
         versions: &[SeqNumberType],
     ) -> OperationResult<()> {
@@ -138,15 +136,15 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         }
 
         let path = versions_path(&self.segment_path);
-        let mut file = self.open_append(&path)?;
+        let mut file = Self::open_append(fs, &path)?;
 
         // A torn tail is healed rather than refused: those bytes are a slot no reader ever saw, and
         // the entries below take their place. `heal_versions` drops the handle before rewriting.
         let file_len = Self::end_of_file(&file)?;
         let committed_len = file_len - file_len % VERSION_ELEMENT_SIZE;
         if committed_len != file_len {
-            self.heal_versions(&path, file, file_len)?;
-            file = self.open_append(&path)?;
+            Self::heal_versions(fs, &path, file, file_len)?;
+            file = Self::open_append(fs, &path)?;
         }
         let covered_slots = committed_len / VERSION_ELEMENT_SIZE;
 
@@ -210,8 +208,9 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     ///
     /// Slots are consecutive above every slot the log has claimed, and stay invisible to readers
     /// until [`set_internal_versions`](Self::set_internal_versions) covers them.
-    pub fn insert_operations(
+    pub fn insert_operations<Fs: UniversalWriteFileOps>(
         &mut self,
+        fs: &Fs,
         operations: &[MappingOperation],
     ) -> OperationResult<Vec<(PointIdType, PointOffsetType)>> {
         if operations.is_empty() {
@@ -252,7 +251,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
         }
 
         let path = mappings_path(&self.segment_path);
-        let mut file = self.open_append(&path)?;
+        let mut file = Self::open_append(fs, &path)?;
 
         // One entry per buffer, appended in order in a single operation, at the end of the log
         // rather than the end of the file. The two part ways only after a write that tore or landed
@@ -266,8 +265,8 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             // batch appended anew. Drop this handle first, healing replaces the path, which Windows
             // refuses while an mmap is still open.
             drop(file);
-            self.heal_mappings(&path)?;
-            file = self.open_append(&path)?;
+            self.heal_mappings(fs, &path)?;
+            file = Self::open_append(fs, &path)?;
             file.append_batch(self.mappings_end, batch())?;
         }
         (file.flusher())()?;
@@ -297,17 +296,19 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     ///
     /// Runs at construction rather than lazily on the first write, so that no later write path can
     /// be added that forgets it and publishes one of these points.
-    fn retire_pending_inserts(
+    fn retire_pending_inserts<Fs: UniversalWriteFileOps>(
         &mut self,
+        fs: &Fs,
         pending_inserts: impl IntoIterator<Item = PointIdType>,
     ) -> OperationResult<()> {
-        self.delete_points(pending_inserts)
+        self.delete_points(fs, pending_inserts)
     }
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
     /// handed out again. Tombstoning that data is the caller's business.
-    pub fn delete_points(
+    pub fn delete_points<Fs: UniversalWriteFileOps>(
         &mut self,
+        fs: &Fs,
         point_ids: impl IntoIterator<Item = PointIdType>,
     ) -> OperationResult<()> {
         let operations: Vec<MappingOperation> = point_ids
@@ -316,7 +317,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
             .collect();
 
         // Deletes claim no slots, so the returned mappings are empty.
-        self.insert_operations(&operations)?;
+        self.insert_operations(fs, &operations)?;
 
         Ok(())
     }
@@ -333,12 +334,15 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     }
 
     /// Open the append handle for `path`, creating the file if it is not there yet.
-    fn open_append(&self, path: &Path) -> OperationResult<S> {
-        match self.fs.open_append(path, Self::open_options()) {
+    fn open_append<Fs: UniversalWriteFileOps>(
+        fs: &Fs,
+        path: &Path,
+    ) -> OperationResult<Fs::AppendFile> {
+        match fs.open_append(path, Self::open_options()) {
             Ok(file) => Ok(file),
             Err(err) if err.is_not_found() => {
-                self.fs.create(path, 0)?;
-                Ok(self.fs.open_append(path, Self::open_options())?)
+                fs.create(path, 0)?;
+                Ok(fs.open_append(path, Self::open_options())?)
             }
             Err(err) => Err(err.into()),
         }
@@ -348,7 +352,7 @@ impl<S: UniversalAppend> UpdateOnlyAppendableIdTracker<S> {
     ///
     /// `NotFound` means a lazy backend has not materialized the object yet, so it is empty and the
     /// append at 0 creates it.
-    fn end_of_file(file: &S) -> OperationResult<u64> {
+    fn end_of_file<S: UniversalAppend>(file: &S) -> OperationResult<u64> {
         Ok(file.len::<u8>().ok_not_found()?.unwrap_or(0))
     }
 }

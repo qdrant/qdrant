@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalAppend};
+use common::universal_io::{Populate, UniversalReadFs, UniversalWriteFileOps};
 
 use super::compact_stored_flags::{COMPACT_FLAGS_FILE, open_or_create_compact_mask};
 use super::mode::FlagsMode;
@@ -23,23 +23,25 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// files of both modes behind; rebuild such a segment to migrate its flags.
 ///
 /// [1]: super::compact_stored_flags::CompactStoredFlags
-pub struct UpdateOnlyStoredFlags<S: UniversalAppend + 'static> {
-    fs: S::Fs,
+pub struct UpdateOnlyStoredFlags {
     /// Path of the mask file inside the flags directory.
     path: PathBuf,
     /// The mask, resident in RAM; tracks its own effective dirtiness.
     mask: MutableStoredBitmask,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
+impl UpdateOnlyStoredFlags {
     /// Read the flags at `directory` into memory, ready to be extended. A
     /// directory that holds none yet opens empty, and is created — mask file
     /// included — right away, because storages take the directory as the
     /// marker that they exist at all.
     ///
     /// Errors when the directory holds flags of the dynamic mode.
-    pub fn open(fs: S::Fs, directory: &Path) -> OperationResult<Self> {
-        if FlagsMode::detect(&fs, directory)? == Some(FlagsMode::Dynamic) {
+    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+        fs: &Fs,
+        directory: &Path,
+    ) -> OperationResult<Self> {
+        if FlagsMode::detect(fs, directory)? == Some(FlagsMode::Dynamic) {
             return Err(OperationError::service_error(format!(
                 "flags in {} are in the dynamic mode, which the update-only writer does not \
                  support; rebuild the segment to migrate its flags",
@@ -47,10 +49,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
             )));
         }
 
-        let mask = open_or_create_compact_mask(&fs, directory, Populate::Blocking)?;
+        let mask = open_or_create_compact_mask(fs, directory, Populate::Blocking)?;
 
         Ok(Self {
-            fs,
             path: directory.join(COMPACT_FLAGS_FILE),
             mask,
         })
@@ -69,8 +70,12 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStoredFlags<S> {
 
     /// Persist the mask in one atomic whole-file write, or write nothing when
     /// it has not effectively changed since it was opened or last flushed.
-    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
-        let bytes_written = self.mask.save(&self.fs, &self.path)?;
+    pub fn flush<Fs: UniversalWriteFileOps>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let bytes_written = self.mask.save(fs, &self.path)?;
         hw_counter
             .payload_index_io_write_counter()
             .incr_delta(bytes_written);
@@ -98,12 +103,14 @@ mod tests_mod {
     use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
     use crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags;
 
-    fn open(dir: &std::path::Path) -> UpdateOnlyStoredFlags<S> {
-        UpdateOnlyStoredFlags::open(Fs::default(), dir).unwrap()
+    fn open(dir: &std::path::Path) -> UpdateOnlyStoredFlags {
+        UpdateOnlyStoredFlags::open(&Fs::default(), dir).unwrap()
     }
 
-    fn flush(flags: &mut UpdateOnlyStoredFlags<S>) {
-        flags.flush(&HardwareCounterCell::new()).unwrap();
+    fn flush(flags: &mut UpdateOnlyStoredFlags) {
+        flags
+            .flush(&Fs::default(), &HardwareCounterCell::new())
+            .unwrap();
     }
 
     /// Reader for what the writer left behind, through the type the writable
@@ -221,7 +228,7 @@ mod tests_mod {
         let dir = TempDir::new().unwrap();
         DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
 
-        let result = UpdateOnlyStoredFlags::<S>::open(Fs::default(), dir.path());
+        let result = UpdateOnlyStoredFlags::open(&Fs::default(), dir.path());
         let message = result
             .err()
             .expect("dynamic flags must be refused")

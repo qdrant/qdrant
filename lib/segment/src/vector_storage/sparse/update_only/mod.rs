@@ -31,19 +31,15 @@ const STORAGE_CONFIG: LogstoreConfig = LogstoreConfig {
 /// [`MmapSparseVectorStorage`]: super::mmap_sparse_vector_storage::MmapSparseVectorStorage
 pub struct UpdateOnlySparseVectorStorage<S: UniversalAppend + 'static> {
     storage: UpdateOnlyBlobstore<StoredSparseVector, S>,
-    deleted: UpdateOnlyStoredFlags<S>,
+    deleted: UpdateOnlyStoredFlags,
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
         Ok(Self {
-            storage: UpdateOnlyBlobstore::open(
-                fs.clone(),
-                &path.join(STORAGE_DIRNAME),
-                STORAGE_CONFIG,
-            )?,
+            storage: UpdateOnlyBlobstore::open(fs, &path.join(STORAGE_DIRNAME), STORAGE_CONFIG)?,
             deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIRNAME))?,
         })
     }
@@ -56,6 +52,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
     /// deleted, which is what the writable side records for it.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -80,10 +77,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
             };
 
             self.storage
-                .put(slot, &stored, hw_counter.ref_vector_io_write_counter())?;
+                .put(fs, slot, &stored, hw_counter.ref_vector_io_write_counter())?;
         }
 
         self.storage.flush()?;
-        self.deleted.flush(hw_counter)
+        self.deleted.flush(fs, hw_counter)
     }
 }

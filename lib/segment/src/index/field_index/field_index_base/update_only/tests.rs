@@ -53,11 +53,13 @@ fn write(
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
-    let mut writer = Writer::open(MmapFs, dir, &field(), schema, &index_type).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir, &field(), schema, &index_type).unwrap();
     for (slot, value) in points {
-        writer.add_point(*slot, &[value], &hw_counter).unwrap();
+        writer
+            .add_point(&MmapFs, *slot, &[value], &hw_counter)
+            .unwrap();
     }
-    writer.flush(&hw_counter).unwrap();
+    writer.flush(&MmapFs, &hw_counter).unwrap();
 
     storage
 }
@@ -213,7 +215,7 @@ fn rewriting_a_slot_is_rejected() {
     let schema = schema(PayloadSchemaType::Integer);
 
     let mut writer = Writer::open(
-        MmapFs,
+        &MmapFs,
         dir.path(),
         &field(),
         &schema,
@@ -221,8 +223,14 @@ fn rewriting_a_slot_is_rejected() {
     )
     .unwrap();
 
-    writer.add_point(1, &[&json!(1)], &hw_counter).unwrap();
-    assert!(writer.add_point(0, &[&json!(0)], &hw_counter).is_err());
+    writer
+        .add_point(&MmapFs, 1, &[&json!(1)], &hw_counter)
+        .unwrap();
+    assert!(
+        writer
+            .add_point(&MmapFs, 0, &[&json!(0)], &hw_counter)
+            .is_err()
+    );
 }
 
 /// The boolean index is mask-backed: its writer rewrites both masks whole,

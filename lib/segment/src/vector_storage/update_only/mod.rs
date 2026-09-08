@@ -63,14 +63,14 @@ pub enum VectorToStore<'a> {
 ///
 /// [1]: crate::vector_storage::VectorStorageEnum
 pub enum UpdateOnlyVectorStorage<S: UniversalAppend + 'static> {
-    Dense(Box<UpdateOnlyDenseVectorStorage<VectorElementType, S>>),
-    DenseByte(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeByte, S>>),
-    DenseHalf(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeHalf, S>>),
-    MultiDense(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementType, S>>),
-    MultiDenseByte(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeByte, S>>),
-    MultiDenseHalf(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeHalf, S>>),
-    Turbo(Box<UpdateOnlyTurboVectorStorage<S>>),
-    MultiTurbo(Box<UpdateOnlyMultiTurboVectorStorage<S>>),
+    Dense(Box<UpdateOnlyDenseVectorStorage<VectorElementType>>),
+    DenseByte(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeByte>>),
+    DenseHalf(Box<UpdateOnlyDenseVectorStorage<VectorElementTypeHalf>>),
+    MultiDense(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementType>>),
+    MultiDenseByte(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeByte>>),
+    MultiDenseHalf(Box<UpdateOnlyMultiDenseVectorStorage<VectorElementTypeHalf>>),
+    Turbo(Box<UpdateOnlyTurboVectorStorage>),
+    MultiTurbo(Box<UpdateOnlyMultiTurboVectorStorage>),
     Sparse(Box<UpdateOnlySparseVectorStorage<S>>),
 }
 
@@ -80,7 +80,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     ///
     /// Fails for a storage type an update-only segment cannot have: the mmap
     /// ones are immutable, built whole rather than appended to.
-    pub fn open(fs: S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, path: &Path, config: &VectorDataConfig) -> OperationResult<Self> {
         match config.storage_type {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
             storage_type @ (VectorStorageType::Mmap
@@ -128,7 +128,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// Open the writer for a sparse vector storage at `path`. Sparse vectors
     /// are configured separately from dense ones, so they do not go through
     /// [`open`](Self::open).
-    pub fn open_sparse(fs: S::Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open_sparse(fs: &S::Fs, path: &Path) -> OperationResult<Self> {
         Ok(Self::Sparse(Box::new(UpdateOnlySparseVectorStorage::open(
             fs, path,
         )?)))
@@ -138,20 +138,21 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     /// persist them.
     pub fn append_many<'a>(
         &mut self,
+        fs: &S::Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Dense(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::DenseByte(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::DenseHalf(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDense(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDenseByte(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiDenseHalf(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::Turbo(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::MultiTurbo(s) => s.append_many(start_slot, vectors, hw_counter),
-            Self::Sparse(s) => s.append_many(start_slot, vectors, hw_counter),
+            Self::Dense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::DenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::DenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiDenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::Turbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::MultiTurbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::Sparse(s) => s.append_many(fs, start_slot, vectors, hw_counter),
         }
     }
 }

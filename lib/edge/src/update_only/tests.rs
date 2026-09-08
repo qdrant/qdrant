@@ -195,7 +195,7 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
 mod store {
     use std::path::Path;
 
-    use common::universal_io::MmapFs;
+    use common::universal_io::{MmapFile, MmapFs};
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
     use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
@@ -223,7 +223,7 @@ mod store {
             if payload_storage.is_dir() {
                 fs_err::remove_dir_all(&payload_storage).unwrap();
                 // Opening the writer creates the storage in append-only mode.
-                UpdateOnlyPayloadStorage::<MmapFile>::open(MmapFs, &segment_path).unwrap();
+                UpdateOnlyPayloadStorage::<MmapFile>::open(&MmapFs, &segment_path).unwrap();
             }
         }
     }
