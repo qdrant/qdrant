@@ -40,7 +40,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFileOps as _, read_json_via};
+use common::universal_io::{UniversalAppendFs, read_json_via};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 
@@ -54,9 +54,9 @@ use crate::vector_storage::quantized::quantized_vectors::{
 };
 use crate::vector_storage::update_only::VectorToStore;
 
-enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
-    Binary(Box<EncodedVectorsBin<u128, UpdateOnlyQuantizedChunkedStorage<S>>>),
-    Turbo(Box<EncodedVectorsTQ<UpdateOnlyQuantizedChunkedStorage<S>>>),
+enum UpdateOnlyQuantizedVectorStorage<Fs: UniversalAppendFs> {
+    Binary(Box<EncodedVectorsBin<u128, UpdateOnlyQuantizedChunkedStorage<Fs>>>),
+    Turbo(Box<EncodedVectorsTQ<UpdateOnlyQuantizedChunkedStorage<Fs>>>),
 }
 
 /// The write half of a dense vector's quantized overlay, for one update-only appendable
@@ -64,15 +64,15 @@ enum UpdateOnlyQuantizedVectorStorage<S: UniversalAppend + 'static> {
 /// segment's quantization config supports it.
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
-pub struct UpdateOnlyQuantizedVectors<S: UniversalAppend + 'static> {
-    storage: UpdateOnlyQuantizedVectorStorage<S>,
+pub struct UpdateOnlyQuantizedVectors<Fs: UniversalAppendFs> {
+    storage: UpdateOnlyQuantizedVectorStorage<Fs>,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
     distance: Distance,
     datatype: VectorStorageDatatype,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
     /// Reopen the quantized overlay persisted at `path`, if one is there.
     ///
     /// This never creates anything: whether a vector gets a quantized overlay is a decision made
@@ -81,7 +81,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
     /// for this vector, or the configured method didn't support incremental appends (Scalar,
     /// Product — see [`QuantizationConfig::supports_appendable`]) at creation time.
     pub fn open(
-        fs: S::Fs,
+        fs: Fs,
         path: &Path,
         vector_config: &VectorDataConfig,
     ) -> OperationResult<Option<Self>> {
@@ -108,7 +108,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyQuantizedVectors<S> {
     /// every vector it writes is sized from this same metadata, so the invariant `load`'s check
     /// protects holds by construction here, not by verification.
     fn open_existing(
-        fs: S::Fs,
+        fs: Fs,
         config: QuantizedVectorsConfig,
         path: &Path,
         distance: Distance,

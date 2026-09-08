@@ -4,7 +4,7 @@ use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalWriteFileOps};
+use common::universal_io::{OpenOptions, Populate, UniversalReadFs, UniversalWriteFileOps};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::PointIdType;
@@ -20,8 +20,8 @@ pub(crate) fn deleted_path(base: &Path) -> PathBuf {
 /// [`StoredBitSlice::atomic_update`]; `seed` is consumed in place of reading
 /// the mask file when the caller held it in memory — and kept for a later
 /// call when `points` is empty and nothing is written.
-pub(crate) fn tombstone_points_in_stored_mask<S: UniversalRead<Fs: UniversalWriteFileOps>>(
-    fs: &S::Fs,
+pub(crate) fn tombstone_points_in_stored_mask<Fs: UniversalReadFs + UniversalWriteFileOps>(
+    fs: &Fs,
     segment_path: &Path,
     seed: &mut Option<BitVec>,
     points: &[(PointIdType, PointOffsetType)],
@@ -29,7 +29,7 @@ pub(crate) fn tombstone_points_in_stored_mask<S: UniversalRead<Fs: UniversalWrit
     if points.is_empty() {
         return Ok(());
     }
-    StoredBitSlice::<S>::atomic_update(
+    StoredBitSlice::atomic_update(
         fs,
         deleted_path(segment_path),
         OpenOptions {

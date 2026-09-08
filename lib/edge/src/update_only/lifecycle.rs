@@ -4,8 +4,8 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, UniversalAppend, UniversalFlush as _, UniversalReadFs,
-    UniversalReadFsAsync, UniversalWriteFileOps,
+    MmapFs, OpenOptions, Populate, UniversalAppend, UniversalAppendFs, UniversalFlush as _,
+    UniversalWriteFileOps,
 };
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -23,7 +23,7 @@ use crate::read_view::build_segment_pool;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::holder::LookupSegmentHolder;
 
-impl UpdateOnlyEdgeShard<MmapFile> {
+impl UpdateOnlyEdgeShard<MmapFs> {
     /// Open a writer over local memory-mapped files, discovering segments by
     /// scanning the `segments/` directory — the writer owns the directory it
     /// writes to, so there is no manifest to agree with.
@@ -32,7 +32,7 @@ impl UpdateOnlyEdgeShard<MmapFile> {
     }
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Open a writer over the shard directory at `path`, using `fs` as the
     /// backend and `enumerator` to discover the segments.
     ///
@@ -46,13 +46,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     /// is an error, not a skip — a writer that misses a segment would resolve
     /// a point against a stale copy of itself, or duplicate it.
     pub fn open(
-        fs: S::Fs,
+        fs: Fs,
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFs<File = S> + UniversalReadFsAsync,
-    {
+    ) -> OperationResult<Self> {
         // Sized like the search pools: over-provisioned relative to the CPU
         // count, since on a remote backend the threads mostly wait on IO.
         let pool = build_segment_pool(
@@ -63,26 +60,25 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
 
         let segments: Vec<(Uuid, ListedSegment)> =
             enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<(Uuid, LookupSegment<S>, UpdateOnlySegmentEnum<S>, bool)> =
-            pool.install(|| {
-                segments
-                    .into_par_iter()
-                    .map(|(uuid, listing)| {
-                        let ListedSegment { path, writable } = listing;
-                        // No deferred threshold yet: it belongs to the coordination
-                        // with an external rebuilder, which does not exist in this
-                        // iteration.
-                        let segment = LookupSegment::<S>::open(&fs, &path, None)?;
-                        let writer = UpdateOnlySegmentEnum::open(
-                            &fs,
-                            &path,
-                            &segment.segment_config,
-                            segment.writer_state(),
-                        )?;
-                        Ok((uuid, segment, writer, writable))
-                    })
-                    .collect::<OperationResult<Vec<_>>>()
-            })?;
+        let opened: Vec<_> = pool.install(|| {
+            segments
+                .into_par_iter()
+                .map(|(uuid, listing)| {
+                    let ListedSegment { path, writable } = listing;
+                    // No deferred threshold yet: it belongs to the coordination
+                    // with an external rebuilder, which does not exist in this
+                    // iteration.
+                    let segment = LookupSegment::open(&fs, &path, None)?;
+                    let writer = UpdateOnlySegmentEnum::open(
+                        fs.clone(),
+                        &path,
+                        &segment.segment_config,
+                        segment.writer_state(),
+                    )?;
+                    Ok((uuid, segment, writer, writable))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?;
 
         let mut holder = LookupSegmentHolder::default();
         let mut writers = HashMap::new();
@@ -101,9 +97,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
     }
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S>
+impl<Fs> UpdateOnlyEdgeShard<Fs>
 where
-    S::Fs: UniversalReadFs<File = S> + UniversalReadFsAsync,
+    Fs: UniversalAppendFs,
 {
     /// [`create_appendable`](Self::create_appendable) with `source`'s config.
     #[cfg(test)]
@@ -155,9 +151,9 @@ where
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
         copy_dir_via(&self.fs, &local, &remote)?;
 
-        let lookup = LookupSegment::<S>::open(&self.fs, &remote, None)?;
+        let lookup = LookupSegment::<Fs::File>::open(&self.fs, &remote, None)?;
         let writer = UpdateOnlySegmentEnum::open(
-            &self.fs,
+            self.fs.clone(),
             &remote,
             &lookup.segment_config,
             lookup.writer_state(),

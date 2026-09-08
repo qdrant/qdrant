@@ -18,7 +18,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use serde_json::Value;
 
 pub use self::writer::{UpdateOnlyIndexKind, UpdateOnlyValueIndex};
@@ -64,7 +64,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// Open the writer for `field`'s index of type `index_type`, under the
     /// payload index root `dir`, creating its storage if it is not there yet.
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         dir: &Path,
         field: &JsonPath,
         schema: &PayloadFieldSchema,
@@ -116,7 +116,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// [`flush`](Self::flush).
     pub fn add_point(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         values: &[&Value],
         hw_counter: &HardwareCounterCell,
@@ -139,7 +139,11 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     ///
     /// `hw_counter` is charged only by the bitmask-backed indexes, which do
     /// their writing here; the rest charge each value as it is put.
-    pub fn flush(&mut self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn flush(
+        &mut self,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
             Self::IntIndex(index) => index.flush(),
             Self::DatetimeIndex(index) => index.flush(),

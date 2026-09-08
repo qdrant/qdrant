@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalWriteFileOps};
+use common::universal_io::UniversalAppendFs;
 
 use super::DeleteOnlyIdTrackerState;
 use crate::common::operation_error::OperationResult;
@@ -16,19 +16,15 @@ use crate::types::PointIdType;
 /// A segment open for deletes: nothing in it can grow, so the only thing a
 /// batch can do here is retire points that are already there. Where their
 /// tombstones go is the id tracker's decision.
-pub struct DeleteOnlySegment<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> {
-    id_tracker: DeleteOnlyIdTrackerEnum<S>,
+pub struct DeleteOnlySegment<Fs: UniversalAppendFs> {
+    id_tracker: DeleteOnlyIdTrackerEnum<Fs>,
 }
 
-impl<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> DeleteOnlySegment<S> {
+impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
     /// Open the segment directory at `segment_path` for deletes, resuming the
     /// tracker kind its [`DeleteOnlyIdTrackerState`] variant names; nothing is
     /// read.
-    pub fn open(
-        fs: S::Fs,
-        segment_path: &Path,
-        id_tracker_state: DeleteOnlyIdTrackerState,
-    ) -> Self {
+    pub fn open(fs: Fs, segment_path: &Path, id_tracker_state: DeleteOnlyIdTrackerState) -> Self {
         let id_tracker = match id_tracker_state {
             DeleteOnlyIdTrackerState::Immutable(deleted) => DeleteOnlyIdTrackerEnum::Immutable(
                 UpdateOnlyImmutableIdTracker::new(fs, segment_path, deleted),

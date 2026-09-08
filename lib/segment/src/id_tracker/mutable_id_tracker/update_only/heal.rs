@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::path::Path;
 
 use common::generic_consts::Sequential;
-use common::universal_io::{UniversalRead as _, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppendFs, UniversalRead as _};
 
 use super::UpdateOnlyAppendableIdTracker;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -16,7 +16,7 @@ impl UpdateOnlyAppendableIdTracker {
     ///
     /// Takes ownership of `file` and drops it before the rewrite, Windows cannot replace a path
     /// that still has an mmap open. Callers open a fresh handle afterwards.
-    pub(super) fn heal_versions<Fs: UniversalWriteFileOps>(
+    pub(super) fn heal_versions<Fs: UniversalAppendFs>(
         fs: &Fs,
         path: &Path,
         file: Fs::AppendFile,
@@ -48,7 +48,7 @@ impl UpdateOnlyAppendableIdTracker {
     /// The caller must drop any open handle on `path` first, Windows cannot replace a path that
     /// still has an mmap open. Opens its own handle, drops it before the rewrite, and leaves the
     /// caller to open a fresh one.
-    pub(super) fn heal_mappings<Fs: UniversalWriteFileOps>(
+    pub(super) fn heal_mappings<Fs: UniversalAppendFs>(
         &self,
         fs: &Fs,
         path: &Path,

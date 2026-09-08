@@ -96,7 +96,7 @@ fn some_vectors(n: usize) -> Vec<Vec<f32>> {
 fn create_empty_overlay(
     config: &QuantizationConfig,
     path: &std::path::Path,
-) -> UpdateOnlyQuantizedVectors<MmapFile> {
+) -> UpdateOnlyQuantizedVectors<MmapFs> {
     let storage_type = QuantizedVectorsStorageType::Mutable;
     let vector_parameters =
         QuantizedVectors::construct_vector_parameters(config, Distance::Dot, DIM, 0, storage_type);
@@ -205,7 +205,7 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
     drop(writer);
 
     let mut writer =
-        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, path, &dense_vector_config())
+        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, path, &dense_vector_config())
             .unwrap()
             .expect("overlay was already created by the first writer");
     writer
@@ -371,7 +371,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
 fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
     let overlay =
-        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path(), &dense_vector_config())
+        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
             .unwrap();
     assert!(overlay.is_none());
 }
@@ -398,7 +398,7 @@ fn reopening_a_nonempty_overlay_works() {
     drop(writer);
 
     let reopened =
-        UpdateOnlyQuantizedVectors::<MmapFile>::open(MmapFs, dir.path(), &dense_vector_config())
+        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
             .unwrap();
     assert!(reopened.is_some());
 }

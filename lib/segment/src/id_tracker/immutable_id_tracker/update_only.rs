@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalRead, UniversalWriteFileOps};
+use common::universal_io::UniversalAppendFs;
 
 use super::deleted_storage::tombstone_points_in_stored_mask;
 use crate::common::operation_error::OperationResult;
@@ -16,18 +16,18 @@ use crate::types::PointIdType;
 /// plus [`atomic_save`] from the backend, so object stores qualify.
 ///
 /// [`atomic_save`]: UniversalWriteFileOps::atomic_save
-pub struct UpdateOnlyImmutableIdTracker<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> {
-    fs: S::Fs,
+pub struct UpdateOnlyImmutableIdTracker<Fs: UniversalAppendFs> {
+    fs: Fs,
     segment_path: PathBuf,
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
     /// place of reading the mask file.
     deleted: Option<BitVec>,
 }
 
-impl<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> UpdateOnlyImmutableIdTracker<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyImmutableIdTracker<Fs> {
     /// `deleted` is the mask as the read phase held it in memory, when it
     /// did; nothing is read here.
-    pub fn new(fs: S::Fs, segment_path: &Path, deleted: Option<BitVec>) -> Self {
+    pub fn new(fs: Fs, segment_path: &Path, deleted: Option<BitVec>) -> Self {
         Self {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -44,11 +44,6 @@ impl<S: UniversalRead<Fs: UniversalWriteFileOps> + 'static> UpdateOnlyImmutableI
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
-        tombstone_points_in_stored_mask::<S>(
-            &self.fs,
-            &self.segment_path,
-            &mut self.deleted,
-            points,
-        )
+        tombstone_points_in_stored_mask(&self.fs, &self.segment_path, &mut self.deleted, points)
     }
 }

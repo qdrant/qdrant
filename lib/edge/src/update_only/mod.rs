@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::universal_io::UniversalAppend;
+use common::universal_io::UniversalAppendFs;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
@@ -48,23 +48,22 @@ pub use self::batch::{PointUpdates, UpdateBatchPlan};
 use self::holder::LookupSegmentHolder;
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
-/// A batch writer over the segments of one shard directory, generic over the
-/// backend `S`.
+/// A batch writer over the segments of one shard directory.
 ///
 /// Compared to [`EdgeShard`](crate::EdgeShard), there is no WAL, no
 /// optimizers, and no `EdgeConfig` — the write target's own segment config is
 /// the only configuration a write needs.
-pub struct UpdateOnlyEdgeShard<S: UniversalAppend + 'static> {
+pub struct UpdateOnlyEdgeShard<Fs: UniversalAppendFs> {
     path: PathBuf,
     /// Backend the segments were opened on; live-reloads their lookup
     /// halves after a batch writes to them.
-    fs: S::Fs,
-    segments: RwLock<LookupSegmentHolder<S>>,
+    fs: Fs,
+    segments: RwLock<LookupSegmentHolder<Fs::File>>,
     /// One writer per segment, opened at shard open from the state its
     /// [`LookupSegment`](segment::segment::update_only::LookupSegment)
     /// observed — which also decided whether the segment accepts appends or
     /// deletes only.
-    writers: HashMap<Uuid, UpdateOnlySegmentEnum<S>>,
+    writers: HashMap<Uuid, UpdateOnlySegmentEnum<Fs>>,
     /// Thread pool the per-segment work of a batch runs on: on a remote
     /// backend each segment's reads block on the network, so segments are
     /// visited in parallel.
@@ -81,7 +80,7 @@ pub struct SegmentConfigInfo {
     pub config: SegmentConfig,
 }
 
-impl<S: UniversalAppend + 'static> UpdateOnlyEdgeShard<S> {
+impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     pub fn path(&self) -> &Path {
         &self.path
     }

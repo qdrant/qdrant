@@ -8,7 +8,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, UniversalWrite, UniversalWriteFileOps,
+    MmapFile, OpenOptions, Populate, UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
 };
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
@@ -115,7 +115,11 @@ impl<S: UniversalWrite> Bitmask<S> {
         })
     }
 
-    pub(crate) fn open(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub(crate) fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        config: GridstoreConfig,
+    ) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes
