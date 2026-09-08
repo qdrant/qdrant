@@ -55,6 +55,16 @@ fn unindexed_text_match(stored: &str, query: &str) -> bool {
     })
 }
 
+fn unindexed_text_any_match(stored: &str, query: &str) -> bool {
+    let document_tokens = collect_unindexed_document_tokens(stored);
+    let query_tokens = collect_unindexed_query_tokens(query);
+    query_tokens.iter().any(|query_token| {
+        document_tokens
+            .iter()
+            .any(|document_token| document_token == query_token)
+    })
+}
+
 fn unindexed_phrase_match(stored: &str, phrase: &str) -> bool {
     let document_tokens = collect_unindexed_document_tokens(stored);
     let phrase_tokens = collect_unindexed_query_tokens(phrase);
@@ -236,9 +246,7 @@ impl ValueChecker for Match {
                 | Value::Object(_) => false,
             },
             Match::TextAny(MatchTextAny { text_any }) => match payload {
-                Value::String(stored) => text_any
-                    .split_whitespace()
-                    .any(|token| stored.contains(token)),
+                Value::String(stored) => unindexed_text_any_match(stored, text_any),
                 Value::Null
                 | Value::Bool(_)
                 | Value::Number(_)

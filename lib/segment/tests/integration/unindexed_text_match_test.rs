@@ -1,5 +1,5 @@
 use segment::payload_storage::condition_checker::ValueChecker;
-use segment::types::{Match, MatchPhrase, MatchText};
+use segment::types::{Match, MatchPhrase, MatchText, MatchTextAny};
 use serde_json::Value;
 
 /// Regression for <https://github.com/qdrant/qdrant/issues/10182>
@@ -34,4 +34,25 @@ fn test_unindexed_phrase_requires_token_order() {
     assert!(!phrase_match("alpha beta", "alphabeta"));
     assert!(!phrase_match("good", "goodness only"));
     assert!(phrase_match("good", "goodness only good"));
+}
+
+/// Same tokenization gap as <https://github.com/qdrant/qdrant/issues/10182>,
+/// in the `text_any` matcher.
+#[test]
+fn test_unindexed_text_any_uses_token_matching() {
+    let text_any_match = |query: &str, stored: &str| {
+        Match::TextAny(MatchTextAny {
+            text_any: query.to_string(),
+        })
+        .check_match(&Value::String(stored.to_string()))
+    };
+
+    // At least one query token must appear as a whole token (lowercased),
+    // like the indexed full-text path.
+    assert!(text_any_match("hello", "Hello, world!"));
+    assert!(text_any_match("alpha beta", "foo beta bar"));
+
+    // A substring that is not a whole token must not match.
+    assert!(!text_any_match("good", "goodness only"));
+    assert!(!text_any_match("alpha beta", "gamma delta"));
 }
