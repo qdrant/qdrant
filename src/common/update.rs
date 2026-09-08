@@ -62,6 +62,13 @@ impl UpdateParams {
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
         timeout: Option<u64>,
     ) -> tonic::Result<Self> {
+        // Keep parity with the REST API: a zero timeout is rejected there by
+        // `validate_update_timeout`, so reject it here as well.
+        if matches!(timeout, Some(0)) {
+            return Err(tonic::Status::invalid_argument(
+                "timeout must be at least 1 second",
+            ));
+        }
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
@@ -1363,6 +1370,13 @@ fn get_shard_selector_for_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grpc_rejects_zero_timeout() {
+        assert!(UpdateParams::from_grpc(None, None, Some(0)).is_err());
+        assert!(UpdateParams::from_grpc(None, None, Some(5)).is_ok());
+        assert!(UpdateParams::from_grpc(None, None, None).is_ok());
+    }
 
     #[test]
     fn update_params_reject_zero_timeout() {
