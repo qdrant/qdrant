@@ -75,7 +75,7 @@ fn batch_reaches_every_index_of_a_field() {
 
     let mut index = Index::open(&MmapFs, dir.path()).unwrap();
     index
-        .append_many(
+        .par_append_many(
             &MmapFs,
             payloads.iter().enumerate().map(|(i, p)| (i as u32, p)),
             &hw_counter,
@@ -131,7 +131,7 @@ fn batches_resume() {
         let payload = payload_json! { "f": value };
         let mut index = Index::open(&MmapFs, dir.path()).unwrap();
         index
-            .append_many(&MmapFs, [(slot, &payload)], &hw_counter)
+            .par_append_many(&MmapFs, [(slot, &payload)], &hw_counter)
             .unwrap();
     }
 
@@ -174,7 +174,7 @@ fn segment_without_indexes_opens_empty() {
     let payload = payload_json! { "f": "alpha" };
     let mut index = Index::open(&MmapFs, dir.path()).unwrap();
     index
-        .append_many(&MmapFs, [(0, &payload)], &hw_counter)
+        .par_append_many(&MmapFs, [(0, &payload)], &hw_counter)
         .unwrap();
 }
 
