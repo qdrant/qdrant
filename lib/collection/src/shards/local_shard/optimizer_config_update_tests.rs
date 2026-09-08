@@ -89,13 +89,16 @@ mod tests {
     use tokio::runtime::Handle;
     use tokio::sync::{RwLock, oneshot};
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+
     use super::worker_restart_hooks::{
         clear_worker_restart_hook, install_worker_restart_hook, update_handler_is_stopped,
     };
     use crate::common::adaptive_handle::AdaptiveSearchHandle;
     use crate::shards::local_shard::LocalShard;
-    use crate::shards::shard_trait::ShardOperation;
-    use crate::tests::fixtures::create_collection_config;
+    use crate::shards::shard_trait::{ShardOperation, WaitUntil};
+    use crate::tests::fixtures::{create_collection_config, upsert_operation};
+    use crate::update_handler::UpdateSignal;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn optimizer_config_update_refreshes_prevent_unoptimized_flag() {
@@ -188,6 +191,78 @@ mod tests {
         assert!(
             shard.segments.read().optimizer_errors.is_none(),
             "optimizer errors should be cleared after config update"
+        );
+
+        shard.stop_gracefully().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn successful_optimization_clears_optimizer_errors() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+        let mut config = create_collection_config();
+        // Low indexing threshold, so the upsert below schedules an indexing optimization
+        config.optimizer_config.indexing_threshold = Some(2);
+
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+        let shard = LocalShard::build(
+            0,
+            "test".to_string(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            payload_index_schema,
+            update_runtime.clone(),
+            search_runtime.clone(),
+            ResourceBudget::default(),
+            config.optimizer_config.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Simulate a previous (transient) optimizer failure
+        shard
+            .segments
+            .write()
+            .report_optimizer_error("test optimizer error");
+        assert!(shard.segments.read().optimizer_errors.is_some());
+
+        // Upsert enough points to schedule an indexing optimization
+        shard
+            .update(
+                upsert_operation().into(),
+                WaitUntil::Visible,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap();
+
+        // Trigger optimizers and wait for the scheduled optimization to finish
+        shard
+            .update_sender
+            .load()
+            .send(UpdateSignal::Nop)
+            .await
+            .unwrap();
+
+        let mut cleared = false;
+        for _ in 0..100 {
+            if shard.segments.read().optimizer_errors.is_none() {
+                cleared = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        assert!(
+            cleared,
+            "optimizer error should be cleared by a successful optimization"
         );
 
         shard.stop_gracefully().await;

@@ -386,6 +386,7 @@ impl UpdateWorkers {
                 let is_optimized;
                 let status;
                 let reported_error;
+                let mut clear_optimizer_errors = false;
                 match result {
                     // Success
                     Ok(Ok(optimized_points)) => {
@@ -393,6 +394,7 @@ impl UpdateWorkers {
                         status = TrackerStatus::Done;
                         reported_error = None;
                         total_optimized_points.fetch_add(optimized_points, Ordering::Relaxed);
+                        clear_optimizer_errors = true;
                         callback();
                     }
                     // Cancelled
@@ -428,6 +430,11 @@ impl UpdateWorkers {
                 if let Some(reported_error) = reported_error {
                     segments.write().report_optimizer_error(reported_error);
                     is_optimization_failed.store(true, Ordering::Relaxed);
+                } else if clear_optimizer_errors {
+                    // A successful optimization shows the optimizer recovered from a
+                    // previous (possibly transient) failure: clear the sticky error,
+                    // so the shard does not stay red until restart or config update.
+                    segments.write().optimizer_errors = None;
                 }
                 is_optimized
             });
