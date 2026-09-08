@@ -7,9 +7,14 @@ a trait doesn't dead-end the walk), lays the graphs out with graphviz, and
 writes a self-contained interactive HTML report: pan/zoom graph, per-node
 source snippets and docs, exact call sites, GitHub/editor links.
 
+The root may also be a struct, enum, trait, type alias, const or static. Its
+"callers" are the items whose source mentions it: the enclosing function, or
+the enclosing type definition / impl block's self type when the mention is not
+inside a function. Its "callees" are its methods (trait body + impl blocks).
+
 Usage:
-    tools/callgraph/callgraph.py <function-name>
-    tools/callgraph/callgraph.py <module::path::function>
+    tools/callgraph/callgraph.py <item-name>
+    tools/callgraph/callgraph.py <module::path::item>
     tools/callgraph/callgraph.py <path/to/file.rs>:<line>
 
 Test code is excluded: rust-analyzer runs with cfg(test) disabled, and the
@@ -28,6 +33,11 @@ TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(TOOL_DIR))
 EXCLUDE_PATH_PARTS = ("/tests/", "/benches/", "/examples/", "/target/", "/edge/publish/")
 SNIPPET_MAX_LINES = 80
+ITEM_RE = r"\b(fn|struct|enum|trait|type|const|static)\s+(%s)\b"
+# LSP SymbolKind values as rust-analyzer emits them
+FN_KINDS = (6, 12)  # Method, Function
+TYPE_KINDS = (23, 10, 11, 26, 14)  # Struct, Enum, Interface (trait), TypeParameter (type alias), Constant (const/static)
+IMPL_KIND = 19  # Object: impl blocks
 PALETTE = [
     "#dbeafe", "#dcfce7", "#fef3c7", "#fce7f3", "#e0e7ff",
     "#ccfbf1", "#fee2e2", "#f3e8ff", "#ede9d5", "#f1f5f9",
@@ -103,7 +113,10 @@ class Lsp:
                 "processId": os.getpid(),
                 "rootUri": "file://" + ROOT,
                 "capabilities": {
-                    "textDocument": {"hover": {"contentFormat": ["markdown"]}},
+                    "textDocument": {
+                        "hover": {"contentFormat": ["markdown"]},
+                        "documentSymbol": {"hierarchicalDocumentSymbolSupport": True},
+                    },
                     "experimental": {"serverStatusNotification": True},
                 },
                 # analyze without cfg(test): test modules become inactive code,
@@ -124,11 +137,12 @@ class Lsp:
         log("indexed.")
 
 
-def find_function(target):
-    """Locate `fn name` by name, optionally qualified with :: module hints."""
+def find_item(target):
+    """Locate an item definition by name, optionally qualified with :: module hints."""
     *hints, name = target.split("::")
+    pattern = ITEM_RE % re.escape(name)
     out = subprocess.run(
-        ["grep", "-rn", "--include=*.rs", "-E", r"\bfn %s\b" % re.escape(name), "lib", "src"],
+        ["grep", "-rn", "--include=*.rs", "-E", pattern, "lib", "src"],
         cwd=ROOT, capture_output=True, text=True,
     ).stdout.splitlines()
     hits = []
@@ -136,10 +150,10 @@ def find_function(target):
         path, lineno, text = line.split(":", 2)
         if any(p in "/" + path + "/" for p in EXCLUDE_PATH_PARTS):
             continue
-        score = sum(1 for h in hints if h in path.split("/"))
+        score = sum(1 for h in hints if h in path.removesuffix(".rs").split("/"))
         hits.append((score, path, int(lineno), text))
     if not hits:
-        sys.exit(f"no definition of `fn {name}` found")
+        sys.exit(f"no definition of `{name}` found")
     best = max(score for score, *_ in hits)
     hits = [h for h in hits if h[0] == best]
     if len(hits) > 1:
@@ -148,7 +162,7 @@ def find_function(target):
             log(f"  {path}:{lineno}  {text.strip()}")
         sys.exit(1)
     _, path, lineno, text = hits[0]
-    return os.path.join(ROOT, path), lineno - 1, text.index(name, text.index("fn "))
+    return os.path.join(ROOT, path), lineno - 1, re.search(pattern, text).start(2)
 
 
 def position_in_file(spec):
@@ -156,16 +170,37 @@ def position_in_file(spec):
     path = os.path.abspath(path)
     lineno = int(lineno) - 1
     line = open(path).read().splitlines()[lineno]
-    m = re.search(r"\bfn\s+(\w+)", line)
+    m = re.search(ITEM_RE % r"\w+", line)
     if not m:
-        sys.exit(f"no `fn` on line {lineno + 1} of {path}")
-    return path, lineno, m.start(1)
+        sys.exit(f"no item definition on line {lineno + 1} of {path}")
+    return path, lineno, m.start(2)
 
 
 def keep(path):
     # cfg(test) code is already invisible (cfg.setTest=false); what remains to
     # exclude are the directory-defined cargo targets and generated code.
     return path.startswith(ROOT) and not any(p in path for p in EXCLUDE_PATH_PARTS)
+
+
+def is_fn(item):
+    return item["kind"] in FN_KINDS
+
+
+def contains(rng, pos):
+    start, end = rng["start"], rng["end"]
+    return (start["line"], start["character"]) <= (pos["line"], pos["character"]) <= (end["line"], end["character"])
+
+
+def as_item(uri, sym):
+    """Shape a DocumentSymbol like a CallHierarchyItem so type nodes are uniform with fn nodes."""
+    return {
+        "name": sym["name"],
+        "kind": sym["kind"],
+        "uri": uri,
+        "range": sym["range"],
+        "selectionRange": sym["selectionRange"],
+        "detail": sym.get("detail", ""),
+    }
 
 
 def norm_locations(resp):
@@ -189,6 +224,7 @@ class Collector:
         self.nodes = {}  # id -> {item, ...}
         self.ids = {}  # (uri, line, name) -> id
         self.file_cache = {}
+        self.symbol_cache = {}  # uri -> hierarchical DocumentSymbol[]
 
     def node_id(self, item):
         key = (item["uri"], item["selectionRange"]["start"]["line"], item["name"])
@@ -212,6 +248,102 @@ class Collector:
             except OSError:
                 self.file_cache[path] = []
         return self.file_cache[path]
+
+    def symbols(self, uri):
+        if uri not in self.symbol_cache:
+            self.symbol_cache[uri] = self.lsp.request(
+                "textDocument/documentSymbol", {"textDocument": {"uri": uri}}, default=[]
+            )
+        return self.symbol_cache[uri]
+
+    def symbol_chain(self, uri, pos):
+        """Document symbols enclosing `pos`, outermost first."""
+        chain, syms = [], self.symbols(uri)
+        while True:
+            hit = next((s for s in syms if contains(s["range"], pos)), None)
+            if not hit:
+                return chain
+            chain.append(hit)
+            syms = hit.get("children") or []
+
+    def type_at(self, uri, pos):
+        chain = self.symbol_chain(uri, pos)
+        if chain and chain[-1]["kind"] in TYPE_KINDS:
+            return as_item(uri, chain[-1])
+        return None
+
+    def item_at(self, uri, pos):
+        return self.prepare(uri, pos) or self.type_at(uri, pos)
+
+    def owner(self, uri, pos):
+        """The item a mention at `pos` belongs to: the enclosing fn or type
+        definition, or the self type of the enclosing impl block. None for
+        mentions outside any item (`use` lines)."""
+        for sym in reversed(self.symbol_chain(uri, pos)):
+            start = sym["selectionRange"]["start"]
+            if sym["kind"] in FN_KINDS:
+                return self.prepare(uri, start)
+            if sym["kind"] in TYPE_KINDS:
+                return as_item(uri, sym)
+            if sym["kind"] == IMPL_KIND:  # selectionRange of an impl block is its self type
+                for def_uri, def_pos in norm_locations(self.lsp.request(
+                    "textDocument/definition", {"textDocument": {"uri": uri}, "position": start}
+                )):
+                    return self.type_at(def_uri, def_pos)
+                return None
+        return None
+
+    def referrers(self, item):
+        """Items whose source mentions `item` -> [(peer_item, [(path, line) mention sites])]."""
+        uri, pos = item["uri"], item["selectionRange"]["start"]
+        peers = {}
+        for ref in self.lsp.request(
+            "textDocument/references",
+            {"textDocument": {"uri": uri}, "position": pos, "context": {"includeDeclaration": False}},
+            default=[],
+        ):
+            path = ref["uri"].removeprefix("file://")
+            if not keep(path):
+                continue
+            peer = self.owner(ref["uri"], ref["range"]["start"])
+            if peer is None:
+                continue
+            peers.setdefault(self.node_id(peer), (peer, []))[1].append((path, ref["range"]["start"]["line"]))
+        return list(peers.values())
+
+    def methods_of(self, item):
+        """Functions declared in the item's own body (trait methods) and in its impl blocks."""
+        uri, pos = item["uri"], item["selectionRange"]["start"]
+        impls = norm_locations(self.lsp.request(
+            "textDocument/implementation", {"textDocument": {"uri": uri}, "position": pos}
+        ))
+        methods = []
+        for block_uri, block_pos in [(uri, pos), *impls]:
+            if not keep(block_uri.removeprefix("file://")):
+                continue
+            chain = self.symbol_chain(block_uri, block_pos)
+            for child in (chain[-1].get("children") or []) if chain else []:
+                if child["kind"] in FN_KINDS:
+                    peer = self.prepare(block_uri, child["selectionRange"]["start"])
+                    if peer:
+                        methods.append(peer)
+        return methods
+
+    def neighbors(self, item, callers):
+        """One walk step from `item`: [(peer_item, edge_kind, [(path, line) sites])]."""
+        if not is_fn(item):
+            if callers:
+                return [(peer, "ref", sites) for peer, sites in self.referrers(item)]
+            return [(m, "member", []) for m in self.methods_of(item)]
+        method = "callHierarchy/incomingCalls" if callers else "callHierarchy/outgoingCalls"
+        out = []
+        for call in self.lsp.request(method, {"item": item}, default=[]):
+            peer = call["from" if callers else "to"]
+            if peer["kind"] not in FN_KINDS:
+                continue
+            path = (peer if callers else item)["uri"].removeprefix("file://")  # fromRanges are the caller's
+            out.append((peer, "call", [(path, r["start"]["line"]) for r in call.get("fromRanges", [])]))
+        return out
 
     def goto(self, item, method):
         """Resolve a goto-style request into call-hierarchy items (self excluded)."""
@@ -253,10 +385,8 @@ class Collector:
 
     def collect_view(self, root_item, direction, depth, max_nodes):
         callers = direction == "callers"
-        method = "callHierarchy/incomingCalls" if callers else "callHierarchy/outgoingCalls"
-        peer_key = "from" if callers else "to"
         root_id = self.node_id(root_item)
-        edges = {}  # (caller_id, callee_id, kind) -> [ranges in caller's file]
+        edges = {}  # (caller_id, callee_id, kind) -> [(path, line) call/mention sites]
         in_view = {root_id}
         truncated = set()
         expanded = set()
@@ -270,17 +400,18 @@ class Collector:
             if d >= depth or len(in_view) >= max_nodes:
                 truncated.add(iid)
                 continue
-            for call in self.lsp.request(method, {"item": item}, default=[]):
-                peer = call[peer_key]
-                if peer["kind"] not in (6, 12):  # 6 = Method, 12 = Function
-                    continue
+            for peer, kind, sites in self.neighbors(item, callers):
                 if not keep(peer["uri"].removeprefix("file://")):
                     continue
                 pid = self.node_id(peer)
-                edge = (pid, iid, "call") if callers else (iid, pid, "call")
-                edges.setdefault(edge, []).extend(call.get("fromRanges", []))
+                if pid == iid and kind == "ref":  # a type named in its own impl headers
+                    continue
+                edge = (pid, iid, kind) if callers else (iid, pid, kind)
+                edges.setdefault(edge, []).extend(sites)
                 in_view.add(pid)
                 queue.append((peer, d + 1))
+            if not is_fn(item):
+                continue
             for decl, impl, enqueue in self.bridge(item, callers, iid == root_id):
                 if not (keep(decl["uri"].removeprefix("file://")) and keep(impl["uri"].removeprefix("file://"))):
                     continue
@@ -315,28 +446,24 @@ class Collector:
             path=rel,
             line=item["selectionRange"]["start"]["line"] + 1,
             crate=crate_of(rel),
+            isType=not is_fn(item),
             detail=item.get("detail", ""),
             hover=contents,
             snippet={"start": start + 1, "lines": lines[:SNIPPET_MAX_LINES], "clipped": clipped},
         )
 
-    def call_sites(self, caller_id, ranges):
-        path = self.nodes[caller_id]["item"]["uri"].removeprefix("file://")
-        lines = self.lines(path)
-        sites, seen = [], set()
-        for rng in ranges:
-            line = rng["start"]["line"]
-            if line in seen:
-                continue
-            seen.add(line)
+    def call_sites(self, sites):
+        out = []
+        for path, line in sorted(set(sites)):
+            lines = self.lines(path)
             lo, hi = max(0, line - 2), min(len(lines), line + 3)
-            sites.append({
+            out.append({
+                "path": os.path.relpath(path, ROOT),
                 "line": line + 1,
                 "context_start": lo + 1,
                 "lines": lines[lo:hi],
             })
-        sites.sort(key=lambda s: s["line"])
-        return sites
+        return out
 
 
 def crate_of(rel):
@@ -355,22 +482,27 @@ def render_dot(nodes, view, root_id, crate_colors):
     lines = [
         "digraph callgraph {",
         '  rankdir=LR; splines=true; ranksep=0.7; nodesep=0.25; pad=0.3;',
-        '  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,'
-        ' margin="0.15,0.08", color="#00000033"];',
+        '  node [shape=box, fontname="Helvetica", fontsize=11, margin="0.15,0.08", color="#00000033"];',
         '  edge [color="#64748b", arrowsize=0.7];',
     ]
     for nid in sorted(view["in_view"], key=lambda n: int(n[1:])):
         node = nodes[nid]
         name = node["name"].replace("\\", "\\\\").replace('"', '\\"')
         where = short_path(node["path"]).replace("\\", "\\\\").replace('"', '\\"')
+        style = "filled" if node["isType"] else "rounded,filled"  # square corners = type, rounded = fn
         extra = ', penwidth=2.2, color="#b45309"' if nid == root_id else ""
         lines.append(
-            f'  {nid} [id="{nid}", label="{name}\\n{where}", fillcolor="{crate_colors[node["crate"]]}"{extra}];'
+            f'  {nid} [id="{nid}", label="{name}\\n{where}", style="{style}",'
+            f' fillcolor="{crate_colors[node["crate"]]}"{extra}];'
         )
     for i, (a, b, kind) in enumerate(sorted(view["edges"])):
         attrs = f'id="E{i}_{kind}"'
         if kind == "impl":
             attrs += ', style=dashed, color="#94a3b8", arrowhead=empty'
+        elif kind == "ref":
+            attrs += ', color="#0d9488"'
+        elif kind == "member":
+            attrs += ', style=dotted, color="#94a3b8"'
         lines.append(f"  {a} -> {b} [{attrs}];")
     lines.append("}")
     return "\n".join(lines)
@@ -389,7 +521,7 @@ def git(*args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", help="function name, module::path::function, or file.rs:line")
+    parser.add_argument("target", help="item name (fn/struct/enum/trait/...), module::path::item, or file.rs:line")
     parser.add_argument("--depth", type=int, default=4, help="call hops from the root (default 4)")
     parser.add_argument("--max-nodes", type=int, default=250, help="node cap per view (default 250)")
     parser.add_argument("--out", help="output HTML path (default target/callgraph/<fn>.html)")
@@ -398,7 +530,7 @@ def main():
     if re.search(r"\.rs:\d+$", args.target):
         path, line, col = position_in_file(args.target)
     else:
-        path, line, col = find_function(args.target)
+        path, line, col = find_item(args.target)
 
     lsp = Lsp()
     lsp.start()
@@ -412,12 +544,12 @@ def main():
     collector = Collector(lsp)
     root = None
     for _ in range(5):  # rust-analyzer can need a beat right after quiescence
-        root = collector.prepare(uri, {"line": line, "character": col})
+        root = collector.item_at(uri, {"line": line, "character": col})
         if root:
             break
         time.sleep(1)
     if not root:
-        sys.exit("rust-analyzer found no call-hierarchy item at that position")
+        sys.exit("rust-analyzer found no function or type definition at that position")
     root_id = collector.node_id(root)
 
     log("collecting graphs...")
@@ -438,10 +570,10 @@ def main():
     for name, view in views.items():
         edges_json = []
         sites_json = {}
-        for (a, b, kind), ranges in sorted(view["edges"].items()):
+        for (a, b, kind), sites in sorted(view["edges"].items()):
             edges_json.append([a, b, kind])
-            if kind == "call" and ranges:
-                sites_json[f"{a}>{b}"] = collector.call_sites(a, ranges)
+            if sites:
+                sites_json[f"{a}>{b}"] = collector.call_sites(sites)
         out_views[name] = {
             "svg": layout_svg(render_dot(collector.nodes, view, root_id, crate_colors)),
             "edges": edges_json,
