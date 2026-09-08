@@ -1,12 +1,12 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
-use common::universal_io::{UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalReadFsAsync};
 
 use super::LookupSegment;
 use crate::common::live_reload::LiveReload as _;
 use crate::common::operation_error::OperationResult;
 
-impl<S: UniversalRead + 'static> LookupSegment<S> {
+impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// Refresh every component to the current on-disk state (id-tracker
     /// delta → payload storage and vector storages) without re-opening the
     /// segment — the mirror of [`ReadOnlySegment::live_reload`], over the
@@ -18,12 +18,9 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// reloaded again.
     ///
     /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
-    pub fn live_reload(
-        &mut self,
-        fs: &impl UniversalReadFs<File = S>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         let Self {
+            fs,
             segment_path: _,
             id_tracker,
             payload_storage,
@@ -32,6 +29,23 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
             appendable: _,
         } = self;
 
+        // Prepare new LIST snapshot
+        fs.rotate_cache_file_info();
+        fs.cache_file_info()?;
+
+        // Live preload: schedule everything
+        let mut futs = id_tracker.borrow().live_preload(fs)?;
+        futs.extend(payload_storage.borrow_mut().live_preload(fs)?);
+        for vector_storage in vector_data.values() {
+            futs.extend(vector_storage.borrow_mut().live_preload(fs)?);
+        }
+
+        // Wait for preload
+        futures::executor::block_on(async {
+            futures::join!(fs.wait_all(), futures::future::join_all(futs))
+        });
+
+        // Live reload: apply updates
         let delta = id_tracker.borrow_mut().live_reload(fs)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.

@@ -8,7 +8,7 @@
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppendFs, UniversalRead};
+use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
@@ -71,8 +71,8 @@ pub enum PointAction {
 /// into its [`PointAction`]. Reads only — the single decision stage behind
 /// both [`UpdateOnlyEdgeShard::preview_batch`] and
 /// [`UpdateOnlyEdgeShard::apply_batch`].
-pub(super) fn resolve_batch<S: UniversalRead + 'static>(
-    segments: &LookupSegmentHolder<S>,
+pub(super) fn resolve_batch<Fs: UniversalReadFsAsync>(
+    segments: &LookupSegmentHolder<Fs>,
     plan: UpdateBatchPlan,
     pool: &ThreadPool,
 ) -> OperationResult<Vec<PointPreview>> {

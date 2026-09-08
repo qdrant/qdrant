@@ -5,10 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{
-    CachedFs, CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
-    read_json_via,
-};
+use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFsAsync, read_json_via};
 
 use super::LookupSegment;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -39,10 +36,10 @@ const WRITER_POPULATE: Populate = Populate::No;
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
 /// config the writer never opens.
 fn build_cached_fs<Fs: UniversalReadFsAsync>(
-    fs: &Fs,
+    fs: Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
-    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
+    let mut cached_fs = CachedFs::new(fs, segment_path)?;
 
     cached_fs.cache_file_info()?;
 
@@ -54,7 +51,7 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     Ok(cached_fs)
 }
 
-impl<S: UniversalRead + 'static> LookupSegment<S> {
+impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// Open the segment over a per-segment [`CachedFs`]: every file the
     /// components will read is prefetched concurrently
     /// ([`preopen`](Self::preopen)) before the component opens consume it, so
@@ -67,13 +64,13 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
     /// working the same directory — see [`open_via`](Self::open_via).
     pub fn open(
-        fs: &impl UniversalReadFsAsync<File = S>,
+        fs: Fs,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let config = Self::preopen(&cached_fs, segment_path)?;
-        Self::open_via(&cached_fs, segment_path, config, deferred_internal_id)
+        Self::open_via(cached_fs, segment_path, config, deferred_internal_id)
     }
 
     /// Open the segment's components: the id tracker, the payload storage and
@@ -93,12 +90,14 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// appendable segment has a deferred track; on any other segment the
     /// cutoff is ignored.
     pub fn open_via(
-        fs: &impl UniversalReadFs<File = S>,
+        fs: CachedFs<Fs>,
         segment_path: &Path,
         config: SegmentConfig,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
+        futures::executor::block_on(fs.wait_all());
+
+        if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written
             // last, so its absence means the segment vanished mid-open (or was
             // never completed).
@@ -108,7 +107,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         }
 
         let payload_storage = Arc::new(AtomicRefCell::new(ReadOnlyPayloadStorage::open(
-            fs,
+            &fs,
             segment_path.to_path_buf(),
             WRITER_POPULATE,
         )?));
@@ -119,7 +118,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         // deferred threshold applies to the appendable tracker only, mirroring
         // `ReadOnlySegment::open_via`.
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
-            fs,
+            &fs,
             segment_path,
             deferred_internal_id.filter(|_| appendable),
         )?));
@@ -129,7 +128,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
             let path = get_vector_storage_path(segment_path, vector_name);
             let index_path = get_vector_index_path(segment_path, vector_name);
             let storage = VectorStorageReadEnum::open(
-                fs,
+                &fs,
                 vector_config,
                 &path,
                 &index_path,
@@ -145,12 +144,13 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage = VectorStorageReadEnum::Sparse(Box::new(
-                ReadOnlySparseVectorStorage::open(fs, &path, WRITER_POPULATE)?,
+                ReadOnlySparseVectorStorage::open(&fs, &path, WRITER_POPULATE)?,
             ));
             vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
 
         Ok(Self {
+            fs,
             segment_path: segment_path.to_path_buf(),
             id_tracker,
             payload_storage,
@@ -164,10 +164,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// caching filesystem can fetch them concurrently instead of one blocking
     /// round-trip at a time. Returns the segment config parsed along the way,
     /// so the open does not read it twice.
-    pub fn preopen(
-        fs: &impl CachedReadFs<File = S>,
-        segment_path: &Path,
-    ) -> OperationResult<SegmentConfig> {
+    pub fn preopen(fs: &CachedFs<Fs>, segment_path: &Path) -> OperationResult<SegmentConfig> {
         let SegmentState {
             initial_version: _,
             version: _,
@@ -180,7 +177,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
             let index_path = get_vector_index_path(segment_path, vector_name);
-            VectorStorageReadEnum::<S>::preopen(
+            VectorStorageReadEnum::<Fs::File>::preopen(
                 fs,
                 vector_config,
                 &path,
@@ -190,7 +187,7 @@ impl<S: UniversalRead + 'static> LookupSegment<S> {
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            ReadOnlySparseVectorStorage::<S>::preopen(fs, &path, WRITER_POPULATE)?;
+            ReadOnlySparseVectorStorage::<Fs::File>::preopen(fs, &path, WRITER_POPULATE)?;
         }
 
         Ok(config)

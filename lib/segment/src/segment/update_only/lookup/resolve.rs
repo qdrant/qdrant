@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::UniversalRead;
+use common::universal_io::UniversalReadFsAsync;
 
 use super::LookupSegment;
 use crate::common::operation_error::OperationResult;
@@ -18,7 +18,7 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Payload, PointIdType, SeqNumberType};
 use crate::vector_storage::VectorStorageRead;
 
-impl<S: UniversalRead + 'static> LookupSegment<S> {
+impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// Locate `point_ids` in this segment, streaming each `(point_id,
     /// internal_id)` pair that resolves; ids the segment does not hold are
     /// skipped. Deferred heads are included, so a point shadowed by an

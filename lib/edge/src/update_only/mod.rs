@@ -58,7 +58,7 @@ pub struct UpdateOnlyEdgeShard<Fs: UniversalAppendFs> {
     /// Backend the segments were opened on; live-reloads their lookup
     /// halves after a batch writes to them.
     fs: Fs,
-    segments: RwLock<LookupSegmentHolder<Fs::File>>,
+    segments: RwLock<LookupSegmentHolder<Fs>>,
     /// One writer per segment, opened at shard open from the state its
     /// [`LookupSegment`](segment::segment::update_only::LookupSegment)
     /// observed — which also decided whether the segment accepts appends or
