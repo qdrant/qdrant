@@ -1,5 +1,6 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -56,13 +57,12 @@ fn unindexed_text_match(stored: &str, query: &str) -> bool {
 }
 
 fn unindexed_text_any_match(stored: &str, query: &str) -> bool {
-    let document_tokens = collect_unindexed_document_tokens(stored);
+    let document_tokens: HashSet<String> =
+        collect_unindexed_document_tokens(stored).into_iter().collect();
     let query_tokens = collect_unindexed_query_tokens(query);
-    query_tokens.iter().any(|query_token| {
-        document_tokens
-            .iter()
-            .any(|document_token| document_token == query_token)
-    })
+    query_tokens
+        .iter()
+        .any(|query_token| document_tokens.contains(query_token))
 }
 
 fn unindexed_phrase_match(stored: &str, phrase: &str) -> bool {
