@@ -423,6 +423,7 @@ mod test {
 
         test_query_limit(&collection).await;
         test_scroll_query_limit(&collection).await;
+        test_query_groups_prefetch(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
@@ -471,6 +472,46 @@ mod test {
             order_by: None,
         };
         assert_strict_mode_success(request_valid_limit, collection).await;
+    }
+
+    async fn test_query_groups_prefetch(collection: &Collection) {
+        use segment::json_path::JsonPath;
+
+        use crate::operations::universal_query::collection_query::{
+            CollectionPrefetch, CollectionQueryGroupsRequest,
+        };
+
+        let groups_request = |prefetch_limit: usize| CollectionQueryGroupsRequest {
+            prefetch: vec![CollectionPrefetch {
+                prefetch: vec![],
+                query: None,
+                using: Default::default(),
+                filter: None,
+                score_threshold: None,
+                limit: prefetch_limit,
+                params: None,
+                lookup_from: None,
+            }],
+            query: None,
+            using: Default::default(),
+            filter: None,
+            params: None,
+            score_threshold: None,
+            with_vector: Default::default(),
+            with_payload: Default::default(),
+            lookup_from: None,
+            group_by: JsonPath::new(INDEXED_KEY),
+            group_size: 1,
+            limit: 2,
+            with_lookup: None,
+        };
+
+        // Group query itself is within max_query_limit (2 * 1 = 2 <= 4), but the
+        // prefetch limit (10) exceeds max_query_limit (4) and must be rejected
+        assert_strict_mode_error(groups_request(10), collection).await;
+
+        // Prefetch within the limit passes
+        assert_strict_mode_success(groups_request(4), collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
