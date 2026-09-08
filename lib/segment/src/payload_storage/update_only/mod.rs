@@ -6,7 +6,7 @@ use std::path::Path;
 use blobstore::config::LogstoreConfig;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppend;
+use common::universal_io::{UniversalAppend, UniversalAppendFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::common::update_only_blobstore::UpdateOnlyBlobstore;
@@ -35,7 +35,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     /// its file format is not one this writer can append to.
     ///
     /// [1]: crate::payload_storage::payload_storage_impl::PayloadStorageImpl::open_or_create
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        segment_path: &Path,
+    ) -> OperationResult<Self> {
         let storage =
             UpdateOnlyBlobstore::open(fs, &storage_dir(segment_path), LogstoreConfig::DEFAULT)?;
 
@@ -54,7 +57,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     /// an unwritten slot already reads back as an empty payload.
     pub fn append_many<'a>(
         &mut self,
-        fs: &S::Fs,
+        fs: &impl UniversalAppendFs<AppendFile = S>,
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {

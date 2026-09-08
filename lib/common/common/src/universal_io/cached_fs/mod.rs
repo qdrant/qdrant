@@ -12,10 +12,9 @@ use parking_lot::Mutex;
 mod async_io;
 
 use crate::mmap::AdviceSetting;
-use crate::universal_io::traits::CachedReadFs;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
+    CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
+    UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync, UniversalWriteFileOps,
 };
 
 #[derive(Clone, Debug)]
@@ -53,9 +52,14 @@ impl FileInfo {
     }
 }
 
-/// Read-only filesystem wrapper that snapshots the file listing and serves
+/// Filesystem wrapper that snapshots the file listing and serves read-only
 /// opens from explicitly prefetched handles. The only [`CachedReadFs`]
 /// implementation.
+///
+/// The write side is a passthrough: writable opens and
+/// [`UniversalWriteFileOps`] forward to the wrapped filesystem and do NOT
+/// update the snapshot — reads that must observe a post-snapshot mutation
+/// need a fresh [`CachedFs::cache_file_info`].
 ///
 /// Opens produce the *wrapped* backend's file type (`Fs::File`), so
 /// components generic over `impl UniversalReadFs<File = S>` accept a raw
@@ -397,6 +401,47 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
     }
 }
 
+impl<Fs> UniversalWriteFileOps for CachedFs<Fs>
+where
+    Fs: UniversalReadFs + UniversalWriteFileOps,
+{
+    type AppendFile = Fs::AppendFile;
+
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
+        self.fs.create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
+        self.fs.create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> UioResult<()> {
+        // Drop any prefetched handle so a pooled open cannot resurrect the
+        // removed file.
+        self.files_prefetched.lock().remove(path);
+        self.fs.remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
+        self.files_prefetched
+            .lock()
+            .retain(|pooled, _| !pooled.starts_with(path));
+        self.fs.remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        self.fs.atomic_save(path, bytes)
+    }
+
+    fn open_append(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> UioResult<Self::AppendFile> {
+        self.fs.open_append(path, options)
+    }
+}
+
 impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
     /// The *wrapped* backend's file type: opening through the cache hands
     /// out the very handles the inner filesystem produced (prefetched or
@@ -412,12 +457,12 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
     ) -> UioResult<Fs::File> {
         let path = path.as_ref();
 
+        // Writable opens bypass the cache machinery entirely: prefetched
+        // handles are read-only, the snapshot's size may lag appends (a
+        // writer must observe the true length), and the snapshot cannot know
+        // files this writer created after the LIST.
         if options.writeable {
-            return Err(UniversalIoError::Uninitialized {
-                description:
-                    "CachedReadFs only supports read-only files, writeable option is not allowed"
-                        .to_string(),
-            });
+            return self.fs.open(path, options, extra);
         }
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {

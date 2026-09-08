@@ -54,7 +54,7 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     Ok(cached_fs)
 }
 
-impl<S: UniversalRead<Fs: UniversalReadFsAsync> + 'static> LookupSegment<S> {
+impl<S: UniversalRead + 'static> LookupSegment<S> {
     /// Open the segment over a per-segment [`CachedFs`]: every file the
     /// components will read is prefetched concurrently
     /// ([`preopen`](Self::preopen)) before the component opens consume it, so
@@ -67,7 +67,7 @@ impl<S: UniversalRead<Fs: UniversalReadFsAsync> + 'static> LookupSegment<S> {
     /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
     /// working the same directory — see [`open_via`](Self::open_via).
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFsAsync<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {

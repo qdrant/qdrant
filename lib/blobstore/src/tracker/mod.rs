@@ -455,7 +455,11 @@ where
 
     /// Create a new PageTracker at the given dir path
     /// The file is created with the default size if no size hint is given
-    pub fn new(fs: &S::Fs, path: &Path, size_hint: Option<usize>) -> Result<Self> {
+    pub fn new(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        size_hint: Option<usize>,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(

@@ -305,7 +305,10 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// Create a new empty page 0 in the given directory, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    pub(super) fn new(fs: &S::Fs, dir: &Path) -> Result<Self> {
+    pub(super) fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         let page = AppendOnlyPage::new(fs, page_file_name(dir, 0))?;
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -322,12 +325,15 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     ///
     /// The value is buffered in memory until the next flush; only a page rollover touches disk
     /// by creating the new, empty page file.
-    pub(super) fn append_value(
+    pub(super) fn append_value<Fs>(
         &mut self,
-        fs: &S::Fs,
+        fs: &Fs,
         value: &[u8],
         page_capacity_bytes: u64,
-    ) -> Result<(PageId, BlockOffset)> {
+    ) -> Result<(PageId, BlockOffset)>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         let last = self
             .pages
             .last()
@@ -526,7 +532,10 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// Create a new empty page file at the given path, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    fn new(fs: &S::Fs, path: PathBuf) -> Result<Self> {
+    fn new<Fs>(fs: &Fs, path: PathBuf) -> Result<Self>
+    where
+        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+    {
         fs.create(&path, 0)?;
         let file = fs.open(
             &path,
