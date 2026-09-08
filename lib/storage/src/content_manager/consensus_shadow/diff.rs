@@ -4,19 +4,37 @@
 //! until the compare covers it. A divergence names the field it found, as a path into
 //! [`ClusterState`].
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::mem;
 
 use collection::collection_state;
+use collection::shards::CollectionId;
 
+use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::consensus_state_machine::{ApplyOutcome, ClusterState};
 use crate::content_manager::errors::StorageResult;
+use crate::quota::QuotaConfig;
+use crate::types::{PeerAddressById, PeerMetadataById};
+
+/// Cluster state read back from `TableOfContent` for one compare.
+///
+/// Carries collection names only. Reading a collection's state is the expensive part, so
+/// [`collection`] compares one collection at a time.
+#[derive(Clone, Debug)]
+pub struct ActualState {
+    pub collections: BTreeSet<CollectionId>,
+    pub aliases: AliasMapping,
+    pub peer_address_by_id: PeerAddressById,
+    pub peer_metadata_by_id: PeerMetadataById,
+    pub cluster_metadata: HashMap<String, serde_json::Value>,
+    pub quota_config: QuotaConfig,
+}
 
 /// Fields where `shadow` differs from `actual`, leaving out the contents of collections.
 ///
 /// A collection only one side holds is reported as `collections[name]`; [`collection`] compares
 /// the two states of a collection both sides hold.
-pub fn cluster(shadow: &ClusterState, actual: &ClusterState) -> Vec<String> {
+pub fn cluster(shadow: &ClusterState, actual: &ActualState) -> Vec<String> {
     let ClusterState {
         collections,
         aliases,
@@ -26,7 +44,7 @@ pub fn cluster(shadow: &ClusterState, actual: &ClusterState) -> Vec<String> {
         quota_config,
     } = shadow;
 
-    let ClusterState {
+    let ActualState {
         collections: actual_collections,
         aliases: actual_aliases,
         peer_address_by_id: actual_peer_address_by_id,
@@ -37,10 +55,9 @@ pub fn cluster(shadow: &ClusterState, actual: &ClusterState) -> Vec<String> {
 
     let mut diff = Vec::new();
 
-    let collections: BTreeSet<_> = collections.keys().collect();
-    let actual_collections: BTreeSet<_> = actual_collections.keys().collect();
+    let collections: BTreeSet<_> = collections.keys().cloned().collect();
 
-    for collection in collections.symmetric_difference(&actual_collections) {
+    for collection in collections.symmetric_difference(actual_collections) {
         diff.push(format!("collections[{collection}]"));
     }
 
@@ -184,8 +201,8 @@ mod tests {
 
     #[test]
     fn cluster_match() {
-        let state = cluster_state();
-        let diff = cluster(&state, &state);
+        let (shadow, actual) = cluster_states();
+        let diff = cluster(&shadow, &actual);
 
         assert!(diff.is_empty(), "states match, got {diff:?}");
     }
@@ -193,18 +210,18 @@ mod tests {
     /// A collection one side does not hold is reported by name, whatever is inside it
     #[test]
     fn cluster_collection_names() {
-        let mut actual = cluster_state();
+        let (shadow, mut actual) = cluster_states();
         actual.collections.clear();
 
         assert_eq!(
-            cluster(&cluster_state(), &actual),
+            cluster(&shadow, &actual),
             [format!("collections[{COLLECTION}]")],
         );
     }
 
     #[test]
     fn cluster_every_field() {
-        let mutations: Vec<Mutation<ClusterState>> = vec![
+        let mutations: Vec<Mutation<ActualState>> = vec![
             ("aliases", |actual| actual.aliases.remove(ALIAS)),
             ("peer_address_by_id", |actual| {
                 actual.peer_address_by_id.clear();
@@ -221,33 +238,43 @@ mod tests {
         ];
 
         for (field, mutate) in mutations {
-            let mut actual = cluster_state();
+            let (shadow, mut actual) = cluster_states();
             mutate(&mut actual);
 
-            assert_eq!(
-                cluster(&cluster_state(), &actual),
-                [field],
-                "mutated {field}"
-            );
+            assert_eq!(cluster(&shadow, &actual), [field], "mutated {field}");
         }
     }
 
-    /// Cluster state with every field filled, so a mutation of one is the only difference
-    fn cluster_state() -> ClusterState {
+    /// A shadow state and the read-back matching it, both filled in every field
+    fn cluster_states() -> (ClusterState, ActualState) {
         let mut aliases = AliasMapping::default();
         aliases.insert(ALIAS.to_string(), COLLECTION.to_string());
 
-        ClusterState {
+        let peer_address_by_id =
+            HashMap::from([(PEER_ID, "http://localhost:6335".parse().expect("valid uri"))]);
+        let peer_metadata_by_id = HashMap::from([(PEER_ID, PeerMetadata::current())]);
+        let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
+        let quota_config = QuotaConfig::default();
+
+        let shadow = ClusterState {
             collections: HashMap::from([(COLLECTION.to_string(), collection_state(Vec::new()))]),
+            aliases: aliases.clone(),
+            peer_address_by_id: peer_address_by_id.clone(),
+            peer_metadata_by_id: peer_metadata_by_id.clone(),
+            cluster_metadata: cluster_metadata.clone(),
+            quota_config,
+        };
+
+        let actual = ActualState {
+            collections: BTreeSet::from([COLLECTION.to_string()]),
             aliases,
-            peer_address_by_id: HashMap::from([(
-                PEER_ID,
-                "http://localhost:6335".parse().expect("valid uri"),
-            )]),
-            peer_metadata_by_id: HashMap::from([(PEER_ID, PeerMetadata::current())]),
-            cluster_metadata: HashMap::from([("owner".to_string(), json!("qdrant"))]),
-            quota_config: QuotaConfig::default(),
-        }
+            peer_address_by_id,
+            peer_metadata_by_id,
+            cluster_metadata,
+            quota_config,
+        };
+
+        (shadow, actual)
     }
 
     #[test]

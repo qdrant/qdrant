@@ -4,7 +4,7 @@
 //! Driving an entry through `ConsensusManager` only covers the wiring, where the one thing a
 //! test can observe is whether the peer died.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, mpsc};
 
@@ -70,7 +70,23 @@ fn diverged_collection() {
     shadow.container.add_shard(0);
 
     assert_eq!(
-        shadow.apply(&drop_payload_index()).as_deref(),
+        shadow.apply(&drop_payload_index(COLLECTION)).as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
+}
+
+/// An operation naming an alias has the collection behind it compared, under the name the two
+/// sides hold it by
+#[test]
+fn diverged_collection_under_alias() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+
+    assert_eq!(
+        shadow.apply(&drop_payload_index(ALIAS)).as_deref(),
         Some(format!("collections[{COLLECTION}].shards").as_str()),
     );
 }
@@ -214,6 +230,29 @@ fn scrape_cluster_state() {
     assert_eq!(state.cluster_metadata, persistent.cluster_metadata);
 }
 
+/// The per-entry read holds the same state, with collection names in place of their state
+#[test]
+fn scrape_actual_state() {
+    let dir = tempdir();
+    let persistent = persistent(dir.path());
+    let container = container();
+
+    let state = super::scrape_actual_state(&container, &persistent);
+
+    assert_eq!(state.collections, BTreeSet::from([COLLECTION.to_string()]));
+    assert_eq!(state.aliases, *container.aliases.lock());
+    assert_eq!(state.quota_config, container.quota_config);
+    assert_eq!(
+        state.peer_address_by_id,
+        *persistent.peer_address_by_id.read(),
+    );
+    assert_eq!(
+        state.peer_metadata_by_id,
+        *persistent.peer_metadata_by_id.read(),
+    );
+    assert_eq!(state.cluster_metadata, persistent.cluster_metadata);
+}
+
 /// Shadow over a container, without the manager in between
 struct Shadow {
     machine: Mutex<ShadowStateMachine>,
@@ -249,7 +288,13 @@ impl Shadow {
         let mut machine = self.machine.lock();
         let outcome = machine.apply(&self.container, &self.persistent, operation);
 
-        machine.diff(&self.container, &self.persistent, &outcome, result)
+        machine.diff(
+            &self.container,
+            &self.persistent,
+            operation,
+            &outcome,
+            result,
+        )
     }
 }
 
@@ -324,10 +369,10 @@ fn create_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
-/// Covered operation naming the collection, so the compare after it reads that collection
-fn drop_payload_index() -> ConsensusOperations {
+/// Covered operation naming `collection`, so the compare after it reads that collection
+fn drop_payload_index(collection: &str) -> ConsensusOperations {
     let operation = DropPayloadIndex {
-        collection_name: COLLECTION.to_string(),
+        collection_name: collection.to_string(),
         field_name: "city".parse().expect("valid field name"),
     };
 
@@ -423,6 +468,18 @@ impl CollectionContainer for Container {
             collections: self.collections.lock().clone(),
             aliases: self.aliases.lock().clone(),
         }
+    }
+
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State> {
+        self.collections.lock().get(collection).cloned()
+    }
+
+    fn collection_names(&self) -> BTreeSet<CollectionId> {
+        self.collections.lock().keys().cloned().collect()
+    }
+
+    fn alias_mapping(&self) -> AliasMapping {
+        self.aliases.lock().clone()
     }
 
     fn node_context(&self) -> NodeContext {
