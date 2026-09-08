@@ -212,17 +212,20 @@ function show(name) {
   applySearch();
 }
 
+// edge kind -> [label at the target node, label at the source node]
+const LABELS = {
+  impl: ["Declared in trait", "Implementations"],
+  call: ["Called by", "Calls"],
+  ref: ["Used by", "Uses"],
+  member: ["Method of", "Methods"],
+};
 function edgesOf(nid) {
   const v = DATA.views[view];
-  const res = { callers: [], callees: [], impls: [], decl: [] };
+  const res = { in: [], out: [] };
   v.edges.forEach(([a, b, kind], i) => {
-    if (kind === "call") {
-      if (b === nid) res.callers.push({ peer: a, i, sites: v.sites[`${a}>${b}`] || [] });
-      if (a === nid) res.callees.push({ peer: b, i, sites: v.sites[`${a}>${b}`] || [] });
-    } else {
-      if (a === nid) res.impls.push({ peer: b, i });
-      if (b === nid) res.decl.push({ peer: a, i });
-    }
+    const sites = v.sites[`${a}>${b}`] || [];
+    if (b === nid) res.in.push({ peer: a, i, kind, sites });
+    if (a === nid) res.out.push({ peer: b, i, kind, sites });
   });
   return res;
 }
@@ -237,10 +240,8 @@ function applySelection() {
   if (el) el.classList.add("sel");
   const rel = edgesOf(selected);
   const v = DATA.views[view];
-  for (const { peer, i } of [...rel.callers, ...rel.decl])
-    mark(peer, i, v.edges[i][2], "in-e");
-  for (const { peer, i } of [...rel.callees, ...rel.impls])
-    mark(peer, i, v.edges[i][2], "out-e");
+  for (const { peer, i, kind } of rel.in) mark(peer, i, kind, "in-e");
+  for (const { peer, i, kind } of rel.out) mark(peer, i, kind, "out-e");
   function mark(peer, i, kind, cls) {
     svg.getElementById(peer)?.classList.add("nbr");
     svg.getElementById(edgeSvgId(i, kind))?.classList.add(cls);
@@ -256,17 +257,12 @@ function select(nid, centerIt, focus = true) {
 }
 
 /* ---------- details panel ---------- */
-function nodeRef(nid) {
-  const n = NODES[nid];
-  return `<a class="goto" data-goto="${nid}">${esc(n.name)}</a> <span class="path">${esc(n.path)}:${n.line}</span>`;
-}
-function relEntry({ peer, i, sites }, siteOwnerIsPeer) {
+function relEntry({ peer, sites }) {
   const n = NODES[peer];
   const siteHtml = (sites || []).map((s) => {
-    const owner = siteOwnerIsPeer ? NODES[peer] : NODES[selected];
-    const gh = ghLink(owner.path, s.line);
+    const gh = ghLink(s.path, s.line);
     return `<div class="site">
-      <div class="site-head" title="${esc(owner.path)}:${s.line}">line ${s.line}${gh ? ` — <a href="${gh}" target="_blank">GitHub ↗</a>` : ""}</div>
+      <div class="site-head" title="${esc(s.path)}:${s.line}">${esc(shortPath(s.path))}:${s.line}${gh ? ` — <a href="${gh}" target="_blank">GitHub ↗</a>` : ""}</div>
       ${codeBlock(s.lines, s.context_start, s.line)}
     </div>`;
   }).join("");
@@ -287,6 +283,7 @@ function renderPanel() {
   const rel = edgesOf(selected);
   const badges =
     (selected === M.rootId ? '<span class="badge" style="background:#fde68a">root</span>' : "") +
+    (n.isType ? '<span class="badge">type</span>' : "") +
     `<span class="badge" style="background:${M.crateColors[n.crate]}">${esc(n.crate)}</span>` +
     (v.truncated.includes(selected) ? '<span class="badge warn">not expanded (limit)</span>' : "");
   let html = `<h2>${esc(n.name)}</h2>
@@ -294,14 +291,11 @@ function renderPanel() {
     <div class="path" style="margin-top:6px">${esc(n.path)}:${n.line}</div>
     ${linksRow(n.path, n.line)}
     ${renderDocs(n.hover)}`;
-  if (rel.decl.length)
-    html += `<h3>Declared in trait</h3>` + rel.decl.map((r) => `<div class="rel"><div class="rel-head">${nodeRef(r.peer)}</div></div>`).join("");
-  if (rel.impls.length)
-    html += `<h3>Implementations (${rel.impls.length})</h3>` + rel.impls.map((r) => `<div class="rel"><div class="rel-head">${nodeRef(r.peer)}</div></div>`).join("");
-  if (rel.callers.length)
-    html += `<h3>Called by (${rel.callers.length})</h3>` + rel.callers.map((r) => relEntry(r, true)).join("");
-  if (rel.callees.length)
-    html += `<h3>Calls (${rel.callees.length})</h3>` + rel.callees.map((r) => relEntry(r, false)).join("");
+  for (const [kind, labels] of Object.entries(LABELS))
+    for (const [dir, label] of [["in", labels[0]], ["out", labels[1]]]) {
+      const rs = rel[dir].filter((r) => r.kind === kind);
+      if (rs.length) html += `<h3>${label} (${rs.length})</h3>` + rs.map(relEntry).join("");
+    }
   const snip = n.snippet;
   html += `<details class="src"><summary>Source (${snip.lines.length}${snip.clipped ? "+ (clipped)" : ""} lines)</summary>
     ${codeBlock(snip.lines, snip.start, -1)}</details>`;
@@ -440,6 +434,9 @@ $("z-fit").onclick = fit;
 $("legend").innerHTML =
   Object.entries(M.crateColors).map(([c, col]) => `<span class="chip"><i style="background:${col}"></i>${esc(c)}</span>`).join("") +
   `<span class="chip"><svg width="26" height="10"><line x1="0" y1="5" x2="26" y2="5" stroke="#94a3b8" stroke-dasharray="4 3" stroke-width="1.5"/></svg>trait ↔ impl</span>` +
+  `<span class="chip"><svg width="26" height="10"><line x1="0" y1="5" x2="26" y2="5" stroke="#0d9488" stroke-width="1.5"/></svg>mentions type</span>` +
+  `<span class="chip"><svg width="26" height="10"><line x1="0" y1="5" x2="26" y2="5" stroke="#94a3b8" stroke-dasharray="1.5 2.5" stroke-width="1.5"/></svg>method of</span>` +
+  `<span class="chip"><i style="border-radius:0"></i>type</span><span class="chip"><i style="border-radius:6px"></i>fn</span>` +
   `<span class="chip"><i style="border:1.5px dashed #64748b; background:none"></i>not expanded</span>`;
 show("callers");
 select(M.rootId, false, false);
