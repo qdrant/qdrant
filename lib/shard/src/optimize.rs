@@ -1033,4 +1033,96 @@ mod tests {
              into the holder",
         );
     }
+
+    /// `finish_optimization` must apply all pending proxy changes to the optimized segment: a
+    /// queued payload index creation, a queued named vector creation, and a queued point delete,
+    /// each recorded with a higher version than the last.
+    ///
+    /// Unlike `propagate_to_wrapped` (which applies index changes before vector name changes,
+    /// see [`crate::proxy_segment::tests::test_propagate_to_wrapped_vector_name_and_index`]),
+    /// `finish_optimization` applies vector name changes *before* index changes. So the index
+    /// change is queued *first* here, at the lowest version, to check that applying the
+    /// higher-versioned vector name change afterwards, which bumps the segment version, does not
+    /// cause the index change to be silently skipped.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/10507>
+    #[test]
+    fn finish_optimization_propagates_index_vector_name_and_delete() {
+        use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+        use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        // Stand in for the freshly-built optimized segment: it already holds the same points
+        // `wrapped` had when the optimization started, but none of the schema changes queued
+        // below, since those only land on the proxy after the build has started.
+        let optimized_segment = build_segment_1(dir.path());
+
+        let mut proxy = ProxySegment::new(wrapped.clone());
+
+        // Queue a payload index creation, then a named vector creation, then a point delete,
+        // each with a higher version than the last.
+        let field_name: PayloadKeyType = "color".parse().unwrap();
+        let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+        proxy
+            .create_field_index(10, &field_name, Some(&field_schema), &hw_counter)
+            .unwrap();
+
+        let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+            size: 4,
+            distance: Distance::Dot,
+            multivector_config: None,
+            datatype: None,
+        });
+        proxy
+            .create_vector_name(20, "extra_vector", &vector_config)
+            .unwrap();
+
+        proxy.delete_point(30, 1.into(), &hw_counter).unwrap();
+
+        let holder = LockedSegmentHolder::new(holder);
+        let locked_proxy = LockedSegment::from(proxy);
+        holder
+            .write()
+            .replace(segment_id, locked_proxy.clone())
+            .unwrap();
+
+        finish_optimization(
+            &holder,
+            vec![locked_proxy],
+            optimized_segment,
+            &DeletedPoints::new(),
+            &[segment_id],
+            None,
+            &AtomicBool::new(false),
+            &hw_counter,
+        )
+        .unwrap();
+
+        let result_segment = holder.read().iter().next().unwrap().1.clone();
+        let result_segment = result_segment.get();
+        let result_segment = result_segment.read();
+
+        assert!(
+            result_segment
+                .config()
+                .vector_data
+                .contains_key("extra_vector"),
+            "named vector change must land on the optimized segment",
+        );
+        assert_eq!(
+            result_segment.get_indexed_fields().get(&field_name),
+            Some(&field_schema),
+            "payload index change queued before the named vector change must still land",
+        );
+        assert!(
+            !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred),
+            "point delete must land on the optimized segment",
+        );
+    }
 }
