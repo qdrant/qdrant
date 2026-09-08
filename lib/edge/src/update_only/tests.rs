@@ -674,3 +674,186 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
     let follower = open_follower(dir.path());
     assert_eq!(exact_count(&follower), 1);
 }
+
+mod copy_dir {
+    use std::collections::BTreeMap;
+    use std::future::Future;
+    use std::path::{Path, PathBuf};
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
+
+    use common::universal_io::{MmapFs, UioResult, UniversalIoError, UniversalWriteFsAsync};
+
+    use crate::update_only::lifecycle::{COPY_CONCURRENCY, copy_dir};
+
+    /// Records every call and the peak number of saves in flight. Saves yield
+    /// once before completing, so the wave is observable.
+    #[derive(Default)]
+    struct Log {
+        dirs: Vec<PathBuf>,
+        saves: Vec<(PathBuf, Vec<u8>)>,
+        removed: Vec<PathBuf>,
+        in_flight: usize,
+        peak_in_flight: usize,
+        attempts: usize,
+        /// The n-th save attempt (1-based) fails instead of landing.
+        fail_save_at: Option<usize>,
+    }
+
+    #[derive(Clone, Default)]
+    struct RecordingFs(Arc<Mutex<Log>>);
+
+    struct Save {
+        fs: RecordingFs,
+        target: Option<(PathBuf, Vec<u8>)>,
+        attempt: usize,
+    }
+
+    impl Future for Save {
+        type Output = UioResult<()>;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.attempt == 0 {
+                let mut log = self.fs.0.lock().unwrap();
+                log.in_flight += 1;
+                log.peak_in_flight = log.peak_in_flight.max(log.in_flight);
+                log.attempts += 1;
+                let attempt = log.attempts;
+                drop(log);
+                self.attempt = attempt;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            let (path, bytes) = self.target.take().expect("polled after completion");
+            let mut log = self.fs.0.lock().unwrap();
+            log.in_flight -= 1;
+            if log.fail_save_at == Some(self.attempt) {
+                return Poll::Ready(Err(UniversalIoError::Io(std::io::Error::other(
+                    "injected save failure",
+                ))));
+            }
+            log.saves.push((path, bytes));
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl UniversalWriteFsAsync for RecordingFs {
+        fn create_dir_async(
+            &self,
+            path: PathBuf,
+        ) -> impl Future<Output = UioResult<()>> + Send + '_ {
+            self.0.lock().unwrap().dirs.push(path);
+            std::future::ready(Ok(()))
+        }
+
+        fn atomic_save_async(
+            &self,
+            path: PathBuf,
+            bytes: Vec<u8>,
+        ) -> impl Future<Output = UioResult<()>> + Send + '_ {
+            Save {
+                fs: self.clone(),
+                target: Some((path, bytes)),
+                attempt: 0,
+            }
+        }
+
+        fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
+            self.0.lock().unwrap().removed.push(path);
+            std::future::ready(Ok(()))
+        }
+    }
+
+    fn segment_like_dir(files: usize) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        fs_err::create_dir_all(dir.path().join("vector_storage/dense")).unwrap();
+        for i in 0..files {
+            let rel = if i % 2 == 0 {
+                format!("file_{i}.bin")
+            } else {
+                format!("vector_storage/dense/chunk_{i}.mmap")
+            };
+            fs_err::write(dir.path().join(rel), vec![i as u8; 16 + i]).unwrap();
+        }
+        dir
+    }
+
+    fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        walkdir::WalkDir::new(root)
+            .into_iter()
+            .map(|e| e.unwrap())
+            .filter(|e| e.file_type().is_file())
+            .map(|e| {
+                let rel = e.path().strip_prefix(root).unwrap().to_path_buf();
+                (rel, fs_err::read(e.path()).unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn saves_every_file_once_in_a_bounded_wave() {
+        let local = segment_like_dir(12);
+        let fs = RecordingFs::default();
+        let remote = Path::new("shard/segments/uuid");
+
+        futures::executor::block_on(copy_dir(&fs, local.path(), remote)).unwrap();
+
+        let log = fs.0.lock().unwrap();
+        let saved: BTreeMap<PathBuf, Vec<u8>> = log
+            .saves
+            .iter()
+            .map(|(p, b)| (p.strip_prefix(remote).unwrap().to_path_buf(), b.clone()))
+            .collect();
+        assert_eq!(log.saves.len(), 12, "one save per file, no duplicates");
+        assert_eq!(saved, tree(local.path()), "same tree, same bytes");
+        assert_eq!(
+            log.peak_in_flight, COPY_CONCURRENCY,
+            "the wave fills the bound"
+        );
+        assert_eq!(
+            log.dirs.first().map(PathBuf::as_path),
+            Some(remote),
+            "the root is created first"
+        );
+        assert!(
+            log.dirs.contains(&remote.join("vector_storage/dense")),
+            "nested directories are created: {:?}",
+            log.dirs
+        );
+        assert!(log.removed.is_empty());
+    }
+
+    #[test]
+    fn a_failed_save_removes_what_landed() {
+        let local = segment_like_dir(12);
+        let fs = RecordingFs::default();
+        fs.0.lock().unwrap().fail_save_at = Some(5);
+        let remote = Path::new("shard/segments/uuid");
+
+        let err = futures::executor::block_on(copy_dir(&fs, local.path(), remote))
+            .expect_err("the injected failure surfaces");
+
+        assert!(err.to_string().contains("injected save failure"), "{err}");
+        let log = fs.0.lock().unwrap();
+        assert_eq!(log.in_flight, 0, "no save is left in flight");
+        assert_eq!(log.saves.len(), 11, "only the failed save is missing");
+        for (path, _) in &log.saves {
+            assert!(
+                log.removed.contains(path),
+                "{path:?} landed and must be removed"
+            );
+        }
+    }
+
+    #[test]
+    fn reproduces_the_tree_on_a_local_fs() {
+        let local = segment_like_dir(5);
+        let remote = tempfile::tempdir().unwrap();
+        let target = remote.path().join("segments/uuid");
+
+        futures::executor::block_on(copy_dir(&MmapFs, local.path(), &target)).unwrap();
+
+        assert_eq!(tree(&target), tree(local.path()));
+    }
+}
