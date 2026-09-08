@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use common::universal_io::{
@@ -29,6 +29,39 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {
 impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
         Self { inner, runtime }
+    }
+}
+
+impl<A: AsyncWrite + Clone> BlobFs<A> {
+    pub fn save_async(
+        &self,
+        path: PathBuf,
+        bytes: Vec<u8>,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        self.spawn_write(async move { inner.save(&path, Bytes::from(bytes)).await })
+    }
+
+    pub fn remove_async(
+        &self,
+        path: PathBuf,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        self.spawn_write(async move { inner.remove(&path).await })
+    }
+
+    /// Like the async reads, the write rides the [`BridgeRuntime`] rather than
+    /// the caller's executor, so the returned future needs no ambient reactor.
+    /// It spawns on first poll.
+    fn spawn_write<F>(
+        &self,
+        op: F,
+    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A, F>
+    where
+        F: Future<Output = UioResult<()>> + Send + 'static,
+    {
+        let handle = self.runtime.handle().clone();
+        async move { handle.spawn(op).await? }
     }
 }
 

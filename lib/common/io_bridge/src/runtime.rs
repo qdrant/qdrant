@@ -45,7 +45,10 @@ pub(crate) struct BridgeRuntimeInner(tokio::runtime::Runtime);
 /// Work reaches the runtime in one of two ways, both routed through the runtime
 /// [`Handle`](tokio::runtime::Handle):
 /// - single reads / metadata block the caller via [`Self::block_on`];
-/// - batched reads are dispatched with [`Handle::spawn`] (see [`Self::handle`]).
+/// - batched reads and whole-object writes are dispatched with
+///   [`Handle::spawn`](tokio::runtime::Handle::spawn) (see [`Self::handle`]),
+///   so the futures handed to a caller carry no reactor requirement of their
+///   own.
 #[derive(Clone)]
 pub struct BridgeRuntime(Arc<BridgeRuntimeInner>);
 
