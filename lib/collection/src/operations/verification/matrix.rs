@@ -51,3 +51,31 @@ impl StrictModeVerification for CollectionSearchMatrixRequest {
         None
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn collection_matrix_query_limit_saturates_on_overflow() {
+        // (1 << 32) * (1 << 32) wraps to 0 without saturation
+        let request = CollectionSearchMatrixRequest {
+            sample_size: 1 << 32,
+            limit_per_sample: 1 << 32,
+            filter: None,
+            using: Default::default(),
+        };
+        assert_eq!(request.query_limit(), Some(usize::MAX));
+    }
+
+    #[test]
+    fn collection_matrix_query_limit_normal_product() {
+        let request = CollectionSearchMatrixRequest {
+            sample_size: 10,
+            limit_per_sample: 3,
+            filter: None,
+            using: Default::default(),
+        };
+        assert_eq!(request.query_limit(), Some(30));
+    }
+}

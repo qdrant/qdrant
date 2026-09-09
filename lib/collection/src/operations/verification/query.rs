@@ -279,3 +279,41 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
         self.params.as_ref()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use segment::types::{WithPayloadInterface, WithVector};
+
+    use super::*;
+
+    fn groups_request(limit: usize, group_size: usize) -> CollectionQueryGroupsRequest {
+        CollectionQueryGroupsRequest {
+            prefetch: vec![],
+            query: None,
+            using: Default::default(),
+            filter: None,
+            params: None,
+            score_threshold: None,
+            with_vector: WithVector::from(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+            group_by: "num".parse().unwrap(),
+            group_size,
+            limit,
+            with_lookup: None,
+        }
+    }
+
+    #[test]
+    fn groups_query_limit_saturates_on_overflow() {
+        // (1 << 32) * (1 << 32) wraps to 0 without saturation
+        let request = groups_request(1 << 32, 1 << 32);
+        assert_eq!(request.query_limit(), Some(usize::MAX));
+    }
+
+    #[test]
+    fn groups_query_limit_normal_product() {
+        let request = groups_request(10, 5);
+        assert_eq!(request.query_limit(), Some(50));
+    }
+}
