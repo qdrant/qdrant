@@ -570,9 +570,17 @@ impl Validate for super::qdrant::payload_index_params::IndexParams {
 impl Validate for super::qdrant::TextIndexParams {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let super::qdrant::TextIndexParams {
+            tokenizer: _,
+            lowercase: _,
             min_token_len,
             max_token_len,
-            ..
+            on_disk: _,
+            stopwords: _,
+            phrase_matching: _,
+            stemmer: _,
+            ascii_folding: _,
+            enable_hnsw: _,
+            memory: _,
         } = self;
         validate_text_index_params(
             &min_token_len.map(|len| len as usize),

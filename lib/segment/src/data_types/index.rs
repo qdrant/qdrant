@@ -313,9 +313,18 @@ pub struct TextIndexParams {
 impl Validate for TextIndexParams {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let TextIndexParams {
+            r#type: _,
+            tokenizer: _,
             min_token_len,
             max_token_len,
-            ..
+            lowercase: _,
+            ascii_folding: _,
+            phrase_matching: _,
+            stopwords: _,
+            on_disk: _,
+            memory: _,
+            stemmer: _,
+            enable_hnsw: _,
         } = self;
         validate_text_index_params(min_token_len, max_token_len)
     }
