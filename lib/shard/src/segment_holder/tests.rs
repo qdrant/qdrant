@@ -2428,3 +2428,115 @@ fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
         "Source copy should be deleted, the destination copy is visible",
     );
 }
+
+/// A flush pass takes only the holder read lock, so it can start between the phases of one
+/// update operation and capture a segment holding half of it. Neither that segment nor the
+/// acknowledged version may claim the operation: the segment would look fully persisted at
+/// `version == persisted_version`, every later pass would skip it, and the WAL entry that could
+/// replay the rest would be acknowledged away (#10402).
+#[test]
+fn test_flush_all_does_not_claim_an_unfinished_operation() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // First phase of operation 10.
+    let mut segment = empty_segment(dir.path());
+    segment
+        .upsert_point(
+            10,
+            1.into(),
+            segment::data_types::vectors::only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(segment);
+
+    // Operation 10 has not finished applying, so the last finished operation is 9.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(9))
+            .unwrap(),
+        9,
+        "the acknowledged version must leave the unfinished operation replayable",
+    );
+
+    // The segment stays unsaved, so the rest of the operation is flushed once it is applied.
+    assert_eq!(holder.flush_all(FlushMode::Sync, false).unwrap(), 10);
+}
+
+/// A copy-on-write dependency is retired once the flush pass has persisted it. A clamped pass
+/// persists only up to the last fully applied operation, so an edge registered past that bound
+/// must survive it: dropping it would let the next pass flush the source before the destination,
+/// and a crash in between leaves the move without a durable pre-image to replay.
+#[test]
+fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    holder.add_new(empty_segment(dir.path()));
+
+    // Operation 20 moves the point out of the non-appendable segment, recording the dependency.
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            None,
+            &hw_counter,
+        )
+        .unwrap();
+    assert_eq!(
+        holder
+            .flush_dependency
+            .lock()
+            .dependencies_of(&source_id)
+            .count(),
+        1,
+        "the move should record a copy-on-write dependency",
+    );
+
+    // Operation 20 has not finished applying, so the pass persists no further than 19.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(19))
+            .unwrap(),
+        19,
+    );
+    assert_eq!(
+        holder
+            .flush_dependency
+            .lock()
+            .dependencies_of(&source_id)
+            .count(),
+        1,
+        "the dependency of an operation past the bound is not persisted yet, it must be kept",
+    );
+
+    // Once the operation is applied, an unclamped pass persists the move and retires the edge.
+    assert_eq!(holder.flush_all(FlushMode::Sync, false).unwrap(), 20);
+    assert_eq!(
+        holder
+            .flush_dependency
+            .lock()
+            .dependencies_of(&source_id)
+            .count(),
+        0,
+        "the dependency is persisted, it must be retired",
+    );
+}
