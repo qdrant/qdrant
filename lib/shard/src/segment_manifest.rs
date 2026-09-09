@@ -39,8 +39,13 @@ pub enum SegmentManifestState {
         /// Unix seconds after which the claim is stale.
         lease_until: u64,
     },
-    /// A superseded segment that is still readable but pending removal.
-    Retiring,
+    /// A superseded segment that is still readable but pending removal. Readers on the manifest
+    /// that preceded the swap may still hold it, so its removal waits out a grace period measured
+    /// from `retired_at`.
+    Retiring {
+        /// Unix seconds of the swap that superseded the segment.
+        retired_at: u64,
+    },
 }
 
 impl SegmentManifestState {
@@ -54,7 +59,8 @@ impl SegmentManifestState {
                 holder: _,
                 lease_until: _,
             } => true,
-            SegmentManifestState::UnderConstruction | SegmentManifestState::Retiring => false,
+            SegmentManifestState::UnderConstruction
+            | SegmentManifestState::Retiring { retired_at: _ } => false,
         }
     }
 
@@ -69,7 +75,7 @@ impl SegmentManifestState {
                 holder: _,
                 lease_until: _,
             }
-            | SegmentManifestState::Retiring => false,
+            | SegmentManifestState::Retiring { retired_at: _ } => false,
         }
     }
 
@@ -83,7 +89,7 @@ impl SegmentManifestState {
                 holder: _,
                 lease_until: _,
             }
-            | SegmentManifestState::Retiring => true,
+            | SegmentManifestState::Retiring { retired_at: _ } => true,
             SegmentManifestState::Active | SegmentManifestState::UnderConstruction => false,
         }
     }
@@ -246,7 +252,7 @@ mod tests {
         let retiring = Uuid::parse_str("6ba7b811-9dad-11d1-80b4-00c04fd430c8").unwrap();
 
         let json = format!(
-            r#"{{"{active}":"active","{building}":"under_construction","{retiring}":"retiring"}}"#,
+            r#"{{"{active}":"active","{building}":"under_construction","{retiring}":{{"retiring":{{"retired_at":7}}}}}}"#,
         );
         let parsed: SegmentsManifest = serde_json::from_str(&json).unwrap();
 
@@ -255,7 +261,10 @@ mod tests {
             parsed.get(&building),
             Some(SegmentManifestState::UnderConstruction),
         );
-        assert_eq!(parsed.get(&retiring), Some(SegmentManifestState::Retiring));
+        assert_eq!(
+            parsed.get(&retiring),
+            Some(SegmentManifestState::Retiring { retired_at: 7 }),
+        );
     }
 
     #[test]
@@ -281,17 +290,17 @@ mod tests {
         assert_eq!(parsed, manifest);
     }
 
-    /// Byte-compat guard: today's writers produce bare strings for the unit states; adding
-    /// the data-carrying variant must not change how those serialize.
+    /// Byte-compat guard: the unit states serialize as bare strings; the data-carrying
+    /// variants must not change how those serialize.
     #[test]
     fn unit_states_keep_their_bare_string_form() {
         let uuid = Uuid::parse_str("6ba7b811-9dad-11d1-80b4-00c04fd430c8").unwrap();
-        let manifest: SegmentsManifest = [(uuid, SegmentManifestState::Retiring)]
+        let manifest: SegmentsManifest = [(uuid, SegmentManifestState::UnderConstruction)]
             .into_iter()
             .collect();
         assert_eq!(
             serde_json::to_string(&manifest).unwrap(),
-            r#"{"6ba7b811-9dad-11d1-80b4-00c04fd430c8":"retiring"}"#,
+            r#"{"6ba7b811-9dad-11d1-80b4-00c04fd430c8":"under_construction"}"#,
         );
     }
 
@@ -307,7 +316,7 @@ mod tests {
         };
         let previous: SegmentsManifest = [
             (kept, optimizing.clone()),
-            (gone, SegmentManifestState::Retiring),
+            (gone, SegmentManifestState::Retiring { retired_at: 7 }),
         ]
         .into_iter()
         .collect();
