@@ -1,17 +1,14 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use std::sync::atomic::AtomicBool;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
-use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use segment::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 use segment::vector_storage::{VectorStorage, VectorStorageRead};
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use tempfile::Builder;
@@ -22,38 +19,34 @@ const MAX_SPARSE_DIM: usize = 1_000;
 fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-storage-group");
 
-    let stopped = AtomicBool::new(false);
     let mut rnd = SmallRng::seed_from_u64(42);
-    let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-    let mut rocksdb_sparse_vector_storage =
-        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &stopped).unwrap();
+    let mut volatile_sparse_vector_storage = VolatileSparseVectorStorage::default();
 
     let hw_counter = HardwareCounterCell::new();
 
-    group.bench_function("insert-rocksdb", |b| {
+    group.bench_function("insert-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
                 let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
-                rocksdb_sparse_vector_storage
+                volatile_sparse_vector_storage
                     .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
             }
         })
     });
 
-    group.bench_function("read-rocksdb", |b| {
+    group.bench_function("read-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
                 let vec =
-                    rocksdb_sparse_vector_storage.get_vector_opt::<Random>(idx as PointOffsetType);
+                    volatile_sparse_vector_storage.get_vector_opt::<Random>(idx as PointOffsetType);
                 assert!(vec.is_some());
             }
         })
     });
 
-    drop(rocksdb_sparse_vector_storage);
+    drop(volatile_sparse_vector_storage);
 
     let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut mmap_sparse_vector_storage =
