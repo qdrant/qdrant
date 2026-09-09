@@ -13,6 +13,7 @@ use std::str::FromStr as _;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use serde_json::json;
@@ -154,8 +155,13 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
     };
     assert!(!target_config.is_appendable());
 
-    let mut builder =
-        SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_path,
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
     builder
         .update(&[&source], &AtomicBool::new(false), &hw)
         .unwrap();

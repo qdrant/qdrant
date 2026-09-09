@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::VERSION_FILE;
 use fs_err as fs;
@@ -49,6 +50,7 @@ fn test_building_new_segment() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -129,6 +131,7 @@ fn test_building_new_defragmented_segment() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -255,6 +258,7 @@ fn test_building_new_sparse_segment() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -319,6 +323,7 @@ fn test_build_not_ready_defers_version_file() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -383,6 +388,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
         temp_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -449,6 +455,7 @@ fn test_building_new_segment_bug_5614() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -624,6 +631,7 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
         temp_dir.path(),
         &target_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -701,6 +709,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
         temp_dir.path(),
         &target_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -731,6 +740,7 @@ fn test_segment_builder_drops_deleted_source_vector_name() {
         build_dir.path(),
         &target_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -769,6 +779,7 @@ fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
         temp_dir.path(),
         &target_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 
@@ -822,6 +833,7 @@ fn test_building_new_segment_with_mmap_payload() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 

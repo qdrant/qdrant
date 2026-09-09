@@ -1057,8 +1057,13 @@ fn test_build_hnsw_using_quantization() {
         inline_storage: None,
     });
 
-    let mut builder =
-        SegmentBuilder::new(temp_dir.path(), &config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     builder.update(&[&segment1], &stopped, &hw_counter).unwrap();

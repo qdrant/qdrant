@@ -12,7 +12,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::feature_flags;
+use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
@@ -65,6 +65,7 @@ pub struct SegmentBuilder {
     vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
     hnsw_global_config: HnswGlobalConfig,
+    feature_flags: FeatureFlags,
 
     // The temporary segment directory
     temp_dir: TempDir,
@@ -91,6 +92,7 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
         hnsw_global_config: &HnswGlobalConfig,
+        feature_flags: FeatureFlags,
     ) -> OperationResult<Self> {
         let temp_dir = create_temp_dir(temp_dir)?;
 
@@ -145,6 +147,7 @@ impl SegmentBuilder {
             vector_data,
             segment_config: segment_config.clone(),
             hnsw_global_config: hnsw_global_config.clone(),
+            feature_flags,
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
@@ -572,6 +575,7 @@ impl SegmentBuilder {
                 mut vector_data,
                 mut segment_config,
                 hnsw_global_config,
+                feature_flags,
                 temp_dir,
                 indexed_fields,
                 defragment_keys: _,
@@ -741,7 +745,7 @@ impl SegmentBuilder {
                         stopped,
                         rng,
                         hnsw_global_config: &hnsw_global_config,
-                        feature_flags: feature_flags(),
+                        feature_flags,
                         inline_vectors: vector_config.inline_vectors_in_graph(),
                         progress: progress_vector_index.running_subtask(vector_name),
                     },
@@ -761,7 +765,8 @@ impl SegmentBuilder {
                 // So we may clear unconditionally
                 index.clear_cache()?;
 
-                if vector_config.inline_vectors_in_graph() {
+                if feature_flags.combined_vector_storage && vector_config.inline_vectors_in_graph()
+                {
                     // Reclaim the build storage from its other holders and
                     // become the sole owner of it.
                     drop(index);
