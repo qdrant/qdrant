@@ -101,7 +101,7 @@ async fn await_consensus_sync(
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
 ) {
-    let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT;
+    let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT * 2;
     let sync_consensus =
         timeout_at(wait_until, consensus.await_consensus_sync(channel_service)).await;
 
