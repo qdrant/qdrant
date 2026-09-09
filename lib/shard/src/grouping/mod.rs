@@ -80,6 +80,8 @@ fn shape_candidates_query(
     query.with_payload = group_by_to_payload_selector(group_by);
 }
 
+/// Recursively scale prefetch limits by `group_size` using saturating multiplication,
+/// ensuring enough candidate points survive every rescoring stage without arithmetic overflow.
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
     shard_prefetch.limit = shard_prefetch.limit.saturating_mul(group_size);
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
