@@ -30,6 +30,8 @@ use tonic::transport::Uri;
 use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
+use super::consensus_shadow::{ShadowMode, ShadowStateMachine};
+use super::consensus_state_machine::ApplyOutcome;
 use super::errors::StorageError;
 use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -109,6 +111,9 @@ pub struct ConsensusManager<C: CollectionContainer> {
     next_peer_metadata_update_attempt: Mutex<Instant>,
     /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
     applied_log: AppliedEntryRing,
+    /// State machine applying every entry alongside the handlers below, to compare the two.
+    /// `None` unless the shadow run is enabled.
+    shadow: Option<Mutex<ShadowStateMachine>>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -153,7 +158,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
             applied_log: Default::default(),
+            shadow: None,
         })
+    }
+
+    /// Run the state machine alongside this manager, comparing the two after every entry
+    pub fn with_shadow(mut self, mode: ShadowMode) -> Self {
+        self.shadow = mode.build();
+        self
     }
 
     /// Snapshot of the recently applied entries on this peer, oldest first.
@@ -361,6 +373,18 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Return `true` if consensus should be stopped (peer removed)
     /// Return `false` if everything is ok.
     pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+        let result = self.apply_entries_impl(raw_node);
+
+        // An entry that failed here is applied again after the restart, on top of whatever it
+        // wrote before it failed
+        if result.is_err() {
+            self.invalidate_shadow();
+        }
+
+        result
+    }
+
+    fn apply_entries_impl<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
         self.persistent
@@ -448,6 +472,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         raw_node: &mut RawNode<T>,
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
+
+        // Peer changes are not modeled yet, and removing one drops its replicas from every
+        // collection
+        self.invalidate_shadow();
 
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {conf_state:?}");
@@ -542,6 +570,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        let shadow = self.shadow_apply(&operation);
         let result = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
                 self.toc.perform_collection_meta_op(*operation)
@@ -582,6 +611,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
+        if let Some(outcome) = shadow {
+            self.shadow_compare(&outcome, &result);
+        }
+
         if let Some(on_apply) = on_apply
             && on_apply.send(result.clone()).is_err()
         {
@@ -592,12 +625,44 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
+    /// Apply `operation` to the shadow state, when the shadow run is enabled
+    fn shadow_apply(&self, operation: &ConsensusOperations) -> Option<ApplyOutcome> {
+        let shadow = self.shadow.as_ref()?;
+        let outcome = shadow
+            .lock()
+            .apply(&*self.toc, &self.persistent.read(), operation);
+
+        Some(outcome)
+    }
+
+    /// Drop the shadow state, so the next entry builds a machine from `TableOfContent`
+    fn invalidate_shadow(&self) {
+        if let Some(shadow) = &self.shadow {
+            shadow.lock().invalidate();
+        }
+    }
+
+    /// Compare the shadow against what the authoritative apply left behind
+    fn shadow_compare(&self, outcome: &ApplyOutcome, result: &Result<bool, StorageError>) {
+        let Some(shadow) = self.shadow.as_ref() else {
+            return;
+        };
+
+        shadow
+            .lock()
+            .compare(&*self.toc, &self.persistent.read(), outcome, result);
+    }
+
     // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
     pub fn apply_snapshot(
         &self,
         snapshot: &raft::eraftpb::Snapshot,
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
+
+        // Recovery deliberately leaves state no operation asked for: it discards proxies,
+        // forces recovery of local replicas it just created and proposes transfer aborts
+        self.invalidate_shadow();
 
         let SnapshotData {
             collections_data,
@@ -1488,6 +1553,11 @@ mod tests {
 
         fn collections_snapshot(&self) -> super::CollectionsSnapshot {
             super::CollectionsSnapshot::default()
+        }
+
+        // Only the shadow run reads the node config, and these tests never enable it
+        fn node_context(&self) -> crate::content_manager::consensus_state_machine::NodeContext {
+            unimplemented!()
         }
 
         fn apply_collections_snapshot(

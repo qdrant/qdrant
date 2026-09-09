@@ -2,6 +2,7 @@ use collection::shards::shard::PeerId;
 
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
+use self::consensus_state_machine::NodeContext;
 use self::errors::StorageError;
 use crate::quota::QuotaConfig;
 
@@ -11,6 +12,7 @@ pub mod collection_verification;
 mod collections_ops;
 pub mod consensus;
 pub mod consensus_manager;
+pub mod consensus_shadow;
 pub mod consensus_state_machine;
 pub mod conversions;
 pub mod errors;
@@ -209,6 +211,9 @@ pub trait CollectionContainer {
     ) -> Result<bool, StorageError>;
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;
+
+    /// Node-local values operations read, from this node's storage config
+    fn node_context(&self) -> NodeContext;
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
