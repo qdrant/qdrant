@@ -2,12 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::flags::feature_flags;
 use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
-use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -41,7 +39,7 @@ pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
-const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
+pub(super) const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
 
 #[derive(Debug)]
 pub struct HNSWIndex {
@@ -78,17 +76,10 @@ impl HNSWIndex {
 
         let config = load_or_derive_config(&MmapFs, path, &hnsw_config, &vector_storage)?;
 
-        let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
-
-        let (memory, residency) = graph_residency(&hnsw_config, None);
-        let is_on_disk = memory.is_on_disk();
-
-        let with_uring = use_io_uring(
-            IoUringFallback::Mmap,
-            memory,
-            feature_flags().async_hnsw_graph,
-        );
-        let graph = HnswGraph::open(path, residency, do_convert, with_uring)?;
+        let graph = match vector_storage.borrow().hnsw_graph() {
+            Some(graph) => HnswGraph::clone(graph),
+            None => HnswGraph::open(path, hnsw_config.memory_placement())?,
+        };
 
         Ok(HNSWIndex {
             id_tracker,
@@ -97,9 +88,9 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
+            is_on_disk: graph.is_on_disk(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
-            is_on_disk,
         })
     }
 
@@ -212,11 +203,11 @@ fn load_or_derive_config(
 /// every residency over the same files, so even a `pinned` graph can be demoted
 /// to a lazy cold view. The returned [`Memory`] stays config-derived: it
 /// describes the configuration, not the per-open placement.
-fn graph_residency(
-    hnsw_config: &HnswConfig,
+pub(crate) fn graph_residency(
+    memory: Memory,
     populate_override: Option<Populate>,
 ) -> (Memory, GraphLinksResidency) {
-    let memory = hnsw_config.memory_placement().clamp_to_low_memory();
+    let memory = memory.clamp_to_low_memory();
 
     let residency = match memory.with_populate_override(populate_override) {
         // Keep the links cold: lazily loaded from disk, cached with usage

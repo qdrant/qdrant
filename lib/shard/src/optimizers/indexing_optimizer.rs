@@ -66,7 +66,6 @@ impl IndexingOptimizer {
         for (vector_name, vector_cfg) in &self.segment_optimizer_config.dense_vectors {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
                 let is_indexed = vector_data.index.is_indexed();
-                let is_on_disk = vector_data.storage_type.is_on_disk();
                 let storage_size_bytes = segment
                     .available_vectors_size_in_bytes(vector_name)
                     .unwrap_or_default();
@@ -75,10 +74,16 @@ impl IndexingOptimizer {
                 let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
 
                 let optimize_for_index = is_big_for_index && !is_indexed;
-                let optimize_for_mmap = if let Some(on_disk_config) = vector_cfg.on_disk {
-                    on_disk_config && !is_on_disk
-                } else {
-                    is_big_for_mmap && !is_on_disk
+                let optimize_for_mmap = match vector_data.storage_type.memory() {
+                    Some(memory) => {
+                        let is_on_disk = memory.is_on_disk();
+                        if let Some(on_disk_config) = vector_cfg.on_disk {
+                            on_disk_config && !is_on_disk
+                        } else {
+                            is_big_for_mmap && !is_on_disk
+                        }
+                    }
+                    None => false,
                 };
 
                 if optimize_for_index || optimize_for_mmap || has_deferred_points {

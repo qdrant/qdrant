@@ -89,7 +89,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
             storage_type @ (VectorStorageType::Mmap
             | VectorStorageType::InRamMmap
-            | VectorStorageType::Memory) => {
+            | VectorStorageType::Memory
+            | VectorStorageType::GraphInline) => {
                 return Err(OperationError::service_error(format!(
                     "Cannot open a {storage_type:?} vector storage for appending: it is not an \
                      appendable storage type",

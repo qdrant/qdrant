@@ -10,6 +10,7 @@ use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::{
     open_dense_vector_storage, open_dense_vector_storage_byte, open_dense_vector_storage_half,
 };
+use crate::vector_storage::graph_inline::open_graph_inline_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     open_appendable_memmap_multi_vector_storage, open_appendable_memmap_vector_storage,
 };
@@ -98,7 +99,7 @@ fn open_chunked_mmap_vector_storage(
 pub(crate) fn open_vector_storage(
     vector_config: &VectorDataConfig,
     vector_storage_path: &Path,
-    _vector_index_path: &Path,
+    vector_index_path: &Path,
 ) -> OperationResult<VectorStorageEnum> {
     match vector_config.storage_type {
         VectorStorageType::Memory => Err(OperationError::service_error(
@@ -132,6 +133,11 @@ pub(crate) fn open_vector_storage(
             AdviceSetting::from(Advice::Normal),
             true,
         ),
+
+        // Vectors inlined into the HNSW links file
+        VectorStorageType::GraphInline => {
+            open_graph_inline_vector_storage(vector_storage_path, vector_index_path, vector_config)
+        }
     }
 }
 

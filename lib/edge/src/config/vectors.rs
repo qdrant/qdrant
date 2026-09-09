@@ -75,7 +75,7 @@ impl EdgeVectorParams {
         let VectorDataConfig {
             size,
             distance,
-            storage_type,
+            storage_type: _,
             index,
             quantization_config, // edge uses global only
             multivector_config,
@@ -84,7 +84,7 @@ impl EdgeVectorParams {
         Self {
             size: *size,
             distance: *distance,
-            on_disk: Some(storage_type.is_on_disk()),
+            on_disk: Some(v.is_on_disk()),
             multivector_config: *multivector_config,
             datatype: *datatype,
             quantization_config: quantization_config.clone(),
