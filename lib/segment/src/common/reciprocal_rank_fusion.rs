@@ -67,6 +67,11 @@ pub fn rrf_scoring(
                 responses.len()
             )));
         }
+        if weights.iter().any(|w| !w.is_finite()) {
+            return Err(OperationError::validation_error(
+                "RRF weights must be finite numbers",
+            ));
+        }
         Either::Left(weights.iter().copied())
     } else {
         Either::Right(std::iter::repeat(1.0f32))
@@ -245,6 +250,23 @@ mod tests {
 
         // With a 3:1 weight ratio, we expect the count of source 1 items in the top 10 to be roughly 3 times that of source 2
         assert!(count_source_1 >= 2 * count_source_2); // Allow some variance due to tie-breaking and small sample size
+    }
+
+    #[test]
+    fn test_rrf_scoring_rejects_non_finite_weights() {
+        let responses = vec![
+            vec![make_scored_point(1, 0.9)],
+            vec![make_scored_point(2, 0.9)],
+        ];
+
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let weights = [1.0, bad];
+            let result = rrf_scoring(responses.clone(), DEFAULT_RRF_K, Some(&weights));
+            assert!(
+                result.is_err(),
+                "non-finite weight {bad} must be rejected, got {result:?}"
+            );
+        }
     }
 
     #[test]
