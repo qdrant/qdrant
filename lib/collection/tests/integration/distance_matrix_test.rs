@@ -189,6 +189,7 @@ async fn distance_matrix_max_limit() {
     assert_eq!(matrix.nearests.len(), sample_size);
     for nearest in matrix.nearests {
         assert!(!nearest.is_empty());
-        assert!(nearest.len() < point_count);
+        assert!(nearest.len() < point_count as usize);
     }
 }
+
