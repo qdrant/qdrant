@@ -310,7 +310,7 @@ impl<'a> From<&'a CoreSearchRequest> for BatchSearchParams<'a> {
                     .unwrap_or(&WithPayloadInterface::Bool(false)),
             ),
             with_vector: with_vector.clone().unwrap_or_default(),
-            top: limit + offset,
+            top: limit.saturating_add(*offset),
             params: params.as_ref(),
         }
     }
