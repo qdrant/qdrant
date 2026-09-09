@@ -407,27 +407,29 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 
     // Apply index changes before point deletions
     // Point deletions bump the segment version, can cause index changes to be ignored
-    let old_optimized_segment_version = optimized_segment.version();
+    //
+    // This artificially bumps the operation version to be at least as high as the current segment
+    // version. This way we make sure the segment does not ignore the operation. Alternatively we
+    // can interleave index, vector name and deletion changes and apply them in exactly the same
+    // order they arrive, but that requires more complex changes.
     for (field_name, change) in index_changes.iter_ordered() {
-        debug_assert!(
-            change.version() >= old_optimized_segment_version,
-            "proxied index change should have newer version than segment",
-        );
         match change {
             ProxyIndexChange::Create(schema, version) => {
+                let op_num = max(*version, optimized_segment.version());
                 optimized_segment.create_field_index(
-                    *version,
+                    op_num,
                     field_name,
                     Some(schema),
                     hw_counter,
                 )?;
             }
             ProxyIndexChange::Delete(version) => {
-                optimized_segment.delete_field_index(*version, field_name)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_field_index(op_num, field_name)?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment
-                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_field_index_if_incompatible(op_num, field_name, schema)?;
             }
         }
         check_process_stopped(stopped)?;
