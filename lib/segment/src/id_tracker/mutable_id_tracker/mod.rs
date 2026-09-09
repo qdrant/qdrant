@@ -45,9 +45,6 @@ use crate::types::{PointIdType, SeqNumberType};
 /// This structure may grow forever by collecting changes. It therefore relies on the optimization
 /// processes in Qdrant to eventually vacuum the segment this ID tracker belongs to. Reoptimization
 /// will clear all collected changes and start from scratch.
-///
-/// This ID tracker primarily replaces [`SimpleIdTracker`], so that we can eliminate the use of
-/// RocksDB.
 #[derive(Debug)]
 pub struct MutableIdTracker {
     segment_path: PathBuf,

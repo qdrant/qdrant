@@ -73,9 +73,6 @@ where
 
         let num_points = self.id_tracker.available_point_count();
         let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
-
-        // Unwrap and default to 0 here because the RocksDB storage is the only fallible one,
-        // and we will remove it eventually.
         let payloads_size_bytes = self.payload_storage.get_storage_size_bytes().unwrap_or(0);
 
         SegmentInfo {

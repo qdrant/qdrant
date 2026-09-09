@@ -255,7 +255,6 @@ impl ShardReplicaSet {
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if let Some(local_manifest) = local_manifest {
-                // ToDo: Replace with `partial_snapshot_merge_plan` when rocksdb is removed
                 let merge_plan = SnapshotUtils::partial_snapshot_merge_plan(
                     &self.shard_path,
                     &local_manifest,

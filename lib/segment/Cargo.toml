@@ -194,12 +194,10 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
-bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "sparse_vector_storage"
 harness = false
-bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "multi_vector_search"

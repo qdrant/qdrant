@@ -575,17 +575,11 @@ fn test_id_tracker_equal() {
 }
 
 #[test]
-// TODO(rocksdb): fix and re-enable
-// https://github.com/qdrant/qdrant/pull/8529#discussion_r3014389245
-#[cfg(false)]
-fn simple_id_tracker_vs_mutable_tracker_congruence() {
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-
+fn in_memory_id_tracker_vs_mutable_tracker_congruence() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let db = open_db(segment_dir.path(), &[DB_VECTOR_CF]).unwrap();
 
     let mut mutable_id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
-    let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
+    let mut in_memory_id_tracker = InMemoryIdTracker::new();
 
     // Insert 100 random points into id_tracker
 
@@ -600,9 +594,9 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
         let version = rng.random_range(0..1000);
 
         let internal_id_mmap = mutable_id_tracker.total_point_count() as PointOffsetType;
-        let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;
+        let internal_id_in_memory = in_memory_id_tracker.total_point_count() as PointOffsetType;
 
-        assert_eq!(internal_id_mmap, internal_id_simple);
+        assert_eq!(internal_id_mmap, internal_id_in_memory);
 
         if mutable_id_tracker
             .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
@@ -617,21 +611,21 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
             .set_internal_version(internal_id_mmap, version)
             .unwrap();
 
-        if simple_id_tracker
+        if in_memory_id_tracker
             .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
             .is_some()
         {
-            simple_id_tracker.drop(point_id).unwrap();
+            in_memory_id_tracker.drop(point_id).unwrap();
         }
-        simple_id_tracker
-            .set_link(point_id, internal_id_simple)
+        in_memory_id_tracker
+            .set_link(point_id, internal_id_in_memory)
             .unwrap();
-        simple_id_tracker
-            .set_internal_version(internal_id_simple, version)
+        in_memory_id_tracker
+            .set_internal_version(internal_id_in_memory, version)
             .unwrap();
     }
 
-    fn check_trackers(a: &SimpleIdTracker, b: &MutableIdTracker) {
+    fn check_trackers(a: &InMemoryIdTracker, b: &MutableIdTracker) {
         for (external_id, internal_id) in a.point_mappings().iter_from(None) {
             assert_eq!(
                 a.internal_version(internal_id).unwrap(),
@@ -659,7 +653,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
         }
     }
 
-    check_trackers(&simple_id_tracker, &mutable_id_tracker);
+    check_trackers(&in_memory_id_tracker, &mutable_id_tracker);
 
     // Persist and reload mutable tracker and test again
     mutable_id_tracker.mapping_flusher()().unwrap();
@@ -667,7 +661,7 @@ fn simple_id_tracker_vs_mutable_tracker_congruence() {
     drop(mutable_id_tracker);
     let mutable_id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
 
-    check_trackers(&simple_id_tracker, &mutable_id_tracker);
+    check_trackers(&in_memory_id_tracker, &mutable_id_tracker);
 }
 
 /// Loading versions with a partial trailing entry should ignore the incomplete bytes

@@ -261,7 +261,6 @@ def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
 
     config = {
         "QDRANT__LOG_LEVEL": "debug,collection::common::file_utils=trace",
-        "QDRANT__FEATURE_FLAGS__USE_MUTABLE_ID_TRACKER_WITHOUT_ROCKSDB": "true",
     }
 
     uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)

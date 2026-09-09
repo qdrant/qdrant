@@ -4,7 +4,6 @@ import uuid
 from e2e_tests.client_utils import ClientUtils
 from e2e_tests.models import QdrantContainerConfig
 
-# TODO(rocksdb): fix this test - storage.tar.xz contains rocksdb data
 pytest.skip("disabled until low-ram test data is updated", allow_module_level=True)
 
 

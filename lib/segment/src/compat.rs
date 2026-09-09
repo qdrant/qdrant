@@ -74,8 +74,6 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
-        // ToDo: remove this whole thing once we drop rocksdb support
-
         let default_storage_type = PayloadStorageType::Mmap;
 
         SegmentConfig {
