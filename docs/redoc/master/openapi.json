@@ -11941,6 +11941,11 @@
             "default": false,
             "type": "boolean"
           },
+          "combined_vector_storage": {
+            "description": "When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage (aka inline-storage without standalone vector storage) for new segments.\n\nExisting `GraphInline` segments are always readable, regardless of this flag.",
+            "default": true,
+            "type": "boolean"
+          },
           "serverless_compatible": {
             "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
