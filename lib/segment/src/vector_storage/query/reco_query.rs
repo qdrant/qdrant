@@ -161,6 +161,7 @@ fn avg_vectors<'a>(
     vectors: impl IntoIterator<Item = VectorRef<'a>>,
 ) -> OperationResult<VectorInternal> {
     let mut avg_dense = DenseVector::default();
+    let mut dense_dim: Option<usize> = None;
     let mut avg_sparse = SparseVector::default();
     let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
     let mut dense_count = 0;
@@ -170,6 +171,16 @@ fn avg_vectors<'a>(
         match vector {
             VectorRef::Dense(vector) => {
                 dense_count += 1;
+                match dense_dim {
+                    None => dense_dim = Some(vector.len()),
+                    Some(expected_dim) if expected_dim != vector.len() => {
+                        return Err(OperationError::WrongVectorDimension {
+                            expected_dim,
+                            received_dim: vector.len(),
+                        });
+                    }
+                    Some(_) => {}
+                }
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
                         avg_dense.push(vector[i])
@@ -184,15 +195,21 @@ fn avg_vectors<'a>(
             }
             VectorRef::MultiDense(vector) => {
                 multi_count += 1;
-                avg_multi = Some(avg_multi.map_or_else(
-                    || vector.to_owned(),
-                    |mut avg_multi| {
+                avg_multi = Some(match avg_multi {
+                    None => vector.to_owned(),
+                    Some(mut avg_multi) => {
+                        if avg_multi.dim != vector.dim {
+                            return Err(OperationError::WrongVectorDimension {
+                                expected_dim: avg_multi.dim,
+                                received_dim: vector.dim,
+                            });
+                        }
                         avg_multi
                             .flattened_vectors
                             .extend_from_slice(vector.flattened_vectors);
                         avg_multi
-                    },
-                ));
+                    }
+                });
             }
         }
     }
@@ -275,7 +292,7 @@ mod test {
 
     use super::{avg_vector_for_recommendation, avg_vectors};
     use crate::common::operation_error::OperationError;
-    use crate::data_types::vectors::{VectorInternal, VectorRef};
+    use crate::data_types::vectors::{TypedMultiDenseVector, VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
     enum Chosen {
@@ -433,6 +450,50 @@ mod test {
                 .into(),
         ];
         assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
+    }
+
+    #[test]
+    fn test_avg_vectors_rejects_mixed_dense_dims() {
+        // Positives with different dimensions must be rejected instead of being
+        // merged into a vector of the longer dimension (which can accidentally
+        // match the collection dimension and silently produce wrong results).
+        let vectors: Vec<VectorInternal> =
+            vec![vec![1.0, 2.0].into(), vec![1.0, 2.0, 3.0, 4.0].into()];
+        let result = avg_vectors(vectors.iter().map(VectorRef::from));
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 4,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_avg_vectors_rejects_mixed_multi_dims() {
+        // Multivectors with different inner dimensions must be rejected;
+        // concatenating their flattened data corrupts the multi vector layout.
+        let first: VectorInternal = TypedMultiDenseVector::try_from_flatten(
+            vec![1.0, 2.0, 3.0, 4.0],
+            2,
+        )
+        .unwrap()
+        .into();
+        let second: VectorInternal = TypedMultiDenseVector::try_from_flatten(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            3,
+        )
+        .unwrap()
+        .into();
+        let vectors = vec![first, second];
+        let result = avg_vectors(vectors.iter().map(VectorRef::from));
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
     }
 
     #[test]
