@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ::wal::WalOptions;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
@@ -20,10 +19,11 @@ use segment::segment_constructor::{build_segment, load_segment, normalize_segmen
 use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
-use shard::segment_holder::{FlushMode, SegmentHolder};
+use shard::segment_holder::{FlushMode, PostFlushOutcome, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use uuid::Uuid;
+use wal::WalOptions;
 
 use crate::config::optimizers::EdgeOptimizersConfig;
 use crate::config::shard::{EDGE_CONFIG_FILE, EdgeConfig};
@@ -461,10 +461,12 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
             ))
         })?;
 
-        // Replay pending changes persisted by proxy segments onto this segment, then remove
-        // them. Buffered proxy state that made it to disk does not hold back the WAL
-        // acknowledge, so it must be recovered here, before WAL replay.
-        segment::pending_changes::recover_pending_changes(
+        // Replay pending changes persisted by proxy segments onto this segment. Buffered proxy
+        // state that made it to disk does not hold back the WAL acknowledge, so it must be
+        // recovered here, before WAL replay. The log files are only safe to remove once the
+        // segment durably persists past `recovered.ready_at`; that is deferred to a post-flush
+        // action.
+        let recovered = segment::pending_changes::recover_pending_changes(
             &mut segment,
             PersistedProxyChanges::Replay,
         )
@@ -476,6 +478,19 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
         })?;
 
         segments.add_new(segment);
+
+        if !recovered.log_files.is_empty() {
+            segments.register_post_flush_action(
+                recovered.ready_at,
+                recovered.ready_at,
+                move || {
+                    for path in &recovered.log_files {
+                        fs::remove_file(path)?;
+                    }
+                    Ok(PostFlushOutcome::Done)
+                },
+            );
+        }
     }
 
     Ok((segments, derived))

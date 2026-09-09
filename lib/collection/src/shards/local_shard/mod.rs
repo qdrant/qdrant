@@ -72,7 +72,9 @@ use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, PostFlushOutcome, SegmentHolder,
+};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -457,13 +459,15 @@ impl LocalShard {
 
                     segment.check_consistency_and_repair()?;
 
-                    // Replay pending changes persisted by proxy segment, then remove them.
-                    // Buffered proxy state that made it to disk doesn't hold back the WAL
-                    // acknowledge, so it must be recovered here before WAL replay to create a
-                    // consistent view of the segment.
+                    // Replay pending changes persisted by proxy segment. Buffered proxy state
+                    // that made it to disk doesn't hold back the WAL acknowledge, so it must be
+                    // recovered here before WAL replay to create a consistent view of the
+                    // segment. The log files are only safe to remove once the segment durably
+                    // persists past `recovered.ready_at`; that is deferred to a post-flush action
+                    // registered once this segment has joined the holder, below.
                     // Skipped when loading a mirror of another writer's segment files, such as a
                     // recovered partial snapshot, which must not diverge from the writer's.
-                    segment::pending_changes::recover_pending_changes(
+                    let recovered = segment::pending_changes::recover_pending_changes(
                         &mut segment,
                         persisted_proxy_changes,
                     )?;
@@ -478,7 +482,7 @@ impl LocalShard {
                     // but are missing from the segment (e.g. after crash between config update and shard update)
                     segment.update_all_vector_names(&desired_vectors)?;
 
-                    CollectionResult::Ok(Some(segment))
+                    CollectionResult::Ok(Some((segment, recovered)))
                 });
                 AbortOnDropHandle::new(handle)
             })
@@ -492,11 +496,26 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::builder();
 
         while let Some(result) = segment_stream.next().await {
-            let Some(segment) = result?? else {
+            let Some((segment, recovered)) = result?? else {
                 continue;
             };
 
             segment_holder.add_new(segment);
+
+            // Defer removing the pending changes log files until a future flush proves the
+            // replayed operations durable; see `RecoveredPendingChanges::log_files`.
+            if !recovered.log_files.is_empty() {
+                segment_holder.register_post_flush_action(
+                    recovered.ready_at,
+                    recovered.ready_at,
+                    move || {
+                        for path in &recovered.log_files {
+                            fs::remove_file(path)?;
+                        }
+                        Ok(PostFlushOutcome::Done)
+                    },
+                );
+            }
         }
         drop(segment_stream); // release `payload_index_schema` from borrow checker
 

@@ -32,7 +32,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
-use fs_err as fs;
 use parking_lot::Mutex;
 
 pub use self::change::{DeletedPoints, PendingChange, ProxyDeletedPoint, ProxyIndexChange};
@@ -58,10 +57,10 @@ use crate::types::{PayloadKeyType, PointIdType, SegmentConfig, SeqNumberType, Ve
 ///
 /// The log file deliberately outlives the component: when a proxy segment is unwrapped its
 /// buffered changes are propagated to the wrapped segment in memory, but deleting the log before
-/// the wrapped segment has flushed those changes would not be crash safe. The file is cleaned up
-/// on restart (see [`recover_pending_changes`]) and when the segment directory is dropped, and a
-/// new proxy on the same segment adopts and appends to it (see [`Self::open`]). Replaying a stale
-/// file is safe because all operations are version gated.
+/// the wrapped segment has flushed those changes would not be crash safe. The file is eventually
+/// cleaned up after a restart (see [`recover_pending_changes`]) and when the segment directory is
+/// dropped, and a new proxy on the same segment adopts and appends to it (see [`Self::open`]).
+/// Replaying a stale file is safe because all operations are version gated.
 #[derive(Debug)]
 pub struct PendingChanges {
     /// Points which should no longer be used from the wrapped segment.
@@ -426,12 +425,26 @@ where
 /// See [`recover_pending_changes`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PersistedProxyChanges {
-    /// Replay all persisted pending proxy changes onto the segment and remove their log files.
+    /// Replay all persisted pending proxy changes onto the segment; their log files can be
+    /// removed once the segment durably persists past the replay, see
+    /// [`RecoveredPendingChanges`].
     #[default]
     Replay,
     /// Do not replay persisted pending proxy changes, leave the segment and the log files
     /// untouched.
     Ignore,
+}
+
+/// What [`recover_pending_changes`] leaves to clean up.
+#[derive(Debug, Default)]
+pub struct RecoveredPendingChanges {
+    /// Number of replayed log entries, across all layers.
+    pub replayed: usize,
+    /// Log files that are safe to remove once the segment durably persists at or past
+    /// `ready_at`. Removing them before that is unsafe, see [`recover_pending_changes`].
+    pub log_files: Vec<PathBuf>,
+    /// Flush version after which log files can be safely removed.
+    pub ready_at: SeqNumberType,
 }
 
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay
@@ -443,26 +456,30 @@ pub enum PersistedProxyChanges {
 /// segment already applied (e.g. because a proxy did propagate before unwrapping, leaving the
 /// file behind) are silently skipped.
 ///
-/// The segment is force-flushed afterwards, making the replayed operations durable, and only then
-/// are the log files removed. Must be called before regular WAL replay, which recovers everything
-/// past what segments (including these logs) have durably applied.
+/// Must be called before regular WAL replay, which recovers everything past what segments
+/// (including these logs) have durably applied.
 ///
 /// This is necessary because proxy changes that are persisted on disk are also acknowledged in the
 /// WAL. It means that on restart we expect all those changes to be visible in the segment to get a
 /// consistent read view. Since the processes that required a proxy are not running anymore we
 /// don't reconstruct the proxies, instead we just apply the changes directly to the segment.
 ///
+/// The replayed operations are only applied in memory here; nothing is flushed. The returned
+/// [`RecoveredPendingChanges::log_files`] must not be removed until the segment durably persists
+/// past [`RecoveredPendingChanges::ready_at`] — the caller is expected to defer that, e.g. by
+/// registering it as a post-flush action on the segment's `SegmentHolder` once the segment has
+/// joined one.
+///
 /// With [`PersistedProxyChanges::Ignore`] nothing is replayed and the log files are left as they
 /// are; see there for when that is appropriate.
-///
-/// Returns the number of replayed log entries.
+#[must_use = "Should clean up log files after segment flush"]
 pub fn recover_pending_changes(
     segment: &mut Segment,
     persisted_proxy_changes: PersistedProxyChanges,
-) -> OperationResult<usize> {
+) -> OperationResult<RecoveredPendingChanges> {
     let log_files = list_pending_changes_log_files(&segment.segment_path);
     if log_files.is_empty() {
-        return Ok(0);
+        return Ok(RecoveredPendingChanges::default());
     }
 
     match persisted_proxy_changes {
@@ -473,7 +490,7 @@ pub fn recover_pending_changes(
                 log_files.len(),
                 segment.segment_path.display(),
             );
-            return Ok(0);
+            return Ok(RecoveredPendingChanges::default());
         }
     }
 
@@ -496,13 +513,9 @@ pub fn recover_pending_changes(
         replayed += loaded.changes.len();
     }
 
-    // Persist the replayed operations before removing the log files; a crash in between just
-    // means the files are replayed again, which is a version-gated no-op
-    segment.flush(true)?;
-
-    for path in log_files {
-        fs::remove_file(path)?;
-    }
-
-    Ok(replayed)
+    Ok(RecoveredPendingChanges {
+        replayed,
+        ready_at: segment.version(),
+        log_files,
+    })
 }

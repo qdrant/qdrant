@@ -744,6 +744,9 @@ fn test_pending_changes_recovered_on_restart() {
     // Flush persists the pending changes log; the wrapped segment itself never sees the changes
     let flushed_version = proxy_segment.flush(false).unwrap();
     assert_eq!(flushed_version, 101);
+    // The proxy flush durably persisted the wrapped segment's own (unrelated) base state; this is
+    // the persisted version the reloaded segment starts from below
+    let wrapped_persisted_version = locked_wrapped_segment.get().read().persistent_version();
 
     // "Crash": drop the proxy without propagating to the wrapped segment
     drop(proxy_segment);
@@ -763,12 +766,12 @@ fn test_pending_changes_recovered_on_restart() {
     // Before recovery the segment does not know about the buffered operations
     assert!(segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
 
-    let replayed = segment::pending_changes::recover_pending_changes(
+    let recovered = segment::pending_changes::recover_pending_changes(
         &mut segment,
         segment::pending_changes::PersistedProxyChanges::Replay,
     )
     .unwrap();
-    assert_eq!(replayed, 2);
+    assert_eq!(recovered.replayed, 2);
 
     assert!(!segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
     assert!(
@@ -777,8 +780,18 @@ fn test_pending_changes_recovered_on_restart() {
             .contains_key(&"color".parse().unwrap())
     );
     assert_eq!(segment.version(), 101);
-    // Recovery flushed the segment and removed the log file
+    assert_eq!(recovered.ready_at, 101);
+    // Recovery does not flush; the log file must survive until the segment durably persists
+    // past `ready_at`, so the caller (the segment holder, via a post-flush action) can safely
+    // remove it
+    assert_eq!(segment.persistent_version(), wrapped_persisted_version);
+    assert!(segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0).is_file());
+
+    segment.flush(true).unwrap();
     assert_eq!(segment.persistent_version(), 101);
+    for path in &recovered.log_files {
+        fs_err::remove_file(path).unwrap();
+    }
     assert!(!segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0).is_file());
 }
 
@@ -891,16 +904,26 @@ fn test_double_proxy_pending_changes_levels() {
     )
     .unwrap();
 
-    let replayed = segment::pending_changes::recover_pending_changes(
+    let recovered = segment::pending_changes::recover_pending_changes(
         &mut segment,
         segment::pending_changes::PersistedProxyChanges::Replay,
     )
     .unwrap();
-    assert_eq!(replayed, 2);
+    assert_eq!(recovered.replayed, 2);
 
     assert!(!segment.has_point(2.into(), DeferredBehavior::VisibleOnly));
     assert!(!segment.has_point(3.into(), DeferredBehavior::VisibleOnly));
     assert_eq!(segment.version(), 101);
+    assert_eq!(recovered.ready_at, 101);
+    assert_eq!(
+        segment::pending_changes::list_pending_changes_log_files(&wrapped_segment_dir),
+        recovered.log_files,
+    );
+
+    segment.flush(true).unwrap();
+    for path in &recovered.log_files {
+        fs_err::remove_file(path).unwrap();
+    }
     assert!(
         segment::pending_changes::list_pending_changes_log_files(&wrapped_segment_dir).is_empty()
     );
