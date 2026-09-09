@@ -503,31 +503,33 @@ fn finish_optimization(
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
-    let old_optimized_segment_version = optimized_segment.version();
+    //
+    // This artificially bumps the operation version to be at least as high as the current segment
+    // version. This way we make sure the segment does not ignore the operation. Alternatively we
+    // can interleave index, vector name and deletion changes and apply them in exactly the same
+    // order they arrive, but that requires more complex changes.
     let vector_name_changes = proxy_vector_name_changes(&locked_proxies);
     for (vector_name, intent) in vector_name_changes.iter_ordered() {
-        debug_assert!(
-            intent.version() >= old_optimized_segment_version,
-            "proxied vector name change should have newer version than segment",
-        );
         match intent {
             IntendedVector::Absent { version } => {
-                optimized_segment.delete_vector_name(*version, vector_name)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_vector_name(op_num, vector_name)?;
             }
             IntendedVector::Present {
                 config,
                 version,
                 supersedes_wrapped,
             } => {
+                let op_num = max(*version, optimized_segment.version());
                 if *supersedes_wrapped {
                     // The optimised segment was built from the wrapped data,
                     // so it currently carries the *old* schema for this name.
                     // `create_vector_name_impl` is idempotent and would
                     // silently keep that old storage; clear it first so the
                     // new schema actually takes effect.
-                    optimized_segment.delete_vector_name(*version, vector_name)?;
+                    optimized_segment.delete_vector_name(op_num, vector_name)?;
                 }
-                optimized_segment.create_vector_name(*version, vector_name, config)?;
+                optimized_segment.create_vector_name(op_num, vector_name, config)?;
             }
         }
         check_process_stopped(stopped)?;
