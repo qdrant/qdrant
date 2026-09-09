@@ -562,6 +562,7 @@ fn test_take_snapshot_includes_pending_changes_log() {
     let file_version = manifest
         .file_version(std::path::Path::new(&log_file_name))
         .expect("pending changes log must be listed in the segment manifest");
+    assert_eq!(file_version, proxy_segment.version());
     assert_eq!(file_version, manifest.segment_version);
 
     // The pending changes log is included in the snapshot files
