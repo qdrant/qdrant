@@ -394,3 +394,33 @@ fn test_mmr_multi_vector() {
         assert_eq!(multi_scored_points.len(), 3);
     }
 }
+
+#[test]
+fn test_mmr_huge_limit_does_not_panic() {
+    // A request-level limit far above the candidate count must not trigger an
+    // oversized allocation: MMR can never select more points than candidates.
+    let points = vec![
+        create_scored_point_with_vector(1.into(), vec![1.0, 0.0, 0.0], None),
+        create_scored_point_with_vector(2.into(), vec![0.0, 1.0, 0.0], None),
+        create_scored_point_with_vector(3.into(), vec![0.0, 0.0, 1.0], None),
+    ];
+
+    let mmr = MmrInternal {
+        vector: vec![1.0, 0.0, 0.0].into(),
+        using: VectorNameBuf::from(""),
+        lambda: OrderedFloat(0.5),
+        candidates_limit: 100,
+    };
+
+    let result = mmr_from_points_with_vector(
+        points,
+        mmr,
+        Distance::Dot,
+        None,
+        usize::MAX,
+        HwMeasurementAcc::new(),
+    );
+
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().len(), 3);
+}
