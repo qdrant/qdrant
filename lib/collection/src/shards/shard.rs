@@ -59,6 +59,7 @@ pub enum Shard {
 impl Shard {
     pub fn variant_name(&self) -> &'static str {
         match self {
+            // Note: we use these exact strings in cluster manager
             Shard::Local(_) => "local shard",
             Shard::Proxy(_) => "proxy shard",
             Shard::ForwardProxy(_) => "forward proxy shard",
