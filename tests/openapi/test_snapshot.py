@@ -446,3 +446,17 @@ def test_collection_snapshot_security(collection_name):
     )
     assert response.status_code == 400
     assert response.json()["status"]["error"] == "Bad request: Invalid snapshot URI, file path must be absolute or on localhost"
+
+
+def test_upload_snapshot_without_config_is_rejected_without_path_leak(collection_name):
+    # An archive that carries no collection config (here: an empty file) is bad
+    # input, and the error must not expose the server-side temporary directory.
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}/snapshots/upload",
+        files={'snapshot': ('empty.snapshot', b'', 'application/octet-stream')},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 400
+    assert 'does not contain a collection config' in response.text
+    assert 'recovery-' not in response.text
+    assert 'config.json' not in response.text
