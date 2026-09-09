@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
+use collection::collection_state;
+use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 
+use self::alias_mapping::AliasMapping;
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
 use self::consensus_state_machine::NodeContext;
@@ -212,8 +217,20 @@ pub trait CollectionContainer {
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;
 
+    /// State of one collection, `None` when there is no such collection
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State>;
+
+    /// Names of all collections, without reading their state
+    fn collection_names(&self) -> BTreeSet<CollectionId>;
+
+    /// Current alias mapping
+    fn alias_mapping(&self) -> AliasMapping;
+
     /// Node-local values operations read, from this node's storage config
     fn node_context(&self) -> NodeContext;
+
+    /// Collections that changed without a consensus operation asking for it, clearing the record
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId>;
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 

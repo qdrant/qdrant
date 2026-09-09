@@ -611,8 +611,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
-        if let Some(outcome) = shadow {
-            self.shadow_compare(&outcome, &result);
+        if let Some((operation, outcome)) = shadow {
+            self.shadow_compare(&operation, &outcome, &result);
         }
 
         if let Some(on_apply) = on_apply
@@ -625,14 +625,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
-    /// Apply `operation` to the shadow state, when the shadow run is enabled
-    fn shadow_apply(&self, operation: &ConsensusOperations) -> Option<ApplyOutcome> {
+    /// Apply `operation` to the shadow state, when the shadow run is enabled.
+    ///
+    /// Hands the operation back as well, since applying it authoritatively consumes it before
+    /// the compare, which reads the collections it names.
+    fn shadow_apply(
+        &self,
+        operation: &ConsensusOperations,
+    ) -> Option<(ConsensusOperations, ApplyOutcome)> {
         let shadow = self.shadow.as_ref()?;
         let outcome = shadow
             .lock()
             .apply(&*self.toc, &self.persistent.read(), operation);
 
-        Some(outcome)
+        Some((operation.clone(), outcome))
     }
 
     /// Drop the shadow state, so the next entry builds a machine from `TableOfContent`
@@ -643,14 +649,23 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     /// Compare the shadow against what the authoritative apply left behind
-    fn shadow_compare(&self, outcome: &ApplyOutcome, result: &Result<bool, StorageError>) {
+    fn shadow_compare(
+        &self,
+        operation: &ConsensusOperations,
+        outcome: &ApplyOutcome,
+        result: &Result<bool, StorageError>,
+    ) {
         let Some(shadow) = self.shadow.as_ref() else {
             return;
         };
 
-        shadow
-            .lock()
-            .compare(&*self.toc, &self.persistent.read(), outcome, result);
+        shadow.lock().compare(
+            &*self.toc,
+            &self.persistent.read(),
+            operation,
+            outcome,
+            result,
+        );
     }
 
     // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
@@ -1555,9 +1570,31 @@ mod tests {
             super::CollectionsSnapshot::default()
         }
 
-        // Only the shadow run reads the node config, and these tests never enable it
+        // Only the shadow run reads these, and these tests never enable it
+
+        fn collection_state(
+            &self,
+            _collection: &str,
+        ) -> Option<collection::collection_state::State> {
+            unimplemented!()
+        }
+
+        fn collection_names(&self) -> std::collections::BTreeSet<collection::shards::CollectionId> {
+            unimplemented!()
+        }
+
+        fn alias_mapping(&self) -> crate::content_manager::alias_mapping::AliasMapping {
+            unimplemented!()
+        }
+
         fn node_context(&self) -> crate::content_manager::consensus_state_machine::NodeContext {
             unimplemented!()
+        }
+
+        fn take_dirty_collections(
+            &self,
+        ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
+            std::collections::BTreeSet::new()
         }
 
         fn apply_collections_snapshot(

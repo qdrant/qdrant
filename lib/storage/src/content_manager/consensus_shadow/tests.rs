@@ -4,8 +4,9 @@
 //! Driving an entry through `ConsensusManager` only covers the wiring, where the one thing a
 //! test can observe is whether the peer died.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use collection::collection_state;
@@ -14,7 +15,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use raft::eraftpb::Entry as RaftEntry;
+use raft::eraftpb::{ConfState, Entry as RaftEntry, Snapshot, SnapshotMetadata};
 use segment::types::PayloadSchemaType;
 use serde_json::json;
 use tempfile::{Builder, TempDir};
@@ -25,12 +26,13 @@ use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
-use crate::content_manager::consensus_manager::ConsensusManager;
+use crate::content_manager::consensus_manager::{ConsensusManager, SnapshotData};
 use crate::content_manager::consensus_state_machine::NodeContext;
 use crate::content_manager::consensus_state_machine::tests::{
     PEER_ID, collection_state, node_context,
 };
 use crate::quota::QuotaConfig;
+use crate::types::{PeerAddressById, PeerMetadataById};
 
 const COLLECTION: &str = "books";
 const ALIAS: &str = "novels";
@@ -68,7 +70,26 @@ fn diverged_collection() {
 
     shadow.container.add_shard(0);
 
-    assert!(shadow.apply(&drop_payload_index()).is_some());
+    assert_eq!(
+        shadow.apply(&drop_payload_index(COLLECTION)).as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
+}
+
+/// An operation naming an alias has the collection behind it compared, under the name the two
+/// sides hold it by
+#[test]
+fn diverged_collection_under_alias() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+
+    assert_eq!(
+        shadow.apply(&drop_payload_index(ALIAS)).as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
 }
 
 /// Both sides reject a missing collection, and with the same error class
@@ -110,10 +131,72 @@ fn rejected_by_apply_only() {
     assert!(shadow.apply_with(&nop(), &rejection).is_some());
 }
 
-/// An operation the machine does not model leaves state it cannot predict
+/// An operation the machine does not model, naming no collection, can have changed any of them
 #[test]
 fn not_covered_invalidates() {
-    invalidates(&set_replica_state(), &Ok(true));
+    invalidates(&remove_peer(), &Ok(true));
+}
+
+/// An operation the machine does not model reads the collections it names back, rather than
+/// rebuilding the machine from every collection
+#[test]
+fn not_covered_resync() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    // Builds the machine, the one full read of the state this test expects
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+    assert_eq!(shadow.apply(&set_replica_state()), None);
+
+    // Names the collection, so its state is compared: the shard has to be in both by now
+    assert_eq!(shadow.apply(&drop_payload_index(COLLECTION)), None);
+
+    assert_eq!(shadow.container.snapshots(), 1);
+}
+
+/// Reading one collection back does not paper over a divergence somewhere else
+#[test]
+fn not_covered_keeps_the_rest() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_alias(OTHER_ALIAS);
+    assert_eq!(shadow.apply(&set_replica_state()), None);
+
+    assert_eq!(shadow.apply(&nop()).as_deref(), Some("aliases"));
+}
+
+/// Recovering a partial shard snapshot rewrites the payload index schema of a collection
+/// without a consensus operation. The collection is read back, rather than reported.
+#[test]
+fn dirty_collection_resync() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    shadow.container.add_shard(0);
+    shadow.container.mark_dirty();
+
+    // Names the collection, so its state is compared
+    assert_eq!(shadow.apply(&drop_payload_index(COLLECTION)), None);
+}
+
+/// Recovery runs next to the apply, so a collection can be dirtied after the machine planned
+/// the entry and before the compare reads it back
+#[test]
+fn dirty_collection_resync_mid_apply() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+
+    assert_eq!(shadow.apply(&nop()), None);
+
+    let report = shadow.apply_between(&drop_payload_index(COLLECTION), &Ok(true), |container| {
+        container.add_shard(0);
+        container.mark_dirty();
+    });
+
+    assert_eq!(report, None);
 }
 
 /// A service error kills the consensus thread, and what the failed apply wrote before it gave
@@ -140,9 +223,28 @@ fn invalidates(operation: &ConsensusOperations, result: &StorageResult<bool>) {
     assert_eq!(shadow.apply(&nop()), None);
 }
 
+/// Snapshot recovery leaves state no operation asked for, so the machine goes and the next
+/// entry builds a new one. Here the snapshot empties the container while the machine still
+/// holds a collection and its alias.
+#[test]
+fn snapshot_invalidates() {
+    let container = Arc::new(container());
+    let dir = tempdir();
+    let manager = manager(container, ShadowMode::Panic, dir.path());
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+
+    manager
+        .apply_snapshot(&snapshot())
+        .expect("snapshot applied")
+        .expect("snapshot applied");
+
+    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+}
+
 /// The peer dies on a divergence in panic mode, which is what the consensus test suite runs
 #[test]
-#[should_panic]
+#[should_panic(expected = "aliases")]
 fn manager_panics_on_divergence() {
     let container = Arc::new(container());
     let dir = tempdir();
@@ -191,6 +293,29 @@ fn scrape_cluster_state() {
     assert_eq!(state.cluster_metadata, persistent.cluster_metadata);
 }
 
+/// The per-entry read holds the same state, with collection names in place of their state
+#[test]
+fn scrape_actual_state() {
+    let dir = tempdir();
+    let persistent = persistent(dir.path());
+    let container = container();
+
+    let state = super::scrape_actual_state(&container, &persistent);
+
+    assert_eq!(state.collections, BTreeSet::from([COLLECTION.to_string()]));
+    assert_eq!(state.aliases, *container.aliases.lock());
+    assert_eq!(state.quota_config, container.quota_config);
+    assert_eq!(
+        state.peer_address_by_id,
+        *persistent.peer_address_by_id.read(),
+    );
+    assert_eq!(
+        state.peer_metadata_by_id,
+        *persistent.peer_metadata_by_id.read(),
+    );
+    assert_eq!(state.cluster_metadata, persistent.cluster_metadata);
+}
+
 /// Shadow over a container, without the manager in between
 struct Shadow {
     machine: Mutex<ShadowStateMachine>,
@@ -223,10 +348,29 @@ impl Shadow {
         operation: &ConsensusOperations,
         result: &StorageResult<bool>,
     ) -> Option<String> {
+        self.apply_between(operation, result, |_| ())
+    }
+
+    /// Plan `operation`, let `between` change the container the way something running next to
+    /// the apply would, then compare
+    fn apply_between(
+        &self,
+        operation: &ConsensusOperations,
+        result: &StorageResult<bool>,
+        between: impl FnOnce(&Container),
+    ) -> Option<String> {
         let mut machine = self.machine.lock();
         let outcome = machine.apply(&self.container, &self.persistent, operation);
 
-        machine.diff(&self.container, &self.persistent, &outcome, result)
+        between(&self.container);
+
+        machine.diff(
+            &self.container,
+            &self.persistent,
+            operation,
+            &outcome,
+            result,
+        )
     }
 }
 
@@ -259,6 +403,31 @@ fn entry(operation: &ConsensusOperations) -> RaftEntry {
     }
 }
 
+/// Snapshot of an empty cluster, with this peer as its only voter
+fn snapshot() -> Snapshot {
+    let data = SnapshotData {
+        collections_data: CollectionsSnapshot::default(),
+        address_by_id: PeerAddressById::new(),
+        metadata_by_id: PeerMetadataById::new(),
+        cluster_metadata: HashMap::new(),
+        quota_config: None,
+    };
+
+    let conf_state = ConfState {
+        voters: vec![PEER_ID],
+        ..Default::default()
+    };
+
+    Snapshot {
+        data: serde_cbor::to_vec(&data).expect("snapshot serialized"),
+        metadata: Some(SnapshotMetadata {
+            conf_state: Some(conf_state),
+            index: 1,
+            term: 1,
+        }),
+    }
+}
+
 fn nop() -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Nop { token: 0 }))
 }
@@ -276,10 +445,10 @@ fn create_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
-/// Covered operation naming the collection, so the compare after it reads that collection
-fn drop_payload_index() -> ConsensusOperations {
+/// Covered operation naming `collection`, so the compare after it reads that collection
+fn drop_payload_index(collection: &str) -> ConsensusOperations {
     let operation = DropPayloadIndex {
-        collection_name: COLLECTION.to_string(),
+        collection_name: collection.to_string(),
         field_name: "city".parse().expect("valid field name"),
     };
 
@@ -288,7 +457,12 @@ fn drop_payload_index() -> ConsensusOperations {
     )))
 }
 
-/// Operation the machine does not model yet
+/// Operation the machine does not model, and which names no collection
+fn remove_peer() -> ConsensusOperations {
+    ConsensusOperations::RemovePeer(PEER_ID)
+}
+
+/// Operation the machine does not model yet, naming the collection it changes
 fn set_replica_state() -> ConsensusOperations {
     let operation = SetShardReplicaState {
         collection_name: COLLECTION.to_string(),
@@ -335,6 +509,8 @@ fn container() -> Container {
             enabled: true,
             ..Default::default()
         },
+        snapshots: AtomicUsize::new(0),
+        dirty_collections: Mutex::new(BTreeSet::new()),
     }
 }
 
@@ -346,9 +522,23 @@ struct Container {
     collections: Mutex<HashMap<CollectionId, collection_state::State>>,
     aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
+    /// How many times the whole state was read back, to tell a resync from a rebuild
+    snapshots: AtomicUsize,
+    /// Collections changed without a consensus operation asking for it
+    dirty_collections: Mutex<BTreeSet<CollectionId>>,
 }
 
 impl Container {
+    fn snapshots(&self) -> usize {
+        self.snapshots.load(Ordering::Relaxed)
+    }
+
+    /// Record that the collection changed without a consensus operation, as recovering a
+    /// partial shard snapshot does
+    fn mark_dirty(&self) {
+        self.dirty_collections.lock().insert(COLLECTION.to_string());
+    }
+
     /// Point another alias at the collection, as an operation the machine never saw would
     fn add_alias(&self, alias: &str) {
         self.aliases
@@ -371,10 +561,28 @@ impl Container {
 
 impl CollectionContainer for Container {
     fn collections_snapshot(&self) -> CollectionsSnapshot {
+        self.snapshots.fetch_add(1, Ordering::Relaxed);
+
         CollectionsSnapshot {
             collections: self.collections.lock().clone(),
             aliases: self.aliases.lock().clone(),
         }
+    }
+
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State> {
+        self.collections.lock().get(collection).cloned()
+    }
+
+    fn collection_names(&self) -> BTreeSet<CollectionId> {
+        self.collections.lock().keys().cloned().collect()
+    }
+
+    fn alias_mapping(&self) -> AliasMapping {
+        self.aliases.lock().clone()
+    }
+
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+        std::mem::take(&mut self.dirty_collections.lock())
     }
 
     fn node_context(&self) -> NodeContext {
@@ -394,11 +602,19 @@ impl CollectionContainer for Container {
         Ok(true)
     }
 
-    // Never reached: no test recovers a snapshot, removes a peer or writes a quota config
+    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError> {
+        let CollectionsSnapshot {
+            collections,
+            aliases,
+        } = data;
 
-    fn apply_collections_snapshot(&self, _data: CollectionsSnapshot) -> Result<(), StorageError> {
-        unimplemented!()
+        *self.collections.lock() = collections;
+        *self.aliases.lock() = aliases;
+
+        Ok(())
     }
+
+    // Never reached: no test removes a peer or writes a quota config
 
     fn remove_peer(&self, _peer_id: PeerId) -> Result<(), StorageError> {
         unimplemented!()
