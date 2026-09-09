@@ -313,13 +313,15 @@ impl Consensus {
         }
 
         // raft will not return entries to the application smaller or equal to `applied`
-        let last_applied = state_ref.last_applied_entry().unwrap_or_default();
-        let raft_config = Config {
+        let mut raft_config = Config {
             id: state_ref.this_peer_id(),
-            applied: last_applied,
+            applied: state_ref.last_applied_entry().unwrap_or_default(),
+            batch_append: true,
             ..Default::default()
         };
+
         raft_config.validate()?;
+
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         if state_ref.is_new_deployment() || reinit {
             let leader_established_in_ms =
@@ -351,15 +353,29 @@ impl Consensus {
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::debug!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
+
             log::debug!("Local raft state found - skipping initialization");
         };
 
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
-        node.set_batch_append(true);
 
-        // Before consensus has started apply any unapplied committed entries
-        // They might have not been applied due to unplanned Qdrant shutdown
+        // (Re-)apply any committed, but unapplied entries before starting consensus.
+        // This might happen if Qdrant was stopped or crashed before or while applying an operation.
+        // Applying during startup allows us to catch service errors early,
+        // before starting consensus thread.
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
+
+        // Node was created with older `applied` index, and `apply_entries` does *not* update it.
+        // On first `Ready` Raft would once again return entries applied above to the application,
+        // and we would apply them a second time.
+        //
+        // `applied` can only be set when node is created and can't be updated manually,
+        // so we have to re-create the node with updated index.
+        let applied = state_ref.last_applied_entry().unwrap_or_default();
+        if raft_config.applied < applied {
+            raft_config.applied = applied;
+            node = Node::new(&raft_config, state_ref.clone(), logger)?;
+        }
 
         if force_compact_wal {
             // Making sure that the WAL will be compacted on start
