@@ -67,7 +67,7 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
             arb_aliases(names),
             arb_peer_metadata_by_id(),
             arb_cluster_metadata(),
-            proptest::option::of(arb_quota_config()),
+            arb_quota_config(),
         );
 
         state.prop_map(|state| {

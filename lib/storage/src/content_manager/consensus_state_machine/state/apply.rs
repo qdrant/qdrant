@@ -114,7 +114,7 @@ impl ClusterState {
             }
 
             Action::SetQuotaConfig { config } => {
-                self.quota_config = Some(*config);
+                self.quota_config = *config;
             }
 
             // Sleep on a peer, or fail at random. Neither changes the state.
