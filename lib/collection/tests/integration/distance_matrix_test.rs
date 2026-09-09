@@ -126,3 +126,69 @@ async fn distance_matrix_anonymous_vector() {
         });
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn distance_matrix_max_limit() {
+    let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let point_count = 50;
+    let ids = (0..point_count).map_into().collect();
+    let mut rng = SmallRng::seed_from_u64(SEED);
+
+    let vectors = (0..point_count)
+        .map(|_| rng.random::<[f32; 4]>().to_vec())
+        .collect_vec();
+
+    let batch = BatchPersisted {
+        ids,
+        vectors: BatchVectorStructPersisted::Single(vectors),
+        payloads: None,
+    };
+
+    let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
+        collection::operations::point_ops::PointOperations::UpsertPoints(
+            collection::operations::point_ops::PointInsertOperationsInternal::from(batch),
+        ),
+    );
+
+    let hw_counter = HwMeasurementAcc::new();
+    collection
+        .update_from_client_simple(
+            upsert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
+        .await
+        .unwrap();
+
+    let hw_acc = HwMeasurementAcc::new();
+    let sample_size = 10;
+    let limit_per_sample = usize::MAX;
+    let request = CollectionSearchMatrixRequest {
+        sample_size,
+        limit_per_sample,
+        filter: None,
+        using: DEFAULT_VECTOR_NAME.to_owned(),
+    };
+    let matrix = collection
+        .search_points_matrix(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            None,
+            hw_acc,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(matrix.sample_ids.len(), sample_size);
+    assert_eq!(matrix.nearests.len(), sample_size);
+    for nearest in matrix.nearests {
+        assert!(!nearest.is_empty());
+        assert!(nearest.len() < point_count);
+    }
+}

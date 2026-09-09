@@ -351,9 +351,4 @@ mod tests {
         let actual = SearchMatrixOffsetsResponse::from(response);
         assert_eq!(actual, expected);
     }
-
-    #[test]
-    fn matrix_limit_max_does_not_wrap() {
-        assert_eq!(usize::MAX.saturating_add(1), usize::MAX);
-    }
 }
