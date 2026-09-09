@@ -1766,15 +1766,37 @@ mod tests {
         initial_clocks.store_if_changed(shard_path).unwrap();
 
         // Simulate crash between writes when advancing to newest=20, oldest=15:
-        // With newest-first, newest is persisted to disk first, and crash prevents oldest write.
+        // Exercise `LocalShardClocks::store_if_changed`: inject a failure on the second write (oldest_clocks).
         let mut advanced_newest = ClockMap::default();
+        let mut advanced_oldest = ClockMap::default();
         advanced_newest.advance_clock(ClockTag::new(1, 1, 20));
-        advanced_newest
-            .store_if_changed(&LocalShardClocks::newest_clocks_path(shard_path))
-            .unwrap();
+        advanced_oldest.advance_clock(ClockTag::new(1, 1, 15));
+        let advanced_clocks = LocalShardClocks::new(advanced_newest, advanced_oldest);
+
+        // Inject failure on oldest_clocks path by replacing file with a directory (rename fails with EISDIR).
+        let oldest_path = LocalShardClocks::oldest_clocks_path(shard_path);
+        let oldest_backup = std::fs::read(&oldest_path).unwrap();
+        std::fs::remove_file(&oldest_path).unwrap();
+        std::fs::create_dir(&oldest_path).unwrap();
+
+        // store_if_changed writes newest (20) successfully, then fails on oldest (15).
+        assert!(advanced_clocks.store_if_changed(shard_path).is_err());
+
+        // Restore oldest_clocks.json to simulate pre-crash state on disk (tick 5).
+        std::fs::remove_dir(&oldest_path).unwrap();
+        std::fs::write(&oldest_path, &oldest_backup).unwrap();
 
         // On reboot, load clocks from disk:
         let recovered = LocalShardClocks::load(shard_path).unwrap();
+        assert_eq!(
+            recovered.newest_clocks.blocking_lock().current_tick(1, 1),
+            Some(20)
+        );
+        assert_eq!(
+            recovered.oldest_clocks.blocking_lock().current_tick(1, 1),
+            Some(5)
+        );
+
         let rec_newest = recovered.newest_clocks.blocking_lock().to_recovery_point();
         let rec_oldest = recovered.oldest_clocks.blocking_lock().to_recovery_point();
 
