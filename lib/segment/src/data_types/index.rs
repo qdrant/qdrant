@@ -310,6 +310,33 @@ pub struct TextIndexParams {
     pub enable_hnsw: Option<bool>,
 }
 
+impl Validate for TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let TextIndexParams {
+            min_token_len,
+            max_token_len,
+            ..
+        } = self;
+        validate_text_index_params(min_token_len, max_token_len)
+    }
+}
+
+pub fn validate_text_index_params(
+    min_token_len: &Option<usize>,
+    max_token_len: &Option<usize>,
+) -> Result<(), ValidationErrors> {
+    if let (Some(min), Some(max)) = (min_token_len, max_token_len)
+        && min > max
+    {
+        let mut errors = ValidationErrors::new();
+        let error =
+            ValidationError::new("the 'min_token_len' cannot be greater than the 'max_token_len'");
+        errors.add("min_token_len", error);
+        return Err(errors);
+    }
+    Ok(())
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Snowball {
@@ -627,6 +654,7 @@ pub struct DatetimeIndexParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::PayloadSchemaParams;
 
     #[test]
     fn test_stemming_algorithm_serialization() {
@@ -792,5 +820,36 @@ mod tests {
             StopwordsInterface::new_set(&[Language::English, Language::French], &["AAA"]);
 
         assert_eq!(stopwords_multiple, expected_set);
+    }
+    fn text_params(min: Option<usize>, max: Option<usize>) -> TextIndexParams {
+        TextIndexParams {
+            min_token_len: min,
+            max_token_len: max,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_text_index_params_reject_min_above_max() {
+        // A min_token_len above max_token_len rejects every token during
+        // indexing, silently building an empty full-text index. The schema
+        // validation must reject it instead.
+        let schema = PayloadSchemaParams::Text(text_params(Some(10), Some(5)));
+        assert!(schema.validate().is_err());
+    }
+
+    #[test]
+    fn test_text_index_params_accept_valid_token_lens() {
+        // Unset bounds, min < max, and min == max are all fine.
+        for (min, max) in [
+            (None, None),
+            (Some(3), None),
+            (None, Some(10)),
+            (Some(3), Some(10)),
+            (Some(5), Some(5)),
+        ] {
+            let schema = PayloadSchemaParams::Text(text_params(min, max));
+            assert!(schema.validate().is_ok(), "min={min:?} max={max:?}");
+        }
     }
 }

@@ -2748,7 +2748,7 @@ impl Validate for PayloadSchemaParams {
             PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
             PayloadSchemaParams::Float(_) => Ok(()),
             PayloadSchemaParams::Geo(_) => Ok(()),
-            PayloadSchemaParams::Text(_) => Ok(()),
+            PayloadSchemaParams::Text(text_index_params) => text_index_params.validate(),
             PayloadSchemaParams::Bool(_) => Ok(()),
             PayloadSchemaParams::Datetime(_) => Ok(()),
             PayloadSchemaParams::Uuid(_) => Ok(()),
