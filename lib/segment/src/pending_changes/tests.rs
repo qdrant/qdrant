@@ -804,11 +804,17 @@ fn test_recover_delete_if_incompatible_index_change() {
     pending_changes.flusher(8).unwrap()().unwrap();
     drop(pending_changes);
 
-    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert!(
         !segment.get_indexed_fields().contains_key(&field("color")),
         "an incompatible schema must drop the index",
     );
+
+    // This normally happens after a full segments flush cycle
+    for path in &recovered.log_files {
+        fs::remove_file(path).unwrap();
+    }
+
     assert!(list_pending_changes_log_files(&segment_dir).is_empty());
 }
 
@@ -852,7 +858,7 @@ fn test_recover_superseding_vector_name_change() {
     pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
     drop(pending_changes);
 
-    recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
 
     let vector_config = segment.config().vector_data.get("v2").unwrap();
     assert_eq!(vector_config.size, 8);
@@ -864,6 +870,12 @@ fn test_recover_superseding_vector_name_change() {
             .is_none(),
         "superseded vector data must be cleared on replay",
     );
+
+    // This normally happens after a full segments flush cycle
+    for path in &recovered.log_files {
+        fs::remove_file(path).unwrap();
+    }
+
     assert!(list_pending_changes_log_files(&segment_dir).is_empty());
 }
 
