@@ -81,7 +81,7 @@ fn shape_candidates_query(
 }
 
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
-    shard_prefetch.limit *= group_size;
+    shard_prefetch.limit = shard_prefetch.limit.saturating_mul(group_size);
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
         increase_limit_for_group(prefetch, group_size);
     });
@@ -134,4 +134,32 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
     }
 
     any_variants
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_increase_limit_for_group_saturates_on_overflow() {
+        let mut prefetch = ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![],
+                query: None,
+                limit: usize::MAX,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: None,
+            limit: usize::MAX,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+
+        increase_limit_for_group(&mut prefetch, 2);
+        assert_eq!(prefetch.limit, usize::MAX);
+        assert_eq!(prefetch.prefetches[0].limit, usize::MAX);
+    }
 }
