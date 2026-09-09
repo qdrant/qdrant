@@ -127,13 +127,15 @@ async fn distance_matrix_anonymous_vector() {
     }
 }
 
+use segment::types::PointIdType;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn distance_matrix_max_limit() {
     let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
     let point_count = 50;
-    let ids = (0..point_count).map_into().collect();
+    let ids = (0..point_count).map(PointIdType::from).collect();
     let mut rng = SmallRng::seed_from_u64(SEED);
 
     let vectors = (0..point_count)
@@ -188,8 +190,7 @@ async fn distance_matrix_max_limit() {
     assert_eq!(matrix.sample_ids.len(), sample_size);
     assert_eq!(matrix.nearests.len(), sample_size);
     for nearest in matrix.nearests {
-        assert!(!nearest.is_empty());
-        assert!(nearest.len() < point_count as usize);
+        assert_eq!(nearest.len(), sample_size - 1);
     }
 }
 
