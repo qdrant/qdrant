@@ -611,14 +611,34 @@ impl ShardReplicaSet {
     }
 
     /// Clears the local shard data and loads an empty local shard
+    ///
+    /// # Cancel safety
+    ///
+    /// This is cancel safe. If the future is dropped, `local` is left holding a dummy shard rather
+    /// than the real thing. That dummy state is picked up like any other initialization failure: a
+    /// retried call to this method clears it and tries again.
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
-        let current_shard = local.take();
+        // Keep a dummy placeholder because every await below may drop the future early on
+        // cancellation, we must never leave this at None
+        let current_shard = local.replace(Shard::Dummy(DummyShard::new(
+            "Local shard is being initialized",
+        )));
+
         if let Some(current_shard) = current_shard {
             current_shard.stop_gracefully().await;
         }
-        LocalShard::clear(&self.shard_path).await?;
+
+        if let Err(err) = LocalShard::clear(&self.shard_path).await {
+            let error = format!(
+                "Failed to clear local shard at {:?}: {err}",
+                self.shard_path,
+            );
+            log::error!("{error}");
+            local.replace(Shard::Dummy(DummyShard::new(error)));
+            return Err(err);
+        }
 
         let local_shard_res = LocalShard::build(
             self.shard_id,
@@ -636,16 +656,16 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                *local = Some(Shard::Local(local_shard));
+                local.replace(Shard::Local(local_shard));
                 Ok(())
             }
             Err(err) => {
                 let error = format!(
                     "Failed to initialize local shard at {:?}: {err}",
-                    self.shard_path
+                    self.shard_path,
                 );
                 log::error!("{error}");
-                *local = Some(Shard::Dummy(DummyShard::new(error)));
+                local.replace(Shard::Dummy(DummyShard::new(error)));
                 Err(err)
             }
         }
