@@ -37,7 +37,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorInternal, VectorRef,
 };
-use crate::index::hnsw_index::HnswLinksStorage;
+use crate::index::hnsw_index::{HnswGraph, HnswLinksStorage};
 use crate::types::{Distance, IoBackend, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::dense::graph_inline_dense_vector_storage::GraphInlineDenseVectorStorage;
@@ -673,6 +673,49 @@ pub enum VectorStorageEnum {
 }
 
 impl VectorStorageEnum {
+    pub fn hnsw_graph(&self) -> Option<&HnswGraph<HnswLinksStorage>> {
+        match self {
+            VectorStorageEnum::DenseVolatile(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(_) => None,
+            VectorStorageEnum::DenseMemmap(_) => None,
+            VectorStorageEnum::DenseMemmapByte(_) => None,
+            VectorStorageEnum::DenseMemmapHalf(_) => None,
+            VectorStorageEnum::DenseGraphInline(v) => Some(v.hnsw_graph()),
+            VectorStorageEnum::DenseGraphInlineByte(v) => Some(v.hnsw_graph()),
+            VectorStorageEnum::DenseGraphInlineHalf(v) => Some(v.hnsw_graph()),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_) => None,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte(_) => None,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf(_) => None,
+            VectorStorageEnum::DenseAppendableMemmap(_) => None,
+            VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
+            VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
+            VectorStorageEnum::DenseTurboMemmap(_) => None,
+            VectorStorageEnum::DenseTurboGraphInline(v) => Some(v.hnsw_graph()),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(_) => None,
+            VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
+            VectorStorageEnum::SparseVolatile(_) => None,
+            VectorStorageEnum::SparseMmap(_) => None,
+            VectorStorageEnum::MultiDenseVolatile(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => None,
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => None,
+            VectorStorageEnum::MultiDenseTurbo(_) => None,
+            VectorStorageEnum::EmptyDense(_) => None,
+            VectorStorageEnum::EmptySparse(_) => None,
+        }
+    }
+
     pub fn try_multi_vector_config(&self) -> Option<&MultiVectorConfig> {
         match self {
             VectorStorageEnum::DenseVolatile(_) => None,

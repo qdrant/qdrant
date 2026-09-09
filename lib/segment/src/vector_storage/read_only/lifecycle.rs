@@ -4,9 +4,13 @@ use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::VectorStorageReadEnum;
+use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::index::hnsw_index::HnswGraph;
+use crate::index::hnsw_index::hnsw::graph_residency;
 use crate::types::{VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+use crate::vector_storage::dense::appendable_dense_vector_storage::DELETED_DIR_PATH;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
@@ -17,17 +21,28 @@ use crate::vector_storage::turbo::read_only::{
     ReadOnlyChunkedTurboVectorStorage, ReadOnlyImmutableTurboVectorStorage,
 };
 
-/// How the [`VectorStorageType`] maps onto the read-only open path: mmap
-/// advice, whether the storage is populated on open, and whether it uses the
-/// appendable chunked layout. `None` for the storage types with no on-disk
-/// data to open.
-fn storage_type_params(storage_type: VectorStorageType) -> Option<(AdviceSetting, Populate, bool)> {
+/// How the [`VectorStorageType`] maps onto the read-only open path.
+enum ReadOnlyLayout {
+    /// No on-disk data to open.
+    None,
+    /// Dedicated vector files.
+    Files {
+        advice: AdviceSetting,
+        populate: Populate,
+        chunked: bool,
+    },
+    /// Vectors inlined in the HNSW links file.
+    GraphInline,
+}
+
+fn storage_type_layout(storage_type: VectorStorageType) -> ReadOnlyLayout {
     let (advice, populate, chunked) = match storage_type {
         VectorStorageType::Mmap => (AdviceSetting::Global, false, false),
         VectorStorageType::InRamMmap => (AdviceSetting::from(Advice::Normal), true, false),
         VectorStorageType::ChunkedMmap => (AdviceSetting::Global, false, true),
         VectorStorageType::InRamChunkedMmap => (AdviceSetting::from(Advice::Normal), true, true),
-        VectorStorageType::Memory => return None,
+        VectorStorageType::Memory => return ReadOnlyLayout::None,
+        VectorStorageType::GraphInline => return ReadOnlyLayout::GraphInline,
     };
 
     let populate = match populate {
@@ -35,7 +50,11 @@ fn storage_type_params(storage_type: VectorStorageType) -> Option<(AdviceSetting
         false => Populate::No,
     };
 
-    Some((advice, populate, chunked))
+    ReadOnlyLayout::Files {
+        advice,
+        populate,
+        chunked,
+    }
 }
 
 impl<S: UniversalRead> VectorStorageReadEnum<S> {
@@ -53,15 +72,24 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &impl CachedReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
-        _vector_index_path: &Path,
+        vector_index_path: &Path,
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         let datatype = vector_config.datatype.unwrap_or_default();
 
-        let Some((advice, populate, chunked)) = storage_type_params(vector_config.storage_type)
-        else {
-            // No on-disk data to prefetch for these storage types: no-op.
-            return Ok(());
+        let (advice, populate, chunked) = match storage_type_layout(vector_config.storage_type) {
+            ReadOnlyLayout::None => return Ok(()),
+            ReadOnlyLayout::GraphInline => {
+                let (_memory, residency) =
+                    graph_residency(vector_config.storage_memory(), populate_override);
+                HnswGraph::preopen_universal(fs, vector_index_path, residency)?;
+                return InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH));
+            }
+            ReadOnlyLayout::Files {
+                advice,
+                populate,
+                chunked,
+            } => (advice, populate, chunked),
         };
         let populate = populate_override.unwrap_or(populate);
 
@@ -136,17 +164,51 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
-        _vector_index_path: &Path,
+        vector_index_path: &Path,
         populate_override: Option<Populate>,
-    ) -> OperationResult<Option<Self>> {
+    ) -> OperationResult<Option<Self>>
+    where
+        S: 'static,
+    {
         let dim = vector_config.size;
         let distance = vector_config.distance;
         let datatype = vector_config.datatype.unwrap_or_default();
 
-        // No on-disk data to open for these storage types: no-op.
-        let Some((advice, populate, chunked)) = storage_type_params(vector_config.storage_type)
-        else {
-            return Ok(None);
+        let (advice, populate, chunked) = match storage_type_layout(vector_config.storage_type) {
+            ReadOnlyLayout::None => return Ok(None),
+            ReadOnlyLayout::GraphInline => {
+                let (_memory, residency) =
+                    graph_residency(vector_config.storage_memory(), populate_override);
+                let graph = HnswGraph::open_universal(fs, vector_index_path, residency)?;
+
+                return Ok(Some(match datatype {
+                    VectorStorageDatatype::Float32 => Self::DenseGraphInline(Box::new(
+                        ReadOnlyImmutableDenseVectorStorage::open_graph(
+                            fs, path, graph, dim, distance,
+                        )?,
+                    )),
+                    VectorStorageDatatype::Uint8 => Self::DenseGraphInlineByte(Box::new(
+                        ReadOnlyImmutableDenseVectorStorage::open_graph(
+                            fs, path, graph, dim, distance,
+                        )?,
+                    )),
+                    VectorStorageDatatype::Float16 => Self::DenseGraphInlineHalf(Box::new(
+                        ReadOnlyImmutableDenseVectorStorage::open_graph(
+                            fs, path, graph, dim, distance,
+                        )?,
+                    )),
+                    VectorStorageDatatype::Turbo4 => Self::DenseTurboGraphInline(Box::new(
+                        ReadOnlyImmutableTurboVectorStorage::open_graph(
+                            fs, path, graph, dim, distance,
+                        )?,
+                    )),
+                }));
+            }
+            ReadOnlyLayout::Files {
+                advice,
+                populate,
+                chunked,
+            } => (advice, populate, chunked),
         };
         let populate = populate_override.unwrap_or(populate);
 

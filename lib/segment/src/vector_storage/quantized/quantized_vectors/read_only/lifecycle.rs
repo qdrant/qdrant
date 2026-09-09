@@ -60,7 +60,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             return Ok(());
         };
         let multivector = vector_config.multivector_config.is_some();
-        let on_disk_vector_storage = vector_config.storage_type.is_on_disk();
+        let on_disk_vector_storage = vector_config.storage_memory().is_on_disk();
 
         // Config; `open` reads it off the parked handle.
         let config_path = QuantizedVectors::get_config_path(path);

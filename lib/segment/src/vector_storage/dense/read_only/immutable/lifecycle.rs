@@ -92,6 +92,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
             distance,
         })
     }
+
+    pub fn hnsw_graph(&self) -> HnswGraph<S> {
+        self.vectors.graph().clone()
+    }
 }
 
 /// Read the immutable storage's `deleted.dat` through `fs` into an in-memory flag

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ext::aligned_vec::ACow;
+use common::flags::feature_flags;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(not(target_os = "linux"))]
 use common::universal_io::MmapFile;
@@ -17,9 +18,11 @@ use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_layers::{GraphLayers, SearchAlgorithm};
 use super::graph_layers_batched::GraphLayersBatched;
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
+use super::hnsw::{LINK_COMPRESSION_CONVERT_EXISTING, graph_residency};
 use super::point_scorer::{FilteredScorer, ScorerFilters};
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::IoBackend;
+use crate::types::{IoBackend, Memory};
 
 #[derive(Debug)]
 pub enum HnswGraph<S: UniversalRead> {
@@ -60,12 +63,14 @@ pub enum SearchScorers<'a> {
 }
 
 impl HnswGraph<HnswLinksStorage> {
-    pub fn open(
-        dir: &Path,
-        residency: GraphLinksResidency,
-        do_convert: bool,
-        with_uring: bool,
-    ) -> OperationResult<Self> {
+    pub fn open(dir: &Path, memory: Memory) -> OperationResult<Self> {
+        let (memory, residency) = graph_residency(memory, None);
+        let with_uring = use_io_uring(
+            IoUringFallback::Mmap,
+            memory,
+            feature_flags().async_hnsw_graph,
+        );
+
         if with_uring {
             #[cfg(target_os = "linux")]
             if Self::is_batched(&IoUringFs, dir, residency)? {
@@ -74,7 +79,7 @@ impl HnswGraph<HnswLinksStorage> {
             }
         }
 
-        let graph = GraphLayers::load(dir, residency, do_convert)?;
+        let graph = GraphLayers::load(dir, residency, LINK_COMPRESSION_CONVERT_EXISTING)?;
         Ok(HnswGraph::Direct(Arc::new(graph)))
     }
 }

@@ -5,6 +5,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{
     QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
+use crate::index::hnsw_index::HnswGraph;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 use crate::vector_storage::dense::read_only::{
     ReadOnlyChunkedDenseVectorStorage, ReadOnlyImmutableDenseVectorStorage,
@@ -52,6 +53,31 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     DenseTurboChunked(Box<ReadOnlyChunkedTurboVectorStorage<S>>),
     MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
+}
+
+impl<S: UniversalRead> VectorStorageReadEnum<S> {
+    /// See [crate::vector_storage::VectorStorageEnum::hnsw_graph].
+    pub fn hnsw_graph(&self) -> Option<HnswGraph<S>> {
+        match self {
+            VectorStorageReadEnum::Dense(_) => None,
+            VectorStorageReadEnum::DenseByte(_) => None,
+            VectorStorageReadEnum::DenseHalf(_) => None,
+            VectorStorageReadEnum::DenseGraphInline(s) => Some(s.hnsw_graph()),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => Some(s.hnsw_graph()),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => Some(s.hnsw_graph()),
+            VectorStorageReadEnum::DenseChunked(_) => None,
+            VectorStorageReadEnum::DenseChunkedByte(_) => None,
+            VectorStorageReadEnum::DenseChunkedHalf(_) => None,
+            VectorStorageReadEnum::MultiDenseChunked(_) => None,
+            VectorStorageReadEnum::MultiDenseChunkedByte(_) => None,
+            VectorStorageReadEnum::MultiDenseChunkedHalf(_) => None,
+            VectorStorageReadEnum::DenseTurbo(_) => None,
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => Some(s.hnsw_graph()),
+            VectorStorageReadEnum::DenseTurboChunked(_) => None,
+            VectorStorageReadEnum::MultiDenseTurbo(_) => None,
+            VectorStorageReadEnum::Sparse(_) => None,
+        }
+    }
 }
 
 impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
@@ -706,7 +732,8 @@ mod tests {
                 }
                 VectorStorageType::InRamMmap
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::Memory => {
+                | VectorStorageType::Memory
+                | VectorStorageType::GraphInline => {
                     unreachable!("unexpected storage type {storage_type:?}")
                 }
             }
@@ -728,7 +755,8 @@ mod tests {
                 }
                 VectorStorageType::Memory
                 | VectorStorageType::InRamChunkedMmap
-                | VectorStorageType::InRamMmap => false,
+                | VectorStorageType::InRamMmap
+                | VectorStorageType::GraphInline => false,
             };
             assert!(
                 routed,

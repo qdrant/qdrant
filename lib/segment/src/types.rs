@@ -1754,9 +1754,7 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data
-            .values()
-            .any(|config| config.storage_type.is_on_disk())
+        self.vector_data.values().any(|config| config.is_on_disk())
             || self
                 .sparse_vector_data
                 .values()
@@ -2019,6 +2017,8 @@ pub enum VectorStorageType {
     /// Storage in a single mmap file, not appendable
     /// Pre-fetched into RAM on load
     InRamMmap,
+    /// Vectors are inlined in the HNSW links file, not in a dedicated storage. Not appendable.
+    GraphInline,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -2114,20 +2114,15 @@ impl VectorStorageType {
     }
 
     /// Memory placement this storage type provides.
-    pub fn memory(&self) -> Memory {
+    ///
+    /// `None` (for GraphInline) means no placement is applicable.
+    pub fn memory(&self) -> Option<Memory> {
         match self {
             // Legacy true-heap storage: pinned by construction
-            Self::Memory => Memory::Pinned,
-            Self::Mmap | Self::ChunkedMmap => Memory::Cold,
-            Self::InRamChunkedMmap | Self::InRamMmap => Memory::Cached,
-        }
-    }
-
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            Self::Memory | Self::InRamChunkedMmap | Self::InRamMmap => false,
-            Self::Mmap | Self::ChunkedMmap => true,
+            Self::Memory => Some(Memory::Pinned),
+            Self::Mmap | Self::ChunkedMmap => Some(Memory::Cold),
+            Self::InRamChunkedMmap | Self::InRamMmap => Some(Memory::Cached),
+            Self::GraphInline => None,
         }
     }
 }
@@ -2169,6 +2164,7 @@ impl VectorDataConfig {
             VectorStorageType::ChunkedMmap => true,
             VectorStorageType::InRamChunkedMmap => true,
             VectorStorageType::InRamMmap => false,
+            VectorStorageType::GraphInline => false,
         };
         is_index_appendable && is_storage_appendable
     }
@@ -2257,6 +2253,19 @@ impl VectorDataConfig {
             );
         }
         Ok(true)
+    }
+
+    pub fn storage_memory(&self) -> Memory {
+        match (self.storage_type.memory(), &self.index) {
+            (Some(memory), _) => memory,
+            (None, Indexes::Hnsw(hnsw_config)) => hnsw_config.memory_placement(),
+            // Invalid config: no graph to follow
+            (None, Indexes::Plain {}) => Memory::Cold,
+        }
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.storage_memory().is_on_disk()
     }
 }
 

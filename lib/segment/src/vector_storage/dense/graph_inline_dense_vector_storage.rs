@@ -57,6 +57,10 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
         })
     }
 
+    pub fn hnsw_graph(&self) -> &HnswGraph<S> {
+        self.vectors.graph()
+    }
+
     pub fn populate(&self) {
         self.vectors.populate();
     }

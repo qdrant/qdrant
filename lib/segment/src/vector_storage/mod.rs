@@ -1,6 +1,7 @@
 mod chunked_vectors;
 pub mod common;
 pub mod dense;
+pub mod graph_inline;
 pub mod graph_vectors;
 mod memory_reporter;
 pub mod multi_dense;

@@ -168,6 +168,10 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
     pub fn io_backend(&self) -> Option<IoBackend> {
         self.storage.graph().io_backend()
     }
+
+    pub fn hnsw_graph(&self) -> &HnswGraph<S> {
+        self.storage.graph()
+    }
 }
 
 impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {

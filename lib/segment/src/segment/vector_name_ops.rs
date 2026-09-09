@@ -85,7 +85,7 @@ impl Segment {
             // Use the configured storage type for appendable segments
             let config_for_open = VectorDataConfig {
                 // Override storage type to appendable chunked mmap
-                storage_type: VectorStorageType::from_on_disk(config.storage_type.is_on_disk()),
+                storage_type: VectorStorageType::from_on_disk(config.is_on_disk()),
                 // Use plain index for new vectors
                 index: crate::types::Indexes::Plain {},
                 ..config.clone()
@@ -98,7 +98,7 @@ impl Segment {
                 config.size,
                 config.distance,
                 config.datatype.unwrap_or_default(),
-                config.storage_type.is_on_disk(),
+                config.is_on_disk(),
                 config.multivector_config,
                 num_points,
             )
