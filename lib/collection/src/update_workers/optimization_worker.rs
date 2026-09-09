@@ -256,11 +256,11 @@ impl UpdateWorkers {
         // synchronously - keep it off the async worker.
         let new_handles = tokio::task::spawn_blocking(move || {
             Self::launch_optimization(
-                optimizers.clone(),
+                optimizers,
                 optimizers_log,
                 total_optimized_points,
                 &optimizer_resource_budget,
-                segments.clone(),
+                segments,
                 move || {
                     // Notify other components that optimization is finished
                     // We do not care if there are no receivers or if they are lagging behind
@@ -281,8 +281,9 @@ impl UpdateWorkers {
             Ok(new_handles) => new_handles,
             // The runtime is shutting down, this worker is going away with it
             Err(err) if err.is_cancelled() => vec![],
-            // Launching optimizations must not fail, propagate to the worker like we do for
-            // the appendable segment check above
+            // Launching optimizations must not fail, propagate to the optimization worker
+            // like `ensure_appendable_segment_with_capacity` does. The panic hook already
+            // logged the original backtrace, `resume_unwind` does not run it again.
             Err(err) => std::panic::resume_unwind(err.into_panic()),
         }
     }
