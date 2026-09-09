@@ -130,7 +130,6 @@ pub trait PayloadStorage: PayloadStorageRead {
     fn flusher(&self) -> Flusher;
 
     /// Return all files that are used by storage to include in snapshots.
-    /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
 
     /// Returns a list of files, that are immutable, to exclude from partial snapshots.

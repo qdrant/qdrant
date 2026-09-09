@@ -8,7 +8,7 @@ use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 pub struct TokensProcessor {
     pub lowercase: bool,
     pub ascii_folding: bool,
-    stopwords_filter: Arc<StopwordsFilter>, // TDOO(rocksdb): Remove once rocksdb has been removed!
+    stopwords_filter: Arc<StopwordsFilter>, // TODO: remove `Arc<>`
     stemmer: Option<Stemmer>,
     pub min_token_len: Option<usize>,
     pub max_token_len: Option<usize>,
