@@ -32,7 +32,7 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
 
 impl StrictModeVerification for CollectionSearchMatrixRequest {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit_per_sample * self.sample_size)
+        Some(self.limit_per_sample.saturating_mul(self.sample_size))
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
