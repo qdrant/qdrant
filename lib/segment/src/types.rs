@@ -1685,7 +1685,7 @@ impl Default for PayloadStorageType {
 
 impl PayloadStorageType {
     /// Convert user-facing `on_disk_payload` (true = store on disk) to storage type.
-    /// Returns `Mmap` or `InRamMmap`; for RocksDB-backed variants use collection config.
+    /// Returns `Mmap` or `InRamMmap`.
     pub fn from_on_disk_payload(on_disk: bool) -> Self {
         if on_disk { Self::Mmap } else { Self::InRamMmap }
     }
@@ -2013,8 +2013,6 @@ pub enum VectorStorageType {
     ChunkedMmap,
     /// Same as `ChunkedMmap`, but vectors are forced to be locked in RAM
     /// In this way we avoid cold requests to disk, but risk to run out of memory
-    ///
-    /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
     InRamChunkedMmap,
     /// Storage in a single mmap file, not appendable
     /// Pre-fetched into RAM on load
@@ -4666,7 +4664,8 @@ pub enum SnapshotFormat {
     /// The collection snapshot contains nested tar archives for segments.
     /// Distinguished by a single top-level directory `snapshot` in each segment
     /// tar archive. RocksDB data stored as backups and requires unpacking
-    /// procedure.
+    /// procedure. Note since Qdrant `>=1.18.0` snapshots including RocksDB files cannot be loaded
+    /// because RocksDB support is completely removed, a warning will be shown on restore.
     ///
     /// ```plaintext
     /// ./0/segments/
