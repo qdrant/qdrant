@@ -8,10 +8,13 @@ pub mod diff;
 #[cfg(test)]
 mod tests;
 
+use collection::shards::CollectionId;
 use parking_lot::Mutex;
 use serde::Deserialize;
 
+use self::diff::ActualState;
 use crate::content_manager::CollectionContainer;
+use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::content_manager::consensus_manager::CollectionsSnapshot;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -48,6 +51,10 @@ impl ShadowStateMachine {
         persistent: &Persistent,
         operation: &ConsensusOperations,
     ) -> ApplyOutcome {
+        // Planning reads the state of every collection it touches, so what something other
+        // than consensus wrote since the last entry is read back first
+        self.resync(toc, toc.take_dirty_collections());
+
         let machine = self.machine.get_or_insert_with(|| {
             let state = scrape_cluster_state(toc, persistent);
             ConsensusStateMachine::new(state, toc.node_context())
@@ -62,10 +69,11 @@ impl ShadowStateMachine {
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
+        operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
         result: &StorageResult<bool>,
     ) {
-        let Some(report) = self.diff(toc, persistent, outcome, result) else {
+        let Some(report) = self.diff(toc, persistent, operation, outcome, result) else {
             return;
         };
 
@@ -84,6 +92,7 @@ impl ShadowStateMachine {
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
+        operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
         result: &StorageResult<bool>,
     ) -> Option<String> {
@@ -93,20 +102,50 @@ impl ShadowStateMachine {
 
         // A service error kills the consensus thread and the entry is applied again after
         // restart. What the failed apply wrote before it gave up is not something the machine
-        // predicts, and an operation it does not model leaves its state behind entirely.
-        let comparable = !matches!(result, Err(StorageError::ServiceError { .. }))
-            && !matches!(outcome, ApplyOutcome::NotCovered);
-
-        if !comparable {
+        // predicts.
+        if matches!(result, Err(StorageError::ServiceError { .. })) {
             self.machine = None;
             return None;
         }
 
-        let actual = scrape_cluster_state(toc, persistent);
-        let answer = diff::outcome(outcome, result);
-        let state = diff::cluster(machine.state(), &actual);
+        let collections = compared_collections(operation, machine.state());
 
-        let report: Vec<_> = [answer, state].into_iter().flatten().collect();
+        // An operation the machine does not model leaves the state of the collections it names
+        // behind, so those are read back instead of compared. One that names none, `RemovePeer`
+        // above all, can have changed any of them.
+        if matches!(outcome, ApplyOutcome::NotCovered) {
+            if collections.is_empty() {
+                self.machine = None;
+            } else {
+                self.resync(toc, collections);
+            }
+
+            return None;
+        }
+
+        // Something other than consensus may have changed a collection while the entry was
+        // being applied, and what it wrote is not a divergence
+        self.resync(toc, toc.take_dirty_collections());
+
+        let Some(machine) = &self.machine else {
+            return None;
+        };
+
+        let actual = scrape_actual_state(toc, persistent);
+
+        let mut report = Vec::from_iter(diff::outcome(outcome, result));
+        report.extend(diff::cluster(machine.state(), &actual));
+
+        // Reading a collection's state is the expensive part, so only the ones this operation
+        // could have changed are read. A collection only one side holds is already reported.
+        for collection in collections {
+            let shadow = machine.state().collection(&collection);
+            let actual = toc.collection_state(&collection);
+
+            if let (Some(shadow), Some(actual)) = (shadow, actual) {
+                report.extend(diff::collection(&collection, shadow, &actual));
+            }
+        }
 
         if report.is_empty() {
             return None;
@@ -114,7 +153,23 @@ impl ShadowStateMachine {
 
         self.machine = None;
 
-        Some(report.join("; "))
+        Some(report.join(", "))
+    }
+
+    /// Read the state of `collections` back into the machine
+    fn resync(
+        &mut self,
+        toc: &impl CollectionContainer,
+        collections: impl IntoIterator<Item = CollectionId>,
+    ) {
+        let Some(machine) = &mut self.machine else {
+            return;
+        };
+
+        for collection in collections {
+            let state = toc.collection_state(&collection);
+            machine.resync_collection(&collection, state);
+        }
     }
 }
 
@@ -144,9 +199,9 @@ impl ShadowMode {
     }
 }
 
-/// Read the state consensus decides on back out of the node that applied it.
+/// Read the whole cluster state back, to build a machine that starts from it.
 ///
-/// Reads the state of every collection, which is what one compare costs.
+/// Reads the state of every collection, so this runs when a machine is built, not per entry.
 pub fn scrape_cluster_state(
     toc: &impl CollectionContainer,
     persistent: &Persistent,
@@ -163,5 +218,61 @@ pub fn scrape_cluster_state(
         peer_metadata_by_id: persistent.peer_metadata_by_id.read().clone(),
         cluster_metadata: persistent.cluster_metadata.clone(),
         quota_config: toc.quota_config(),
+    }
+}
+
+/// Read back everything an entry's compare reads, leaving out the contents of collections
+pub fn scrape_actual_state(toc: &impl CollectionContainer, persistent: &Persistent) -> ActualState {
+    ActualState {
+        collections: toc.collection_names(),
+        aliases: toc.alias_mapping(),
+        peer_address_by_id: persistent.peer_address_by_id.read().clone(),
+        peer_metadata_by_id: persistent.peer_metadata_by_id.read().clone(),
+        cluster_metadata: persistent.cluster_metadata.clone(),
+        quota_config: toc.quota_config(),
+    }
+}
+
+/// Collections whose state the compare after `operation` reads.
+///
+/// Both the name the operation carries and the collection it resolves to, since planning
+/// resolves aliases and the legacy handlers do so per operation.
+fn compared_collections(
+    operation: &ConsensusOperations,
+    state: &ClusterState,
+) -> Vec<CollectionId> {
+    let ConsensusOperations::CollectionMeta(operation) = operation else {
+        return Vec::new();
+    };
+
+    let collection = match &**operation {
+        CollectionMetaOperations::CreateCollection(operation) => &operation.collection_name,
+        CollectionMetaOperations::UpdateCollection(operation) => &operation.collection_name,
+        CollectionMetaOperations::DeleteCollection(operation) => &operation.0,
+        CollectionMetaOperations::SetShardReplicaState(operation) => &operation.collection_name,
+        CollectionMetaOperations::CreateShardKey(operation) => &operation.collection_name,
+        CollectionMetaOperations::DropShardKey(operation) => &operation.collection_name,
+        CollectionMetaOperations::CreatePayloadIndex(operation) => &operation.collection_name,
+        CollectionMetaOperations::DropPayloadIndex(operation) => &operation.collection_name,
+        CollectionMetaOperations::CreateNamedVector(operation) => &operation.collection_name,
+        CollectionMetaOperations::DeleteNamedVector(operation) => &operation.collection_name,
+        CollectionMetaOperations::Resharding(collection, _) => collection,
+        CollectionMetaOperations::TransferShard(collection, _) => collection,
+
+        // Change no collection. Alias changes are covered by the compare of the whole mapping.
+        CollectionMetaOperations::ChangeAliases(_) | CollectionMetaOperations::Nop { .. } => {
+            return Vec::new();
+        }
+
+        #[cfg(feature = "staging")]
+        CollectionMetaOperations::TestSlowDown(_)
+        | CollectionMetaOperations::TestTransientError(_) => return Vec::new(),
+    };
+
+    match state.aliases.get(collection) {
+        Some(resolved) if resolved != collection => {
+            vec![collection.clone(), resolved.clone()]
+        }
+        _ => vec![collection.clone()],
     }
 }
