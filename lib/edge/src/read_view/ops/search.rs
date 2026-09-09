@@ -109,8 +109,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             Ok(points_by_request)
         })?;
 
-        let mut aggregator =
-            BatchResultAggregator::new(searches.iter().map(|search| search.offset + search.limit));
+        let mut aggregator = BatchResultAggregator::new(
+            searches
+                .iter()
+                .map(|search| search.offset.saturating_add(search.limit)),
+        );
         aggregator.update_point_versions(points_by_segment.iter().flatten().flatten());
 
         for points_by_request in points_by_segment {

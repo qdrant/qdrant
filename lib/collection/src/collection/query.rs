@@ -107,7 +107,7 @@ impl Collection {
 
         let max_limit = batch_request
             .iter()
-            .map(|req| req.limit + req.offset)
+            .map(|req| req.limit.saturating_add(req.offset))
             .max()
             .unwrap_or(0);
 
@@ -119,7 +119,7 @@ impl Collection {
 
         for request in batch_request.iter() {
             let mut new_request = request.clone();
-            let request_limit = new_request.limit + new_request.offset;
+            let request_limit = new_request.limit.saturating_add(new_request.offset);
 
             let is_exact = request.params.as_ref().is_some_and(|p| p.exact);
 

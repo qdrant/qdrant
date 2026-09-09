@@ -20,7 +20,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::VectorsConfig;
+use crate::operations::types::{CoreSearchRequest, VectorsConfig};
 use crate::operations::universal_query::shard_query::{
     ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -304,6 +304,56 @@ async fn test_offset_limit_does_not_overflow() {
 
     // Normal, non-overflowing offset/limit pagination must still work.
     let points = do_query(10, 15).await;
+    assert_eq!(points.len(), 15, "expected 15 points, got {}", points.len());
+}
+
+/// Regression test for the `core_search_batch` payload-transfer heuristic in
+/// `lib/collection/src/collection/search.rs`, flagged as a follow-up gap on
+/// <https://github.com/qdrant/qdrant/issues/10501>: `sum_limits`/`sum_offsets`
+/// were computed with a plain `.sum()`/`+`/`*` instead of saturating
+/// arithmetic, so a search with an (almost) unbounded limit alongside a
+/// non-zero offset overflowed before ever reaching the per-request take().
+#[tokio::test(flavor = "multi_thread")]
+async fn test_search_batch_offset_limit_does_not_overflow() {
+    let collection = fixture().await;
+
+    let do_search = async |offset, limit| {
+        collection
+            .search(
+                CoreSearchRequest {
+                    query: QueryEnum::Nearest(NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4])),
+                    filter: None,
+                    params: None,
+                    limit,
+                    offset,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                },
+                None,
+                None,
+                &ShardSelectorInternal::All,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .expect("failed to search")
+    };
+
+    // `offset=1, limit=usize::MAX` used to overflow `sum_limits + sum_offsets`
+    // (and the shard-count multiplication) before the per-request take() was
+    // ever reached.
+    let points = do_search(1, usize::MAX).await;
+    assert_eq!(
+        points.len(),
+        POINT_COUNT - 1,
+        "expected {} points, got {}",
+        POINT_COUNT - 1,
+        points.len()
+    );
+
+    // Normal, non-overflowing offset/limit search must still work.
+    let points = do_search(10, 15).await;
     assert_eq!(points.len(), 15, "expected 15 points, got {}", points.len());
 }
 
