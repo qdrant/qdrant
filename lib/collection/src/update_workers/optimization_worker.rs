@@ -193,18 +193,19 @@ impl UpdateWorkers {
                 continue;
             }
 
-            Self::process_optimization(
+            let mut new_handles = Self::process_optimization(
                 optimizers.clone(),
                 segments.clone(),
-                optimization_handles.clone(),
                 optimizers_log.clone(),
                 total_optimized_points.clone(),
-                &optimizer_resource_budget,
+                optimizer_resource_budget.clone(),
                 sender.clone(),
                 optimization_finished_sender.clone(),
                 limit,
             )
             .await;
+            let mut handles = optimization_handles.lock().await;
+            handles.append(&mut new_handles);
         }
     }
 
@@ -244,35 +245,47 @@ impl UpdateWorkers {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_resource_budget: &ResourceBudget,
+        optimizer_resource_budget: ResourceBudget,
         sender: Sender<OptimizerSignal>,
         optimization_finished_sender: watch::Sender<()>,
         limit: usize,
-    ) {
-        let mut new_handles = Self::launch_optimization(
-            optimizers.clone(),
-            optimizers_log,
-            total_optimized_points,
-            optimizer_resource_budget,
-            segments.clone(),
-            move || {
-                // Notify other components that optimization is finished
-                // We do not care if there are no receivers or if they are lagging behind
-                let _ = optimization_finished_sender.send(());
+    ) -> Vec<StoppableTaskHandle<bool>> {
+        // Planning takes the segment holder read lock and builds the optimization plan
+        // synchronously - keep it off the async worker.
+        let new_handles = tokio::task::spawn_blocking(move || {
+            Self::launch_optimization(
+                optimizers,
+                optimizers_log,
+                total_optimized_points,
+                &optimizer_resource_budget,
+                segments,
+                move || {
+                    // Notify other components that optimization is finished
+                    // We do not care if there are no receivers or if they are lagging behind
+                    let _ = optimization_finished_sender.send(());
 
-                // After optimization is finished, we still need to check if there are
-                // some further optimizations possible.
-                // If receiver is already dead - we do not care.
-                // If channel is full - optimization will be triggered by some other signal
-                let _ = sender.try_send(OptimizerSignal::Nop);
-            },
-            Some(limit),
-        );
-        let mut handles = optimization_handles.lock().await;
-        handles.append(&mut new_handles);
+                    // After optimization is finished, we still need to check if there are
+                    // some further optimizations possible.
+                    // If receiver is already dead - we do not care.
+                    // If channel is full - optimization will be triggered by some other signal
+                    let _ = sender.try_send(OptimizerSignal::Nop);
+                },
+                Some(limit),
+            )
+        })
+        .await;
+
+        match new_handles {
+            Ok(new_handles) => new_handles,
+            // The runtime is shutting down, this worker is going away with it
+            Err(err) if err.is_cancelled() => vec![],
+            // Launching optimizations must not fail, propagate to the optimization worker
+            // like `ensure_appendable_segment_with_capacity` does. The panic hook already
+            // logged the original backtrace, `resume_unwind` does not run it again.
+            Err(err) => std::panic::resume_unwind(err.into_panic()),
+        }
     }
 
     /// Checks conditions for all optimizers until there is no suggested segment
