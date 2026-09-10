@@ -603,43 +603,63 @@ impl Inner {
     ///
     /// Locks the WAL, reads up to `MAX_BATCH_BYTES` / `MAX_BATCH_OPS` entries, and returns them.
     ///
+    /// The read itself runs on the blocking pool. A batch is up to `MAX_BATCH_BYTES` of WAL data to
+    /// read from disk and deserialize, which is far too much synchronous work to do on an async
+    /// worker: the same runtime serves all internal gRPC traffic, including health checks used to
+    /// decide whether a peer is still alive.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    ///
+    /// If cancelled - the spawned read still runs to completion and its result is dropped. The WAL
+    /// lock is held until it finishes. Nothing is mutated either way.
     async fn read_wal_batch(&self, from: u64) -> CollectionResult<WalBatch> {
-        let wal = self.wrapped_shard.wal.wal.lock().await;
-        let items_left = (wal.last_index() + 1).saturating_sub(from);
-        let items_total = (from - self.started_at) + items_left;
+        // Take the lock here rather than inside the closure, so a blocking-pool thread is only
+        // occupied by the read itself and never by waiting for a concurrent writer.
+        let wal = Mutex::lock_owned(self.wrapped_shard.wal.wal.clone()).await;
+        let started_at = self.started_at;
 
-        let mut batch = Vec::new();
-        let mut batch_bytes = 0usize;
-        for result in wal.read_with_size(from) {
-            let (idx, size, op) = result.map_err(|e| {
-                CollectionError::service_error(format!(
-                    "Failed to read WAL during queue proxy transfer: {e}"
-                ))
-            })?;
+        tokio::task::spawn_blocking(move || {
+            let items_left = (wal.last_index() + 1).saturating_sub(from);
+            let items_total = (from - started_at) + items_left;
 
-            batch_bytes += size;
-            batch.push((idx, op));
+            let mut batch = Vec::new();
+            let mut batch_bytes = 0usize;
+            for result in wal.read_with_size(from) {
+                let (idx, size, op) = result.map_err(|e| {
+                    CollectionError::service_error(format!(
+                        "Failed to read WAL during queue proxy transfer: {e}"
+                    ))
+                })?;
 
-            // Always include at least one operation per batch
-            if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
-                break;
+                batch_bytes += size;
+                batch.push((idx, op));
+
+                // Always include at least one operation per batch
+                if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
+                    break;
+                }
             }
-        }
 
-        let reached_end = batch.len() as u64 >= items_left;
-        debug_assert!(
-            batch.len() as u64 <= items_left,
-            "batch cannot be larger than items_left",
-        );
+            let reached_end = batch.len() as u64 >= items_left;
+            debug_assert!(
+                batch.len() as u64 <= items_left,
+                "batch cannot be larger than items_left",
+            );
 
-        Ok(WalBatch {
-            batch,
-            reached_end,
-            total: items_total,
+            Ok(WalBatch {
+                batch,
+                reached_end,
+                total: items_total,
+            })
         })
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to join WAL read task during queue proxy transfer: {err}"
+            ))
+        })?
     }
 
     /// Send a batch of WAL operations to the remote shard with retries.
