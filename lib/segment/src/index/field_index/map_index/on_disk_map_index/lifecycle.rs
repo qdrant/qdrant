@@ -8,8 +8,7 @@ use common::mmap::AdviceSetting;
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
-    UniversalWrite, read_json_via,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 
@@ -213,13 +212,7 @@ where
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
     }
-}
 
-impl<N, S> OnDiskMapIndex<N, S>
-where
-    N: MapIndexKey + Key + ?Sized,
-    S: UniversalWrite,
-{
     /// TODO: Use Fs to create config and hashmap files?
     pub fn build(
         fs: &S::Fs,
@@ -263,7 +256,7 @@ where
             build_prefix_index(path, entries.into_iter())?;
         }
 
-        OnDiskPointToValues::<N, MmapFile>::build_from_iter(
+        OnDiskPointToValues::<N, S>::build_from_iter(
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (
