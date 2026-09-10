@@ -402,12 +402,14 @@ impl Collection {
                 let collection_params = self.collection_config.read().await.params.clone();
                 let search_runtime_handle = &self.search_runtime;
                 let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+                // MMR runs before the offset is applied below, so it must select the whole page.
+                let mmr_limit = limit.saturating_add(*offset);
 
                 let mut mmr_result = mmr_from_points_with_vector(
                     &collection_params,
                     points_with_vector,
                     mmr.clone(),
-                    *limit,
+                    mmr_limit,
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,

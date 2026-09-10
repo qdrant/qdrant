@@ -206,7 +206,7 @@ fn maximal_marginal_relevance(
         return Vec::new();
     }
 
-    let mut selected_indices = Vec::with_capacity(limit);
+    let mut selected_indices = Vec::with_capacity(limit.min(num_candidates));
     let mut remaining_indices: IndexSet<usize, ahash::RandomState> = (0..num_candidates).collect();
 
     // Select first point with highest relevance score

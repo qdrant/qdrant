@@ -19,6 +19,7 @@ use collection::shards::replica_set::replica_set_state::{ReplicaSetState, Replic
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err::File;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
@@ -26,7 +27,7 @@ use segment::types::{
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
-use shard::query::{SampleInternal, ScoringQuery, ShardQueryRequest};
+use shard::query::{MmrInternal, SampleInternal, ScoringQuery, ShardQueryRequest};
 use tempfile::Builder;
 
 use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
@@ -1107,4 +1108,92 @@ async fn test_random_sample_huge_limit_does_not_abort() {
     // Bounded by the points actually available; the request completes instead of
     // aborting.
     assert_eq!(result.len(), 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_mmr_pagination_applies_offset_after_rescoring() {
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let batch = BatchPersisted {
+        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.9, 0.1, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![-1.0, 0.0, 0.0, 0.0],
+            vec![0.0, -1.0, 0.0, 0.0],
+        ]),
+        payloads: None,
+    };
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(batch),
+    ));
+    collection
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    let make_request = |limit, offset| ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Mmr(MmrInternal {
+            vector: vec![1.0, 0.0, 0.0, 0.0].into(),
+            using: "".into(),
+            lambda: OrderedFloat(0.5),
+            candidates_limit: 5,
+        })),
+        filter: None,
+        score_threshold: None,
+        limit,
+        offset,
+        params: None,
+        with_vector: false.into(),
+        with_payload: false.into(),
+    };
+
+    let full = collection
+        .query(
+            make_request(5, 0),
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+    let page = collection
+        .query(
+            make_request(2, 1),
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+
+    let expected = full[1..3].iter().map(|point| point.id).collect_vec();
+    let actual = page.iter().map(|point| point.id).collect_vec();
+    assert_eq!(actual, expected);
+
+    let oversized_offset_page = collection
+        .query(
+            make_request(2, usize::MAX),
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap();
+    assert!(oversized_offset_page.is_empty());
 }
