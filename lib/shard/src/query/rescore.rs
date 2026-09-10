@@ -60,12 +60,25 @@ where
 #[cfg(test)]
 mod tests {
     use segment::types::{Condition, PointIdType, ScoredPoint};
+    use uuid::Uuid;
 
     use super::*;
 
     fn point(id: u64, score: f32) -> ScoredPoint {
         ScoredPoint {
             id: PointIdType::from(id),
+            version: 0,
+            score,
+            payload: None,
+            vector: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
+    fn point_uuid(id: u128, score: f32) -> ScoredPoint {
+        ScoredPoint {
+            id: PointIdType::Uuid(Uuid::from_u128(id)),
             version: 0,
             score,
             payload: None,
@@ -104,6 +117,28 @@ mod tests {
         ids
     }
 
+    /// All ids (numeric and UUID) normalized to point-id string form, sorted.
+    fn sorted_id_strings<'a>(ids: impl Iterator<Item = &'a PointIdType>) -> Vec<String> {
+        let mut ids: Vec<String> = ids
+            .map(|id| match id {
+                PointIdType::NumId(num) => num.to_string(),
+                // `PointIdType` renders UUIDs hyphenated; `Uuid`'s own
+                // `Display` renders them without hyphens.
+                PointIdType::Uuid(uuid) => uuid.hyphenated().to_string(),
+            })
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    fn filter_with_point_ids_sorted(filter: &Filter) -> Vec<String> {
+        let conditions = filter.must.as_ref().expect("filter must conditions");
+        let Condition::HasId(has_id) = &conditions[0] else {
+            panic!("expected HasId condition");
+        };
+        sorted_id_strings(has_id.has_id.iter())
+    }
+
     #[test]
     fn fusion_rescore_rrf_combines_sources_and_limits() {
         let sources = vec![
@@ -122,6 +157,83 @@ mod tests {
         // All points are returned when the limit is large enough.
         let all = fusion_rescore(sources, fusion, None, 10).unwrap();
         assert_eq!(sorted_num_ids(&all), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn fusion_rescore_rrf_weights_change_ranking() {
+        use ordered_float::OrderedFloat;
+
+        // Source 0's only point must outrank source 1's top point: it wins on
+        // weight even though source 1 has more candidates.
+        let sources = vec![vec![point(3, 1.0)], vec![point(1, 1.0), point(2, 1.0)]];
+        let weighted = FusionInternal::Rrf {
+            k: 2,
+            weights: Some(vec![OrderedFloat(5.0), OrderedFloat(1.0)]),
+        };
+
+        let result = fusion_rescore(sources, weighted, None, 10).unwrap();
+        assert_eq!(
+            sorted_num_ids(&result),
+            vec![1, 2, 3],
+            "all points must survive weighted fusion"
+        );
+        assert_eq!(
+            result[0].id,
+            PointIdType::from(3),
+            "the heavier-weighted source's point must rank first",
+        );
+    }
+
+    #[test]
+    fn fusion_rescore_rrf_rejects_mismatched_weights() {
+        let sources = vec![vec![point(1, 1.0)], vec![point(2, 1.0)]];
+        let fusion = FusionInternal::Rrf {
+            k: 2,
+            weights: Some(vec![ordered_float::OrderedFloat(1.0)]),
+        };
+
+        let result = fusion_rescore(sources, fusion, None, 10);
+        assert!(
+            result.is_err(),
+            "weights must match the number of sources: {result:?}",
+        );
+    }
+
+    #[test]
+    fn fusion_rescore_preserves_uuid_ids() {
+        let uuid_a = 0x1234_5678_9abc_def0_u128;
+        let uuid_b = 0xfedc_ba98_7654_3210_u128;
+
+        let sources = vec![
+            vec![point_uuid(uuid_a, 1.0), point(7, 0.9)],
+            vec![point_uuid(uuid_b, 1.0), point(7, 0.8)],
+        ];
+
+        let result = fusion_rescore(
+            sources,
+            FusionInternal::Rrf {
+                k: 2,
+                weights: None,
+            },
+            None,
+            10,
+        )
+        .unwrap();
+        let ids = sorted_id_strings(result.iter().map(|point| &point.id));
+
+        assert_eq!(ids.len(), 3, "uuid ids must not be dropped: {ids:?}");
+        assert!(
+            ids.contains(&PointIdType::from(7).to_string()),
+            "mixed numeric id must survive fusion: {ids:?}",
+        );
+        assert!(
+            ids.contains(&PointIdType::Uuid(Uuid::from_u128(uuid_a)).to_string()),
+            "uuid_a must survive fusion: {ids:?}",
+        );
+        assert!(
+            ids.contains(&PointIdType::Uuid(Uuid::from_u128(uuid_b)).to_string()),
+            "uuid_b must survive fusion: {ids:?}",
+        );
     }
 
     #[test]
@@ -166,5 +278,30 @@ mod tests {
 
         let filter = filter_with_point_ids(&sources);
         assert_eq!(filter_num_ids(&filter), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn filter_with_point_ids_preserves_and_deduplicates_uuids() {
+        let uuid_a = 0x1234_5678_9abc_def0_u128;
+        let uuid_b = 0xfedc_ba98_7654_3210_u128;
+
+        // Numeric id 2 and uuid_a are each duplicated across sources.
+        let sources = vec![
+            vec![point(1, 1.0), point_uuid(uuid_a, 1.0)],
+            vec![point(2, 1.0), point_uuid(uuid_a, 1.0)],
+            vec![point_uuid(uuid_b, 1.0), point(2, 1.0)],
+        ];
+
+        let filter = filter_with_point_ids(&sources);
+        assert_eq!(
+            filter_with_point_ids_sorted(&filter),
+            vec![
+                Uuid::from_u128(uuid_a).hyphenated().to_string(),
+                Uuid::from_u128(uuid_b).hyphenated().to_string(),
+                PointIdType::from(1).to_string(),
+                PointIdType::from(2).to_string(),
+            ],
+            "uuids must be preserved and deduplicated alongside numeric ids",
+        );
     }
 }
