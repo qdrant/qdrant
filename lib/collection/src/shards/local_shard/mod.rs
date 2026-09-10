@@ -26,7 +26,7 @@ mod wal_ops;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
@@ -146,6 +146,10 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Version of the last operation the update worker finished applying, shared with the
+    /// update handler and its workers. See `UpdateHandler::applied_version`.
+    applied_version: Arc<AtomicU64>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -329,6 +333,8 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
+        let applied_version = update_handler.applied_version.clone();
+
         Self {
             collection_name,
             segments: segment_holder,
@@ -351,6 +357,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            applied_version,
         }
     }
 
@@ -947,6 +954,12 @@ impl LocalShard {
             // version.
             segments.flush_all(FlushMode::Sync, true)?;
         }
+
+        // Everything before `to` is applied and flushed now, and whatever is queued to the
+        // update worker below starts at `to`. Let the flush worker acknowledge the replayed
+        // prefix in the WAL; the update worker takes over from here.
+        self.applied_version
+            .fetch_max(to.saturating_sub(1), Ordering::Release);
 
         bar.finish();
         if !show_progress_bar {
