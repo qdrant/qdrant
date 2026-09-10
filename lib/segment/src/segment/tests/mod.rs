@@ -2832,7 +2832,14 @@ fn test_flush_of_unfinished_operation_reloads_dirty() {
     .expect("flush must not fail");
     drop(segment);
 
-    let reloaded = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let reloaded = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     // Coming back at 10 would make the segment look clean, and the WAL replay of operation 10
     // would sit in memory with nothing left to flush it.
