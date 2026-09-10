@@ -7232,7 +7232,7 @@
         "type": "object",
         "properties": {
           "memory": {
-            "description": "Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and reads it on demand, `pinned` keeps it in RAM. `cached` is not supported. Default: `pinned`.",
+            "description": "Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and reads it on demand, `cached` keeps it on disk but primes the page cache with it on load, `pinned` keeps it in RAM. Default: `pinned`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Memory"

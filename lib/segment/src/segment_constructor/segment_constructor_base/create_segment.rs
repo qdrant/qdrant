@@ -8,7 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::defaults::log_load_timing;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -58,9 +58,19 @@ pub(super) fn create_segment(
     let deferred_internal_id = deferred_internal_id.filter(|_| appendable_flag);
 
     let id_tracker_format = IdTrackerFormat::detect_local(segment_path, appendable_flag);
+    let id_tracker_populate = Populate::from(
+        config
+            .id_tracker_memory_placement()
+            .clamp_to_low_memory()
+            .populate_on_open(),
+    );
     let started = Instant::now();
-    let id_tracker =
-        create_segment_id_tracker(id_tracker_format, segment_path, deferred_internal_id)?;
+    let id_tracker = create_segment_id_tracker(
+        id_tracker_format,
+        segment_path,
+        deferred_internal_id,
+        id_tracker_populate,
+    )?;
     log_load_timing(segment_path, "id_tracker", started);
 
     let mut vector_storages = HashMap::new();
