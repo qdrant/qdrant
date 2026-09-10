@@ -603,10 +603,8 @@ impl Inner {
     ///
     /// Locks the WAL, reads up to `MAX_BATCH_BYTES` / `MAX_BATCH_OPS` entries, and returns them.
     ///
-    /// The read itself runs on the blocking pool. A batch is up to `MAX_BATCH_BYTES` of WAL data to
-    /// read from disk and deserialize, which is far too much synchronous work to do on an async
-    /// worker: the same runtime serves all internal gRPC traffic, including health checks used to
-    /// decide whether a peer is still alive.
+    /// The read itself runs on the blocking pool.
+    /// A batch is up to `MAX_BATCH_BYTES` of WAL data to read from disk and deserialize.
     ///
     /// # Cancel safety
     ///
