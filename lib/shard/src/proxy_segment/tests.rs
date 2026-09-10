@@ -1129,11 +1129,12 @@ fn test_drop_data_removes_pending_changes_log() {
     let wrapped_segment_dir = locked_wrapped_segment.get().read().data_path();
 
     let mut proxy_segment = ProxySegment::new(locked_wrapped_segment);
+    let log_path = proxy_segment.pending_changes.log_path().to_path_buf();
     proxy_segment
         .delete_point(100, 2.into(), &hw_counter)
         .unwrap();
     proxy_segment.flush(false).unwrap();
-    assert!(segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0).is_file());
+    assert!(log_path.is_file());
 
     proxy_segment.drop_data().unwrap();
     assert!(!wrapped_segment_dir.exists());
@@ -1194,10 +1195,10 @@ fn test_background_flush_ack_stays_within_durable_state() {
         .unwrap();
 
     let wrapped_segment = build_segment_1(tmp_dir.path());
-    let wrapped_segment_dir = wrapped_segment.data_path();
     let locked_wrapped_segment = LockedSegment::new(wrapped_segment);
 
     let mut inner_proxy = ProxySegment::new(locked_wrapped_segment.clone());
+    let inner_log = inner_proxy.pending_changes.log_path().to_path_buf();
     inner_proxy.delete_point(99, 1.into(), &hw_counter).unwrap();
     let locked_inner_proxy = LockedSegment::from(inner_proxy);
 
@@ -1208,7 +1209,6 @@ fn test_background_flush_ack_stays_within_durable_state() {
 
     // Park the inner layer's flush: opening a FIFO for writing blocks until a reader shows up, so
     // the flush stalls right after the outer layer persisted its own pending changes
-    let inner_log = segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0);
     assert!(
         Command::new("mkfifo")
             .arg(&inner_log)
@@ -1254,12 +1254,14 @@ fn test_pending_changes_log_is_compacted_after_propagation() {
         .unwrap();
 
     let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
-    let wrapped_segment_dir = locked_wrapped_segment.get().read().data_path();
-    let log_path = segment::pending_changes::pending_changes_log_path(&wrapped_segment_dir, 0);
 
     let mut first_cycle_len = 0;
     for point_id in 1..=5u64 {
         let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
+        // Each proxy generation starts a fresh, uniquely named log file (see
+        // `test_unproxy_leaves_pending_changes_log_without_adoption`), so its size must be read
+        // fresh every cycle rather than reused from a previous generation's path
+        let log_path = proxy_segment.pending_changes.log_path().to_path_buf();
         proxy_segment
             .delete_point(100 + point_id, point_id.into(), &hw_counter)
             .unwrap();
@@ -1288,13 +1290,18 @@ fn test_pending_changes_log_manifest_version_tracks_content() {
     let hw_cell = HardwareCounterCell::new();
 
     let mut proxy_segment = ProxySegment::new(LockedSegment::new(build_segment_1(dir.path())));
+    let log_file_name = proxy_segment
+        .pending_changes
+        .log_path()
+        .file_name()
+        .unwrap()
+        .to_owned();
     proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
     proxy_segment.flush(false).unwrap();
-    let log_file = std::path::Path::new(segment::pending_changes::PENDING_CHANGES_LOG_FILE);
     let old_version = proxy_segment
         .get_segment_manifest()
         .unwrap()
-        .file_version(log_file)
+        .file_version(std::path::Path::new(&log_file_name))
         .unwrap();
 
     proxy_segment.delete_point(103, 2.into(), &hw_cell).unwrap();
@@ -1302,7 +1309,7 @@ fn test_pending_changes_log_manifest_version_tracks_content() {
     let new_version = proxy_segment
         .get_segment_manifest()
         .unwrap()
-        .file_version(log_file)
+        .file_version(std::path::Path::new(&log_file_name))
         .unwrap();
 
     assert!(

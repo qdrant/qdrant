@@ -782,7 +782,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         .unwrap();
     assert!(segment.get_indexed_fields().contains_key(&field("color")));
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_index_change(
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(7, keyword_schema()),
@@ -796,7 +796,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         "a compatible schema must keep the index",
     );
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_index_change(
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(8, integer_schema()),
@@ -848,7 +848,7 @@ fn test_recover_superseding_vector_name_change() {
     let segment_config = segment.config().clone();
     let segment_version = segment.version();
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_vector_name_create(
         "v2".into(),
         dense_config(8, Distance::Cosine),
@@ -887,7 +887,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -914,7 +914,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
     );
     pending_changes.flusher(11).unwrap()().unwrap();
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
     assert_eq!(loaded.persisted_version(), 11);
 }
@@ -925,7 +925,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
 fn test_torn_tail_truncation_sweep() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     for point_id in 1..=4u64 {
         pending_changes.register_delete_point(
             point_id.into(),
@@ -959,7 +959,7 @@ fn test_torn_tail_truncation_sweep() {
             .copied()
             .unwrap_or(0);
 
-        let loaded = PendingChanges::load(dir.path(), 0)
+        let loaded = PendingChanges::load(&log_path)
             .unwrap_or_else(|err| panic!("prefix of {prefix_len} bytes must load: {err}"));
         assert_eq!(
             loaded.deleted_points().len(),
