@@ -576,14 +576,10 @@ impl ShardReplicaSet {
                 // If there are enough successes, deactivate failed replicas
                 // Failed replicas will automatically recover from another replica ensuring consistency
 
-                let failures_to_handle: Vec<_> = failures
+                let (strict_mode_refusals, other_failures) = split_strict_mode_failures(failures);
+
+                let failures_to_handle: Vec<_> = other_failures
                     .into_iter()
-                    // A strict mode refusal says the request was not allowed,
-                    // not that the replica failed to apply it. Dropping it here
-                    // rather than only in `handle_failed_replicas` also keeps it
-                    // out of the deactivation wait below, which would otherwise
-                    // wait out its timeout on a replica nothing is deactivating.
-                    .filter(|(_, err)| !err.is_strict_mode())
                     // We can only deactivate transient errors
                     .filter(|(_, err)| has_full_completed_updates || err.is_transient())
                     .collect();
@@ -634,6 +630,10 @@ impl ShardReplicaSet {
                             self.shard_id,
                         )));
                     }
+                }
+
+                if let Some((_peer_id, err)) = strict_mode_refusals.into_iter().next() {
+                    return Err(err);
                 }
             } else {
                 // If there aren't enough successes, report error to user
@@ -814,7 +814,26 @@ impl ShardReplicaSet {
 
         wait_for_deactivation
     }
+}
 
+/// Split replica-set update failures into strict-mode refusals and the rest.
+///
+/// A refusal is a policy verdict on the request, not a replica health signal:
+/// keep the refusing replica Active, but still surface the error to the client
+/// so a partial apply (other replicas already succeeded) is never reported as
+/// success.
+fn split_strict_mode_failures(
+    failures: Vec<(PeerId, CollectionError)>,
+) -> (
+    Vec<(PeerId, CollectionError)>,
+    Vec<(PeerId, CollectionError)>,
+) {
+    failures
+        .into_iter()
+        .partition(|(_, err)| err.is_strict_mode())
+}
+
+impl ShardReplicaSet {
     /// Forward update to the leader replica
     ///
     /// # Cancel safety
@@ -1062,6 +1081,35 @@ mod tests {
             rs.is_locally_disabled(3),
             "any other failure still deactivates the replica",
         );
+    }
+
+    /// Refusals must be split out of the deactivation set *and* kept for the
+    /// caller: otherwise enough successes would turn a remote Active refusal
+    /// into a silent 200 while that replica stays Active without the update.
+    #[test]
+    fn test_split_strict_mode_failures_keeps_refusals_for_the_client() {
+        let failures = vec![
+            (
+                1,
+                CollectionError::strict_mode("matches 100 points", "use a slice"),
+            ),
+            (
+                2,
+                CollectionError::forward_proxy_error(
+                    9,
+                    CollectionError::strict_mode("matches 100 points", "use a slice"),
+                ),
+            ),
+            (3, CollectionError::service_error("something broke")),
+            (4, CollectionError::bad_input("malformed")),
+        ];
+
+        let (refusals, other) = split_strict_mode_failures(failures);
+
+        assert_eq!(refusals.len(), 2);
+        assert!(refusals.iter().all(|(_, err)| err.is_strict_mode()));
+        assert_eq!(other.len(), 2);
+        assert!(other.iter().all(|(_, err)| !err.is_strict_mode()));
     }
 
     const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {

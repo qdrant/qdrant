@@ -37,9 +37,11 @@
 //! resolved on its own, so another shard of the collection may have applied its
 //! share before this one refused (the client sees `InconsistentShardFailure`).
 //! Replicas of one shard can disagree the same way when their point sets have
-//! drifted apart; that divergence is the accepted cost of a per-shard limit,
-//! and a refusal is never a reason to deactivate a replica (see
-//! `handle_failed_replicas`), which would trade it for a full resync.
+//! drifted apart; that divergence is the accepted cost of a per-shard limit.
+//! A refusal is never a reason to deactivate a replica (see
+//! `handle_failed_replicas`), which would trade it for a full resync, but the
+//! replica set still returns the refusal to the client so a partial apply is
+//! never reported as success.
 //!
 //! Only the replica taking the client write gates: `submit_update`'s
 //! `enforce_strict_mode` is off for a replica that is catching up, which is
