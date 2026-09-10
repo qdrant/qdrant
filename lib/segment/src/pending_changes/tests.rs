@@ -3,6 +3,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use fs_err as fs;
 use tempfile::Builder;
+use uuid::Uuid;
 
 use super::*;
 use crate::data_types::vectors::only_default_vector;
@@ -50,17 +51,28 @@ fn build_segment(path: &Path) -> Segment {
 #[test]
 fn test_log_path_levels() {
     let segment_path = Path::new("/some/segment");
+    let id = Uuid::nil();
     assert_eq!(
-        pending_changes_log_path(segment_path, 0),
-        segment_path.join("pending_changes.log"),
+        pending_changes_log_path(segment_path, 0, id),
+        segment_path.join(format!("pending_changes.log-{id}")),
     );
     assert_eq!(
-        pending_changes_log_path(segment_path, 1),
-        segment_path.join("pending_changes.log.1"),
+        pending_changes_log_path(segment_path, 1, id),
+        segment_path.join(format!("pending_changes.log.1-{id}")),
     );
     assert_eq!(
-        pending_changes_log_path(segment_path, 2),
-        segment_path.join("pending_changes.log.2"),
+        pending_changes_log_path(segment_path, 2, id),
+        segment_path.join(format!("pending_changes.log.2-{id}")),
+    );
+}
+
+#[test]
+fn test_log_path_unique_id_per_call() {
+    let segment_path = Path::new("/some/segment");
+    assert_ne!(
+        pending_changes_log_path(segment_path, 0, Uuid::new_v4()),
+        pending_changes_log_path(segment_path, 0, Uuid::new_v4()),
+        "two different ids at the same level must not collide",
     );
 }
 
@@ -71,20 +83,34 @@ fn test_list_log_files_ordered_and_gap_tolerant() {
     assert!(list_pending_changes_log_files(dir.path()).is_empty());
 
     // A proxy layer that never persisted anything leaves no file; levels may have gaps
-    fs::write(pending_changes_log_path(dir.path(), 2), b"").unwrap();
-    fs::write(pending_changes_log_path(dir.path(), 0), b"").unwrap();
+    let level_2 = pending_changes_log_path(dir.path(), 2, Uuid::new_v4());
+    let level_0 = pending_changes_log_path(dir.path(), 0, Uuid::new_v4());
+    fs::write(&level_2, b"").unwrap();
+    fs::write(&level_0, b"").unwrap();
     // Unrelated files are not picked up
     fs::write(dir.path().join("pending_changes.log.bak"), b"").unwrap();
     fs::write(dir.path().join("segment.json"), b"").unwrap();
 
     let files = list_pending_changes_log_files(dir.path());
-    assert_eq!(
-        files,
-        vec![
-            pending_changes_log_path(dir.path(), 0),
-            pending_changes_log_path(dir.path(), 2),
-        ],
-    );
+    assert_eq!(files, vec![level_0, level_2]);
+}
+
+#[test]
+fn test_list_log_files_multiple_generations_same_level() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    // An unwrapped proxy's log file not cleaned up yet, and a new proxy at the same level, both
+    // exist side by side under their own unique names
+    let older = pending_changes_log_path(dir.path(), 0, Uuid::new_v4());
+    let newer = pending_changes_log_path(dir.path(), 0, Uuid::new_v4());
+    fs::write(&older, b"").unwrap();
+    fs::write(&newer, b"").unwrap();
+
+    let mut files = list_pending_changes_log_files(dir.path());
+    files.sort();
+    let mut expected = vec![older, newer];
+    expected.sort();
+    assert_eq!(files, expected);
 }
 
 #[test]
@@ -94,7 +120,7 @@ fn test_register_flush_load_roundtrip() {
     let segment_dir = segment.data_path();
     let segment_config = segment.config().clone();
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     assert_eq!(pending_changes.persisted_version(), 0);
 
     // Register one operation of each type
@@ -137,7 +163,7 @@ fn test_register_flush_load_roundtrip() {
     assert!(pending_changes.flusher(14).is_none());
 
     // Reconstruct the in-memory state from the log file
-    let loaded = PendingChanges::load(&segment_dir, 0).unwrap();
+    let loaded = PendingChanges::load(pending_changes.log_path()).unwrap();
     assert_eq!(loaded.persisted_version(), 14);
     assert_eq!(loaded.deleted_points(), pending_changes.deleted_points());
     assert_eq!(loaded.index_changes().len(), 2);
@@ -170,19 +196,20 @@ fn test_register_flush_load_roundtrip() {
         &IntendedVector::Absent { version: 14 },
     );
 
-    // Plain open adopts the file without loading the buffers
-    let adopted = PendingChanges::open(&segment_dir, 0).unwrap();
-    assert_eq!(adopted.persisted_version(), 14);
-    assert!(adopted.deleted_points().is_empty());
-    assert!(adopted.index_changes().is_empty());
-    assert!(adopted.vector_name_changes().is_empty());
+    // A further plain open never adopts the file: it always starts a new, uniquely named one
+    let fresh = PendingChanges::new(&segment_dir, 0).unwrap();
+    assert_ne!(fresh.log_path(), pending_changes.log_path());
+    assert_eq!(fresh.persisted_version(), 0);
+    assert!(fresh.deleted_points().is_empty());
+    assert!(fresh.index_changes().is_empty());
+    assert!(fresh.vector_name_changes().is_empty());
 }
 
 #[test]
 fn test_flusher_covers_version_without_changes() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
 
     // Nothing registered and version 0 already covered
     assert!(pending_changes.flusher(0).is_none());
@@ -201,7 +228,7 @@ fn test_flusher_covers_version_without_changes() {
 fn test_register_during_flush_is_not_lost_nor_covered() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -228,7 +255,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
     flusher().unwrap();
     assert_eq!(pending_changes.persisted_version(), 11);
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    let loaded = PendingChanges::load(pending_changes.log_path()).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
 }
 
@@ -236,7 +263,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
 fn test_flusher_skipped_after_drop() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -258,7 +285,7 @@ fn test_flusher_skipped_after_drop() {
 fn test_torn_tail_is_truncated() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -277,7 +304,7 @@ fn test_torn_tail_is_truncated() {
     mangled.extend_from_slice(&[0xAB, 0xCD]);
     fs::write(&log_path, &mangled).unwrap();
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 1);
     assert_eq!(loaded.persisted_version(), 10);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), intact_len);
@@ -288,22 +315,23 @@ fn test_torn_tail_is_truncated() {
     mangled.extend_from_slice(b"partial");
     fs::write(&log_path, &mangled).unwrap();
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 1);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), intact_len);
 
-    // Appending after truncation must work and keep the intact entry
-    let mut adopted = PendingChanges::open(dir.path(), 0).unwrap();
-    adopted.register_delete_point(
+    // Appending after truncation must work and keep the intact entry. This resumes the exact
+    // same file rather than opening a new one, unlike a brand new proxy would.
+    let mut resumed = PendingChanges::load(&log_path).unwrap();
+    resumed.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
             local_version: 2,
             operation_version: 11,
         },
     );
-    adopted.flusher(11).unwrap()().unwrap();
+    resumed.flusher(11).unwrap()().unwrap();
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
     assert_eq!(loaded.persisted_version(), 11);
 }
@@ -312,7 +340,7 @@ fn test_torn_tail_is_truncated() {
 fn test_corruption_in_middle_is_error() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -338,14 +366,59 @@ fn test_corruption_in_middle_is_error() {
     mangled[4] = b'X';
     fs::write(&log_path, &mangled).unwrap();
 
-    assert!(PendingChanges::load(dir.path(), 0).is_err());
+    assert!(PendingChanges::load(&log_path).is_err());
 }
 
 #[test]
-fn test_adopted_log_is_appended() {
+fn test_new_proxy_never_adopts_old_log() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut pending_changes = PendingChanges::open(dir.path(), 0).unwrap();
+    let mut first = PendingChanges::new(dir.path(), 0).unwrap();
+    first.register_delete_point(
+        1.into(),
+        ProxyDeletedPoint {
+            local_version: 1,
+            operation_version: 10,
+        },
+    );
+    first.flusher(10).unwrap()().unwrap();
+    let first_log_path = first.log_path().to_path_buf();
+    drop(first);
+
+    // A new proxy on the same segment (e.g. after the first one unwrapped) never adopts the old
+    // log file: it starts a new, uniquely named one and leaves the old file untouched
+    let mut second = PendingChanges::new(dir.path(), 0).unwrap();
+    assert_ne!(second.log_path(), first_log_path);
+    assert_eq!(second.persisted_version(), 0);
+    assert!(second.deleted_points().is_empty());
+
+    second.register_delete_point(
+        2.into(),
+        ProxyDeletedPoint {
+            local_version: 2,
+            operation_version: 20,
+        },
+    );
+    second.flusher(20).unwrap()().unwrap();
+    assert_eq!(second.persisted_version(), 20);
+
+    // Both log files coexist, each still holding just its own proxy's entries
+    let loaded_first = PendingChanges::load(&first_log_path).unwrap();
+    assert_eq!(loaded_first.deleted_points().len(), 1);
+    assert_eq!(loaded_first.persisted_version(), 10);
+
+    let loaded_second = PendingChanges::load(second.log_path()).unwrap();
+    assert_eq!(loaded_second.deleted_points().len(), 1);
+    assert_eq!(loaded_second.persisted_version(), 20);
+
+    assert_eq!(list_pending_changes_log_files(dir.path()).len(), 2);
+}
+
+#[test]
+fn test_load_resumes_same_log_name() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
     pending_changes.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -354,24 +427,25 @@ fn test_adopted_log_is_appended() {
         },
     );
     pending_changes.flusher(10).unwrap()().unwrap();
+    let log_path = pending_changes.log_path().to_path_buf();
     drop(pending_changes);
 
-    // A new proxy on the same segment adopts the log file and appends to it
-    let mut adopted = PendingChanges::open(dir.path(), 0).unwrap();
-    assert_eq!(adopted.persisted_version(), 10);
-    assert!(adopted.deleted_points().is_empty());
-
-    adopted.register_delete_point(
+    // Loading the same proxy's exact file and storing again must keep using that same file name
+    let mut resumed = PendingChanges::load(&log_path).unwrap();
+    assert_eq!(resumed.log_path(), log_path);
+    resumed.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
             local_version: 2,
             operation_version: 20,
         },
     );
-    adopted.flusher(20).unwrap()().unwrap();
-    assert_eq!(adopted.persisted_version(), 20);
+    resumed.flusher(20).unwrap()().unwrap();
 
-    let loaded = PendingChanges::load(dir.path(), 0).unwrap();
+    assert_eq!(resumed.log_path(), log_path);
+    assert_eq!(list_pending_changes_log_files(dir.path()), vec![log_path]);
+
+    let loaded = PendingChanges::load(resumed.log_path()).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
     assert_eq!(loaded.persisted_version(), 20);
 }
@@ -384,7 +458,7 @@ fn test_recover_pending_changes() {
     let segment_dir = segment.data_path();
     let segment_version = segment.version();
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
@@ -445,7 +519,7 @@ fn test_recover_ignore_leaves_log_untouched() {
     let segment_dir = segment.data_path();
     let segment_version = segment.version();
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
@@ -489,7 +563,7 @@ fn test_recover_stale_log_is_noop() {
 
     // The operation is already applied to the segment, e.g. because a proxy propagated its
     // changes before unwrapping and left the log file behind
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     pending_changes.register_delete_point(
         3.into(),
         ProxyDeletedPoint {
@@ -531,7 +605,7 @@ fn test_recover_multiple_levels_in_order() {
 
     // Inner most proxy layer deleted point 1, the layer above later deleted point 2 and
     // re-created the index the inner layer deleted
-    let mut inner = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut inner = PendingChanges::new(&segment_dir, 0).unwrap();
     inner.register_delete_point(
         1.into(),
         ProxyDeletedPoint {
@@ -546,7 +620,7 @@ fn test_recover_multiple_levels_in_order() {
     inner.flusher(segment_version + 2).unwrap()().unwrap();
     drop(inner);
 
-    let mut outer = PendingChanges::open(&segment_dir, 1).unwrap();
+    let mut outer = PendingChanges::new(&segment_dir, 1).unwrap();
     outer.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
@@ -578,6 +652,54 @@ fn test_recover_multiple_levels_in_order() {
     assert!(list_pending_changes_log_files(&segment_dir).is_empty());
 }
 
+/// Two proxy generations at the *same* level (e.g. a proxy that unwrapped without its log being
+/// cleaned up yet, followed by a new proxy that never adopts it) are not chronologically ordered
+/// by file discovery. Recovery must still replay them in the correct order.
+#[test]
+fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment(dir.path());
+    let segment_dir = segment.data_path();
+    let segment_version = segment.version();
+
+    // First proxy generation at level 0 creates the "color" index, then unwraps without the
+    // segment ever flushing, leaving its log file behind
+    let mut first = PendingChanges::new(&segment_dir, 0).unwrap();
+    first.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), segment_version + 1),
+    );
+    first.flusher(segment_version + 1).unwrap()().unwrap();
+    drop(first);
+
+    // A second proxy generation at the very same level starts fresh (it does not adopt the first
+    // one's file) and later creates a different index
+    let mut second = PendingChanges::new(&segment_dir, 0).unwrap();
+    second.register_index_change(
+        field("size"),
+        ProxyIndexChange::Create(keyword_schema(), segment_version + 2),
+    );
+    second.flusher(segment_version + 2).unwrap()().unwrap();
+    drop(second);
+
+    assert_eq!(list_pending_changes_log_files(&segment_dir).len(), 2);
+
+    // Both changes must be applied. Replaying the newer (second generation) change before the
+    // older (first generation) one would bump the segment's global version past it, silently and
+    // permanently skipping it, even though it targets a different field entirely.
+    let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
+    assert_eq!(recovered.replayed, 2);
+    assert!(segment.get_indexed_fields().contains_key(&field("color")));
+    assert!(segment.get_indexed_fields().contains_key(&field("size")));
+    assert_eq!(segment.version(), segment_version + 2);
+
+    segment.flush(true).unwrap();
+    for path in &recovered.log_files {
+        fs::remove_file(path).unwrap();
+    }
+    assert!(list_pending_changes_log_files(&segment_dir).is_empty());
+}
+
 #[test]
 fn test_recover_vector_name_changes() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -586,7 +708,7 @@ fn test_recover_vector_name_changes() {
     let segment_version = segment.version();
     let segment_config = segment.config().clone();
 
-    let mut pending_changes = PendingChanges::open(&segment_dir, 0).unwrap();
+    let mut pending_changes = PendingChanges::new(&segment_dir, 0).unwrap();
     // Create a brand new sparse vector name
     pending_changes.register_vector_name_create(
         "sparse_new".into(),

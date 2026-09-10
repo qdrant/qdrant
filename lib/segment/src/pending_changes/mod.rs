@@ -14,9 +14,11 @@
 //! an entry the segment already applied is a no-op, and replaying a stale file is harmless.
 //!
 //! Proxy segments can be layered (an optimization and a snapshot both proxy the same segment).
-//! Each layer persists into its own log file: the inner most layer gets no suffix, each layer
-//! above it gets its level as a numeric suffix. On restart the files are replayed inner most
-//! first, matching the order in which the layers received their operations.
+//! Each layer persists into its own log file, named after its level plus a
+//! random ID generated when the proxy is created. On restart all files found in
+//! the segment directory are replayed level by level (level 0 fully before level
+//! 1, and so on), and by version within a level, so multiple files left behind
+//! on the same level are still applied in the right order.
 
 mod change;
 mod index_changes;
@@ -33,11 +35,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
 use parking_lot::Mutex;
+use uuid::Uuid;
 
 pub use self::change::{DeletedPoints, PendingChange, ProxyDeletedPoint, ProxyIndexChange};
 pub use self::index_changes::ProxyIndexChanges;
 pub use self::log_file::{
-    PENDING_CHANGES_LOG_FILE, list_pending_changes_log_files, pending_changes_log_path,
+    LOG_FILE_TEMPLATE, list_pending_changes_log_files, pending_changes_log_path,
 };
 pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::common::Flusher;
@@ -57,10 +60,7 @@ use crate::types::{PayloadKeyType, PointIdType, SegmentConfig, SeqNumberType, Ve
 ///
 /// The log file deliberately outlives the component: when a proxy segment is unwrapped its
 /// buffered changes are propagated to the wrapped segment in memory, but deleting the log before
-/// the wrapped segment has flushed those changes would not be crash safe. The file is eventually
-/// cleaned up after a restart (see [`recover_pending_changes`]) and when the segment directory is
-/// dropped, and a new proxy on the same segment adopts and appends to it (see [`Self::open`]).
-/// Replaying a stale file is safe because all operations are version gated.
+/// the wrapped segment has flushed those changes would not be crash safe.
 #[derive(Debug)]
 pub struct PendingChanges {
     /// Points which should no longer be used from the wrapped segment.
@@ -107,50 +107,39 @@ pub struct PendingChanges {
 }
 
 impl PendingChanges {
-    /// Open the pending changes for the proxy layer `level` on the segment at `segment_path`.
+    /// Open a new pending changes log for the proxy layer `level` on the segment at `segment_path`.
     ///
-    /// If a log file for this layer already exists — left behind by a previous proxy on the same
-    /// segment, which propagated its buffered changes to the segment before unwrapping — it is
-    /// adopted: new changes are appended after its existing entries, and
-    /// [`Self::persisted_version`] starts at the highest version the file holds. The existing
-    /// entries are *not* loaded into the in-memory buffers, as they are already applied to the
-    /// wrapped segment.
-    pub fn open(segment_path: &Path, level: usize) -> OperationResult<Self> {
-        Self::open_impl(segment_path, level, false)
+    /// Uses a random ID.
+    pub fn new(segment_path: &Path, level: usize) -> OperationResult<Self> {
+        let path = pending_changes_log_path(segment_path, level, Uuid::new_v4());
+        Ok(Self::empty(path, level))
     }
 
-    /// Like [`Self::open`], but also reconstruct the in-memory buffers from the log file.
+    /// Reopen the pending changes log at its exact `path`, reconstructing the in-memory buffers
+    /// from it as if every entry were registered again in order.
     ///
-    /// This restores the buffered state of the proxy layer that wrote the file, as if every entry
-    /// were registered again in order. Use this only when the entries are *not* applied to the
-    /// wrapped segment; the regular restart path replays them onto the segment directly instead
-    /// (see [`recover_pending_changes`]).
-    pub fn load(segment_path: &Path, level: usize) -> OperationResult<Self> {
-        Self::open_impl(segment_path, level, true)
-    }
+    /// Unlike [`Self::open`], this targets one specific file rather than creating a new one.
+    /// `path` must be exactly the log file of the proxy generation being resumed. New changes will
+    /// keep appending to the same file.
+    ///
+    /// Must only be used when entries are not yet applied to the wrapped segment.
+    pub fn load(path: &Path) -> OperationResult<Self> {
+        let level = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(log_file::parse_log_file_level)
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Not a pending changes log file path: {}",
+                    path.display(),
+                ))
+            })?;
 
-    fn open_impl(
-        segment_path: &Path,
-        level: usize,
-        reconstruct_buffers: bool,
-    ) -> OperationResult<Self> {
-        let path = pending_changes_log_path(segment_path, level);
-
-        let mut changes = Self {
-            deleted_points: DeletedPoints::default(),
-            changed_indexes: ProxyIndexChanges::default(),
-            changed_vector_names: ProxyVectorNameChanges::default(),
-            pending_persist: Default::default(),
-            path: path.clone(),
-            level,
-            expected_file_len: Arc::new(AtomicU64::new(0)),
-            persisted_version: Arc::new(AtomicU64::new(0)),
-            is_alive_lock: IsAliveLock::new(),
-        };
+        let mut changes = Self::empty(path.to_path_buf(), level);
 
         if path.is_file() {
             // Read all entries, truncating a torn entry at the end of the file if there is one
-            let loaded = log_file::load_changes(&path)?;
+            let loaded = log_file::load_changes(path)?;
             let max_version = loaded
                 .changes
                 .iter()
@@ -164,14 +153,27 @@ impl PendingChanges {
                 .persisted_version
                 .store(max_version, Ordering::Relaxed);
 
-            if reconstruct_buffers {
-                for change in loaded.changes {
-                    changes.reconstruct_change(change);
-                }
+            for change in loaded.changes {
+                changes.reconstruct_change(change);
             }
         }
 
         Ok(changes)
+    }
+
+    /// Build an empty instance targeting `path`, with nothing loaded or persisted yet.
+    fn empty(path: PathBuf, level: usize) -> Self {
+        Self {
+            deleted_points: DeletedPoints::default(),
+            changed_indexes: ProxyIndexChanges::default(),
+            changed_vector_names: ProxyVectorNameChanges::default(),
+            pending_persist: Default::default(),
+            path,
+            level,
+            expected_file_len: Arc::new(AtomicU64::new(0)),
+            persisted_version: Arc::new(AtomicU64::new(0)),
+            is_alive_lock: IsAliveLock::new(),
+        }
     }
 
     /// Re-insert a change loaded from the log file into the in-memory buffers.
@@ -451,10 +453,12 @@ pub struct RecoveredPendingChanges {
 ///
 /// If the segment directory holds pending changes log files, the proxy segments that wrote them
 /// did not propagate their buffered state into this segment before the process stopped. Instead
-/// of reconstructing the proxies, replay all logged operations directly onto the segment: inner
-/// most layer first, each file in append order. All operations are version gated, so entries the
-/// segment already applied (e.g. because a proxy did propagate before unwrapping, leaving the
-/// file behind) are silently skipped.
+/// of reconstructing the proxies, replay all logged operations directly onto the segment.
+///
+/// Replay order is level first, then operation version: every level-0 file is fully replayed
+/// before any level-1 file, matching the order of proxy laters. It is possible a level has
+/// multiple files if a unproxy failed to clean it up. In that case all files are replayed by
+/// version order.
 ///
 /// Must be called before regular WAL replay, which recovers everything past what segments
 /// (including these logs) have durably applied.
@@ -472,7 +476,7 @@ pub struct RecoveredPendingChanges {
 ///
 /// With [`PersistedProxyChanges::Ignore`] nothing is replayed and the log files are left as they
 /// are; see there for when that is appropriate.
-#[must_use = "Should clean up log files after segment flush"]
+#[must_use = "should clean up log files after segment flush"]
 pub fn recover_pending_changes(
     segment: &mut Segment,
     persisted_proxy_changes: PersistedProxyChanges,
@@ -494,15 +498,42 @@ pub fn recover_pending_changes(
         }
     }
 
-    let mut replayed = 0;
+    // Load every file, tagged with its level and the version it starts at, then order whole
+    // files for replay: level first, then by that starting version, see above.
+    let mut files = Vec::with_capacity(log_files.len());
     for path in &log_files {
-        let loaded = log_file::load_changes(path)?;
-        log::info!(
-            "Replaying {} pending proxy changes onto segment ({})",
-            loaded.changes.len(),
+        let level = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(log_file::parse_log_file_level)
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Not a pending changes log file path: {}",
+                    path.display(),
+                ))
+            })?;
+        let changes = log_file::load_changes(path)?.changes;
+        let start_version = changes
+            .iter()
+            .map(PendingChange::version)
+            .min()
+            .unwrap_or(0);
+        log::debug!(
+            "Loaded {} pending proxy changes from {} (level {level})",
+            changes.len(),
             path.display(),
         );
-        for change in &loaded.changes {
+        files.push((level, start_version, path, changes));
+    }
+    files.sort_by_key(|(level, start_version, ..)| (*level, *start_version));
+
+    let replayed: usize = files.iter().map(|(.., changes)| changes.len()).sum();
+    log::info!(
+        "Replaying {replayed} pending proxy changes onto segment ({})",
+        segment.segment_path.display(),
+    );
+    for (_, _, path, changes) in &files {
+        for change in changes {
             apply_change(segment, change).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to replay pending change from {}: {err}",
@@ -510,7 +541,6 @@ pub fn recover_pending_changes(
                 ))
             })?;
         }
-        replayed += loaded.changes.len();
     }
 
     Ok(RecoveredPendingChanges {

@@ -1,11 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::tar_ext;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::{FileVersion, SegmentManifest};
 use segment::entry::StorageSegmentEntry;
 use segment::entry::snapshot_entry::SnapshotEntry;
-use segment::pending_changes::pending_changes_log_path;
 use segment::types::*;
 
 use super::ProxySegment;
@@ -38,8 +37,13 @@ impl SnapshotEntry for ProxySegment {
 
         // Add persisted pending changes log file
         manifest.segment_version = self.version();
+        let log_file_name = self
+            .pending_changes
+            .log_path()
+            .file_name()
+            .expect("pending changes log path must have a file name");
         manifest.file_versions.insert(
-            pending_changes_log_path(Path::new(""), self.pending_changes.level()),
+            PathBuf::from(log_file_name),
             FileVersion::Version(manifest.segment_version),
         );
 

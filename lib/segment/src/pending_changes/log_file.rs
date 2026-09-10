@@ -16,6 +16,13 @@
 //! WAL and will simply be replayed from there.
 //!
 //! This mirrors the mutable ID tracker mappings storage.
+//!
+//! ## File naming
+//!
+//! Every proxy gets a random ID assigned, which is included in the changes log
+//! file name. When a segment is unproxied and proxied again, it will get a new
+//! ID. This way different proxy instances can be uniquely identified on disk
+//! for serverless deployments.
 
 use std::cmp::Ordering;
 use std::io::{BufReader, Write as _};
@@ -26,29 +33,31 @@ use byteorder::{LittleEndian, ReadBytesExt as _, WriteBytesExt as _};
 use common::fs::{OneshotFile, sync_parent_dir};
 use fs_err::File;
 use parking_lot::Mutex;
+use uuid::Uuid;
 
 use super::change::PendingChange;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// File name of the pending changes log of the first (inner most) proxy layer.
+/// File name template of a pending changes log file.
 ///
-/// Additional proxy layers append a numeric suffix: the second layer writes to
-/// `pending_changes.log.1`, the third to `pending_changes.log.2`, and so on. See
-/// [`pending_changes_log_path`].
-pub const PENDING_CHANGES_LOG_FILE: &str = "pending_changes.log";
+/// Every actual file also carries a level suffix  and a random ID.
+/// See [`pending_changes_log_path`] for the full naming scheme.
+pub const LOG_FILE_TEMPLATE: &str = "pending_changes.log";
 
 /// Sanity limit for a single log entry, to not trust a corrupted length prefix.
 const MAX_ENTRY_SIZE: u32 = 32 * 1024 * 1024;
 
-/// Path of the pending changes log file for the given proxy `level` inside `segment_path`.
+/// Path of the pending changes log file, includes `level` and `id`.
 ///
-/// The first (inner most) proxy layer gets no suffix, each further layer gets its level as a
-/// numeric suffix.
-pub fn pending_changes_log_path(segment_path: &Path, level: usize) -> PathBuf {
+/// The first (inner most) proxy layer gets no level suffix, each further layer
+/// gets its level as a numeric suffix; every layer also carries `id` as a
+/// further suffix. `id` must be a random UUID for a brand new proxy (see
+/// `PendingChanges::new`). A reopened proxy must retain the same UUID.
+pub fn pending_changes_log_path(segment_path: &Path, level: usize, id: Uuid) -> PathBuf {
     if level == 0 {
-        segment_path.join(PENDING_CHANGES_LOG_FILE)
+        segment_path.join(format!("{LOG_FILE_TEMPLATE}-{id}"))
     } else {
-        segment_path.join(format!("{PENDING_CHANGES_LOG_FILE}.{level}"))
+        segment_path.join(format!("{LOG_FILE_TEMPLATE}.{level}-{id}"))
     }
 }
 
@@ -56,8 +65,9 @@ pub fn pending_changes_log_path(segment_path: &Path, level: usize) -> PathBuf {
 /// (inner most first).
 ///
 /// Levels are not necessarily contiguous: a proxy layer that never persisted any change does not
-/// create a file, while a layer above it may have. The listing is therefore based on the actual
-/// directory contents rather than probing levels until the first gap.
+/// create a file, while a layer above it may have. It is possible for multiple
+/// files to exist on a single level, if an unwrapped proxy failed to clean up
+/// its log file for example. In that case both are expected to be applied.
 pub fn list_pending_changes_log_files(segment_path: &Path) -> Vec<PathBuf> {
     let Ok(dir) = fs_err::read_dir(segment_path) else {
         return Vec::new();
@@ -76,16 +86,27 @@ pub fn list_pending_changes_log_files(segment_path: &Path) -> Vec<PathBuf> {
 }
 
 /// Parse the proxy level from a pending changes log file name, if it is one.
-fn parse_log_file_level(file_name: &str) -> Option<usize> {
-    if file_name == PENDING_CHANGES_LOG_FILE {
-        return Some(0);
-    }
-    let suffix = file_name
-        .strip_prefix(PENDING_CHANGES_LOG_FILE)?
-        .strip_prefix('.')?;
-    // Higher levels always carry an explicit non-zero suffix, level 0 never does
-    let level: usize = suffix.parse().ok()?;
-    (level > 0).then_some(level)
+pub(super) fn parse_log_file_level(file_name: &str) -> Option<usize> {
+    let rest = file_name.strip_prefix(LOG_FILE_TEMPLATE)?;
+
+    // The level prefix (empty, or `.<level>`) never contains a `-`, so the first one always marks
+    // the boundary with the ID suffix (which may contain further ones of its own)
+    let (level_part, id_part) = rest.split_once('-')?;
+
+    let level: usize = if level_part.is_empty() {
+        0
+    } else {
+        // Higher levels always carry an explicit non-zero suffix, level 0 never does
+        match level_part.strip_prefix('.')?.parse().ok()? {
+            0 => return None,
+            level => level,
+        }
+    };
+
+    // Reject anything whose suffix isn't actually a valid ID, e.g. an unrelated `.bak` file
+    Uuid::parse_str(id_part).ok()?;
+
+    Some(level)
 }
 
 /// Store new pending changes, appending them to the given log file.

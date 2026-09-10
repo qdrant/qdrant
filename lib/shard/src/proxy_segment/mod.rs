@@ -71,10 +71,10 @@ impl UnsyncedProxySegment {
     /// [`ProxySegment`], so the sync cannot be forgotten nor done twice.
     ///
     /// Opens the pending changes log for this proxy layer inside the wrapped segment's
-    /// directory. Wrapping a segment that already is a proxy uses the next layer up, writing to a
-    /// dedicated log file. If a log file for this layer already exists — left behind by a
-    /// previous proxy that propagated its changes into the segment before unwrapping — it is
-    /// adopted and appended to.
+    /// directory, under a freshly minted, uniquely named log file. Wrapping a segment that
+    /// already is a proxy uses the next layer up, writing to its own dedicated log file. This
+    /// never reuses a log file left behind by an earlier proxy at the same level that propagated
+    /// its changes into the segment before unwrapping; that file is left untouched.
     pub fn new(segment: LockedSegment) -> OperationResult<Self> {
         let (wrapped_config, version, data_path) = {
             let read_segment = segment.get().read();
@@ -95,7 +95,7 @@ impl UnsyncedProxySegment {
             }
         };
 
-        let pending_changes = PendingChanges::open(&data_path, pending_changes_level)?;
+        let pending_changes = PendingChanges::new(&data_path, pending_changes_level)?;
 
         Ok(UnsyncedProxySegment(ProxySegment {
             wrapped_segment: segment,
