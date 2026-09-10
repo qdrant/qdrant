@@ -137,11 +137,20 @@ pub(super) fn store_changes(
         // Clean up by truncating to what we expect, then append
         // May happen if system is out of disk space and the file cannot be grown
         Ordering::Greater => {
-            file.set_len(file_start_appending).map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to truncate pending changes log file that is too large: {err}"
-                ))
-            })?;
+            // `file` is opened in append-only mode, which on Windows grants `FILE_APPEND_DATA`
+            // but not `FILE_WRITE_DATA`/`GENERIC_WRITE`. `set_len` needs the latter (it calls
+            // `SetEndOfFile`), so truncate through a separate, plainly-writable handle instead;
+            // POSIX has no such distinction and this is equivalent there.
+            File::options()
+                .write(true)
+                .truncate(false)
+                .open(path)
+                .and_then(|file| file.set_len(file_start_appending))
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to truncate pending changes log file that is too large: {err}"
+                    ))
+                })?;
         }
         // File is smaller than expected, indicates a bug we cannot recover from
         Ordering::Less => {
