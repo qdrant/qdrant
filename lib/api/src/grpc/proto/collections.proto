@@ -528,6 +528,13 @@ message PayloadStorageParams {
   optional Memory memory = 1;
 }
 
+message IdTrackerParams {
+  // Memory placement of the point id mapping in indexed segments:
+  // `Cold` keeps it on disk and reads it on demand, `Pinned` keeps it in RAM.
+  // `Cached` is not supported.
+  optional Memory memory = 1;
+}
+
 message CreateCollection {
   // Name of the collection
   string collection_name = 1;
@@ -570,6 +577,8 @@ message CreateCollection {
   map<string, Value> metadata = 18;
   // Configuration of the payload storage
   optional PayloadStorageParams payload = 19;
+  // Configuration of the point id tracker
+  optional IdTrackerParams id_tracker = 20;
 }
 
 message UpdateCollection {
@@ -640,6 +649,8 @@ message CollectionParams {
   optional uint64 read_fan_out_delay_ms = 11;
   // Configuration of the payload storage
   optional PayloadStorageParams payload = 12;
+  // Configuration of the point id tracker
+  optional IdTrackerParams id_tracker = 13;
 }
 
 message CollectionParamsDiff {
@@ -656,6 +667,8 @@ message CollectionParamsDiff {
   optional uint64 read_fan_out_delay_ms = 5;
   // Update params of the payload storage
   optional PayloadStorageParams payload = 6;
+  // Update params of the point id tracker
+  optional IdTrackerParams id_tracker = 7;
 }
 
 message CollectionConfig {

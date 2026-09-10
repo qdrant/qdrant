@@ -41,8 +41,8 @@ use super::types::{
     VectorsConfigDiff,
 };
 use crate::config::{
-    CollectionParams, PayloadStorageParams, ShardingMethod, WalConfig, default_on_disk_payload,
-    default_replication_factor, default_write_consistency_factor,
+    CollectionParams, IdTrackerParams, PayloadStorageParams, ShardingMethod, WalConfig,
+    default_on_disk_payload, default_replication_factor, default_write_consistency_factor,
 };
 use crate::lookup::WithLookup;
 use crate::lookup::types::WithLookupInterface;
@@ -323,6 +323,26 @@ impl From<PayloadStorageParams> for api::grpc::qdrant::PayloadStorageParams {
     }
 }
 
+impl TryFrom<api::grpc::qdrant::IdTrackerParams> for IdTrackerParams {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::IdTrackerParams) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::IdTrackerParams { memory } = value;
+        Ok(Self {
+            memory: convert_memory_from_proto(memory)?,
+        })
+    }
+}
+
+impl From<IdTrackerParams> for api::grpc::qdrant::IdTrackerParams {
+    fn from(value: IdTrackerParams) -> Self {
+        let IdTrackerParams { memory } = value;
+        Self {
+            memory: convert_memory_to_proto(memory),
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
     type Error = Status;
 
@@ -334,6 +354,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             on_disk_payload,
             read_fan_out_delay_ms,
             payload,
+            id_tracker,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -353,6 +374,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             read_fan_out_delay_ms,
             on_disk_payload,
             payload: payload.map(PayloadStorageParams::try_from).transpose()?,
+            id_tracker: id_tracker.map(IdTrackerParams::try_from).transpose()?,
         })
     }
 }
@@ -468,6 +490,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             read_fan_out_delay_ms,
             on_disk_payload,
             payload,
+            id_tracker,
             write_consistency_factor,
             read_fan_out_factor,
             sharding_method,
@@ -538,6 +561,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     }),
                     read_fan_out_delay_ms,
                     payload: payload.map(api::grpc::qdrant::PayloadStorageParams::from),
+                    id_tracker: id_tracker.map(api::grpc::qdrant::IdTrackerParams::from),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
@@ -1918,6 +1942,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         shard_number,
                         on_disk_payload,
                         payload,
+                        id_tracker,
                         vectors_config,
                         replication_factor,
                         write_consistency_factor,
@@ -1983,6 +2008,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             .transpose()?,
                         read_fan_out_delay_ms,
                         payload: payload.map(PayloadStorageParams::try_from).transpose()?,
+                        id_tracker: id_tracker.map(IdTrackerParams::try_from).transpose()?,
                     }
                 }
             },

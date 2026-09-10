@@ -99,6 +99,7 @@ fn test_byte_storage_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
 
     let int_key = "int";

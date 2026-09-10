@@ -13,7 +13,7 @@ use segment::types::{
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
-use crate::config::{CollectionParams, PayloadStorageParams, WalConfig};
+use crate::config::{CollectionParams, IdTrackerParams, PayloadStorageParams, WalConfig};
 use crate::optimizers_builder::OptimizersConfig;
 
 pub trait DiffConfig<Diff>: Clone {
@@ -115,6 +115,10 @@ pub struct CollectionParamsDiff {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub payload: Option<PayloadStorageParams>,
+    /// Update params of the point id tracker. If none - it is left unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub id_tracker: Option<IdTrackerParams>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
@@ -323,6 +327,7 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             read_fan_out_delay_ms,
             on_disk_payload,
             payload,
+            id_tracker,
         } = diff;
 
         CollectionParams {
@@ -333,6 +338,10 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             read_fan_out_delay_ms: read_fan_out_delay_ms.or(self.read_fan_out_delay_ms),
             on_disk_payload: on_disk_payload.or(self.on_disk_payload),
             payload: match (self.payload.as_ref(), payload) {
+                (Some(base), Some(diff)) => Some(base.update(diff)),
+                (base, diff) => diff.or(base.copied()),
+            },
+            id_tracker: match (self.id_tracker.as_ref(), id_tracker) {
                 (Some(base), Some(diff)) => Some(base.update(diff)),
                 (base, diff) => diff.or(base.copied()),
             },
@@ -458,6 +467,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             read_fan_out_delay_ms,
             on_disk_payload,
             payload,
+            id_tracker,
             shard_number: _,
             sharding_method: _,
             sparse_vectors: _,
@@ -471,6 +481,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             read_fan_out_delay_ms,
             on_disk_payload,
             payload,
+            id_tracker,
         }
     }
 }
@@ -564,6 +575,7 @@ mod tests {
             read_fan_out_delay_ms: None,
             on_disk_payload: None,
             payload: None,
+            id_tracker: None,
         };
 
         let new_params = params.update(&diff);
@@ -596,6 +608,7 @@ mod tests {
             payload: Some(PayloadStorageParams {
                 memory: Some(segment::types::Memory::Cached),
             }),
+            id_tracker: None,
         };
 
         let new_params = params.update(&diff);

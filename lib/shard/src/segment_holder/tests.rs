@@ -410,6 +410,7 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut segment_a, _) = build_segment(dir.path(), &config, None, true).unwrap();
@@ -522,6 +523,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
         ]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
@@ -645,6 +647,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
         ]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
@@ -749,6 +752,7 @@ fn test_cow_move_allows_role_config_differences() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

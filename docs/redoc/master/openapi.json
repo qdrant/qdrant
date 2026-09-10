@@ -6740,6 +6740,17 @@
               }
             ]
           },
+          "id_tracker": {
+            "description": "Configuration of the point id tracker",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "sparse_vectors": {
             "description": "Configuration of the sparse vector storage",
             "type": "object",
@@ -7205,6 +7216,23 @@
         "properties": {
           "memory": {
             "description": "Memory placement of the payload storage. Overrides the deprecated `on_disk_payload` flag if both are set. `pinned` is not supported for payload storage. Default: `cold` (`cached` if `on_disk_payload` is set to false).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "IdTrackerParams": {
+        "description": "Params of the point id tracker",
+        "type": "object",
+        "properties": {
+          "memory": {
+            "description": "Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and reads it on demand, `pinned` keeps it in RAM. `cached` is not supported. Default: `pinned`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Memory"
@@ -9683,6 +9711,18 @@
               }
             ]
           },
+          "id_tracker": {
+            "description": "Configuration of the point id tracker",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "hnsw_config": {
             "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
             "anyOf": [
@@ -10279,6 +10319,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "id_tracker": {
+            "description": "Update params of the point id tracker. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
               },
               {
                 "nullable": true
@@ -12616,6 +12667,17 @@
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
+          },
+          "id_tracker_memory": {
+            "description": "Memory placement of the id tracker in non-appendable segments. Unset means the deployment default: `cold` in serverless-compatible mode, `pinned` otherwise.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

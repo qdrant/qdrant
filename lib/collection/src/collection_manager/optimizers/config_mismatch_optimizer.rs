@@ -15,10 +15,11 @@ mod tests {
 
     use itertools::Itertools;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::entry::ReadSegmentEntry;
+    use segment::entry::{ReadSegmentEntry, StorageSegmentEntry};
+    use segment::id_tracker::IdTrackerFormat;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
-        CompressionRatio, HnswConfig, HnswGlobalConfig, Indexes, ProductQuantization,
+        CompressionRatio, HnswConfig, HnswGlobalConfig, Indexes, Memory, ProductQuantization,
         ProductQuantizationConfig, QuantizationConfig, ScalarQuantizationConfig, ScalarType,
         SegmentConfig, VectorNameBuf,
     };
@@ -88,6 +89,7 @@ mod tests {
 
         SegmentOptimizerConfig {
             payload_storage_type: segment_config.payload_storage_type,
+            id_tracker_memory: None,
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
@@ -583,5 +585,113 @@ mod tests {
                     "Quantization config of vector2 is not what we expect",
                 );
             });
+    }
+    /// Id tracker formats of the non-appendable segments in the holder, detected from their files
+    fn indexed_id_tracker_formats(holder: &LockedSegmentHolder) -> Vec<IdTrackerFormat> {
+        holder
+            .read()
+            .iter_original()
+            .map(|(_, segment)| segment.read())
+            .filter(|segment| !segment.config().is_appendable())
+            .map(|segment| IdTrackerFormat::detect_local(&segment.data_path(), false))
+            .collect()
+    }
+
+    /// The id tracker placement is a rebuild-requiring parameter: an indexed segment carries the
+    /// tracker format in its files, so changing the requested placement must trigger the config
+    /// mismatch optimizer exactly once, and the rebuilt segment must use the requested format.
+    #[test]
+    fn test_id_tracker_memory_mismatch() {
+        let (point_count, dim) = (1000, 10);
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb: 10,
+            deferred_internal_id: None,
+        };
+
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+
+        let segment = random_segment(dir.path(), 100, point_count, dim as usize);
+        let base_segment_config = segment.segment_config.clone();
+
+        let segment_id = holder.add_new(segment);
+        let locked_holder = LockedSegmentHolder::new(holder);
+
+        let optimizer_config = segment_optimizer_config(&base_segment_config, &HashMap::new());
+        let index_optimizer = IndexingOptimizer::new(
+            2,
+            thresholds_config,
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            optimizer_config.clone(),
+            HnswGlobalConfig::default(),
+        );
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
+
+        let mismatch_optimizer = |id_tracker_memory| {
+            ConfigMismatchOptimizer::new(
+                thresholds_config,
+                dir.path().to_owned(),
+                temp_dir.path().to_owned(),
+                SegmentOptimizerConfig {
+                    id_tracker_memory,
+                    ..optimizer_config.clone()
+                },
+                HnswConfig::default(),
+                HnswGlobalConfig::default(),
+            )
+        };
+
+        // Nothing requested: the deployment default (in-RAM tracker) is used and nothing is
+        // planned. Requesting that same default explicitly must not plan a rebuild either.
+        assert_eq!(
+            indexed_id_tracker_formats(&locked_holder),
+            vec![IdTrackerFormat::Immutable],
+        );
+        for memory in [None, Some(Memory::Pinned)] {
+            let planned = mismatch_optimizer(memory).plan_optimizations_for_test(&locked_holder);
+            assert!(
+                planned.is_empty(),
+                "{memory:?} must not plan a rebuild: {planned:?}"
+            );
+        }
+
+        // Requesting the on-disk tracker rebuilds the segment into the disk format...
+        let optimizer = mismatch_optimizer(Some(Memory::Cold));
+        let suggested = optimizer
+            .plan_optimizations_for_test(&locked_holder)
+            .into_iter()
+            .exactly_one()
+            .unwrap();
+        let changed = optimizer.optimize_for_test(locked_holder.clone(), suggested);
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
+        assert_eq!(
+            indexed_id_tracker_formats(&locked_holder),
+            vec![IdTrackerFormat::Disk],
+        );
+        // ...and the rebuilt segment satisfies the request, so it is not planned again
+        assert!(
+            optimizer
+                .plan_optimizations_for_test(&locked_holder)
+                .is_empty()
+        );
+
+        // Switching back rebuilds into the in-RAM tracker
+        let optimizer = mismatch_optimizer(Some(Memory::Pinned));
+        let suggested = optimizer
+            .plan_optimizations_for_test(&locked_holder)
+            .into_iter()
+            .exactly_one()
+            .unwrap();
+        let changed = optimizer.optimize_for_test(locked_holder.clone(), suggested);
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
+        assert_eq!(
+            indexed_id_tracker_formats(&locked_holder),
+            vec![IdTrackerFormat::Immutable],
+        );
     }
 }

@@ -327,6 +327,7 @@ pub trait SegmentOptimizer: Sync {
             vector_data,
             sparse_vector_data,
             payload_storage_type: segment_optimizer_config.payload_storage_type,
+            id_tracker_memory: segment_optimizer_config.id_tracker_memory,
         };
 
         SegmentBuilder::new(

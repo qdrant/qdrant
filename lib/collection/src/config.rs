@@ -143,6 +143,10 @@ pub struct CollectionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub payload: Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub id_tracker: Option<IdTrackerParams>,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
@@ -185,6 +189,57 @@ impl PayloadStorageParams {
     }
 }
 
+/// Params of the point id tracker
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct IdTrackerParams {
+    /// Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and
+    /// reads it on demand, `pinned` keeps it in RAM. `cached` is not supported.
+    /// Default: `pinned`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_id_tracker_memory"))]
+    pub memory: Option<Memory>,
+}
+
+impl IdTrackerParams {
+    /// Update this config with fields from `diff`; fields specified in `diff` win.
+    pub fn update(&self, diff: &IdTrackerParams) -> Self {
+        let IdTrackerParams { memory } = diff;
+        IdTrackerParams {
+            memory: memory.or(self.memory),
+        }
+    }
+}
+
+/// Reject memory placements not supported by the id tracker.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_id_tracker_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Pinned => Ok(()),
+        Memory::Cached => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(std::borrow::Cow::from(
+                "`cached` memory placement is not supported for id tracker",
+            ));
+            Err(error)
+        }
+    }
+}
+
 /// Reject memory placements not supported by payload storage.
 /// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
 fn validate_payload_storage_memory(memory: &Memory) -> Result<(), ValidationError> {
@@ -216,6 +271,12 @@ impl CollectionParams {
             .unwrap_or(Memory::Cold)
     }
 
+    /// Requested memory placement of the id tracker, `None` if not configured (the deployment
+    /// default applies, see [`SegmentConfig::id_tracker_memory_placement`]).
+    pub fn id_tracker_memory(&self) -> Option<Memory> {
+        self.id_tracker.and_then(|id_tracker| id_tracker.memory)
+    }
+
     /// All vector names (dense and sparse) currently present in the collection schema.
     ///
     /// Covers both kinds because a segment's `vector_data` holds dense and sparse vectors
@@ -243,6 +304,7 @@ impl CollectionParams {
             read_fan_out_delay_ms: _, // May be changed,
             on_disk_payload: _, // May be changed
             payload: _,      // May be changed
+            id_tracker: _,   // May be changed
             sparse_vectors: _, // Sets may differ via named vector CRUD
         } = other;
 
@@ -443,6 +505,7 @@ impl CollectionParams {
             read_fan_out_delay_ms: None,
             payload: None,
             on_disk_payload: default_on_disk_payload_opt(),
+            id_tracker: None,
             sparse_vectors: None,
         }
     }
@@ -740,6 +803,7 @@ impl CollectionParams {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            id_tracker_memory: self.id_tracker_memory(),
         }
     }
 }
