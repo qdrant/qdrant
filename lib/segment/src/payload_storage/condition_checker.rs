@@ -21,7 +21,7 @@ use crate::types::{
 /// For more information see <https://github.com/qdrant/qdrant/pull/3525>.
 pub const INDEXSET_ITER_THRESHOLD: usize = 13;
 
-/// Default tokenizer for unindexed text/phrase filters. Matches
+/// Default tokenizer for unindexed text/phrase/text_any filters. Matches
 /// [`TextIndexParams::default`] (Word tokenizer, lowercase on).
 static DEFAULT_UNINDEXED_TEXT_TOKENIZER: LazyLock<Tokenizer> =
     LazyLock::new(|| Tokenizer::new_from_text_index_params(&TextIndexParams::default()));
@@ -64,6 +64,19 @@ fn unindexed_phrase_match(stored: &str, phrase: &str) -> bool {
     document_tokens
         .windows(phrase_tokens.len())
         .any(|window| window == phrase_tokens.as_slice())
+}
+
+fn unindexed_text_any_match(stored: &str, query: &str) -> bool {
+    let document_tokens = collect_unindexed_document_tokens(stored);
+    let query_tokens = collect_unindexed_query_tokens(query);
+    if query_tokens.is_empty() {
+        return false;
+    }
+    query_tokens.iter().any(|query_token| {
+        document_tokens
+            .iter()
+            .any(|document_token| document_token == query_token)
+    })
 }
 
 pub trait ValueChecker {
@@ -236,9 +249,7 @@ impl ValueChecker for Match {
                 | Value::Object(_) => false,
             },
             Match::TextAny(MatchTextAny { text_any }) => match payload {
-                Value::String(stored) => text_any
-                    .split_whitespace()
-                    .any(|token| stored.contains(token)),
+                Value::String(stored) => unindexed_text_any_match(stored, text_any),
                 Value::Null
                 | Value::Bool(_)
                 | Value::Number(_)
