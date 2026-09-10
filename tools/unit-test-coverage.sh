@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Usage: tools/coverage.sh
+# Usage: tools/unit-test-coverage.sh
 #
-# For running on low RAM machines like Github CI, Use `RUN_PER_PACKAGE=true tools/coverage.sh`
+# For running on low RAM machines like Github CI, Use `RUN_PER_PACKAGE=true tools/unit-test-coverage.sh`
 #
 # If using locally, occasionally run `cargo llvm-cov clean` to avoid bloating `target/llvm-cov-target` dir with .profraw files
 
