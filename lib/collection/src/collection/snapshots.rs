@@ -12,6 +12,7 @@ use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
+use uuid::Uuid;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
@@ -59,9 +60,10 @@ impl Collection {
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
-            "{}-{this_peer_id}-{}.snapshot",
+            "{}-{this_peer_id}-{}-{}.snapshot",
             self.name(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            Uuid::new_v4(),
         );
 
         // Final location of snapshot
