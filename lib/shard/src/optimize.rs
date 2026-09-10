@@ -41,8 +41,8 @@ use crate::proxy_segment::{
     UnsyncedProxySegment,
 };
 use crate::quota::{self, DiskFit};
-use crate::segment_holder::SegmentId;
 use crate::segment_holder::locked::LockedSegmentHolder;
+use crate::segment_holder::{PostFlushOutcome, SegmentId};
 use crate::segment_manifest::NewSegmentToken;
 
 /// Result of optimization execution
@@ -91,6 +91,9 @@ pub trait OptimizationStrategy: Send {
 /// Proxied changes (deleted points, index and vector-name changes) are always propagated into the
 /// wrapped segments first, so they are not lost when the proxies are dropped. If that propagation
 /// fails, no proxy is unwrapped and the error is returned.
+///
+/// Each proxy's pending changes log file should be deleted after the next segments flush cycle. It
+/// is left on disk now, but it schedules a post flush action to remove it later.
 ///
 /// # Arguments
 ///
@@ -143,14 +146,38 @@ pub fn unwrap_proxy(
                     // propagate loses in-memory state, but is recovered on restart: the
                     // persisted pending changes log stays behind and is replayed then, and
                     // everything past it is replayed from the WAL.
-                    if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+                    let propagated = proxy_segment.write().propagate_to_wrapped();
+                    if let Err(err) = &propagated {
                         log::error!(
                             "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
                         );
                     }
 
-                    let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                    segments_lock.replace(proxy_id, wrapped_segment)?;
+                    let proxy_segment_read = proxy_segment.read();
+                    let wrapped_segment = proxy_segment_read.wrapped_segment.clone();
+                    let log_path = proxy_segment_read.pending_changes_log_path().to_path_buf();
+                    drop(proxy_segment_read);
+
+                    segments_lock.replace(proxy_id, wrapped_segment.clone())?;
+
+                    // Schedule proxy log file to delete after next flush cycle
+                    if propagated.is_ok() {
+                        let ready_at = wrapped_segment.get().read().version();
+                        segments_lock.register_post_flush_action(ready_at, ready_at, move || {
+                            match fs::remove_file(&log_path) {
+                                Ok(()) => {}
+                                // File may never have existed on disk at all if never flushed before unwrap
+                                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                                Err(err) => {
+                                    return Err(OperationError::service_error(format!(
+                                        "Failed to remove pending changes log {}: {err}",
+                                        log_path.display(),
+                                    )));
+                                }
+                            }
+                            Ok(PostFlushOutcome::Done)
+                        });
+                    }
                 }
             }
         }
@@ -1066,6 +1093,50 @@ mod tests {
                 .has_point(1.into(), DeferredBehavior::WithDeferred),
             "deletion recorded on the proxy must reach the wrapped segment before it goes back \
              into the holder",
+        );
+    }
+
+    /// Unwrapping a proxy must not delete its pending changes log file right away (that would not
+    /// be crash safe), but it must not leave the file behind forever either: once the wrapped
+    /// segment durably persists past the propagated changes, a later flush must remove it, without
+    /// requiring a restart.
+    #[test]
+    fn unwrap_proxy_removes_pending_changes_log_after_flush() {
+        use crate::segment_holder::FlushMode;
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        // Delete a point through the proxy and flush it, so the pending change is actually
+        // persisted to its log file on disk; otherwise there is nothing to clean up.
+        let mut proxy = ProxySegment::new(wrapped.clone());
+        let log_path = proxy.pending_changes_log_path().to_path_buf();
+        proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
+        proxy.flush(false).unwrap();
+        assert!(log_path.is_file(), "log file must exist once flushed");
+
+        let holder = LockedSegmentHolder::new(holder);
+        holder
+            .write()
+            .replace(segment_id, LockedSegment::from(proxy))
+            .unwrap();
+
+        unwrap_proxy(&holder, &[segment_id]).unwrap();
+        assert!(
+            log_path.is_file(),
+            "unwrapping must leave the log file in place until the wrapped segment durably \
+             persists the propagated changes",
+        );
+
+        holder.read().flush_all(FlushMode::Sync, true).unwrap();
+        assert!(
+            !log_path.is_file(),
+            "the log file must be removed once the wrapped segment flushed past the propagated \
+             changes",
         );
     }
 

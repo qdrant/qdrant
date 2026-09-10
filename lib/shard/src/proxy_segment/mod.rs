@@ -6,6 +6,7 @@ mod tests;
 
 use std::borrow::Cow;
 use std::cmp::max;
+use std::path::Path;
 
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -259,10 +260,8 @@ impl ProxySegment {
     /// Required before making the wrapped segment available in the shard holder. If the wrapped
     /// segment is thrown away, propagating is not needed.
     ///
-    /// The pending changes log file is deliberately left in place: deleting it before the wrapped
-    /// segment has flushed the propagated changes would not be crash safe. It is cleaned up on
-    /// restart and when the segment directory is dropped, and a new proxy on the same segment
-    /// adopts it. Replaying it is safe because all operations are version gated.
+    /// The pending changes log file is left in place here. `unwarp_proxy` is responsible for
+    /// removing it.
     pub fn propagate_to_wrapped(&mut self) -> OperationResult<()> {
         // Important: we must not keep a write lock on the wrapped segment for the duration of this
         // function to prevent a deadlock. The search functions conflict with it trying to take a
@@ -379,6 +378,10 @@ impl ProxySegment {
         }
 
         Ok(())
+    }
+
+    pub fn pending_changes_log_path(&self) -> &Path {
+        self.pending_changes.log_path()
     }
 
     pub fn get_deleted_points(&self) -> &DeletedPoints {
