@@ -248,6 +248,7 @@ impl UpdateHandler {
         let clocks = self.clocks.clone();
         let flush_interval_sec = self.flush_interval_sec;
         let shard_path = self.shard_path.clone();
+        let applied_seq_handler = self.applied_seq_handler.clone();
         let (flush_tx, flush_rx) = oneshot::channel();
         self.flush_worker = Some(self.runtime_handle.spawn(UpdateWorkers::flush_worker_fn(
             segments,
@@ -257,6 +258,7 @@ impl UpdateHandler {
             flush_interval_sec,
             flush_rx,
             shard_path,
+            applied_seq_handler,
         )));
 
         self.flush_stop = Some(flush_tx);

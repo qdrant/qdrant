@@ -51,6 +51,19 @@ impl AppliedSeqHandler {
         }
     }
 
+    /// The last operation the update worker finished applying.
+    ///
+    /// Unlike [`AppliedSeqHandler::op_num`] this does not disappear for a handler running
+    /// without its file: the in-memory value is maintained either way, and a flush needs the
+    /// bound in both cases (see `StorageSegmentEntry::flusher`).
+    ///
+    /// Monotonic, and never ahead of the applied work: the update worker is serial and stores
+    /// this after an operation is applied, so the value can lag by the moment between the two.
+    /// Lagging only costs a re-flush on a later pass.
+    pub fn applied_op_num(&self) -> u64 {
+        self.op_num.load(Ordering::Relaxed)
+    }
+
     /// Get the op_num upper bound for the last_applied_seq adjusted to the persistence interval
     ///
     /// Returns None if the handler is not active.

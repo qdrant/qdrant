@@ -14,16 +14,25 @@ use tokio::sync::oneshot;
 
 use crate::shards::local_shard::LocalShardClocks;
 use crate::update_workers::UpdateWorkers;
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
 
 impl UpdateWorkers {
     /// Returns confirmed version after flush of all segments
     ///
+    /// `applied_up_to` is the last operation the update worker finished applying. This pass runs
+    /// concurrently with the update worker and can start between the phases of one operation, so
+    /// no segment may claim a version past it. See [`StorageSegmentEntry::flusher`].
+    ///
     /// # Errors
     /// Returns an error on flush failure
-    fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
+    fn flush_segments(
+        segments: LockedSegmentHolder,
+        applied_up_to: Option<SeqNumberType>,
+    ) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        let flushed_version = read_segments.flush_all(FlushMode::Background, false)?;
+        let flushed_version =
+            read_segments.flush_all_up_to(FlushMode::Background, false, applied_up_to)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
@@ -36,6 +45,7 @@ impl UpdateWorkers {
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
+        applied_seq_handler: Arc<AppliedSeqHandler>,
     ) {
         log::trace!("Attempting flushing");
         let wal_flush_job = wal.blocking_lock().flush_async();
@@ -62,7 +72,11 @@ impl UpdateWorkers {
             return;
         }
 
-        let confirmed_version = Self::flush_segments(segments.clone());
+        // Read before capturing anything: an operation that finishes during the flush must not
+        // raise the cap for segments this pass already captured half of.
+        let applied_up_to = applied_seq_handler.applied_op_num();
+
+        let confirmed_version = Self::flush_segments(segments.clone(), Some(applied_up_to));
         let confirmed_version = match confirmed_version {
             Ok(version) => version,
             Err(err) => {
@@ -99,6 +113,7 @@ impl UpdateWorkers {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -107,6 +122,7 @@ impl UpdateWorkers {
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
         shard_path: PathBuf,
+        applied_seq_handler: Arc<AppliedSeqHandler>,
     ) {
         loop {
             tokio::select! {
@@ -125,6 +141,7 @@ impl UpdateWorkers {
             let wal_keep_from_clone = wal_keep_from.clone();
             let clocks_clone = clocks.clone();
             let shard_path_clone = shard_path.clone();
+            let applied_seq_handler_clone = applied_seq_handler.clone();
 
             tokio::task::spawn_blocking(move || {
                 Self::flush_worker_internal(
@@ -133,6 +150,7 @@ impl UpdateWorkers {
                     wal_keep_from_clone,
                     clocks_clone,
                     shard_path_clone,
+                    applied_seq_handler_clone,
                 )
             })
             .await

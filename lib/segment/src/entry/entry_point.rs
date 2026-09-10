@@ -297,12 +297,24 @@ pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
     /// If `force` is true, will return a flusher even if there are no changes to flush.
-    fn flusher(&self, force: bool) -> Option<Flusher>;
+    ///
+    /// `up_to` caps the version the flush is allowed to claim as persisted, and must be the
+    /// last operation known to be fully applied when the flusher is captured. It may still write
+    /// newer operations to disk though. One update operation writes a segment in several
+    /// separately locked phases under the same operation number, so a flush capturing the segment
+    /// between them holds only part of that operation. Claiming its version would leave the
+    /// segment at `version == persisted_version` with the rest still in memory: every later flush
+    /// skips it and the WAL acknowledge moves past the operation, dropping the rest for good
+    /// (#10402). Pass `None` only when the flush cannot race an update operation.
+    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher>;
 
     /// Immediately flush all changes to disk and return persisted version.
     /// Blocks the current thread.
+    ///
+    /// Claims everything the segment holds, so only for flushes that cannot race an update
+    /// operation. See `flusher`.
     fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
-        if let Some(flusher) = self.flusher(force) {
+        if let Some(flusher) = self.flusher(force, None) {
             flusher()?;
         }
         Ok(self.persistent_version())

@@ -11,7 +11,7 @@ use super::helpers::{check_unprocessed_points, points_by_filter};
 use crate::segment_holder::SegmentHolder;
 
 /// Batch size when modifying payload
-const PAYLOAD_OP_BATCH_SIZE: usize = 32;
+pub(crate) const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
 pub fn set_payload(
     segments: &SegmentHolder,

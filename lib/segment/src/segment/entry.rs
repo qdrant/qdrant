@@ -397,7 +397,7 @@ impl StorageSegmentEntry for Segment {
         (*self.persisted_version.lock()).unwrap_or(0)
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
+    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
         match (self.version, current_persisted_version) {
@@ -426,7 +426,20 @@ impl StorageSegmentEntry for Segment {
             .values()
             .filter_map(|v| v.quantized_vectors.borrow().as_ref().map(|q| q.flusher()))
             .collect();
-        let state = self.get_state();
+        let mut state = self.get_state();
+        // The state captured above holds only part of `version` when the operation writing it
+        // has not finished; `up_to` is the last one that did. Persist the segment as that
+        // version, so it stays dirty for the rest of the operation and the WAL keeps the
+        // operation replayable. The clamp goes into the state file as well: reloading at the
+        // unfinished version would make the segment look clean again, with the replayed
+        // remainder in memory and nothing left to flush it.
+        if let (Some(version), Some(up_to)) = (state.version, up_to)
+            && up_to < version
+        {
+            state.version = Some(up_to);
+            // Keeps the file consistent when the segment was created by this very operation
+            state.initial_version = state.initial_version.map(|initial| initial.min(up_to));
+        }
         let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
