@@ -2750,6 +2750,83 @@ fn test_deleted_deferred_point_count() {
     }
 }
 
+/// A flush pass can capture a segment between the phases of ONE update operation: the points
+/// that already exist are written under one lock, the new ones under another, both carrying the
+/// same operation number. Claiming that operation's version would leave the segment at
+/// `version == persisted_version` with the second phase still in memory, so every later pass
+/// skips it while the WAL acknowledge moves past the operation. Root cause of the missing points
+/// in #10402.
+#[test]
+fn test_flush_does_not_claim_an_unfinished_operation() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+
+    segment
+        .upsert_point(
+            10,
+            1.into(),
+            only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Operation 10 is still being applied, so the last finished operation is 9.
+    let flusher = segment
+        .flusher(false, Some(9))
+        .expect("segment has unflushed changes");
+    flusher().expect("flush must not fail");
+
+    assert_eq!(segment.version(), 10);
+    assert_eq!(
+        segment.persistent_version(),
+        9,
+        "a flush must not claim an operation that has not finished applying",
+    );
+
+    // The segment is therefore not clean, and the next pass flushes the rest of operation 10
+    // instead of skipping it. A skip would leave the persisted version at 9.
+    assert_eq!(segment.flush(false).unwrap(), 10);
+    assert!(
+        segment.flusher(false, None).is_none(),
+        "a fully persisted segment must not be flushed again",
+    );
+}
+
+/// The clamp must reach the segment state file, not just the in-memory persisted version.
+/// A segment reloading at the operation's own version would be clean again, with the second
+/// phase replayed from the WAL into memory and nothing left to flush it.
+#[test]
+fn test_flush_of_unfinished_operation_reloads_dirty() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let segment_path = segment.segment_path.clone();
+
+    segment
+        .upsert_point(
+            10,
+            1.into(),
+            only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    segment
+        .flusher(false, Some(9))
+        .expect("segment has unflushed changes")()
+    .expect("flush must not fail");
+    drop(segment);
+
+    let reloaded = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+
+    // Coming back at 10 would make the segment look clean, and the WAL replay of operation 10
+    // would sit in memory with nothing left to flush it.
+    assert_eq!(reloaded.version(), 9);
+    assert_eq!(reloaded.persistent_version(), 9);
+}
+
 /// A field index dropped between flusher capture and execution (a `DropIndex`
 /// racing the background flush) must not abort the rest of the flush sequence.
 ///
@@ -2788,7 +2865,7 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // Capture the flushers (as the background flush thread does), then drop the
     // index before executing them.
     let flusher = segment
-        .flusher(true)
+        .flusher(true, None)
         .expect("segment has unflushed changes");
     segment
         .delete_field_index(4, &JsonPath::new("num"))

@@ -29,7 +29,26 @@ impl SegmentHolder {
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
+    ///
+    /// Claims everything the segments hold, so only for flushes that cannot run while an update
+    /// operation is being applied. Use [`SegmentHolder::flush_all_up_to`] otherwise.
     pub fn flush_all(&self, mode: FlushMode, force: bool) -> OperationResult<SeqNumberType> {
+        self.flush_all_up_to(mode, force, None)
+    }
+
+    /// [`SegmentHolder::flush_all`], but no segment may claim a version past `up_to`.
+    ///
+    /// `up_to` is the last operation known to be fully applied. The holder read lock does not
+    /// exclude an update operation, so a flush pass can start between the phases of one and
+    /// capture a segment holding only part of it. See [`StorageSegmentEntry::flusher`]. This will
+    /// also flush newer operations than `up_to`, but it won't bump the segment version past
+    /// `up_to`.
+    pub fn flush_all_up_to(
+        &self,
+        mode: FlushMode,
+        force: bool,
+        up_to: Option<SeqNumberType>,
+    ) -> OperationResult<SeqNumberType> {
         let sync = match mode {
             FlushMode::Sync => true,
             FlushMode::Background => false,
@@ -99,8 +118,16 @@ impl SegmentHolder {
         // Capture all flushers first to improve data consistency
         let flushers: Vec<_> = segment_reads
             .iter()
-            .filter_map(|read_segment| read_segment.flusher(force))
+            .filter_map(|read_segment| read_segment.flusher(force, up_to))
             .collect();
+
+        // Copy-on-write dependencies are only satisfied up to what this pass actually persists.
+        // The segments may hold more than that: `up_to` clamps them to the last fully applied
+        // operation, so an edge registered by an operation past it must outlive this pass. Were
+        // it dropped, the next pass would be free to flush the source before the destination,
+        // and a crash in between would leave the move without a durable pre-image to replay.
+        let cleanup_up_to =
+            up_to.map_or(max_applied_version, |up_to| min(max_applied_version, up_to));
 
         if sync {
             for flusher in flushers {
@@ -108,7 +135,7 @@ impl SegmentHolder {
             }
             self.flush_dependency
                 .lock()
-                .retain(|_, _, version| *version > max_applied_version);
+                .retain(|_, _, version| *version > cleanup_up_to);
         } else {
             let flush_dependency = self.flush_dependency.clone();
             *background_flush_lock = Some(
@@ -120,7 +147,7 @@ impl SegmentHolder {
                         }
                         flush_dependency
                             .lock()
-                            .retain(|_, _, version| *version > max_applied_version);
+                            .retain(|_, _, version| *version > cleanup_up_to);
                         Ok(())
                     })
                     .unwrap(),
@@ -296,7 +323,7 @@ impl SegmentHolder {
         segment_reads: Vec<RwLockReadGuard<'_, dyn StorageSegmentEntry>>,
         lock_order: Vec<SegmentId>,
     ) -> SeqNumberType {
-        // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
+        // Start with the max_persisted_version at the set overwrite value, which may just be 0
         // Any of the segments we flush may increase this if they have a higher persisted version
         // The overwrite is required to ensure we acknowledge no-op operations in WAL that didn't hit any segment
         //

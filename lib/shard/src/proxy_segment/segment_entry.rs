@@ -796,10 +796,10 @@ impl StorageSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().persistent_version()
     }
 
-    fn flusher(&self, force: bool) -> Option<Flusher> {
+    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
-        wrapped_segment_guard.flusher(force)
+        wrapped_segment_guard.flusher(force, up_to)
     }
 
     fn drop_data(self) -> OperationResult<()> {

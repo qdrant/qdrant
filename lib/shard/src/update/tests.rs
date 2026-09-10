@@ -1040,3 +1040,117 @@ fn create_field_index_flushes_cow_destinations_before_source() {
          the only remaining copy is memory-only, got {destination_persisted}",
     );
 }
+
+/// One update operation is applied to a segment in several separately locked steps, and a flush
+/// pass can land in any of the gaps. `set_payload` walks its points in chunks of
+/// [`PAYLOAD_OP_BATCH_SIZE`], each chunk taking the segment write lock on its own, so a
+/// thousand-point payload update offers 31 such gaps. The first chunk already raises the segment
+/// to the operation's version while most of its points are untouched.
+///
+/// A flush there must not claim that version. Claiming it makes the segment clean at
+/// `version == persisted_version`, so the chunks that follow are never flushed, the WAL entry
+/// that would replay them is acknowledged away, and the points come back missing after a
+/// restart. That is #10402.
+#[test]
+fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::types::DeferredBehavior;
+    use segment::segment_constructor::load_segment;
+    use uuid::Uuid;
+
+    use crate::update::payload::PAYLOAD_OP_BATCH_SIZE;
+    use crate::update::set_payload;
+
+    /// More than one batch, so the operation cannot be applied in a single locked step
+    const POINT_COUNT: u64 = PAYLOAD_OP_BATCH_SIZE as u64 + 8;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let is_stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = empty_segment(dir.path());
+    let segment_path = segment.segment_path.clone();
+    let ids: Vec<PointIdType> = (1..=POINT_COUNT).map(PointIdType::from).collect();
+    for id in &ids {
+        segment
+            .upsert_point(
+                1,
+                *id,
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    let mut holder = SegmentHolder::default();
+    let segment_id = holder.add_new(segment);
+    holder.flush_all(FlushMode::Sync, true).unwrap();
+
+    // Operation 10 sets a payload on every point. This is its first batch; the update worker
+    // has not returned, so the last fully applied operation is still 9.
+    let payload = payload_json! {"city": "Berlin"};
+    set_payload(
+        &holder,
+        10,
+        &payload,
+        &ids[..PAYLOAD_OP_BATCH_SIZE],
+        &None,
+        None,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(
+        holder.get(segment_id).unwrap().get().read().version(),
+        10,
+        "the first batch already carries the segment to the operation's version",
+    );
+
+    // A flush pass lands in the gap before the next batch.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(9))
+            .unwrap(),
+        9,
+        "the acknowledged version must leave the unfinished operation replayable",
+    );
+
+    // The remaining batches of the same operation.
+    set_payload(
+        &holder,
+        10,
+        &payload,
+        &ids[PAYLOAD_OP_BATCH_SIZE..],
+        &None,
+        None,
+        &hw_counter,
+    )
+    .unwrap();
+
+    // The next pass sees operation 10 finished and must persist the rest of it. Had the pass
+    // above claimed version 10, the segment would look clean here and be skipped.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(10))
+            .unwrap(),
+        10,
+    );
+
+    drop(holder);
+    let reloaded = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let hits = reloaded
+        .read_filtered(
+            None,
+            None,
+            Some(&city_filter("Berlin")),
+            &is_stopped,
+            &hw_counter,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        POINT_COUNT as usize,
+        "every point of operation 10 must survive a restart, not just its first batch",
+    );
+}

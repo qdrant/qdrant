@@ -57,6 +57,7 @@ fn test_snapshot_all() {
         &tar,
         SnapshotFormat::Regular,
         None,
+        None,
     )
     .unwrap();
 
@@ -143,6 +144,7 @@ fn test_snapshot_includes_segment_manifest() {
         // Descend into `segments/`, mirroring how the local shard snapshot is produced.
         &tar.descend(std::path::Path::new(SEGMENTS_PATH)).unwrap(),
         SnapshotFormat::Regular,
+        None,
         None,
     )
     .unwrap();

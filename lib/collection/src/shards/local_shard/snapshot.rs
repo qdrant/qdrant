@@ -11,7 +11,7 @@ use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
 use segment::entry::StorageSegmentEntry;
-use segment::types::{SegmentConfig, SnapshotFormat};
+use segment::types::{SegmentConfig, SeqNumberType, SnapshotFormat};
 use shard::files::{APPLIED_SEQ_FILE, SEGMENT_MANIFEST_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::operations::OperationWithClockTag;
@@ -27,6 +27,7 @@ use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -75,7 +76,8 @@ impl LocalShard {
             )
         };
 
-        let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
+        let applied_seq_handler = self.applied_seq_handler.clone();
+        let applied_seq_path = applied_seq_handler.path().to_path_buf();
 
         let tar = tar.clone();
         let temp_path = temp_path.to_path_buf();
@@ -153,6 +155,7 @@ impl LocalShard {
                     &tar.descend(Path::new(SEGMENTS_PATH))?,
                     format,
                     manifest.as_ref(),
+                    Some(&applied_seq_handler),
                 )?;
 
                 // Staging delay: widen the window between snapshotting the segments and archiving
@@ -340,12 +343,19 @@ pub fn snapshot_all_segments(
     tar: &tar_ext::BuilderExt,
     format: SnapshotFormat,
     manifest: Option<&SnapshotManifest>,
+    applied_seq_handler: Option<&AppliedSeqHandler>,
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
 
+    // Updates keep flowing into the proxies' shared write segment while we snapshot, so the
+    // flush inside must not claim an operation that is still being applied to it. Read here
+    // rather than at flush time: too low only costs a re-flush on the next pass.
+    let applied_up_to = applied_seq_handler.map(AppliedSeqHandler::applied_op_num);
+
     proxy_all_segments_and_apply(
         segments,
+        applied_up_to,
         segments_path,
         segment_config,
         payload_index_schema,
@@ -397,6 +407,7 @@ pub fn snapshot_all_segments(
 /// Before snapshotting all segments are forcefully flushed to ensure all data is persisted.
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
+    applied_up_to: Option<SeqNumberType>,
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -420,7 +431,7 @@ where
     )?;
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore
-    segments_lock.flush_all(FlushMode::Sync, true)?;
+    segments_lock.flush_all_up_to(FlushMode::Sync, true, applied_up_to)?;
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
