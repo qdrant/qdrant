@@ -20,6 +20,13 @@ service:
 cluster:
   resharding_enabled: true
 
+  consensus:
+    # Compare consensus operation handlers with the in-memory state machine:
+    # - disabled: do not compare
+    # - log: log divergences
+    # - panic: panic on divergence
+    shadow_state_machine: disabled
+
 storage:
   performance:
     # Number of parallel threads used for search operations. If 0 - auto selection.

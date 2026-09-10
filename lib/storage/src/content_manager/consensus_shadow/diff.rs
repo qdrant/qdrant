@@ -1,8 +1,4 @@
-//! Compare the shadow state against the state `TableOfContent` holds.
-//!
-//! Both sides are destructured field by field, so a field added to either one stops compiling
-//! until the compare covers it. A divergence names the field it found, as a path into
-//! [`ClusterState`].
+//! Report field-level differences between consensus state machine and applied state
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem;
@@ -16,12 +12,14 @@ use crate::content_manager::errors::StorageResult;
 use crate::quota::QuotaConfig;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
-/// Cluster state read back from `TableOfContent` for one compare.
+/// Lightweight view of applied consensus state.
 ///
-/// Carries collection names only. Reading a collection's state is the expensive part, so
-/// [`collection`] compares one collection at a time.
+/// Mirrors [`ClusterState`], but stores only collection names instead of full collection state,
+/// because validation reads it after each covered consensus operation.
+///
+/// Full state is loaded on demand for collections the operation may have changed.
 #[derive(Clone, Debug)]
-pub struct ActualState {
+pub struct ShallowState {
     pub collections: BTreeSet<CollectionId>,
     pub aliases: AliasMapping,
     pub peer_address_by_id: PeerAddressById,
@@ -30,11 +28,8 @@ pub struct ActualState {
     pub quota_config: QuotaConfig,
 }
 
-/// Fields where `shadow` differs from `actual`, leaving out the contents of collections.
-///
-/// A collection only one side holds is reported as `collections[name]`; [`collection`] compares
-/// the two states of a collection both sides hold.
-pub fn cluster(shadow: &ClusterState, actual: &ActualState) -> Vec<String> {
+/// Compare collection names and cluster fields
+pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<String> {
     let ClusterState {
         collections,
         aliases,
@@ -42,55 +37,53 @@ pub fn cluster(shadow: &ClusterState, actual: &ActualState) -> Vec<String> {
         peer_metadata_by_id,
         cluster_metadata,
         quota_config,
-    } = shadow;
+    } = state_machine;
 
-    let ActualState {
-        collections: actual_collections,
-        aliases: actual_aliases,
-        peer_address_by_id: actual_peer_address_by_id,
-        peer_metadata_by_id: actual_peer_metadata_by_id,
-        cluster_metadata: actual_cluster_metadata,
-        quota_config: actual_quota_config,
-    } = actual;
+    let ShallowState {
+        collections: applied_collections,
+        aliases: applied_aliases,
+        peer_address_by_id: applied_peer_address_by_id,
+        peer_metadata_by_id: applied_peer_metadata_by_id,
+        cluster_metadata: applied_cluster_metadata,
+        quota_config: applied_quota_config,
+    } = applied;
 
+    // TODO: Include values into diff!?
     let mut diff = Vec::new();
 
     let collections: BTreeSet<_> = collections.keys().cloned().collect();
-
-    for collection in collections.symmetric_difference(actual_collections) {
+    for collection in collections.symmetric_difference(applied_collections) {
         diff.push(format!("collections[{collection}]"));
     }
 
-    if aliases != actual_aliases {
-        diff.push("aliases".to_string());
+    if aliases != applied_aliases {
+        diff.push("aliases".into());
     }
 
-    if peer_address_by_id != actual_peer_address_by_id {
-        diff.push("peer_address_by_id".to_string());
+    if peer_address_by_id != applied_peer_address_by_id {
+        diff.push("peer_address_by_id".into());
     }
 
-    if peer_metadata_by_id != actual_peer_metadata_by_id {
-        diff.push("peer_metadata_by_id".to_string());
+    if peer_metadata_by_id != applied_peer_metadata_by_id {
+        diff.push("peer_metadata_by_id".into());
     }
 
-    if cluster_metadata != actual_cluster_metadata {
-        diff.push("cluster_metadata".to_string());
+    if cluster_metadata != applied_cluster_metadata {
+        diff.push("cluster_metadata".into());
     }
 
-    if quota_config != actual_quota_config {
-        diff.push("quota_config".to_string());
+    if quota_config != applied_quota_config {
+        diff.push("quota_config".into());
     }
 
     diff
 }
 
-/// Fields where the two states of one collection differ.
-///
-/// Both sides hold the collection: [`cluster`] compares which collections exist
+/// Compare collection states
 pub fn collection(
     name: &str,
-    shadow: &collection_state::State,
-    actual: &collection_state::State,
+    state_machine: &collection_state::State,
+    applied: &collection_state::State,
 ) -> Vec<String> {
     let collection_state::State {
         config,
@@ -99,40 +92,41 @@ pub fn collection(
         transfers,
         shards_key_mapping,
         payload_index_schema,
-    } = shadow;
+    } = state_machine;
 
     let collection_state::State {
-        config: actual_config,
-        shards: actual_shards,
-        resharding: actual_resharding,
-        transfers: actual_transfers,
-        shards_key_mapping: actual_shards_key_mapping,
-        payload_index_schema: actual_payload_index_schema,
-    } = actual;
+        config: applied_config,
+        shards: applied_shards,
+        resharding: applied_resharding,
+        transfers: applied_transfers,
+        shards_key_mapping: applied_shards_key_mapping,
+        payload_index_schema: applied_payload_index_schema,
+    } = applied;
 
-    let mut fields = Vec::new();
+    // TODO: Include values into diff!?
+    let mut fields = Vec::new(); // TODO: `SmallVec`?
 
-    if config != actual_config {
+    if config != applied_config {
         fields.push("config");
     }
 
-    if shards != actual_shards {
+    if shards != applied_shards {
         fields.push("shards");
     }
 
-    if resharding != actual_resharding {
+    if resharding != applied_resharding {
         fields.push("resharding");
     }
 
-    if transfers != actual_transfers {
+    if transfers != applied_transfers {
         fields.push("transfers");
     }
 
-    if shards_key_mapping != actual_shards_key_mapping {
+    if shards_key_mapping != applied_shards_key_mapping {
         fields.push("shards_key_mapping");
     }
 
-    if payload_index_schema != actual_payload_index_schema {
+    if payload_index_schema != applied_payload_index_schema {
         fields.push("payload_index_schema");
     }
 
@@ -142,35 +136,45 @@ pub fn collection(
         .collect()
 }
 
-/// How the machine's decision differs from what the apply path answered.
-///
-/// Only the class of the answer is compared. A rejection message reaches the client, so the
-/// machine reproduces the wording of the handler it replaces, but a difference in wording is
-/// for the soak to collect rather than for this to report.
-pub fn outcome(shadow: &ApplyOutcome, actual: &StorageResult<bool>) -> Option<String> {
-    match (shadow, actual) {
-        (ApplyOutcome::Accepted(_), Ok(_)) => None,
-
-        (ApplyOutcome::Rejected(shadow), Err(actual))
-            if mem::discriminant(shadow) == mem::discriminant(actual) =>
-        {
+/// Compare outcomes from consensus state machine and operation handler.
+/// Errors match by variant, error messages are ignored.
+pub fn outcome(outcome: &ApplyOutcome, result: &StorageResult<bool>) -> Option<String> {
+    match (outcome, result) {
+        (ApplyOutcome::Accepted(_), Ok(_)) => {
+            log::debug!("Consensus state machine and operation handler accepted operation");
             None
         }
 
-        (ApplyOutcome::Accepted(_), Err(actual)) => {
-            Some(format!("machine accepted, apply rejected it: {actual}"))
+        (ApplyOutcome::Rejected(state_machine), Err(handler))
+            if mem::discriminant(state_machine) == mem::discriminant(handler) =>
+        {
+            log::debug!(
+                "Consensus state machine and operation handler rejected operation: \
+                 `{state_machine}` and `{handler}`"
+            );
+
+            None
         }
 
-        (ApplyOutcome::Rejected(shadow), Ok(_)) => Some(format!(
-            "machine rejected it with `{shadow}`, apply accepted"
+        (ApplyOutcome::Accepted(_), Err(handler)) => Some(format!(
+            "state machine accepted operation, \
+             but operation handler returned error `{handler}`"
         )),
 
-        (ApplyOutcome::Rejected(shadow), Err(actual)) => Some(format!(
-            "machine and apply rejected it differently: `{shadow}` against `{actual}`"
+        (ApplyOutcome::Rejected(state_machine), Ok(_)) => Some(format!(
+            "state machine rejected operation with `{state_machine}`, \
+             but operation handler applied it successfully"
         )),
 
-        // Caller invalidates the machine rather than comparing
-        (ApplyOutcome::NotCovered, Ok(_) | Err(_)) => None,
+        (ApplyOutcome::Rejected(state_machine), Err(handler)) => Some(format!(
+            "state machine and operation handler rejected operation differently: \
+             `{state_machine}` vs `{handler}`"
+        )),
+
+        (ApplyOutcome::NotCovered, _) => {
+            log::debug!("Consensus state machine does not cover operation");
+            None
+        }
     }
 }
 
@@ -221,7 +225,7 @@ mod tests {
 
     #[test]
     fn cluster_every_field() {
-        let mutations: Vec<Mutation<ActualState>> = vec![
+        let mutations: Vec<Mutation<ShallowState>> = vec![
             ("aliases", |actual| actual.aliases.remove(ALIAS)),
             ("peer_address_by_id", |actual| {
                 actual.peer_address_by_id.clear();
@@ -245,13 +249,13 @@ mod tests {
         }
     }
 
-    /// A shadow state and the read-back matching it, both filled in every field
-    fn cluster_states() -> (ClusterState, ActualState) {
+    /// Matching state-machine and applied states used as the mutation-test baseline
+    fn cluster_states() -> (ClusterState, ShallowState) {
         let mut aliases = AliasMapping::default();
         aliases.insert(ALIAS.to_string(), COLLECTION.to_string());
 
         let peer_address_by_id =
-            HashMap::from([(PEER_ID, "http://localhost:6335".parse().expect("valid uri"))]);
+            HashMap::from([(PEER_ID, "http://localhost:6335".parse().expect("valid URI"))]);
         let peer_metadata_by_id = HashMap::from([(PEER_ID, PeerMetadata::current())]);
         let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
         let quota_config = QuotaConfig::default();
@@ -265,7 +269,7 @@ mod tests {
             quota_config,
         };
 
-        let actual = ActualState {
+        let actual = ShallowState {
             collections: BTreeSet::from([COLLECTION.to_string()]),
             aliases,
             peer_address_by_id,

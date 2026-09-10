@@ -217,21 +217,6 @@ pub trait CollectionContainer {
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;
 
-    /// State of one collection, `None` when there is no such collection
-    fn collection_state(&self, collection: &str) -> Option<collection_state::State>;
-
-    /// Names of all collections, without reading their state
-    fn collection_names(&self) -> BTreeSet<CollectionId>;
-
-    /// Current alias mapping
-    fn alias_mapping(&self) -> AliasMapping;
-
-    /// Node-local values operations read, from this node's storage config
-    fn node_context(&self) -> NodeContext;
-
-    /// Collections that changed without a consensus operation asking for it, clearing the record
-    fn take_dirty_collections(&self) -> BTreeSet<CollectionId>;
-
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
@@ -244,6 +229,12 @@ pub trait CollectionContainer {
     fn quota_config(&self) -> QuotaConfig;
 
     fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError>;
+
+    fn node_context(&self) -> NodeContext;
+    fn collection_names(&self) -> BTreeSet<CollectionId>;
+    fn alias_mapping(&self) -> AliasMapping;
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State>;
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId>;
 }
 
 #[cfg(test)]

@@ -12,14 +12,7 @@ use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::quota::QuotaConfig;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
-/// Cluster state consensus decides on.
-///
-/// Same fields as [`SnapshotData`], the state we serialize into Raft snapshots, so a copy can be
-/// compared against state read back from `TableOfContent` field by field. Types match too, except
-/// that `SnapshotData` wraps the quota config in an `Option` to read snapshots taken before
-/// global quotas existed.
-///
-/// `TableOfContent` stays the source of truth; this is the copy we validate operations against.
+/// Cluster state modeled by consensus state machine. Mirrors [`SnapshotData`].
 ///
 /// [`SnapshotData`]: crate::content_manager::consensus_manager::SnapshotData
 #[derive(Clone, Debug, Default, PartialEq)]

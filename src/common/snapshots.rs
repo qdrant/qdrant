@@ -353,8 +353,7 @@ pub async fn recover_shard_snapshot_impl(
         .await?
         .await?;
 
-    // A partial recovery rewrites the payload index schema of the collection, which is part of
-    // the state consensus decides on, without an operation asking for it
+    // Partial snapshot recovery changes payload schema without a consensus operation
     if recovery_type.is_partial() {
         toc.mark_collection_dirty(collection.name());
     }

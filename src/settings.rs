@@ -172,7 +172,7 @@ pub struct ConsensusConfig {
     /// Compact WAL when it grows to enough applied entries
     #[serde(default = "default_compact_wal_entries")]
     pub compact_wal_entries: u64,
-    /// Run the consensus state machine alongside the apply path and compare the two
+    /// Compare consensus state machine with operation handlers
     #[serde(default)]
     pub shadow_state_machine: ShadowMode,
 }
@@ -597,8 +597,7 @@ mod tests {
         assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
-    /// The consensus test suite turns the shadow run on through this variable, so a rename here
-    /// leaves that suite testing nothing.
+    /// Ensure environment variable used by consensus tests enables state machine validation
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test]
     fn shadow_state_machine_from_env() {
