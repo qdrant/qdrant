@@ -822,12 +822,11 @@ impl ShardReplicaSet {
 /// keep the refusing replica Active, but still surface the error to the client
 /// so a partial apply (other replicas already succeeded) is never reported as
 /// success.
+type ReplicaUpdateFailure = (PeerId, CollectionError);
+
 fn split_strict_mode_failures(
-    failures: Vec<(PeerId, CollectionError)>,
-) -> (
-    Vec<(PeerId, CollectionError)>,
-    Vec<(PeerId, CollectionError)>,
-) {
+    failures: Vec<ReplicaUpdateFailure>,
+) -> (Vec<ReplicaUpdateFailure>, Vec<ReplicaUpdateFailure>) {
     failures
         .into_iter()
         .partition(|(_, err)| err.is_strict_mode())
