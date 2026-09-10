@@ -38,27 +38,27 @@ use uuid::Uuid;
 use super::change::PendingChange;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// File name template of a pending changes log file.
+/// File name prefix of a pending changes log file.
 ///
-/// Every actual file also carries a level suffix  and a random ID.
-/// See [`pending_changes_log_path`] for the full naming scheme.
-pub const LOG_FILE_TEMPLATE: &str = "pending_changes.log";
+/// Every actual file also carries a level, a random ID and the [`LOG_FILE_EXTENSION`], e.g.
+/// `proxy_changes.0.<uuid>.dat`. See [`pending_changes_log_path`] for the full naming scheme.
+pub const LOG_FILE_PREFIX: &str = "proxy_changes";
+
+/// File name extension of a pending changes log file.
+const LOG_FILE_EXTENSION: &str = "dat";
 
 /// Sanity limit for a single log entry, to not trust a corrupted length prefix.
 const MAX_ENTRY_SIZE: u32 = 32 * 1024 * 1024;
 
-/// Path of the pending changes log file, includes `level` and `id`.
+/// Path of the pending changes log file, includes `level` and `id`: `proxy_changes.<level>.<id>.dat`.
 ///
-/// The first (inner most) proxy layer gets no level suffix, each further layer
-/// gets its level as a numeric suffix; every layer also carries `id` as a
-/// further suffix. `id` must be a random UUID for a brand new proxy (see
-/// `PendingChanges::new`). A reopened proxy must retain the same UUID.
+/// The level is always included, even for the first (inner most) proxy layer at level 0. `id`
+/// must be a random UUID for a brand new proxy (see `PendingChanges::new`). A reopened proxy must
+/// retain the same UUID.
 pub fn pending_changes_log_path(segment_path: &Path, level: usize, id: Uuid) -> PathBuf {
-    if level == 0 {
-        segment_path.join(format!("{LOG_FILE_TEMPLATE}-{id}"))
-    } else {
-        segment_path.join(format!("{LOG_FILE_TEMPLATE}.{level}-{id}"))
-    }
+    segment_path.join(format!(
+        "{LOG_FILE_PREFIX}.{level}.{id}.{LOG_FILE_EXTENSION}"
+    ))
 }
 
 /// List all pending changes log files inside the given segment directory, ordered by proxy level
@@ -87,24 +87,19 @@ pub fn list_pending_changes_log_files(segment_path: &Path) -> Vec<PathBuf> {
 
 /// Parse the proxy level from a pending changes log file name, if it is one.
 pub(super) fn parse_log_file_level(file_name: &str) -> Option<usize> {
-    let rest = file_name.strip_prefix(LOG_FILE_TEMPLATE)?;
+    let rest = file_name
+        .strip_prefix(LOG_FILE_PREFIX)?
+        .strip_prefix('.')?
+        .strip_suffix(LOG_FILE_EXTENSION)?
+        .strip_suffix('.')?;
 
-    // The level prefix (empty, or `.<level>`) never contains a `-`, so the first one always marks
-    // the boundary with the ID suffix (which may contain further ones of its own)
-    let (level_part, id_part) = rest.split_once('-')?;
+    // The level never contains a `.`, so the first one always marks the boundary with the UUID
+    // (which is only ever hyphenated, never dotted)
+    let (level_str, id_str) = rest.split_once('.')?;
+    let level: usize = level_str.parse().ok()?;
 
-    let level: usize = if level_part.is_empty() {
-        0
-    } else {
-        // Higher levels always carry an explicit non-zero suffix, level 0 never does
-        match level_part.strip_prefix('.')?.parse().ok()? {
-            0 => return None,
-            level => level,
-        }
-    };
-
-    // Reject anything whose suffix isn't actually a valid ID, e.g. an unrelated `.bak` file
-    Uuid::parse_str(id_part).ok()?;
+    // Reject anything whose id isn't actually a valid UUID, e.g. an unrelated file
+    Uuid::parse_str(id_str).ok()?;
 
     Some(level)
 }

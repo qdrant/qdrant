@@ -40,7 +40,7 @@ use uuid::Uuid;
 pub use self::change::{DeletedPoints, PendingChange, ProxyDeletedPoint, ProxyIndexChange};
 pub use self::index_changes::ProxyIndexChanges;
 pub use self::log_file::{
-    LOG_FILE_TEMPLATE, list_pending_changes_log_files, pending_changes_log_path,
+    LOG_FILE_PREFIX, list_pending_changes_log_files, pending_changes_log_path,
 };
 pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::common::Flusher;
@@ -118,7 +118,7 @@ impl PendingChanges {
     /// Reopen the pending changes log at its exact `path`, reconstructing the in-memory buffers
     /// from it as if every entry were registered again in order.
     ///
-    /// Unlike [`Self::open`], this targets one specific file rather than creating a new one.
+    /// Unlike [`Self::new`], this targets one specific file rather than creating a new one.
     /// `path` must be exactly the log file of the proxy generation being resumed. New changes will
     /// keep appending to the same file.
     ///
@@ -456,9 +456,9 @@ pub struct RecoveredPendingChanges {
 /// of reconstructing the proxies, replay all logged operations directly onto the segment.
 ///
 /// Replay order is level first, then operation version: every level-0 file is fully replayed
-/// before any level-1 file, matching the order of proxy laters. It is possible a level has
-/// multiple files if a unproxy failed to clean it up. In that case all files are replayed by
-/// version order.
+/// before any level-1 file, matching the order the proxy layers were created in. A level may have
+/// multiple files if an unproxy failed to clean one up; in that case they are replayed in version
+/// order.
 ///
 /// Must be called before regular WAL replay, which recovers everything past what segments
 /// (including these logs) have durably applied.

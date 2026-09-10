@@ -52,18 +52,12 @@ fn build_segment(path: &Path) -> Segment {
 fn test_log_path_levels() {
     let segment_path = Path::new("/some/segment");
     let id = Uuid::nil();
-    assert_eq!(
-        pending_changes_log_path(segment_path, 0, id),
-        segment_path.join(format!("pending_changes.log-{id}")),
-    );
-    assert_eq!(
-        pending_changes_log_path(segment_path, 1, id),
-        segment_path.join(format!("pending_changes.log.1-{id}")),
-    );
-    assert_eq!(
-        pending_changes_log_path(segment_path, 2, id),
-        segment_path.join(format!("pending_changes.log.2-{id}")),
-    );
+    for level in 0..3 {
+        assert_eq!(
+            pending_changes_log_path(segment_path, level, id),
+            segment_path.join(format!("proxy_changes.{level}.{id}.dat")),
+        );
+    }
 }
 
 #[test]
@@ -88,7 +82,7 @@ fn test_list_log_files_ordered_and_gap_tolerant() {
     fs::write(&level_2, b"").unwrap();
     fs::write(&level_0, b"").unwrap();
     // Unrelated files are not picked up
-    fs::write(dir.path().join("pending_changes.log.bak"), b"").unwrap();
+    fs::write(dir.path().join("proxy_changes.bak"), b"").unwrap();
     fs::write(dir.path().join("segment.json"), b"").unwrap();
 
     let files = list_pending_changes_log_files(dir.path());
