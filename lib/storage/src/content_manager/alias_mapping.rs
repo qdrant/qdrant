@@ -197,9 +197,11 @@ mod tests {
     fn insert_keeps_memory_state_when_persistence_fails() {
         let (mut persistence, original) = persistence_with_unwritable_path();
 
-        assert!(persistence
-            .insert("new_alias".to_string(), "new_collection".to_string())
-            .is_err());
+        assert!(
+            persistence
+                .insert("new_alias".to_string(), "new_collection".to_string())
+                .is_err()
+        );
         assert_eq!(persistence.state(), &original);
     }
 
