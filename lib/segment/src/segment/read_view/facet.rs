@@ -18,7 +18,9 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::types::{Condition, FieldCondition, Filter, IntPayloadType, Match, ValueVariants};
+use crate::types::{
+    Condition, FieldCondition, Filter, IntPayloadType, Match, MinShould, ValueVariants,
+};
 
 /// Filter selectivity below which [`SegmentReadView::visit_filter_iter`] beats
 /// [`SegmentReadView::visit_facet_iter`] on the full (non-sampling) path.
@@ -42,7 +44,12 @@ const MIN_SAMPLE_TARGET: usize = 1000;
 /// any new candidate value before we give up.
 const MAX_NO_NEW_POINTS: usize = 4096;
 
-/// Build a `field MATCH ANY [candidates]` filter.
+/// Build a filter matching `key` against every candidate value.
+///
+/// A single `MATCH ANY` holds either strings or integers, never both, so a
+/// field whose values mix both shapes needs one condition per shape, OR'd
+/// with `min_should`. Dropping one shape would exclude every point that only
+/// carries a value of that shape from the counting pass.
 fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> Filter {
     let mut strings: Vec<String> = Vec::new();
     let mut integers: Vec<IntPayloadType> = Vec::new();
@@ -59,16 +66,21 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
         }
     }
 
-    let any_match = if integers.is_empty() {
-        Match::from(strings)
-    } else {
-        Match::from(integers)
+    let match_condition = |values: Match| {
+        Condition::Field(FieldCondition::new_match(key.clone(), values))
     };
 
-    Filter::new_must(Condition::Field(FieldCondition::new_match(
-        key.clone(),
-        any_match,
-    )))
+    match (strings.is_empty(), integers.is_empty()) {
+        (false, true) => Filter::new_must(match_condition(Match::from(strings))),
+        (true, _) => Filter::new_must(match_condition(Match::from(integers))),
+        (false, false) => Filter::new_min_should(MinShould {
+            conditions: vec![
+                match_condition(Match::from(strings)),
+                match_condition(Match::from(integers)),
+            ],
+            min_count: 1,
+        }),
+    }
 }
 
 /// How the user filter is use to check individual points.
@@ -492,5 +504,66 @@ where
         };
 
         Ok(values)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+    use common::counter::hardware_counter::HardwareCounterCell;
+
+    use super::*;
+    use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+    use crate::id_tracker::{IdTracker, IdTrackerEnum};
+    use crate::json_path::JsonPath;
+    use crate::payload_json;
+    use crate::payload_storage::PayloadStorage;
+    use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+    use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+    use crate::payload_storage::query_checker::SimpleConditionChecker;
+    use crate::types::Payload;
+
+    /// A field whose payload values mix strings and integers must match both
+    /// shapes: the candidate filter drives which points get counted, so
+    /// dropping one shape would silently drop that shape's counts.
+    #[test]
+    fn candidate_match_filter_covers_strings_and_integers() {
+        let key = JsonPath::new("tag");
+        let candidates = HashSet::from([
+            FacetValue::Keyword("red".to_string()),
+            FacetValue::Int(7),
+        ]);
+
+        let filter = candidate_match_filter(&key, &candidates);
+
+        let payloads: Vec<Payload> = vec![
+            payload_json! {"tag": "red"},
+            payload_json! {"tag": 7},
+            payload_json! {"tag": "blue"},
+            payload_json! {"tag": 9},
+        ];
+
+        let hw_counter = HardwareCounterCell::new();
+        let mut payload_storage = PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
+        for (i, payload) in payloads.iter().enumerate() {
+            let id = i as u32;
+            id_tracker.set_link((id as u64).into(), id).unwrap();
+            payload_storage.overwrite(id, payload, &hw_counter).unwrap();
+        }
+
+        let checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(id_tracker))),
+            HashMap::new(),
+        );
+
+        assert!(checker.check(0, &filter), "string candidate must match");
+        assert!(checker.check(1, &filter), "integer candidate must match");
+        assert!(!checker.check(2, &filter), "non-candidate string");
+        assert!(!checker.check(3, &filter), "non-candidate integer");
     }
 }
