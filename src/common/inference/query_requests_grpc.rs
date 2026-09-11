@@ -321,6 +321,10 @@ fn convert_query_with_inferred(
                 strategy,
             } = feedback;
 
+            if feedback.is_empty() {
+                return Err(Status::invalid_argument("feedback must not be empty"));
+            }
+
             if feedback.len() > MAX_FEEDBACK_ITEMS {
                 return Err(Status::invalid_argument(format!(
                     "feedback elements must not exceed {MAX_FEEDBACK_ITEMS} items"
@@ -655,6 +659,19 @@ mod tests {
         let err = convert_query_with_inferred(query, &inferred).unwrap_err();
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
         assert!(err.message().contains("must not exceed"));
+    }
+
+    #[test]
+    fn test_relevance_feedback_empty_rejected() {
+        let inferred = create_test_inferred_batch();
+        let query = grpc::Query {
+            variant: Some(api::grpc::qdrant::query::Variant::RelevanceFeedback(
+                feedback_input_with_len(0),
+            )),
+        };
+        let err = convert_query_with_inferred(query, &inferred).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("must not be empty"));
     }
 
     #[test]
