@@ -2,11 +2,14 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use rstest::rstest;
 use tempfile::Builder;
 
 use super::super::FullTextIndex;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, Match};
 
@@ -179,4 +182,146 @@ fn test_full_text_indexing() {
         index.remove_point(3).unwrap();
         assert_eq!(index.count_indexed_points().unwrap(), 2);
     }
+}
+
+/// Reach the in-memory lengths of a gridstore-backed index.
+fn doc_lens(index: &FullTextIndex) -> (Vec<u32>, u64) {
+    let FullTextIndex::Mutable(index) = index else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    let inverted = &index.inner.inverted_index;
+    (inverted.point_to_doc_len.clone(), inverted.total_tokens)
+}
+
+fn length_config(phrase_matching: bool) -> TextIndexParams {
+    TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Whitespace,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: None,
+        phrase_matching: Some(phrase_matching),
+        on_disk: None,
+        memory: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+    }
+}
+
+/// Document length has to survive a reload, and the `phrase_matching: false`
+/// case is the one at risk: those tokens are sorted and deduplicated on the way
+/// to the gridstore, so a length derived from the stored tokens after reopening
+/// would count distinct terms rather than all of them.
+#[rstest]
+fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
+    let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
+    let path = temp_dir.path().join("index");
+    let hw_counter = HardwareCounterCell::new();
+
+    // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
+    let payloads = [
+        serde_json::json!("alpha beta gamma"),
+        serde_json::json!("the cat sat on the mat the"),
+    ];
+    let expected = vec![3u32, 7];
+
+    {
+        let mut index =
+            FullTextIndex::new_gridstore(path.clone(), length_config(phrase_matching), true)
+                .unwrap()
+                .unwrap();
+        for (idx, payload) in payloads.iter().enumerate() {
+            index
+                .add_point(idx as PointOffsetType, &[payload], &hw_counter)
+                .unwrap();
+        }
+        let (lens, total) = doc_lens(&index);
+        assert_eq!(lens, expected, "lengths wrong before reload");
+        assert_eq!(total, 10);
+        index.flusher()().unwrap();
+    }
+
+    let reopened = FullTextIndex::new_gridstore(path, length_config(phrase_matching), false)
+        .unwrap()
+        .unwrap();
+    let (lens, total) = doc_lens(&reopened);
+    assert_eq!(lens, expected, "lengths lost across reload");
+    assert_eq!(total, 10);
+}
+
+/// Array boundary sentinels occupy a position so phrases cannot match across
+/// two elements, but they are not content and must not count toward length.
+#[test]
+fn doc_len_excludes_array_boundary_sentinels() {
+    let temp_dir = Builder::new().prefix("doc_len_sentinel").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Two elements, three tokens each. With phrase matching a sentinel is
+    // inserted between them; the length must still be six.
+    let payload = serde_json::json!(["alpha beta gamma", "delta epsilon zeta"]);
+
+    for phrase_matching in [false, true] {
+        let path = temp_dir.path().join(format!("index_{phrase_matching}"));
+        let mut index = FullTextIndex::new_gridstore(path, length_config(phrase_matching), true)
+            .unwrap()
+            .unwrap();
+        index.add_point(0, &[&payload], &hw_counter).unwrap();
+
+        let (lens, total) = doc_lens(&index);
+        assert_eq!(lens, vec![6], "phrase_matching = {phrase_matching}");
+        assert_eq!(total, 6, "phrase_matching = {phrase_matching}");
+    }
+}
+
+/// Removing a point takes its length back out of the running total, so `avgdl`
+/// is not inflated by documents that no longer exist.
+#[test]
+fn removing_a_point_discounts_its_length() {
+    let temp_dir = Builder::new().prefix("doc_len_remove").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut index =
+        FullTextIndex::new_gridstore(temp_dir.path().join("index"), length_config(false), true)
+            .unwrap()
+            .unwrap();
+    index
+        .add_point(0, &[&serde_json::json!("alpha beta gamma")], &hw_counter)
+        .unwrap();
+    index
+        .add_point(1, &[&serde_json::json!("delta epsilon")], &hw_counter)
+        .unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 2], 5));
+
+    index.remove_point(1).unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 0], 3));
+
+    // Removing twice must not double-discount.
+    index.remove_point(1).unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 0], 3));
+}
+
+/// Overwriting a point replaces its length instead of adding to it.
+#[test]
+fn overwriting_a_point_replaces_its_length() {
+    let temp_dir = Builder::new()
+        .prefix("doc_len_overwrite")
+        .tempdir()
+        .unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut index =
+        FullTextIndex::new_gridstore(temp_dir.path().join("index"), length_config(false), true)
+            .unwrap()
+            .unwrap();
+    index
+        .add_point(0, &[&serde_json::json!("alpha beta gamma")], &hw_counter)
+        .unwrap();
+    assert_eq!(doc_lens(&index), (vec![3], 3));
+
+    index
+        .add_point(0, &[&serde_json::json!("delta epsilon")], &hw_counter)
+        .unwrap();
+    assert_eq!(doc_lens(&index), (vec![2], 2));
 }

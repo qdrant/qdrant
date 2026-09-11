@@ -64,8 +64,8 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,
                 |idx, value: Vec<u8>| {
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    builder.add(idx, str_tokens);
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
                 hw_counter.ref_payload_index_io_read_counter(),

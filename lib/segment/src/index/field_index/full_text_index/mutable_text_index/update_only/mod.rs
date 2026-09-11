@@ -37,9 +37,12 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
         let str_tokens =
             FullTextIndex::tokenize_document(&self.tokenizer, self.phrase_matching, &values);
 
+        let doc_len = FullTextIndex::document_length(&str_tokens);
+
         Ok(Some(FullTextIndex::serialize_stored_document(
             str_tokens,
             self.phrase_matching,
+            doc_len,
         )?))
     }
 }

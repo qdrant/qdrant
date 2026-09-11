@@ -367,6 +367,12 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             vocab,
             point_to_tokens,
             point_to_doc,
+            // Dropped for now: the immutable index has nowhere to keep them
+            // until it grows its own `doc_len` sidecar. Nothing reads document
+            // length yet, and a segment converted before that lands is rebuilt
+            // from payload by the missing-file check.
+            point_to_doc_len: _,
+            total_tokens: _,
             points_count,
         } = index;
 

@@ -22,6 +22,21 @@ pub mod tokenizers;
 pub use read_only::ReadOnlyFullTextIndex;
 pub use read_ops::FullTextConditionChecker;
 
+/// A point's tokens as they are persisted, plus the length measured before the
+/// tokens were deduplicated.
+///
+/// The index is rebuilt from these records on every open, so the length has to
+/// travel with them: without phrase matching the stored tokens are sorted and
+/// deduplicated, and the true document length cannot be recovered from them.
+#[derive(Debug, serde::Deserialize)]
+pub(super) struct StoredDocument {
+    pub tokens: Vec<String>,
+    /// Total tokens, array boundary sentinels excluded. Zero on records written
+    /// before this field existed; such indexes are rebuilt from payload.
+    #[serde(default)]
+    pub doc_len: u32,
+}
+
 #[cfg(test)]
 mod tests;
 
