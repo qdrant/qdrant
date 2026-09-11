@@ -11885,8 +11885,13 @@
             "default": false,
             "type": "boolean"
           },
+          "persist_proxy_segments": {
+            "description": "Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are open. Replays the persisted changes on startup to guarantee data consistency. Required for serverless deployments where storage and compute is separated.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
-            "description": "Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`] and [`Self::append_only_storages`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
