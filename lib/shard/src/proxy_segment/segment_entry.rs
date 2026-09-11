@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -834,6 +835,10 @@ impl StorageSegmentEntry for ProxySegment {
     }
 
     fn persistent_version(&self) -> SeqNumberType {
+        if !feature_flags().persist_proxy_segments {
+            return self.wrapped_segment.get().read().persistent_version();
+        }
+
         // Everything this proxy buffers at or below the persisted pending changes version is
         // durable in the pending changes log, on top of whatever the wrapped segment persisted
         // itself. Reporting it here is what allows the WAL to be acknowledged past operations
@@ -855,7 +860,9 @@ impl StorageSegmentEntry for ProxySegment {
                 if let Some(wrapped_flusher) = wrapped_flusher {
                     wrapped_flusher()?;
                 }
-                if let Some(pending_changes_flusher) = pending_changes_flusher {
+                if let Some(pending_changes_flusher) = pending_changes_flusher
+                    && feature_flags().persist_proxy_segments
+                {
                     pending_changes_flusher()?;
                 }
                 Ok(())

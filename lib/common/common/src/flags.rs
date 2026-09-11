@@ -75,9 +75,14 @@ pub struct FeatureFlags {
     /// Read on the sending side only: nodes accept raw payloads regardless.
     pub transfer_raw_payloads: bool,
 
-    /// Serverless-compatible deployment mode. Automatically enables [`Self::write_segment_manifest`],
-    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`] and
-    /// [`Self::append_only_storages`].
+    /// Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are
+    /// open. Replays the persisted changes on startup to guarantee data consistency. Required for
+    /// serverless deployments where storage and compute is separated.
+    pub persist_proxy_segments: bool,
+
+    /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`]
+    /// and [`Self::persist_proxy_segments`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     serverless_compatible: bool,
@@ -98,6 +103,7 @@ impl Default for FeatureFlags {
             append_only_storages: false,
             transfer_raw_points: false,
             transfer_raw_payloads: false,
+            persist_proxy_segments: false,
             serverless_compatible: false,
         }
     }
@@ -133,6 +139,7 @@ impl FeatureFlags {
             // version that understands them, so they can only be switched on a release later.
             transfer_raw_points: false,
             transfer_raw_payloads: false,
+            persist_proxy_segments: true,
             serverless_compatible: false,
         }
     }
@@ -150,6 +157,7 @@ impl FeatureFlags {
             self.append_only_mutations = true;
             self.compact_bitmask = true;
             self.append_only_storages = true;
+            self.persist_proxy_segments = true;
         }
 
         // Append-only storages cannot rewrite slots.
@@ -209,6 +217,7 @@ mod tests {
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
+        assert!(flags.persist_proxy_segments);
     }
 
     #[test]
@@ -224,6 +233,7 @@ mod tests {
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
+        assert!(flags.persist_proxy_segments);
     }
 
     #[test]
