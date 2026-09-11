@@ -2065,10 +2065,14 @@ impl TryFrom<GeoBoundingBox> for segment::types::GeoBoundingBox {
             GeoBoundingBox {
                 top_left: Some(t),
                 bottom_right: Some(b),
-            } => Ok(Self {
-                top_left: t.into(),
-                bottom_right: b.into(),
-            }),
+            } => {
+                validate_geo_point(&t)?;
+                validate_geo_point(&b)?;
+                Ok(Self {
+                    top_left: t.into(),
+                    bottom_right: b.into(),
+                })
+            }
             _ => Err(Status::invalid_argument("Malformed GeoBoundingBox type")),
         }
     }
@@ -2095,10 +2099,13 @@ impl TryFrom<GeoRadius> for segment::types::GeoRadius {
             GeoRadius {
                 center: Some(c),
                 radius,
-            } => Ok(Self {
-                center: segment::types::GeoPoint::from(c),
-                radius: OrderedFloat(FloatPayloadType::from(radius)),
-            }),
+            } => {
+                validate_geo_point(&c)?;
+                Ok(Self {
+                    center: segment::types::GeoPoint::from(c),
+                    radius: OrderedFloat(FloatPayloadType::from(radius)),
+                })
+            }
             _ => Err(Status::invalid_argument("Malformed GeoRadius type")),
         }
     }
@@ -2122,10 +2129,19 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
             GeoPolygon {
                 exterior: Some(e),
                 interiors,
-            } => Ok(Self {
-                exterior: e.into(),
-                interiors: Some(interiors.into_iter().map(GeoLineString::into).collect()),
-            }),
+            } => {
+                for point in e
+                    .points
+                    .iter()
+                    .chain(interiors.iter().flat_map(|line| line.points.iter()))
+                {
+                    validate_geo_point(point)?;
+                }
+                Ok(Self {
+                    exterior: e.into(),
+                    interiors: Some(interiors.into_iter().map(GeoLineString::into).collect()),
+                })
+            }
             _ => Err(Status::invalid_argument(
                 "Malformed GeoPolygon type - field `exterior` is required",
             )),
@@ -2148,6 +2164,13 @@ impl From<segment::types::GeoPolygon> for GeoPolygon {
                 .collect(),
         }
     }
+}
+
+/// Validates geo filter coordinates the same way the REST API does on
+/// deserialization (lat within [-90, 90], lon within [-180, 180]).
+fn validate_geo_point(point: &GeoPoint) -> Result<(), Status> {
+    segment::types::GeoPoint::validate(point.lon, point.lat)
+        .map_err(|err| Status::invalid_argument(err.to_string()))
 }
 
 impl From<GeoPoint> for segment::types::GeoPoint {
@@ -3870,5 +3893,110 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
         VectorStorageDatatype::Float16 => grpc::Datatype::Float16,
         VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
         VectorStorageDatatype::Turbo4 => grpc::Datatype::Turbo4,
+    }
+}
+
+
+#[cfg(test)]
+mod geo_validation_tests {
+    use super::*;
+
+    #[test]
+    fn geo_radius_rejects_out_of_range_coordinates() {
+        let bad_center = GeoRadius {
+            center: Some(GeoPoint {
+                lon: 181.0,
+                lat: 0.0,
+            }),
+            radius: 1000.0,
+        };
+        let err = segment::types::GeoRadius::try_from(bad_center).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+
+        let bad_lat = GeoRadius {
+            center: Some(GeoPoint {
+                lon: 0.0,
+                lat: -91.0,
+            }),
+            radius: 1000.0,
+        };
+        assert!(segment::types::GeoRadius::try_from(bad_lat).is_err());
+
+        let ok = GeoRadius {
+            center: Some(GeoPoint {
+                lon: 180.0,
+                lat: 90.0,
+            }),
+            radius: 1000.0,
+        };
+        assert!(segment::types::GeoRadius::try_from(ok).is_ok());
+    }
+
+    #[test]
+    fn geo_bounding_box_rejects_out_of_range_coordinates() {
+        let bad = GeoBoundingBox {
+            top_left: Some(GeoPoint {
+                lon: 0.0,
+                lat: 90.0,
+            }),
+            bottom_right: Some(GeoPoint {
+                lon: 10.0,
+                lat: -90.1,
+            }),
+        };
+        assert!(segment::types::GeoBoundingBox::try_from(bad).is_err());
+
+        let ok = GeoBoundingBox {
+            top_left: Some(GeoPoint {
+                lon: -180.0,
+                lat: 90.0,
+            }),
+            bottom_right: Some(GeoPoint {
+                lon: 180.0,
+                lat: -90.0,
+            }),
+        };
+        assert!(segment::types::GeoBoundingBox::try_from(ok).is_ok());
+    }
+
+    #[test]
+    fn geo_polygon_rejects_out_of_range_coordinates() {
+        let bad_exterior = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lon: 0.0, lat: 0.0 },
+                    GeoPoint { lon: 0.0, lat: 200.0 },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(segment::types::GeoPolygon::try_from(bad_exterior).is_err());
+
+        let bad_interior = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![GeoPoint { lon: 0.0, lat: 0.0 }],
+            }),
+            interiors: vec![GeoLineString {
+                points: vec![GeoPoint {
+                    lon: -181.0,
+                    lat: 0.0,
+                }],
+            }],
+        };
+        assert!(segment::types::GeoPolygon::try_from(bad_interior).is_err());
+
+        let ok = GeoPolygon {
+            exterior: Some(GeoLineString {
+                points: vec![
+                    GeoPoint { lon: 0.0, lat: 0.0 },
+                    GeoPoint {
+                        lon: 10.0,
+                        lat: 10.0,
+                    },
+                ],
+            }),
+            interiors: vec![],
+        };
+        assert!(segment::types::GeoPolygon::try_from(ok).is_ok());
     }
 }
