@@ -237,20 +237,20 @@ impl RemoteShard {
         Ok(res)
     }
 
-    pub async fn forward_update_batch(
-        &self,
+    /// Build the gRPC request for a batch of operations.
+    ///
+    /// One full pass over the batch, up to `MAX_BATCH_BYTES` of point data.
+    /// Split out of `forward_update_batch` so it can run on the blocking pool.
+    fn build_update_batch_request(
+        shard_id: Option<ShardId>,
+        collection_name: String,
         operations: Vec<OperationWithClockTag>,
         wait: WaitUntil,
-        timeout: Option<Duration>,
-        ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<UpdateResult> {
+        timeout: Option<u64>,
+        ordering: Option<WriteOrdering>,
+    ) -> CollectionResult<UpdateBatchInternal> {
         let mut updates = Vec::with_capacity(operations.len());
-
-        let shard_id = Some(self.id);
-        let collection_name = &self.collection_id;
-        let ordering = Some(ordering);
-        let timeout = timeout.map(|t| t.as_secs());
+        let collection_name = &collection_name;
 
         for operation in operations {
             let update_op = match operation.operation {
@@ -510,11 +510,41 @@ impl RemoteShard {
             });
         }
 
-        let batch_request = &UpdateBatchInternal {
+        Ok(UpdateBatchInternal {
             operations: updates,
             wait_override: wait_override_to_proto(wait),
-        };
+        })
+    }
 
+    pub async fn forward_update_batch(
+        &self,
+        operations: Vec<OperationWithClockTag>,
+        wait: WaitUntil,
+        timeout: Option<Duration>,
+        ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
+        let shard_id = Some(self.id);
+        let collection_name = self.collection_id.clone();
+        let ordering = Some(ordering);
+        let timeout = timeout.map(|t| t.as_secs());
+
+        let batch_request = tokio::task::spawn_blocking(move || {
+            Self::build_update_batch_request(
+                shard_id,
+                collection_name,
+                operations,
+                wait,
+                timeout,
+                ordering,
+            )
+        })
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!("Failed to join update batch build task: {err}"))
+        })??;
+
+        let batch_request = &batch_request;
         let point_operation_response = self
             .with_points_client(|mut client| async move {
                 client

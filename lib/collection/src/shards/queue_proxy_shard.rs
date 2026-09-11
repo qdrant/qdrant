@@ -471,7 +471,9 @@ impl Drop for QueueProxyShard {
 /// A batch of WAL operations read for transfer.
 struct WalBatch {
     /// Operations in this batch: (WAL index, operation).
-    batch: Vec<(u64, OperationWithClockTag)>,
+    ///
+    /// Behind an `Arc` so it can be shared into a blocking task without being copied.
+    batch: Arc<Vec<(u64, OperationWithClockTag)>>,
     /// Whether this batch reaches the end of the WAL.
     reached_end: bool,
     /// Total number of items to transfer (for progress reporting).
@@ -647,7 +649,7 @@ impl Inner {
             );
 
             Ok(WalBatch {
-                batch,
+                batch: Arc::new(batch),
                 reached_end,
                 total: items_total,
             })
@@ -924,7 +926,7 @@ impl ShardOperation for Inner {
 ///
 /// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
 async fn transfer_operations_batch(
-    batch: &[(u64, OperationWithClockTag)],
+    batch: &Arc<Vec<(u64, OperationWithClockTag)>>,
     remote_shard: &RemoteShard,
     wait: WaitUntil,
     timeout: Option<Duration>,
@@ -938,17 +940,27 @@ async fn transfer_operations_batch(
         remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
 
     if supports_update_batching {
-        let mut batch_upd = Vec::with_capacity(batch.len());
+        // Cloning the batch is another full pass over up to `MAX_BATCH_BYTES` of point data.
+        let batch_for_send = Arc::clone(batch);
+        let batch_upd = tokio::task::spawn_blocking(move || {
+            let mut batch_upd = Vec::with_capacity(batch_for_send.len());
 
-        for (_idx, operation) in batch {
-            let mut operation = operation.clone();
-            // Set force flag because operations from WAL may be unordered if another node is sending
-            // new operations at the same time
-            if let Some(clock_tag) = &mut operation.clock_tag {
-                clock_tag.force = true;
+            for (_idx, operation) in batch_for_send.iter() {
+                let mut operation = operation.clone();
+                // Set force flag because operations from WAL may be unordered if another node is
+                // sending new operations at the same time
+                if let Some(clock_tag) = &mut operation.clock_tag {
+                    clock_tag.force = true;
+                }
+                batch_upd.push(operation);
             }
-            batch_upd.push(operation);
-        }
+
+            batch_upd
+        })
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!("Failed to join batch clone task: {err}"))
+        })?;
 
         match remote_shard
             .forward_update_batch(
@@ -980,7 +992,7 @@ async fn transfer_operations_batch(
 
     // One-by-one transfer. Used both when the remote does not support batch updates and
     // as the isolation path after a non-transient batch failure.
-    for (_idx, operation) in batch {
+    for (_idx, operation) in batch.iter() {
         let mut operation = operation.clone();
 
         // Set force flag because operations from WAL may be unordered if another node is sending
