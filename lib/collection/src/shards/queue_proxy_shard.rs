@@ -940,22 +940,22 @@ async fn transfer_operations_batch(
         remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
 
     if supports_update_batching {
-        // Cloning the batch is another full pass over up to `MAX_BATCH_BYTES` of point data.
+        // Clone inside blocking task, the clone may be very expensive (`MAX_BATCH_BYTES` of data).
+        // Strip operation ID and set force flag because operations from WAL may be unordered if
+        // another node is sending new operations at the same time
         let batch_for_send = Arc::clone(batch);
         let batch_upd = tokio::task::spawn_blocking(move || {
-            let mut batch_upd = Vec::with_capacity(batch_for_send.len());
-
-            for (_idx, operation) in batch_for_send.iter() {
-                let mut operation = operation.clone();
-                // Set force flag because operations from WAL may be unordered if another node is
-                // sending new operations at the same time
-                if let Some(clock_tag) = &mut operation.clock_tag {
-                    clock_tag.force = true;
-                }
-                batch_upd.push(operation);
-            }
-
-            batch_upd
+            batch_for_send
+                .as_ref()
+                .to_owned()
+                .into_iter()
+                .map(|(_idx, mut operation)| {
+                    if let Some(clock_tag) = &mut operation.clock_tag {
+                        clock_tag.force = true;
+                    }
+                    operation
+                })
+                .collect()
         })
         .await
         .map_err(|err| {
