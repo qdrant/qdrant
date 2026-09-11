@@ -341,7 +341,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ContextInputPair.negative", ""),
             ("ContextInput.pairs", ""),
             ("RelevanceFeedbackInput.target", ""),
-            ("RelevanceFeedbackInput.feedback", "length(min = 1, max = 100)"),
+            ("RelevanceFeedbackInput.feedback", ""),
             ("RelevanceFeedbackInput.strategy", ""),
             ("FeedbackStrategy.variant", ""),
             ("FeedbackItem.example", ""),
