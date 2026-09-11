@@ -20,6 +20,17 @@ pub struct MutableInvertedIndex {
     ///
     /// Must be enabled explicitly.
     pub point_to_doc: Option<Vec<Option<Document>>>,
+
+    /// Total tokens per point, for BM25 length normalization.
+    ///
+    /// Unlike `point_to_tokens`, which holds the *distinct* tokens, this counts
+    /// every token the tokenizer kept. Always populated, whether or not
+    /// positions are enabled.
+    pub(in crate::index::field_index::full_text_index) point_to_doc_len: Vec<u32>,
+
+    /// Sum of `point_to_doc_len` over live points, so `avgdl` is a division
+    /// rather than a scan.
+    pub(in crate::index::field_index::full_text_index) total_tokens: u64,
     pub(super) points_count: usize,
 }
 
@@ -31,6 +42,8 @@ impl MutableInvertedIndex {
             vocab: HashMap::new(),
             point_to_tokens: Vec::new(),
             point_to_doc: with_positions.then_some(Vec::new()),
+            point_to_doc_len: Vec::new(),
+            total_tokens: 0,
             points_count: 0,
         }
     }
@@ -41,6 +54,18 @@ impl MutableInvertedIndex {
 
     fn get_document(&self, idx: PointOffsetType) -> Option<&Document> {
         self.point_to_doc.as_ref()?.get(idx as usize)?.as_ref()
+    }
+
+    /// Record the point's length, replacing any previous value so an overwrite
+    /// does not double-count in `total_tokens`.
+    fn set_doc_len(&mut self, point_id: PointOffsetType, doc_len: u32) {
+        let needed = point_id as usize + 1;
+        if self.point_to_doc_len.len() < needed {
+            self.point_to_doc_len.resize(needed, 0);
+        }
+        let slot = &mut self.point_to_doc_len[point_id as usize];
+        self.total_tokens = self.total_tokens.saturating_sub(u64::from(*slot)) + u64::from(doc_len);
+        *slot = doc_len;
     }
 
     /// Iterate over point ids whose documents contain all given tokens
@@ -116,13 +141,19 @@ impl MutableInvertedIndex {
     /// Shared by the write path and read-only live reload so the two cannot
     /// drift apart. Positions are keyed off `point_to_doc` rather than the
     /// config flag, so an index built without them never pays for the clone.
+    ///
+    /// `doc_len` is a parameter rather than something derived from `str_tokens`
+    /// on purpose: live reload replays documents that were deduplicated on the
+    /// way to disk, so only the write path can measure the true length.
     pub fn index_str_tokens(
         &mut self,
         point_id: PointOffsetType,
         str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
+        doc_len: u32,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
+        self.set_doc_len(point_id, doc_len);
 
         if self.point_to_doc.is_some() {
             self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
@@ -220,6 +251,11 @@ impl InvertedIndex for MutableInvertedIndex {
 
         if let Some(point_to_doc) = &mut self.point_to_doc {
             point_to_doc[point_id as usize] = None;
+        }
+
+        if let Some(doc_len) = self.point_to_doc_len.get_mut(point_id as usize) {
+            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
+            *doc_len = 0;
         }
 
         self.points_count -= 1;
@@ -331,6 +367,8 @@ impl MutableInvertedIndex {
             vocab,
             point_to_tokens,
             point_to_doc,
+            point_to_doc_len,
+            total_tokens: _,
             points_count: _,
         } = self;
 
@@ -344,6 +382,7 @@ impl MutableInvertedIndex {
         // String heap data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
         // TokenSet wraps Vec<TokenId> — account for heap allocation
+        let doc_len_bytes = point_to_doc_len.capacity() * std::mem::size_of::<u32>();
         let ptt_bytes: usize = point_to_tokens.capacity() * std::mem::size_of::<Option<TokenSet>>()
             + point_to_tokens
                 .iter()
@@ -361,6 +400,6 @@ impl MutableInvertedIndex {
                         .sum::<usize>()
             })
             .unwrap_or(0);
-        postings_bytes + vocab_base_bytes + vocab_heap_bytes + ptt_bytes + ptd_bytes
+        postings_bytes + vocab_base_bytes + vocab_heap_bytes + ptt_bytes + ptd_bytes + doc_len_bytes
     }
 }

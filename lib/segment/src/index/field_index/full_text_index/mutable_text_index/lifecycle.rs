@@ -57,8 +57,8 @@ impl MutableFullTextIndex {
         store
             .iter::<_, OperationError>(
                 |idx, value: Vec<u8>| {
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    builder.add(idx, str_tokens);
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -127,11 +127,16 @@ impl MutableFullTextIndex {
         let str_tokens =
             FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
+        // Measured here, before `serialize_stored_document` may deduplicate the
+        // stream: this is the only place that still sees every token.
+        let doc_len = FullTextIndex::document_length(&str_tokens);
+
         self.inner
             .inverted_index
-            .index_str_tokens(idx, &str_tokens, hw_counter)?;
+            .index_str_tokens(idx, &str_tokens, doc_len, hw_counter)?;
 
-        let db_document = FullTextIndex::serialize_stored_document(str_tokens, phrase_matching)?;
+        let db_document =
+            FullTextIndex::serialize_stored_document(str_tokens, phrase_matching, doc_len)?;
 
         // Update persisted storage
         self.storage
@@ -165,7 +170,7 @@ impl MutableFullTextIndex {
         self.storage
             .get_value::<Random>(idx, &HardwareCounterCell::disposable())
             .unwrap()
-            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap())
+            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }
 }
 
