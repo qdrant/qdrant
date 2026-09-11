@@ -108,6 +108,28 @@ impl MutableInvertedIndex {
 
         Box::new(iter)
     }
+
+    /// Index a point from its string tokens: register them in the vocabulary,
+    /// store the ordered document when positions are enabled, then index the
+    /// token set.
+    ///
+    /// Shared by the write path and read-only live reload so the two cannot
+    /// drift apart. Positions are keyed off `point_to_doc` rather than the
+    /// config flag, so an index built without them never pays for the clone.
+    pub fn index_str_tokens(
+        &mut self,
+        point_id: PointOffsetType,
+        str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let tokens = self.register_tokens(str_tokens);
+
+        if self.point_to_doc.is_some() {
+            self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
+        }
+
+        self.index_tokens(point_id, TokenSet::from_iter(tokens), hw_counter)
+    }
 }
 
 impl InvertedIndex for MutableInvertedIndex {
