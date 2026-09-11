@@ -217,7 +217,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// here must make the same placement decisions the prefetches did.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_via(
-        fs: CachedFs<S::Fs>,
+        mut fs: CachedFs<S::Fs>,
         raw_fs: &S::Fs,
         segment_path: &Path,
         config: SegmentConfig,
@@ -339,6 +339,8 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         } else {
             SegmentType::Plain
         };
+
+        fs.rotate_cache_file_info();
 
         Ok(Self {
             uuid,
