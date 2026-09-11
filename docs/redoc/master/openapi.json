@@ -12150,7 +12150,7 @@
           "resharding": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ReshardingInfo"
+              "$ref": "#/components/schemas/ReshardingTelemetry"
             },
             "nullable": true
           },
@@ -13248,6 +13248,52 @@
             "minimum": 0
           }
         }
+      },
+      "ReshardingTelemetry": {
+        "type": "object",
+        "required": [
+          "direction",
+          "peer_id",
+          "shard_id",
+          "stage"
+        ],
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/ReshardingStage"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/ReshardingDirection"
+          },
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ReshardingStage": {
+        "description": "Resharding stages",
+        "type": "string",
+        "enum": [
+          "migrating_points",
+          "read_hash_ring_committed",
+          "write_hash_ring_committed"
+        ]
       },
       "ShardCleanStatusTelemetry": {
         "oneOf": [

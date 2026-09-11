@@ -73,11 +73,12 @@ impl ReshardState {
 }
 
 /// Resharding stages
-///
-/// # Warning
-///
-/// This enum is ordered!
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+// This enum is ordered!
+// Cluster Manager depends on these serialized values and their meanings.
+// Avoid breaking changes.
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ReshardingStage {
     #[default]

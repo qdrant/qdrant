@@ -6,13 +6,14 @@ use segment::data_types::tiny_map::TinyMap;
 use segment::types::{
     HnswConfig, Payload, QuantizationConfig, StrictModeConfigOutput, VectorNameBuf,
 };
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardStatus, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::ShardId;
 use crate::shards::telemetry::{
     LocalShardTelemetry, PartialSnapshotTelemetry, ReplicaSetTelemetry,
@@ -35,12 +36,43 @@ pub struct CollectionTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transfers: Option<Vec<ShardTransferInfo>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_resharding"
+    )]
+    #[schemars(with = "Option<Vec<ReshardingTelemetry<'_>>>")]
     pub resharding: Option<Vec<ReshardingInfo>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub shard_clean_tasks: Option<HashMap<ShardId, ShardCleanStatusTelemetry>>,
+}
+
+// Keep the applied stage in telemetry without changing collection cluster responses.
+#[derive(Serialize, JsonSchema)]
+struct ReshardingTelemetry<'a> {
+    #[serde(flatten)]
+    info: &'a ReshardingInfo,
+    /// Applied resharding stage on this peer.
+    stage: ReshardingStage,
+}
+
+fn serialize_resharding<S: Serializer>(
+    resharding: &Option<Vec<ReshardingInfo>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    resharding
+        .as_ref()
+        .map(|operations| {
+            operations
+                .iter()
+                .map(|info| ReshardingTelemetry {
+                    info,
+                    stage: info.stage,
+                })
+                .collect::<Vec<_>>()
+        })
+        .serialize(serializer)
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
@@ -176,6 +208,90 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::operations::cluster_ops::ReshardingDirection;
+
+    #[test]
+    fn test_resharding_telemetry_serialization() {
+        for (stage, expected_stage) in [
+            (ReshardingStage::MigratingPoints, "migrating_points"),
+            (
+                ReshardingStage::ReadHashRingCommitted,
+                "read_hash_ring_committed",
+            ),
+            (
+                ReshardingStage::WriteHashRingCommitted,
+                "write_hash_ring_committed",
+            ),
+        ] {
+            let info = ReshardingInfo {
+                uuid: Uuid::nil(),
+                direction: ReshardingDirection::Up,
+                shard_id: 1,
+                peer_id: 2,
+                shard_key: None,
+                stage,
+            };
+            let telemetry = CollectionTelemetry {
+                id: "test".to_string(),
+                init_time_ms: None,
+                config: None,
+                shards: None,
+                transfers: None,
+                resharding: Some(vec![info]),
+                shard_clean_tasks: None,
+            };
+
+            let mut expected = json!({
+                "uuid": "00000000-0000-0000-0000-000000000000",
+                "direction": "up",
+                "shard_id": 1,
+                "peer_id": 2,
+                "shard_key": null,
+                "stage": expected_stage,
+            });
+            assert_eq!(
+                serde_json::to_value(&telemetry).unwrap()["resharding"][0],
+                expected
+            );
+
+            expected["uuid"] = json!(Uuid::nil().anonymize());
+            assert_eq!(
+                serde_json::to_value(telemetry.anonymize()).unwrap()["resharding"][0],
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn test_resharding_stage_is_only_in_telemetry_schema() {
+        let cluster_schema = schemars::schema_for!(ReshardingInfo);
+        assert!(
+            !cluster_schema
+                .schema
+                .object
+                .unwrap()
+                .properties
+                .contains_key("stage")
+        );
+
+        let telemetry_schema = schemars::schema_for!(CollectionTelemetry);
+        let schema = serde_json::to_value(telemetry_schema).unwrap();
+        assert_eq!(
+            schema["properties"]["resharding"]["items"]["$ref"],
+            "#/definitions/ReshardingTelemetry",
+        );
+        assert_eq!(
+            schema["definitions"]["ReshardingTelemetry"]["properties"]["stage"]["allOf"][0]["$ref"],
+            "#/definitions/ReshardingStage",
+        );
+    }
+}
+
 // Internal telemetry service conversions
 mod internal_conversions {
     use api::grpc::conversions::{convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc};
@@ -184,7 +300,6 @@ mod internal_conversions {
 
     use super::*;
     use crate::operations::cluster_ops::ReshardingDirection;
-    use crate::shards::resharding::ReshardingStage;
     use crate::shards::telemetry::RemoteShardTelemetry;
     use crate::shards::transfer::ShardTransferMethod;
 
