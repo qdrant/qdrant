@@ -90,7 +90,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// appendable segment has a deferred track; on any other segment the
     /// cutoff is ignored.
     pub fn open_via(
-        fs: CachedFs<Fs>,
+        mut fs: CachedFs<Fs>,
         segment_path: &Path,
         config: SegmentConfig,
         deferred_internal_id: Option<PointOffsetType>,
@@ -148,6 +148,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             ));
             vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
+
+        fs.rotate_cache_file_info();
 
         Ok(Self {
             fs,
