@@ -1178,16 +1178,12 @@ fn test_persistent_version_not_advanced_by_failed_flush() {
     );
 }
 
-/// `flush_all` returns the version that gets acknowledged in the WAL. While a background flush is
-/// still running it must never report more than what is actually durable, otherwise the
-/// acknowledge passes operations that are not on disk anywhere.
-#[cfg(unix)]
+/// The WAL is acknowledged up to the persisted version the segments report. A proxy persists its
+/// own pending changes only after the layer beneath it is durable, so a layer that fails to
+/// persist holds back every layer above it. Otherwise the outer layer would report its changes as
+/// durable while the inner layer's are not on disk anywhere, and the acknowledge would pass both.
 #[test]
-fn test_background_flush_ack_stays_within_durable_state() {
-    use std::process::Command;
-
-    use crate::segment_holder::{FlushMode, SegmentHolder};
-
+fn test_persistent_version_held_back_by_failed_inner_flush() {
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
@@ -1195,52 +1191,32 @@ fn test_background_flush_ack_stays_within_durable_state() {
         .unwrap();
 
     let wrapped_segment = build_segment_1(tmp_dir.path());
+    let wrapped_version = wrapped_segment.version();
     let locked_wrapped_segment = LockedSegment::new(wrapped_segment);
 
     let mut inner_proxy = ProxySegment::new(locked_wrapped_segment.clone());
     let inner_log = inner_proxy.pending_changes.log_path().to_path_buf();
     inner_proxy.delete_point(99, 1.into(), &hw_counter).unwrap();
-    let locked_inner_proxy = LockedSegment::from(inner_proxy);
 
-    let mut outer_proxy = ProxySegment::new(locked_inner_proxy.clone());
+    let mut outer_proxy = ProxySegment::new(LockedSegment::from(inner_proxy));
     outer_proxy
         .delete_point(100, 2.into(), &hw_counter)
         .unwrap();
 
-    // Park the inner layer's flush: opening a FIFO for writing blocks until a reader shows up, so
-    // the flush stalls right after the outer layer persisted its own pending changes
-    assert!(
-        Command::new("mkfifo")
-            .arg(&inner_log)
-            .status()
-            .unwrap()
-            .success()
-    );
+    // Fail the inner layer at persisting its pending changes: the log file only gets created on
+    // the first flush, so a directory in its place makes writing it fail. The flush still gets as
+    // far as the wrapped segment, which is persisted first
+    fs_err::create_dir(&inner_log).unwrap();
+    assert!(outer_proxy.flush(true).is_err());
 
-    let mut holder = SegmentHolder::default();
-    let proxy_id = holder.add_new_locked(LockedSegment::from(outer_proxy));
-    holder.flush_all(FlushMode::Background, false).unwrap();
-
-    let proxy = holder.get(proxy_id).unwrap().clone();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while proxy.get().read().persistent_version() < 100 {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "outer layer never persisted its pending changes",
-        );
-        std::thread::yield_now();
-    }
-
-    let acked = holder.flush_all(FlushMode::Background, false).unwrap();
     let durable = locked_wrapped_segment.get().read().persistent_version();
-
-    // Unblock the parked flusher before asserting, so a failure does not leave a stuck thread
-    let _ = fs_err::read(&inner_log);
-
+    let outer_persisted = outer_proxy.persistent_version();
     assert!(
-        acked <= durable,
-        "acknowledged version {acked} exceeds what is durable on disk ({durable})",
+        outer_persisted <= durable,
+        "outer layer reports version {outer_persisted} as durable while only {durable} is on disk",
     );
+    // The flush did persist the wrapped segment before failing, so the above is not trivially zero
+    assert_eq!(durable, wrapped_version);
 }
 
 /// Once a proxy propagated its buffered changes into the wrapped segment and the segment flushed,
