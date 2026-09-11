@@ -248,7 +248,6 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         }
 
         // Ensure fresh new view of the files
-        self.fs.rotate_cache_file_info();
         self.fs.cache_file_info()?;
 
         let operations: Vec<MappingOperation> = points
@@ -316,6 +315,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         self.id_tracker
             .set_internal_versions(&self.fs, &slots, &versions)?;
 
+        self.fs.rotate_cache_file_info();
         Ok(())
     }
 

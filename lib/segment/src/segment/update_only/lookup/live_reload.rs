@@ -30,7 +30,6 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         } = self;
 
         // Prepare new LIST snapshot
-        fs.rotate_cache_file_info();
         fs.cache_file_info()?;
 
         // Live preload: schedule everything
@@ -61,6 +60,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 .live_reload(fs, &deleted, &inserted, hw_counter)?;
         }
 
+        fs.rotate_cache_file_info();
         Ok(())
     }
 }
