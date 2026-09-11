@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::flags::{FeatureFlags, init_feature_flags};
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
@@ -1778,6 +1779,11 @@ async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proxy_pending_changes_crash_recovery() {
     use shard::proxy_segment::UnsyncedProxySegment;
+
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
 
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

@@ -1046,6 +1046,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::flags::{FeatureFlags, init_feature_flags};
     use common::types::DeferredBehavior;
     use tempfile::Builder;
 
@@ -1103,6 +1104,11 @@ mod tests {
     #[test]
     fn unwrap_proxy_removes_pending_changes_log_after_flush() {
         use crate::segment_holder::FlushMode;
+
+        init_feature_flags(FeatureFlags {
+            persist_proxy_segments: true,
+            ..Default::default()
+        });
 
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let hw_counter = HardwareCounterCell::new();

@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::flags::{FeatureFlags, init_feature_flags};
 use common::tar_ext;
 use common::types::DeferredBehavior;
 use fs_err::File;
@@ -535,6 +536,11 @@ fn test_take_snapshot() {
 /// partial and streamed snapshots all carry it and recovery can replay it.
 #[test]
 fn test_take_snapshot_includes_pending_changes_log() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
@@ -673,6 +679,11 @@ fn test_point_vector_count_multivec() {
 
 #[test]
 fn test_proxy_segment_flush() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -717,6 +728,11 @@ fn test_proxy_segment_flush() {
 /// (e.g. a crash) and are replayed onto the actual segment when it is loaded again.
 #[test]
 fn test_pending_changes_recovered_on_restart() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
@@ -801,6 +817,11 @@ fn test_pending_changes_recovered_on_restart() {
 /// the old file untouched.
 #[test]
 fn test_unproxy_leaves_pending_changes_log_without_adoption() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
@@ -871,6 +892,11 @@ fn test_unproxy_leaves_pending_changes_log_without_adoption() {
 /// are replayed onto the segment, inner most layer first.
 #[test]
 fn test_double_proxy_pending_changes_levels() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")

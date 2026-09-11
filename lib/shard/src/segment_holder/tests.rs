@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use common::flags::{FeatureFlags, init_feature_flags};
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
@@ -2547,6 +2548,11 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
 #[test]
 fn test_proxy_segment_does_not_hold_back_wal_ack() {
     use crate::proxy_segment::ProxySegment;
+
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();

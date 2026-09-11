@@ -12,7 +12,7 @@ pub struct FeatureFlags {
     /// Magic feature flag that enables all features.
     ///
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
-    all: bool,
+    pub all: bool,
 
     /// Use incremental HNSW building.
     ///
@@ -85,7 +85,7 @@ pub struct FeatureFlags {
     /// and [`Self::persist_proxy_segments`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
-    serverless_compatible: bool,
+    pub serverless_compatible: bool,
 }
 
 impl Default for FeatureFlags {
