@@ -11581,7 +11581,8 @@
         "required": [
           "direction",
           "peer_id",
-          "shard_id"
+          "shard_id",
+          "stage"
         ],
         "properties": {
           "direction": {
@@ -11606,6 +11607,9 @@
                 "nullable": true
               }
             ]
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ReshardingStage"
           }
         }
       },
@@ -11615,6 +11619,15 @@
         "enum": [
           "up",
           "down"
+        ]
+      },
+      "ReshardingStage": {
+        "description": "Resharding stages",
+        "type": "string",
+        "enum": [
+          "migrating_points",
+          "read_hash_ring_committed",
+          "write_hash_ring_committed"
         ]
       },
       "TelemetryData": {
