@@ -39,6 +39,7 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
+use tokio_util::task::AbortOnDropHandle;
 use tonic::Status;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
@@ -516,6 +517,13 @@ impl RemoteShard {
         })
     }
 
+    /// Forward batch of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - either none or all operations of the batch may be forwarded to the remote.
     pub async fn forward_update_batch(
         &self,
         operations: Vec<OperationWithClockTag>,
@@ -529,7 +537,8 @@ impl RemoteShard {
         let ordering = Some(ordering);
         let timeout = timeout.map(|t| t.as_secs());
 
-        let batch_request = tokio::task::spawn_blocking(move || {
+        // Build update batch inside blocking task, it may be expensive on a large batch
+        let batch_request = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
             Self::build_update_batch_request(
                 shard_id,
                 collection_name,
@@ -538,7 +547,7 @@ impl RemoteShard {
                 timeout,
                 ordering,
             )
-        })
+        }))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to join update batch build task: {err}"))

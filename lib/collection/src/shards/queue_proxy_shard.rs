@@ -21,6 +21,7 @@ use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::sync::Mutex;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
@@ -620,7 +621,7 @@ impl Inner {
         let wal = Mutex::lock_owned(self.wrapped_shard.wal.wal.clone()).await;
         let started_at = self.started_at;
 
-        tokio::task::spawn_blocking(move || {
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
             let items_left = (wal.last_index() + 1).saturating_sub(from);
             let items_total = (from - started_at) + items_left;
 
@@ -653,7 +654,7 @@ impl Inner {
                 reached_end,
                 total: items_total,
             })
-        })
+        }))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -944,7 +945,7 @@ async fn transfer_operations_batch(
         // Strip operation ID and set force flag because operations from WAL may be unordered if
         // another node is sending new operations at the same time
         let batch_for_send = Arc::clone(batch);
-        let batch_upd = tokio::task::spawn_blocking(move || {
+        let batch_upd = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
             batch_for_send
                 .as_ref()
                 .to_owned()
@@ -956,7 +957,7 @@ async fn transfer_operations_batch(
                     operation
                 })
                 .collect()
-        })
+        }))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to join batch clone task: {err}"))
