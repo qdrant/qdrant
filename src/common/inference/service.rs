@@ -13,6 +13,7 @@ use parking_lot::RwLock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use tokio_util::task::AbortOnDropHandle;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
@@ -155,8 +156,18 @@ impl InferenceService {
                 }
             });
 
-        // Run inference on local models
-        let local_model_results = local_model::infer_local(local_inference_inputs, inference_type)?;
+        // Run inference on local models. This is synchronous CPU work
+        // (tokenization, stemming, hashing), so move it off the async worker.
+        // Skip the round-trip through the blocking pool when every input is
+        // remote, which is the common case with no local models in play.
+        let local_model_results = if local_inference_inputs.is_empty() {
+            vec![]
+        } else {
+            AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                local_model::infer_local(local_inference_inputs, inference_type)
+            }))
+            .await??
+        };
 
         // Early return with the local model's results if no other inference_inputs were passed.
         // If local models is also empty, we automatically return an empty response here.
