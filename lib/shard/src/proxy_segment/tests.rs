@@ -1119,6 +1119,11 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
 /// pending changes log with it.
 #[test]
 fn test_drop_data_removes_pending_changes_log() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
@@ -1184,6 +1189,11 @@ fn test_persistent_version_not_advanced_by_failed_flush() {
 /// durable while the inner layer's are not on disk anywhere, and the acknowledge would pass both.
 #[test]
 fn test_persistent_version_held_back_by_failed_inner_flush() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
@@ -1223,6 +1233,11 @@ fn test_persistent_version_held_back_by_failed_inner_flush() {
 /// the log entries are dead weight. They must not accumulate across proxy generations.
 #[test]
 fn test_pending_changes_log_is_compacted_after_propagation() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
     let hw_counter = HardwareCounterCell::new();
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
