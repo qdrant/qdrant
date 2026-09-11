@@ -231,14 +231,14 @@ fn binary_quantized_non_rescored_search_is_ordered(distance: Distance) {
     const TOP: usize = 5;
 
     let seed = vec![
-        vec![-0.0494680889, -1.5822200775],
-        vec![-0.5807184577, -1.3024002314],
-        vec![-0.2222844660, 1.0905684233],
-        vec![-0.5575756431, 0.6532790065],
-        vec![0.7734391689, -0.2747519016],
+        vec![-0.049_468_09, -1.582_220_1],
+        vec![-0.580_718_46, -1.302_400_2],
+        vec![-0.222_284_47, 1.090_568_4],
+        vec![-0.557_575_64, 0.653_279],
+        vec![0.773_439_17, -0.274_751_9],
     ];
-    let updated_point = vec![-0.2057184577, -1.3024002314];
-    let query: QueryVector = vec![1.3748825788, -1.0415413379].into();
+    let updated_point = vec![-0.205_718_46, -1.302_400_2];
+    let query: QueryVector = vec![1.374_882_6, -1.041_541_3].into();
 
     let stopped = AtomicBool::new(false);
     let hw_counter = HardwareCounterCell::new();
