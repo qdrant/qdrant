@@ -22,9 +22,11 @@
 //!
 //! | `kind`         | When                                            | Extra fields |
 //! |----------------|-------------------------------------------------|---|
-//! | `Header`       | First line — run configuration                  | `seed`, `op_num`, `shard_count`, `id_pool`, `disable_optimizer`, `max_segment_size_kb`, `indexing_threshold_kb`, `flush_interval_sec`, `restart_probability`, `swarm_interval`, `disable_snapshots`, `enable_force_off`, `duration_sec` (null unless `--duration`) |
+//! | `Header`       | First line — run configuration                  | `seed`, `op_num`, `shard_count`, `id_pool`, `disable_optimizer`, `max_segment_size_kb`, `indexing_threshold_kb`, `flush_interval_sec`, `restart_probability`, `swarm_interval`, `disable_snapshots`, `edge_verify`, `enable_force_off`, `duration_sec` (null unless `--duration`) |
 //! | *(op variant)* | Each `Op` from the workload generator           | See `op_payload` below — `id`/`ids`/etc. depending on variant |
 //! | `Restart`      | Mid-run close+reopen+verify                     | `pre_points`, `pre_segments` |
+//! | `EdgeVerify`   | Edge-follower checkpoint (restart / end of run) | `points` (model size; written before the compare so a divergence panic is attributable) |
+//! | `EdgeVerifySkipped` | Edge checkpoint skipped: optimizer still busy at deadline | |
 //! | `LiveVerify`   | End-of-run scroll vs model, before reload       | `model_points`, `engine_points`, `segments`, `optimized_points`, `extra`, `missing` |
 //! | `ReloadVerify` | End-of-run scroll vs model, after final reload  | `model_points`, `engine_points`, `extra`, `missing` |
 //!
@@ -101,6 +103,7 @@ impl Trace {
         swarm_interval: usize,
         enable_force_off: bool,
         disable_snapshots: bool,
+        edge_verify: bool,
         duration: Option<Duration>,
     ) {
         self.write(&json!({
@@ -117,6 +120,7 @@ impl Trace {
             "restart_probability": restart_probability,
             "swarm_interval": swarm_interval,
             "disable_snapshots": disable_snapshots,
+            "edge_verify": edge_verify,
             "enable_force_off": enable_force_off,
             // null in op-count mode; seconds when the run is time-bounded (`--duration`).
             "duration_sec": duration.map(|d| d.as_secs()),
@@ -154,6 +158,27 @@ impl Trace {
             "kind": "Restart",
             "pre_points": pre_points,
             "pre_segments": pre_segments,
+        }));
+    }
+
+    /// Records a quiesced edge-follower checkpoint (force-flush + refresh + full compare)
+    /// at op `tick`. Written BEFORE the checkpoint runs, so a divergence panic is
+    /// attributable to it in the trace.
+    pub(super) fn edge_verify(&mut self, tick: usize, points: usize) {
+        self.write(&json!({
+            "op": tick,
+            "kind": "EdgeVerify",
+            "points": points,
+        }));
+    }
+
+    /// Records an edge checkpoint that was SKIPPED because the optimizer still held proxy
+    /// segments at the deadline. Without this event a trace with no `EdgeVerify` entries
+    /// is indistinguishable from a run that never checkpointed at all.
+    pub(super) fn edge_verify_skipped(&mut self, tick: usize) {
+        self.write(&json!({
+            "op": tick,
+            "kind": "EdgeVerifySkipped",
         }));
     }
 

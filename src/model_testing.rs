@@ -149,6 +149,22 @@ struct Args {
     /// the swarm config is unchanged either way.
     #[clap(long, default_value_t = false)]
     disable_snapshots: bool,
+
+    /// Also verify the collection through an Edge read-only follower: one
+    /// `ReadOnlyEdgeShard` per shard dir, checked at quiesced checkpoints (end of run, and
+    /// each mid-run restart) by force-flushing every shard, refreshing the followers, and
+    /// comparing a full follower scroll against the model.
+    ///
+    /// Requires building with `--features edge-verify` (panics otherwise). Forces the
+    /// whole `serverless_compatible` feature-flag bundle (manifest discovery, append-only
+    /// mutations, compact bitmask): the follower's live-reload only observes appended
+    /// offsets, so in-place mutations would be invisible to it. Draws no rng and does not
+    /// change the candidate universe, so op streams are seed-comparable with non-edge
+    /// runs. Two coverage caveats: append-only mode changes leader mutation semantics vs
+    /// a default run, and each checkpoint force-flushes every shard, so mid-run restarts
+    /// no longer exercise cold unflushed WAL-replay recovery.
+    #[clap(long, default_value_t = false)]
+    edge_verify: bool,
 }
 
 fn main() {
@@ -175,7 +191,16 @@ fn main() {
 
 async fn run_main(args: Args) {
     env_logger::init();
-    init_feature_flags(FeatureFlags::default());
+    let mut feature_flags = FeatureFlags::default();
+    if args.edge_verify {
+        // Read-only Edge followers assume the serverless leader contract: segment
+        // discovery through the manifest and append-only mutations (an in-place slot
+        // rewrite is invisible to a follower's live-reload). Force the whole
+        // serverless_compatible bundle so the soak exercises exactly that contract.
+        // Must be set before the fixture builds the collection.
+        feature_flags.enable_serverless_compatible();
+    }
+    init_feature_flags(feature_flags);
     let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(true);
     init_requests_profile_collector(tokio::runtime::Handle::current());
 
@@ -223,7 +248,7 @@ async fn run_main(args: Args) {
          storage_path={} disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
          restart_probability={} swarm_interval={} \
          on_disk={} async_scorer={} pre_restart_check={} enable_force_off={} \
-         disable_snapshots={}",
+         disable_snapshots={} edge_verify={}",
         args.seed,
         args.shard_count,
         args.id_pool,
@@ -239,6 +264,7 @@ async fn run_main(args: Args) {
         args.pre_restart_check,
         args.enable_force_off,
         args.disable_snapshots,
+        args.edge_verify,
     );
     let start = Instant::now();
     collection::model_testing::run(
@@ -257,6 +283,7 @@ async fn run_main(args: Args) {
         args.pre_restart_check,
         args.enable_force_off,
         args.disable_snapshots,
+        args.edge_verify,
         args.duration_sec.map(Duration::from_secs),
         shutdown,
     )
