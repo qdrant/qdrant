@@ -517,28 +517,29 @@ impl RemoteShard {
         })
     }
 
-    /// Forward batch of operations
+    /// Build a request for a batch of update operations.
+    ///
+    /// The operations are moved into the request, so a built request can be sent repeatedly
+    /// without copying the operation data again.
+    ///
+    /// Built on the blocking pool, it may be expensive on a large batch.
     ///
     /// # Cancel safety
     ///
-    /// This method is cancel safe.
-    ///
-    /// If cancelled - either none or all operations of the batch may be forwarded to the remote.
-    pub async fn forward_update_batch(
+    /// This method is cancel safe. Nothing is transmitted or mutated.
+    pub async fn build_update_batch(
         &self,
         operations: Vec<OperationWithClockTag>,
         wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<UpdateResult> {
+    ) -> CollectionResult<UpdateBatchInternal> {
         let shard_id = Some(self.id);
         let collection_name = self.collection_id.clone();
         let ordering = Some(ordering);
         let timeout = timeout.map(|t| t.as_secs());
 
-        // Build update batch inside blocking task, it may be expensive on a large batch
-        let batch_request = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
             Self::build_update_batch_request(
                 shard_id,
                 collection_name,
@@ -551,9 +552,21 @@ impl RemoteShard {
         .await
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to join update batch build task: {err}"))
-        })??;
+        })?
+    }
 
-        let batch_request = &batch_request;
+    /// Forward a prebuilt batch of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - either none or all operations of the batch may be forwarded to the remote.
+    pub async fn forward_update_batch(
+        &self,
+        batch_request: &UpdateBatchInternal,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
         let point_operation_response = self
             .with_points_client(|mut client| async move {
                 client

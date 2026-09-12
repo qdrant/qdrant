@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use api::grpc::UpdateBatchInternal;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -14,7 +15,6 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig, WithPayload,
     WithPayloadInterface, WithVector,
 };
-use semver::Version;
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
@@ -52,8 +52,6 @@ const MAX_BATCH_OPS: usize = 10_000;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
-
-const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
 
 /// QueueProxyShard shard
 ///
@@ -471,10 +469,10 @@ impl Drop for QueueProxyShard {
 
 /// A batch of WAL operations read for transfer.
 struct WalBatch {
-    /// Operations in this batch: (WAL index, operation).
-    ///
-    /// Behind an `Arc` so it can be shared into a blocking task without being copied.
-    batch: Arc<Vec<(u64, OperationWithClockTag)>>,
+    /// Operations in this batch, ready to be sent to the remote.
+    operations: Vec<OperationWithClockTag>,
+    /// WAL index of the last operation in this batch, `None` if the batch is empty.
+    last_idx: Option<u64>,
     /// Whether this batch reaches the end of the WAL.
     reached_end: bool,
     /// Total number of items to transfer (for progress reporting).
@@ -569,26 +567,26 @@ impl Inner {
             // and hold it for the rest of the transfer so no new writes can accumulate.
             // If the batch was empty without the lock, re-read under lock to confirm — otherwise
             // a concurrent write could have committed between our read and our return.
-            if (batch.batch.is_empty() || batch.reached_end) && update_lock.is_none() {
+            if (batch.operations.is_empty() || batch.reached_end) && update_lock.is_none() {
                 update_lock = Some(self.update_lock.lock().await);
-                if batch.batch.is_empty() {
+                if batch.operations.is_empty() {
                     batch = self
                         .read_wal_batch(self.transfer_from.load(Ordering::Relaxed))
                         .await?;
                 }
             }
 
-            if batch.batch.is_empty() {
+            let Some(last_idx) = batch.last_idx else {
                 break;
-            }
+            };
 
             // Send the current batch and prefetch the next one concurrently. This overlaps the
             // network round-trip with the WAL read for the next batch.
             // Note: this temporarily holds two batches in memory (~2x MAX_BATCH_BYTES).
             let is_last = batch.reached_end;
-            let next_from = batch.batch.last().unwrap().0 + 1;
+            let next_from = last_idx + 1;
             let (send_result, read_result) = tokio::join!(
-                self.send_wal_batch(&batch, is_last),
+                self.send_wal_batch(batch, is_last),
                 self.read_wal_batch(next_from),
             );
             send_result?;
@@ -627,15 +625,23 @@ impl Inner {
 
             let mut batch = Vec::new();
             let mut batch_bytes = 0usize;
+            let mut last_idx = None;
             for result in wal.read_with_size(from) {
-                let (idx, size, op) = result.map_err(|e| {
+                let (idx, size, mut op) = result.map_err(|e| {
                     CollectionError::service_error(format!(
                         "Failed to read WAL during queue proxy transfer: {e}"
                     ))
                 })?;
 
+                // Set force flag because operations from WAL may be unordered if another node is
+                // sending new operations at the same time
+                if let Some(clock_tag) = &mut op.clock_tag {
+                    clock_tag.force = true;
+                }
+
                 batch_bytes += size;
-                batch.push((idx, op));
+                last_idx = Some(idx);
+                batch.push(op);
 
                 // Always include at least one operation per batch
                 if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
@@ -650,7 +656,8 @@ impl Inner {
             );
 
             Ok(WalBatch {
-                batch: Arc::new(batch),
+                operations: batch,
+                last_idx,
                 reached_end,
                 total: items_total,
             })
@@ -674,12 +681,19 @@ impl Inner {
     ///
     /// If cancelled - none, some or all operations may be transmitted to the remote.
     /// The `transfer_from` cursor may not be updated, causing idempotent re-sends on retry.
-    async fn send_wal_batch(&self, wal_batch: &WalBatch, is_last: bool) -> CollectionResult<()> {
+    async fn send_wal_batch(&self, wal_batch: WalBatch, is_last: bool) -> CollectionResult<()> {
+        let WalBatch {
+            operations,
+            last_idx,
+            reached_end: _,
+            total,
+        } = wal_batch;
+
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
-            wal_batch.batch.len(),
+            operations.len(),
             self.remote_shard.peer_id,
         );
 
@@ -699,30 +713,26 @@ impl Inner {
         // Set initial progress on the first batch
         let is_first = transfer_from == self.started_at;
         if is_first {
-            self.progress.lock().set(0, wal_batch.total as usize);
+            self.progress.lock().set(0, total as usize);
         }
 
+        // Build the request once, moving the operations into it, so retries below never copy
+        // the operation data again.
+        let request = self
+            .remote_shard
+            .build_update_batch(operations, wait, None, WriteOrdering::Weak)
+            .await?;
+
         // Transfer batch with retries and store last transferred ID
-        let last_idx = wal_batch.batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
             let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
-            match transfer_operations_batch(
-                &wal_batch.batch,
-                &self.remote_shard,
-                wait,
-                None,
-                disposed_hw,
-            )
-            .await
-            {
+            match transfer_batch(&request, &self.remote_shard, disposed_hw).await {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
 
                         let transferred = (idx + 1 - self.started_at) as usize;
-                        self.progress
-                            .lock()
-                            .set(transferred, wal_batch.total as usize);
+                        self.progress.lock().set(transferred, total as usize);
                     }
                     break;
                 }
@@ -919,115 +929,81 @@ impl ShardOperation for Inner {
     }
 }
 
-/// Transfer batch of operations without retries
+/// Transfer a prepared batch of operations without retries
 ///
 /// # Cancel safety
 ///
 /// This method is cancel safe.
 ///
 /// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
-async fn transfer_operations_batch(
-    batch: &Arc<Vec<(u64, OperationWithClockTag)>>,
+async fn transfer_batch(
+    request: &UpdateBatchInternal,
     remote_shard: &RemoteShard,
-    wait: WaitUntil,
-    timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
-    if batch.is_empty() {
+    if request.operations.is_empty() {
         return Ok(());
     }
 
-    let supports_update_batching =
-        remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
-
-    if supports_update_batching {
-        // Clone inside blocking task, the clone may be very expensive (`MAX_BATCH_BYTES` of data).
-        // Strip operation ID and set force flag because operations from WAL may be unordered if
-        // another node is sending new operations at the same time
-        let batch_for_send = Arc::clone(batch);
-        let batch_upd = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
-            batch_for_send
-                .as_ref()
-                .to_owned()
-                .into_iter()
-                .map(|(_idx, mut operation)| {
-                    if let Some(clock_tag) = &mut operation.clock_tag {
-                        clock_tag.force = true;
-                    }
-                    operation
-                })
-                .collect()
-        }))
+    match remote_shard
+        .forward_update_batch(request, hw_measurement_acc.clone())
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!("Failed to join batch clone task: {err}"))
-        })?;
-
-        match remote_shard
-            .forward_update_batch(
-                batch_upd,
-                wait,
-                timeout,
-                WriteOrdering::Weak,
-                hw_measurement_acc.clone(),
-            )
-            .await
-        {
-            Ok(_) => return Ok(()),
-            // A transient error is a delivery failure: let the caller retry the whole batch.
-            Err(err) if err.is_transient() => return Err(err),
-            // A non-transient error means some operation in the batch is permanently
-            // rejected by the remote (e.g. bad request, missing point). The batch is
-            // applied sequentially and aborts at the first such operation, so we cannot
-            // tell which one failed. Re-send the batch one-by-one to isolate and skip
-            // the offending operation(s); see the loop below.
-            Err(err) => {
-                log::warn!(
-                    "Non-transient error transferring batch of updates to peer {}, \
-                     retrying operations individually: {err}",
-                    remote_shard.peer_id,
-                );
-            }
+    {
+        Ok(_) => return Ok(()),
+        // A transient error is a delivery failure: let the caller retry the whole batch.
+        Err(err) if err.is_transient() => return Err(err),
+        // A non-transient error means some operation in the batch is permanently
+        // rejected by the remote (e.g. bad request, missing point). The batch is
+        // applied sequentially and aborts at the first such operation, so we cannot
+        // tell which one failed. Re-send the batch one-by-one to isolate and skip
+        // the offending operation(s); see the loop below.
+        Err(err) => {
+            log::warn!(
+                "Non-transient error transferring batch of updates to peer {}, \
+                 retrying operations individually: {err}",
+                remote_shard.peer_id,
+            );
         }
     }
 
-    // One-by-one transfer. Used both when the remote does not support batch updates and
-    // as the isolation path after a non-transient batch failure.
-    for (_idx, operation) in batch.iter() {
-        let mut operation = operation.clone();
+    for operation in &request.operations {
+        let single = UpdateBatchInternal {
+            operations: vec![operation.clone()],
+            wait_override: request.wait_override,
+        };
 
-        // Set force flag because operations from WAL may be unordered if another node is sending
-        // new operations at the same time
-        if let Some(clock_tag) = &mut operation.clock_tag {
-            clock_tag.force = true;
-        }
+        let result = remote_shard
+            .forward_update_batch(&single, hw_measurement_acc.clone())
+            .await;
 
-        match remote_shard
-            .forward_update(
-                operation,
-                wait,
-                timeout,
-                WriteOrdering::Weak,
-                hw_measurement_acc.clone(),
-            )
-            .await
-        {
-            Ok(_) => {}
-            // Transient errors are delivery failures: let the caller retry the batch.
-            Err(err) if err.is_transient() => return Err(err),
-            // A non-transient error means the operation is permanently rejected by the
-            // remote. This operation was replayed from the WAL, so it was already applied
-            // (and rejected the same way) on the sender - the sender's state therefore
-            // reflects it as a no-op. Skipping it here keeps both sides consistent and
-            // prevents a single bad operation from aborting the whole shard transfer.
-            Err(err) => {
-                log::warn!(
-                    "Skipping operation permanently rejected by peer {} during shard \
-                     transfer (non-transient): {err}",
-                    remote_shard.peer_id,
-                );
-            }
-        }
+        skip_if_rejected(result, remote_shard)?;
     }
+
     Ok(())
+}
+
+/// Handle the result of transferring a single operation.
+///
+/// Transient errors are delivery failures and are propagated, so the caller can retry the batch.
+///
+/// A non-transient error means the operation is permanently rejected by the remote. This operation
+/// was replayed from the WAL, so it was already applied (and rejected the same way) on the sender -
+/// the sender's state therefore reflects it as a no-op. Skipping it here keeps both sides
+/// consistent and prevents a single bad operation from aborting the whole shard transfer.
+fn skip_if_rejected(
+    result: CollectionResult<UpdateResult>,
+    remote_shard: &RemoteShard,
+) -> CollectionResult<()> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(err) if err.is_transient() => Err(err),
+        Err(err) => {
+            log::warn!(
+                "Skipping operation permanently rejected by peer {} during shard \
+                 transfer (non-transient): {err}",
+                remote_shard.peer_id,
+            );
+            Ok(())
+        }
+    }
 }
