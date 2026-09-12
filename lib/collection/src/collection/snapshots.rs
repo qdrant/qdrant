@@ -5,7 +5,6 @@ use common::fs::read_json;
 use common::storage_version::StorageVersion as _;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
-use fs_err::File;
 use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
@@ -80,7 +79,7 @@ impl Collection {
                 ))
             })?;
 
-        let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
+        let tar = BuilderExt::new_file(snapshot_temp_arc_file.path())?;
 
         // Create snapshot of each shard
         {
