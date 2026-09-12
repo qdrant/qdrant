@@ -1706,6 +1706,7 @@ fn test_vector_compatibility_checks() {
                 vector_name,
                 &query_vector,
                 &WithPayload {
+                    prefer_payload_index: false,
                     enable: false,
                     payload_selector: None,
                 },
@@ -1723,6 +1724,7 @@ fn test_vector_compatibility_checks() {
                 vector_name,
                 &[&query_vector, &query_vector],
                 &WithPayload {
+                    prefer_payload_index: false,
                     enable: false,
                     payload_selector: None,
                 },
@@ -2361,6 +2363,7 @@ fn test_deferred_point_with_deferred_reads() {
         .retrieve(
             &[point_id],
             &WithPayload {
+                prefer_payload_index: false,
                 enable: true,
                 payload_selector: None,
             },

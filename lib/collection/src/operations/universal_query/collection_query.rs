@@ -9,7 +9,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
-    VectorNameBuf, WithPayloadInterface, WithVector,
+    VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
     ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
@@ -732,7 +732,7 @@ impl CollectionQueryRequest {
             offset,
             params: self.params,
             with_vector: self.with_vector,
-            with_payload: self.with_payload,
+            with_payload: WithPayload::from(self.with_payload),
         })
     }
 

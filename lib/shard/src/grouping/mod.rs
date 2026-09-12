@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, PointIdType, ScoredPoint,
+    AnyVariants, Condition, FieldCondition, Filter, Match, PointIdType, ScoredPoint, WithPayload,
     WithPayloadInterface,
 };
 use serde_json::Value;
@@ -77,7 +77,7 @@ fn shape_candidates_query(
     let key_not_empty = Filter::new_must_not(Condition::IsEmpty(group_by.clone().into()));
     merge_filter(&mut query.filter, key_not_empty);
 
-    query.with_payload = group_by_to_payload_selector(group_by);
+    query.with_payload = WithPayload::from(group_by_to_payload_selector(group_by));
 }
 
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {

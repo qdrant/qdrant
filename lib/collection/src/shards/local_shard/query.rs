@@ -11,7 +11,7 @@ use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
-use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayload, WithVector};
 use shard::query::planned_query::RescoreStages;
 use shard::search::CoreSearchRequestBatch;
 
@@ -109,12 +109,12 @@ impl LocalShard {
     async fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
-        with_payload: WithPayloadInterface,
+        with_payload: WithPayload,
         with_vector: WithVector,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ShardQueryResponse> {
-        if !with_payload.is_required() && !with_vector.is_enabled() {
+        if !with_payload.enable && !with_vector.is_enabled() {
             return Ok(query_response);
         }
 
@@ -131,7 +131,7 @@ impl LocalShard {
             SegmentsSearcher::retrieve(
                 self.segments.clone(),
                 &point_ids,
-                &(&with_payload).into(),
+                &with_payload,
                 &with_vector,
                 &self.search_runtime,
                 timeout,

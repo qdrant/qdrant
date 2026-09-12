@@ -2,7 +2,7 @@ use common::types::ScoreType;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::NamedQuery;
-use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{Filter, SearchParams, WithPayload, WithVector};
 
 use super::query_enum::QueryEnum;
 use super::scroll::{QueryScrollRequestInternal, ScrollOrder};
@@ -32,7 +32,7 @@ pub struct PlannedQuery {
 pub struct RootPlan {
     pub merge_plan: MergePlan,
     pub with_vector: WithVector,
-    pub with_payload: WithPayloadInterface,
+    pub with_payload: WithPayload,
 }
 
 #[derive(Debug, PartialEq)]
@@ -178,7 +178,7 @@ impl PlannedQuery {
         filter: Option<Filter>,
         score_threshold: Option<f32>,
         with_vector: WithVector,
-        with_payload: WithPayloadInterface,
+        with_payload: WithPayload,
         params: Option<SearchParams>,
         limit: usize,
     ) -> OperationResult<RootPlan> {
@@ -210,7 +210,7 @@ impl PlannedQuery {
             | Some(ScoringQuery::Mmr(_)) => false,
         };
         let requested = (with_vector, with_payload);
-        let nothing = (WithVector::from(false), WithPayloadInterface::from(false));
+        let nothing = (WithVector::from(false), WithPayload::from(false));
         let ((leaf_with_vector, leaf_with_payload), (with_vector, with_payload)) = if leaf_fetches {
             (requested, nothing)
         } else {
@@ -247,7 +247,7 @@ impl PlannedQuery {
         filter: Option<Filter>,
         score_threshold: Option<f32>,
         with_vector: WithVector,
-        with_payload: WithPayloadInterface,
+        with_payload: WithPayload,
         params: Option<SearchParams>,
         limit: usize,
     ) -> OperationResult<RootPlan> {
@@ -357,7 +357,7 @@ fn recurse_prefetches(
                 score_threshold.map(OrderedFloat::into_inner),
                 filter,
                 WithVector::from(false),
-                WithPayloadInterface::from(false),
+                WithPayload::from(false),
             )?
         } else {
             // This has nested prefetches. Recurse into them
@@ -403,7 +403,7 @@ fn leaf_source_from_scoring_query(
     score_threshold: Option<f32>,
     filter: Option<Filter>,
     with_vector: WithVector,
-    with_payload: WithPayloadInterface,
+    with_payload: WithPayload,
 ) -> OperationResult<Source> {
     let source = match query {
         Some(ScoringQuery::Vector(query_enum)) => {
@@ -414,7 +414,7 @@ fn leaf_source_from_scoring_query(
                 limit,
                 offset: 0,
                 with_vector: Some(with_vector),
-                with_payload: Some(with_payload),
+                with_payload: Some(WithPayloadInterface::from(with_payload)),
                 score_threshold,
             };
 
@@ -474,7 +474,7 @@ fn leaf_source_from_scoring_query(
                 filter,
                 score_threshold,
                 with_vector: Some(with_vector),
-                with_payload: Some(with_payload),
+                with_payload: Some(WithPayloadInterface::from(with_payload)),
                 offset: 0,
                 params,
                 limit: candidates_limit,

@@ -14,7 +14,9 @@ use crate::index::field_index::full_text_index::full_text_index_read::FullTextIn
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::field_index::{
+    CardinalityEstimation, PayloadBlockCondition, PayloadValueRetriever, payload_value_retriever,
+};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -207,6 +209,38 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::NullIndex(index) => index.values_is_empty(point_id)?,
+        })
+    }
+
+    fn payload_value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<PayloadValueRetriever<'a>>> {
+        Ok(match self {
+            FieldIndex::KeywordIndex(index) => {
+                Some(payload_value_retriever::keyword(index, hw_counter))
+            }
+            FieldIndex::IntMapIndex(index) => {
+                Some(payload_value_retriever::integer(index, hw_counter))
+            }
+            FieldIndex::IntIndex(index) => Some(Box::new(move |point_id| {
+                payload_value_retriever::collect(
+                    |visit| index.check_values_any(point_id, visit, hw_counter),
+                    |value| Some(Value::from(*value)),
+                )
+            })),
+            // The remaining indexes normalize what they store — uuid case,
+            // datetime offsets, float formatting — or hold no values to return
+            // at all, so their projection would disagree with the exact payload
+            // that a segment without this index returns.
+            FieldIndex::UuidMapIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_) => None,
         })
     }
 

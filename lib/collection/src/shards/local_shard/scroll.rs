@@ -13,9 +13,7 @@ use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
-};
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithVector};
 use shard::common::stopping_guard::StoppingGuard;
 use shard::operations::point_ops::PointStructRawPersisted;
 use shard::retrieve::record_internal::RecordInternal;
@@ -145,7 +143,7 @@ impl LocalShard {
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
+        with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -203,13 +201,12 @@ impl LocalShard {
             .into_iter()
             .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
 
-        let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
         let mut records_map = self
             .scroll_records(
                 &point_ids,
-                &with_payload,
+                with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -331,7 +328,7 @@ impl LocalShard {
     pub async fn internal_scroll_by_field(
         &self,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
+        with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -406,15 +403,13 @@ impl LocalShard {
                 .unzip()
             })?;
 
-        let with_payload = WithPayload::from(with_payload_interface);
-
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
 
         let records_map = self
             .scroll_records(
                 &point_ids,
-                &with_payload,
+                with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
@@ -442,7 +437,7 @@ impl LocalShard {
     async fn scroll_randomly(
         &self,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
+        with_payload: &WithPayload,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
@@ -561,13 +556,12 @@ impl LocalShard {
 
         let selected_points: Vec<_> = random_points.into_iter().collect();
 
-        let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
         let records_map = self
             .scroll_records(
                 &selected_points,
-                &with_payload,
+                with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,

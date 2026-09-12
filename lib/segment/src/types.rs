@@ -2674,6 +2674,19 @@ impl PayloadSchemaType {
             Self::Uuid => PayloadSchemaParams::Uuid(UuidIndexParams::default()),
         }
     }
+
+    /// Whether an index of this type can serve [`WithPayload::prefer_payload_index`].
+    /// Only indexes that store values verbatim can: the others normalize what
+    /// they index, so a projection would disagree with the exact payload that
+    /// a segment without this index returns.
+    pub fn keeps_values_verbatim(&self) -> bool {
+        match self {
+            Self::Keyword | Self::Integer => true,
+            Self::Float | Self::Geo | Self::Text | Self::Bool | Self::Datetime | Self::Uuid => {
+                false
+            }
+        }
+    }
 }
 
 /// Payload type with parameters
@@ -4343,6 +4356,7 @@ impl From<bool> for WithPayload {
         WithPayload {
             enable: x,
             payload_selector: None,
+            prefer_payload_index: false,
         }
     }
 }
@@ -4353,14 +4367,17 @@ impl From<WithPayloadInterface> for WithPayload {
             WithPayloadInterface::Bool(enable) => WithPayload {
                 enable,
                 payload_selector: None,
+                prefer_payload_index: false,
             },
             WithPayloadInterface::Fields(fields) => WithPayload {
                 enable: true,
                 payload_selector: Some(PayloadSelector::new_include(fields)),
+                prefer_payload_index: false,
             },
             WithPayloadInterface::Selector(selector) => WithPayload {
                 enable: true,
                 payload_selector: Some(selector),
+                prefer_payload_index: false,
             },
         }
     }
@@ -4369,6 +4386,16 @@ impl From<WithPayloadInterface> for WithPayload {
 impl From<&WithPayloadInterface> for WithPayload {
     fn from(interface: &WithPayloadInterface) -> Self {
         WithPayload::from(interface.clone())
+    }
+}
+
+impl From<WithPayload> for WithPayloadInterface {
+    fn from(with_payload: WithPayload) -> Self {
+        match (with_payload.enable, with_payload.payload_selector) {
+            (false, _) => Self::Bool(false),
+            (true, Some(selector)) => Self::Selector(selector),
+            (true, None) => Self::Bool(true),
+        }
     }
 }
 
@@ -4454,13 +4481,19 @@ impl PayloadSelector {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct WithPayload {
     /// Enable return payloads or not
     pub enable: bool,
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
+    /// Internal optimization hint. The caller accepts indexed values as arrays,
+    /// including their loss of original representation, order, and multiplicity.
+    /// Unsupported projections fall back to the original payload.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub prefer_payload_index: bool,
 }
 
 #[derive(

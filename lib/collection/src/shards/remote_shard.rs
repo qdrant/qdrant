@@ -1535,7 +1535,7 @@ impl ShardOperation for RemoteShard {
             .into_iter()
             .zip(requests.iter())
             .map(|(query_result, request)| {
-                let is_payload_required = request.with_payload.is_required();
+                let is_payload_required = request.with_payload.enable;
 
                 query_result
                     .intermediate_results
