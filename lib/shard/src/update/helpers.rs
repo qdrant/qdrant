@@ -77,22 +77,48 @@ pub(crate) fn points_by_filter(
     filter: &Filter,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
+    Ok(points_by_filter_limited(segments, filter, None, hw_counter)?.points)
+}
+
+/// Points matching a filter, with a budget on how many are read per segment.
+pub(crate) struct FilteredPoints {
+    /// Matching points, as flattened per-segment reads: a point with copies in
+    /// several segments can appear more than once.
+    pub points: Vec<PointIdType>,
+
+    /// Whether some segment filled its budget, in which case `points` is only
+    /// a subset of what the filter matches.
+    pub truncated: bool,
+}
+
+/// [`points_by_filter`], reading at most `per_segment_limit` points from each
+/// segment. Callers that only need to know whether the match set is bigger
+/// than some bound can cap the read at that bound instead of paying for the
+/// whole scan.
+pub(crate) fn points_by_filter_limited(
+    segments: &SegmentHolder,
+    filter: &Filter,
+    per_segment_limit: Option<usize>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<FilteredPoints> {
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     let mut has_deferred = false;
+    let mut truncated = false;
     let per_segment_points: AHashMap<SegmentId, Vec<PointIdType>> = segments
         .iter()
         .map(|(segment_id, segment)| {
             let segment = segment.get().read();
             let point_ids = segment.read_filtered(
                 None,
-                None,
+                per_segment_limit,
                 Some(filter),
                 &is_stopped,
                 hw_counter,
                 // Read operation used for updates, so we must handle all points
                 DeferredBehavior::WithDeferred,
             )?;
+            truncated |= per_segment_limit.is_some_and(|limit| point_ids.len() >= limit);
             has_deferred |= segment.has_deferred_points();
             Ok((segment_id, point_ids))
         })
@@ -112,7 +138,10 @@ pub(crate) fn points_by_filter(
         }
     }
 
-    Ok(affected_points)
+    Ok(FilteredPoints {
+        points: affected_points,
+        truncated,
+    })
 }
 
 pub(super) fn check_unprocessed_points(

@@ -190,6 +190,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("StrictModeConfig.max_query_limit", "range(min = 1)"),
             ("StrictModeConfig.max_timeout", "range(min = 1)"),
             ("StrictModeConfig.max_points_count", "range(min = 1)"),
+            ("StrictModeConfig.max_update_by_filter_limit", "range(min = 1)"),
             ("StrictModeConfig.read_rate_limit", "range(min = 1)"),
             ("StrictModeConfig.write_rate_limit", "range(min = 1)"),
             ("StrictModeConfig.max_resident_memory_percent", "range(min = 1, max = 100)"),
