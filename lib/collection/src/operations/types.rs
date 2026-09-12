@@ -398,8 +398,7 @@ pub struct ReshardingInfo {
 
     pub shard_key: Option<ShardKey>,
 
-    /// Only included in peer telemetry
-    #[serde(skip)]
+    /// Applied resharding stage on this peer.
     #[anonymize(false)]
     pub stage: ReshardingStage,
 }
@@ -1959,5 +1958,49 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_resharding_info_serialization() {
+        for (stage, expected_stage) in [
+            (ReshardingStage::MigratingPoints, "migrating_points"),
+            (
+                ReshardingStage::ReadHashRingCommitted,
+                "read_hash_ring_committed",
+            ),
+            (
+                ReshardingStage::WriteHashRingCommitted,
+                "write_hash_ring_committed",
+            ),
+        ] {
+            let info = ReshardingInfo {
+                uuid: Uuid::nil(),
+                direction: ReshardingDirection::Up,
+                shard_id: 1,
+                peer_id: 2,
+                shard_key: None,
+                stage,
+            };
+
+            let mut expected = json!({
+                "uuid": "00000000-0000-0000-0000-000000000000",
+                "direction": "up",
+                "shard_id": 1,
+                "peer_id": 2,
+                "shard_key": null,
+                "stage": expected_stage,
+            });
+            assert_eq!(serde_json::to_value(&info).unwrap(), expected);
+
+            expected["uuid"] = json!(Uuid::nil().anonymize());
+            assert_eq!(serde_json::to_value(info.anonymize()).unwrap(), expected);
+        }
     }
 }
