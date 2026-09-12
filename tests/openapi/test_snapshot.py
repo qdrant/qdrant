@@ -462,9 +462,15 @@ def _assert_snapshot_upload_rejected_without_path_leak(collection_name, snapshot
 
 
 def test_upload_snapshot_without_config_is_rejected_without_path_leak(collection_name):
-    # An archive that carries no collection config (here: an empty file) is bad input.
+    # A valid empty TAR (no entries) has no collection config.
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w'):
+        pass
     _assert_snapshot_upload_rejected_without_path_leak(
-        collection_name, b'', 'empty.snapshot'
+        collection_name, buf.getvalue(), 'empty.snapshot'
     )
 
 
