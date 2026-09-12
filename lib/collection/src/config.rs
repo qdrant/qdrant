@@ -208,10 +208,10 @@ impl PayloadStorageParams {
 #[anonymize(false)]
 pub struct IdTrackerParams {
     /// Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and
-    /// reads it on demand, `pinned` keeps it in RAM. `cached` is not supported.
+    /// reads it on demand, `cached` keeps it on disk but primes the page cache with it on load,
+    /// `pinned` keeps it in RAM.
     /// Default: `pinned`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[validate(custom(function = "validate_id_tracker_memory"))]
     pub memory: Option<Memory>,
 }
 
@@ -221,21 +221,6 @@ impl IdTrackerParams {
         let IdTrackerParams { memory } = diff;
         IdTrackerParams {
             memory: memory.or(self.memory),
-        }
-    }
-}
-
-/// Reject memory placements not supported by the id tracker.
-/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
-fn validate_id_tracker_memory(memory: &Memory) -> Result<(), ValidationError> {
-    match memory {
-        Memory::Cold | Memory::Pinned => Ok(()),
-        Memory::Cached => {
-            let mut error = ValidationError::new("unsupported_memory_placement");
-            error.message = Some(std::borrow::Cow::from(
-                "`cached` memory placement is not supported for id tracker",
-            ));
-            Err(error)
         }
     }
 }

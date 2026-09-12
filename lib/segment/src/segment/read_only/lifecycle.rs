@@ -63,6 +63,17 @@ fn payload_populate(config: &SegmentConfig) -> Populate {
     }
 }
 
+/// How the disk-resident id tracker's per-point data is brought into memory;
+/// the other tracker formats hold it in RAM regardless.
+fn id_tracker_populate(config: &SegmentConfig) -> Populate {
+    let memory = config.id_tracker_memory_placement().clamp_to_low_memory();
+    if memory.populate_on_open() {
+        Populate::PreferBackground
+    } else {
+        Populate::No
+    }
+}
+
 /// How one sparse vector's storage is brought into memory. Search never reads
 /// it, so it normally stays cold — except when the (non-persisted) mutable-RAM
 /// sparse index is configured: that index is rebuilt from the storage at open,
@@ -141,7 +152,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_storage_populate)?;
 
         // Id tracker; always loaded — every request resolves ids through it.
-        ReadOnlyIdTrackerEnum::preopen(fs, segment_path)?;
+        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, id_tracker_populate(&config))?;
 
         // Vector storages
         for (vector_name, vector_config) in &config.vector_data {
@@ -255,6 +266,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             &fs,
             segment_path,
             deferred_internal_id,
+            id_tracker_populate(&config),
         )?));
 
         // Open all vector storages up front: the payload index needs them.

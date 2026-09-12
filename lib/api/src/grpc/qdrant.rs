@@ -1183,8 +1183,8 @@ pub struct PayloadStorageParams {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdTrackerParams {
     /// Memory placement of the point id mapping in indexed segments:
-    /// `Cold` keeps it on disk and reads it on demand, `Pinned` keeps it in RAM.
-    /// `Cached` is not supported.
+    /// `Cold` keeps it on disk and reads it on demand, `Cached` keeps it on disk
+    /// but primes the page cache with it on load, `Pinned` keeps it in RAM.
     #[prost(enumeration = "Memory", optional, tag = "1")]
     pub memory: ::core::option::Option<i32>,
 }

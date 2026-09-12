@@ -16,11 +16,11 @@ use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
-    pub(super) fn open_options() -> OpenOptions {
+    pub(super) fn open_options(populate: Populate) -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Global,
         }
     }
@@ -37,16 +37,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
     /// will read. Returns `false` (nothing scheduled) when the tracker is not
-    /// in the on-disk format.
+    /// in the on-disk format. `populate` is the placement of the per-point
+    /// data, see [`open`](Self::open).
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
+        populate: Populate,
     ) -> OperationResult<bool> {
-        if !DiskMappingReader::try_preopen(fs, segment_path)? {
+        if !DiskMappingReader::try_preopen(fs, segment_path, populate)? {
             return Ok(false);
         }
 
-        let options = Self::open_options();
+        let options = Self::open_options(populate);
         fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
         fs.schedule_open(
             &deleted_path(segment_path),
@@ -58,12 +60,17 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Open a read-only disk id tracker at `segment_path`; all per-point data
-    /// except the `is_uuid` bitmap stays on the backing store.
+    /// except the `is_uuid` bitmap stays on the backing store. A populating
+    /// `populate` primes the page cache with the mapping and versions.
     ///
     /// Errors if the segment is not in the on-disk format; use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
-        Self::try_open(fs, segment_path)?.ok_or_else(|| {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        Self::try_open(fs, segment_path, populate)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker not found in segment {}",
                 segment_path.display(),
@@ -76,12 +83,13 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
+        populate: Populate,
     ) -> OperationResult<Option<Self>> {
-        let Some(reader) = DiskMappingReader::try_open(fs, segment_path)? else {
+        let Some(reader) = DiskMappingReader::try_open(fs, segment_path, populate)? else {
             return Ok(None);
         };
 
-        let options = Self::open_options();
+        let options = Self::open_options(populate);
 
         let versions = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),

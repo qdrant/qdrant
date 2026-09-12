@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
@@ -23,8 +23,14 @@ pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
 impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// Schedule background prefetch for whichever id-tracker format is
     /// present, probing in the same order as [`Self::detect_and_load`].
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) -> OperationResult<()> {
-        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path)? {
+    /// `populate` applies to the disk-resident format only: the other formats
+    /// hold their per-point data in RAM regardless.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate)? {
             return Ok(());
         }
         if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
@@ -40,12 +46,14 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// Order: disk-resident (the serverless/object-storage format) first, then
     /// the in-RAM immutable format, then the appendable/mutable format (whose
     /// open tolerates absent files, i.e. a fresh or empty segment).
+    /// `populate` applies to the disk-resident format only, see [`Self::preopen`].
     pub fn detect_and_load(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
+        populate: Populate,
     ) -> OperationResult<Self> {
-        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path)? {
+        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
             return Ok(Self::DiskResident(tracker));
         }
         if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 
 use super::sp;
 use crate::common::operation_error::OperationResult;
@@ -19,10 +19,13 @@ pub(crate) fn create_mutable_id_tracker(
     MutableIdTracker::open(segment_path, deferred_internal_id)
 }
 
+/// `populate` is the placement of the disk-resident format's mapping; the other
+/// formats hold it in RAM regardless.
 pub(crate) fn create_segment_id_tracker(
     format: IdTrackerFormat,
     segment_path: &Path,
     deferred_internal_id: Option<PointOffsetType>,
+    populate: Populate,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     let id_tracker = match format {
         IdTrackerFormat::Mutable => IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
@@ -33,7 +36,7 @@ pub(crate) fn create_segment_id_tracker(
             IdTrackerEnum::ImmutableIdTracker(ImmutableIdTracker::open(&MmapFs, segment_path)?)
         }
         IdTrackerFormat::Disk => {
-            IdTrackerEnum::DiskIdTracker(DiskIdTracker::open(&MmapFs, segment_path)?)
+            IdTrackerEnum::DiskIdTracker(DiskIdTracker::open(&MmapFs, segment_path, populate)?)
         }
     };
     Ok(sp(id_tracker))
