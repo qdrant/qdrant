@@ -1,6 +1,5 @@
-use actix_web_validator::error::flatten_errors;
 use serde_json::Value;
-use validator::{ValidationError, ValidationErrors};
+use validator::{ValidationError, ValidationErrors, ValidationErrorsKind};
 
 /// Warn about validation errors in the log.
 ///
@@ -33,6 +32,48 @@ fn describe_errors(errs: &ValidationErrors) -> Vec<(String, String)> {
         .into_iter()
         .map(|(_, name, err)| (name, describe_error(err)))
         .collect()
+}
+
+/// Flatten nested validation errors into `(indent, field_path, error)` tuples.
+///
+/// Adapted from `actix_web_validator::error::flatten_errors` so this crate does not
+/// depend on that package (which may pin a different `validator` version).
+fn flatten_errors(errors: &ValidationErrors) -> Vec<(u16, String, &ValidationError)> {
+    flatten_errors_inner(errors, None, None)
+}
+
+fn flatten_errors_inner(
+    errors: &ValidationErrors,
+    path: Option<String>,
+    indent: Option<u16>,
+) -> Vec<(u16, String, &ValidationError)> {
+    errors
+        .errors()
+        .iter()
+        .flat_map(|(field, err)| {
+            let indent = indent.unwrap_or(0);
+            let actual_path = path
+                .as_ref()
+                .map(|path| [path.as_str(), field].join("."))
+                .unwrap_or_else(|| field.to_string());
+            match err {
+                ValidationErrorsKind::Field(field_errors) => field_errors
+                    .iter()
+                    .map(|error| (indent, actual_path.clone(), error))
+                    .collect::<Vec<_>>(),
+                ValidationErrorsKind::List(list_error) => list_error
+                    .iter()
+                    .flat_map(|(index, errors)| {
+                        let actual_path = format!("{}[{}]", actual_path.as_str(), index);
+                        flatten_errors_inner(errors, Some(actual_path), Some(indent + 1))
+                    })
+                    .collect::<Vec<_>>(),
+                ValidationErrorsKind::Struct(struct_errors) => {
+                    flatten_errors_inner(struct_errors, Some(actual_path), Some(indent + 1))
+                }
+            }
+        })
+        .collect::<Vec<_>>()
 }
 
 /// Describe a specific validation error.
