@@ -27,12 +27,19 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
 }
 
-pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
+// Two lifetime parameters, not one: `gpu_device`'s `LockedGpuDevice<'g>` is locked once and
+// reused across a whole loop of `build_vector_index()` calls, so `'g` legitimately spans that
+// entire loop — but the `&'a mut` reference to it, like `old_indices`/`rng`, is only borrowed
+// fresh per call. Unifying both under one lifetime (as a shared `&'a LockedGpuDevice<'a>`
+// reference did before this became `&mut` for device recreation) forces every iteration's
+// exclusive borrow to be treated as live for the whole loop, dragging old_indices/rng's
+// per-call borrows into the same false constraint. Keeping 'a short and 'g independent fixes it.
+pub struct VectorIndexBuildArgs<'a, 'g, R: Rng + ?Sized> {
     pub permit: Arc<ResourcePermit>,
     /// Vector indices from other segments, used to speed up index building.
     /// May or may not contain the same vectors.
     pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],
-    pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
+    pub gpu_device: Option<&'a mut LockedGpuDevice<'g>>,
     pub rng: &'a mut R,
     pub stopped: &'a AtomicBool,
     pub hnsw_global_config: &'a HnswGlobalConfig,
