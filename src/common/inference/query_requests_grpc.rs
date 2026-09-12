@@ -2,6 +2,7 @@ use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant::RecommendInput;
 use api::grpc::qdrant::query::Variant;
 use api::grpc::{InferenceUsage, qdrant as grpc};
+use api::rest::validate::MAX_FEEDBACK_ITEMS;
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
@@ -320,6 +321,16 @@ fn convert_query_with_inferred(
                 strategy,
             } = feedback;
 
+            if feedback.is_empty() {
+                return Err(Status::invalid_argument("feedback must not be empty"));
+            }
+
+            if feedback.len() > MAX_FEEDBACK_ITEMS {
+                return Err(Status::invalid_argument(format!(
+                    "feedback elements must not exceed {MAX_FEEDBACK_ITEMS} items"
+                )));
+            }
+
             let target = target.ok_or_else(|| Status::invalid_argument("target is missing"))?;
             let target = convert_vector_input_with_inferred(target, inferred)?;
 
@@ -607,4 +618,71 @@ mod tests {
                 .contains("positive is missing"),
         );
     }
+
+    fn feedback_input_with_len(len: usize) -> grpc::RelevanceFeedbackInput {
+        let example = grpc::VectorInput {
+            variant: Some(Variant::Dense(grpc::DenseVector {
+                data: vec![1.0, 2.0, 3.0],
+            })),
+        };
+        let item = grpc::FeedbackItem {
+            example: Some(example),
+            score: 1.0,
+        };
+        grpc::RelevanceFeedbackInput {
+            target: Some(grpc::VectorInput {
+                variant: Some(Variant::Dense(grpc::DenseVector {
+                    data: vec![1.0, 2.0, 3.0],
+                })),
+            }),
+            feedback: vec![item; len],
+            strategy: Some(grpc::FeedbackStrategy {
+                variant: Some(grpc::feedback_strategy::Variant::Naive(
+                    grpc::NaiveFeedbackStrategy {
+                        a: 1.0,
+                        b: 0.5,
+                        c: 0.25,
+                    },
+                )),
+            }),
+        }
+    }
+
+    #[test]
+    fn test_relevance_feedback_over_limit_rejected() {
+        let inferred = create_test_inferred_batch();
+        let query = grpc::Query {
+            variant: Some(api::grpc::qdrant::query::Variant::RelevanceFeedback(
+                feedback_input_with_len(MAX_FEEDBACK_ITEMS + 1),
+            )),
+        };
+        let err = convert_query_with_inferred(query, &inferred).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("must not exceed"));
+    }
+
+    #[test]
+    fn test_relevance_feedback_empty_rejected() {
+        let inferred = create_test_inferred_batch();
+        let query = grpc::Query {
+            variant: Some(api::grpc::qdrant::query::Variant::RelevanceFeedback(
+                feedback_input_with_len(0),
+            )),
+        };
+        let err = convert_query_with_inferred(query, &inferred).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_relevance_feedback_at_limit_accepted() {
+        let inferred = create_test_inferred_batch();
+        let query = grpc::Query {
+            variant: Some(api::grpc::qdrant::query::Variant::RelevanceFeedback(
+                feedback_input_with_len(MAX_FEEDBACK_ITEMS),
+            )),
+        };
+        assert!(convert_query_with_inferred(query, &inferred).is_ok());
+    }
 }
+

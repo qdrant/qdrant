@@ -288,6 +288,15 @@ impl Validate for Expression {
     }
 }
 
+/// Artificial maximum number of feedback items in a relevance feedback query.
+///
+/// Feedback items expand into `n * (n - 1)` ordered context pairs, each holding
+/// clones of two query vectors, so an uncapped list amplifies a small request
+/// into a quadratic memory spike. Real-world feedback is human-labeled and
+/// stays in the tens, so this leaves generous headroom.
+/// Mirrors `RelevanceFeedbackInput.feedback` validation in the gRPC API.
+pub const MAX_FEEDBACK_ITEMS: usize = 100;
+
 /// Struct level validation for `FeedbackInput`
 pub fn validate_relevance_feedback_input(
     relevance_feedback_input: &RelevanceFeedbackInput,
@@ -298,12 +307,55 @@ pub fn validate_relevance_feedback_input(
         return Err(err);
     }
 
+    if relevance_feedback_input.feedback.len() > MAX_FEEDBACK_ITEMS {
+        let mut err = ValidationError::new("feedback");
+        err.message = Some(Cow::from(format!(
+            "feedback elements must not exceed {MAX_FEEDBACK_ITEMS} items"
+        )));
+        return Err(err);
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rest::schema::{FeedbackItem, FeedbackStrategy, NaiveFeedbackStrategy, NaiveFeedbackStrategyParams, RelevanceFeedbackInput};
+
+    fn feedback_input_with_len(len: usize) -> RelevanceFeedbackInput {
+        RelevanceFeedbackInput {
+            target: crate::rest::schema::VectorInput::DenseVector(vec![0.0; 4]),
+            feedback: (0..len)
+                .map(|i| FeedbackItem {
+                    example: crate::rest::schema::VectorInput::DenseVector(vec![0.0; 4]),
+                    score: i as f32,
+                })
+                .collect(),
+            strategy: FeedbackStrategy::Naive(NaiveFeedbackStrategy {
+                naive: NaiveFeedbackStrategyParams {
+                    a: 1.0,
+                    b: 0.0,
+                    c: 1.0,
+                },
+            }),
+        }
+    }
+
+    #[test]
+    fn relevance_feedback_rejects_too_many_items() {
+        let input = feedback_input_with_len(MAX_FEEDBACK_ITEMS + 1);
+        assert!(validate_relevance_feedback_input(&input).is_err());
+
+        let input = feedback_input_with_len(MAX_FEEDBACK_ITEMS);
+        assert!(validate_relevance_feedback_input(&input).is_ok());
+    }
+
+    #[test]
+    fn relevance_feedback_rejects_empty() {
+        let input = feedback_input_with_len(0);
+        assert!(validate_relevance_feedback_input(&input).is_err());
+    }
 
     fn formula_query_with_defaults(defaults: serde_json::Value) -> FormulaQuery {
         serde_json::from_value(serde_json::json!({
