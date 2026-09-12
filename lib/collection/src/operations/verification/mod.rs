@@ -429,6 +429,7 @@ mod test {
         test_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
+        test_recommend_groups_grouping_field(&collection).await;
     }
 
     async fn test_query_limit(collection: &Collection) {
@@ -647,6 +648,38 @@ mod test {
             update_mode: None,
         });
         assert_strict_mode_success(request, collection).await;
+    }
+
+    async fn test_recommend_groups_grouping_field(collection: &Collection) {
+        use api::rest::BaseGroupRequest;
+
+        use crate::operations::types::RecommendGroupsRequestInternal;
+
+        let groups_request = |key: &str| RecommendGroupsRequestInternal {
+            positive: vec![],
+            negative: vec![],
+            strategy: None,
+            filter: None,
+            params: None,
+            with_payload: None,
+            with_vector: None,
+            score_threshold: None,
+            using: None,
+            lookup_from: None,
+            group_request: BaseGroupRequest {
+                group_by: key.parse().unwrap(),
+                group_size: 1,
+                limit: 1,
+                with_lookup: None,
+            },
+        };
+
+        // group_by on an unindexed key must be rejected when
+        // unindexed_filtering_retrieve is disabled
+        assert_strict_mode_error(groups_request(UNINDEXED_KEY), collection).await;
+
+        // group_by on an indexed key passes
+        assert_strict_mode_success(groups_request(INDEXED_KEY), collection).await;
     }
 
     async fn assert_strict_mode_error<R: StrictModeVerification>(
