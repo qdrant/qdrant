@@ -39,6 +39,9 @@ sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
 
+[dev-dependencies]
+prost-types = { workspace = true }
+
 [build-dependencies]
 tonic-prost-build = { workspace = true }
 common = { path = "../common/common" }
