@@ -6104,7 +6104,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant-edge-ffi"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "ahash",
  "edge",
@@ -6129,7 +6129,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant-edge-py"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "ahash",
  "bytemuck",
