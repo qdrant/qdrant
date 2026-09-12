@@ -49,8 +49,8 @@ use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
 use crate::types::{
-    CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType,
-    SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
+    CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, Memory, PayloadFieldSchema,
+    PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
 };
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -591,25 +591,30 @@ impl SegmentBuilder {
 
             let id_tracker = match id_tracker {
                 IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
-                    // Serverless-compatible builds produce the disk-resident tracker
-                    // (mapping stays on disk); otherwise the in-RAM immutable tracker.
-                    if feature_flags().serverless_compatible() {
-                        let disk_id_tracker = DiskIdTracker::from_in_memory_tracker(
-                            &MmapFs,
-                            in_memory_id_tracker,
-                            temp_dir.path(),
-                        )?;
-                        IdTrackerEnum::DiskIdTracker(disk_id_tracker)
-                    } else {
-                        let (versions, mappings) = in_memory_id_tracker.into_internal();
-                        let compressed_mapping = CompressedPointMappings::from_mappings(mappings);
-                        let immutable_id_tracker = ImmutableIdTracker::new(
-                            &MmapFs,
-                            temp_dir.path(),
-                            &versions,
-                            compressed_mapping,
-                        )?;
-                        IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
+                    match segment_config.id_tracker_memory_placement() {
+                        // Mapping stays on disk. `Cached` is rejected by API validation;
+                        // it defensively maps to the closest supported placement.
+                        Memory::Cold | Memory::Cached => {
+                            let disk_id_tracker = DiskIdTracker::from_in_memory_tracker(
+                                &MmapFs,
+                                in_memory_id_tracker,
+                                temp_dir.path(),
+                            )?;
+                            IdTrackerEnum::DiskIdTracker(disk_id_tracker)
+                        }
+                        // Mapping is held in RAM.
+                        Memory::Pinned => {
+                            let (versions, mappings) = in_memory_id_tracker.into_internal();
+                            let compressed_mapping =
+                                CompressedPointMappings::from_mappings(mappings);
+                            let immutable_id_tracker = ImmutableIdTracker::new(
+                                &MmapFs,
+                                temp_dir.path(),
+                                &versions,
+                                compressed_mapping,
+                            )?;
+                            IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
+                        }
                     }
                 }
                 IdTrackerEnum::MutableIdTracker(_) => id_tracker,

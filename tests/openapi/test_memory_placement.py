@@ -96,6 +96,7 @@ def test_create_collection_without_memory_placement_has_no_new_fields():
     params = response.json()["result"]["config"]["params"]
     assert "memory" not in params["vectors"]
     assert "payload" not in params
+    assert "id_tracker" not in params
 
 
 def test_pinned_dense_vector_storage_is_rejected():
@@ -110,6 +111,54 @@ def test_pinned_dense_vector_storage_is_rejected():
     )
     assert response.status_code == 422, response.text
     assert "pinned" in response.json()["status"]["error"]
+
+
+def test_id_tracker_memory_placement():
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        body={
+            "vectors": {"size": 4, "distance": "Dot"},
+            "id_tracker": {"memory": "cold"},
+        },
+    )
+    assert response.ok, response.text
+
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="GET",
+        path_params={"collection_name": collection_name},
+    )
+    assert response.ok, response.text
+    assert response.json()["result"]["config"]["params"]["id_tracker"]["memory"] == "cold"
+
+    # The placement is mutable
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": collection_name},
+        body={"params": {"id_tracker": {"memory": "pinned"}}},
+    )
+    assert response.ok, response.text
+
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="GET",
+        path_params={"collection_name": collection_name},
+    )
+    assert response.ok, response.text
+    assert response.json()["result"]["config"]["params"]["id_tracker"]["memory"] == "pinned"
+
+    # The id tracker has no populate-on-open variant: `cached` is rejected
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": collection_name},
+        body={"params": {"id_tracker": {"memory": "cached"}}},
+    )
+    assert response.status_code == 422, response.text
+    assert "cached" in response.json()["status"]["error"]
 
 
 def test_pinned_payload_storage_is_rejected():

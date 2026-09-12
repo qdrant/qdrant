@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 
 use collection::config::{
-    CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
+    CollectionConfigInternal, CollectionParams, IdTrackerParams, PayloadStorageParams,
+    ShardingMethod,
 };
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -163,6 +164,10 @@ pub struct CreateCollection {
     #[serde(default)]
     #[validate(nested)]
     pub payload: Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[serde(default)]
+    #[validate(nested)]
+    pub id_tracker: Option<IdTrackerParams>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
     #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
@@ -580,6 +585,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             read_fan_out_delay_ms: _,
             on_disk_payload,
             payload,
+            id_tracker,
             sparse_vectors,
         } = params;
 
@@ -591,6 +597,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             write_consistency_factor: Some(write_consistency_factor.get()),
             on_disk_payload,
             payload,
+            id_tracker,
             hnsw_config: Some(hnsw_config.into()),
             wal_config: Some(wal_config.into()),
             optimizers_config: Some(optimizer_config.into()),

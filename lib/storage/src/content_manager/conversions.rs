@@ -91,6 +91,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
             shard_number,
             on_disk_payload,
             payload,
+            id_tracker,
             timeout: _,
             vectors_config,
             replication_factor,
@@ -119,6 +120,9 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 on_disk_payload,
                 payload: payload
                     .map(collection::config::PayloadStorageParams::try_from)
+                    .transpose()?,
+                id_tracker: id_tracker
+                    .map(collection::config::IdTrackerParams::try_from)
                     .transpose()?,
                 replication_factor,
                 write_consistency_factor,

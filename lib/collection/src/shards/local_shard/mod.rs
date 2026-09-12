@@ -649,6 +649,7 @@ impl LocalShard {
                 vector_data: vector_params.clone(),
                 sparse_vector_data: sparse_vector_params.clone(),
                 payload_storage_type: config.params.payload_storage_type(),
+                id_tracker_memory: config.params.id_tracker_memory(),
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))

@@ -290,6 +290,7 @@ mod tests {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         };
 
         let (mut segment, _) = build_segment(

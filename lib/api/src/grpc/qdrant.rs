@@ -1179,6 +1179,15 @@ pub struct PayloadStorageParams {
     #[prost(enumeration = "Memory", optional, tag = "1")]
     pub memory: ::core::option::Option<i32>,
 }
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdTrackerParams {
+    /// Memory placement of the point id mapping in indexed segments:
+    /// `Cold` keeps it on disk and reads it on demand, `Pinned` keeps it in RAM.
+    /// `Cached` is not supported.
+    #[prost(enumeration = "Memory", optional, tag = "1")]
+    pub memory: ::core::option::Option<i32>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1248,6 +1257,9 @@ pub struct CreateCollection {
     /// Configuration of the payload storage
     #[prost(message, optional, tag = "19")]
     pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[prost(message, optional, tag = "20")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1363,6 +1375,9 @@ pub struct CollectionParams {
     /// Configuration of the payload storage
     #[prost(message, optional, tag = "12")]
     pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[prost(message, optional, tag = "13")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1390,6 +1405,9 @@ pub struct CollectionParamsDiff {
     /// Update params of the payload storage
     #[prost(message, optional, tag = "6")]
     pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Update params of the point id tracker
+    #[prost(message, optional, tag = "7")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

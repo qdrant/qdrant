@@ -77,6 +77,7 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
@@ -108,6 +109,7 @@ fn build_immutable_segment_with_data(
         vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), mmap_dense_config(DIM))]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     assert!(!target_config.is_appendable());
 

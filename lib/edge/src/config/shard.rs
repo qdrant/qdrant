@@ -157,6 +157,7 @@ impl EdgeConfig {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            id_tracker_memory: _,
         } = segment;
 
         let vectors = vector_data
@@ -257,6 +258,7 @@ impl EdgeConfig {
 
         SegmentOptimizerConfig {
             payload_storage_type: PayloadStorageType::from_on_disk_payload(self.on_disk_payload()),
+            id_tracker_memory: None,
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
@@ -372,6 +374,7 @@ mod tests {
             )]),
             sparse_vector_data: HashMap::new(),
             payload_storage_type: PayloadStorageType::from_on_disk_payload(true),
+            id_tracker_memory: None,
         }
     }
 

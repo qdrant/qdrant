@@ -77,6 +77,7 @@ pub async fn handle_existing_collections(
                 write_consistency_factor: Some(params.write_consistency_factor.get()),
                 on_disk_payload: params.on_disk_payload,
                 payload: params.payload,
+                id_tracker: params.id_tracker,
                 hnsw_config: Some(hnsw_config.into()),
                 wal_config: Some(wal_config.into()),
                 optimizers_config: Some(optimizer_config.into()),

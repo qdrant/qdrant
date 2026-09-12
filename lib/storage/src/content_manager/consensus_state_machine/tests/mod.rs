@@ -54,6 +54,7 @@ fn create_collection_request() -> CreateCollection {
         #[expect(deprecated)]
         on_disk_payload: None,
         payload: None,
+        id_tracker: None,
         hnsw_config: None,
         wal_config: None,
         optimizers_config: None,
@@ -128,5 +129,6 @@ fn collection_params(vectors: VectorsConfig) -> CollectionParams {
         #[expect(deprecated)]
         on_disk_payload: Some(false),
         payload: None,
+        id_tracker: None,
     }
 }

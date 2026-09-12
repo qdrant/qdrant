@@ -223,6 +223,7 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                             shard_number: Some(1),
                             on_disk_payload: None,
                             payload: None,
+                            id_tracker: None,
                             replication_factor: None,
                             write_consistency_factor: None,
                             quantization_config: None,

@@ -58,6 +58,7 @@ fn build_immutable_segment(segments_path: &Path, temp_path: &Path) -> Segment {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
@@ -114,6 +115,7 @@ fn build_immutable_segment(segments_path: &Path, temp_path: &Path) -> Segment {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     assert!(!target_config.is_appendable());
 
@@ -426,6 +428,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
                 },
             )]),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,

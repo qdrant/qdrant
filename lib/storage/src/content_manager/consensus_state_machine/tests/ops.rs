@@ -1475,6 +1475,7 @@ fn params_diff() -> CollectionParamsDiff {
         #[expect(deprecated)]
         on_disk_payload: None,
         payload: None,
+        id_tracker: None,
     }
 }
 

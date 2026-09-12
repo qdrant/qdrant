@@ -537,6 +537,7 @@ mod tests {
                 },
             )]),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         };
         let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
         let hw_counter = HardwareCounterCell::new();

@@ -1727,9 +1727,26 @@ pub struct SegmentConfig {
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
+    /// Memory placement of the id tracker in non-appendable segments. Unset means the deployment
+    /// default: `cold` in serverless-compatible mode, `pinned` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_tracker_memory: Option<Memory>,
 }
 
 impl SegmentConfig {
+    /// Effective memory placement of the id tracker in a non-appendable segment: the configured
+    /// one, otherwise the deployment default (`cold`, i.e. the disk-resident tracker, in
+    /// serverless-compatible mode; `pinned`, i.e. the in-RAM immutable tracker, otherwise).
+    pub fn id_tracker_memory_placement(&self) -> Memory {
+        self.id_tracker_memory.unwrap_or_else(|| {
+            if common::flags::feature_flags().serverless_compatible() {
+                Memory::Cold
+            } else {
+                Memory::Pinned
+            }
+        })
+    }
+
     /// Helper to get vector specific quantization config.
     ///
     /// This grabs the quantization config for the given vector name if it exists.
@@ -1786,6 +1803,7 @@ impl SegmentConfig {
             vector_data: _,
             sparse_vector_data: _,
             payload_storage_type: _,
+            id_tracker_memory: _,
         } = self;
 
         check_vectors_map_compatible(

@@ -179,6 +179,7 @@ pub(super) async fn fixture(
         read_fan_out_delay_ms: None,
         on_disk_payload: Some(false),
         payload: None,
+        id_tracker: None,
     };
 
     // Optimizer config — `max_segment_size_kb` / `indexing_threshold_kb` are caller-supplied

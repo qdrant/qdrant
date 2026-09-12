@@ -72,6 +72,7 @@ mod tests {
         }
         SegmentOptimizerConfig {
             payload_storage_type: segment.segment_config.payload_storage_type,
+            id_tracker_memory: segment.segment_config.id_tracker_memory,
             dense_vectors,
             sparse_vectors: Default::default(),
             live_vector_names: None,
