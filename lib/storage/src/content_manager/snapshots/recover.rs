@@ -166,6 +166,14 @@ async fn _do_recover_from_snapshot(
     });
     restoring.await??;
 
+    // A snapshot without a collection config is a malformed archive. Reject it
+    // explicitly: the raw IO error from `load` would embed the server-side
+    // temporary path in the API response.
+    if !CollectionConfigInternal::check(tmp_collection_dir.path()) {
+        return Err(StorageError::bad_input(
+            "Snapshot archive does not contain a collection config",
+        ));
+    }
     let snapshot_config = CollectionConfigInternal::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 

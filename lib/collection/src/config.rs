@@ -433,10 +433,10 @@ impl CollectionConfigInternal {
         Ok(serde_json::from_str(&contents)?)
     }
 
-    /// Check if collection config exists
+    /// Check if collection config exists as a regular file
     pub fn check(path: &Path) -> bool {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
-        config_path.exists()
+        config_path.is_file()
     }
 
     pub fn validate_and_warn(&self) {

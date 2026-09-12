@@ -185,6 +185,15 @@ impl Collection {
             }
         }
 
+        // A snapshot without a collection config is a malformed archive. Reject it
+        // explicitly: the raw IO error from `load` would embed the server-side
+        // temporary path in the API response.
+        if !CollectionConfigInternal::check(target_dir) {
+            return Err(CollectionError::bad_input(
+                "Snapshot archive does not contain a collection config",
+            ));
+        }
+
         let config = CollectionConfigInternal::load(target_dir)?;
         config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
