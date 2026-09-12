@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::grpc::pre_encoded::{PreEncodedMessage, update_batch_pre_encoded};
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::qdrant_client::QdrantClient;
@@ -41,6 +42,7 @@ use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::Status;
+use tonic::client::Grpc;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use url::Url;
@@ -147,6 +149,23 @@ impl RemoteShard {
                 let client = PointsInternalClient::new(channel);
                 let client = client.max_decoding_message_size(usize::MAX);
                 f(client)
+            })
+            .await
+            .map_err(|err| err.into())
+    }
+
+    /// Like [`Self::with_points_client`], but hands out the [`Grpc`] the generated clients wrap,
+    /// for calls they cannot express. See [`update_batch_pre_encoded`].
+    async fn with_grpc<T, O: Future<Output = Result<T, Status>>>(
+        &self,
+        f: impl Fn(Grpc<InterceptedService<Channel, PoolInterceptor>>) -> O,
+    ) -> CollectionResult<T> {
+        let current_address = self.current_address()?;
+        self.channel_service
+            .channel_pool
+            .with_channel(&current_address, |channel| {
+                let grpc = Grpc::new(channel).max_decoding_message_size(usize::MAX);
+                f(grpc)
             })
             .await
             .map_err(|err| err.into())
@@ -557,6 +576,9 @@ impl RemoteShard {
 
     /// Forward a prebuilt batch of operations
     ///
+    /// The batch is encoded once, on the blocking pool. The attempts the channel pool makes share
+    /// the encoded bytes instead of copying and encoding the batch again on the async runtime.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
@@ -564,15 +586,21 @@ impl RemoteShard {
     /// If cancelled - either none or all operations of the batch may be forwarded to the remote.
     pub async fn forward_update_batch(
         &self,
-        batch_request: &UpdateBatchInternal,
+        batch_request: Arc<UpdateBatchInternal>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
+        let encoded = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            PreEncodedMessage::encode(&*batch_request)
+        }))
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to join update batch encode task: {err}"
+            ))
+        })?;
+
         let point_operation_response = self
-            .with_points_client(|mut client| async move {
-                client
-                    .update_batch(tonic::Request::new(batch_request.clone()))
-                    .await
-            })
+            .with_grpc(|grpc| update_batch_pre_encoded(grpc, encoded.clone()))
             .await?
             .into_inner();
 
