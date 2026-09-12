@@ -26,6 +26,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 
 use crate::actix::api::audit_api::config_audit_api;
+use crate::actix::api::block_hashes_api::block_hashes;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
@@ -170,6 +171,7 @@ pub fn init(
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)
                 .service(count_points)
+                .service(block_hashes)
                 .service(get_point)
                 .service(get_points);
 

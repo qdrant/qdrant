@@ -7,6 +7,7 @@ use collection::collection::distance_matrix::{
 use collection::config::ShardingMethod;
 use collection::grouping::GroupBy;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
+use collection::operations::block_hashes::{BlockHashesRequest, BlockHashesResponse};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::routing::RoutingToken;
@@ -380,6 +381,31 @@ impl TableOfContent {
             )
             .await
             .map_err(|err| err.into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn block_hashes(
+        &self,
+        collection_name: &str,
+        request: BlockHashesRequest,
+        read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
+        timeout: Option<Duration>,
+        auth: Auth,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> StorageResult<BlockHashesResponse> {
+        let collection_pass = auth.check_point_op(collection_name, &request, "block_hashes")?;
+        let collection = self.get_collection(&collection_pass).await?;
+        collection
+            .block_hashes(
+                request,
+                read_consistency,
+                routing_token,
+                timeout,
+                hw_measurement_acc,
+            )
+            .await
+            .map_err(Into::into)
     }
 
     #[allow(clippy::too_many_arguments)]

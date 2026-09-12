@@ -1,3 +1,4 @@
+pub mod block_hashes_api;
 use collection::shards::shard::ShardId;
 use common::validation::{validate_collection_name, validate_collection_name_legacy};
 use serde::Deserialize;

@@ -31,6 +31,7 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{collection_name}/index",
     "/collections/{collection_name}/points",
     "/collections/{collection_name}/points/batch",
+    "/collections/{collection_name}/points/block-hashes",
     "/collections/{collection_name}/points/count",
     "/collections/{collection_name}/points/delete",
     "/collections/{collection_name}/points/discover",

@@ -1,3 +1,4 @@
+mod block_hashes;
 mod count;
 mod discover;
 mod facet;

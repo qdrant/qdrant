@@ -25,6 +25,7 @@ dependencies = [
 package = false
 
 [tool.pytest.ini_options]
+pythonpath = [".."]
 markers = [
     "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
     "xdist_group: group tests to run on the same worker (for pytest-xdist)",

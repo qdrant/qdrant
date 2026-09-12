@@ -1,3 +1,4 @@
+mod block_hashes_test;
 mod collection_restore_test;
 mod collection_test;
 mod common;
