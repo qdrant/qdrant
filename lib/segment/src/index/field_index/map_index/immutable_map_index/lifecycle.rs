@@ -153,17 +153,35 @@ where
     }
 
     /// Removes `idx` from values-to-points-container.
-    /// It is implemented by shrinking the range of values-to-points by one and moving the removed element
-    /// out of the range.
-    /// Previously last element is swapped with the removed one and then the range is shrank by one.
     ///
+    /// The posting itself stays in `value_to_points_container`; it is marked in
+    /// `deleted_value_to_points_container` so the read-side iterator skips it, and
+    /// the value's live-posting counter is shrunk by one.
+    ///
+    /// The shrink must happen **only when this call actually retired a live
+    /// posting**. `count` is not a hint: `get_mut_point_ids_slice` refuses a value
+    /// once it reaches zero, and reaching zero here drops the value's key from
+    /// `value_to_points` outright, which makes every *remaining* live posting of
+    /// that value unreachable through `get_iterator`. Shrinking on a call that
+    /// removed nothing therefore retires a slot that is still in use, and enough
+    /// of them silently delete a whole value from the index while the payload,
+    /// `point_to_values` and the posting container all still hold it.
+    ///
+    /// Two ways a call can remove nothing, both of which used to fall through to
+    /// the shrink (their `debug_assert!`s are compiled out in release builds, so
+    /// the corruption was silent in production):
+    ///
+    /// - `idx` holds no posting for `value` at all — the binary search misses.
+    /// - `idx`'s posting was already marked deleted by an earlier call, e.g. a
+    ///   point whose `point_to_values` entry lists the same value twice, so
+    ///   [`Self::remove_point`] visits it twice in one pass.
     ///
     /// Example:
     ///     Before:
     ///
     /// value_to_points -> {
-    ///     "a": 0..5,
-    ///     "b": 5..10
+    ///     "a": range 0..5, count 5
+    ///     "b": range 5..10, count 5
     /// }
     /// value_to_points_container -> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     ///
@@ -174,12 +192,13 @@ where
     /// After:
     ///
     /// value_to_points -> {
-    ///    "a": 0..4,
-    ///    "b": 5..10
+    ///    "a": range 0..5, count 4
+    ///    "b": range 5..10, count 5
     /// }
     ///
-    /// value_to_points_container -> [0, 1, 2, 4, (3), 5, 6, 7, 8, 9]
-    fn remove_idx_from_value_list(
+    /// value_to_points_container -> [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    /// deleted_value_to_points_container -> [_, _, _, 1, _, _, _, _, _, _]
+    pub(super) fn remove_idx_from_value_list(
         value_to_points: &mut HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
         value_to_points_container: &mut [PointOffsetType],
         deleted_value_to_points_container: &mut BitVec,
@@ -189,21 +208,28 @@ where
         let Some((values, offset)) =
             Self::get_mut_point_ids_slice(value_to_points, value_to_points_container, value)
         else {
-            debug_assert!(false, "value {value} not found in value_to_points");
+            // The value is already fully retired, nothing to shrink.
             return;
         };
 
         // Finds the index of `idx` in values-to-points map which we want to remove
         // We mark it as removed in deleted flags
-        if let Ok(local_pos) = values.binary_search(&idx) {
-            let pos = offset + local_pos;
+        let Ok(local_pos) = values.binary_search(&idx) else {
+            // `idx` never had a posting for this value.
+            return;
+        };
 
-            if deleted_value_to_points_container.len() < pos + 1 {
-                deleted_value_to_points_container.resize(pos + 1, false);
-            }
+        let pos = offset + local_pos;
 
-            let did_exist = !deleted_value_to_points_container.replace(pos, true);
-            debug_assert!(did_exist, "value {value} was already deleted");
+        if deleted_value_to_points_container.len() < pos + 1 {
+            deleted_value_to_points_container.resize(pos + 1, false);
+        }
+
+        let did_exist = !deleted_value_to_points_container.replace(pos, true);
+        if !did_exist {
+            // Already retired by an earlier call; shrinking again would retire a
+            // slot that is still live.
+            return;
         }
 
         if Self::shrink_value_range(value_to_points, value) {
