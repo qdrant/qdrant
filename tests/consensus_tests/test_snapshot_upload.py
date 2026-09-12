@@ -12,9 +12,9 @@ N_SHARDS = 3
 COLLECTION_NAME = "test_collection"
 
 
-def create_snapshot(peer_api_uri):
+def create_snapshot(peer_api_uri, collection_name=COLLECTION_NAME):
     r = requests.post(
-        f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots")
+        f"{peer_api_uri}/collections/{collection_name}/snapshots")
     assert_http_ok(r)
     return r.json()["result"]["name"]
 
@@ -37,12 +37,16 @@ def get_remote_shards(peer_api_uri):
     return r.json()["result"]["remote_shards"]
 
 
-def upload_snapshot(peer_api_uri, snapshot_path):
+def upload_snapshot(peer_api_uri, snapshot_path, collection_name=COLLECTION_NAME, delete_after_restore=None):
     with open(snapshot_path, "rb") as f:
         print(f"uploading {snapshot_path} to {peer_api_uri}")
         snapshot_file = {"snapshot": f}
+        url = f"{peer_api_uri}/collections/{collection_name}/snapshots/upload"
+        if delete_after_restore is not None:
+            value = str(delete_after_restore).lower()
+            url = f"{url}?delete_after_restore={value}"
         r = requests.post(
-            f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots/upload",
+            url,
             files=snapshot_file,
         )
         assert_http_ok(r)
@@ -181,3 +185,50 @@ def recover_from_uploaded_snapshot(tmp_path: pathlib.Path, n_replicas):
     assert replicas_per_shard == {
         shard_id: n_replicas for shard_id in range(N_SHARDS)
     }
+
+
+def test_upload_snapshot_delete_after_restore_failure_keeps_snapshot(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    source_collection = "test_source_cleanup_failure"
+    target_collection = "test_target_cleanup_failure"
+
+    peer_api_uris, peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 1)
+    peer_api_uri = peer_api_uris[0]
+
+    create_collection(peer_api_uri, collection=source_collection, shard_number=1, replication_factor=1)
+    wait_collection_exists_and_active_on_all_peers(source_collection, peer_api_uris)
+    upsert_random_points(peer_api_uri, 5, collection_name=source_collection)
+
+    source_info = requests.get(f"{peer_api_uri}/collections/{source_collection}")
+    assert_http_ok(source_info)
+    source_vector_size = source_info.json()["result"]["config"]["params"]["vectors"]["size"]
+    incompatible_vector_size = source_vector_size + 1
+
+    # Create incompatible target (different vector size) so recovery fails after upload is saved.
+    requests.put(
+        f"{peer_api_uri}/collections/{target_collection}",
+        json={
+            "vectors": {"size": incompatible_vector_size, "distance": "Dot"},
+            "shard_number": 1,
+            "replication_factor": 1,
+            "write_consistency_factor": 1,
+        },
+    ).raise_for_status()
+    wait_collection_exists_and_active_on_all_peers(target_collection, peer_api_uris=[peer_api_uri])
+
+    snapshot_name = create_snapshot(peer_api_uri, source_collection)
+    snapshot_path = Path(peer_dirs[0]) / "snapshots" / source_collection / snapshot_name
+    assert snapshot_path.exists()
+
+    with open(snapshot_path, "rb") as f:
+        r = requests.post(
+            f"{peer_api_uri}/collections/{target_collection}/snapshots/upload",
+            params={"delete_after_restore": "true"},
+            files={"snapshot": f},
+        )
+
+    assert not r.ok
+
+    restored_snapshot_path = Path(peer_dirs[0]) / "snapshots" / target_collection / snapshot_name
+    assert restored_snapshot_path.exists()

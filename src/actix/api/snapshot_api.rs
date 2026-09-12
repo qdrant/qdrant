@@ -11,6 +11,7 @@ use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
+    get_checksum_path,
 };
 use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -54,6 +55,9 @@ use crate::settings::ServiceConfig;
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,
     pub priority: Option<SnapshotPriority>,
+    /// If true, delete uploaded snapshot file after successful recovery.
+    #[serde(default)]
+    pub delete_after_restore: Option<bool>,
 
     /// Optional SHA256 checksum to verify snapshot integrity before recovery.
     #[serde(default)]
@@ -204,6 +208,7 @@ async fn upload_snapshot(
 ) -> impl Responder {
     let auth = early_auth.auth;
     let wait = params.wait;
+    let delete_after_restore = params.delete_after_restore.unwrap_or(false);
 
     // Nothing to verify.
     let pass = new_unchecked_verification_pass();
@@ -229,20 +234,40 @@ async fn upload_snapshot(
         let http_client = http_client.client(None)?;
 
         let snapshot_recover = SnapshotRecover {
-            location: snapshot_location,
+            location: snapshot_location.clone(),
             priority: params.priority,
             checksum: None,
             api_key: None,
         };
 
-        do_recover_from_snapshot(
+        let recovered = do_recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.collection_name,
             snapshot_recover,
-            auth,
+            auth.clone(),
             http_client,
         )
-        .await
+        .await?;
+
+        if delete_after_restore {
+            let snapshot_path = snapshot_location.to_file_path().map_err(|_| {
+                StorageError::service_error("Failed to resolve uploaded snapshot local path")
+            })?;
+
+            tokio_fs::remove_file(&snapshot_path)
+                .await
+                .map_err(StorageError::from)?;
+
+            // Uploaded snapshots may have checksum sidecars; cleanup is best-effort.
+            let checksum_path = get_checksum_path(&snapshot_path);
+            if let Err(err) = tokio_fs::remove_file(checksum_path).await {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("Failed to delete uploaded snapshot checksum sidecar: {err}");
+                }
+            }
+        }
+
+        Ok(recovered)
     };
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
@@ -522,6 +547,7 @@ async fn upload_shard_snapshot(
         wait,
         priority,
         checksum,
+        delete_after_restore: _,
     } = query.into_inner();
 
     // - `recover_shard_snapshot_impl` is *not* cancel safe
@@ -688,6 +714,7 @@ async fn recover_partial_snapshot(
         wait,
         priority,
         checksum,
+        delete_after_restore: _,
     } = query.into_inner();
 
     // nothing to verify.
