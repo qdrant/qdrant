@@ -12,9 +12,9 @@ N_SHARDS = 3
 COLLECTION_NAME = "test_collection"
 
 
-def create_snapshot(peer_api_uri):
+def create_snapshot(peer_api_uri, collection_name=COLLECTION_NAME):
     r = requests.post(
-        f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots")
+        f"{peer_api_uri}/collections/{collection_name}/snapshots")
     assert_http_ok(r)
     return r.json()["result"]["name"]
 
@@ -25,24 +25,24 @@ def get_peer_id(peer_api_uri):
     return r.json()["result"]["peer_id"]
 
 
-def get_local_shards(peer_api_uri):
-    r = requests.get(f"{peer_api_uri}/collections/{COLLECTION_NAME}/cluster")
+def get_local_shards(peer_api_uri, collection_name=COLLECTION_NAME):
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster")
     assert_http_ok(r)
     return r.json()["result"]["local_shards"]
 
 
-def get_remote_shards(peer_api_uri):
-    r = requests.get(f"{peer_api_uri}/collections/{COLLECTION_NAME}/cluster")
+def get_remote_shards(peer_api_uri, collection_name=COLLECTION_NAME):
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster")
     assert_http_ok(r)
     return r.json()["result"]["remote_shards"]
 
 
-def upload_snapshot(peer_api_uri, snapshot_path):
+def upload_snapshot(peer_api_uri, snapshot_path, collection_name=COLLECTION_NAME):
     with open(snapshot_path, "rb") as f:
         print(f"uploading {snapshot_path} to {peer_api_uri}")
         snapshot_file = {"snapshot": f}
         r = requests.post(
-            f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots/upload",
+            f"{peer_api_uri}/collections/{collection_name}/snapshots/upload",
             files=snapshot_file,
         )
         assert_http_ok(r)
@@ -181,3 +181,73 @@ def recover_from_uploaded_snapshot(tmp_path: pathlib.Path, n_replicas):
     assert replicas_per_shard == {
         shard_id: n_replicas for shard_id in range(N_SHARDS)
     }
+
+
+def test_upload_snapshot_custom_sharding_into_new_collection(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    source_collection = "test_custom_snapshot_source"
+    target_collection = "test_custom_snapshot_restore"
+
+    peer_api_uris, peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 1)
+    peer_api_uri = peer_api_uris[0]
+
+    create_collection(
+        peer_api_uri,
+        collection=source_collection,
+        shard_number=1,
+        replication_factor=1,
+        sharding_method="custom",
+        sparse_vectors=False,
+    )
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=source_collection,
+        peer_api_uris=peer_api_uris,
+    )
+
+    create_shard_key(
+        "1",
+        peer_api_uri,
+        collection=source_collection,
+        shard_number=1,
+        replication_factor=1,
+    )
+    create_shard_key(
+        "2",
+        peer_api_uri,
+        collection=source_collection,
+        shard_number=1,
+        replication_factor=1,
+    )
+
+    upsert_random_points(
+        peer_api_uri,
+        num=20,
+        collection_name=source_collection,
+        with_sparse_vector=False,
+        shard_key="1",
+    )
+
+    source_count = get_collection_point_count(
+        peer_api_uri,
+        source_collection,
+        exact=True,
+    )
+    assert source_count == 20
+
+    snapshot_name = create_snapshot(peer_api_uri, source_collection)
+    snapshot_path = Path(peer_dirs[0]) / "snapshots" / source_collection / snapshot_name
+    assert snapshot_path.exists()
+
+    upload_snapshot(peer_api_uri, snapshot_path, target_collection)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=target_collection,
+        peer_api_uris=peer_api_uris,
+    )
+
+    restored_count = get_collection_point_count(
+        peer_api_uri,
+        target_collection,
+        exact=True,
+    )
+    assert restored_count == source_count
