@@ -23,7 +23,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
 };
-use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_estimator::combine_match_any_estimations;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchValue,
     PayloadKeyType, ValueVariants,
@@ -204,7 +204,11 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
                 let estimation = if estimations.is_empty() {
                     CardinalityEstimation::exact(0)
                 } else {
-                    combine_should_estimations(&estimations, index.get_indexed_points())
+                    combine_match_any_estimations(
+                        &estimations,
+                        index.get_indexed_points(),
+                        index.get_values_count(),
+                    )
                 };
                 Some(
                     estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(
