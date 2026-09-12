@@ -86,6 +86,7 @@ fn bad_payload_key_in_field_condition_returns_error() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -108,6 +109,7 @@ fn valid_payload_key_in_field_condition_converts() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -184,6 +186,7 @@ fn field_with_match(m: Match) -> Condition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     }
 }
@@ -419,6 +422,7 @@ fn geo_polygon_field_condition_converts() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -456,6 +460,7 @@ fn geo_polygon_bad_coordinate_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -487,6 +492,7 @@ fn geo_polygon_too_few_points_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -518,6 +524,7 @@ fn geo_polygon_unclosed_ring_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -563,6 +570,7 @@ fn geo_polygon_bad_interior_ring_returns_error() {
             geo_radius: None,
             geo_polygon: Some(polygon),
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -589,6 +597,7 @@ fn field_with_geo_radius(radius: f64) -> Condition {
             }),
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     }
 }
@@ -653,6 +662,7 @@ fn field_condition_no_predicate_returns_error() {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
@@ -663,13 +673,10 @@ fn field_condition_no_predicate_returns_error() {
     assert!(matches!(r.unwrap_err(), EdgeError::InvalidArgument { .. }));
 }
 
-/// Setting MORE than one predicate is rejected: the engine has no well-defined
-/// semantics for multiple predicates in one field condition (it evaluates only
-/// one, and which one depends on the field's indexes), so the FFI fails loud and
-/// steers callers to separate `must` conditions instead of silently diverging
-/// from a Qdrant server.
+/// Setting MORE than one predicate is accepted and correctly converts to the
+/// engine's `SegmentFieldCondition`. The engine will apply all set predicates.
 #[test]
-fn field_condition_multiple_predicates_rejected() {
+fn field_condition_multiple_predicates_accepted() {
     use qdrant_edge_ffi::filter::{RangeFloat, ValuesCount};
     let cond = Condition::Field {
         condition: FieldCondition {
@@ -693,12 +700,14 @@ fn field_condition_multiple_predicates_rejected() {
                 lte: None,
                 lt: None,
             }),
+            range_integer: None,
         },
     };
     let r: Result<SegmentCondition, _> = cond.try_into();
     assert!(
-        matches!(r, Err(EdgeError::InvalidArgument { .. })),
-        "multiple predicates must be rejected, got: {r:?}"
+        r.is_ok(),
+        "multiple predicates must be accepted, got: {:?}",
+        r.unwrap_err()
     );
 }
 
@@ -809,6 +818,7 @@ fn datetime_range_converts_and_rejects_garbage() {
         geo_radius: None,
         geo_polygon: None,
         values_count: None,
+        range_integer: None,
     };
 
     let ok = base(Some(RangeDatetime {
