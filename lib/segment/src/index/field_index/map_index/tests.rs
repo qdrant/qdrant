@@ -12,9 +12,9 @@ use rstest::rstest;
 use serde_json::Value;
 use tempfile::Builder;
 
-use super::MapIndex;
 use super::key::MapIndexKey;
 use super::read_ops::MapIndexRead;
+use super::MapIndex;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
@@ -389,17 +389,68 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
         );
     }
 
+    let expected_count = match index_type {
+        IndexType::Mmap => Some(3),
+        IndexType::MutableGridstore | IndexType::RamMmap => Some(2),
+    };
+    let expected_cardinality = match index_type {
+        IndexType::Mmap => CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: 2,
+            max: 3,
+        },
+        IndexType::MutableGridstore | IndexType::RamMmap => CardinalityEstimation::exact(2),
+    };
+
     let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1, &hw_counter).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 3]);
+    assert_eq!(
+        new_index.get_count_for_value(&1, &hw_counter),
+        expected_count
+    );
+    assert_eq!(
+        new_index.match_cardinality(&1, &hw_counter),
+        expected_cardinality
+    );
 
     let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 4]);
+    assert_eq!(
+        new_index.get_count_for_value(&2, &hw_counter),
+        expected_count
+    );
+    assert_eq!(
+        new_index.match_cardinality(&2, &hw_counter),
+        expected_cardinality
+    );
 
     let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3, &hw_counter).collect();
     hits.sort();
     assert_eq!(hits, vec![3, 4]);
+    assert_eq!(
+        new_index.get_count_for_value(&3, &hw_counter),
+        expected_count
+    );
+    assert_eq!(
+        new_index.match_cardinality(&3, &hw_counter),
+        expected_cardinality
+    );
+
+    if index_type == IndexType::Mmap {
+        let excluded = [1];
+        assert_eq!(
+            new_index.except_cardinality(excluded.iter(), &hw_counter),
+            CardinalityEstimation {
+                primary_clauses: vec![],
+                min: 0,
+                exp: 2,
+                max: 3,
+            },
+        );
+    }
 }
 
 /// Regression test: when reloading an mmap map index with a `deleted_points`
