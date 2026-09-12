@@ -562,6 +562,7 @@ fn test_take_snapshot_includes_pending_changes_log() {
     let file_version = manifest
         .file_version(std::path::Path::new(&log_file_name))
         .expect("pending changes log must be listed in the segment manifest");
+    assert_eq!(file_version, proxy_segment.version());
     assert_eq!(file_version, manifest.segment_version);
 
     // The pending changes log is included in the snapshot files
@@ -1111,5 +1112,199 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
             .get_indexed_fields()
             .get(&field_name),
         Some(&field_schema),
+    );
+}
+
+/// Dropping the data of a proxy segment removes the wrapped segment directory, taking the
+/// pending changes log with it.
+#[test]
+fn test_drop_data_removes_pending_changes_log() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
+    let hw_counter = HardwareCounterCell::new();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
+    let wrapped_segment_dir = locked_wrapped_segment.get().read().data_path();
+
+    let mut proxy_segment = ProxySegment::new(locked_wrapped_segment);
+    let log_path = proxy_segment.pending_changes.log_path().to_path_buf();
+    proxy_segment
+        .delete_point(100, 2.into(), &hw_counter)
+        .unwrap();
+    proxy_segment.flush(false).unwrap();
+    assert!(log_path.is_file());
+
+    proxy_segment.drop_data().unwrap();
+    assert!(!wrapped_segment_dir.exists());
+}
+
+/// Replace the file at `path` with a directory, so writing it fails deterministically.
+fn block_file_write(path: &std::path::Path) {
+    fs_err::remove_file(path).unwrap();
+    fs_err::create_dir(path).unwrap();
+}
+
+/// A segment's persisted version may only advance once its flush fully completed. The proxy
+/// persists its pending changes before passing the flush along to the wrapped segment, so a
+/// failing wrapped flush leaves the proxy claiming durability the segment does not have.
+#[test]
+fn test_persistent_version_not_advanced_by_failed_flush() {
+    let hw_counter = HardwareCounterCell::new();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let wrapped_segment = build_segment_1(tmp_dir.path());
+    let wrapped_segment_dir = wrapped_segment.data_path();
+    assert_eq!(wrapped_segment.version(), 6);
+    assert_eq!(wrapped_segment.persistent_version(), 0);
+
+    block_file_write(&wrapped_segment_dir.join("segment.json"));
+
+    let mut proxy_segment = ProxySegment::new(LockedSegment::new(wrapped_segment));
+    proxy_segment
+        .delete_point(100, 2.into(), &hw_counter)
+        .unwrap();
+
+    assert!(proxy_segment.flush(false).is_err());
+    assert_eq!(
+        proxy_segment.persistent_version(),
+        0,
+        "a failed flush must not advance the persisted version (version: {})",
+        proxy_segment.version(),
+    );
+}
+
+/// The WAL is acknowledged up to the persisted version the segments report. A proxy persists its
+/// own pending changes only after the layer beneath it is durable, so a layer that fails to
+/// persist holds back every layer above it. Otherwise the outer layer would report its changes as
+/// durable while the inner layer's are not on disk anywhere, and the acknowledge would pass both.
+#[test]
+fn test_persistent_version_held_back_by_failed_inner_flush() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
+    let hw_counter = HardwareCounterCell::new();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let wrapped_segment = build_segment_1(tmp_dir.path());
+    let wrapped_version = wrapped_segment.version();
+    let locked_wrapped_segment = LockedSegment::new(wrapped_segment);
+
+    let mut inner_proxy = ProxySegment::new(locked_wrapped_segment.clone());
+    let inner_log = inner_proxy.pending_changes.log_path().to_path_buf();
+    inner_proxy.delete_point(99, 1.into(), &hw_counter).unwrap();
+
+    let mut outer_proxy = ProxySegment::new(LockedSegment::from(inner_proxy));
+    outer_proxy
+        .delete_point(100, 2.into(), &hw_counter)
+        .unwrap();
+
+    // Fail the inner layer at persisting its pending changes: the log file only gets created on
+    // the first flush, so a directory in its place makes writing it fail. The flush still gets as
+    // far as the wrapped segment, which is persisted first
+    fs_err::create_dir(&inner_log).unwrap();
+    assert!(outer_proxy.flush(true).is_err());
+
+    let durable = locked_wrapped_segment.get().read().persistent_version();
+    let outer_persisted = outer_proxy.persistent_version();
+    assert!(
+        outer_persisted <= durable,
+        "outer layer reports version {outer_persisted} as durable while only {durable} is on disk",
+    );
+    // The flush did persist the wrapped segment before failing, so the above is not trivially zero
+    assert_eq!(durable, wrapped_version);
+}
+
+/// Once a proxy propagated its buffered changes into the wrapped segment and the segment flushed,
+/// the log entries are dead weight. They must not accumulate across proxy generations.
+#[test]
+fn test_pending_changes_log_is_compacted_after_propagation() {
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
+    let hw_counter = HardwareCounterCell::new();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
+
+    let mut first_cycle_len = 0;
+    for point_id in 1..=5u64 {
+        let mut proxy_segment = ProxySegment::new(locked_wrapped_segment.clone());
+        // Each proxy generation starts a fresh, uniquely named log file (see
+        // `test_unproxy_leaves_pending_changes_log_without_adoption`), so its size must be read
+        // fresh every cycle rather than reused from a previous generation's path
+        let log_path = proxy_segment.pending_changes.log_path().to_path_buf();
+        proxy_segment
+            .delete_point(100 + point_id, point_id.into(), &hw_counter)
+            .unwrap();
+        proxy_segment.flush(false).unwrap();
+        proxy_segment.propagate_to_wrapped().unwrap();
+        drop(proxy_segment);
+        locked_wrapped_segment.get().read().flush(true).unwrap();
+
+        let log_len = fs_err::metadata(&log_path).unwrap().len();
+        if point_id == 1 {
+            first_cycle_len = log_len;
+        }
+        assert_eq!(
+            log_len, first_cycle_len,
+            "pending changes log grew to {log_len} bytes after {point_id} propagated cycles",
+        );
+    }
+}
+
+/// The pending changes log is registered in the segment manifest, so a partial snapshot can tell
+/// whether the receiver's copy is up to date. Its version must therefore track the log's content,
+/// not the frozen version of the wrapped segment.
+#[test]
+fn test_pending_changes_log_manifest_version_tracks_content() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_cell = HardwareCounterCell::new();
+
+    let mut proxy_segment = ProxySegment::new(LockedSegment::new(build_segment_1(dir.path())));
+    let log_file_name = proxy_segment
+        .pending_changes
+        .log_path()
+        .file_name()
+        .unwrap()
+        .to_owned();
+    proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
+    proxy_segment.flush(false).unwrap();
+    let old_version = proxy_segment
+        .get_segment_manifest()
+        .unwrap()
+        .file_version(std::path::Path::new(&log_file_name))
+        .unwrap();
+
+    proxy_segment.delete_point(103, 2.into(), &hw_cell).unwrap();
+    proxy_segment.flush(false).unwrap();
+    let new_version = proxy_segment
+        .get_segment_manifest()
+        .unwrap()
+        .file_version(std::path::Path::new(&log_file_name))
+        .unwrap();
+
+    assert!(
+        new_version > old_version,
+        "appending to the log must bump its manifest version ({old_version} -> {new_version})",
     );
 }
