@@ -258,3 +258,80 @@ fn sampling_selective_filter_iterates_filter() {
     assert!(hits.len() < N_FILTER_ITER);
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
+
+/// Build a fixture of `n` points whose `tag` alternates between a unique
+/// string and a unique integer: a keyword facet key with mixed value shapes.
+#[cfg(not(windows))]
+fn build_segment_mixed_tags_n(n: usize) -> (TempDir, Segment) {
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("facet_segment_mixed").tempdir().unwrap();
+
+    let dim = 2;
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let vector: Vec<f32> = (0..dim).map(|i| i as f32 / 10.0).collect();
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
+
+    let mut op = 0u64;
+    for i in 0..n {
+        let point_id = PointIdType::from(i as u64 + 1);
+        segment
+            .insert_new_vectors(point_id, op, &vectors, &hw_counter)
+            .unwrap();
+        op += 1;
+
+        let tag = if i % 2 == 0 {
+            serde_json::json!(i as i64)
+        } else {
+            serde_json::json!(format!("tag_{i}"))
+        };
+        let payload = payload_json! {
+            TAG_KEY: tag,
+            SEQ_KEY: i as f64,
+        };
+        segment
+            .set_full_payload(op, point_id, &payload, &hw_counter)
+            .unwrap();
+        op += 1;
+    }
+
+    for (key, schema) in [
+        (TAG_KEY, PayloadSchemaType::Keyword),
+        (SEQ_KEY, PayloadSchemaType::Float),
+    ] {
+        segment
+            .create_field_index(
+                op,
+                &JsonPath::new(key),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+                &hw_counter,
+            )
+            .unwrap();
+        op += 1;
+    }
+
+    (dir, segment)
+}
+
+/// sampling → filter iter over a mixed-shape field. The candidate filter must
+/// cover strings and integers alike: a single MATCH ANY holds only one shape,
+/// so whichever shape is dropped never gets its points visited, and every
+/// sampled candidate of that shape silently vanishes from the result.
+#[cfg(not(windows))]
+#[test]
+fn sampling_selective_filter_counts_strings_and_integers() {
+    let (_dir, segment) = build_segment_mixed_tags_n(N_FILTER_ITER);
+    let filter = seq_below(N_FILTER_ITER * 9 / 100);
+
+    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+
+    assert!(!hits.is_empty());
+    assert!(
+        hits.keys().any(|v| matches!(v, FacetValue::Int(_))),
+        "integer candidates must not be dropped, got {hits:?}"
+    );
+    assert!(
+        hits.keys().any(|v| matches!(v, FacetValue::Keyword(_))),
+        "string candidates must not be dropped, got {hits:?}"
+    );
+    assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
+}
