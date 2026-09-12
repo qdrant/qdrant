@@ -17,10 +17,12 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 
+pub mod bucketed_snapshot;
 pub mod driver;
 pub mod helpers;
 pub mod resharding_stream_records;
 pub mod snapshot;
+pub mod snapshot_bucketed;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
 pub mod wal_delta;
@@ -281,6 +283,11 @@ impl ShardTransferKey {
 /// - `wal_delta` - Attempt to transfer shard difference by WAL delta.
 ///
 /// - `resharding_stream_records` - Shard transfer for resharding: stream all records in batches until all points are transferred.
+///
+/// - `snapshot_bucketed` - Like `snapshot`, but partitions the shard's data into several
+///   independent buckets and transfers each over its own connection, rather than one
+///   connection carrying the whole shard. Can transfer substantially faster on
+///   high-latency links where a single TCP flow can't saturate the available bandwidth.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
@@ -293,13 +300,16 @@ pub enum ShardTransferMethod {
     // Shard transfer for resharding: stream all records in batches until all points are
     // transferred.
     ReshardingStreamRecords,
+    // Like `Snapshot`, but partitions the shard's data into several independent buckets
+    // and transfers each over its own connection.
+    SnapshotBucketed,
 }
 
 impl ShardTransferMethod {
     pub fn is_resharding(&self) -> bool {
         match self {
             Self::ReshardingStreamRecords => true,
-            Self::StreamRecords | Self::Snapshot | Self::WalDelta => false,
+            Self::StreamRecords | Self::Snapshot | Self::WalDelta | Self::SnapshotBucketed => false,
         }
     }
 }

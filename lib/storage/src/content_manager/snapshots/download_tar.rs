@@ -130,10 +130,99 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
+/// Query parameter name a bucketed-transfer sender encodes on the marker URL: a JSON
+/// array of arrays, `manifest[bucket_index]` = list of entries (relative to the shard's
+/// data directory) that bucket owns. Its mere presence on a URL (regardless of path) is
+/// what [`download_and_unpack_tar`] uses to decide to dispatch to the bucketed path
+/// instead of downloading a single tar.
+const BUCKET_MANIFEST_QUERY_PARAM: &str = "bucket_manifest";
+
+/// If `url` carries a [`BUCKET_MANIFEST_QUERY_PARAM`] query parameter, parse and return
+/// it. Returns `Ok(None)` for any URL without that parameter, so non-bucketed callers are
+/// entirely unaffected.
+fn extract_bucket_manifest(url: &Url) -> Result<Option<Vec<Vec<String>>>, StorageError> {
+    let Some((_, value)) = url
+        .query_pairs()
+        .find(|(key, _)| key == BUCKET_MANIFEST_QUERY_PARAM)
+    else {
+        return Ok(None);
+    };
+    let manifest: Vec<Vec<String>> = serde_json::from_str(&value).map_err(|err| {
+        StorageError::service_error(format!(
+            "failed to parse {BUCKET_MANIFEST_QUERY_PARAM} query parameter: {err}"
+        ))
+    })?;
+    Ok(Some(manifest))
+}
+
+/// Download and unpack a bucketed shard-transfer snapshot.
+///
+/// `manifest[i]` is the list of entries (paths relative to the shard's data directory)
+/// that bucket `i` owns, exactly as computed by the sender's
+/// `bucketed_snapshot::assign_buckets`. Each non-empty bucket is fetched and unpacked
+/// independently and concurrently: there is no cross-bucket ordering, watermark, or
+/// reassembly step, so a bucket that finishes early is unpacked immediately rather than
+/// waiting for the others. This is a structural property, not an optimization detail:
+/// validity here is a property of each bucket's own self-contained tar, never of a byte
+/// range spanning multiple buckets, so there is nothing for a cross-stream
+/// synchronization bug to attach to.
+///
+/// A combined content hash across independently-tarred buckets isn't produced (each
+/// bucket only reports its own), so this always returns no checksum, matching the
+/// `compute_checksum: false` that shard-transfer recovery already uses for this path.
+async fn download_and_unpack_buckets(
+    client: &reqwest::Client,
+    base_url: &Url,
+    manifest: &[Vec<String>],
+    target_dir: &Path,
+) -> Result<(), StorageError> {
+    let mut bucket_url = base_url.clone();
+    bucket_url.set_query(None);
+    {
+        let mut segments = bucket_url.path_segments_mut().map_err(|()| {
+            StorageError::service_error(
+                "snapshot bucket URL cannot be used as a base for path segments".to_string(),
+            )
+        })?;
+        // The marker path's last segment is "snapshot-buckets" (plural); the real
+        // per-bucket endpoint is its "snapshot-bucket" (singular) sibling.
+        segments.pop();
+        segments.push("snapshot-bucket");
+    }
+
+    let mut tasks = Vec::with_capacity(manifest.len());
+    for bucket_entries in manifest {
+        if bucket_entries.is_empty() {
+            continue;
+        }
+        let mut url = bucket_url.clone();
+        let entries_json = serde_json::to_string(bucket_entries).map_err(|err| {
+            StorageError::service_error(format!("failed to encode bucket entries: {err}"))
+        })?;
+        url.query_pairs_mut().append_pair("entries", &entries_json);
+
+        let client = client.clone();
+        let target_dir = target_dir.to_path_buf();
+        tasks.push(tokio::spawn(async move {
+            download_and_unpack_tar_impl(&client, &url, &target_dir, false).await
+        }));
+    }
+
+    for task in tasks {
+        task.await.map_err(|err| {
+            StorageError::service_error(format!("Bucket download task failed: {err}"))
+        })??;
+    }
+
+    Ok(())
+}
+
 /// Download and unpack a tar file in streaming fashion without saving to disk first.
 ///
-/// This function streams the HTTP response directly into the tar extractor,
-/// avoiding the need to store the entire tar file on disk before extraction.
+/// If `url` carries a [`BUCKET_MANIFEST_QUERY_PARAM`] query parameter, dispatches to
+/// [`download_and_unpack_buckets`] instead -- see its docs. Every other URL takes the
+/// path below unchanged: this function streams the HTTP response directly into the tar
+/// extractor, avoiding the need to store the entire tar file on disk before extraction.
 ///
 /// # Cancel safety
 ///
@@ -152,6 +241,28 @@ impl<R: Read> Read for HashingReader<R> {
 /// Returns `Ok(Some(hash))` if `compute_checksum` is true, `Ok(None)` otherwise.
 /// Returns a `StorageError` if the download or extraction fails.
 pub async fn download_and_unpack_tar(
+    client: &reqwest::Client,
+    url: &Url,
+    target_dir: &Path,
+    compute_checksum: bool,
+) -> Result<Option<String>, StorageError> {
+    if let Some(manifest) = extract_bucket_manifest(url)? {
+        download_and_unpack_buckets(client, url, &manifest, target_dir).await?;
+        return Ok(None);
+    }
+
+    download_and_unpack_tar_impl(client, url, target_dir, compute_checksum).await
+}
+
+/// The actual single-tar streaming download and unpack, shared by
+/// [`download_and_unpack_tar`]'s non-bucketed path and by
+/// [`download_and_unpack_buckets`]'s per-bucket downloads. Kept as its own function
+/// (rather than having buckets call back into [`download_and_unpack_tar`] itself) so the
+/// per-bucket futures spawned in [`download_and_unpack_buckets`] have a concrete,
+/// non-recursively-shaped type -- calling back into the dispatching function directly
+/// would make the future's type embed itself through the `bucket_manifest` branch, which
+/// `tokio::spawn` cannot prove `Send` for.
+async fn download_and_unpack_tar_impl(
     client: &reqwest::Client,
     url: &Url,
     target_dir: &Path,
