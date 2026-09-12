@@ -11,20 +11,20 @@
 use std::marker::PhantomData;
 
 use prost::Message;
-use prost::bytes::{BufMut, Bytes, BytesMut};
+use prost::bytes::{BufMut, Bytes};
 use tonic::client::{Grpc, GrpcService};
 use tonic::codec::{BufferSettings, Codec, EncodeBuf, Encoder};
 use tonic::codegen::{Body, StdError, http};
 use tonic::{GrpcMethod, Request, Response, Status};
 use tonic_prost::ProstDecoder;
 
+use crate::grpc::qdrant::points_internal_server::SERVICE_NAME;
 use crate::grpc::qdrant::{PointsOperationResponseInternal, UpdateBatchInternal};
 
 /// Identity of `PointsInternal/UpdateBatch`, as the generated client spells it.
 ///
 /// Bypassing the generated client means these no longer follow the proto automatically, so
 /// `tests::update_batch_rpc_matches_proto` checks them against the compiled descriptor set.
-const UPDATE_BATCH_SERVICE: &str = "qdrant.PointsInternal";
 const UPDATE_BATCH_METHOD: &str = "UpdateBatch";
 const UPDATE_BATCH_PATH: &str = "/qdrant.PointsInternal/UpdateBatch";
 
@@ -43,13 +43,8 @@ impl<M: Message> PreEncodedMessage<M> {
     /// This is a full pass over the message. Callers holding a large message should do it outside
     /// an async runtime.
     pub fn encode(message: &M) -> Self {
-        let mut body = BytesMut::with_capacity(message.encoded_len());
-        message
-            .encode(&mut body)
-            .expect("BytesMut grows on demand, so encoding into it cannot run out of space");
-
         Self {
-            body: body.freeze(),
+            body: Bytes::from(message.encode_to_vec()),
             _pd: PhantomData,
         }
     }
@@ -57,11 +52,13 @@ impl<M: Message> PreEncodedMessage<M> {
 
 /// [`PointsInternalClient::update_batch`] with an already-encoded request body.
 ///
+/// `grpc` is what [`PointsInternalClient::new`] wraps, configured the same way.
+///
 /// [`PointsInternalClient::update_batch`]: crate::grpc::qdrant::points_internal_client::PointsInternalClient::update_batch
+/// [`PointsInternalClient::new`]: crate::grpc::qdrant::points_internal_client::PointsInternalClient::new
 pub async fn update_batch_pre_encoded<T>(
-    channel: T,
+    mut grpc: Grpc<T>,
     request: PreEncodedMessage<UpdateBatchInternal>,
-    max_decoding_message_size: usize,
 ) -> Result<Response<PointsOperationResponseInternal>, Status>
 where
     T: GrpcService<tonic::body::Body>,
@@ -69,8 +66,6 @@ where
     T::ResponseBody: Body<Data = Bytes> + Send + 'static,
     <T::ResponseBody as Body>::Error: Into<StdError> + Send,
 {
-    let mut grpc = Grpc::new(channel).max_decoding_message_size(max_decoding_message_size);
-
     grpc.ready()
         .await
         .map_err(|err| Status::unknown(format!("Service was not ready: {}", err.into())))?;
@@ -78,7 +73,7 @@ where
     let mut request = Request::new(request);
     request
         .extensions_mut()
-        .insert(GrpcMethod::new(UPDATE_BATCH_SERVICE, UPDATE_BATCH_METHOD));
+        .insert(GrpcMethod::new(SERVICE_NAME, UPDATE_BATCH_METHOD));
 
     grpc.unary(
         request,
@@ -155,16 +150,14 @@ mod tests {
                 let package = file.package();
                 file.service.iter().map(move |service| (package, service))
             })
-            .filter(|(package, service)| {
-                format!("{package}.{}", service.name()) == UPDATE_BATCH_SERVICE
-            })
+            .filter(|(package, service)| format!("{package}.{}", service.name()) == SERVICE_NAME)
             .flat_map(|(_, service)| &service.method)
             .find(|method| method.name() == UPDATE_BATCH_METHOD)
             .expect("proto defines the RPC this module calls");
 
         assert_eq!(
             UPDATE_BATCH_PATH,
-            format!("/{UPDATE_BATCH_SERVICE}/{UPDATE_BATCH_METHOD}"),
+            format!("/{SERVICE_NAME}/{UPDATE_BATCH_METHOD}"),
         );
         // The types `update_batch_pre_encoded` sends and decodes.
         assert_eq!(method.input_type(), ".qdrant.UpdateBatchInternal");
