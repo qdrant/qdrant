@@ -1593,13 +1593,16 @@ impl LocalShardClocks {
 
     /// Persist clock maps to disk
     pub fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
-        self.oldest_clocks
-            .blocking_lock()
-            .store_if_changed(&Self::oldest_clocks_path(shard_path))?;
-
+        // Persist newest before oldest: if we crash between writes, on-disk newest is ahead of
+        // oldest (preserving oldest <= newest). A stale oldest cutoff is safe and just replays
+        // more from the WAL, whereas a stale newest would make oldest > newest and reject deltas.
         self.newest_clocks
             .blocking_lock()
             .store_if_changed(&Self::newest_clocks_path(shard_path))?;
+
+        self.oldest_clocks
+            .blocking_lock()
+            .store_if_changed(&Self::oldest_clocks_path(shard_path))?;
 
         Ok(())
     }
@@ -1716,5 +1719,111 @@ fn collect_segment_memory_metadata(
             let proxy_guard = proxy.read();
             collect_segment_memory_metadata(&proxy_guard.wrapped_segment, reports);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::operations::ClockTag;
+
+    #[test]
+    fn test_local_shard_clocks_store_order() {
+        let temp_dir = Builder::new().prefix("test_clocks").tempdir().unwrap();
+        let shard_path = temp_dir.path();
+
+        let mut newest = ClockMap::default();
+        let mut oldest = ClockMap::default();
+        newest.advance_clock(ClockTag::new(1, 1, 10));
+        oldest.advance_clock(ClockTag::new(1, 1, 5));
+
+        let clocks = LocalShardClocks::new(newest, oldest);
+        clocks.store_if_changed(shard_path).unwrap();
+
+        let loaded = LocalShardClocks::load(shard_path).unwrap();
+        let loaded_newest = loaded.newest_clocks.blocking_lock().to_recovery_point();
+        let loaded_oldest = loaded.oldest_clocks.blocking_lock().to_recovery_point();
+
+        // Oldest must not exceed newest
+        assert!(!loaded_newest.has_any_older_clocks_than(&loaded_oldest));
+    }
+
+    #[test]
+    fn test_local_shard_clocks_crash_between_writes_preserves_invariant() {
+        let temp_dir = Builder::new()
+            .prefix("test_clocks_crash")
+            .tempdir()
+            .unwrap();
+        let shard_path = temp_dir.path();
+
+        // Initial state on disk: newest=10, oldest=5
+        let mut initial_newest = ClockMap::default();
+        let mut initial_oldest = ClockMap::default();
+        initial_newest.advance_clock(ClockTag::new(1, 1, 10));
+        initial_oldest.advance_clock(ClockTag::new(1, 1, 5));
+        let initial_clocks = LocalShardClocks::new(initial_newest, initial_oldest);
+        initial_clocks.store_if_changed(shard_path).unwrap();
+
+        // Simulate crash between writes when advancing to newest=20, oldest=15:
+        // Exercise `LocalShardClocks::store_if_changed`: inject a failure on the second write (oldest_clocks).
+        let mut advanced_newest = ClockMap::default();
+        let mut advanced_oldest = ClockMap::default();
+        advanced_newest.advance_clock(ClockTag::new(1, 1, 20));
+        advanced_oldest.advance_clock(ClockTag::new(1, 1, 15));
+        let advanced_clocks = LocalShardClocks::new(advanced_newest, advanced_oldest);
+
+        // Inject failure on oldest_clocks path by replacing file with a directory (rename fails with EISDIR).
+        let oldest_path = LocalShardClocks::oldest_clocks_path(shard_path);
+        let oldest_backup = std::fs::read(&oldest_path).unwrap();
+        std::fs::remove_file(&oldest_path).unwrap();
+        std::fs::create_dir(&oldest_path).unwrap();
+
+        // store_if_changed writes newest (20) successfully, then fails on oldest (15).
+        assert!(advanced_clocks.store_if_changed(shard_path).is_err());
+
+        // Restore oldest_clocks.json to simulate pre-crash state on disk (tick 5).
+        std::fs::remove_dir(&oldest_path).unwrap();
+        std::fs::write(&oldest_path, &oldest_backup).unwrap();
+
+        // On reboot, load clocks from disk:
+        let recovered = LocalShardClocks::load(shard_path).unwrap();
+        assert_eq!(
+            recovered.newest_clocks.blocking_lock().current_tick(1, 1),
+            Some(20)
+        );
+        assert_eq!(
+            recovered.oldest_clocks.blocking_lock().current_tick(1, 1),
+            Some(5)
+        );
+
+        let rec_newest = recovered.newest_clocks.blocking_lock().to_recovery_point();
+        let rec_oldest = recovered.oldest_clocks.blocking_lock().to_recovery_point();
+
+        // Invariant oldest <= newest is preserved: rec_newest is 20, rec_oldest is 5.
+        assert!(!rec_newest.has_any_older_clocks_than(&rec_oldest));
+
+        // Contrast with backwards (oldest-first) crash: if oldest=15 was written but newest remained 10,
+        // rec_oldest would exceed rec_newest (15 > 10).
+        let mut backwards_oldest = ClockMap::default();
+        backwards_oldest.advance_clock(ClockTag::new(1, 1, 15));
+        backwards_oldest
+            .store_if_changed(&LocalShardClocks::oldest_clocks_path(shard_path))
+            .unwrap();
+
+        // Reset newest on disk back to 10
+        let mut stale_newest = ClockMap::default();
+        stale_newest.advance_clock(ClockTag::new(1, 1, 10));
+        stale_newest
+            .store_if_changed(&LocalShardClocks::newest_clocks_path(shard_path))
+            .unwrap();
+
+        let broken = LocalShardClocks::load(shard_path).unwrap();
+        let broken_newest = broken.newest_clocks.blocking_lock().to_recovery_point();
+        let broken_oldest = broken.oldest_clocks.blocking_lock().to_recovery_point();
+
+        // In the broken order, newest is strictly older than oldest (invariant inverted!)
+        assert!(broken_newest.has_any_older_clocks_than(&broken_oldest));
     }
 }
