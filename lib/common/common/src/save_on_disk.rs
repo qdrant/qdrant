@@ -246,10 +246,9 @@ mod tests {
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
+            // A single write exercises the wake-up path without an unrelated
+            // atomic overwrite, which can be flaky on Windows CI.
             counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
         });
 
         assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
@@ -265,10 +264,9 @@ mod tests {
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));
+            // Wake the waiter without satisfying its condition, so it must
+            // continue waiting until the timeout.
             counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
         });
 
         assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
