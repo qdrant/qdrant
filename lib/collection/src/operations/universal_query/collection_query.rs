@@ -712,7 +712,11 @@ impl CollectionQueryRequest {
                     &query_lookup_vector_name,
                     query_lookup_collection.as_ref(),
                     using,
-                    self.limit,
+                    // The MMR `candidates_limit` default is derived from this
+                    // limit, and MMR must select `limit + offset` points before
+                    // the offset is applied at collection level, so the default
+                    // pool has to cover the whole requested page.
+                    self.limit.saturating_add(offset),
                 )
             })
             .transpose()?;
@@ -798,6 +802,80 @@ mod tests {
         };
         referenced.extend(None, vec![(point_id, record)]);
         referenced
+    }
+
+    #[test]
+    fn test_mmr_default_candidates_limit_covers_offset() {
+        // MMR selects `limit + offset` points at collection level, so the
+        // default candidates pool must cover the whole requested page.
+        let request = CollectionQueryRequest {
+            prefetch: vec![],
+            query: Some(Query::Vector(VectorQuery::NearestWithMmr(
+                NearestWithMmr {
+                    nearest: VectorInputInternal::Vector(VectorInternal::Dense(vec![
+                        1.0, 2.0, 3.0,
+                    ])),
+                    mmr: Mmr {
+                        diversity: None,
+                        candidates_limit: None,
+                    },
+                },
+            ))),
+            using: VectorNameBuf::from(DEFAULT_VECTOR_NAME),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            offset: 20,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+        };
+
+        let shard_request = request
+            .try_into_shard_request("test_collection", &ReferencedVectors::default())
+            .unwrap();
+
+        let Some(ScoringQuery::Mmr(mmr)) = shard_request.query else {
+            panic!("expected MMR scoring query");
+        };
+        assert_eq!(mmr.candidates_limit, 30);
+    }
+
+    #[test]
+    fn test_mmr_explicit_candidates_limit_is_respected() {
+        let request = CollectionQueryRequest {
+            prefetch: vec![],
+            query: Some(Query::Vector(VectorQuery::NearestWithMmr(
+                NearestWithMmr {
+                    nearest: VectorInputInternal::Vector(VectorInternal::Dense(vec![
+                        1.0, 2.0, 3.0,
+                    ])),
+                    mmr: Mmr {
+                        diversity: None,
+                        candidates_limit: Some(100),
+                    },
+                },
+            ))),
+            using: VectorNameBuf::from(DEFAULT_VECTOR_NAME),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            offset: 20,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+        };
+
+        let shard_request = request
+            .try_into_shard_request("test_collection", &ReferencedVectors::default())
+            .unwrap();
+
+        let Some(ScoringQuery::Mmr(mmr)) = shard_request.query else {
+            panic!("expected MMR scoring query");
+        };
+        assert_eq!(mmr.candidates_limit, 100);
     }
 
     #[test]
