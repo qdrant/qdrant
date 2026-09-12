@@ -1144,6 +1144,7 @@ impl From<EdgeConfig> for SegmentConfig {
                 .map(|(k, v)| (k, SegmentSparseVectorDataConfig::from(v)))
                 .collect(),
             payload_storage_type: PayloadStorageType::Mmap,
+            id_tracker_memory: None,
         }
     }
 }
@@ -1155,6 +1156,7 @@ impl From<SegmentConfig> for EdgeConfig {
             sparse_vector_data,
             // Fixed on the write path (`Mmap`); not an FFI knob.
             payload_storage_type: _,
+            id_tracker_memory: _,
         } = c;
         EdgeConfig {
             vector_data: vector_data

@@ -255,6 +255,7 @@ pub fn build_segment_optimizer_config(
 
     SegmentOptimizerConfig {
         payload_storage_type: collection_params.payload_storage_type(),
+        id_tracker_memory: collection_params.id_tracker_memory(),
         dense_vectors,
         sparse_vectors,
         live_vector_names: None,

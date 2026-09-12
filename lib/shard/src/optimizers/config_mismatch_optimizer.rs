@@ -77,6 +77,15 @@ impl ConfigMismatchOptimizer {
             return true; // Optimize segment due to payload storage mismatch
         }
 
+        // Appendable segments always use the mutable tracker; the placement only applies once
+        // they are indexed, which happens with the current configuration anyway.
+        if let Some(required_memory) = self.segment_optimizer_config.id_tracker_memory
+            && !segment_config.is_appendable()
+            && required_memory != segment_config.id_tracker_memory_placement()
+        {
+            return true; // Optimize segment due to id tracker placement mismatch
+        }
+
         // Determine whether dense data in segment has mismatch
         let dense_has_mismatch =
             segment_config

@@ -726,6 +726,7 @@ fn test_retrieve_raw_multivec_bytes() {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
@@ -792,6 +793,7 @@ fn test_retrieve_raw_sparse_bytes() {
                 },
             )]),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
@@ -1218,6 +1220,7 @@ fn test_upsert_raw_multivec_roundtrip() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
@@ -1273,6 +1276,7 @@ fn test_upsert_raw_sparse_roundtrip() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
@@ -1329,6 +1333,7 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         };
         let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
         let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
@@ -1416,6 +1421,7 @@ fn test_upsert_raw_dense_turbo_bytes() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
@@ -1471,6 +1477,7 @@ fn test_upsert_raw_multivec_turbo_bytes() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
@@ -1552,6 +1559,7 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
@@ -1886,6 +1894,7 @@ fn create_deferred_segment(
                 ),
             ]),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         deferred_internal_id,
         true,
@@ -2303,6 +2312,7 @@ fn test_deferred_point_with_deferred_reads() {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         Some(0),
         true,

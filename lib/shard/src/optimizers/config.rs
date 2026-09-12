@@ -144,6 +144,9 @@ impl fmt::Debug for LiveVectorNamesProvider {
 #[derive(Debug, Clone)]
 pub struct SegmentOptimizerConfig {
     pub payload_storage_type: PayloadStorageType,
+    /// Requested id tracker placement for non-appendable segments; `None` leaves the deployment
+    /// default in place.
+    pub id_tracker_memory: Option<Memory>,
     pub dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerConfig>,
     pub sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerConfig>,
     /// Live read of the collection's vector names, when wired in via
@@ -165,6 +168,7 @@ impl SegmentOptimizerConfig {
                 .map(|(name, config)| (name.clone(), config.plain()))
                 .collect(),
             payload_storage_type: self.payload_storage_type,
+            id_tracker_memory: self.id_tracker_memory,
         }
     }
 

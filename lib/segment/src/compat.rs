@@ -80,6 +80,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
             vector_data,
             sparse_vector_data: Default::default(),
             payload_storage_type: payload_storage_type.unwrap_or(default_storage_type),
+            id_tracker_memory: None,
         }
     }
 }

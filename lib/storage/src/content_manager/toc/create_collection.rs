@@ -38,6 +38,7 @@ impl TableOfContent {
             sharding_method,
             on_disk_payload,
             payload,
+            id_tracker,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
@@ -141,6 +142,7 @@ impl TableOfContent {
             sharding_method,
             on_disk_payload: Some(on_disk_payload.unwrap_or(self.storage_config.on_disk_payload)),
             payload,
+            id_tracker,
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
                 StorageError::bad_input("`replication_factor` cannot be 0".to_string())
             })?,

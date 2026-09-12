@@ -612,6 +612,7 @@ fn sparse_vector_index_persistence_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
@@ -790,6 +791,7 @@ fn sparse_vector_test_large_index() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
