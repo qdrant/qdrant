@@ -592,8 +592,8 @@ impl SegmentBuilder {
             let id_tracker = match id_tracker {
                 IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
                     match segment_config.id_tracker_memory_placement() {
-                        // Mapping stays on disk. `Cached` is rejected by API validation;
-                        // it defensively maps to the closest supported placement.
+                        // Mapping stays on disk; a cached placement primes the page cache
+                        // with it when the built segment is loaded.
                         Memory::Cold | Memory::Cached => {
                             let disk_id_tracker = DiskIdTracker::from_in_memory_tracker(
                                 &MmapFs,

@@ -38,8 +38,9 @@ where
     }
 
     /// Open an existing disk-resident id tracker: `deleted` and `versions` are
-    /// read into RAM (small, mutated in place), the mapping stays on disk.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    /// read into RAM (small, mutated in place), the mapping stays on disk;
+    /// `populate` says whether to prime the page cache with it.
+    pub fn open(fs: &S::Fs, segment_path: &Path, populate: Populate) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -71,7 +72,7 @@ where
         let internal_to_version_wrapper =
             SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
 
-        let reader = DiskMappingReader::open(fs, segment_path)?;
+        let reader = DiskMappingReader::open(fs, segment_path, populate)?;
 
         Ok(Self {
             path: segment_path.to_path_buf(),
@@ -158,7 +159,9 @@ where
         deleted_wrapper.flusher()()?;
         internal_to_version_wrapper.flusher()()?;
 
-        let reader = DiskMappingReader::open(fs, path)?;
+        // Just written, so cached already; the configured placement applies
+        // when the built segment is loaded.
+        let reader = DiskMappingReader::open(fs, path, Populate::No)?;
 
         Ok(Self {
             path: path.to_path_buf(),

@@ -150,15 +150,21 @@ def test_id_tracker_memory_placement():
     assert response.ok, response.text
     assert response.json()["result"]["config"]["params"]["id_tracker"]["memory"] == "pinned"
 
-    # The id tracker has no populate-on-open variant: `cached` is rejected
     response = request_with_validation(
         api="/collections/{collection_name}",
         method="PATCH",
         path_params={"collection_name": collection_name},
         body={"params": {"id_tracker": {"memory": "cached"}}},
     )
-    assert response.status_code == 422, response.text
-    assert "cached" in response.json()["status"]["error"]
+    assert response.ok, response.text
+
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="GET",
+        path_params={"collection_name": collection_name},
+    )
+    assert response.ok, response.text
+    assert response.json()["result"]["config"]["params"]["id_tracker"]["memory"] == "cached"
 
 
 def test_pinned_payload_storage_is_rejected():

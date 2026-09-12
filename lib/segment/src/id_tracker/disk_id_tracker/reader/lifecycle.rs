@@ -21,14 +21,19 @@ use crate::id_tracker::disk_id_tracker::on_disk_format::{
 type Endian = LittleEndian;
 
 impl<S: UniversalRead> DiskMappingReader<S> {
-    fn open_options() -> OpenOptions {
+    /// Options for the `i2e`/`e2i` handles. A non-populating open still
+    /// prefetches the headers, which are read at open regardless.
+    fn open_options(populate: Populate) -> OpenOptions {
+        let populate = match populate {
+            Populate::Blocking | Populate::PreferBackground => populate,
+            Populate::Auto | Populate::No | Populate::Partial(_) => Populate::Partial(
+                ReadRange::new(0, size_of::<I2eHeader>().max(size_of::<E2iHeader>()) as u64),
+            ),
+        };
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::Partial(ReadRange::new(
-                0,
-                size_of::<I2eHeader>().max(size_of::<E2iHeader>()) as u64,
-            )),
+            populate,
             advice: AdviceSetting::Global,
         }
     }
@@ -46,17 +51,19 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
     /// will open. Returns `false` (nothing scheduled) when the mapping is not
-    /// in the on-disk format.
+    /// in the on-disk format. `populate` is the mapping placement, see
+    /// [`open`](Self::open).
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
+        populate: Populate,
     ) -> OperationResult<bool> {
         let i2e_path = i2e_path(segment_path);
         if !UniversalReadFileOps::exists(fs, &i2e_path)? {
             return Ok(false);
         }
 
-        let options = Self::open_options();
+        let options = Self::open_options(populate);
 
         fs.schedule_open(&i2e_path, Some(options), None);
         fs.schedule_open(&e2i_path(segment_path), Some(options), None);
@@ -75,12 +82,18 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     }
 
     /// Open the reader, loading only headers, the sparse index, and the
-    /// `is_uuid` bitmap into RAM; no per-point mapping data is read.
+    /// `is_uuid` bitmap into RAM; no per-point mapping data is read. A
+    /// populating `populate` additionally primes the page cache with the
+    /// mapping files, which otherwise are paged in on demand.
     ///
     /// Errors if the segment is not in the on-disk format (`i2e` absent). Use
     /// [`try_open`](Self::try_open) to probe without erroring.
-    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
-        Self::try_open(fs, segment_path)?.ok_or_else(|| {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        Self::try_open(fs, segment_path, populate)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker mapping ({}) not found",
                 i2e_path(segment_path).display(),
@@ -95,8 +108,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
+        populate: Populate,
     ) -> OperationResult<Option<Self>> {
-        let options = Self::open_options();
+        let options = Self::open_options(populate);
 
         let Some(i2e) = fs
             .open(i2e_path(segment_path), options, Default::default())

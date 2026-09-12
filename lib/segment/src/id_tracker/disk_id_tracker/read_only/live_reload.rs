@@ -3,7 +3,7 @@
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 
 use super::ReadOnlyDiskIdTracker;
@@ -45,7 +45,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         let Some(fresh) = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
-            Self::open_options(),
+            Self::open_options(Populate::No),
             Default::default(),
         )
         .ok_unchanged()?
