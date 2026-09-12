@@ -446,3 +446,46 @@ def test_collection_snapshot_security(collection_name):
     )
     assert response.status_code == 400
     assert response.json()["status"]["error"] == "Bad request: Invalid snapshot URI, file path must be absolute or on localhost"
+
+
+def _assert_snapshot_upload_rejected_without_path_leak(collection_name, snapshot_bytes, filename):
+    # Rejected as bad input, and the error must not expose the server-side temporary directory.
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}/snapshots/upload",
+        files={'snapshot': (filename, snapshot_bytes, 'application/octet-stream')},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 400
+    assert 'does not contain a collection config' in response.text
+    assert 'recovery-' not in response.text
+    assert 'config.json' not in response.text
+
+
+def test_upload_snapshot_without_config_is_rejected_without_path_leak(collection_name):
+    # A valid empty TAR (no entries) has no collection config.
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w'):
+        pass
+    _assert_snapshot_upload_rejected_without_path_leak(
+        collection_name, buf.getvalue(), 'empty.snapshot'
+    )
+
+
+def test_upload_snapshot_with_config_directory_is_rejected_without_path_leak(collection_name):
+    # A tar whose config.json entry is a directory must be rejected the same way:
+    # exists() alone is not enough, and File::open on a directory would leak the path.
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w') as tar:
+        info = tarfile.TarInfo(name='config.json')
+        info.type = tarfile.DIRTYPE
+        info.mode = 0o755
+        tar.addfile(info)
+    _assert_snapshot_upload_rejected_without_path_leak(
+        collection_name, buf.getvalue(), 'config-dir.snapshot'
+    )
