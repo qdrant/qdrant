@@ -106,48 +106,61 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
 /// Preferably, the `uuid` should match the last component of `path`.
 /// In production use [`normalize_segment_dir`] to obtain correct path and UUID.
 /// In tests it is acceptable to pass an arbitrary UUID, e.g., [`Uuid::nil()`].
+///
+/// `ignore_missing_version` controls whether a missing version file is tolerated instead of
+/// an error. Pass `false` unless reloading a segment this same process just built with
+/// `ready: false` (see `SegmentBuilder::build`), whose version file is intentionally not yet
+/// written.
 pub fn load_segment(
     path: &Path,
     uuid: Uuid,
     deferred_internal_id: Option<PointOffsetType>,
     stopped: &AtomicBool,
+    ignore_missing_version: bool,
 ) -> OperationResult<Segment> {
     let total_started = Instant::now();
 
-    let stored_version = SegmentVersion::load_universal(&MmapFs, path)?.ok_or_else(|| {
-        OperationError::service_error(format!(
-            "Segment version file not found in segment: {}",
-            path.display()
-        ))
-    })?;
+    let stored_version = SegmentVersion::load_universal(&MmapFs, path)?;
 
-    let app_version = SegmentVersion::current();
+    match stored_version {
+        Some(stored_version) => {
+            let app_version = SegmentVersion::current();
 
-    if stored_version != app_version {
-        info!("Migrating segment {stored_version} -> {app_version}");
+            if stored_version != app_version {
+                info!("Migrating segment {stored_version} -> {app_version}");
 
-        if stored_version > app_version {
+                if stored_version > app_version {
+                    return Err(OperationError::service_error(format!(
+                        "Data version {stored_version} is newer than application version {app_version}. \
+                        Please upgrade the application. Compatibility is not guaranteed."
+                    )));
+                }
+
+                if stored_version.major == 0 && stored_version.minor < 3 {
+                    return Err(OperationError::service_error(format!(
+                        "Segment version({stored_version}) is not compatible with current version({app_version})"
+                    )));
+                }
+
+                if stored_version.major == 0 && stored_version.minor == 3 {
+                    let segment_state = load_segment_state_v3(path)?;
+                    Segment::save_state(&segment_state, path)?;
+                } else if stored_version.major == 0 && stored_version.minor <= 5 {
+                    let segment_state = load_segment_state_v5(path)?;
+                    Segment::save_state(&segment_state, path)?;
+                }
+
+                SegmentVersion::save(path)?
+            }
+        }
+        None if !ignore_missing_version => {
             return Err(OperationError::service_error(format!(
-                "Data version {stored_version} is newer than application version {app_version}. \
-                Please upgrade the application. Compatibility is not guaranteed."
+                "Segment version file not found in segment: {}",
+                path.display()
             )));
         }
-
-        if stored_version.major == 0 && stored_version.minor < 3 {
-            return Err(OperationError::service_error(format!(
-                "Segment version({stored_version}) is not compatible with current version({app_version})"
-            )));
-        }
-
-        if stored_version.major == 0 && stored_version.minor == 3 {
-            let segment_state = load_segment_state_v3(path)?;
-            Segment::save_state(&segment_state, path)?;
-        } else if stored_version.major == 0 && stored_version.minor <= 5 {
-            let segment_state = load_segment_state_v5(path)?;
-            Segment::save_state(&segment_state, path)?;
-        }
-
-        SegmentVersion::save(path)?
+        // Freshly built by this process (`ready: false`); nothing to migrate yet.
+        None => {}
     }
 
     let started = Instant::now();

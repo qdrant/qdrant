@@ -1,4 +1,4 @@
-//! Pending vector-schema changes recorded in a [`super::ProxySegment`].
+//! Pending vector-schema changes recorded in a proxy segment.
 //!
 //! See [`IntendedVector`] for the rationale behind the intent representation
 //! and [`ProxyVectorNameChanges`] for the per-proxy buffer.
@@ -8,11 +8,13 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use itertools::Itertools as _;
-use segment::data_types::vector_name_config::{
+use serde::{Deserialize, Serialize};
+
+use crate::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
-use segment::index::field_index::CardinalityEstimation;
-use segment::types::{
+use crate::index::field_index::CardinalityEstimation;
+use crate::types::{
     Condition, CustomIdCheckerCondition, ExtendedPointId, Filter, SegmentConfig, SeqNumberType,
     SparseVectorDataConfig, VectorDataConfig, VectorName, VectorNameBuf, WithVector,
 };
@@ -34,7 +36,7 @@ impl CustomIdCheckerCondition for AlwaysFalseChecker {
     }
 }
 
-/// Desired end-state of a single named vector inside a [`super::ProxySegment`].
+/// Desired end-state of a single named vector inside a proxy segment.
 ///
 /// `ProxyVectorNameChanges` records, for each name touched in the proxy, the
 /// final state we want the wrapped/optimised segment to converge to once the
@@ -44,7 +46,7 @@ impl CustomIdCheckerCondition for AlwaysFalseChecker {
 /// stale storage from the wrapped segment. The intent representation keeps
 /// enough information that the apply path can clear that stale storage before
 /// installing the new schema.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IntendedVector {
     /// The vector should exist with this configuration once the proxy drains.
     Present {
@@ -90,7 +92,7 @@ pub struct ProxyVectorNameChanges {
 }
 
 impl ProxyVectorNameChanges {
-    /// Record a `Create` intent for `vector_name`.
+    /// Record a `Create` intent for `vector_name`, and return the recorded intent.
     ///
     /// `wrapped_config` is the segment config the proxy is wrapping; it is used
     /// to decide whether the wrapped segment already carries this name with a
@@ -104,7 +106,7 @@ impl ProxyVectorNameChanges {
         config: VectorNameConfig,
         version: SeqNumberType,
         wrapped_config: &SegmentConfig,
-    ) {
+    ) -> IntendedVector {
         // Carry forward an earlier "tainted" flag: a previous `Absent` (or a
         // previous `Present { supersedes_wrapped: true }`) means the wrapped
         // data has already been logically discarded by this proxy, so even a
@@ -116,20 +118,32 @@ impl ProxyVectorNameChanges {
         let supersedes_wrapped =
             previous_taints || wrapped_carries_stale_schema(wrapped_config, &vector_name, &config);
 
-        self.intent.insert(
-            vector_name,
-            IntendedVector::Present {
-                config,
-                version,
-                supersedes_wrapped,
-            },
-        );
+        let intent = IntendedVector::Present {
+            config,
+            version,
+            supersedes_wrapped,
+        };
+        self.intent.insert(vector_name, intent.clone());
+        intent
     }
 
     /// Record a `Delete` intent for `vector_name`.
     pub fn record_delete(&mut self, vector_name: VectorNameBuf, version: SeqNumberType) {
         self.intent
             .insert(vector_name, IntendedVector::Absent { version });
+    }
+
+    /// Insert an already-computed intent for `vector_name` as-is.
+    ///
+    /// Used to reconstruct the buffer from a persisted pending changes log, where the intent —
+    /// including its `supersedes_wrapped` flag — was computed when the change was first recorded.
+    pub fn insert_intent(&mut self, vector_name: VectorNameBuf, intent: IntendedVector) {
+        self.intent.insert(vector_name, intent);
+    }
+
+    /// Get the recorded intent for `vector_name`, if any.
+    pub fn get(&self, vector_name: &VectorName) -> Option<&IntendedVector> {
+        self.intent.get(vector_name)
     }
 
     pub fn is_empty(&self) -> bool {

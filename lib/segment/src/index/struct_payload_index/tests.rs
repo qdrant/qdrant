@@ -88,6 +88,7 @@ fn test_load_payload_index() {
         Uuid::nil(),
         None,
         &AtomicBool::new(false),
+        false,
     )
     .unwrap();
 
@@ -152,8 +153,14 @@ fn create_field_index_persists_index_data_with_config() {
         "create_field_index must durably commit the config",
     );
 
-    let segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false))
-        .expect("segment must load after simulated crash");
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load after simulated crash");
 
     // Queried before any replay on purpose: the index data itself must be complete,
     // not repaired by re-applied operations.
@@ -223,8 +230,14 @@ fn switch_incompatible_index_type_survives_crash() {
         "the durable config must list the new index schema",
     );
 
-    let segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false))
-        .expect("segment must load after simulated crash");
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load after simulated crash");
 
     // Queried before any replay on purpose: the new index data must be complete.
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(

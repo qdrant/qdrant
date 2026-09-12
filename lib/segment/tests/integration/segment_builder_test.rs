@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::progress_tracker::ProgressTracker;
+use common::storage_version::VERSION_FILE;
 use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -17,6 +18,7 @@ use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
+use segment::segment_constructor::normalize_segment_dir;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
@@ -305,6 +307,53 @@ fn test_building_new_sparse_segment() {
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
 }
 
+#[test]
+fn test_build_not_ready_defers_version_file() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let segment1 = build_segment_1(dir.path());
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &segment1.segment_config,
+        &HnswGlobalConfig::default(),
+    )
+    .unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    builder.update(&[&segment1], &stopped, &hw_counter).unwrap();
+
+    let permit = ResourcePermit::dummy(get_num_indexing_threads(0) as u32);
+    let mut rng = rand::rng();
+
+    let built_segment = builder
+        .build(
+            dir.path(),
+            Uuid::new_v4(),
+            None,
+            false, // ready
+            permit,
+            &stopped,
+            &mut rng,
+            &hw_counter,
+            ProgressTracker::new_for_test(),
+        )
+        .unwrap();
+
+    let segment_path = built_segment.segment_path.clone();
+    drop(built_segment);
+
+    // Version file must not be written while not `ready`.
+    assert!(!segment_path.join(VERSION_FILE).is_file());
+
+    // A restart (or snapshot recovery) must not pick this segment up before it is marked
+    // ready; `normalize_segment_dir` discards it, same as any other half-built segment.
+    assert!(normalize_segment_dir(&segment_path).unwrap().is_none());
+    assert!(!segment_path.exists());
+}
+
 fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u64, bool) {
     let mut rng = rand::rng();
     let stopped = Arc::new(AtomicBool::new(false));
@@ -363,6 +412,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
         dir.path(),
         Uuid::new_v4(),
         None,
+        true,
         permit,
         &stopped,
         &mut rng,
