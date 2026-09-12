@@ -789,3 +789,60 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
         Some(&field_schema),
     );
 }
+
+#[test]
+fn test_propagate_to_wrapped_stale_version_schema() {
+    use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+    use segment::types::Distance;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = empty_segment(dir.path());
+    let hw_counter = HardwareCounterCell::new();
+
+    let wrapped_segment = LockedSegment::new(segment);
+    let mut proxy_segment = ProxySegment::new(wrapped_segment.clone());
+
+    // Queue changes on proxy while segment is at version 0
+    let field_name: PayloadKeyType = "color".parse().unwrap();
+    let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+    proxy_segment
+        .create_field_index(10, &field_name, Some(&field_schema), &hw_counter)
+        .unwrap();
+
+    let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+        size: 4,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    });
+    proxy_segment
+        .create_vector_name(20, "extra_vector", &vector_config)
+        .unwrap();
+
+    // Now bump wrapped segment version to 50 (higher than queued changes: 50 > 20 > 10)
+    let vec = vec![1.0, 0.0, 0.0, 0.0];
+    wrapped_segment
+        .get()
+        .write()
+        .upsert_point(50, 1.into(), only_default_vector(&vec), &hw_counter)
+        .unwrap();
+
+    proxy_segment.propagate_to_wrapped().unwrap();
+
+    assert!(
+        wrapped_segment
+            .get()
+            .read()
+            .config()
+            .vector_data
+            .contains_key("extra_vector")
+    );
+    assert_eq!(
+        wrapped_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .get(&field_name),
+        Some(&field_schema),
+    );
+}
