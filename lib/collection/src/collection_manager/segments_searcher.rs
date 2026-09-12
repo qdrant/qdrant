@@ -296,7 +296,7 @@ impl SegmentsSearcher {
             batch_request
                 .searches
                 .iter()
-                .map(|request| request.limit + request.offset)
+                .map(|request| request.limit.saturating_add(request.offset))
                 .collect(),
             &further_results,
         );
