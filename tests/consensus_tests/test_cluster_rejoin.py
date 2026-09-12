@@ -50,14 +50,17 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
         res = requests.get(f"{peer_api_uris[1]}/collections")
         print(res.json())
 
-    # Create new collection unknown to the dead node
+    # Create new collection unknown to the dead node. Unlike the log-accumulation
+    # loops above, this create must succeed before we restart the peer — do not use
+    # the tight 3s timeout (CI load can exceed it even though consensus commits).
     create_collection(
         peer_api_uris[0],
         "test_collection2",
         shard_number=N_SHARDS,
         replication_factor=N_REPLICA,
-        timeout=3
     )
+    # Wait until living peers have applied the create before restarting the dead one.
+    wait_collection_on_all_peers("test_collection2", peer_api_uris[:-1])
 
     # Restart last node
     new_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_uri, uris_in_env=uris_in_env)
