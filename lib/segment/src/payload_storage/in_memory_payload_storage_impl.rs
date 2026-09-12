@@ -250,7 +250,8 @@ mod tests {
             0,
             &IndexesMap::new(),
             &HardwareCounterCell::new(),
-        );
+        )
+        .unwrap();
     }
 
     #[test]
