@@ -10,6 +10,8 @@ use segment::common::anonymize::Anonymize;
 use segment::types::HnswGlobalConfig;
 use serde::Serialize;
 
+use storage::audit_sink::AuditSinkKind;
+
 use crate::common::audit::{AuditConfig, AuditRotation};
 use crate::settings::Settings;
 
@@ -75,8 +77,22 @@ pub struct AuditTelemetry {
     pub max_log_files: usize,
     pub trust_forwarded_headers: bool,
     pub log_api: bool,
+    pub write_to_file: bool,
+    pub write_to_stdout: bool,
+    /// What the file sink does when its queue is full: `drop` or `block`.
+    /// Always reported when audit logging is enabled, so fleet tooling can
+    /// find peers whose audit trail is lossy without scraping startup logs.
+    #[anonymize(false)]
+    pub on_file_full: String,
+    /// What the stdout sink does when its queue is full: `drop` or `block`.
+    #[anonymize(false)]
+    pub on_stdout_full: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dir_size_bytes: Option<usize>,
+    /// Records the stdout sink discarded because its queue was full.  Only
+    /// present when `write_to_stdout` is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout_dropped_records: Option<usize>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
@@ -144,7 +160,7 @@ fn collect_audit_telemetry(
     detail: TelemetryDetail,
 ) -> Option<AuditTelemetry> {
     let config = audit.filter(|c| c.enabled)?;
-    let dir_size_bytes = (detail.level > DetailsLevel::Level2)
+    let dir_size_bytes = (config.write_to_file && detail.level > DetailsLevel::Level2)
         .then(|| {
             common::disk::dir_disk_size(&config.dir)
                 .ok()
@@ -161,7 +177,13 @@ fn collect_audit_telemetry(
         max_log_files: config.max_log_files,
         trust_forwarded_headers: config.trust_forwarded_headers,
         log_api: config.log_api,
+        write_to_file: config.write_to_file,
+        write_to_stdout: config.write_to_stdout,
+        on_file_full: config.on_file_full.as_str().to_string(),
+        on_stdout_full: config.on_stdout_full.as_str().to_string(),
         dir_size_bytes,
+        stdout_dropped_records: storage::audit::audit_dropped_records(AuditSinkKind::Stdout)
+            .map(|dropped| dropped as usize),
     })
 }
 

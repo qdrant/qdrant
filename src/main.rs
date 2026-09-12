@@ -440,8 +440,9 @@ fn main() -> anyhow::Result<()> {
 
     // If audit logging is enabled, but failed to initialize,
     // we should stop the service, as it may cause unlogged access to the data.
-    // The guard must be held alive until shutdown to flush remaining audit events.
-    let _audit_guard = common::audit::init_audit_logger(settings.audit.as_ref())
+    // The guards (one per sink) must be held alive until shutdown to flush
+    // remaining audit events.
+    let _audit_guards = common::audit::init_audit_logger(settings.audit.as_ref())
         .expect("Audit logger must be initialized if audit logging is enabled");
 
     //

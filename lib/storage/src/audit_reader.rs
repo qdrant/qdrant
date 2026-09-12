@@ -53,6 +53,17 @@ pub fn read_local_audit_logs(
         ));
     }
 
+    // Reading is file-backed, so with no file sink there is nothing to query.
+    // Fail explicitly: returning an empty list here would be indistinguishable
+    // from "no audit records matched", which is badly misleading.
+    if !config.write_to_file {
+        return Err(StorageError::bad_request(
+            "Audit logs are not queryable on this peer: audit records are not \
+             written to files (`audit.write_to_file` is disabled)"
+                .to_string(),
+        ));
+    }
+
     let dir = &config.dir;
     if !dir.exists() {
         return Ok(Vec::new());
