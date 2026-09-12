@@ -48,7 +48,9 @@ impl OneshotFile {
         #[cfg(posix_fadvise_supported)]
         {
             fadvise(&file, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)?;
-            fadvise(&file, PosixFadviseAdvice::POSIX_FADV_NOREUSE)?;
+            // POSIX_FADV_NOREUSE is purely advisory; on certain filesystems (e.g. Android F2FS),
+            // a len=0 request returns ENOENT. Ignore advisory error to not fail valid file loads.
+            let _ = fadvise(&file, PosixFadviseAdvice::POSIX_FADV_NOREUSE);
         }
         Ok(Self { file: Some(file) })
     }
