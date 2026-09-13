@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
@@ -14,7 +14,8 @@ use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, ScoredPoint, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::operations::point_ops::PointStructRawPersisted;
@@ -22,7 +23,8 @@ use shard::retrieve::record_internal::RecordInternal;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
-use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::provenance::Routes;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
@@ -31,16 +33,25 @@ use crate::operations::types::{
 
 impl LocalShard {
     /// Basic parallel batching, it is conveniently used for the universal query API.
+    /// `routes` restricts the scroll to the segments that produced the
+    /// candidates of a rescore stage, each one filtered to its own ids. It
+    /// applies to a single-request batch, whose filter is exactly the `has_id`
+    /// over the union of the routes.
     pub(super) async fn query_scroll_batch(
         &self,
         batch: Arc<Vec<QueryScrollRequestInternal>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        routes: Option<&Routes>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if batch.is_empty() {
             return Ok(vec![]);
         }
+        debug_assert!(
+            routes.is_none() || batch.len() == 1,
+            "routes address the candidates of a single request",
+        );
 
         let scrolls = batch.iter().map(|request| {
             self.query_scroll(
@@ -48,6 +59,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc.clone(),
+                routes,
             )
         });
 
@@ -68,6 +80,7 @@ impl LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        routes: Option<&Routes>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
             limit,
@@ -83,6 +96,9 @@ impl LocalShard {
 
         let record_results = match scroll_order {
             ScrollOrder::ById => {
+                // Scrolling by id is only a prefetch source, never a rescore
+                // stage, so there is nothing to route it with.
+                debug_assert!(routes.is_none());
                 self.internal_scroll_by_id(
                     offset_id,
                     limit,
@@ -102,6 +118,7 @@ impl LocalShard {
                     with_payload,
                     with_vector,
                     filter.as_ref(),
+                    routes,
                     search_runtime_handle,
                     order_by,
                     timeout,
@@ -116,6 +133,7 @@ impl LocalShard {
                     with_payload,
                     with_vector,
                     filter.as_ref(),
+                    routes,
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
@@ -328,12 +346,14 @@ impl LocalShard {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn internal_scroll_by_field(
         &self,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        routes: Option<&Routes>,
         search_runtime_handle: &AdaptiveSearchHandle,
         order_by: &OrderBy,
         timeout: Duration,
@@ -345,50 +365,50 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = {
+        let segments_to_read = {
             let Some(segments_guard) = segments.try_read_for(timeout) else {
                 return Err(CollectionError::timeout(
                     timeout,
                     "internal_scroll_by_field",
                 ));
             };
-            segments_guard.split_segments()
+            segments_to_read(&segments_guard, filter, routes)
         };
 
-        let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
-            let is_stopped = stopping_guard.get_is_stopped();
-            let filter = filter.cloned();
-            let order_by = order_by.clone();
+        let read_ordered_filtered =
+            |(segment, filter): (LockedSegment, Option<Filter>),
+             hw_counter: &HardwareCounterCell| {
+                let is_stopped = stopping_guard.get_is_stopped();
+                let order_by = order_by.clone();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
-            let task = search_runtime_handle.spawn_blocking(move || {
-                let work = || {
-                    segment.get().read().read_ordered_filtered(
-                        Some(limit),
-                        filter.as_ref(),
-                        &order_by,
-                        &is_stopped,
-                        &hw_counter,
-                        deferred_behavior,
-                    )
-                };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
-            });
-            AbortOnDropHandle::new(task)
-        };
+                let hw_counter = hw_counter.fork();
+                let cpu_utilization = hw_counter.cpu_utilization();
+                let task = search_runtime_handle.spawn_blocking(move || {
+                    let work = || {
+                        segment.get().read().read_ordered_filtered(
+                            Some(limit),
+                            filter.as_ref(),
+                            &order_by,
+                            &is_stopped,
+                            &hw_counter,
+                            deferred_behavior,
+                        )
+                    };
+                    match cpu_utilization {
+                        Some(cu) => cu.measure(work),
+                        None => work(),
+                    }
+                });
+                AbortOnDropHandle::new(task)
+            };
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
-                non_appendable
+                segments_to_read
                     .into_iter()
-                    .chain(appendable)
                     .map(|segment| read_ordered_filtered(segment, &hw_counter)),
             ),
         )
@@ -439,12 +459,14 @@ impl LocalShard {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     async fn scroll_randomly(
         &self,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
+        routes: Option<&Routes>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
@@ -454,16 +476,16 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = {
+        let segments_to_read = {
             let Some(segments_guard) = segments.try_read_for(timeout) else {
                 return Err(CollectionError::timeout(timeout, "scroll_randomly"));
             };
-            segments_guard.split_segments()
+            segments_to_read(&segments_guard, filter, routes)
         };
 
-        let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let read_filtered = |(segment, filter): (LockedSegment, Option<Filter>),
+                             hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
-            let filter = filter.cloned();
 
             let hw_counter = hw_counter.fork();
             let cpu_utilization = hw_counter.cpu_utilization();
@@ -495,9 +517,8 @@ impl LocalShard {
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
-                non_appendable
+                segments_to_read
                     .into_iter()
-                    .chain(appendable)
                     .map(|segment| read_filtered(segment, &hw_counter)),
             ),
         )
@@ -615,5 +636,98 @@ impl LocalShard {
         )
         .await
         .map_err(|_| CollectionError::timeout(timeout, "retrieve"))?
+    }
+}
+
+/// The segments to read, non-appendable first, and the filter each one gets.
+///
+/// Without routes that is every segment with the request's own filter. With
+/// them it is only the segments that produced the candidates, each narrowed to
+/// its own ids — the request's filter is the `has_id` over all of them, so
+/// this only narrows it. A route to a segment the holder no longer has (a
+/// finished optimization) falls back to reading every segment.
+fn segments_to_read(
+    holder: &SegmentHolder,
+    filter: Option<&Filter>,
+    routes: Option<&Routes>,
+) -> Vec<(LockedSegment, Option<Filter>)> {
+    let unrouted = || {
+        holder
+            .non_appendable_then_appendable_segments()
+            .map(|segment| (segment, filter.cloned()))
+            .collect::<Vec<_>>()
+    };
+    let Some(routes) = routes else {
+        return unrouted();
+    };
+
+    let routed: Vec<_> = holder
+        .non_appendable_then_appendable_segments_with_ids()
+        .filter_map(|(segment_id, segment)| {
+            let ids = routes.get(&segment_id)?;
+            let own_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(
+                ids.iter().copied().collect::<AHashSet<_>>(),
+            )));
+            Some((segment, Some(own_ids)))
+        })
+        .collect();
+
+    if routed.len() == routes.len() {
+        routed
+    } else {
+        unrouted()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::collection_manager::fixtures::build_test_holder;
+
+    fn has_id(ids: impl IntoIterator<Item = u64>) -> Filter {
+        Filter::new_must(Condition::HasId(HasIdCondition::from(
+            ids.into_iter()
+                .map(ExtendedPointId::from)
+                .collect::<AHashSet<_>>(),
+        )))
+    }
+
+    #[test]
+    fn routes_narrow_the_filter_per_segment() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let holder = build_test_holder(dir.path());
+        let holder = holder.read();
+        let segment_ids = holder.segment_ids();
+        assert_eq!(segment_ids.len(), 2);
+        let candidates = has_id([1, 2, 3, 4]);
+
+        let unrouted = segments_to_read(&holder, Some(&candidates), None);
+        assert_eq!(unrouted.len(), 2);
+        assert!(
+            unrouted
+                .iter()
+                .all(|(_, f)| f.as_ref() == Some(&candidates))
+        );
+
+        let routes = Routes::from_iter([(segment_ids[0], vec![ExtendedPointId::from(1)])]);
+        let routed = segments_to_read(&holder, Some(&candidates), Some(&routes));
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].1, Some(has_id([1])));
+
+        // A route to a segment that is gone takes the whole read back to every
+        // segment, with the full candidate list.
+        let stale = Routes::from_iter([
+            (segment_ids[0], vec![ExtendedPointId::from(1)]),
+            (segment_ids[1] + 1000, vec![ExtendedPointId::from(2)]),
+        ]);
+        let fallback = segments_to_read(&holder, Some(&candidates), Some(&stale));
+        assert_eq!(fallback.len(), 2);
+        assert!(
+            fallback
+                .iter()
+                .all(|(_, f)| f.as_ref() == Some(&candidates))
+        );
     }
 }

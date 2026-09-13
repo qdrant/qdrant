@@ -310,6 +310,7 @@ impl ShardOperation for LocalShard {
                     with_payload.as_ref().unwrap_or(&default_with_payload),
                     with_vector,
                     filter.as_ref(),
+                    None,
                     search_runtime_handle,
                     &order_by,
                     timeout,

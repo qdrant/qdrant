@@ -111,6 +111,7 @@ impl LocalShard {
             search_runtime_handle,
             timeout,
             hw_counter_acc.clone(),
+            None,
         );
 
         // execute both searches and scrolls concurrently
@@ -351,13 +352,14 @@ impl LocalShard {
             ),
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(&sources);
+                let candidate_ids = sources_ids(&sources);
+                let routes = prefetch_holder.routes(candidate_ids.iter().copied());
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
                 let scroll_request = QueryScrollRequestInternal {
                     limit,
-                    filter: Some(filter),
+                    filter: Some(filter_with_ids(candidate_ids)),
                     with_payload: false.into(),
                     with_vector: false.into(),
                     scroll_order: ScrollOrder::ByField(order_by),
@@ -368,6 +370,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_counter_acc.clone(),
+                    routes.as_ref(),
                 )
                 .await?
                 .pop()
@@ -436,12 +439,13 @@ impl LocalShard {
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
                     // create single scroll request for rescoring query
-                    let filter = filter_with_sources_ids(&sources);
+                    let candidate_ids = sources_ids(&sources);
+                    let routes = prefetch_holder.routes(candidate_ids.iter().copied());
 
                     // Note: score_threshold is not used in this case, as all results will have same score and order_value
                     let scroll_request = QueryScrollRequestInternal {
                         limit,
-                        filter: Some(filter),
+                        filter: Some(filter_with_ids(candidate_ids)),
                         with_payload: false.into(),
                         with_vector: false.into(),
                         scroll_order: ScrollOrder::Random,
@@ -452,6 +456,7 @@ impl LocalShard {
                         search_runtime_handle,
                         timeout,
                         hw_counter_acc.clone(),
+                        routes.as_ref(),
                     )
                     .await?
                     .pop()
@@ -556,11 +561,6 @@ impl LocalShard {
 
         Ok(top_mmr)
     }
-}
-
-/// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_with_sources_ids(sources: &[Vec<ScoredPoint>]) -> Filter {
-    filter_with_ids(sources_ids(sources))
 }
 
 /// The deduplicated ids of every source.
