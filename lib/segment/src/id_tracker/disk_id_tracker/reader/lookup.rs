@@ -106,20 +106,16 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// External→internal lookup ignoring deletion (the caller applies its own
     /// deleted source). `Ok(None)` if the id is absent; storage errors propagate.
     ///
-    /// Served from the positive cache when the id was resolved before, and
-    /// fills it on a hit.
+    /// Served from the positive cache when an earlier `i2e` read resolved the
+    /// id already.
     pub fn lookup(&self, external_id: PointIdType) -> OperationResult<Option<PointOffsetType>> {
-        if let Some(offset) = self.cached_e2i(external_id) {
+        if let Some(offset) = self.e2i_cache.get(external_id) {
             return Ok(Some(offset));
         }
-        let found = match external_id {
-            PointIdType::NumId(num) => self.lookup_num(num)?,
-            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128())?,
-        };
-        if let Some(offset) = found {
-            self.cache_e2i(external_id, offset);
+        match external_id {
+            PointIdType::NumId(num) => self.lookup_num(num),
+            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128()),
         }
-        Ok(found)
     }
 
     /// Batch counterpart of [`lookup`](Self::lookup): one pipelined
@@ -149,7 +145,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         // collected because the read pass owns `on_found` for its own callback.
         let mut misses = Vec::new();
         for external_id in external_ids {
-            match self.cached_e2i(external_id) {
+            match self.e2i_cache.get(external_id) {
                 Some(offset) => on_found(external_id, offset)?,
                 None => misses.push(external_id),
             }
@@ -185,7 +181,6 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                     } else {
                         PointIdType::NumId(key as u64)
                     };
-                    self.cache_e2i(id, entries[pos].1);
                     on_found(id, entries[pos].1)?;
                 }
                 Ok(())
@@ -234,7 +229,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         self.i2e.read_batch(ranges, Random, |offset, bytes| {
             let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
             let external_id = decode_external(value, self.is_uuid.contains(offset));
-            self.cache_e2i(external_id, offset);
+            self.e2i_cache.insert(external_id, offset);
             on_found(offset, external_id);
             Ok(())
         })

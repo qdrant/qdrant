@@ -122,7 +122,6 @@ macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
-quick_cache = "0.7.0"
 duplicate = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
