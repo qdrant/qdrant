@@ -81,10 +81,24 @@ fn test_aggregation_of_batch_search_results() {
 
     let further_results = vec![vec![true, true], vec![true, true], vec![false, true]];
 
-    let (aggregator, re_request) = SegmentsSearcher::process_search_result_step1(
+    // Holder ids, deliberately not the positions in `search_results`.
+    let segment_ids = [7, 3, 5];
+
+    let (aggregator, provenance, re_request) = SegmentsSearcher::process_search_result_step1(
         search_results,
+        &segment_ids,
         result_limits,
         &further_results,
+    );
+
+    // Point 111 is newest in the second segment; 112 and 113 are the same
+    // version everywhere, so the first segment that reported them wins.
+    let (routes, unrouted) = provenance.routes([111, 112, 113].map(PointIdType::NumId));
+    assert!(unrouted.is_empty());
+    assert_eq!(routes[&3], vec![PointIdType::NumId(111)]);
+    assert_eq!(
+        routes[&7],
+        vec![PointIdType::NumId(112), PointIdType::NumId(113)],
     );
 
     // ------------Segment----------batch---
@@ -133,8 +147,9 @@ fn test_batch_search_aggregation_high_limit() {
 
     let further_results = vec![vec![true, true], vec![true, true], vec![false, true]];
 
-    let (_aggregator, _re_request) = SegmentsSearcher::process_search_result_step1(
+    let (_aggregator, _provenance, _re_request) = SegmentsSearcher::process_search_result_step1(
         search_results,
+        &[0, 1, 2],
         result_limits,
         &further_results,
     );

@@ -376,8 +376,17 @@ impl ShardOperation for LocalShard {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
-            .await
+        // A plain search is one stage: nothing consumes the provenance of its results.
+        let (results, _provenance) = self
+            .do_search(
+                request,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                None,
+            )
+            .await?;
+        Ok(results)
     }
 
     /// This call is rate limited by the read rate limiter.

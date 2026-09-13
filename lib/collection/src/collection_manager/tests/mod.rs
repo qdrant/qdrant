@@ -26,6 +26,7 @@ use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
+mod test_routed_search;
 mod test_search_aggregation;
 
 fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId) -> SegmentId {

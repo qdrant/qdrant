@@ -8,6 +8,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
+use crate::collection_manager::provenance::{Provenance, Routes};
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -27,15 +28,21 @@ use crate::operations::types::{CollectionError, CollectionResult};
 const CHUNK_SIZE: usize = 16;
 
 impl LocalShard {
+    /// Search the shard's segments, returning the top-k of each request in the
+    /// batch and the segment each point came from.
+    ///
+    /// `routes` restricts the search to the segments that own the candidates,
+    /// see [`SegmentsSearcher::search`].
     pub async fn do_search(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        routes: Option<&Routes>,
+    ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Provenance)> {
         if core_request.searches.is_empty() {
-            return Ok(vec![]);
+            return Ok((vec![], Provenance::default()));
         }
 
         let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {
@@ -64,9 +71,12 @@ impl LocalShard {
                     timeout,
                     hw_counter_acc,
                     &is_stopped_guard,
+                    routes,
                 )
                 .await;
         }
+        // A routed request is a single search, so it never reaches the chunking below.
+        debug_assert!(routes.is_none());
 
         // Batch if we have many searches, allows for more parallelism
         let CoreSearchRequestBatch { searches } = core_request.as_ref();
@@ -83,17 +93,21 @@ impl LocalShard {
                     timeout,
                     hw_counter_acc.clone(),
                     &is_stopped_guard,
+                    None,
                 )
             })
             .collect::<Vec<_>>();
 
-        let results = futures::future::try_join_all(chunk_futures)
-            .await?
-            .into_iter()
-            .flatten()
-            .collect();
+        let mut results = Vec::with_capacity(searches.len());
+        let mut provenance = Provenance::default();
+        for (chunk_results, chunk_provenance) in
+            futures::future::try_join_all(chunk_futures).await?
+        {
+            results.extend(chunk_results);
+            provenance.merge(chunk_provenance);
+        }
 
-        Ok(results)
+        Ok((results, provenance))
     }
 
     async fn do_search_impl(
@@ -103,7 +117,8 @@ impl LocalShard {
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        routes: Option<&Routes>,
+    ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Provenance)> {
         let start = std::time::Instant::now();
         let (query_context, distances) = {
             let collection_config = self.collection_config.read().await;
@@ -120,7 +135,7 @@ impl LocalShard {
 
             let Some(query_context) = query_context_opt else {
                 // No segments to search
-                return Ok(vec![]);
+                return Ok((vec![], Provenance::default()));
             };
 
             // Resolve the per-request distances now, rather than cloning all collection params
@@ -147,9 +162,10 @@ impl LocalShard {
             true,
             query_context,
             timeout,
+            routes,
         );
 
-        let res = tokio::time::timeout(timeout, search_request)
+        let (res, provenance) = tokio::time::timeout(timeout, search_request)
             .await
             .map_err(|_| {
                 log::debug!("Search timeout reached: {timeout:?}");
@@ -189,6 +205,6 @@ impl LocalShard {
                 }
             })
             .collect();
-        Ok(top_results)
+        Ok((top_results, provenance))
     }
 }

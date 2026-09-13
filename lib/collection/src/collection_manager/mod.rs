@@ -1,6 +1,7 @@
 pub mod collection_updater;
 pub mod holders;
 pub mod optimizers;
+pub mod provenance;
 pub mod segments_searcher;
 
 pub mod probabilistic_search_sampling;

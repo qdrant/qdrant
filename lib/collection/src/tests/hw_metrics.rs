@@ -96,6 +96,7 @@ async fn test_hw_metrics_cancellation() {
             &current_runtime,
             Duration::from_secs(60),
             HwMeasurementAcc::new(),
+            None,
         )
         .await
         .expect("warmup search should succeed");
@@ -112,7 +113,7 @@ async fn test_hw_metrics_cancellation() {
         {
             let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
             let search_res = shard
-                .do_search(req.clone(), &current_runtime, timeout, hw_counter)
+                .do_search(req.clone(), &current_runtime, timeout, hw_counter, None)
                 .await;
 
             match search_res {

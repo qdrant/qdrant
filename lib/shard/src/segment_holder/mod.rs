@@ -412,10 +412,20 @@ impl SegmentHolder {
 
     /// Get all locked segments, non-appendable first, then appendable.
     pub fn non_appendable_then_appendable_segments(&self) -> impl Iterator<Item = LockedSegment> {
+        self.non_appendable_then_appendable_segments_with_ids()
+            .map(|(_, segment)| segment)
+    }
+
+    /// [`non_appendable_then_appendable_segments`](Self::non_appendable_then_appendable_segments),
+    /// paired with the holder id each segment is registered under, so a caller
+    /// can come back to the same segment in a later stage of the same query.
+    pub fn non_appendable_then_appendable_segments_with_ids(
+        &self,
+    ) -> impl Iterator<Item = (SegmentId, LockedSegment)> {
         self.non_appendable_segments
-            .values()
-            .chain(self.appendable_segments.values())
-            .cloned()
+            .iter()
+            .chain(self.appendable_segments.iter())
+            .map(|(id, segment)| (*id, segment.clone()))
     }
 
     /// Get two separate lists for non-appendable and appendable locked segments

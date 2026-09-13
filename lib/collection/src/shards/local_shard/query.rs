@@ -11,12 +11,15 @@ use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
-use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
+};
 use shard::query::planned_query::RescoreStages;
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
 use crate::collection::mmr::mmr_from_points_with_vector;
+use crate::collection_manager::provenance::{Provenance, Routes};
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
@@ -37,13 +40,22 @@ pub enum FetchedSource {
 struct PrefetchResults {
     search_results: Mutex<Vec<Vec<ScoredPoint>>>,
     scroll_results: Mutex<Vec<Vec<ScoredPoint>>>,
+    /// The segment every candidate seen so far came from, shared by all stages
+    /// of the query: a stage routes its own candidates with it and records the
+    /// provenance of what it produces back, so nested stages stay routed.
+    provenance: Mutex<Provenance>,
 }
 
 impl PrefetchResults {
-    fn new(search_results: Vec<Vec<ScoredPoint>>, scroll_results: Vec<Vec<ScoredPoint>>) -> Self {
+    fn new(
+        search_results: Vec<Vec<ScoredPoint>>,
+        scroll_results: Vec<Vec<ScoredPoint>>,
+        provenance: Provenance,
+    ) -> Self {
         Self {
             scroll_results: Mutex::new(scroll_results),
             search_results: Mutex::new(search_results),
+            provenance: Mutex::new(provenance),
         }
     }
 
@@ -53,6 +65,17 @@ impl PrefetchResults {
             FetchedSource::Scroll(idx) => self.scroll_results.lock().get_mut(idx).map(mem::take),
         }
         .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
+    }
+
+    /// Segments owning `ids`, or `None` if any of them has no provenance —
+    /// a stage is routed all-or-nothing.
+    fn routes(&self, ids: impl IntoIterator<Item = PointIdType>) -> Option<Routes> {
+        let (routes, unrouted) = self.provenance.lock().routes(ids);
+        unrouted.is_empty().then_some(routes)
+    }
+
+    fn record(&self, provenance: Provenance) {
+        self.provenance.lock().merge(provenance);
     }
 }
 
@@ -72,6 +95,7 @@ impl LocalShard {
             search_runtime_handle,
             timeout,
             hw_counter_acc.clone(),
+            None,
         );
 
         let scrolls_f = self.query_scroll_batch(
@@ -82,8 +106,9 @@ impl LocalShard {
         );
 
         // execute both searches and scrolls concurrently
-        let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
-        let prefetch_holder = PrefetchResults::new(search_results, scroll_results);
+        let ((search_results, provenance), scroll_results) =
+            tokio::try_join!(searches_f, scrolls_f)?;
+        let prefetch_holder = PrefetchResults::new(search_results, scroll_results, provenance);
 
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
@@ -259,6 +284,7 @@ impl LocalShard {
                         .rescore(
                             sources,
                             rescore_params,
+                            prefetch_holder,
                             search_runtime_handle,
                             timeout,
                             hw_counter_acc,
@@ -284,10 +310,12 @@ impl LocalShard {
     }
 
     /// Rescore list of scored points
+    #[allow(clippy::too_many_arguments)]
     async fn rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
+        prefetch_holder: &PrefetchResults,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
@@ -336,11 +364,15 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let candidate_ids = sources_ids(sources.into_iter());
+                // Ask only the segments that produced the candidates; every
+                // other segment would just re-resolve the whole id list and
+                // find nothing.
+                let routes = prefetch_holder.routes(candidate_ids.iter().copied());
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
-                    filter: Some(filter),
+                    filter: Some(filter_with_ids(candidate_ids)),
                     params,
                     limit,
                     offset: 0,
@@ -352,16 +384,19 @@ impl LocalShard {
                     searches: vec![search_request],
                 };
 
-                self.do_search(
-                    Arc::new(rescoring_core_search_request),
-                    search_runtime_handle,
-                    timeout,
-                    hw_counter_acc,
-                )
-                .await?
+                let (mut results, provenance) = self
+                    .do_search(
+                        Arc::new(rescoring_core_search_request),
+                        search_runtime_handle,
+                        timeout,
+                        hw_counter_acc,
+                        routes.as_ref(),
+                    )
+                    .await?;
+                prefetch_holder.record(provenance);
+
                 // One search request is sent. We expect only one result
-                .pop()
-                .ok_or_else(|| {
+                results.pop().ok_or_else(|| {
                     CollectionError::service_error(
                         "Rescoring with vector(s) query didn't return expected batch of results",
                     )
@@ -501,6 +536,11 @@ impl LocalShard {
 
 /// Extracts point ids from sources, and creates a filter to only include those ids.
 fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
+    filter_with_ids(sources_ids(sources))
+}
+
+/// The deduplicated ids of every source.
+fn sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> AHashSet<PointIdType> {
     let mut point_ids = AHashSet::new();
 
     for source in sources {
@@ -509,7 +549,11 @@ fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> F
         }
     }
 
-    // create filter for target point ids
+    point_ids
+}
+
+/// A filter matching exactly `point_ids`.
+fn filter_with_ids(point_ids: AHashSet<PointIdType>) -> Filter {
     Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
         point_ids,
     )))
