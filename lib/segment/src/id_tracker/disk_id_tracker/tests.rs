@@ -557,3 +557,56 @@ fn on_disk_sections_are_aligned() {
         assert!(e2i.uuid_run_offset >= e2i.num_run_offset + e2i.num_count * NUM_ENTRY_SIZE);
     }
 }
+
+/// The `i2e` pass a search does on its results primes the positive `e2i`
+/// cache, so the next stage resolves the same ids without touching `e2i`.
+/// Deletion still applies: the cache mirrors the mapping, not the live set.
+#[test]
+fn e2i_cache_serves_the_next_stage() {
+    use super::mappings::DiskMappingsSource as _;
+
+    let (versions, mappings) = make_data(9);
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let mut disk =
+        DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
+
+    let candidates: Vec<(PointIdType, u32)> =
+        disk.point_mappings().iter_from(None).take(200).collect();
+    assert!(!candidates.is_empty());
+
+    // Stage one: internal -> external, as a search does with its own results.
+    disk.external_ids_batch(candidates.iter().map(|&(_, offset)| offset), |_, _| {})
+        .unwrap();
+    let hits_before = disk.mapping_reader().e2i_cache_hits();
+
+    // Stage two: external -> internal, resolved entirely from the cache.
+    let mut resolved = Vec::new();
+    disk.resolve_external_ids(
+        candidates.iter().map(|&(id, _)| id),
+        DeferredBehavior::VisibleOnly,
+        |id, offset| resolved.push((id, offset)),
+    )
+    .unwrap();
+    resolved.sort_unstable_by_key(|&(id, _)| id);
+    assert_eq!(resolved, candidates);
+    assert_eq!(
+        disk.mapping_reader().e2i_cache_hits() - hits_before,
+        candidates.len() as u64,
+    );
+
+    // A point deleted after the cache was primed is no longer resolvable,
+    // through the single lookup and the batch alike.
+    let (deleted_id, deleted_offset) = candidates[0];
+    disk.drop(deleted_id).unwrap();
+    assert_eq!(
+        disk.internal_id_with_behavior(deleted_id, DeferredBehavior::VisibleOnly),
+        None,
+    );
+    let mut resolved_after = Vec::new();
+    disk.resolve_external_ids([deleted_id], DeferredBehavior::VisibleOnly, |id, offset| {
+        resolved_after.push((id, offset))
+    })
+    .unwrap();
+    assert!(resolved_after.is_empty());
+    assert!(disk.is_deleted_point(deleted_offset));
+}

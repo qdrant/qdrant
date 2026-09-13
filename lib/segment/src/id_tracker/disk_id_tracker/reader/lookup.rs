@@ -105,11 +105,21 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
     /// External→internal lookup ignoring deletion (the caller applies its own
     /// deleted source). `Ok(None)` if the id is absent; storage errors propagate.
+    ///
+    /// Served from the positive cache when the id was resolved before, and
+    /// fills it on a hit.
     pub fn lookup(&self, external_id: PointIdType) -> OperationResult<Option<PointOffsetType>> {
-        match external_id {
-            PointIdType::NumId(num) => self.lookup_num(num),
-            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128()),
+        if let Some(offset) = self.cached_e2i(external_id) {
+            return Ok(Some(offset));
         }
+        let found = match external_id {
+            PointIdType::NumId(num) => self.lookup_num(num)?,
+            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128())?,
+        };
+        if let Some(offset) = found {
+            self.cache_e2i(external_id, offset);
+        }
+        Ok(found)
     }
 
     /// Batch counterpart of [`lookup`](Self::lookup): one pipelined
@@ -127,15 +137,28 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// block, so reads landing in the same block are deduplicated by the cache
     /// (piggybacked while in flight, a plain hit once resident). Grouping here
     /// would only re-implement that at the cost of an up-front index.
+    ///
+    /// Ids in the positive cache are answered from RAM before the read pass is
+    /// scheduled, so a fully cached batch reads nothing.
     pub fn lookup_batch(
         &self,
         external_ids: impl IntoIterator<Item = PointIdType>,
         mut on_found: impl FnMut(PointIdType, PointOffsetType) -> OperationResult<()>,
     ) -> OperationResult<()> {
+        // Cache hits are delivered first; only the misses are read. They are
+        // collected because the read pass owns `on_found` for its own callback.
+        let mut misses = Vec::new();
+        for external_id in external_ids {
+            match self.cached_e2i(external_id) {
+                Some(offset) => on_found(external_id, offset)?,
+                None => misses.push(external_id),
+            }
+        }
+
         // Each read is tagged with `(is_uuid, key)` so the callback can pick the
         // decoder, binary-search, and rebuild the id. Ids outside every block
-        // are dropped here; the range iterator stays lazy (no collect).
-        let ranges = external_ids
+        // are dropped here.
+        let ranges = misses
             .into_iter()
             .filter_map(|external_id| match external_id {
                 PointIdType::NumId(num) => {
@@ -162,6 +185,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                     } else {
                         PointIdType::NumId(key as u64)
                     };
+                    self.cache_e2i(id, entries[pos].1);
                     on_found(id, entries[pos].1)?;
                 }
                 Ok(())
@@ -186,6 +210,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// completes (read-completion order, not input order); out-of-range
     /// offsets are skipped. The input is walked once and nothing is buffered.
     /// Deletion is NOT applied; storage errors propagate.
+    ///
+    /// Every resolved pair is remembered in the positive `e2i` cache: the
+    /// stages after a search resolve the very ids it converted here.
     pub fn external_ids_batch(
         &self,
         offsets: impl IntoIterator<Item = PointOffsetType>,
@@ -206,10 +233,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
         self.i2e.read_batch(ranges, Random, |offset, bytes| {
             let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-            on_found(
-                offset,
-                decode_external(value, self.is_uuid.contains(offset)),
-            );
+            let external_id = decode_external(value, self.is_uuid.contains(offset));
+            self.cache_e2i(external_id, offset);
+            on_found(offset, external_id);
             Ok(())
         })
     }

@@ -7178,6 +7178,7 @@ dependencies = [
  "proptest",
  "qdrant-rust-stemmers",
  "quantization",
+ "quick_cache",
  "rand 0.10.2",
  "rand_distr",
  "rayon",

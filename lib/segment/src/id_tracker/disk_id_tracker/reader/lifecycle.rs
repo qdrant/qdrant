@@ -12,7 +12,7 @@ use common::universal_io::{
     UniversalReadFileOps, UniversalReadFs,
 };
 
-use super::DiskMappingReader;
+use super::{DiskMappingReader, E2I_CACHE_ENTRIES};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::disk_id_tracker::on_disk_format::{
     E2I_HEADER_SIZE, E2iHeader, I2E_HEADER_SIZE, I2eHeader, e2i_path, i2e_path, is_uuid_path,
@@ -167,6 +167,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             num_sparse,
             uuid_sparse,
             is_uuid,
+            e2i_cache: quick_cache::sync::Cache::new(E2I_CACHE_ENTRIES),
+            e2i_cache_hits: Default::default(),
         }))
     }
 }
