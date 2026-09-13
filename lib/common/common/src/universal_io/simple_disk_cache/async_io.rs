@@ -52,14 +52,17 @@ where
                     Some(len) => len,
                     None => remote.len::<u8>()?,
                 };
-                let byte_range = 0..len;
-
-                let content = remote
-                    .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
-
                 let local = LocalState::new(&local_path, len, options)?;
-                unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
+                // An empty object has nothing to populate, and a bounded `0..0`
+                // range is rejected by the backend rather than answered with an
+                // empty body (see `AsyncRead::read_range`), so skip the fetch.
+                if len > 0 {
+                    let byte_range = 0..len;
+                    let content = remote
+                        .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                        .await?;
+                    unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
+                }
                 State::ready(remote, local)
             }
             Populate::Partial(read_range) => {
