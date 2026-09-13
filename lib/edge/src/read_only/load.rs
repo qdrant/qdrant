@@ -2,12 +2,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::UniversalReadFsAsync;
+use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::future::join_all;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
 use rayon::prelude::*;
-use segment::common::operation_error::OperationResult;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
@@ -45,7 +45,10 @@ where
             match ReadOnlySegment::<S>::schedule_open(fs, &segment_path, uuid, None, load_profile) {
                 Ok(staged) => Some((uuid, staged)),
                 Err(err) => {
-                    log::warn!("read-only open: skipping unloadable segment {uuid}: {err}");
+                    log::log!(
+                        skip_level(&err),
+                        "read-only open: skipping unloadable segment {uuid}: {err}"
+                    );
                     None
                 }
             }
@@ -62,12 +65,34 @@ where
             .filter_map(|(uuid, staged)| match staged.finish(fs) {
                 Ok(segment) => Some((uuid, segment)),
                 Err(err) => {
-                    log::warn!("read-only open: skipping unloadable segment {uuid}: {err}");
+                    log::log!(
+                        skip_level(&err),
+                        "read-only open: skipping unloadable segment {uuid}: {err}"
+                    );
                     None
                 }
             })
             .collect()
     })
+}
+
+/// The level at which a segment that failed to open is reported.
+///
+/// The manifest is superset-biased, so a listed segment may be one the leader has
+/// not finalized yet or has already removed. Both surface as `FileNotFound`, both
+/// resolve themselves once the follower catches up, and both are routine enough to
+/// stay out of the log at default levels.
+///
+/// Anything else is a segment that should have loaded and did not. The shard opens
+/// and serves without it, so queries silently return results computed over a subset
+/// of the data — worth an error, and worth telling apart from the churn above, which
+/// it previously shared a log line and a level with.
+fn skip_level(err: &OperationError) -> log::Level {
+    if err.is_not_found() {
+        log::Level::Debug
+    } else {
+        log::Level::Error
+    }
 }
 
 /// Live-reload the given segments in two phases — stage every fetch under
