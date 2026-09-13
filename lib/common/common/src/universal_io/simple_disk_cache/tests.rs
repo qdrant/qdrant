@@ -1049,6 +1049,84 @@ mod tests_async {
 
     /// A cache miss must fetch through the remote's async read and commit the
     /// covering blocks to the local mirror.
+    /// A partial populate of a zero-length object has nothing to fetch: the
+    /// async open must succeed without a remote read, matching the sync open
+    /// instead of rejecting the block-aligned `0..0` range.
+    #[tokio::test]
+    async fn empty_object_partial_populate_issues_no_fetch() {
+        let scn = Scenario::new(0);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::Partial(ReadRange::new(0, 64)),
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
+    }
+
+    /// An empty `Populate::Partial` range prefetches nothing but still opens,
+    /// matching the sync `partial_populate_empty_range_is_lazy` behavior.
+    #[tokio::test]
+    async fn empty_partial_range_async_open_is_lazy() {
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::Partial(ReadRange::new(10, 0)),
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        // Nothing prefetched: the first read faults its block in lazily.
+        let bytes = file.read_bytes_async(0..16, Sequential, 1).await.unwrap();
+        assert_eq!(&*bytes, &scn.data[0..16]);
+    }
+
+    /// A `Populate::Partial` range starting past EOF has nothing valid to
+    /// prefetch; the async open must still succeed and serve reads lazily,
+    /// matching the sync `partial_populate_range_past_eof_is_lazy` behavior.
+    #[tokio::test]
+    async fn partial_range_past_eof_async_open_is_lazy() {
+        let scn = Scenario::new(100);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::Partial(ReadRange::new(
+                        BLOCK_SIZE as u64 * 4,
+                        BLOCK_SIZE as u64,
+                    )),
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        let bytes = file.read_bytes_async(0..100, Sequential, 1).await.unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+    }
+
     #[tokio::test]
     async fn miss_fetches_via_remote_async_read() {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
