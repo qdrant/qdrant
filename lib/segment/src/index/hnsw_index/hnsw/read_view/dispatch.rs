@@ -87,6 +87,22 @@ where
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
 
+                let available_vector_count = self.vector_storage.available_vector_count();
+
+                let hw_counter = query_context.hardware_counter();
+
+                // Estimated once for every strategy below: for a filter whose conditions
+                // resolve ids (`has_id`), the estimation performs the external->internal
+                // resolution, and the plain search reuses the resolved offsets.
+                let query_point_cardinality = self
+                    .payload_index
+                    .estimate_cardinality(query_filter, &hw_counter)?;
+                let query_cardinality = adjust_to_available_vectors(
+                    query_point_cardinality,
+                    available_vector_count,
+                    self.id_tracker.available_point_count(),
+                );
+
                 // if exact search is requested, we should not use HNSW index
                 if exact || is_hnsw_disabled {
                     let _timer = ScopeDurationMeasurer::new(if exact {
@@ -100,24 +116,12 @@ where
                     return self.search_vectors_plain(
                         vectors,
                         query_filter,
+                        &query_cardinality,
                         top,
                         params_ref,
                         query_context,
                     );
                 }
-
-                let available_vector_count = self.vector_storage.available_vector_count();
-
-                let hw_counter = query_context.hardware_counter();
-
-                let query_point_cardinality = self
-                    .payload_index
-                    .estimate_cardinality(query_filter, &hw_counter)?;
-                let query_cardinality = adjust_to_available_vectors(
-                    query_point_cardinality,
-                    available_vector_count,
-                    self.id_tracker.available_point_count(),
-                );
 
                 if query_cardinality.max < self.config.full_scan_threshold {
                     // if cardinality is small - use plain index
@@ -126,6 +130,7 @@ where
                     return self.search_vectors_plain(
                         vectors,
                         query_filter,
+                        &query_cardinality,
                         top,
                         params,
                         query_context,
@@ -170,7 +175,14 @@ where
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    self.search_vectors_plain(vectors, query_filter, top, params, query_context)
+                    self.search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        &query_cardinality,
+                        top,
+                        params,
+                        query_context,
+                    )
                 }
             }
         }

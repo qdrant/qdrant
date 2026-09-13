@@ -9,6 +9,7 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
@@ -311,10 +312,14 @@ where
         Ok(search_results)
     }
 
+    /// `query_cardinality` is the estimation of `filter`, as made by the caller
+    /// that picked this strategy; its primary clauses carry whatever the
+    /// estimation already resolved, so re-estimating here would repeat that work.
     pub(super) fn search_vectors_plain(
         &self,
         vectors: &[&QueryVector],
         filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
@@ -323,14 +328,11 @@ where
         let is_stopped = &vector_query_context.is_stopped();
 
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
         let filtered_points: Vec<PointOffsetType> = self
             .payload_index
             .iter_filtered_points(
                 filter,
-                &query_cardinality,
+                query_cardinality,
                 hw_counter,
                 is_stopped,
                 // No deferred filtering here since it's HNSW index.
