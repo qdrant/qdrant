@@ -5,9 +5,12 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use segment::data_types::query_context::QueryContext;
-use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint};
+use segment::types::{
+    Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithVector,
+};
 use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::search::{CoreSearchRequest, CoreSearchRequestBatch};
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -166,4 +169,69 @@ async fn stale_route_falls_back_to_broadcast() {
     })
     .await;
     assert_eq!(by_score(&broadcast), by_score(&routed));
+}
+
+/// Retrieving each point from the segment it came from must return the same
+/// records as asking every segment — including for points that live in two
+/// segments at different versions, where the newest one wins either way.
+#[tokio::test]
+async fn routed_retrieve_matches_broadcast() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments = build_test_holder(dir.path());
+
+    let (candidates, provenance) = search(&segments, None, None).await;
+    let ids: Vec<_> = candidates.iter().map(|point| point.id).collect();
+
+    let broadcast = SegmentsSearcher::retrieve(
+        segments.clone(),
+        &ids,
+        &WithPayload::from(true),
+        &WithVector::from(true),
+        &AdaptiveSearchHandle::current_for_tests(),
+        TEST_TIMEOUT,
+        HwMeasurementAcc::new(),
+        DeferredBehavior::VisibleOnly,
+    )
+    .await
+    .unwrap();
+    assert_eq!(broadcast.len(), ids.len());
+
+    let (routes, unrouted) = provenance.routes(ids.iter().copied());
+    assert!(unrouted.is_empty());
+    let routed = SegmentsSearcher::retrieve_routed(
+        segments.clone(),
+        routes.clone(),
+        Vec::new(),
+        &WithPayload::from(true),
+        &WithVector::from(true),
+        &AdaptiveSearchHandle::current_for_tests(),
+        TEST_TIMEOUT,
+        HwMeasurementAcc::new(),
+        DeferredBehavior::VisibleOnly,
+    )
+    .await
+    .unwrap();
+    assert_eq!(broadcast, routed);
+
+    // A stale route and an id nothing recorded a segment for both fall back to
+    // the broadcast retrieve, mixed into the same result.
+    let mut stale_routes = routes;
+    let stale = stale_routes.keys().copied().max().unwrap() + 1;
+    let moved = stale_routes.values_mut().next().unwrap().split_off(0);
+    stale_routes.insert(stale, moved);
+    let unrouted = stale_routes.values_mut().last().unwrap().split_off(0);
+    let mixed = SegmentsSearcher::retrieve_routed(
+        segments,
+        stale_routes,
+        unrouted,
+        &WithPayload::from(true),
+        &WithVector::from(true),
+        &AdaptiveSearchHandle::current_for_tests(),
+        TEST_TIMEOUT,
+        HwMeasurementAcc::new(),
+        DeferredBehavior::VisibleOnly,
+    )
+    .await
+    .unwrap();
+    assert_eq!(broadcast, mixed);
 }

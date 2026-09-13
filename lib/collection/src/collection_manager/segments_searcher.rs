@@ -22,7 +22,7 @@ use shard::common::stopping_guard::StoppingGuard;
 use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::retrieve::record_internal::RecordInternal;
-use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
+use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_over, retrieve_raw_blocking};
 use shard::search::{
     BatchSearchParams, CoreSearchRequest, CoreSearchRequestBatch, SearchBatchGroup,
     group_search_batches,
@@ -453,6 +453,84 @@ impl SegmentsSearcher {
             }
         });
         Ok(AbortOnDropHandle::new(points).await??)
+    }
+
+    /// [`retrieve`](Self::retrieve) restricted to the segment that produced
+    /// each point (see [`Provenance`]): every segment is asked only about its
+    /// own ids, instead of resolving the whole id list in all of them.
+    ///
+    /// `unrouted` ids — from a source that does not record provenance, or whose
+    /// segment is gone — are retrieved from every segment as usual. Unlike a
+    /// routed search, the two kinds mix freely here: the records are collected
+    /// into one map and the id sets are disjoint.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn retrieve_routed(
+        segments: LockedSegmentHolder,
+        routes: Routes,
+        unrouted: Vec<PointIdType>,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
+        let stopping_guard = StoppingGuard::new();
+        let with_payload = with_payload.clone();
+        let with_vector = with_vector.clone();
+        let records = runtime_handle.spawn_blocking(move || {
+            let is_stopped = stopping_guard.get_is_stopped();
+
+            // Snapshot the routed segments, and all of them if anything is
+            // unrouted, under one bounded read lock.
+            let mut unrouted = unrouted;
+            let (routed, broadcast) = {
+                let Some(holder) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(timeout, "retrieve"));
+                };
+                let mut routed = Vec::with_capacity(routes.len());
+                for (segment_id, ids) in routes {
+                    match holder.get(segment_id) {
+                        Some(segment) => routed.push((segment.get_read_arc(), ids)),
+                        // The segment is gone (a finished optimization).
+                        None => unrouted.extend(ids),
+                    }
+                }
+                let broadcast = (!unrouted.is_empty()).then(|| {
+                    holder
+                        .non_appendable_then_appendable_segments()
+                        .map(|segment| segment.get_read_arc())
+                        .collect::<Vec<_>>()
+                });
+                (routed, broadcast)
+            };
+
+            let mut records = AHashMap::new();
+            for (segment, ids) in routed {
+                records.extend(retrieve_over(
+                    vec![segment],
+                    &ids,
+                    &with_payload,
+                    &with_vector,
+                    &is_stopped,
+                    hw_measurement_acc.clone(),
+                    deferred_behavior,
+                )?);
+            }
+            if let Some(segments) = broadcast {
+                records.extend(retrieve_over(
+                    segments,
+                    &unrouted,
+                    &with_payload,
+                    &with_vector,
+                    &is_stopped,
+                    hw_measurement_acc,
+                    deferred_behavior,
+                )?);
+            }
+            Ok(records)
+        });
+        AbortOnDropHandle::new(records).await?
     }
 
     /// Byte-blob analogue of [`Self::retrieve`]: returns vectors as

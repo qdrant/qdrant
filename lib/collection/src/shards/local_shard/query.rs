@@ -68,10 +68,18 @@ impl PrefetchResults {
     }
 
     /// Segments owning `ids`, or `None` if any of them has no provenance —
-    /// a stage is routed all-or-nothing.
+    /// a search stage is routed all-or-nothing.
     fn routes(&self, ids: impl IntoIterator<Item = PointIdType>) -> Option<Routes> {
         let (routes, unrouted) = self.provenance.lock().routes(ids);
         unrouted.is_empty().then_some(routes)
+    }
+
+    /// Segments owning `ids`, plus the ids nothing recorded a segment for.
+    fn split_routes(
+        &self,
+        ids: impl IntoIterator<Item = PointIdType>,
+    ) -> (Routes, Vec<PointIdType>) {
+        self.provenance.lock().routes(ids)
     }
 
     fn record(&self, provenance: Provenance) {
@@ -131,11 +139,13 @@ impl LocalShard {
     /// Fetches the payload and/or vector if required. This will filter out points if they are deleted between search and retrieve.
     ///
     /// This function always filters out deferred points.
+    #[allow(clippy::too_many_arguments)]
     async fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
+        prefetch_holder: &PrefetchResults,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ShardQueryResponse> {
@@ -144,18 +154,22 @@ impl LocalShard {
         }
 
         // ids to retrieve (deduplication happens in the searcher)
-        let point_ids: Vec<_> = query_response
+        let point_ids = query_response
             .iter()
             .flatten()
-            .map(|scored_point| scored_point.id)
-            .collect();
+            .map(|scored_point| scored_point.id);
+
+        // Fetch each point from the segment it came from; the ids of a source
+        // without provenance are looked up in every segment, as before.
+        let (routes, unrouted) = prefetch_holder.split_routes(point_ids);
 
         // Collect retrieved records into a hashmap for fast lookup
         let records_map = tokio::time::timeout(
             timeout,
-            SegmentsSearcher::retrieve(
+            SegmentsSearcher::retrieve_routed(
                 self.segments.clone(),
-                &point_ids,
+                routes,
+                unrouted,
                 &(&with_payload).into(),
                 &with_vector,
                 &self.search_runtime,
@@ -219,6 +233,7 @@ impl LocalShard {
             results,
             with_payload,
             with_vector,
+            prefetch_holder,
             timeout,
             hw_measurement_acc,
         )
@@ -447,6 +462,7 @@ impl LocalShard {
                     sources,
                     mmr,
                     limit,
+                    prefetch_holder,
                     search_runtime_handle,
                     timeout,
                     hw_counter_acc,
@@ -486,11 +502,13 @@ impl LocalShard {
     }
 
     /// Maximal Marginal Relevance rescoring
+    #[allow(clippy::too_many_arguments)]
     async fn mmr_rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         mmr: MmrInternal,
         limit: usize,
+        prefetch_holder: &PrefetchResults,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
@@ -502,6 +520,7 @@ impl LocalShard {
                 sources,
                 false.into(),
                 WithVector::from(mmr.using.clone()),
+                prefetch_holder,
                 timeout,
                 hw_measurement_acc.clone(),
             )
