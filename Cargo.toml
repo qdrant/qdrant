@@ -221,6 +221,7 @@ chrono = { version = "0.4.44", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
 core_affinity = "0.8.3"
 criterion = "0.8.2"
+crossbeam-utils = "0.8.21"
 data-encoding = "2.11.0"
 duplicate = { version = "2.0.1", default-features = false }
 ecow = { version = "0.3.0", features = ["serde"] }

@@ -3,8 +3,8 @@
 //!
 //! Guarantees:
 //!
-//! - resident RAM is small and bounded: headers, the e2i sparse block index,
-//!   the `is_uuid` bitmap, and a fixed-capacity positive `e2i` cache;
+//! - resident RAM is small and fixed after open: headers, the e2i sparse
+//!   block index, the `is_uuid` bitmap, and the positive `e2i` cache;
 //! - a point lookup reads at most one data block;
 //! - deletion is deliberately NOT applied: lookups and iteration return
 //!   build-time-live entries, and callers filter with their own deleted
@@ -52,8 +52,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     }
 
     /// Resident RAM: the e2i sparse block index, the `is_uuid` bitmap and the
-    /// filled part of the `e2i` cache. The mapping data itself is not counted —
-    /// it stays on disk.
+    /// `e2i` cache. The mapping data itself is not counted — it stays on disk.
     pub fn ram_usage_bytes(&self) -> usize {
         let Self {
             i2e: _,        // on-disk handle

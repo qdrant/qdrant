@@ -7139,6 +7139,7 @@ dependencies = [
  "clap",
  "common",
  "criterion",
+ "crossbeam-utils",
  "data-encoding",
  "dataset",
  "duplicate",

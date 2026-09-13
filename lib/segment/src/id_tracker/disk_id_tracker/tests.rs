@@ -579,7 +579,8 @@ fn e2i_cache_serves_the_next_stage() {
         .unwrap();
     let hits_before = disk.mapping_reader().e2i_cache_hits();
 
-    // Stage two: external -> internal, resolved entirely from the cache.
+    // Stage two: external -> internal, served from the cache except for the
+    // few candidates that shared a slot with a later one.
     let mut resolved = Vec::new();
     disk.resolve_external_ids(
         candidates.iter().map(|&(id, _)| id),
@@ -589,10 +590,8 @@ fn e2i_cache_serves_the_next_stage() {
     .unwrap();
     resolved.sort_unstable_by_key(|&(id, _)| id);
     assert_eq!(resolved, candidates);
-    assert_eq!(
-        disk.mapping_reader().e2i_cache_hits() - hits_before,
-        candidates.len() as u64,
-    );
+    let hits = disk.mapping_reader().e2i_cache_hits() - hits_before;
+    assert!(hits >= candidates.len() as u64 * 9 / 10, "{hits} hits");
 
     // A point deleted after the cache was primed is no longer resolvable,
     // through the single lookup and the batch alike.

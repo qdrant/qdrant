@@ -53,6 +53,7 @@ fs-err = { workspace = true }
 integer-encoding = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
+crossbeam-utils = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
 uuid = { workspace = true }
