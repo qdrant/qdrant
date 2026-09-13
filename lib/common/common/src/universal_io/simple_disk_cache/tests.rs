@@ -1131,4 +1131,36 @@ mod tests_async {
         let state = file.state().unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
     }
+
+    /// A zero-length object has nothing to populate: a populating async open
+    /// must succeed without issuing a remote read, because a bounded `0..0`
+    /// range is rejected by real backends rather than answered with an empty
+    /// body (see `AsyncRead::read_range`).
+    #[tokio::test]
+    async fn empty_object_populating_open_issues_no_fetch() {
+        let scn = Scenario::new(0);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::PreferBackground,
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
+        assert!(
+            file.read_bytes_async(0..0, Sequential, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 }

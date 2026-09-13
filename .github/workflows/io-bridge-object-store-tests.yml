@@ -23,9 +23,14 @@ jobs:
   integration:
     name: rustfs-backed integration
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ci-test-user
+      AWS_SECRET_ACCESS_KEY: ci-test-secret-not-for-prod
+      AWS_DEFAULT_REGION: us-east-1
     services:
       rustfs:
-        image: rustfs/rustfs:latest
+        # Pinned by digest so a moving upstream tag cannot change what CI tests against.
+        image: rustfs/rustfs:v1.0.0-rc.5@sha256:b7014e0ce2bc703c1316b3ef760e29dfae61fe4a50d1a66fa89638e0f8ea211f
         ports:
           - 9000:9000
         env:
@@ -35,25 +40,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      # The AWS CLI ships with the runner image, so readiness and bucket setup pull
+      # no third-party container. An authenticated call, so this also waits out
+      # credential setup rather than just the port opening.
       - name: Wait for rustfs to be ready
         run: |
           for _ in $(seq 1 60); do
-            if docker run --rm --network host minio/mc \
-                 alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
-                 >/dev/null 2>&1; then
+            if aws --endpoint-url http://localhost:9000 s3api list-buckets >/dev/null 2>&1; then
               echo "rustfs is up"
               exit 0
             fi
             sleep 1
           done
-          echo "rustfs did not become ready in 60s" >&2
+          echo "rustfs did not become ready in 60s; last attempt was:" >&2
+          aws --endpoint-url http://localhost:9000 s3api list-buckets
           exit 1
 
       - name: Create test bucket
-        run: |
-          docker run --rm --network host --entrypoint sh minio/mc -c \
-            "mc alias set local http://localhost:9000 ci-test-user ci-test-secret-not-for-prod \
-              && mc mb --ignore-existing local/test-bucket"
+        run: aws --endpoint-url http://localhost:9000 s3api create-bucket --bucket test-bucket
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
