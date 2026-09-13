@@ -43,24 +43,34 @@ where
         let prefetches_scores = prefetches_scores
             .iter()
             .map(|scores| {
-                scores
-                    .iter()
-                    .filter_map(|point| {
-                        // Discard points without internal ids. Rescoring a
-                        // prefetch must resolve the same visible head the
-                        // search saw.
-                        let internal_id = self
-                            .id_tracker
-                            .internal_id_with_behavior(point.id, DeferredBehavior::VisibleOnly)?;
+                // The batched resolution delivers pairs in read-completion order, so
+                // the score is carried by external id rather than by input position.
+                let scores_by_external: AHashMap<_, _> =
+                    scores.iter().map(|point| (point.id, point.score)).collect();
 
-                        // filter_map side effect: keep all uniquely seen point offsets.
+                let mut scores_by_internal = AHashMap::with_capacity(scores_by_external.len());
+
+                // Points without internal ids are discarded: rescoring a prefetch
+                // must resolve the same visible head the search saw.
+                self.id_tracker.resolve_external_ids(
+                    scores_by_external.keys().copied(),
+                    DeferredBehavior::VisibleOnly,
+                    |external_id, internal_id| {
+                        let Some(&score) = scores_by_external.get(&external_id) else {
+                            // Resolved from this map's own keys, so it always hits.
+                            return;
+                        };
+
+                        // callback side effect: keep all uniquely seen point offsets.
                         points_to_rescore.insert(internal_id);
 
-                        Some((internal_id, point.score))
-                    })
-                    .collect::<AHashMap<_, _>>()
+                        scores_by_internal.insert(internal_id, score);
+                    },
+                )?;
+
+                OperationResult::Ok(scores_by_internal)
             })
-            .collect::<Vec<_>>();
+            .collect::<OperationResult<Vec<_>>>()?;
 
         let scorer = self
             .payload_index
@@ -132,5 +142,95 @@ where
             hw_counter,
             is_stopped,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use tempfile::Builder;
+
+    use crate::data_types::named_vectors::NamedVectors;
+    use crate::data_types::query_context::FormulaContext;
+    use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+    use crate::entry::entry_point::{
+        NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
+    };
+    use crate::index::query_optimization::rescore_formula::parsed_formula::{
+        ParsedExpression, ParsedFormula,
+    };
+    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use crate::types::{Distance, PointIdType, ScoredPoint};
+
+    fn scored(id: u64, score: f32) -> ScoredPoint {
+        ScoredPoint {
+            id: PointIdType::NumId(id),
+            version: 0,
+            score,
+            payload: None,
+            vector: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
+    /// The prefetch scores must land on the point they were scored for, and ids the
+    /// segment cannot resolve must be dropped.
+    #[test]
+    fn rescore_keeps_every_prefetch_score_with_its_own_point() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        for id in [1, 2, 3] {
+            let mut vectors = NamedVectors::default();
+            vectors.insert(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorInternal::Dense(vec![id as f32, 0.0]),
+            );
+            segment
+                .upsert_point(id, PointIdType::NumId(id), vectors, &hw_counter)
+                .unwrap();
+        }
+        segment
+            .delete_point(10, PointIdType::NumId(3), &hw_counter)
+            .unwrap();
+
+        let ctx = FormulaContext {
+            // The rescored score is the prefetch score itself.
+            formula: ParsedFormula {
+                payload_vars: HashSet::new(),
+                conditions: Vec::new(),
+                defaults: HashMap::new(),
+                formula: ParsedExpression::new_score_id(0),
+            },
+            prefetches_results: vec![vec![
+                scored(1, 10.0),
+                scored(2, 20.0),
+                // Deleted, and never inserted: neither resolves.
+                scored(3, 30.0),
+                scored(99, 99.0),
+            ]],
+            limit: 10,
+            score_threshold: None,
+            is_stopped: Arc::new(AtomicBool::new(false)),
+        };
+
+        let rescored = segment
+            .rescore_with_formula(Arc::new(ctx), &hw_counter)
+            .unwrap();
+
+        let scores: Vec<_> = rescored
+            .into_iter()
+            .map(|point| (point.id, point.score))
+            .collect();
+        assert_eq!(
+            scores,
+            vec![(PointIdType::NumId(2), 20.0), (PointIdType::NumId(1), 10.0),],
+        );
     }
 }
