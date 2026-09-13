@@ -104,16 +104,22 @@ async fn scatter_stream_into_buffer(
         let start = usize::try_from(offset).ok();
         let end = start.and_then(|start| start.checked_add(bytes.len()));
         let Some((start, end)) = start.zip(end).filter(|&(_, end)| end <= expected_len) else {
-            return Err(UniversalIoError::S3(Box::from(format!(
-                "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
+            return Err(UniversalIoError::S3 {
+                path: None,
+                source: Box::from(format!(
+                    "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
                      {expected_len}",
-                bytes.len(),
-            ))));
+                    bytes.len(),
+                )),
+            });
         };
         if runs.iter().any(|run| run.start < end && start < run.end) {
-            return Err(UniversalIoError::S3(Box::from(format!(
-                "overlapping read: chunk {start}..{end} intersects already-received bytes"
-            ))));
+            return Err(UniversalIoError::S3 {
+                path: None,
+                source: Box::from(format!(
+                    "overlapping read: chunk {start}..{end} intersects already-received bytes"
+                )),
+            });
         }
         // SAFETY: `end <= expected_len <= capacity`, and the check above
         // guarantees `start..end` is disjoint from every prior write.
@@ -138,9 +144,11 @@ async fn scatter_stream_into_buffer(
     // Every write was in-bounds and disjoint, so matching totals prove the
     // chunks tiled `0..expected_len` exactly; anything less means a gap.
     if bytes_written != expected_len {
-        return Err(UniversalIoError::S3(
-            format!("short read: expected {expected_len} bytes, got {bytes_written}").into(),
-        ));
+        return Err(UniversalIoError::S3 {
+            path: None,
+            source: format!("short read: expected {expected_len} bytes, got {bytes_written}")
+                .into(),
+        });
     }
     // SAFETY: the coverage check above proves every byte in `0..expected_len`
     // was written exactly once.
