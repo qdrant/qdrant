@@ -622,31 +622,39 @@ impl SegmentsSearcher {
     /// Rescore results with a formula that can reference payload values.
     ///
     /// Aggregates rescores from the segments.
+    /// `routes` restricts the rescore to the segments that produced the
+    /// prefetched points, each one seeing only its own share of the prefetch
+    /// results — the others would resolve the whole list and find nothing. A
+    /// route to a segment the holder no longer has falls back to rescoring in
+    /// every segment.
+    #[allow(clippy::too_many_arguments)]
     pub async fn rescore_with_formula(
         segments: LockedSegmentHolder,
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &AdaptiveSearchHandle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Duration,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+        routes: Option<&Routes>,
+    ) -> CollectionResult<(Vec<ScoredPoint>, Provenance)> {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments: Vec<_> = {
+            let (segments, routes) = {
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
                     return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
                 };
                 // Collect the segments first so we don't lock the segment holder during the operations.
-                segments_guard
-                    .non_appendable_then_appendable_segments()
-                    .collect()
+                routed_segments(&segments_guard, routes)
             };
 
             segments
                 .into_iter()
-                .map(|segment| {
+                .map(|(segment_id, segment)| {
+                    let ctx = match routes {
+                        Some(routes) => Arc::new(context_for_ids(&arc_ctx, &routes[&segment_id])),
+                        None => arc_ctx.clone(),
+                    };
                     let handle = runtime_handle.spawn_blocking({
-                        let arc_ctx = arc_ctx.clone();
                         let hw_counter = hw_measurement_acc.get_counter_cell();
                         let cpu_utilization = hw_measurement_acc.cpu_utilization();
                         move || {
@@ -654,7 +662,8 @@ impl SegmentsSearcher {
                                 segment
                                     .get()
                                     .read()
-                                    .rescore_with_formula(arc_ctx, &hw_counter)
+                                    .rescore_with_formula(ctx, &hw_counter)
+                                    .map(|scored| (segment_id, scored))
                             })
                         }
                     });
@@ -668,7 +677,16 @@ impl SegmentsSearcher {
             segments_results.push(result?)
         }
 
+        let mut provenance = Provenance::default();
+        for (segment_id, scored) in &segments_results {
+            provenance.record(*segment_id, scored);
+        }
+
         // use aggregator with only one "batch"
+        let segments_results: Vec<_> = segments_results
+            .into_iter()
+            .map(|(_segment_id, scored)| scored)
+            .collect();
         let mut aggregator = BatchResultAggregator::new(std::iter::once(limit));
         aggregator.update_point_versions(segments_results.iter().flatten());
         aggregator.update_batch_results(0, segments_results.into_iter().flatten());
@@ -677,7 +695,38 @@ impl SegmentsSearcher {
                 OperationError::service_error("expected first result of aggregator")
             })?;
 
-        Ok(top)
+        Ok((top, provenance))
+    }
+}
+
+/// The formula context with every prefetch result narrowed to `ids`.
+///
+/// A routed segment only has to score the points it produced; handing it the
+/// whole candidate list would just make it resolve, and drop, everyone else's.
+fn context_for_ids(ctx: &FormulaContext, ids: &[PointIdType]) -> FormulaContext {
+    let ids: AHashSet<_> = ids.iter().copied().collect();
+    let FormulaContext {
+        formula,
+        prefetches_results,
+        limit,
+        score_threshold,
+        is_stopped,
+    } = ctx;
+    FormulaContext {
+        formula: formula.clone(),
+        prefetches_results: prefetches_results
+            .iter()
+            .map(|scores| {
+                scores
+                    .iter()
+                    .filter(|point| ids.contains(&point.id))
+                    .cloned()
+                    .collect()
+            })
+            .collect(),
+        limit: *limit,
+        score_threshold: *score_threshold,
+        is_stopped: is_stopped.clone(),
     }
 }
 

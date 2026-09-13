@@ -9,19 +9,24 @@ use segment::types::ScoredPoint;
 use shard::common::stopping_guard::StoppingGuard;
 
 use super::LocalShard;
+use crate::collection_manager::provenance::{Provenance, Routes};
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {
+    /// `routes` restricts the rescore to the segments that produced the
+    /// prefetched points, see [`SegmentsSearcher::rescore_with_formula`].
+    #[allow(clippy::too_many_arguments)]
     pub async fn rescore_with_formula(
         &self,
         formula: ParsedFormula,
         prefetches_results: Vec<Vec<ScoredPoint>>,
         limit: usize,
         score_threshold: Option<ScoreType>,
+        routes: Option<&Routes>,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<(Vec<ScoredPoint>, Provenance)> {
         let stopping_guard = StoppingGuard::new();
 
         let ctx = FormulaContext {
@@ -40,6 +45,7 @@ impl LocalShard {
             &self.search_runtime,
             hw_measurement_acc,
             timeout,
+            routes,
         );
 
         let res = tokio::time::timeout(timeout, future)

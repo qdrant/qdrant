@@ -351,7 +351,7 @@ impl LocalShard {
             ),
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(sources.into_iter());
+                let filter = filter_with_sources_ids(&sources);
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
@@ -379,7 +379,7 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let candidate_ids = sources_ids(sources.into_iter());
+                let candidate_ids = sources_ids(&sources);
                 // Ask only the segments that produced the candidates; every
                 // other segment would just re-resolve the whole id list and
                 // find nothing.
@@ -418,20 +418,25 @@ impl LocalShard {
                 })
             }
             ScoringQuery::Formula(formula) => {
-                self.rescore_with_formula(
-                    formula,
-                    sources,
-                    limit,
-                    score_threshold.map(OrderedFloat::into_inner),
-                    timeout,
-                    hw_counter_acc,
-                )
-                .await
+                let routes = prefetch_holder.routes(sources_ids(&sources));
+                let (rescored, provenance) = self
+                    .rescore_with_formula(
+                        formula,
+                        sources,
+                        limit,
+                        score_threshold.map(OrderedFloat::into_inner),
+                        routes.as_ref(),
+                        timeout,
+                        hw_counter_acc,
+                    )
+                    .await?;
+                prefetch_holder.record(provenance);
+                Ok(rescored)
             }
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
                     // create single scroll request for rescoring query
-                    let filter = filter_with_sources_ids(sources.into_iter());
+                    let filter = filter_with_sources_ids(&sources);
 
                     // Note: score_threshold is not used in this case, as all results will have same score and order_value
                     let scroll_request = QueryScrollRequestInternal {
@@ -554,16 +559,16 @@ impl LocalShard {
 }
 
 /// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
+fn filter_with_sources_ids(sources: &[Vec<ScoredPoint>]) -> Filter {
     filter_with_ids(sources_ids(sources))
 }
 
 /// The deduplicated ids of every source.
-fn sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> AHashSet<PointIdType> {
+fn sources_ids(sources: &[Vec<ScoredPoint>]) -> AHashSet<PointIdType> {
     let mut point_ids = AHashSet::new();
 
     for source in sources {
-        for point in source.iter() {
+        for point in source {
             point_ids.insert(point.id);
         }
     }

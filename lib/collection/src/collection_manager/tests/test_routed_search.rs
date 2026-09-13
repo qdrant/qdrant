@@ -7,7 +7,10 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{FormulaContext, QueryContext};
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    ParsedExpression, ParsedFormula, VariableId,
+};
 use segment::types::{
     Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithVector,
 };
@@ -234,4 +237,53 @@ async fn routed_retrieve_matches_broadcast() {
     .await
     .unwrap();
     assert_eq!(broadcast, mixed);
+}
+
+/// A formula rescore sees only its own segment's share of the prefetch
+/// results, and must produce what the whole list produces everywhere.
+#[tokio::test]
+async fn routed_formula_rescore_matches_broadcast() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments = build_test_holder(dir.path());
+
+    let (candidates, provenance) = search(&segments, None, None).await;
+    let ids: Vec<_> = candidates.iter().map(|point| point.id).collect();
+
+    // Score by the prefetch score, so the rescore is exactly the prefetch.
+    let formula = ParsedFormula {
+        payload_vars: Default::default(),
+        conditions: Vec::new(),
+        defaults: Default::default(),
+        formula: ParsedExpression::Variable(VariableId::Score(0)),
+    };
+    let rescore = |routes: Option<Routes>| {
+        let ctx = Arc::new(FormulaContext {
+            formula: formula.clone(),
+            prefetches_results: vec![candidates.clone()],
+            limit: ids.len(),
+            score_threshold: None,
+            is_stopped: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        });
+        let segments = segments.clone();
+        async move {
+            SegmentsSearcher::rescore_with_formula(
+                segments,
+                ctx,
+                &AdaptiveSearchHandle::current_for_tests(),
+                HwMeasurementAcc::new(),
+                TEST_TIMEOUT,
+                routes.as_ref(),
+            )
+            .await
+            .unwrap()
+            .0
+        }
+    };
+
+    let (routes, unrouted) = provenance.routes(ids.iter().copied());
+    assert!(unrouted.is_empty());
+    let broadcast = rescore(None).await;
+    let routed = rescore(Some(routes)).await;
+    assert_eq!(by_score(&broadcast), by_score(&routed));
+    assert_eq!(broadcast.len(), ids.len());
 }
