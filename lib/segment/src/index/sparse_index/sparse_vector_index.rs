@@ -12,9 +12,14 @@ use common::storage_version::StorageVersion as _;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFs};
 use fs_err as fs;
 use sparse::SearchScratchPool;
+#[cfg(test)]
+#[path = "sparse_build_profile.rs"]
+mod sparse_build_profile;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
+use sparse::index::inverted_index::inverted_index_ram_builder::{
+    InvertedIndexBuilder, StreamingInvertedIndexBuilder,
+};
 use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadWrite};
 
 use self::read_view::{SparseVectorIndexReadView, SparseVectorIndexReadViewEnum};
@@ -124,7 +129,9 @@ fn build_ram_index(
         .iter_internal_excluding(deleted_bitslice)
         .map(|id| ((), id));
 
-    let mut ram_index_builder = InvertedIndexBuilder::new();
+    let mut ram_index_builder = (num_threads <= 1).then(InvertedIndexBuilder::new);
+    let mut streaming_builder =
+        (num_threads > 1).then(|| StreamingInvertedIndexBuilder::new(num_threads));
     let mut indices_tracker = IndicesTracker::default();
     let scan_started = Instant::now();
     let mut vectors_read = 0usize;
@@ -154,8 +161,14 @@ fn build_ram_index(
         // do not index empty vectors
         if !vector.is_empty() {
             indices_tracker.register_indices(vector);
-            let vector = indices_tracker.remap_vector(vector.to_owned());
-            ram_index_builder.add(id, vector);
+            if let Some(ram_index_builder) = &mut ram_index_builder {
+                ram_index_builder.add(id, indices_tracker.remap_vector(vector.to_owned()));
+            } else {
+                streaming_builder
+                    .as_mut()
+                    .expect("parallel sparse builds must have a streaming builder")
+                    .add(id, vector.to_owned());
+            }
         }
         vectors_read += 1;
         tick_progress();
@@ -163,10 +176,21 @@ fn build_ram_index(
     result?;
 
     let scan_elapsed = scan_started.elapsed();
+    let accumulation_started = Instant::now();
+    let ram_index_builder = match (ram_index_builder, streaming_builder) {
+        (Some(builder), None) => builder,
+        (None, Some(builder)) => builder.finish(indices_tracker.map.len(), |dim_id| {
+            indices_tracker
+                .remap_index(dim_id)
+                .map(|offset| offset as usize)
+        }),
+        _ => unreachable!("sparse index build must select exactly one accumulation strategy"),
+    };
+    let accumulation_elapsed = accumulation_started.elapsed();
     let finalize_started = Instant::now();
     let ram_index = ram_index_builder.build_with_threads(num_threads);
     log::info!(
-        "sparse index build: scanned/remapped {vectors_read} vector(s) into {} posting list(s) in {scan_elapsed:.1?}; finalized postings in {:.1?}",
+        "sparse index build: streamed {vectors_read} vector(s) in {scan_elapsed:.1?}; assembled streamed postings in {accumulation_elapsed:.1?}; finalized {} posting list(s) in {:.1?}",
         ram_index.postings.len(),
         finalize_started.elapsed(),
     );

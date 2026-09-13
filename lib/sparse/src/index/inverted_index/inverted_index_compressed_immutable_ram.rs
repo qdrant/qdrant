@@ -276,18 +276,25 @@ mod tests {
     #[test]
     fn parallel_finalization_and_compression_match_single_threaded_output() {
         let build_ram_index = |num_threads| {
-            let mut builder = InvertedIndexBuilder::new();
-            for point_id in 0..1_024 {
-                builder.add(
-                    point_id,
-                    vec![
-                        (point_id % 11, point_id as f32),
-                        (32 + (point_id % 31), point_id as f32 / 2.0),
-                    ]
-                    .try_into()
-                    .unwrap(),
-                );
-            }
+            let vectors = (0..1_024)
+                .map(|point_id| {
+                    // Each worker's contiguous range reaches a different maximum dimension.
+                    // This catches merge implementations that accidentally shrink a previously
+                    // merged posting-builder vector.
+                    let dim_id = match point_id / 256 {
+                        0 => 1_024,
+                        1 => 64,
+                        2 => 8,
+                        _ => 1,
+                    };
+                    (
+                        point_id,
+                        vec![(dim_id, point_id as f32)].try_into().unwrap(),
+                    )
+                })
+                .collect();
+            let builder =
+                InvertedIndexBuilder::from_vectors_with_threads(vectors, 1_025, num_threads);
             builder.build_with_threads(num_threads)
         };
 
@@ -329,7 +336,7 @@ mod tests {
     fn profile_sparse_index_build_scaling() {
         const MAX_DIMENSION: usize = 10_000;
 
-        for vector_count in [25_000usize, 100_000, 200_000] {
+        for vector_count in [25_000usize, 100_000, 200_000, 300_000] {
             let mut rng = SmallRng::seed_from_u64(0x5A17_5EED);
 
             let generate_started = Instant::now();
@@ -339,11 +346,18 @@ mod tests {
             let generate_elapsed = generate_started.elapsed();
 
             let build = |num_threads| {
+                let worker_vectors = vectors
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(point_id, vector)| (point_id as u32, vector))
+                    .collect();
                 let accumulate_started = Instant::now();
-                let mut builder = InvertedIndexBuilder::new();
-                for (point_id, vector) in vectors.iter().cloned().enumerate() {
-                    builder.add(point_id as u32, vector);
-                }
+                let builder = InvertedIndexBuilder::from_vectors_with_threads(
+                    worker_vectors,
+                    MAX_DIMENSION,
+                    num_threads,
+                );
                 let accumulate_elapsed = accumulate_started.elapsed();
 
                 let finalize_started = Instant::now();

@@ -254,6 +254,16 @@ fn snapshot_shard(segments_dir: &Path) -> Result<SegmentSnapshot> {
 
 /// Run scatter, plan, build and assemble for one route, returning the shard output root.
 fn run_pipeline(corpus: &Corpus, route: BuildRoute, tag: &str) -> Result<PathBuf> {
+    run_pipeline_with_indexing_threads(corpus, route, tag, None)
+}
+
+/// Test-only entry point for measuring a real segment build with a fixed sparse-index permit.
+fn run_pipeline_with_indexing_threads(
+    corpus: &Corpus,
+    route: BuildRoute,
+    tag: &str,
+    indexing_threads: Option<usize>,
+) -> Result<PathBuf> {
     let work = corpus.root.join(format!("work_{tag}"));
     let out = corpus.root.join(format!("out_{tag}"));
     let staging = out.join("staging");
@@ -289,6 +299,7 @@ fn run_pipeline(corpus: &Corpus, route: BuildRoute, tag: &str) -> Result<PathBuf
     )?;
 
     let build_layout = BuildLayout::new(&out, &staging);
+    let build_started = std::time::Instant::now();
     let stats = crate::build::run_all(
         &corpus.config,
         &planned.plans,
@@ -300,11 +311,17 @@ fn run_pipeline(corpus: &Corpus, route: BuildRoute, tag: &str) -> Result<PathBuf
             payload_index: Some(&corpus.payload_index),
             slice: None,
             route,
-            indexing_threads: None,
+            indexing_threads,
             mapping: None,
         },
     )?;
     assert!(stats.segments_built > 0, "{tag}: nothing was built");
+    if let Some(threads) = indexing_threads {
+        eprintln!(
+            "sparse streaming profile: threads={threads}, build={:.3?}",
+            build_started.elapsed()
+        );
+    }
 
     for (shard_id, shard_dir) in crate::assemble::discover_shards(&out)? {
         crate::assemble::assemble_shard(
@@ -317,6 +334,38 @@ fn run_pipeline(corpus: &Corpus, route: BuildRoute, tag: &str) -> Result<PathBuf
     }
 
     Ok(out)
+}
+
+/// Whole shard-builder smoke benchmark, including dense HNSW and payload indexes.
+/// This does not isolate sparse performance. Use segment's `profile_sparse_storage_build`
+/// release benchmark for sparse timing, memory, and output comparisons.
+///
+/// Run with:
+/// `cargo test -p shard-builder profile_sparse_streaming_build -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn profile_sparse_streaming_build() {
+    let threads = std::env::var("SPARSE_STREAMING_PROFILE_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .map(|threads| vec![threads])
+        .unwrap_or_else(|| vec![1, 4, 8, 16, 32]);
+    for threads in threads {
+        // One shard and one segment isolate intra-segment sparse indexing from build concurrency.
+        let corpus = corpus(1, 1, 200_000);
+        let started = std::time::Instant::now();
+        run_pipeline_with_indexing_threads(
+            &corpus,
+            BuildRoute::Bulk,
+            &format!("sparse-streaming-{threads}"),
+            Some(threads),
+        )
+        .expect("streaming build must complete");
+        eprintln!(
+            "sparse streaming profile: threads={threads}, total={:.3?}",
+            started.elapsed()
+        );
+    }
 }
 
 /// The headline test: both routes must produce the same artifact.
