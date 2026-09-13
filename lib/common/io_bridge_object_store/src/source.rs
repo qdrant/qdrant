@@ -155,7 +155,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
                 Err(object_store::Error::NotFound { .. }) => {
                     Err(UniversalIoError::NotFound { path: prefix_path })
                 }
-                Err(other) => Err(UniversalIoError::s3(other)),
+                Err(other) => Err(UniversalIoError::s3_at(prefix_str, other)),
             }
         }
     }
@@ -168,7 +168,7 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
             match store.head(&key).await {
                 Ok(_) => Ok(true),
                 Err(object_store::Error::NotFound { .. }) => Ok(false),
-                Err(other) => Err(UniversalIoError::s3(other)),
+                Err(other) => Err(UniversalIoError::s3_at(key.to_string(), other)),
             }
         }
     }
@@ -356,7 +356,7 @@ fn map_get_err(err: object_store::Error, key: &object_store::path::Path) -> Univ
         object_store::Error::NotFound { .. } => UniversalIoError::NotFound {
             path: PathBuf::from(key.to_string()),
         },
-        other => UniversalIoError::s3(other),
+        other => UniversalIoError::s3_at(key.to_string(), other),
     }
 }
 

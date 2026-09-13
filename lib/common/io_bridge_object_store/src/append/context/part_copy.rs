@@ -493,7 +493,7 @@ mod tests {
         ]);
 
         let err = rewrite_data_at(&endpoint, 10 * 1024 * 1024).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
 
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 3);
@@ -514,7 +514,7 @@ mod tests {
         ]);
 
         let err = rewrite_data_at(&endpoint, 10 * 1024 * 1024).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         assert!(err.to_string().contains("InternalError"), "{err}");
         assert_eq!(seen.lock().unwrap().last().unwrap().method, "DELETE");
     }

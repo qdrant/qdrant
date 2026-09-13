@@ -53,7 +53,7 @@ impl IsNotFound for UniversalIoError {
             | Self::AppendRewriteRequired { .. }
             | Self::AppendEntityTooSmall { .. }
             | Self::AppendEtagMismatch { .. }
-            | Self::S3(_)
+            | Self::S3 { .. }
             | Self::S3Config { .. }
             | Self::TaskPanicked(_) => false,
         }
@@ -153,8 +153,17 @@ pub enum UniversalIoError {
     #[error("append to {path} rejected: entity tag mismatch, the object was replaced")]
     AppendEtagMismatch { path: PathBuf },
 
-    #[error("S3 object store error: {0}")]
-    S3(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error(
+        "S3 object store error{}: {source}",
+        .path.as_ref().map(|path| format!(" for {}", path.display())).unwrap_or_default(),
+    )]
+    S3 {
+        /// Object the failed operation was addressing, where the call site knows it.
+        /// `None` for failures that are not about one particular object.
+        path: Option<PathBuf>,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 
     #[error("S3 configuration missing or invalid: {description}")]
     S3Config { description: String },
@@ -181,7 +190,7 @@ impl UniversalIoError {
             | Self::AppendRewriteRequired { .. }
             | Self::AppendEntityTooSmall { .. }
             | Self::AppendEtagMismatch { .. }
-            | Self::S3(_)
+            | Self::S3 { .. }
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }
             | Self::TaskPanicked(_) => false,
@@ -205,7 +214,7 @@ impl UniversalIoError {
             | Self::AppendOffsetConflict { .. }
             | Self::AppendEntityTooSmall { .. }
             | Self::AppendEtagMismatch { .. }
-            | Self::S3(_)
+            | Self::S3 { .. }
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }
             | Self::TaskPanicked(_) => false,
@@ -229,7 +238,7 @@ impl UniversalIoError {
             | Self::AppendOffsetConflict { .. }
             | Self::AppendRewriteRequired { .. }
             | Self::AppendEtagMismatch { .. }
-            | Self::S3(_)
+            | Self::S3 { .. }
             | Self::S3Config { .. }
             | Self::UnchangedOpen { .. }
             | Self::TaskPanicked(_) => false,
@@ -254,7 +263,21 @@ impl UniversalIoError {
     where
         E: std::error::Error + Send + Sync + 'static,
     {
-        Self::S3(Box::new(err))
+        Self::S3 {
+            path: None,
+            source: Box::new(err),
+        }
+    }
+
+    /// [`Self::s3`] for a failure that was addressing a known object.
+    pub fn s3_at<E>(path: impl Into<PathBuf>, err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::S3 {
+            path: Some(path.into()),
+            source: Box::new(err),
+        }
     }
 }
 

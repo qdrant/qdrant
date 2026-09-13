@@ -279,7 +279,7 @@ mod tests {
             stub_server(vec![StubResponse::new(403).body("compose denied by stub")]);
 
         let err = compose_at(&endpoint, Some("42")).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         let message = err.to_string();
         assert!(message.contains("403"), "{message}");
         assert!(message.contains("compose denied by stub"), "{message}");

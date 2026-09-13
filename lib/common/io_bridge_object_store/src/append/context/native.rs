@@ -359,7 +359,7 @@ mod tests {
         let (endpoint, _seen) = stub_server(vec![success_with_size(42)]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         assert!(err.to_string().contains("expected 9"), "{err}");
     }
 
@@ -370,7 +370,7 @@ mod tests {
         ]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
     }
 
     /// At offset 0 an append equals a whole-object write, so a store that
@@ -390,7 +390,7 @@ mod tests {
         let (endpoint, _seen) = stub_server(vec![StubResponse::new(200)]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         assert!(err.to_string().contains(OBJECT_SIZE_HEADER), "{err}");
     }
 
@@ -442,7 +442,7 @@ mod tests {
         ]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
     }
 
     /// A missing object under a nonzero offset is a stale view of the
@@ -480,7 +480,7 @@ mod tests {
         ]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         assert!(err.to_string().contains("NoSuchBucket"), "{err}");
     }
 
@@ -519,7 +519,7 @@ mod tests {
         let (endpoint, seen) = stub_server(responses);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         assert!(err.to_string().contains("503"), "{err}");
         assert_eq!(seen.lock().unwrap().len(), MAX_ATTEMPTS as usize);
     }
@@ -568,7 +568,7 @@ mod tests {
             stub_server(vec![StubResponse::new(403).body("AccessDenied by stub")]);
 
         let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3(_));
+        assert_matches!(err, UniversalIoError::S3 { .. });
         let message = err.to_string();
         assert!(message.contains("403"), "{message}");
         assert!(message.contains("AccessDenied by stub"), "{message}");
