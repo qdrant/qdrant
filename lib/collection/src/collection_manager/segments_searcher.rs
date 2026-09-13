@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
@@ -27,9 +27,10 @@ use shard::search::{
 };
 use shard::search_result_aggregator::BatchResultAggregator;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::routing_cache::RoutingCache;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentId};
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::CollectionConfigInternal;
@@ -81,12 +82,16 @@ impl SegmentsSearcher {
     ///
     /// # Arguments
     /// * `search_result` - `[segment_size x batch_size]`
+    /// * `segment_ids` - `[segment_size]` - holder id of the segment each result came from
+    /// * `routing_cache` - records which segment returned each point, for the stages that follow
     /// * `limits` - `[batch_size]` - how many results to return for each batched request
     /// * `further_results` - `[segment_size x batch_size]` - whether we can search further in the segment
     ///
     /// Returns batch results aggregated by `[batch_size]` and list of queries, grouped by segment to re-run
     pub(crate) fn process_search_result_step1(
         search_result: BatchSearchResult,
+        segment_ids: &[SegmentId],
+        routing_cache: &RoutingCache,
         limits: Vec<usize>,
         further_results: &[Vec<bool>],
     ) -> (
@@ -129,6 +134,7 @@ impl SegmentsSearcher {
                     .last()
                     .map(|x| x.score)
                     .unwrap_or_else(f32::min_value);
+                routing_cache.record_points(segment_ids[segment_idx], &query_res);
                 result_aggregator.update_batch_results(batch_req_idx, query_res);
             }
         }
@@ -209,6 +215,13 @@ impl SegmentsSearcher {
         Ok(task)
     }
 
+    /// Search the segments of `segments` and return the merged top-k of each
+    /// request in the batch.
+    ///
+    /// A single request bounded by a `has_id` clause is routed: each segment is
+    /// asked only about the ids the holder's [`RoutingCache`] places in it, plus
+    /// the ids the cache knows nothing about, and segments with nothing to ask
+    /// are skipped. Every result fills the cache for the stages that follow.
     pub async fn search(
         segments: LockedSegmentHolder,
         batch_request: Arc<CoreSearchRequestBatch>,
@@ -221,8 +234,8 @@ impl SegmentsSearcher {
         let query_context_arc = Arc::new(query_context);
 
         // Using block to ensure `segments` variable is dropped in the end of it
-        let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            let segments: Vec<_> = {
+        let (routing_cache, segment_ids, locked_segments, requests, searches) = {
+            let (routing_cache, segments, routed) = {
                 // Unfortunately, we have to do `segments.read()` twice, once in blocking task
                 // and once here, due to `Send` bounds :/
                 let Some(segments_lock) = segments.try_read_for(timeout) else {
@@ -230,9 +243,12 @@ impl SegmentsSearcher {
                 };
 
                 // Collect the segments first so we don't lock the segment holder during the operations.
-                segments_lock
-                    .non_appendable_then_appendable_segments()
-                    .collect()
+                let routing_cache = Arc::clone(segments_lock.routing_cache());
+                let segments = segments_lock
+                    .non_appendable_then_appendable_segments_with_ids()
+                    .collect();
+                let (segments, routed) = route_batch(&batch_request, segments, &routing_cache);
+                (routing_cache, segments, routed)
             };
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
@@ -240,15 +256,20 @@ impl SegmentsSearcher {
             // With probabilistic sampling we determine a smaller sampling limit for each segment.
             // Use probabilistic sampling if:
             // - sampling is enabled
+            // - the search is not routed: a routed segment is asked about its own ids only
             // - more than 1 segment
             // - segments are not empty
             let use_sampling = sampling_enabled
+                && !routed
                 && segments.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
-            segments
-                .into_iter()
-                .map(|segment| {
+            let (segment_ids, locked_segments, requests): (Vec<_>, Vec<_>, Vec<_>) =
+                itertools::multiunzip(segments);
+            let searches: Vec<_> = locked_segments
+                .iter()
+                .zip(&requests)
+                .map(|(segment, batch_request)| {
                     let query_context_arc_segment = query_context_arc.clone();
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
@@ -278,11 +299,16 @@ impl SegmentsSearcher {
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
                     // See: <https://github.com/qdrant/qdrant/pull/7530>
-                    let search = AbortOnDropHandle::new(search);
-
-                    (segment, search)
+                    AbortOnDropHandle::new(search)
                 })
-                .unzip()
+                .collect();
+            (
+                routing_cache,
+                segment_ids,
+                locked_segments,
+                requests,
+                searches,
+            )
         };
 
         // perform search on all segments concurrently
@@ -293,6 +319,8 @@ impl SegmentsSearcher {
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
             all_search_results_per_segment,
+            &segment_ids,
+            &routing_cache,
             batch_request
                 .searches
                 .iter()
@@ -316,7 +344,7 @@ impl SegmentsSearcher {
                     let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
                             .iter()
-                            .map(|batch_id| batch_request.searches[*batch_id].clone())
+                            .map(|batch_id| requests[*segment_id].searches[*batch_id].clone())
                             .collect(),
                     });
                     // update timeout
@@ -361,12 +389,14 @@ impl SegmentsSearcher {
                     .flatten(),
             );
 
-            for ((_segment_id, batch_ids), segments_result) in searches_to_rerun
+            for ((segment_offset, batch_ids), segments_result) in searches_to_rerun
                 .into_iter()
                 .zip(secondary_search_results_per_segment)
             {
                 for (batch_id, secondary_batch_result) in batch_ids.into_iter().zip(segments_result)
                 {
+                    routing_cache
+                        .record_points(segment_ids[segment_offset], &secondary_batch_result);
                     result_aggregator.update_batch_results(batch_id, secondary_batch_result);
                 }
             }
@@ -566,6 +596,72 @@ impl SegmentsSearcher {
     }
 }
 
+/// The segments to search and the request for each: a single request bounded
+/// by a `has_id` clause is split by the routing cache, everything else goes to
+/// every segment as is. Also returns whether the batch was routed.
+///
+/// A routed segment is asked about the ids recorded for it plus every id with
+/// no record, including ids recorded for a segment the holder no longer has
+/// (a finished optimization). Segments with nothing to ask are dropped: only a
+/// segment holding one of the ids can return anything, whatever else the
+/// filter asks.
+fn route_batch(
+    batch_request: &Arc<CoreSearchRequestBatch>,
+    segments: Vec<(SegmentId, LockedSegment)>,
+    routing_cache: &RoutingCache,
+) -> (
+    Vec<(SegmentId, LockedSegment, Arc<CoreSearchRequestBatch>)>,
+    bool,
+) {
+    let broadcast = |segments: Vec<(SegmentId, LockedSegment)>| {
+        let segments = segments
+            .into_iter()
+            .map(|(segment_id, segment)| (segment_id, segment, Arc::clone(batch_request)))
+            .collect();
+        (segments, false)
+    };
+    let [request] = batch_request.searches.as_slice() else {
+        return broadcast(segments);
+    };
+    let Some(filter) = request.filter.as_ref() else {
+        return broadcast(segments);
+    };
+    let Some(bound) = filter.has_id_bound() else {
+        return broadcast(segments);
+    };
+
+    let (mut routes, mut uncached) = routing_cache.routes(bound.iter().copied());
+    let live: AHashSet<SegmentId> = segments.iter().map(|(segment_id, _)| *segment_id).collect();
+    routes.retain(|segment_id, ids| {
+        let is_live = live.contains(segment_id);
+        if !is_live {
+            uncached.append(ids);
+        }
+        is_live
+    });
+    if routes.is_empty() {
+        return broadcast(segments);
+    }
+
+    let routed = segments
+        .into_iter()
+        .filter_map(|(segment_id, segment)| {
+            let own = routes.remove(&segment_id).unwrap_or_default();
+            if own.is_empty() && uncached.is_empty() {
+                return None;
+            }
+            let ids = own.into_iter().chain(uncached.iter().copied()).collect();
+            let mut request = request.clone();
+            request.filter = Some(filter.clone().with_has_id_bound(ids));
+            let batch_request = Arc::new(CoreSearchRequestBatch {
+                searches: vec![request],
+            });
+            Some((segment_id, segment, batch_request))
+        })
+        .collect();
+    (routed, true)
+}
+
 /// Returns suggested search sampling size for a given number of points and required limit.
 fn sampling_limit(
     limit: usize,
@@ -738,6 +834,83 @@ mod tests {
     use crate::collection_manager::fixtures::{TEST_TIMEOUT, build_test_holder, random_segment};
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::types::CoreSearchRequest;
+
+    #[test]
+    fn route_batch_asks_each_segment_about_its_own_and_the_unknown_ids() {
+        use segment::types::{Condition, HasIdCondition};
+
+        let dir = tempfile::Builder::new()
+            .prefix("segment_dir")
+            .tempdir()
+            .unwrap();
+        let holder = build_test_holder(dir.path());
+        let segments: Vec<_> = holder
+            .read()
+            .non_appendable_then_appendable_segments_with_ids()
+            .collect();
+        let [(first, _), (second, _)] = segments.as_slice() else {
+            panic!("the fixture has two segments");
+        };
+        let (first, second) = (*first, *second);
+        let gone = first.max(second) + 1;
+
+        let id = |n: u64| PointIdType::NumId(n);
+        let cache = RoutingCache::default();
+        cache.record(id(1), first, 1);
+        cache.record(id(2), second, 1);
+        cache.record(id(3), gone, 1);
+
+        let request = |ids: &[u64]| {
+            let ids: AHashSet<_> = ids.iter().copied().map(id).collect();
+            Arc::new(CoreSearchRequestBatch {
+                searches: vec![CoreSearchRequest {
+                    query: vec![1.0, 1.0, 1.0, 1.0].into(),
+                    filter: Some(Filter::new_must(Condition::HasId(HasIdCondition::from(
+                        ids,
+                    )))),
+                    params: None,
+                    limit: 10,
+                    offset: 0,
+                    with_payload: None,
+                    with_vector: None,
+                    score_threshold: None,
+                }],
+            })
+        };
+        let asked = |routed: &[(SegmentId, LockedSegment, Arc<CoreSearchRequestBatch>)]| {
+            routed
+                .iter()
+                .map(|(segment_id, _, request)| {
+                    let bound = request.searches[0].filter.as_ref().unwrap().has_id_bound();
+                    (*segment_id, bound.unwrap().clone())
+                })
+                .collect::<AHashMap<_, _>>()
+        };
+
+        // Own ids, plus the id routed to a segment the holder lost and the id
+        // never seen, which every segment has to answer for.
+        let (routed, is_routed) = route_batch(&request(&[1, 2, 3, 4]), segments.clone(), &cache);
+        assert!(is_routed);
+        let asked_ids = asked(&routed);
+        assert_eq!(asked_ids[&first], [1, 3, 4].map(id).into_iter().collect());
+        assert_eq!(asked_ids[&second], [2, 3, 4].map(id).into_iter().collect());
+
+        // Only ids of one segment: the other has nothing to answer and is skipped.
+        let (routed, is_routed) = route_batch(&request(&[1]), segments.clone(), &cache);
+        assert!(is_routed);
+        assert_eq!(asked(&routed).keys().copied().collect::<Vec<_>>(), [first]);
+
+        // Nothing recorded for any id: every segment gets the request as is.
+        let unknown = request(&[4, 5]);
+        let (broadcast, is_routed) = route_batch(&unknown, segments.clone(), &cache);
+        assert!(!is_routed);
+        assert_eq!(broadcast.len(), segments.len());
+        assert!(
+            broadcast
+                .iter()
+                .all(|(_, _, request)| Arc::ptr_eq(request, &unknown))
+        );
+    }
 
     #[test]
     fn test_is_indexed_enough_condition() {

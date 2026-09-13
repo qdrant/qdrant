@@ -28,6 +28,9 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
+        for &id in batch {
+            segments.routing_cache().invalidate(id, op_num);
+        }
         for (_segment_id, segment) in segments.iter() {
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
@@ -113,6 +116,7 @@ pub fn delete_points_by_filter(
 
         let mut deleted_in_batch = 0;
         while let Some(point_id) = curr_points.pop() {
+            segments.routing_cache().invalidate(point_id, op_num);
             if s.delete_point(op_num, point_id, hw_counter)? {
                 total_deleted += 1;
                 deleted_in_batch += 1;

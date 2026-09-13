@@ -4561,6 +4561,48 @@ impl Filter {
         }
     }
 
+    /// The `must` `has_id` clause with the fewest ids, with its position.
+    fn has_id_bound_clause(&self) -> Option<(usize, &HasIdCondition)> {
+        self.must
+            .as_deref()?
+            .iter()
+            .enumerate()
+            .filter_map(|(index, condition)| match condition {
+                Condition::HasId(has_id) => Some((index, has_id)),
+                Condition::Field(_)
+                | Condition::IsEmpty(_)
+                | Condition::IsNull(_)
+                | Condition::HasVector(_)
+                | Condition::Slice(_)
+                | Condition::Nested(_)
+                | Condition::Filter(_)
+                | Condition::CustomIdChecker(_) => None,
+            })
+            .min_by_key(|(_, has_id)| has_id.has_id.len())
+    }
+
+    /// Ids a top-level `must` `has_id` clause bounds the result set to, if
+    /// there is one: whatever else the filter asks, only points with these ids
+    /// can match.
+    pub fn has_id_bound(&self) -> Option<&AHashSet<PointIdType>> {
+        self.has_id_bound_clause()
+            .map(|(_, has_id)| &*has_id.has_id)
+    }
+
+    /// This filter bounded to `ids`: its `has_id` bound is replaced when it has
+    /// one, so the ids are resolved once, and a `has_id` clause is added
+    /// otherwise.
+    pub fn with_has_id_bound(self, ids: AHashSet<PointIdType>) -> Filter {
+        let Some(index) = self.has_id_bound_clause().map(|(index, _)| index) else {
+            return self.with_point_ids(ids);
+        };
+        let mut bounded = self;
+        if let Some(must) = bounded.must.as_mut() {
+            must[index] = Condition::HasId(HasIdCondition::from(ids));
+        }
+        bounded
+    }
+
     /// Create an extended filtering condition, which would also include filter by given list of IDs.
     pub fn with_point_ids(self, ids: impl IntoIterator<Item = PointIdType>) -> Filter {
         let has_id_condition: HasIdCondition = ids.into_iter().collect();
@@ -4796,6 +4838,46 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
+
+    #[test]
+    fn has_id_bound_is_the_smallest_must_has_id_and_narrows_in_place() {
+        let id = |n: u64| PointIdType::NumId(n);
+        let other = Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "k".parse().unwrap(),
+            },
+        });
+        let has_id = |ids: &[u64]| Condition::HasId(ids.iter().copied().map(id).collect());
+
+        // `should` and `must_not` do not bound the result set.
+        assert!(Filter::new_should(has_id(&[1])).has_id_bound().is_none());
+        assert!(Filter::new_must_not(has_id(&[1])).has_id_bound().is_none());
+        assert!(Filter::new_must(other.clone()).has_id_bound().is_none());
+
+        let filter = Filter {
+            must: Some(vec![has_id(&[1, 2, 3]), other.clone(), has_id(&[2, 3])]),
+            should: Some(vec![has_id(&[9])]),
+            min_should: None,
+            must_not: None,
+        };
+        assert_eq!(filter.has_id_bound().unwrap().len(), 2);
+
+        let narrowed = filter
+            .clone()
+            .with_has_id_bound([id(2)].into_iter().collect());
+        let must = narrowed.must.as_deref().unwrap();
+        assert_eq!(must.len(), 3);
+        assert_eq!(must[0], has_id(&[1, 2, 3]));
+        assert_eq!(must[1], other);
+        assert_eq!(must[2], has_id(&[2]));
+        assert_eq!(narrowed.should, filter.should);
+
+        // Without a bound the ids are added as one.
+        let bounded =
+            Filter::new_must(other.clone()).with_has_id_bound([id(1)].into_iter().collect());
+        assert_eq!(bounded.must.as_deref().unwrap().len(), 2);
+        assert_eq!(bounded.has_id_bound().unwrap().len(), 1);
+    }
 
     #[test]
     fn test_memory_legacy_mapping() {

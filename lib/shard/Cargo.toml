@@ -26,6 +26,7 @@ wal = { path = "../wal" }
 
 ahash = { workspace = true }
 chrono = { workspace = true }
+crossbeam-utils = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

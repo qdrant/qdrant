@@ -2,6 +2,7 @@ mod flush;
 pub mod locked;
 pub use flush::FlushMode;
 pub mod read_points;
+pub mod routing_cache;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -40,6 +41,7 @@ use smallvec::SmallVec;
 
 use crate::locked_segment::{DropDataOutcome, LockedSegment};
 use crate::payload_index_schema::PayloadIndexSchema;
+use crate::segment_holder::routing_cache::RoutingCache;
 use crate::segment_manifest::{NewSegmentToken, SegmentsManifest};
 
 pub type SegmentId = usize;
@@ -136,6 +138,14 @@ pub struct SegmentHolder {
     /// funnels through [`add_existing_locked`](Self::add_existing_locked) and
     /// [`remove`](Self::remove), which reconcile it.
     segment_manifest: Option<Arc<SaveOnDisk<SegmentsManifest>>>,
+
+    /// Where a read last found each point, so `has_id`-bounded reads ask only
+    /// the segments holding their ids. Filled from search results, shared as an
+    /// `Arc` because readers fill it after releasing the holder lock. Every
+    /// update invalidates the ids it touches; see [`RoutingCache`]. Entries for
+    /// segments that left the holder are not purged: readers treat an unknown
+    /// segment id as no entry.
+    routing_cache: Arc<RoutingCache>,
 }
 
 impl Drop for SegmentHolder {
@@ -400,6 +410,10 @@ impl SegmentHolder {
         Ok(removed.pop().unwrap())
     }
 
+    pub fn routing_cache(&self) -> &Arc<RoutingCache> {
+        &self.routing_cache
+    }
+
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
         self.appendable_segments
             .get(&id)
@@ -412,10 +426,19 @@ impl SegmentHolder {
 
     /// Get all locked segments, non-appendable first, then appendable.
     pub fn non_appendable_then_appendable_segments(&self) -> impl Iterator<Item = LockedSegment> {
+        self.non_appendable_then_appendable_segments_with_ids()
+            .map(|(_, segment)| segment)
+    }
+
+    /// [`non_appendable_then_appendable_segments`](Self::non_appendable_then_appendable_segments),
+    /// paired with the holder id each segment is registered under.
+    pub fn non_appendable_then_appendable_segments_with_ids(
+        &self,
+    ) -> impl Iterator<Item = (SegmentId, LockedSegment)> {
         self.non_appendable_segments
-            .values()
-            .chain(self.appendable_segments.values())
-            .cloned()
+            .iter()
+            .chain(self.appendable_segments.iter())
+            .map(|(id, segment)| (*id, segment.clone()))
     }
 
     /// Get two separate lists for non-appendable and appendable locked segments
@@ -833,6 +856,10 @@ impl SegmentHolder {
                         .entry(segment_id)
                         .or_insert_with(|| Vec::with_capacity(default_capacity))
                         .push(point_id);
+                    // The copy about to go may be the recorded route. Readers
+                    // ask every segment until one reports a copy at least as
+                    // new as the one that stays.
+                    self.routing_cache.invalidate(point_id, latest_version);
                 }
                 // Otherwise: deferred copies are never deleted (optimizer handles them),
                 // and older non-deferred copies are kept when the latest is deferred-only
@@ -1092,6 +1119,13 @@ impl SegmentHolder {
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
+
+        // Whatever this operation does to a point, where it was last seen no
+        // longer holds. Stamped with the operation's version, so a read that
+        // saw the old copy cannot put the route back afterwards.
+        for point_id in ids {
+            self.routing_cache.invalidate(*point_id, op_num);
+        }
 
         let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
             if let Some(point_version) = write_segment.point_version(point_id)

@@ -7484,6 +7484,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "crossbeam-utils",
  "fnv",
  "fs-err",
  "indexmap 2.14.2",

@@ -1,5 +1,6 @@
 use common::types::ScoreType;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use shard::segment_holder::routing_cache::RoutingCache;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 
@@ -81,10 +82,26 @@ fn test_aggregation_of_batch_search_results() {
 
     let further_results = vec![vec![true, true], vec![true, true], vec![false, true]];
 
+    // Holder ids, deliberately not the positions in `search_results`.
+    let segment_ids = [7, 3, 5];
+    let routing_cache = RoutingCache::default();
+
     let (aggregator, re_request) = SegmentsSearcher::process_search_result_step1(
         search_results,
+        &segment_ids,
+        &routing_cache,
         result_limits,
         &further_results,
+    );
+
+    // Point 111 is newest in the second segment; 112 and 113 are the same
+    // version everywhere, so the first segment that reported them wins.
+    let (routes, uncached) = routing_cache.routes([111, 112, 113].map(PointIdType::NumId));
+    assert!(uncached.is_empty());
+    assert_eq!(routes[&3], vec![PointIdType::NumId(111)]);
+    assert_eq!(
+        routes[&7],
+        vec![PointIdType::NumId(112), PointIdType::NumId(113)],
     );
 
     // ------------Segment----------batch---
@@ -135,6 +152,8 @@ fn test_batch_search_aggregation_high_limit() {
 
     let (_aggregator, _re_request) = SegmentsSearcher::process_search_result_step1(
         search_results,
+        &[0, 1, 2],
+        &RoutingCache::default(),
         result_limits,
         &further_results,
     );
