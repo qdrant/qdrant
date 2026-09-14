@@ -1,9 +1,11 @@
 use std::cell::OnceCell;
 use std::collections::VecDeque;
 use std::ops::Range;
+use std::time::Instant;
 
 use slab::Slab;
 
+use super::stats::FetchStats;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -36,6 +38,7 @@ where
     /// so two live `&'file DiskCache<R>` referring to the same logical file
     /// are guaranteed to be the same reference.
     file: &'file DiskCache<R>,
+    fetch: FetchStats,
     /// Blocks the fetch covers; committed to the local mirror on completion.
     blocks_range: Range<u32>,
     /// `(user_data, byte range)` of every read resolved by this fetch; each is
@@ -146,7 +149,9 @@ where
         file,
         blocks_range,
         reads,
+        fetch: timing,
     } = fetch;
+    timing.complete(bytes.len());
 
     // The mirror is already materialized: scheduling this remote read went
     // through `file.state()` (see `schedule`), which forces initialization.
@@ -267,6 +272,7 @@ where
                 // the fetch lands on the key the remote read was tagged with.
                 let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
                 let entry = self.in_flight.vacant_entry();
+                let started = Instant::now();
                 remote_pipeline.schedule::<P>(
                     entry.key() as u64,
                     state.remote,
@@ -275,6 +281,7 @@ where
                 )?;
                 entry.insert(InFlightFetch {
                     file,
+                    fetch: file.stats.fetch(started),
                     blocks_range,
                     reads: vec![(user_data, range)],
                 });

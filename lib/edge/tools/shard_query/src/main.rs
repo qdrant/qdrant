@@ -919,6 +919,58 @@ fn print_diff(previous: &[Row], current: &[Row]) -> Result<()> {
     Ok(())
 }
 
+/// Print interval counters to stderr, leaving query result output unchanged.
+fn print_cache_stats(phase: &str, stats: &common::universal_io::DiskCacheStatsSnapshot) {
+    let mut fields = Vec::new();
+    for (label, value) in [
+        ("fetches", stats.remote_fetches_started),
+        ("completed", stats.remote_fetches_completed),
+        ("bytes", stats.downloaded_bytes),
+        ("fetch_errors", stats.remote_fetch_errors),
+        ("abandoned", stats.remote_fetches_abandoned),
+    ] {
+        if value != 0 {
+            fields.push(format!("{label}={value}"));
+        }
+    }
+    if let Some(average) = stats
+        .avg_fetch_duration()
+        .filter(|duration| !duration.is_zero())
+    {
+        fields.push(format!("avg={average:.3?}"));
+    }
+    let max_count = stats
+        .fetch_duration_histogram
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(0);
+    if fields.is_empty() && max_count == 0 {
+        return;
+    }
+    eprintln!("Disk cache ({phase}): {}", fields.join(" "));
+    if max_count == 0 {
+        return;
+    }
+    eprintln!("  Fetch latency (ms, upper bounds exclusive):");
+    let bounds = common::universal_io::DiskCacheStatsSnapshot::FETCH_DURATION_BUCKET_BOUNDS;
+    for (i, &count) in stats.fetch_duration_histogram.iter().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        let label = if i == 0 {
+            format!("<{}", bounds[0].as_millis())
+        } else if i == bounds.len() {
+            format!(">={}", bounds[i - 1].as_millis())
+        } else {
+            format!("{}-{}", bounds[i - 1].as_millis(), bounds[i].as_millis())
+        };
+        // Scale to the busiest bucket; keep every non-empty bucket visible.
+        let width = (u128::from(count) * 20).div_ceil(u128::from(max_count)) as usize;
+        eprintln!("  {label:>9} | {:<20} {count}", "#".repeat(width));
+    }
+}
+
 /// Open the read-only shard over backend `A` and dispatch the requested command.
 ///
 /// Generic over the object-storage backend handle `A` (e.g.
@@ -932,6 +984,7 @@ where
     // Segment data — and the segment manifest used for discovery — are read through a disk cache:
     // fetched from object storage once, then served from the local mirror directory afterwards.
     let cached_fs = build_cached_fs::<A>(remote_config, prefix, cache_dir)?;
+    let stats = cached_fs.stats();
     log::info!("caching segment reads under {}", cache_dir.display());
 
     // Build the request before the open: the shard is opened for exactly this request, so the
@@ -952,14 +1005,23 @@ where
 
     log::info!("Load profile: {load_profile:?}");
 
+    let before_open = stats.snapshot();
     let shard =
         ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config, load_profile)
-            .context("failed to open read-only edge shard over object storage")?;
+            .context("failed to open read-only edge shard over object storage");
+    print_cache_stats("open", &stats.snapshot().delta_since(&before_open));
+    let shard = shard?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
-    request.fill_random_vector(&shard)?;
+    let before_prepare = stats.snapshot();
+    let result = request.fill_random_vector(&shard);
+    print_cache_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
+    result?;
 
-    let (rows, next_offset) = request.run(&shard)?;
+    let before_query = stats.snapshot();
+    let result = request.run(&shard);
+    print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
+    let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
 
     let Some(trigger) = ReloadTrigger::from_cli(cli) else {
@@ -977,7 +1039,10 @@ where
             return Ok(());
         }
 
-        if let Err(err) = shard.live_reload() {
+        let before_reload = stats.snapshot();
+        let result = shard.live_reload();
+        print_cache_stats("reload", &stats.snapshot().delta_since(&before_reload));
+        if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
             log::error!("live_reload failed (will retry on next reload): {err}");
             continue;
@@ -987,7 +1052,10 @@ where
             shard.segments_count(),
         );
 
-        let (rows, _) = request.run(&shard)?;
+        let before_query = stats.snapshot();
+        let result = request.run(&shard);
+        print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
+        let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");
         print_diff(&previous, &rows)?;
         previous = rows;

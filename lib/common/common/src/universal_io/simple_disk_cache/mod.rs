@@ -2,6 +2,7 @@ mod async_io;
 mod config;
 mod file;
 mod fs;
+mod stats;
 
 mod local_state;
 pub mod pipeline;
@@ -13,6 +14,7 @@ use std::ops::Range;
 pub use config::DiskCacheConfig;
 pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
+pub use stats::{DiskCacheStats, DiskCacheStatsSnapshot};
 
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{OpenOptions, Populate, UniversalReadAsync, UniversalReadFs};
