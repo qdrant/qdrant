@@ -212,6 +212,19 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     spawn_async_cancellable(move |cancel| async move {
+        // A driver spawned while this peer has no consensus leader acts on a view of consensus
+        // that may be stale. On startup, committed but unapplied entries are replayed before this
+        // peer joins consensus, so a `Start` for a transfer that has since been aborted still
+        // spawns its driver here. Hold off until a leader is established, so the entries that come
+        // with it, such as an abort of this transfer, are applied before we touch the remote.
+        progress.lock().set_stage(TransferStage::WaitingConsensus);
+        if cancel::future::cancel_on_token(cancel.clone(), consensus.await_leader_established())
+            .await
+            .is_err()
+        {
+            return false;
+        }
+
         let mut result = Err(cancel::Error::Cancelled);
 
         for attempt in 0..MAX_RETRY_COUNT {
