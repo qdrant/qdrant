@@ -521,6 +521,27 @@ def all_nodes_respond(peer_api_uris: [str]) -> bool:
     return True
 
 
+def all_nodes_have_applied_same_commit(peer_api_uris: [str]) -> bool:
+    """
+    Like `all_nodes_have_same_commit`, but also requires every peer to have
+    applied all of its committed entries. A peer that has just joined can share
+    the leader's commit index while its local state is still being replayed.
+    """
+    commits = []
+    for uri in peer_api_uris:
+        try:
+            r = requests.get(f"{uri}/cluster")
+            assert_http_ok(r)
+            raft_info = r.json()["result"]["raft_info"]
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {uri} to fetch commit")
+            return False
+        if raft_info["pending_operations"] != 0:
+            return False
+        commits.append(raft_info["commit"])
+    return len(set(commits)) == 1
+
+
 def all_peers_are_voters(peer_api_uris: [str]) -> bool:
     try:
         for uri in peer_api_uris:
@@ -750,6 +771,14 @@ def wait_for_all_peers_versions(peer_api_uris: [str]):
 def wait_for_same_commit(peer_api_uris: [str]):
     try:
         wait_for(all_nodes_have_same_commit, peer_api_uris)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
+
+
+def wait_for_same_applied_commit(peer_api_uris: [str]):
+    try:
+        wait_for(all_nodes_have_applied_same_commit, peer_api_uris)
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e
