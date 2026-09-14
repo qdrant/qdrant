@@ -1348,7 +1348,7 @@ mod statistics {
 
     #[test]
     fn reload_tail_is_counted_once_even_when_future_is_shared() {
-        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let mut scn = Scenario::new(BLOCK_SIZE + 100);
         let fs = scn.fs::<MmapFile>();
         let stats = fs.stats();
         let mut file = fs
@@ -1359,11 +1359,9 @@ mod statistics {
             )
             .unwrap();
         let before = stats.snapshot();
-        let mut remote = fs::OpenOptions::new()
-            .append(true)
-            .open(&scn.remote_path)
-            .unwrap();
-        std::io::Write::write_all(&mut remote, &[42; 100]).unwrap();
+        // Close the append handle before listing: Windows can otherwise report
+        // the old size in the directory snapshot and skip the tail fetch.
+        scn.grow_remote(100);
         let first = file
             .live_preload(scn.snapshot_file_info::<MmapFile>())
             .unwrap();
