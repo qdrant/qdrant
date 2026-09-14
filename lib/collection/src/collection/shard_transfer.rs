@@ -661,9 +661,14 @@ impl Collection {
     /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
     /// partial state. In that case it will remain a dummy shard, signaled by the initialization
     /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    ///
+    /// If `from_peer_id` is given, only a transfer from that peer is accepted. A sender that
+    /// drives a transfer consensus has since aborted must not be able to piggyback on another
+    /// transfer into this shard.
     pub fn initiate_shard_transfer(
         &self,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
         let shards_holder = self.shards_holder.clone();
 
@@ -693,9 +698,10 @@ impl Collection {
                 let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
                 let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
-                        shard_transfers
-                            .iter()
-                            .any(|shard_transfer| shard_transfer.is_target(this_peer_id, shard_id))
+                        shard_transfers.iter().any(|shard_transfer| {
+                            shard_transfer.is_target(this_peer_id, shard_id)
+                                && from_peer_id.is_none_or(|from| shard_transfer.from == from)
+                        })
                     },
                     Duration::from_secs(60),
                 );
@@ -717,13 +723,15 @@ impl Collection {
                 Ok(true) => Ok(()),
 
                 Ok(false) => {
-                    let description = "\
-                        Failed to initiate shard transfer: \
-                        Didn't receive shard transfer notification from consensus in 60 seconds";
+                    let expected = from_peer_id
+                        .map(|from| format!(" (expected transfer from peer {from})"))
+                        .unwrap_or_default();
+                    let description = format!(
+                        "Failed to initiate shard transfer: \
+                         Didn't receive shard transfer notification from consensus in 60 seconds{expected}",
+                    );
 
-                    Err(CollectionError::Timeout {
-                        description: description.into(),
-                    })
+                    Err(CollectionError::Timeout { description })
                 }
 
                 Err(err) => Err(CollectionError::service_error(format!(

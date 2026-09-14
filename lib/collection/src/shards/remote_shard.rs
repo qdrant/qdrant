@@ -223,13 +223,17 @@ impl RemoteShard {
         }
     }
 
-    pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {
+    pub async fn initiate_transfer(
+        &self,
+        from_peer_id: PeerId,
+    ) -> CollectionResult<CollectionOperationResponse> {
         let res = self
             .with_collections_client(|mut client| async move {
                 client
                     .initiate(InitiateShardTransferRequest {
                         collection_name: self.collection_id.clone(),
                         shard_id: self.id,
+                        from_peer_id: Some(from_peer_id),
                     })
                     .await
             })
@@ -1036,6 +1040,7 @@ impl RemoteShard {
         url: &Url,
         snapshot_priority: SnapshotPriority,
         api_key: Option<&str>,
+        from_peer_id: PeerId,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
             .with_shard_snapshots_client_timeout(
@@ -1052,6 +1057,7 @@ impl RemoteShard {
                             ) as i32,
                             checksum: None,
                             api_key: api_key.map(Into::into),
+                            from_peer_id: Some(from_peer_id),
                         })
                         .await
                 },
