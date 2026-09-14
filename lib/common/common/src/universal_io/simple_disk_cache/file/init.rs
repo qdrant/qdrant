@@ -95,9 +95,7 @@ where
         mut pipeline: OwnedPipeline<R, ()>,
         fetch: FetchStats,
     ) -> UioResult<(R, LocalState)> {
-        let completion = pipeline
-            .wait()
-            .inspect_err(|_| self.stats.pipeline_error())?;
+        let completion = pipeline.wait()?;
         fetch.complete(completion.as_ref().map_or(0, |(_, bytes)| bytes.len()));
         match completion {
             Some((_, bytes)) => {
@@ -130,9 +128,7 @@ where
     ) -> UioResult<(R, LocalState)> {
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
 
-        let completion = pipeline
-            .wait()
-            .inspect_err(|_| self.stats.pipeline_error())?;
+        let completion = pipeline.wait()?;
         fetch.complete(completion.as_ref().map_or(0, |(_, bytes)| bytes.len()));
         match completion {
             Some((blocks_range, bytes)) if !bytes.is_empty() => {

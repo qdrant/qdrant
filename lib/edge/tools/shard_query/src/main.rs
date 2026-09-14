@@ -930,7 +930,6 @@ fn print_cache_stats(phase: &str, stats: &common::universal_io::DiskCacheStatsSn
         ("misses", stats.cache_misses),
         ("coalesced", stats.coalesced_reads),
         ("fetch_errors", stats.remote_fetch_errors),
-        ("pipeline_errors", stats.remote_pipeline_errors),
         ("abandoned", stats.remote_fetches_abandoned),
     ] {
         if value != 0 {

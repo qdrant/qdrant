@@ -328,16 +328,6 @@ where
                 // this particular failed response.
                 //
                 // Let's just drop all in-flight requests.
-                let mut observers = Vec::new();
-                for (_, fetch) in &self.in_flight {
-                    if !observers
-                        .iter()
-                        .any(|stats| fetch.file.stats.same_observer(stats))
-                    {
-                        fetch.file.stats.pipeline_error();
-                        observers.push(fetch.file.stats.clone());
-                    }
-                }
                 self.in_flight.clear();
                 self.remote_pipeline.take();
                 return Err(err);

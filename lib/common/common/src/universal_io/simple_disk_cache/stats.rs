@@ -25,7 +25,6 @@ struct Counters {
     remote_fetches_started: AtomicU64,
     remote_fetches_completed: AtomicU64,
     remote_fetch_errors: AtomicU64,
-    remote_pipeline_errors: AtomicU64,
     remote_fetches_abandoned: AtomicU64,
     downloaded_bytes: AtomicU64,
     cache_hits: AtomicU64,
@@ -46,8 +45,6 @@ pub struct DiskCacheStatsSnapshot {
     pub remote_fetches_completed: u64,
     /// Errors from individual async fetches.
     pub remote_fetch_errors: u64,
-    /// Pipeline wait errors; the interface does not identify the failed fetch.
-    pub remote_pipeline_errors: u64,
     /// Started fetches dropped without an observed result, including pending fetches on pipeline errors.
     pub remote_fetches_abandoned: u64,
     /// Successful response bytes, including alignment and repeated downloads; excludes hidden retries and partial failed responses.
@@ -74,7 +71,6 @@ impl DiskCacheStats {
             remote_fetches_started: self.0.remote_fetches_started.load(Ordering::Relaxed),
             remote_fetches_completed: self.0.remote_fetches_completed.load(Ordering::Relaxed),
             remote_fetch_errors: self.0.remote_fetch_errors.load(Ordering::Relaxed),
-            remote_pipeline_errors: self.0.remote_pipeline_errors.load(Ordering::Relaxed),
             remote_fetches_abandoned: self.0.remote_fetches_abandoned.load(Ordering::Relaxed),
             downloaded_bytes: self.0.downloaded_bytes.load(Ordering::Relaxed),
             cache_hits: self.0.cache_hits.load(Ordering::Relaxed),
@@ -129,22 +125,6 @@ impl DiskCacheStats {
     pub(super) fn coalesced(&self) {
         self.0.coalesced_reads.fetch_add(1, Ordering::Relaxed);
     }
-
-    pub(super) fn pipeline_error(&self) {
-        self.0
-            .remote_pipeline_errors
-            .fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Whether both handles share the same counter allocation.
-    ///
-    /// Used when a pipeline error discards all in-flight fetches: several fetches
-    /// may share an observer through their filesystem, so the error is recorded
-    /// only once per affected observer. Compares `Arc` identity, independently of
-    /// the current counter values.
-    pub(super) fn same_observer(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
 }
 
 impl DiskCacheStatsSnapshot {
@@ -174,9 +154,6 @@ impl DiskCacheStatsSnapshot {
             remote_fetch_errors: self
                 .remote_fetch_errors
                 .saturating_sub(earlier.remote_fetch_errors),
-            remote_pipeline_errors: self
-                .remote_pipeline_errors
-                .saturating_sub(earlier.remote_pipeline_errors),
             remote_fetches_abandoned: self
                 .remote_fetches_abandoned
                 .saturating_sub(earlier.remote_fetches_abandoned),

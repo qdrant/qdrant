@@ -1087,7 +1087,7 @@ mod tests_async {
     }
 
     #[test]
-    fn statistics_pipeline_failure_does_not_guess_failed_request() {
+    fn statistics_pipeline_failure_abandons_pending_fetches() {
         let scn = Scenario::new(BLOCK_SIZE * 2);
         let fs = scn.fs::<AsyncOnlyRemote>();
         let file = scn.open::<AsyncOnlyRemote>(false);
@@ -1121,7 +1121,6 @@ mod tests_async {
         assert!(pipeline.wait().is_err());
         drop(pipeline);
         for stats in [file.stats.snapshot(), fs.stats().snapshot()] {
-            assert_eq!(stats.remote_pipeline_errors, 1);
             assert_eq!(stats.remote_fetches_abandoned, 2);
             assert_eq!(stats.remote_fetch_errors, 0);
             assert_eq!(stats.downloaded_bytes, 0);
