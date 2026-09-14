@@ -69,6 +69,43 @@ def test_context(collection_name):
         assert point["score"] <= 0.0
 
 
+def test_context_raw_loss_formula(collection_name):
+    # Context search with explicit vectors to verify raw loss without nonlinear compression (#10612)
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "context": [
+                    {
+                        "positive": [1.0, 0.0, 0.0, 0.0],
+                        "negative": [0.0, 1.0, 0.0, 0.0],
+                    }
+                ]
+            },
+            "limit": 8,
+            "params": {"exact": True},
+            "with_vector": True,
+        },
+    )
+    assert response.ok, response.json()
+    points = response.json()["result"]["points"]
+    assert len(points) > 0
+
+    def dot(a, b):
+        return sum(x * y for x, y in zip(a, b))
+
+    pos = [1.0, 0.0, 0.0, 0.0]
+    neg = [0.0, 1.0, 0.0, 0.0]
+    for pt in points:
+        vec = pt["vector"]
+        p_sim = dot(pos, vec)
+        n_sim = dot(neg, vec)
+        expected_score = min(p_sim - n_sim, 0.0)
+        assert abs(pt["score"] - expected_score) < 1e-4, f"pt: {pt['id']}, score: {pt['score']}, expected: {expected_score}"
+
+
 # When we only use target, it should be the exact same as search
 def test_only_target_is_search_with_different_scoring(collection_name):
     target = random_vector()

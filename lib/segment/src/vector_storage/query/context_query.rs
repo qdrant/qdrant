@@ -1,7 +1,6 @@
 use std::hash::Hash;
 use std::iter::{self, Chain, Once};
 
-use common::math::fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
 use serde::Serialize;
@@ -31,10 +30,11 @@ impl<T> ContextPair<T> {
         })
     }
 
-    /// In the first stage of discovery search, the objective is to get the best entry point
-    /// for the search. This is done by using a smooth loss function instead of hard ranking
-    /// to approach the best zone, once the best zone is reached, score will be same for all
-    /// points inside that zone.
+    /// In context search or the first stage of discovery search, the objective is to get points
+    /// in the best zone where positive examples are preferred over negative examples.
+    /// This is done using a loss function: if a point is closer to a negative example than
+    /// to a positive example, it receives a negative loss equal to the similarity difference.
+    /// Points inside the positive zone receive a score of 0.0.
     /// e.g.:
     /// ```text
     ///                   │
@@ -48,8 +48,6 @@ impl<T> ContextPair<T> {
     ///  -0.4        -0.1 │   +0
     ///                   │
     /// ```
-    /// Simple 2D model:
-    /// <https://www.desmos.com/calculator/lbxycyh2hs>
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         const MARGIN: ScoreType = ScoreType::EPSILON;
 
@@ -58,7 +56,7 @@ impl<T> ContextPair<T> {
 
         let difference = positive - negative - MARGIN;
 
-        fast_sigmoid(ScoreType::min(difference, 0.0))
+        ScoreType::min(difference, 0.0)
     }
 }
 
@@ -149,14 +147,74 @@ mod test {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(1000))]
 
-        /// Checks that the loss is between 0 and -1
+        /// Checks that the loss is non-positive and matches the documented formula min(p - n - EPSILON, 0.0)
         #[test]
-        fn loss_is_not_more_than_1_per_pair((p, n) in (sim(), sim())) {
+        fn loss_matches_formula((p, n) in (sim(), sim())) {
             let query = ContextQuery::new(vec![ContextPair::from((p, n))]);
 
             let score = query.score_by(dummy_similarity);
+            let expected = ScoreType::min(p - n - ScoreType::EPSILON, 0.0);
             assert!(score <= 0.0, "similarity: {score}");
-            assert!(score > -1.0, "similarity: {score}");
+            assert!((score - expected).abs() < 1e-6, "score: {score}, expected: {expected}");
         }
+
+        /// Scale invariance: scaling similarity differences by c > 0 scales the total loss proportionally
+        #[test]
+        fn scale_invariance(
+            (p1, n1) in (sim(), sim()),
+            (p2, n2) in (sim(), sim()),
+            scale in 0.01f32..100.0f32,
+        ) {
+            let query_raw = ContextQuery::new(vec![
+                ContextPair::from((p1, n1)),
+                ContextPair::from((p2, n2)),
+            ]);
+            let query_scaled = ContextQuery::new(vec![
+                ContextPair::from((p1 * scale, n1 * scale)),
+                ContextPair::from((p2 * scale, n2 * scale)),
+            ]);
+
+            let score_raw = query_raw.score_by(dummy_similarity);
+            let score_scaled = query_scaled.score_by(dummy_similarity);
+
+            assert!(
+                (score_raw * scale - score_scaled).abs() <= 1e-4 * scale.max(1.0),
+                "score_raw: {score_raw}, scaled: {score_scaled}, scale: {scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_issue_10612_exact_loss_scores() {
+        // Reproduce exact values from issue #10612
+        // positive context: [1.0, 0.0]
+        // negative context: [-1.0, 0.0]
+        let dot = |v1: &[f32; 2], v2: &[f32; 2]| v1[0] * v2[0] + v1[1] * v2[1];
+        let pos = [1.0, 0.0];
+        let neg = [-1.0, 0.0];
+        let pair = ContextPair {
+            positive: pos,
+            negative: neg,
+        };
+        let query = ContextQuery::new(vec![pair]);
+
+        // Candidate 0: [0.8, 0.6] -> pos = 0.8, neg = -0.8 -> diff = 1.6 > 0 -> score = 0.0
+        let s0 = query.score_by(|v| dot(v, &[0.8, 0.6]));
+        assert_eq!(s0, 0.0);
+
+        // Candidate 2: [-0.8, 0.6] -> pos = -0.8, neg = 0.8 -> diff = -1.6 -> score ≈ -1.6
+        let s2 = query.score_by(|v| dot(v, &[-0.8, 0.6]));
+        assert!((s2 - (-1.6)).abs() < 1e-5, "got {s2}, expected -1.6");
+
+        // Candidate 3: [-0.2, 0.979_795_9] -> pos = -0.2, neg = 0.2 -> diff = -0.4 -> score ≈ -0.4
+        let s3 = query.score_by(|v| dot(v, &[-0.2, 0.979_795_9]));
+        assert!((s3 - (-0.4)).abs() < 1e-5, "got {s3}, expected -0.4");
+
+        // Mutant 1: [-0.5, 0.866_025_4] -> pos = -0.5, neg = 0.5 -> diff = -1.0 -> score ≈ -1.0
+        let s_mutant = query.score_by(|v| dot(v, &[-0.5, 0.866_025_4]));
+        assert!(
+            (s_mutant - (-1.0)).abs() < 1e-5,
+            "got {s_mutant}, expected -1.0"
+        );
     }
 }
