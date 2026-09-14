@@ -124,6 +124,7 @@ impl MutableInvertedIndex {
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
 
+        // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
             self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
         }
