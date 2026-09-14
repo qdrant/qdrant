@@ -13255,7 +13255,8 @@
           "direction",
           "peer_id",
           "shard_id",
-          "stage"
+          "stage",
+          "uuid"
         ],
         "properties": {
           "stage": {
@@ -13283,6 +13284,10 @@
                 "nullable": true
               }
             ]
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

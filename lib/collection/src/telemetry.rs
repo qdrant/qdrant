@@ -52,9 +52,23 @@ pub struct CollectionTelemetry {
 #[derive(Serialize, JsonSchema)]
 struct ReshardingTelemetry<'a> {
     #[serde(flatten)]
+    #[schemars(schema_with = "resharding_info_telemetry_schema")]
     info: &'a ReshardingInfo,
     /// Applied resharding stage on this peer.
     stage: ReshardingStage,
+}
+
+fn resharding_info_telemetry_schema(
+    generator: &mut schemars::r#gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    let mut schema = ReshardingInfo::json_schema(generator).into_object();
+    // UUID is already serialized, but hidden in the shared collection cluster schema.
+    let object = schema.object();
+    object
+        .properties
+        .insert("uuid".into(), Uuid::json_schema(generator));
+    object.required.insert("uuid".into());
+    schema.into()
 }
 
 fn serialize_resharding<S: Serializer>(
@@ -268,16 +282,11 @@ mod tests {
     }
 
     #[test]
-    fn test_resharding_stage_is_only_in_telemetry_schema() {
+    fn test_resharding_telemetry_schema_preserves_cluster_schema() {
         let cluster_schema = schemars::schema_for!(ReshardingInfo);
-        assert!(
-            !cluster_schema
-                .schema
-                .object
-                .unwrap()
-                .properties
-                .contains_key("stage")
-        );
+        let cluster_properties = &cluster_schema.schema.object.unwrap().properties;
+        assert!(!cluster_properties.contains_key("stage"));
+        assert!(!cluster_properties.contains_key("uuid"));
 
         let telemetry_schema = schemars::schema_for!(CollectionTelemetry);
         let schema = serde_json::to_value(telemetry_schema).unwrap();
@@ -288,6 +297,16 @@ mod tests {
         assert_eq!(
             schema["definitions"]["ReshardingTelemetry"]["properties"]["stage"]["allOf"][0]["$ref"],
             "#/definitions/ReshardingStage",
+        );
+        assert_eq!(
+            schema["definitions"]["ReshardingTelemetry"]["properties"]["uuid"],
+            json!({"type": "string", "format": "uuid"}),
+        );
+        assert!(
+            schema["definitions"]["ReshardingTelemetry"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("uuid"))
         );
     }
 }
