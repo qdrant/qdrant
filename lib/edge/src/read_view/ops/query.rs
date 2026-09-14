@@ -504,7 +504,9 @@ mod tests {
             .map(|request| shard.query(request.clone()).unwrap())
             .collect();
 
-        let batched = shard.query_batch(requests).unwrap();
+        let batched = shard
+            .query_batch(crate::QueryBatchRequest::new(requests))
+            .unwrap();
 
         assert_eq!(batched, one_by_one);
     }
@@ -515,7 +517,11 @@ mod tests {
         let shard = shard_with_points(&dir, 3);
 
         let batches = shard
-            .query_batch(vec![nearest(1), nearest(2), nearest(3)])
+            .query_batch(crate::QueryBatchRequest::new(vec![
+                nearest(1),
+                nearest(2),
+                nearest(3),
+            ]))
             .unwrap();
 
         assert_eq!(batches.len(), 3);
@@ -533,7 +539,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
-        let batches = shard.query_batch(Vec::new()).unwrap();
+        let batches = shard
+            .query_batch(crate::QueryBatchRequest::new(Vec::new()))
+            .unwrap();
 
         assert!(batches.is_empty());
     }
@@ -665,7 +673,9 @@ mod tests {
                 .build(),
         ];
 
-        let batches = shard.query_batch(requests).unwrap();
+        let batches = shard
+            .query_batch(crate::QueryBatchRequest::new(requests))
+            .unwrap();
 
         assert!(batches[0].iter().all(|point| point.payload.is_none()));
         assert!(batches[1].iter().all(|point| point.payload.is_some()));
@@ -679,7 +689,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
 
-        let batches = shard.query_batch(vec![nearest(1), nearest(2)]).unwrap();
+        let batches = shard
+            .query_batch(crate::QueryBatchRequest::new(vec![nearest(1), nearest(2)]))
+            .unwrap();
 
         assert_eq!(batches, vec![vec![], vec![]]);
     }
