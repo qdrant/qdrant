@@ -8,6 +8,7 @@ use crate::requests::GroupRequest;
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
+        self.check_stopped()?;
         let GroupRequest {
             query,
             group_by,
@@ -30,6 +31,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         );
 
         while let Some(request) = driver.next_request() {
+            self.check_stopped()?;
             let points = self.query(request)?;
             driver.add_points(&points);
         }

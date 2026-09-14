@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::OperationResult;
@@ -15,6 +14,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// Counts the number of points for each unique value of the specified payload key,
     /// optionally filtering by the given conditions.
     pub(crate) fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
+        self.check_stopped()?;
         let FacetRequestInternal {
             key,
             limit,
@@ -23,7 +23,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         } = request;
 
         let hw_acc = HwMeasurementAcc::disposable_edge();
-        let is_stopped = AtomicBool::new(false);
 
         let facet_params = FacetParams {
             key,
@@ -34,13 +33,16 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         // Facet every segment in parallel, then merge the per-segment counts sequentially.
         let per_segment = self.par_map_segments(|segment| {
-            segment
-                .read_segment()
-                .facet(&facet_params, &is_stopped, &hw_acc.get_counter_cell())
+            segment.read_segment().facet(
+                &facet_params,
+                &self.is_stopped,
+                &hw_acc.get_counter_cell(),
+            )
         })?;
 
         let mut merged_counts = HashMap::new();
         for segment_result in per_segment {
+            self.check_stopped()?;
             for (value, count) in segment_result {
                 *merged_counts.entry(value).or_insert(0) += count;
             }
