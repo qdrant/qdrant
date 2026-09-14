@@ -29,7 +29,8 @@ pub use self::info::ShardInfo;
 pub use self::matrix::{SearchMatrixRequest, SearchMatrixResponse};
 pub use self::query::{
     ContextPair, Direction, FeedbackCoefficients, FeedbackItem, Fusion, OrderBy, Prefetch, Query,
-    QueryRequest, RecommendStrategy, Sample, ScoringQuery, SearchParams, StartFrom,
+    QueryBatchRequest, QueryRequest, RecommendStrategy, Sample, ScoringQuery, SearchParams,
+    StartFrom,
 };
 pub use self::retrieve::RetrieveRequest;
 pub use self::scroll::{ScrollRequest, ScrollResponse};
