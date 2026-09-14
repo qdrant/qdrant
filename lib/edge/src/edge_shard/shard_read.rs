@@ -9,7 +9,8 @@ use shard::retrieve::record_internal::RecordInternal;
 
 use crate::read_view::{EdgeShardRead, ReadViewProvider};
 use crate::requests::{
-    CountRequest, FacetRequest, QueryRequest, RetrieveRequest, ScrollRequest, SearchRequest,
+    CountRequest, FacetRequest, QueryBatchRequest, QueryRequest, RetrieveRequest, ScrollRequest,
+    SearchRequest,
 };
 use crate::{EdgeConfig, EdgeShard, ShardInfo};
 
@@ -56,9 +57,9 @@ impl EdgeShard {
     /// [`EdgeShardRead::query_batch`].
     pub fn query_batch(
         &self,
-        requests: Vec<QueryRequest>,
+        request: QueryBatchRequest,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        EdgeShardRead::query_batch(self, requests)
+        EdgeShardRead::query_batch(self, request)
     }
 
     pub fn scroll(

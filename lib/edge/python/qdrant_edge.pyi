@@ -129,7 +129,7 @@ class EdgeShard:
         """
         ...
 
-    def query_batch(self, queries: List["QueryRequest"]) -> List[List["ScoredPoint"]]:
+    def query_batch(self, request: "QueryBatchRequest") -> List[List["ScoredPoint"]]:
         """
         Execute several queries as one planned batch.
 
@@ -138,7 +138,7 @@ class EdgeShard:
         differ only in their vector are scored together.
 
         Args:
-            queries: The query requests to run together.
+            request: The batch of query requests to run together.
 
         Returns:
             One list of scored points per request, in the same order.
@@ -1586,6 +1586,16 @@ class SnowballLanguage(Enum):
 # ============================================================================
 # Request Classes
 # ============================================================================
+
+class QueryBatchRequest:
+    def __init__(self, queries: List["QueryRequest"]) -> None:
+        """Create a batch of queries, returning results in the same order."""
+        ...
+
+    @property
+    def queries(self) -> List["QueryRequest"]: ...
+
+    def __repr__(self) -> str: ...
 
 class QueryRequest:
     """Request for query operation."""
