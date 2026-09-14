@@ -629,13 +629,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         ]
     }
 
+    /// Every file of this index is written once at build time, so the full file
+    /// list is also the immutable one. Kept as a single list so a new file
+    /// cannot be added to one and forgotten in the other.
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        vec![
-            self.path.join(POSTINGS_FILE),
-            self.path.join(VOCAB_FILE),
-            self.path.join(POINT_TO_TOKENS_COUNT_FILE),
-            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
-        ]
+        self.files()
     }
 
     /// No-op flusher: the on-disk state is build-time only. See the type-level
