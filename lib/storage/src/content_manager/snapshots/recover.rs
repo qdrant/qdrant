@@ -390,10 +390,9 @@ async fn _do_recover_from_snapshot(
 
                     for (peer_id, _) in other_active_replicas {
                         if replicas_to_remove > 0 {
-                            // Keep this replica
+                            // Don't need more replicas, remove this one
                             replicas_to_remove -= 1;
 
-                            // Don't need more replicas, remove this one
                             toc.request_remove_replica(
                                 collection_pass.to_string(),
                                 *shard_id,
