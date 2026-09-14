@@ -503,6 +503,7 @@ dependencies = [
  "ordered-float 5.5.0",
  "parking_lot",
  "prost 0.14.4",
+ "prost-types 0.14.4",
  "prost-wkt-types",
  "rand 0.10.2",
  "schemars",

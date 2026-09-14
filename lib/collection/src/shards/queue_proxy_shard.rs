@@ -718,10 +718,11 @@ impl Inner {
 
         // Build the request once, moving the operations into it, so retries below never copy
         // the operation data again.
-        let request = self
-            .remote_shard
-            .build_update_batch(operations, wait, None, WriteOrdering::Weak)
-            .await?;
+        let request = Arc::new(
+            self.remote_shard
+                .build_update_batch(operations, wait, None, WriteOrdering::Weak)
+                .await?,
+        );
 
         // Transfer batch with retries and store last transferred ID
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
@@ -937,7 +938,7 @@ impl ShardOperation for Inner {
 ///
 /// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
 async fn transfer_batch(
-    request: &UpdateBatchInternal,
+    request: &Arc<UpdateBatchInternal>,
     remote_shard: &RemoteShard,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
@@ -946,7 +947,7 @@ async fn transfer_batch(
     }
 
     match remote_shard
-        .forward_update_batch(request, hw_measurement_acc.clone())
+        .forward_update_batch(Arc::clone(request), hw_measurement_acc.clone())
         .await
     {
         Ok(_) => return Ok(()),
@@ -967,13 +968,13 @@ async fn transfer_batch(
     }
 
     for operation in &request.operations {
-        let single = UpdateBatchInternal {
+        let single = Arc::new(UpdateBatchInternal {
             operations: vec![operation.clone()],
             wait_override: request.wait_override,
-        };
+        });
 
         let result = remote_shard
-            .forward_update_batch(&single, hw_measurement_acc.clone())
+            .forward_update_batch(single, hw_measurement_acc.clone())
             .await;
 
         skip_if_rejected(result, remote_shard)?;
