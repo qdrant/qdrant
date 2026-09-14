@@ -128,6 +128,13 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
             continue
         break
 
+    # The collection shows up as soon as its creation entry is applied, while
+    # the new peer may still be replaying the rest of the consensus log, in
+    # particular the removal of the killed peer. Snapshot recovery decides which
+    # other replicas to remove or mark dead from the local view of the cluster,
+    # so it must not start before the new peer has caught up.
+    wait_for_same_applied_commit(peer_api_uris[:-1] + [new_url])
+
     # Recover snapshot
     # All nodes share the same snapshot directory, so it is fine to use any
     snapshot_url = f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/snapshots/{snapshot_name}"
