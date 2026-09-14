@@ -112,7 +112,7 @@ impl ShardTransferConsensus for NoopReshardingConsensus {
         (0, 0)
     }
 
-    fn is_leader_established(&self) -> bool {
+    fn is_consensus_caught_up(&self) -> bool {
         true
     }
 

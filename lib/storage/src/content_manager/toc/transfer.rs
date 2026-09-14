@@ -33,8 +33,8 @@ impl ShardTransferConsensus for TocDispatcher {
             .applied_commit_term()
     }
 
-    fn is_leader_established(&self) -> bool {
-        self.consensus_state.is_leader_established.check_ready()
+    fn is_consensus_caught_up(&self) -> bool {
+        self.consensus_state.is_consensus_caught_up.check_ready()
     }
 
     fn recovered_switch_to_partial(

@@ -93,8 +93,8 @@ impl RecoveryStage {
 /// Time between consensus confirmation retries.
 const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 
-/// Interval at which a transfer driver checks whether a consensus leader is established.
-const LEADER_ESTABLISHED_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// Interval at which a transfer driver checks whether this peer has caught up with consensus.
+const CONSENSUS_CAUGHT_UP_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
@@ -321,20 +321,19 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// Returns `(commit, term)`.
     fn consensus_commit_term(&self) -> (u64, u64);
 
-    /// Whether this peer currently knows a consensus leader.
+    /// Whether this peer has caught up with the consensus commit of the cluster since it started.
     ///
-    /// This is `false` while a (re)started peer has not joined consensus yet, and during leader
-    /// elections.
-    fn is_leader_established(&self) -> bool;
+    /// This is `false` while a (re)started peer is still applying the entries it missed.
+    fn is_consensus_caught_up(&self) -> bool;
 
-    /// Wait until this peer knows a consensus leader.
+    /// Wait until this peer has caught up with the consensus commit of the cluster.
     ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn await_leader_established(&self) {
-        while !self.is_leader_established() {
-            sleep(LEADER_ESTABLISHED_POLL_INTERVAL).await;
+    async fn await_consensus_caught_up(&self) {
+        while !self.is_consensus_caught_up() {
+            sleep(CONSENSUS_CAUGHT_UP_POLL_INTERVAL).await;
         }
     }
 

@@ -607,14 +607,21 @@ fn main() -> anyhow::Result<()> {
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
 
+        // Marks once this peer has caught up with the consensus commit of the cluster, which
+        // `/readyz` and shard transfer drivers wait for
+        consensus_state.spawn_consensus_catch_up(
+            &runtime_handle,
+            channel_service.channel_pool.clone(),
+            // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
+            consensus_state.is_new_deployment() && bootstrap.is_some(),
+        );
+
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
         health_checker = Some(Arc::new(common::health::HealthChecker::spawn(
             toc_arc.clone(),
             consensus_state.clone(),
             &runtime_handle,
-            // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
-            consensus_state.is_new_deployment() && bootstrap.is_some(),
         )));
 
         let handle = Consensus::run(
