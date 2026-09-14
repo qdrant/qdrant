@@ -9,9 +9,7 @@ use super::ReadOnlyAppendableFullTextIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::LiveReload;
 use crate::index::field_index::full_text_index::FullTextIndex;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, TokenSet,
-};
+use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     type File = S;
@@ -32,7 +30,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
 
-        let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
         let inner = &mut self.inner;
 
         for &deleted_point in deleted_points {
@@ -48,23 +45,11 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                         return Ok(true);
                     };
                     // The stored document is already tokenized, so we replay the
-                    // post-tokenization half of `MutableFullTextIndex::add_many`:
-                    // register the tokens, then index them (plus the ordered
-                    // document when phrase matching is enabled).
+                    // post-tokenization half of `MutableFullTextIndex::add_many`.
                     let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    let tokens = inner.inverted_index.register_tokens(str_tokens);
-                    if phrase_matching {
-                        inner.inverted_index.index_document(
-                            point_offset,
-                            Document::new(tokens.clone()),
-                            hw_counter,
-                        )?;
-                    }
-                    inner.inverted_index.index_tokens(
-                        point_offset,
-                        TokenSet::from_iter(tokens),
-                        hw_counter,
-                    )?;
+                    inner
+                        .inverted_index
+                        .index_str_tokens(point_offset, str_tokens, hw_counter)?;
                     Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),

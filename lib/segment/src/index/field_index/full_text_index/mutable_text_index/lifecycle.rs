@@ -6,8 +6,8 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
 use super::super::FullTextIndex;
+use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
-use super::super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
 use super::inner::MutableFullTextIndexInner;
 use super::{MutableFullTextIndex, storage_options};
@@ -127,19 +127,9 @@ impl MutableFullTextIndex {
         let str_tokens =
             FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
-        let tokens = self.inner.inverted_index.register_tokens(&str_tokens);
-
-        if phrase_matching {
-            let document = Document::new(tokens.clone());
-            self.inner
-                .inverted_index
-                .index_document(idx, document, hw_counter)?;
-        }
-
-        let token_set = TokenSet::from_iter(tokens);
         self.inner
             .inverted_index
-            .index_tokens(idx, token_set, hw_counter)?;
+            .index_str_tokens(idx, &str_tokens, hw_counter)?;
 
         let db_document = FullTextIndex::serialize_stored_document(str_tokens, phrase_matching)?;
 

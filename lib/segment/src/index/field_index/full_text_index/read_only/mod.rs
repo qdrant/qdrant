@@ -47,16 +47,21 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::sorted_slice::SortedSlice;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
     use itertools::Itertools as _;
+    use rstest::rstest;
     use tempfile::TempDir;
 
     use super::super::FullTextIndex;
     use super::ReadOnlyFullTextIndex;
     use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-    use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
+    use crate::index::field_index::{
+        LiveReload, PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer,
+    };
     use crate::json_path::JsonPath;
-    use crate::types::{FieldCondition, Match};
+    use crate::types::{FieldCondition, Match, MatchPhrase};
 
     fn test_config() -> TextIndexParams {
         TextIndexParams {
@@ -143,5 +148,173 @@ mod tests {
                 .collect_vec(),
             vec![1],
         );
+    }
+
+    /// The incremental `LiveReload` path must land on exactly the same state as
+    /// a fresh `open_appendable` over the post-write gridstore.
+    ///
+    /// A writer keeps mutating after the read-only view is open: one point is
+    /// deleted and two are appended. `live_reload` is handed only that delta and
+    /// replays the stored documents itself, so it re-runs the same
+    /// post-tokenization indexing the write path runs. Both token-set matching
+    /// and phrase matching are checked, because the phrase leg is the one that
+    /// depends on the ordered document being indexed as well as the token set.
+    #[rstest]
+    fn live_reload_matches_fresh_open(#[values(false, true)] phrase_matching: bool) {
+        let dir = TempDir::with_prefix("ro_fulltext_live_reload").unwrap();
+        let mut config = test_config();
+        config.phrase_matching = Some(phrase_matching);
+        let hw_counter = HardwareCounterCell::new();
+
+        let initial = [
+            serde_json::json!("the quick brown fox jumps"),
+            serde_json::json!("over the lazy dog"),
+            serde_json::json!("the brown bear sleeps"),
+        ];
+        // Appended after the read-only view is taken. The last one repeats a
+        // term so the document is not just a set of distinct tokens.
+        let appended = [
+            serde_json::json!("a lazy brown moth"),
+            serde_json::json!("the fox and the fox again"),
+        ];
+
+        let mut writer =
+            FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
+                .unwrap()
+                .unwrap();
+        for (idx, payload) in initial.iter().enumerate() {
+            writer
+                .add_point(idx as u32, &[payload], &hw_counter)
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        // Read-only view of points 0..=2, taken before the writer continues.
+        let mut reloaded: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
+            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config.clone())
+                .unwrap()
+                .unwrap();
+
+        // Writer's delta: drop point 1, append points 3 and 4.
+        writer.remove_point(1).unwrap();
+        for (offset, payload) in appended.iter().enumerate() {
+            writer
+                .add_point((3 + offset) as u32, &[payload], &hw_counter)
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let deleted: [PointOffsetType; 1] = [1];
+        let added: [PointOffsetType; 2] = [3, 4];
+        reloaded
+            .live_reload(
+                &fs,
+                &SortedSlice::new(&deleted).unwrap(),
+                &SortedSlice::new(&added).unwrap(),
+                &hw_counter,
+            )
+            .unwrap();
+
+        let fresh: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
+            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(
+            reloaded.count_indexed_points().unwrap(),
+            fresh.count_indexed_points().unwrap(),
+        );
+
+        let key = JsonPath::new("test");
+        let mut conditions = vec![
+            // Spans deleted, surviving and appended points.
+            FieldCondition::new_match(key.clone(), Match::new_text("brown")),
+            // Only ever present on the deleted point.
+            FieldCondition::new_match(key.clone(), Match::new_text("dog")),
+            // Only on appended points.
+            FieldCondition::new_match(key.clone(), Match::new_text("moth")),
+            // Repeated within one appended document.
+            FieldCondition::new_match(key.clone(), Match::new_text("fox")),
+            // Multi-token, so it exercises the posting intersection.
+            FieldCondition::new_match(key.clone(), Match::new_text("lazy brown")),
+        ];
+        if phrase_matching {
+            // Needs the ordered document, not just the token set: "brown fox"
+            // is adjacent in point 0 but not in point 3 ("lazy brown moth").
+            conditions.push(FieldCondition::new_match(
+                key.clone(),
+                Match::Phrase(MatchPhrase::from("brown fox")),
+            ));
+            conditions.push(FieldCondition::new_match(
+                key,
+                Match::Phrase(MatchPhrase::from("lazy brown")),
+            ));
+        }
+
+        for condition in &conditions {
+            let from_reload = reloaded
+                .filter(condition, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec();
+            let from_fresh = fresh
+                .filter(condition, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec();
+            assert_eq!(from_reload, from_fresh, "diverged for {condition:?}");
+            // The deleted point must not survive in either.
+            assert!(
+                !from_reload.contains(&1),
+                "point 1 resurrected by {condition:?}"
+            );
+        }
+
+        // Guard the fixture: the comparisons above hold vacuously if nothing
+        // matches, so pin the results that must come from the reloaded delta.
+        let key = JsonPath::new("test");
+        let expect = |condition: &FieldCondition, want: Vec<PointOffsetType>| {
+            let got = reloaded
+                .filter(condition, &hw_counter)
+                .unwrap()
+                .unwrap()
+                .collect_vec();
+            assert_eq!(got, want, "unexpected hits for {condition:?}");
+        };
+
+        // Appended point only.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("moth")),
+            vec![3],
+        );
+        // Survivor plus both appended points.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("fox")),
+            vec![0, 4],
+        );
+        // The deleted point was the only holder of this term.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("dog")),
+            vec![],
+        );
+
+        if phrase_matching {
+            // Adjacency has to survive the reload, not just term membership:
+            // point 3 has "lazy brown" adjacent, point 0 has "brown fox".
+            expect(
+                &FieldCondition::new_match(
+                    key.clone(),
+                    Match::Phrase(MatchPhrase::from("lazy brown")),
+                ),
+                vec![3],
+            );
+            expect(
+                &FieldCondition::new_match(key, Match::Phrase(MatchPhrase::from("brown fox"))),
+                vec![0],
+            );
+        }
     }
 }
