@@ -136,6 +136,12 @@ impl DiskCacheStats {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Whether both handles share the same counter allocation.
+    ///
+    /// Used when a pipeline error discards all in-flight fetches: several fetches
+    /// may share an observer through their filesystem, so the error is recorded
+    /// only once per affected observer. Compares `Arc` identity, independently of
+    /// the current counter values.
     pub(super) fn same_observer(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
