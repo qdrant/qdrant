@@ -6,6 +6,7 @@
 
 use std::ops::Range;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
@@ -58,9 +59,12 @@ where
                 // empty body (see `AsyncRead::read_range`), so skip the fetch.
                 if len > 0 {
                     let byte_range = 0..len;
+                    let fetch = self.stats.fetch(Instant::now());
                     let content = remote
                         .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                        .await?;
+                        .await;
+                    fetch.result(&content);
+                    let content = content?;
                     unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
                 }
                 State::ready(remote, local)
@@ -75,9 +79,12 @@ where
                 let (block_range, fetch_range) =
                     block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
 
+                let fetch = self.stats.fetch(Instant::now());
                 let content = remote
                     .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
+                    .await;
+                fetch.result(&content);
+                let content = content?;
 
                 let local = LocalState::new(&local_path, file_len, options)?;
                 unsafe { local.write_mmap_bytes(&content, block_range) };
@@ -86,7 +93,7 @@ where
         };
 
         Ok(DiskCache::new(
-            self.remote_fs.clone(),
+            self,
             remote_extra,
             path,
             local_path,
@@ -118,6 +125,7 @@ where
                 range,
                 is_sequential,
             } => {
+                self.stats.read(true, range.is_empty());
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R>(self, range, is_sequential)? };
                 Ok(ACow::Borrowed(bytes))
@@ -126,10 +134,14 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
+                self.stats.read(false, false);
+                let fetch = self.stats.fetch(Instant::now());
                 let bytes = state
                     .remote
                     .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
-                    .await?;
+                    .await;
+                fetch.result(&bytes);
+                let bytes = bytes?;
                 // SAFETY: `bytes` is the remote content of `blocks_range`
                 // (clamped to EOF), which covers `range`.
                 unsafe {

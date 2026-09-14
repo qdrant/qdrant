@@ -29,7 +29,8 @@ pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_s
 pub use self::mmap::{MmapFile, MmapFs};
 pub use self::oneshot::OneshotFile;
 pub use self::simple_disk_cache::{
-    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
+    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote, DiskCacheStats,
+    DiskCacheStatsSnapshot,
 };
 pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{

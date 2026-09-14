@@ -1,9 +1,11 @@
 use std::cell::OnceCell;
 use std::collections::VecDeque;
 use std::ops::Range;
+use std::time::Instant;
 
 use slab::Slab;
 
+use super::stats::FetchStats;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -36,6 +38,7 @@ where
     /// so two live `&'file DiskCache<R>` referring to the same logical file
     /// are guaranteed to be the same reference.
     file: &'file DiskCache<R>,
+    fetch: FetchStats,
     /// Blocks the fetch covers; committed to the local mirror on completion.
     blocks_range: Range<u32>,
     /// `(user_data, byte range)` of every read resolved by this fetch; each is
@@ -146,7 +149,9 @@ where
         file,
         blocks_range,
         reads,
+        fetch: timing,
     } = fetch;
+    timing.complete(bytes.len());
 
     // The mirror is already materialized: scheduling this remote read went
     // through `file.state()` (see `schedule`), which forces initialization.
@@ -241,6 +246,7 @@ where
                 range,
                 is_sequential,
             } => {
+                file.stats.read(true, range.is_empty());
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R>(file, range, is_sequential)? };
                 self.results.push_back((user_data, bytes));
@@ -249,6 +255,7 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
+                file.stats.read(false, false);
                 // An in-flight fetch for the same file covering all needed
                 // blocks resolves this read too: piggyback on it instead of
                 // fetching the same blocks twice.
@@ -257,6 +264,7 @@ where
                         && inflight.blocks_range.start <= blocks_range.start
                         && blocks_range.end <= inflight.blocks_range.end
                 }) {
+                    file.stats.coalesced();
                     fetch.reads.push((user_data, range));
                     return Ok(());
                 }
@@ -267,6 +275,7 @@ where
                 // the fetch lands on the key the remote read was tagged with.
                 let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
                 let entry = self.in_flight.vacant_entry();
+                let started = Instant::now();
                 remote_pipeline.schedule::<P>(
                     entry.key() as u64,
                     state.remote,
@@ -275,6 +284,7 @@ where
                 )?;
                 entry.insert(InFlightFetch {
                     file,
+                    fetch: file.stats.fetch(started),
                     blocks_range,
                     reads: vec![(user_data, range)],
                 });
@@ -318,6 +328,16 @@ where
                 // this particular failed response.
                 //
                 // Let's just drop all in-flight requests.
+                let mut observers = Vec::new();
+                for (_, fetch) in &self.in_flight {
+                    if !observers
+                        .iter()
+                        .any(|stats| fetch.file.stats.same_observer(stats))
+                    {
+                        fetch.file.stats.pipeline_error();
+                        observers.push(fetch.file.stats.clone());
+                    }
+                }
                 self.in_flight.clear();
                 self.remote_pipeline.take();
                 return Err(err);
