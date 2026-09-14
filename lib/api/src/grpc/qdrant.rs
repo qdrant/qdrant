@@ -4132,6 +4132,9 @@ pub struct InitiateShardTransferRequest {
     /// Id of the temporary shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
+    /// Peer ID of the transfer source, checked against the registered shard transfer
+    #[prost(uint64, optional, tag = "3")]
+    pub from_peer_id: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -16023,6 +16026,9 @@ pub struct RecoverShardSnapshotRequest {
     /// Optional API key used when fetching the snapshot from a remote URL
     #[prost(string, optional, tag = "6")]
     pub api_key: ::core::option::Option<::prost::alloc::string::String>,
+    /// Peer ID of the shard transfer source, checked against the registered shard transfer
+    #[prost(uint64, optional, tag = "7")]
+    pub from_peer_id: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

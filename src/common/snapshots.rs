@@ -8,7 +8,7 @@ use collection::operations::snapshot_ops::{
 };
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::shard::ShardId;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use collection::shards::shard_holder::shard_not_found_error;
 use collection::shards::transfer::RecoveryStage;
@@ -167,6 +167,7 @@ pub async fn recover_shard_snapshot(
     checksum: Option<String>,
     client: HttpClient,
     api_key: Option<String>,
+    from_peer_id: Option<PeerId>,
 ) -> Result<(), StorageError> {
     let collection_pass = auth
         .check_global_access(AccessRequirements::new().manage(), "recover_shard_snapshot")?
@@ -206,7 +207,7 @@ pub async fn recover_shard_snapshot(
         // Not done for user-triggered URL recovery, where the shard may still be active.
         if matches!(snapshot_priority, SnapshotPriority::ShardTransfer) {
             collection
-                .clear_local_shard_for_snapshot_recovery(shard_id)
+                .clear_local_shard_for_snapshot_recovery(shard_id, from_peer_id)
                 .await?;
         }
 

@@ -421,13 +421,33 @@ impl Collection {
     /// transfer downloads a replacement snapshot. See
     /// [`ShardReplicaSet::clear_local_for_snapshot_recovery`] for details and safety
     /// constraints.
+    ///
+    /// If `from_peer_id` is given, a shard transfer from that peer into this shard must be
+    /// registered. This is destructive, so a sender that drives a transfer consensus has since
+    /// aborted must not get to wipe a replica that another transfer is populating.
     pub async fn clear_local_shard_for_snapshot_recovery(
         &self,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> CollectionResult<()> {
-        self.shards_holder
-            .read()
-            .await
+        let shard_holder = self.shards_holder.read().await;
+
+        if let Some(from_peer_id) = from_peer_id {
+            let is_registered = !shard_holder
+                .get_transfers(|transfer| {
+                    transfer.is_target(self.this_peer_id, shard_id) && transfer.from == from_peer_id
+                })
+                .is_empty();
+
+            if !is_registered {
+                return Err(CollectionError::bad_request(format!(
+                    "Refusing to clear shard {shard_id} for snapshot recovery: \
+                     no shard transfer from peer {from_peer_id} to this peer is registered",
+                )));
+            }
+        }
+
+        shard_holder
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?
             .clear_local_for_snapshot_recovery(&self.path)
