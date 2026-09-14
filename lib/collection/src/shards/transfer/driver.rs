@@ -56,7 +56,7 @@ pub async fn transfer_shard(
     );
 
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
-    remote_shard.initiate_transfer().await?;
+    remote_shard.initiate_transfer(transfer_config.from).await?;
 
     match transfer_config.method.unwrap_or(fallback_method) {
         // Transfer shard record in batches
