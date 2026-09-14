@@ -926,9 +926,6 @@ fn print_cache_stats(phase: &str, stats: &common::universal_io::DiskCacheStatsSn
         ("fetches", stats.remote_fetches_started),
         ("completed", stats.remote_fetches_completed),
         ("bytes", stats.downloaded_bytes),
-        ("hits", stats.cache_hits),
-        ("misses", stats.cache_misses),
-        ("coalesced", stats.coalesced_reads),
         ("fetch_errors", stats.remote_fetch_errors),
         ("abandoned", stats.remote_fetches_abandoned),
     ] {

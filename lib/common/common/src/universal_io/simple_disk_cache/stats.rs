@@ -1,4 +1,4 @@
-//! Shared, cumulative cache-level statistics. These do not count backend HTTP requests,
+//! Shared, cumulative statistics for remote data fetches. These do not count backend HTTP requests,
 //! metadata operations, retries, or wire bytes.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,9 +27,6 @@ struct Counters {
     remote_fetch_errors: AtomicU64,
     remote_fetches_abandoned: AtomicU64,
     downloaded_bytes: AtomicU64,
-    cache_hits: AtomicU64,
-    cache_misses: AtomicU64,
-    coalesced_reads: AtomicU64,
     fetch_duration_ns: AtomicU64,
     fetch_duration_histogram: [AtomicU64; LATENCY_BOUNDS.len() + 1],
 }
@@ -49,12 +46,6 @@ pub struct DiskCacheStatsSnapshot {
     pub remote_fetches_abandoned: u64,
     /// Successful response bytes, including alignment and repeated downloads; excludes hidden retries and partial failed responses.
     pub downloaded_bytes: u64,
-    /// Non-empty reads found in the local mirror.
-    pub cache_hits: u64,
-    /// Non-empty read attempts requiring remote data, including coalesced reads and rejected schedules.
-    pub cache_misses: u64,
-    /// Misses joining an existing in-flight fetch.
-    pub coalesced_reads: u64,
     /// Sum of successful fetch durations, from scheduling to observing completion.
     /// Includes queueing and delayed collection in `wait`, but excludes local mirror writes.
     pub total_fetch_duration: Duration,
@@ -73,9 +64,6 @@ impl DiskCacheStats {
             remote_fetch_errors: self.0.remote_fetch_errors.load(Ordering::Relaxed),
             remote_fetches_abandoned: self.0.remote_fetches_abandoned.load(Ordering::Relaxed),
             downloaded_bytes: self.0.downloaded_bytes.load(Ordering::Relaxed),
-            cache_hits: self.0.cache_hits.load(Ordering::Relaxed),
-            cache_misses: self.0.cache_misses.load(Ordering::Relaxed),
-            coalesced_reads: self.0.coalesced_reads.load(Ordering::Relaxed),
             fetch_duration_histogram: std::array::from_fn(|i| {
                 self.0.fetch_duration_histogram[i].load(Ordering::Relaxed)
             }),
@@ -109,21 +97,6 @@ impl DiskCacheStats {
             started,
             finished: false,
         }
-    }
-
-    pub(super) fn read(&self, hit: bool, empty: bool) {
-        if !empty {
-            let counter = if hit {
-                &self.0.cache_hits
-            } else {
-                &self.0.cache_misses
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    pub(super) fn coalesced(&self) {
-        self.0.coalesced_reads.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -160,9 +133,6 @@ impl DiskCacheStatsSnapshot {
             downloaded_bytes: self
                 .downloaded_bytes
                 .saturating_sub(earlier.downloaded_bytes),
-            cache_hits: self.cache_hits.saturating_sub(earlier.cache_hits),
-            cache_misses: self.cache_misses.saturating_sub(earlier.cache_misses),
-            coalesced_reads: self.coalesced_reads.saturating_sub(earlier.coalesced_reads),
             fetch_duration_histogram: std::array::from_fn(|i| {
                 self.fetch_duration_histogram[i].saturating_sub(earlier.fetch_duration_histogram[i])
             }),
@@ -236,24 +206,5 @@ mod tests {
             snapshot.fetch_duration_histogram.iter().sum::<u64>(),
             snapshot.remote_fetches_completed
         );
-    }
-
-    #[test]
-    fn histogram_deltas_exclude_previous_reads_and_unsuccessful_fetches() {
-        let stats = DiskCacheStats::default();
-        assert_eq!(stats.snapshot().fetch_duration_histogram, [0; 9]);
-        stats.record_completed(1, Duration::from_millis(2));
-        let before = stats.snapshot();
-        let observer = stats.clone();
-        stats.record_completed(1, Duration::from_millis(20));
-        stats.record_completed(1, Duration::from_millis(20));
-        stats.fetch(Instant::now()).failed();
-        drop(stats.fetch(Instant::now()));
-        let delta = observer.snapshot().delta_since(&before);
-        assert_eq!(delta.fetch_duration_histogram, [0, 0, 0, 2, 0, 0, 0, 0, 0]);
-        assert_eq!(delta.remote_fetches_completed, 2);
-        assert_eq!(delta.remote_fetch_errors, 1);
-        assert_eq!(delta.remote_fetches_abandoned, 1);
-        assert_eq!(delta.avg_fetch_duration(), Some(Duration::from_millis(20)));
     }
 }

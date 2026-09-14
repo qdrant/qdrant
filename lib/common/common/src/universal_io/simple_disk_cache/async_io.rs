@@ -125,7 +125,6 @@ where
                 range,
                 is_sequential,
             } => {
-                self.stats.read(true, range.is_empty());
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R>(self, range, is_sequential)? };
                 Ok(ACow::Borrowed(bytes))
@@ -134,7 +133,6 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
-                self.stats.read(false, false);
                 let fetch = self.stats.fetch(Instant::now());
                 let bytes = state
                     .remote

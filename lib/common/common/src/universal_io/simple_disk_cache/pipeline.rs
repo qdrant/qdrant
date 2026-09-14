@@ -246,7 +246,6 @@ where
                 range,
                 is_sequential,
             } => {
-                file.stats.read(true, range.is_empty());
                 // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R>(file, range, is_sequential)? };
                 self.results.push_back((user_data, bytes));
@@ -255,7 +254,6 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
-                file.stats.read(false, false);
                 // An in-flight fetch for the same file covering all needed
                 // blocks resolves this read too: piggyback on it instead of
                 // fetching the same blocks twice.
@@ -264,7 +262,6 @@ where
                         && inflight.blocks_range.start <= blocks_range.start
                         && blocks_range.end <= inflight.blocks_range.end
                 }) {
-                    file.stats.coalesced();
                     fetch.reads.push((user_data, range));
                     return Ok(());
                 }
