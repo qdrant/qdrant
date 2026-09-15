@@ -22,6 +22,20 @@ pub mod tokenizers;
 pub use read_only::ReadOnlyFullTextIndex;
 pub use read_ops::FullTextConditionChecker;
 
+/// A point's tokens as they are persisted.
+///
+/// The index is rebuilt from these records on every open, and without phrase
+/// matching the tokens are sorted and deduplicated on the way in, so a length
+/// cannot be recovered from them and has to travel alongside.
+#[derive(serde::Deserialize)]
+pub(in crate::index::field_index::full_text_index) struct StoredDocument {
+    pub tokens: Vec<String>,
+    /// Array boundary sentinels excluded. `None` on a record written by an
+    /// index that does not record lengths.
+    #[serde(default)]
+    pub doc_len: Option<u32>,
+}
+
 #[cfg(test)]
 mod tests;
 

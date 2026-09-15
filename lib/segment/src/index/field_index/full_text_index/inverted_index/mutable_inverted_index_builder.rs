@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::InvertedIndex;
@@ -9,13 +10,19 @@ pub struct MutableInvertedIndexBuilder {
 }
 
 impl MutableInvertedIndexBuilder {
-    pub fn new(phrase_matching: bool) -> Self {
-        let index = MutableInvertedIndex::new(phrase_matching);
+    pub fn new(phrase_matching: bool, with_doc_len: bool) -> Self {
+        let index = MutableInvertedIndex::new(phrase_matching, with_doc_len);
         Self { index }
     }
 
-    /// Add a vector to the inverted index builder
-    pub fn add(&mut self, idx: PointOffsetType, str_tokens: impl IntoIterator<Item = String>) {
+    /// Add a vector to the inverted index builder. `doc_len` comes from the
+    /// stored record, never from `str_tokens`.
+    pub fn add(
+        &mut self,
+        idx: PointOffsetType,
+        str_tokens: impl IntoIterator<Item = String>,
+        doc_len: Option<u32>,
+    ) {
         self.index.points_count += 1;
 
         // resize point_to_* structures if needed
@@ -28,6 +35,8 @@ impl MutableInvertedIndexBuilder {
                 point_to_doc.resize_with(idx as usize + 1, Default::default);
             }
         }
+        self.index
+            .set_doc_len(idx, doc_len, &HardwareCounterCell::disposable());
 
         let tokens = self.index.register_tokens(str_tokens);
 

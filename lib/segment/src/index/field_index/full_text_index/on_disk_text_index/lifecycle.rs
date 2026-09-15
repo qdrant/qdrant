@@ -101,7 +101,8 @@ impl FullTextMmapIndexBuilder {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
             path,
-            mutable_index: MutableInvertedIndex::new(with_positions),
+            // No lengths yet: this backend has nowhere to keep them.
+            mutable_index: MutableInvertedIndex::new(with_positions, false),
             config,
             is_on_disk,
             tokenizer,

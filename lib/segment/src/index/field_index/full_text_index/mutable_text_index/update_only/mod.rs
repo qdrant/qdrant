@@ -13,6 +13,7 @@ use crate::index::field_index::{UpdateOnlyIndexKind, ValueIndexer};
 /// [`MutableFullTextIndex`]: super::MutableFullTextIndex
 pub struct UpdateOnlyTextKind {
     phrase_matching: bool,
+    scoring: bool,
     tokenizer: Tokenizer,
 }
 
@@ -20,6 +21,7 @@ impl UpdateOnlyTextKind {
     pub fn new(config: &TextIndexParams) -> Self {
         Self {
             phrase_matching: config.phrase_matching.unwrap_or_default(),
+            scoring: config.scoring(),
             tokenizer: Tokenizer::new_from_text_index_params(config),
         }
     }
@@ -37,9 +39,14 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
         let str_tokens =
             FullTextIndex::tokenize_document(&self.tokenizer, self.phrase_matching, &values);
 
+        let doc_len = self
+            .scoring
+            .then(|| FullTextIndex::document_length(&str_tokens, self.phrase_matching, &values));
+
         Ok(Some(FullTextIndex::serialize_stored_document(
             str_tokens,
             self.phrase_matching,
+            doc_len,
         )?))
     }
 }
@@ -95,7 +102,8 @@ mod tests {
             .unwrap();
         writer.flush(&MmapFs, &hw_counter).unwrap();
 
-        let index = MutableFullTextIndex::open_gridstore(storage, params, false)
+        let scoring = params.scoring();
+        let index = MutableFullTextIndex::open_gridstore(storage, params, false, scoring)
             .unwrap()
             .unwrap();
 

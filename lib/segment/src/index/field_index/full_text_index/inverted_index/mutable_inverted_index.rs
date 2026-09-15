@@ -20,17 +20,28 @@ pub struct MutableInvertedIndex {
     ///
     /// Must be enabled explicitly.
     pub point_to_doc: Option<Vec<Option<Document>>>,
+
+    /// Total tokens per point, for BM25 length normalization. `None` when this
+    /// index does not record lengths. Unlike `point_to_tokens`, which holds the
+    /// *distinct* tokens, this counts every token the tokenizer kept.
+    pub(in crate::index::field_index::full_text_index) point_to_doc_len: Option<Vec<u32>>,
+
+    /// Sum of `point_to_doc_len` over live points, so `avgdl` is a division
+    /// rather than a scan.
+    pub(in crate::index::field_index::full_text_index) total_tokens: u64,
     pub(super) points_count: usize,
 }
 
 impl MutableInvertedIndex {
     /// Create a new inverted index with or without positional information.
-    pub fn new(with_positions: bool) -> Self {
+    pub fn new(with_positions: bool, with_doc_len: bool) -> Self {
         Self {
             postings: Vec::new(),
             vocab: HashMap::new(),
             point_to_tokens: Vec::new(),
             point_to_doc: with_positions.then_some(Vec::new()),
+            point_to_doc_len: with_doc_len.then_some(Vec::new()),
+            total_tokens: 0,
             points_count: 0,
         }
     }
@@ -41,6 +52,39 @@ impl MutableInvertedIndex {
 
     fn get_document(&self, idx: PointOffsetType) -> Option<&Document> {
         self.point_to_doc.as_ref()?.get(idx as usize)?.as_ref()
+    }
+
+    /// Whether this index records document lengths. Keyed off the data rather
+    /// than the config, so a caller cannot measure a length it cannot store.
+    pub(in crate::index::field_index::full_text_index) fn records_doc_len(&self) -> bool {
+        self.point_to_doc_len.is_some()
+    }
+
+    /// Record a point's length, replacing any previous value so an overwrite
+    /// does not double-count in `total_tokens`. The only writer, so that every
+    /// path agrees on what a record without a length means: `None` zeroes the
+    /// slot rather than leaving a stale value behind.
+    pub(in crate::index::field_index::full_text_index) fn set_doc_len(
+        &mut self,
+        point_id: PointOffsetType,
+        doc_len: Option<u32>,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        let Some(point_to_doc_len) = self.point_to_doc_len.as_mut() else {
+            return;
+        };
+        let needed = point_id as usize + 1;
+        if point_to_doc_len.len() < needed {
+            hw_counter
+                .payload_index_io_write_counter()
+                .write_back_counter()
+                .incr_delta((needed - point_to_doc_len.len()) * size_of::<u32>());
+            point_to_doc_len.resize(needed, 0);
+        }
+        let doc_len = doc_len.unwrap_or(0);
+        let slot = &mut point_to_doc_len[point_id as usize];
+        self.total_tokens = self.total_tokens.saturating_sub(u64::from(*slot)) + u64::from(doc_len);
+        *slot = doc_len;
     }
 
     /// Iterate over point ids whose documents contain all given tokens
@@ -120,9 +164,11 @@ impl MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
+        doc_len: Option<u32>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
+        self.set_doc_len(point_id, doc_len, hw_counter);
 
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
@@ -221,6 +267,15 @@ impl InvertedIndex for MutableInvertedIndex {
 
         if let Some(point_to_doc) = &mut self.point_to_doc {
             point_to_doc[point_id as usize] = None;
+        }
+
+        if let Some(doc_len) = self
+            .point_to_doc_len
+            .as_mut()
+            .and_then(|lens| lens.get_mut(point_id as usize))
+        {
+            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
+            *doc_len = 0;
         }
 
         self.points_count -= 1;
@@ -332,6 +387,8 @@ impl MutableInvertedIndex {
             vocab,
             point_to_tokens,
             point_to_doc,
+            point_to_doc_len,
+            total_tokens: _,
             points_count: _,
         } = self;
 
@@ -344,6 +401,10 @@ impl MutableInvertedIndex {
                 + hashmap_entry_overhead);
         // String heap data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
+        let doc_len_bytes = point_to_doc_len
+            .as_ref()
+            .map(|lens| lens.capacity() * std::mem::size_of::<u32>())
+            .unwrap_or(0);
         // TokenSet wraps Vec<TokenId> — account for heap allocation
         let ptt_bytes: usize = point_to_tokens.capacity() * std::mem::size_of::<Option<TokenSet>>()
             + point_to_tokens
@@ -362,6 +423,6 @@ impl MutableInvertedIndex {
                         .sum::<usize>()
             })
             .unwrap_or(0);
-        postings_bytes + vocab_base_bytes + vocab_heap_bytes + ptt_bytes + ptd_bytes
+        postings_bytes + vocab_base_bytes + vocab_heap_bytes + ptt_bytes + ptd_bytes + doc_len_bytes
     }
 }
