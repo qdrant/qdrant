@@ -56,7 +56,7 @@ pub async fn transfer_shard(
     );
 
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
-    remote_shard.initiate_transfer().await?;
+    remote_shard.initiate_transfer(transfer_config.from).await?;
 
     match transfer_config.method.unwrap_or(fallback_method) {
         // Transfer shard record in batches
@@ -212,6 +212,19 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     spawn_async_cancellable(move |cancel| async move {
+        // A driver spawned while this peer is still catching up with consensus acts on a stale
+        // view of it. On startup, committed but unapplied entries are replayed before this peer
+        // joins consensus, so a `Start` for a transfer that has since been aborted still spawns its
+        // driver here. Hold off until this peer has applied everything the cluster had committed,
+        // which includes any abort of this transfer, before we touch the remote.
+        progress.lock().set_stage(TransferStage::WaitingConsensus);
+        if cancel::future::cancel_on_token(cancel.clone(), consensus.await_consensus_caught_up())
+            .await
+            .is_err()
+        {
+            return false;
+        }
+
         let mut result = Err(cancel::Error::Cancelled);
 
         for attempt in 0..MAX_RETRY_COUNT {

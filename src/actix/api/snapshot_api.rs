@@ -489,6 +489,7 @@ async fn recover_shard_snapshot(
             request.checksum,
             http_client.as_ref().clone(),
             request.api_key,
+            None,
         )
         .await?;
 

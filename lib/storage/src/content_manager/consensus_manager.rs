@@ -86,6 +86,9 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Notifies if the current node knows who the leader and is not in the process of election
     /// Otherwise the proposals are not accepted
     pub is_leader_established: Arc<IsReady>,
+    /// Set once this peer has caught up with the consensus commit of the cluster after a (re)start,
+    /// see [`ConsensusStateRef::spawn_consensus_catch_up`]
+    pub is_consensus_caught_up: Arc<IsReady>,
     wal: Mutex<ConsensusOpWal>,
     /// Raft consensus state, which is not saved on disk.
     /// They will change on restart anyway (role + leader id)
@@ -147,6 +150,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Ok(Self {
             persistent: RwLock::new(persistent_state),
             is_leader_established: Arc::new(IsReady::default()),
+            is_consensus_caught_up: Arc::new(IsReady::default()),
             wal: Mutex::new(wal),
             soft_state: RwLock::new(None),
             toc,

@@ -112,6 +112,10 @@ impl ShardTransferConsensus for NoopReshardingConsensus {
         (0, 0)
     }
 
+    fn is_consensus_caught_up(&self) -> bool {
+        true
+    }
+
     fn recovered_switch_to_partial(
         &self,
         _transfer_config: &ShardTransfer,
