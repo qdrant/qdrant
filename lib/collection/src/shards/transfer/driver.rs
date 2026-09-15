@@ -8,6 +8,7 @@ use tokio::time::sleep;
 
 use super::resharding_stream_records::transfer_resharding_stream_records;
 use super::snapshot::transfer_snapshot;
+use super::snapshot_bucketed::transfer_snapshot_bucketed;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
@@ -99,6 +100,22 @@ pub async fn transfer_shard(
                 snapshots_path,
                 &collection_id,
                 temp_dir,
+            )
+            .await?;
+        }
+
+        // Transfer shard as snapshot, partitioned into independent buckets transferred
+        // over their own connections
+        ShardTransferMethod::SnapshotBucketed => {
+            transfer_snapshot_bucketed(
+                transfer_config,
+                shard_holder,
+                progress.clone(),
+                local_shard_id,
+                remote_shard,
+                &channel_service,
+                consensus,
+                &collection_id,
             )
             .await?;
         }

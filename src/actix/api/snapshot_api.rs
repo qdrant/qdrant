@@ -450,6 +450,46 @@ async fn stream_shard_snapshot(
     .await?)
 }
 
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct SnapshotBucketParam {
+    /// JSON-encoded array of paths, relative to the shard's data directory,
+    /// to include in this bucket's tar (e.g. `["segments/<uuid>", "wal"]`).
+    pub entries: String,
+}
+
+/// Bucketed-transfer counterpart to `stream_shard_snapshot`: streams only
+/// the caller-specified `entries` as their own self-contained tar, live,
+/// instead of the whole shard. Stateless on this (sending) side -- the
+/// entries to include travel in the request itself, nothing is looked up
+/// from any server-side registry keyed by a prior request.
+#[get("/collections/{collection_name}/shards/{shard}/snapshot-bucket")]
+async fn stream_shard_snapshot_bucket(
+    dispatcher: web::Data<Dispatcher>,
+    path: valid::Path<CollectionShardPath>,
+    query: web::Query<SnapshotBucketParam>,
+    ActixAuth(auth): ActixAuth,
+) -> Result<SnapshotStream, HttpError> {
+    // nothing to verify.
+    let pass = new_unchecked_verification_pass();
+
+    let CollectionShardPath {
+        collection_name,
+        shard,
+    } = path.into_inner();
+
+    let entries: Vec<String> = serde_json::from_str(&query.entries)
+        .map_err(|err| StorageError::bad_request(format!("invalid entries parameter: {err}")))?;
+
+    Ok(common::snapshots::stream_shard_snapshot_bucket(
+        dispatcher.toc(&auth, &pass).clone(),
+        &auth,
+        collection_name,
+        shard,
+        entries,
+    )
+    .await?)
+}
+
 // TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
 #[put("/collections/{collection_name}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
@@ -983,6 +1023,7 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(list_shard_snapshots)
         .service(create_shard_snapshot)
         .service(stream_shard_snapshot)
+        .service(stream_shard_snapshot_bucket)
         .service(recover_shard_snapshot)
         .service(upload_shard_snapshot)
         .service(download_shard_snapshot)

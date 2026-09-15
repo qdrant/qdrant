@@ -1725,6 +1725,9 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
             api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords => {
                 ShardTransferMethod::ReshardingStreamRecords
             }
+            api::grpc::qdrant::ShardTransferMethod::SnapshotBucketed => {
+                ShardTransferMethod::SnapshotBucketed
+            }
         }
     }
 }
@@ -1739,6 +1742,9 @@ impl From<ShardTransferMethod> for api::grpc::qdrant::ShardTransferMethod {
             ShardTransferMethod::WalDelta => api::grpc::qdrant::ShardTransferMethod::WalDelta,
             ShardTransferMethod::ReshardingStreamRecords => {
                 api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords
+            }
+            ShardTransferMethod::SnapshotBucketed => {
+                api::grpc::qdrant::ShardTransferMethod::SnapshotBucketed
             }
         }
     }
