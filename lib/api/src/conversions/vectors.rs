@@ -635,9 +635,11 @@ impl TryFrom<grpc::RawVector> for VectorInternal {
             Variant::Sparse(sparse) => {
                 VectorInternal::Sparse(sparse::common::sparse_vector::SparseVector::from(sparse))
             }
-            Variant::MultiDense(multi_dense) => {
-                VectorInternal::MultiDense(MultiDenseVectorInternal::from(multi_dense))
-            }
+            Variant::MultiDense(multi_dense) => VectorInternal::MultiDense(
+                MultiDenseVectorInternal::try_from_matrix(multi_dense.into_matrix()).map_err(
+                    |e| Status::invalid_argument(format!("Malformed multi-dense vector: {e}")),
+                )?,
+            ),
         };
 
         Ok(vector)
@@ -647,5 +649,24 @@ impl TryFrom<grpc::RawVector> for VectorInternal {
 impl From<NamedVectorStruct> for grpc::RawVector {
     fn from(value: NamedVectorStruct) -> Self {
         Self::from(value.to_vector())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_vector_with_empty_multi_dense_is_rejected() {
+        let raw = grpc::RawVector {
+            variant: Some(grpc::raw_vector::Variant::MultiDense(
+                grpc::MultiDenseVector { vectors: vec![] },
+            )),
+        };
+
+        assert_eq!(
+            VectorInternal::try_from(raw).unwrap_err().code(),
+            tonic::Code::InvalidArgument,
+        );
     }
 }
