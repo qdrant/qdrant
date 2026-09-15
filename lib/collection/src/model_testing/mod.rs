@@ -682,6 +682,10 @@ pub async fn run(
         if do_restart {
             log::debug!("op:{i} Restart");
             bar.set_message("Restart");
+            // println! (not log::): harness unit tests don't init a logger, and nextest only
+            // dumps captured stdout on failure/timeout — these breadcrumbs are how a hung restart
+            // tells us which stage it never left.
+            stage_breadcrumb(&bar, &format!("op:{i} Restart"));
             let (pre_segments, pre_optimized) = verify::run_summary(&collection).await;
             if pre_optimized > 0 {
                 optimizer_ran_during_run = true;
@@ -725,14 +729,14 @@ pub async fn run(
             // the `drop` below wouldn't actually close the collection (releasing its files) until
             // the task ends — and reopening the same dir with the old collection still open is
             // unsafe.
-            log::info!("op:{i} restart: drain_snapshot");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: drain_snapshot"));
             drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
             // Newest-clocks recovery point must survive the close+reopen exactly; captured here
             // (snapshot drained, op loop idle) and compared after the reload below. See
             // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
-            log::info!("op:{i} restart: collect_clock_ticks");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: collect_clock_ticks"));
             let pre_clocks = verify::collect_clock_ticks(&collection).await;
-            log::info!("op:{i} restart: stop_gracefully");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: stop_gracefully"));
             collection.stop_gracefully().await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
             // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
@@ -741,16 +745,16 @@ pub async fn run(
                 Arc::into_inner(collection)
                     .expect("collection still referenced at restart (undrained background task?)"),
             );
-            log::info!("op:{i} restart: reopen");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: reopen"));
             collection =
                 Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir).await);
             // `Collection::load` returns before tail-of-WAL ops queued to the
             // update worker have been applied — that's an intentional fast-start
             // feature. Wait for the queue to drain so the scroll below observes
             // all WAL-replayed state.
-            log::info!("op:{i} restart: wait_for_pending_updates");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: wait_for_pending_updates"));
             verify::wait_for_pending_updates(&collection).await;
-            log::info!("op:{i} restart: scroll + verify");
+            stage_breadcrumb(&bar, &format!("op:{i} restart: scroll + verify"));
             let live = verify::collect_model_from_collection(&collection).await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
@@ -765,6 +769,11 @@ pub async fn run(
             let op = op::Op::random(rng, &model, &active_names, &id_space, &swarm);
             log::debug!("op:{i} {op:?}");
             bar.set_message(op.kind());
+            // Unit-test / nextest only: print the in-flight op so a timeout dump names the op
+            // that never returned. Omitted from the soak binary (cfg(test) off) so the progress
+            // bar isn't flooded on long runs.
+            #[cfg(test)]
+            stage_breadcrumb(&bar, &format!("op:{i} begin {}", op.kind()));
             // Log BEFORE apply so a panic preserves the offending op in the trace.
             trace.op(i, &op);
             // CreateSnapshot needs run-loop context (it spawns a background task against shared
@@ -821,7 +830,7 @@ pub async fn run(
         eprintln!("model_testing: verifying live state...");
     }
     log::debug!("all ops applied, verifying live collection against model");
-    log::info!("live: scroll + verify");
+    stage_breadcrumb(&bar, "live: scroll + verify");
     let live = verify::collect_model_from_collection(&collection).await;
     let (live_extra, live_missing) = verify::id_diff(&live, &model);
     let (mut segments, mut optimized) = verify::run_summary(&collection).await;
@@ -843,7 +852,7 @@ pub async fn run(
     // not have triggered), when the optimizer is intentionally disabled, or when we
     // already observed optimization earlier in the run (counter resets on restart).
     if !interrupted && !disable_optimizer && !optimizer_ran_during_run {
-        log::info!("live: wait_for_optimizer");
+        stage_breadcrumb(&bar, "live: wait_for_optimizer");
         verify::wait_for_optimizer(&collection).await;
         (segments, optimized) = verify::run_summary(&collection).await;
     }
@@ -859,24 +868,24 @@ pub async fn run(
     }
     // Finish any background snapshot before closing (it holds an `Arc` clone — see the restart
     // path), then close and reopen and re-verify — mirrors blobstore tests.rs:488-516.
-    log::info!("reload: drain_snapshot");
+    stage_breadcrumb(&bar, "reload: drain_snapshot");
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
-    log::info!("reload: stop_gracefully");
+    stage_breadcrumb(&bar, "reload: stop_gracefully");
     collection.stop_gracefully().await;
     // Checked close-before-reopen, same as the mid-run restart path.
     drop(
         Arc::into_inner(collection)
             .expect("collection still referenced at final reload (undrained background task?)"),
     );
-    log::info!("reload: reopen");
+    stage_breadcrumb(&bar, "reload: reopen");
     let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
     // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
-    log::info!("reload: wait_for_pending_updates");
+    stage_breadcrumb(&bar, "reload: wait_for_pending_updates");
     verify::wait_for_pending_updates(&collection).await;
 
-    log::info!("reload: scroll + verify");
+    stage_breadcrumb(&bar, "reload: scroll + verify");
     let reloaded = verify::collect_model_from_collection(&collection).await;
     let (reload_extra, reload_missing) = verify::id_diff(&reloaded, &model);
     trace.reload_verify(
@@ -890,6 +899,14 @@ pub async fn run(
     // After the model check, same as the restart path (see the comment there for ordering).
     let post_clocks = verify::collect_clock_ticks(&collection).await;
     verify::assert_clocks_match(&pre_clocks, &post_clocks, "reloaded");
+}
+
+/// Print a stage/op breadcrumb to stdout so a nextest timeout/failure dump shows the last
+/// point reached. `log::info!` is a no-op here — harness tests never init a logger, and the
+/// soak binary's progress bar would hide stderr log lines on a TTY. `bar.suspend` keeps the
+/// line from being overwritten by the next progress-bar repaint.
+fn stage_breadcrumb(bar: &ProgressBar, msg: &str) {
+    bar.suspend(|| println!("model_testing: {msg}"));
 }
 
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
@@ -990,8 +1007,9 @@ mod tests {
     /// so a failure in this shared helper is attributable to the right test.
     ///
     /// The seed is drawn fresh each run and printed up front so a CI failure is reproducible
-    /// (nextest captures stdout and shows it on failure); on panic [`StorageGuard`] retains the
-    /// storage dir.
+    /// (nextest captures stdout and shows it on failure/timeout); on panic [`StorageGuard`] retains
+    /// the storage dir. Stage/op breadcrumbs (`model_testing: …` stdout lines) land in the same
+    /// dump so a hung run names the last op or reload stage that never returned.
     async fn smoke(
         name: &'static str,
         disable_optimizer: bool,
@@ -1001,7 +1019,10 @@ mod tests {
     ) {
         let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
         let seed = rand::rng().random();
-        println!("model_testing: {name} seed = {seed}");
+        println!(
+            "model_testing: {name} seed = {seed} storage = {}",
+            storage_dir.path().display()
+        );
         let guard = StorageGuard {
             dir: Some(storage_dir),
             name,
