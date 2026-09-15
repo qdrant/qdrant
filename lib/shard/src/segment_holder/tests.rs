@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use common::flags::{FeatureFlags, init_feature_flags};
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
@@ -2543,4 +2544,54 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
         0,
         "the dependency is persisted, it must be retired",
     );
+}
+
+/// A proxy segment must not hold back acknowledging the WAL. Flushing persists its buffered
+/// changes into the pending changes log, so the version returned by `flush_all` — which is what
+/// gets acknowledged in the WAL — advances past operations that only live in the proxy.
+#[test]
+fn test_proxy_segment_does_not_hold_back_wal_ack() {
+    use crate::proxy_segment::ProxySegment;
+
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut holder = SegmentHolder::default();
+
+    // Wrap a segment at version 6 in a proxy, as the optimizer and snapshots do
+    let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
+    let proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
+
+    // All segment state is persisted after a flush, the full version can be acknowledged
+    let version = holder.flush_all(FlushMode::Sync, false).unwrap();
+    assert_eq!(version, 6);
+
+    // Buffer a point delete in the proxy; it is in memory only, so it caps the acknowledgeable
+    // version until it is persisted
+    holder
+        .get(proxy_id)
+        .unwrap()
+        .get()
+        .write()
+        .delete_point(100, 2.into(), &hw_counter)
+        .unwrap();
+
+    // Flushing persists the buffered delete into the pending changes log of the wrapped
+    // segment, so the WAL can be acknowledged up to and including the delete operation even
+    // though the wrapped segment itself never saw it
+    let version = holder.flush_all(FlushMode::Sync, false).unwrap();
+    assert_eq!(
+        version, 100,
+        "flushed proxy segment must not hold back the WAL acknowledge",
+    );
+
+    // The wrapped segment on disk is still at its own version; the difference is covered by the
+    // pending changes log
+    assert_eq!(wrapped_segment.get().read().version(), 6);
 }

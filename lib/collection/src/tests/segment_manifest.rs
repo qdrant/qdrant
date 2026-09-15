@@ -18,9 +18,10 @@ use crate::tests::fixtures::create_collection_config;
 /// (next to the `segments/` directory) listing the shard's segments as `active`.
 #[tokio::test]
 async fn writes_segment_manifest_when_flag_enabled() {
-    let mut flags = FeatureFlags::default();
-    flags.write_segment_manifest = true;
-    init_feature_flags(flags);
+    init_feature_flags(FeatureFlags {
+        write_segment_manifest: true,
+        ..Default::default()
+    });
 
     let collection_dir = Builder::new().prefix("segment-manifest").tempdir().unwrap();
     let payload_schema_dir = Builder::new().prefix("payload-schema").tempdir().unwrap();
