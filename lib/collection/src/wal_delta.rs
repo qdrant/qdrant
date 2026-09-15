@@ -2193,7 +2193,10 @@ mod tests {
             .resolve_wal_delta(target_wal.recovery_point().await)
             .await;
         match delta {
-            Ok(Some(from)) => assert!(from <= 3, "delta starts at {from}, skipping ticks 4..=10"),
+            Ok(Some(from)) => assert!(
+                from <= 3,
+                "delta starts at WAL record {from}, skipping tick 4 (record 3)"
+            ),
             Ok(None) => panic!("empty delta, target is missing ticks 4..=12"),
             Err(_) => {} // Refusing a WAL delta is fine, it falls back to a full transfer
         }

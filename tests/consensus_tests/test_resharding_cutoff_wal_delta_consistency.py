@@ -16,11 +16,13 @@ from .utils import *
 
 COLLECTION = "test_resharding_cutoff_wal_delta"
 
-# A freshly restarted peer does not know peer versions yet and would pick a snapshot transfer
-ENV = {"QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "wal_delta"}
-
-# Default `flush_interval_sec` is 5
-FLUSH_WAIT_SEC = 10
+ENV = {
+    # A freshly restarted peer does not know peer versions yet and would pick a snapshot transfer
+    "QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "wal_delta",
+    # Clocks only reach disk on a flush
+    "QDRANT__STORAGE__OPTIMIZERS__FLUSH_INTERVAL_SEC": "1",
+}
+FLUSH_WAIT_SEC = 3
 
 
 def _upsert(uri: str, point_id: int, n: int) -> requests.Response:
@@ -48,6 +50,12 @@ def test_resharding_cutoff_does_not_break_wal_delta_recovery(tmp_path: pathlib.P
     peer_ids = [get_cluster_info(uri)["peer_id"] for uri in peer_uris]
     peer_procs = list(processes)  # aligned to peer index; `processes` is mutated below
 
+    def kill_target(port: int | None = None) -> int:
+        proc = peer_procs[target] if port is None else next(p for p in processes if p.p2p_port == port)
+        processes.remove(proc)
+        proc.kill()
+        return proc.p2p_port
+
     create_collection(
         peer_uris[0], collection=COLLECTION, shard_number=2, replication_factor=2, sparse_vectors=False,
     )
@@ -62,15 +70,28 @@ def test_resharding_cutoff_does_not_break_wal_delta_recovery(tmp_path: pathlib.P
     source_uri = peer_uris[peer_ids.index(source_id)]
     stream_from_uri = peer_uris[peer_ids.index(stream_from_id)]
 
-    # All writes go through the source peer, so both shards use its clock 0
-    for point_id in range(20):
+    # All writes go through the source peer, so both shards use its clock 0.
+    # Write until both shards hold a point.
+    point_id = 0
+    while True:
         assert_http_ok(_upsert(source_uri, point_id, 0))
-    shard_0_id = scroll_local_points(source_uri, 0, collection=COLLECTION)["points"][0]["id"]
-    shard_1_id = scroll_local_points(stream_from_uri, 1, collection=COLLECTION)["points"][0]["id"]
+        point_id += 1
+        shard_0_points = scroll_local_points(source_uri, 0, collection=COLLECTION)["points"]
+        shard_1_points = scroll_local_points(stream_from_uri, 1, collection=COLLECTION)["points"]
+        if shard_0_points and shard_1_points:
+            break
+    shard_0_id = shard_0_points[0]["id"]
+    shard_1_id = shard_1_points[0]["id"]
 
     # Shard 1's clock runs well ahead of shard 0's
     for n in range(50):
         assert_http_ok(_upsert(source_uri, shard_1_id, n))
+
+    shard_0_tick = _clock_tick(source_uri, 0, source_id)
+    shard_1_tick = _clock_tick(stream_from_uri, 1, source_id)
+    assert shard_1_tick >= shard_0_tick + 40, (
+        f"setup: shard 1 clock ({shard_1_tick}) is not ahead of shard 0 clock ({shard_0_tick})"
+    )
 
     # Resharding down streams shard 1 into the target replica of shard 0, then gets aborted
     assert_http_ok(start_resharding(source_uri, COLLECTION, direction="down"))
@@ -93,18 +114,26 @@ def test_resharding_cutoff_does_not_break_wal_delta_recovery(tmp_path: pathlib.P
         wait_for_collection_resharding_operations_count(uri, COLLECTION, 0)
         wait_for_all_replicas_active(uri, COLLECTION)
 
+    # Restart the target once with no writes in between, so its tick is the one it has on disk
+    target_tick_in_memory = _clock_tick(peer_uris[target], 0, source_id)
+    time.sleep(FLUSH_WAIT_SEC)
+
+    target_port = kill_target()
+    peer_uris[target] = start_peer(
+        peer_dirs[target], f"peer_restart_{target}_0.log", source_uri, port=target_port, extra_env=ENV,
+    )
+    wait_for_peer_online(peer_uris[target])
+    wait_for_all_replicas_active(source_uri, COLLECTION)
+
     target_tick = _clock_tick(peer_uris[target], 0, source_id)
     source_tick = _clock_tick(source_uri, 0, source_id)
     print(f"shard 0 clock tick before the outage: target {target_tick}, source {source_tick}")
-
-    # Clocks only reach disk on a flush, let the target persist them before it gets killed
-    time.sleep(FLUSH_WAIT_SEC)
+    assert target_tick >= target_tick_in_memory, (
+        f"setup: target clocks were not flushed ({target_tick} on disk, {target_tick_in_memory} in memory)"
+    )
 
     # Target goes down and misses writes to shard 0
-    target_proc = peer_procs[target]
-    target_port = target_proc.p2p_port
-    processes.remove(target_proc)
-    target_proc.kill()
+    target_port = kill_target(target_port)
 
     _upsert(source_uri, shard_0_id, 1)  # may fail while the target gets deactivated
     wait_for(check_some_replicas_not_active, source_uri, COLLECTION)
@@ -116,7 +145,7 @@ def test_resharding_cutoff_does_not_break_wal_delta_recovery(tmp_path: pathlib.P
 
     # Target comes back and recovers shard 0 from the source
     peer_uris[target] = start_peer(
-        peer_dirs[target], f"peer_restart_{target}.log", source_uri, port=target_port, extra_env=ENV,
+        peer_dirs[target], f"peer_restart_{target}_1.log", source_uri, port=target_port, extra_env=ENV,
     )
     wait_for_peer_online(peer_uris[target])
     wait_for_all_replicas_active(source_uri, COLLECTION)
