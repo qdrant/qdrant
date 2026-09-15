@@ -38,7 +38,7 @@ mod create_postings;
 mod on_disk_postings;
 pub mod on_disk_postings_enum;
 mod raw_posting_list;
-pub(in crate::index::field_index::full_text_index) mod types;
+pub mod types;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
@@ -61,27 +61,25 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
 pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
-    pub(in crate::index::field_index::full_text_index) path: PathBuf,
-    pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
+    pub path: PathBuf,
+    pub storage: Storage<S>,
     /// Whether the "no values" mask was read from the compact
     /// `deleted_mask.bin` or the legacy `deleted_points.dat`.
     compact_deleted_mask: bool,
 }
 
-pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
-    pub(in crate::index::field_index::full_text_index) postings: OnDiskPostingsEnum<S>,
-    pub(in crate::index::field_index::full_text_index) vocab: UniversalHashMap<str, TokenId, S>,
-    pub(in crate::index::field_index::full_text_index) point_to_tokens_count:
-        TypedStorage<S, usize>,
+pub struct Storage<S: UniversalRead = MmapFile> {
+    pub postings: OnDiskPostingsEnum<S>,
+    pub vocab: UniversalHashMap<str, TokenId, S>,
+    pub point_to_tokens_count: TypedStorage<S, usize>,
     /// Total tokens per point, for BM25 length normalization. `None` when the
     /// index does not record lengths.
     ///
     /// Written once at build time and never masked, like
     /// `point_to_tokens_count`, so anything summing these must filter through
     /// `deleted_points` first.
-    pub(in crate::index::field_index::full_text_index) point_to_doc_len:
-        Option<TypedStorage<S, u32>>,
-    pub(in crate::index::field_index::full_text_index) deleted_points: DeletedBitVec,
+    pub point_to_doc_len: Option<TypedStorage<S, u32>>,
+    pub deleted_points: DeletedBitVec,
 }
 
 impl<S: UniversalRead> Storage<S> {
