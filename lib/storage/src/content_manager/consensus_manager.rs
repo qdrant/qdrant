@@ -398,16 +398,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         loop {
             let unapplied_index = self.persistent.read().current_unapplied_entry();
+
             let Some(entry_index) = unapplied_index else {
                 break;
             };
+
             log::debug!("Applying committed entry with index {entry_index}");
+
             let entry = self
                 .wal
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
+
             let apply_started = Instant::now();
+
             let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
                 false
@@ -415,53 +420,67 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
                         let operation_result = self.apply_normal_entry(&entry);
+
                         match operation_result {
-                            Ok(result) => {
+                            Ok(status) => {
                                 log::debug!(
-                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                                    "Successfully applied consensus operation entry. \
+                                     Index: {}, status: {status}",
                                     entry.index,
                                 );
+
                                 false
                             }
+
                             Err(err @ StorageError::ServiceError { .. }) => {
                                 // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
                                 return Err(err)
                                     .context("Failed to apply collection meta operation entry");
                             }
+
                             Err(err) => {
                                 log::warn!(
                                     "Failed to apply collection meta operation entry with user error: {err}",
                                 );
+
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
                                 false
                             }
                         }
                     }
+
                     EntryType::EntryConfChangeV2 => {
                         let stop_consensus = self
                             .apply_conf_change_entry(&entry, raw_node)
                             .context("Failed to apply configuration change entry")?;
+
                         log::debug!(
-                            "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
+                            "Successfully applied configuration change entry. \
+                             Index: {}, stop consensus: {stop_consensus}",
                             entry.index,
-                            stop_consensus
                         );
+
                         stop_consensus
                     }
+
                     ty @ EntryType::EntryConfChange => {
                         return Err(anyhow!("Unexpected entry type: {ty:?}"));
                     }
                 }
             };
+
             if stop_consensus {
                 return Ok(stop_consensus);
             }
+
             self.persistent
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
+
             self.applied_log.record(&entry, apply_started.elapsed());
         }
+
         Ok(false) // do not stop consensus
     }
 
