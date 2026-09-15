@@ -2147,4 +2147,55 @@ mod tests {
         )
         .unwrap_err();
     }
+
+    /// A resharding transfer sets the target shard's cutoff from the source shard's clocks.
+    /// Those clocks count another shard's operations, so they must not make a later WAL delta
+    /// skip operations the target never received.
+    #[tokio::test]
+    async fn test_resharding_cutoff_does_not_skip_missed_operations() {
+        const PEER: u64 = 1;
+
+        async fn write(wals: &[&RecoverableWal], tick: u64, id: u64) {
+            let operation =
+                OperationWithClockTag::new(mock_operation(id), Some(ClockTag::new(PEER, 0, tick)));
+            for wal in wals {
+                let (_, _) = wal.lock_and_write(&mut operation.clone()).await.unwrap();
+            }
+        }
+
+        // Shard 0 has two replicas, `source` and `target`. Shard 3 is the resharding source.
+        let (source_wal, _source_dir) = fixture_empty_wal();
+        let (target_wal, _target_dir) = fixture_empty_wal();
+        let (shard_3_wal, _shard_3_dir) = fixture_empty_wal();
+
+        // Both shard 0 replicas apply ticks 1..=3
+        for tick in 1..=3 {
+            write(&[&source_wal, &target_wal], tick, tick).await;
+        }
+
+        // The same clock ticked further on shard 3
+        for tick in 1..=10 {
+            write(&[&shard_3_wal], tick, 100 + tick).await;
+        }
+
+        // Resharding streams shard 3 into the target replica of shard 0 and sets its cutoff
+        target_wal
+            .update_cutoff(&shard_3_wal.recovery_point().await)
+            .await;
+
+        // Target goes down, shard 0 keeps taking ticks 4..=12 on the source only
+        for tick in 4..=12 {
+            write(&[&source_wal], tick, tick).await;
+        }
+
+        // Tick 4 is WAL record 3 on the source; the delta must include it
+        let delta = source_wal
+            .resolve_wal_delta(target_wal.recovery_point().await)
+            .await;
+        match delta {
+            Ok(Some(from)) => assert!(from <= 3, "delta starts at {from}, skipping ticks 4..=10"),
+            Ok(None) => panic!("empty delta, target is missing ticks 4..=12"),
+            Err(_) => {} // Refusing a WAL delta is fine, it falls back to a full transfer
+        }
+    }
 }
