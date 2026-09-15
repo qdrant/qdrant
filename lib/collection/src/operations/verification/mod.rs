@@ -427,6 +427,7 @@ mod test {
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
         test_request_exact(&collection).await;
+        test_facet_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
     }
@@ -523,6 +524,26 @@ mod test {
             exact: false,
         };
         assert_strict_mode_success(request, collection).await;
+    }
+
+    async fn test_facet_exact(collection: &Collection) {
+        use segment::data_types::facets::FacetParams;
+        use segment::json_path::JsonPath;
+
+        let facet_params = |exact: bool| FacetParams {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: 1,
+            filter: None,
+            exact,
+        };
+
+        // exact = true must be rejected when strict mode disallows exact search.
+        // The gRPC facet API is verified through `FacetParams`, so this is the
+        // impl that decides whether gRPC facet requests honor search_allow_exact.
+        assert_strict_mode_error(facet_params(true), collection).await;
+
+        // exact = false (also the default) passes
+        assert_strict_mode_success(facet_params(false), collection).await;
     }
 
     async fn test_search_batch_limit(collection: &Collection) {
