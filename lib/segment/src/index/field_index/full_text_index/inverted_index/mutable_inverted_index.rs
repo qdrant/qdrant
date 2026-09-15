@@ -21,14 +21,13 @@ pub struct MutableInvertedIndex {
     /// Must be enabled explicitly.
     pub point_to_doc: Option<Vec<Option<Document>>>,
 
-    /// Total tokens per point, for BM25 length normalization. `None` when this
-    /// index does not record lengths. Unlike `point_to_tokens`, which holds the
-    /// *distinct* tokens, this counts every token the tokenizer kept.
-    pub(in crate::index::field_index::full_text_index) point_to_doc_len: Option<Vec<u32>>,
+    /// Per-point token counts, including repetitions, used as document lengths in BM25.
+    /// `None` when length recording is disabled.
+    pub point_to_doc_len: Option<Vec<u32>>,
 
-    /// Sum of `point_to_doc_len` over live points, so `avgdl` is a division
-    /// rather than a scan.
-    pub(in crate::index::field_index::full_text_index) total_tokens: u64,
+    /// Total token count across live points.
+    /// Divide by `points_count` to get the average document length for BM25.
+    pub total_tokens: u64,
     pub(super) points_count: usize,
 }
 
@@ -56,7 +55,7 @@ impl MutableInvertedIndex {
 
     /// Whether this index records document lengths. Keyed off the data rather
     /// than the config, so a caller cannot measure a length it cannot store.
-    pub(in crate::index::field_index::full_text_index) fn records_doc_len(&self) -> bool {
+    pub fn records_doc_len(&self) -> bool {
         self.point_to_doc_len.is_some()
     }
 
@@ -64,21 +63,12 @@ impl MutableInvertedIndex {
     /// does not double-count in `total_tokens`. The only writer, so that every
     /// path agrees on what a record without a length means: `None` zeroes the
     /// slot rather than leaving a stale value behind.
-    pub(in crate::index::field_index::full_text_index) fn set_doc_len(
-        &mut self,
-        point_id: PointOffsetType,
-        doc_len: Option<u32>,
-        hw_counter: &HardwareCounterCell,
-    ) {
+    pub(super) fn set_doc_len(&mut self, point_id: PointOffsetType, doc_len: Option<u32>) {
         let Some(point_to_doc_len) = self.point_to_doc_len.as_mut() else {
             return;
         };
         let needed = point_id as usize + 1;
         if point_to_doc_len.len() < needed {
-            hw_counter
-                .payload_index_io_write_counter()
-                .write_back_counter()
-                .incr_delta((needed - point_to_doc_len.len()) * size_of::<u32>());
             point_to_doc_len.resize(needed, 0);
         }
         let doc_len = doc_len.unwrap_or(0);
@@ -168,7 +158,7 @@ impl MutableInvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
-        self.set_doc_len(point_id, doc_len, hw_counter);
+        self.set_doc_len(point_id, doc_len);
 
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
@@ -188,21 +178,12 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         tokens: TokenSet,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.points_count += 1;
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         if self.point_to_tokens.len() <= point_id as usize {
             let new_len = point_id as usize + 1;
-
-            // Only measure the overhead of `TokenSet` here since we account for the tokens a few lines below.
-            hw_cell_wb
-                .incr_delta((new_len - self.point_to_tokens.len()) * size_of::<Option<TokenSet>>());
-
             self.point_to_tokens.resize_with(new_len, Default::default);
         }
 
@@ -211,11 +192,9 @@ impl InvertedIndex for MutableInvertedIndex {
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                hw_cell_wb.incr_delta((new_len - self.postings.len()) * size_of::<PostingList>());
                 self.postings.resize_with(new_len, Default::default);
             }
 
-            hw_cell_wb.incr_delta(size_of_val(&point_id));
             self.postings
                 .get_mut(token_idx_usize)
                 .expect("posting must exist")
@@ -230,23 +209,16 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         ordered_document: Document,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(point_to_doc) = &mut self.point_to_doc else {
             // Phrase matching is not enabled
             return Ok(());
         };
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         // Ensure container has enough capacity
         if point_id as usize >= point_to_doc.len() {
             let new_len = point_id as usize + 1;
-
-            hw_cell_wb.incr_delta((new_len - point_to_doc.len()) * size_of::<Option<Document>>());
-
             point_to_doc.resize_with(new_len, Default::default);
         }
 

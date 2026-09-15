@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::InvertedIndex;
@@ -35,8 +34,7 @@ impl MutableInvertedIndexBuilder {
                 point_to_doc.resize_with(idx as usize + 1, Default::default);
             }
         }
-        self.index
-            .set_doc_len(idx, doc_len, &HardwareCounterCell::disposable());
+        self.index.set_doc_len(idx, doc_len);
 
         let tokens = self.index.register_tokens(str_tokens);
 
