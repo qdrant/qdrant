@@ -79,7 +79,7 @@ urlencoding = { workspace = true }
 
 config = { version = "0.15.22", default-features = false, features = ["yaml"] }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
 tokio-util = { workspace = true }
 
 actix-cors = "0.7.1"
@@ -298,7 +298,7 @@ tap = "1.0.1"
 tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.52.3", features = ["fs", "io-std", "io-util", "macros", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
 tonic = { version = "0.14.6", features = ["gzip", "tls-ring"] }
 tonic-prost = { version = "0.14.6" }
