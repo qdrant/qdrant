@@ -57,15 +57,18 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     }
 
     pub fn wipe(self) -> OperationResult<()> {
-        let files = self.inverted_index.files();
         let path = self.inverted_index.path.clone();
         // drop mmap handles before deleting files
         drop(self);
-        for file in files {
-            fs::remove_file(file)?;
+        // Remove the directory rather than the files `files()` reports. That
+        // list carries the `doc_len` sidecar only when the index loaded it, so
+        // a truncated one is omitted, and deleting file by file would leave it
+        // behind and keep the directory alive.
+        match fs::remove_dir_all(&path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
         }
-        let _ = fs::remove_dir(path);
-        Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) {
