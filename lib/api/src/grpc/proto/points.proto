@@ -67,7 +67,8 @@ message Document {
 }
 
 message Image {
-  // Image data, either base64 encoded or URL
+  // Image data, either base64 encoded or URL. Must be set: the server rejects a
+  // request without it
   Value image = 1;
   // Model name
   string model = 2;
@@ -76,7 +77,7 @@ message Image {
 }
 
 message InferenceObject {
-  // Object to infer
+  // Object to infer. Must be set: the server rejects a request without it
   Value object = 1;
   // Model name
   string model = 2;
@@ -1629,10 +1630,13 @@ message PointsIdsList {
 // ---------------------------------------------
 
 message PointStruct {
+  // Must be set: the server rejects a point without an id
   PointId id = 1;
   // deprecated "vector" field
   reserved 2;
   map<string, Value> payload = 3;
+  // Optional on the wire, but required in practice: the server rejects a point
+  // without vectors
   optional Vectors vectors = 4;
 }
 
