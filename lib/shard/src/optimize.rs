@@ -407,27 +407,29 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 
     // Apply index changes before point deletions
     // Point deletions bump the segment version, can cause index changes to be ignored
-    let old_optimized_segment_version = optimized_segment.version();
+    //
+    // This artificially bumps the operation version to be at least as high as the current segment
+    // version. This way we make sure the segment does not ignore the operation. Alternatively we
+    // can interleave index, vector name and deletion changes and apply them in exactly the same
+    // order they arrive, but that requires more complex changes.
     for (field_name, change) in index_changes.iter_ordered() {
-        debug_assert!(
-            change.version() >= old_optimized_segment_version,
-            "proxied index change should have newer version than segment",
-        );
         match change {
             ProxyIndexChange::Create(schema, version) => {
+                let op_num = max(*version, optimized_segment.version());
                 optimized_segment.create_field_index(
-                    *version,
+                    op_num,
                     field_name,
                     Some(schema),
                     hw_counter,
                 )?;
             }
             ProxyIndexChange::Delete(version) => {
-                optimized_segment.delete_field_index(*version, field_name)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_field_index(op_num, field_name)?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment
-                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_field_index_if_incompatible(op_num, field_name, schema)?;
             }
         }
         check_process_stopped(stopped)?;
@@ -525,31 +527,33 @@ fn finish_optimization(
 
     // Apply vector name changes before index and point changes
     // New named vectors must exist before indexes or points reference them
-    let old_optimized_segment_version = optimized_segment.version();
+    //
+    // This artificially bumps the operation version to be at least as high as the current segment
+    // version. This way we make sure the segment does not ignore the operation. Alternatively we
+    // can interleave index, vector name and deletion changes and apply them in exactly the same
+    // order they arrive, but that requires more complex changes.
     let vector_name_changes = proxy_vector_name_changes(&locked_proxies);
     for (vector_name, intent) in vector_name_changes.iter_ordered() {
-        debug_assert!(
-            intent.version() >= old_optimized_segment_version,
-            "proxied vector name change should have newer version than segment",
-        );
         match intent {
             IntendedVector::Absent { version } => {
-                optimized_segment.delete_vector_name(*version, vector_name)?;
+                let op_num = max(*version, optimized_segment.version());
+                optimized_segment.delete_vector_name(op_num, vector_name)?;
             }
             IntendedVector::Present {
                 config,
                 version,
                 supersedes_wrapped,
             } => {
+                let op_num = max(*version, optimized_segment.version());
                 if *supersedes_wrapped {
                     // The optimised segment was built from the wrapped data,
                     // so it currently carries the *old* schema for this name.
                     // `create_vector_name_impl` is idempotent and would
                     // silently keep that old storage; clear it first so the
                     // new schema actually takes effect.
-                    optimized_segment.delete_vector_name(*version, vector_name)?;
+                    optimized_segment.delete_vector_name(op_num, vector_name)?;
                 }
-                optimized_segment.create_vector_name(*version, vector_name, config)?;
+                optimized_segment.create_vector_name(op_num, vector_name, config)?;
             }
         }
         check_process_stopped(stopped)?;
@@ -1131,6 +1135,83 @@ mod tests {
         assert!(
             !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred),
             "point delete must land on the optimized segment",
+        );
+    }
+
+    #[test]
+    fn finish_optimization_propagates_stale_version_schema() {
+        use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+        use segment::data_types::vectors::only_default_vector;
+        use segment::entry::SegmentEntry;
+        use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        // Optimized segment with a higher version than the queued proxy operations (e.g. 50)
+        let mut optimized_segment = build_segment_1(dir.path());
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        optimized_segment
+            .upsert_point(50, 10.into(), only_default_vector(&vec), &hw_counter)
+            .unwrap();
+
+        let mut proxy = ProxySegment::new(wrapped.clone());
+
+        // Queue named vector and payload index on proxy with version < 50
+        let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+            size: 4,
+            distance: Distance::Dot,
+            multivector_config: None,
+            datatype: None,
+        });
+        proxy
+            .create_vector_name(20, "extra_vector", &vector_config)
+            .unwrap();
+
+        let field_name: PayloadKeyType = "color".parse().unwrap();
+        let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+        proxy
+            .create_field_index(25, &field_name, Some(&field_schema), &hw_counter)
+            .unwrap();
+
+        let holder = LockedSegmentHolder::new(holder);
+        let locked_proxy = LockedSegment::from(proxy);
+        holder
+            .write()
+            .replace(segment_id, locked_proxy.clone())
+            .unwrap();
+
+        finish_optimization(
+            &holder,
+            vec![locked_proxy],
+            optimized_segment,
+            &DeletedPoints::new(),
+            &[segment_id],
+            None,
+            &AtomicBool::new(false),
+            &hw_counter,
+        )
+        .unwrap();
+
+        let result_segment = holder.read().iter().next().unwrap().1.clone();
+        let result_segment = result_segment.get();
+        let result_segment = result_segment.read();
+
+        assert!(
+            result_segment
+                .config()
+                .vector_data
+                .contains_key("extra_vector"),
+            "stale-versioned named vector change must land on the optimized segment",
+        );
+        assert_eq!(
+            result_segment.get_indexed_fields().get(&field_name),
+            Some(&field_schema),
+            "payload index change must land on the optimized segment",
         );
     }
 }
