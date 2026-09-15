@@ -9,7 +9,7 @@ use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{Order, ScoredPoint, WithPayload, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::time::Instant;
 
@@ -220,7 +220,7 @@ impl Collection {
             return Ok(empty_batch_results(requests_batch.len()));
         }
 
-        let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
+        let is_payload_required = requests_batch.iter().all(|s| s.with_payload.enable);
         let with_vectors = requests_batch.iter().all(|s| s.with_vector.is_enabled());
 
         let metadata_required = is_payload_required || with_vectors;
@@ -245,7 +245,12 @@ impl Collection {
         let is_required_transfer_large_enough =
             require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
 
-        if metadata_required && is_required_transfer_large_enough {
+        // Keep indexed candidate projections on the shard, where the indexes
+        // are available; the separate retrieve request fetches exact payloads.
+        let prefer_payload_index = requests_batch
+            .iter()
+            .any(|request| request.with_payload.prefer_payload_index);
+        if metadata_required && is_required_transfer_large_enough && !prefer_payload_index {
             // If there is a significant offset, we need to retrieve the whole result
             // set without payload first and then retrieve the payload.
             // It is required to do this because the payload might be too large to send over the
@@ -253,7 +258,7 @@ impl Collection {
             let mut without_payload_requests = Vec::with_capacity(requests_batch.len());
             for query in &requests_batch {
                 let mut without_payload_request = query.clone();
-                without_payload_request.with_payload = WithPayloadInterface::Bool(false);
+                without_payload_request.with_payload = WithPayload::from(false);
                 without_payload_request.with_vector = WithVector::Bool(false);
                 without_payload_requests.push(without_payload_request);
             }
@@ -274,7 +279,7 @@ impl Collection {
                 |(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
-                        Some(req.with_payload),
+                        Some(WithPayloadInterface::from(req.with_payload)),
                         req.with_vector,
                         read_consistency,
                         routing_token,

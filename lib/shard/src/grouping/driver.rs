@@ -216,7 +216,7 @@ mod tests {
     use common::types::ScoreType;
     use segment::data_types::groups::GroupId;
     use segment::payload_json;
-    use segment::types::{WithPayloadInterface, WithVector};
+    use segment::types::{WithPayload, WithPayloadInterface, WithVector};
 
     use super::*;
 
@@ -233,7 +233,7 @@ mod tests {
             offset: 0,
             params: None,
             with_vector: WithVector::Bool(false),
-            with_payload: WithPayloadInterface::Bool(false),
+            with_payload: WithPayload::from(false),
         }
     }
 
@@ -274,7 +274,7 @@ mod tests {
         assert!(request.filter.is_some());
         assert_eq!(
             request.with_payload,
-            WithPayloadInterface::Fields(vec!["g".parse().unwrap()])
+            WithPayload::from(WithPayloadInterface::Fields(vec!["g".parse().unwrap()]))
         );
 
         // One incomplete group left after the response, but the budget is spent.

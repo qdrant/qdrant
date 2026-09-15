@@ -1,5 +1,5 @@
 use segment::data_types::order_by::OrderBy;
-use segment::types::{Filter, WithPayloadInterface, WithVector};
+use segment::types::{Filter, WithPayload, WithVector};
 
 use crate::operation_rate_cost;
 
@@ -13,7 +13,7 @@ pub struct QueryScrollRequestInternal {
     pub filter: Option<Filter>,
 
     /// Select which payload to return with the response. Default is true.
-    pub with_payload: WithPayloadInterface,
+    pub with_payload: WithPayload,
 
     /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: WithVector,

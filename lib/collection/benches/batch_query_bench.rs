@@ -24,7 +24,8 @@ use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, Payload, Range, WithPayloadInterface, WithVector,
+    Condition, Distance, FieldCondition, Filter, Payload, Range, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use serde_json::Map;
 use shard::search::CoreSearchRequestBatch;
@@ -176,7 +177,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             params: None,
                             limit: 10,
                             offset: 0,
-                            with_payload: WithPayloadInterface::Bool(true),
+                            with_payload: WithPayload::from(true),
                             with_vector: WithVector::Bool(false),
                             score_threshold: None,
                         };
@@ -277,7 +278,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                             params: None,
                             limit: 10,
                             offset: 0,
-                            with_payload: WithPayloadInterface::Bool(true),
+                            with_payload: WithPayload::from(true),
                             with_vector: WithVector::Bool(false),
                             score_threshold: None,
                         };
@@ -334,7 +335,7 @@ fn batch_rescore_bench(c: &mut Criterion) {
                             params: None,
                             limit: 10,
                             offset: 0,
-                            with_payload: WithPayloadInterface::Bool(true),
+                            with_payload: WithPayload::from(true),
                             with_vector: WithVector::Bool(false),
                             score_threshold: None,
                         };

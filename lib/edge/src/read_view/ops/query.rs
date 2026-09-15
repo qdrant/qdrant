@@ -12,9 +12,7 @@ use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use segment::types::{
-    Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayload, WithVector};
 use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
@@ -401,11 +399,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
-        with_payload: WithPayloadInterface,
+        with_payload: WithPayload,
         with_vector: WithVector,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<ShardQueryResponse> {
-        if !with_payload.is_required() && !with_vector.is_enabled() {
+        if !with_payload.enable && !with_vector.is_enabled() {
             return Ok(query_response);
         }
 
@@ -419,7 +417,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let records_map = retrieve_over(
             self.segment_arcs(),
             &point_ids,
-            &WithPayload::from(with_payload),
+            &with_payload,
             &with_vector,
             &AtomicBool::new(false),
             hw_measurement_acc,

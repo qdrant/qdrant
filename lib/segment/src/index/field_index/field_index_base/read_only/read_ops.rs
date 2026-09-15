@@ -16,7 +16,8 @@ use crate::index::field_index::numeric_index::{
     NumericFieldIndexRead, NumericIndexRead, ReadOnlyNumericFieldIndex,
 };
 use crate::index::field_index::{
-    CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition, PayloadFieldIndexRead,
+    CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
+    PayloadFieldIndexRead, PayloadValueRetriever, payload_value_retriever,
 };
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -238,6 +239,38 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             }
             ReadOnlyFieldIndex::UuidMapIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::NullIndex(idx) => NullIndexRead::values_is_empty(idx, point_id)?,
+        })
+    }
+
+    fn payload_value_retriever<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<PayloadValueRetriever<'a>>> {
+        Ok(match self {
+            ReadOnlyFieldIndex::KeywordIndex(index) => {
+                Some(payload_value_retriever::keyword(index, hw_counter))
+            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => {
+                Some(payload_value_retriever::integer(index, hw_counter))
+            }
+            ReadOnlyFieldIndex::IntIndex(index) => Some(Box::new(move |point_id| {
+                payload_value_retriever::collect(
+                    |visit| index.check_values_any(point_id, visit, hw_counter),
+                    |value| Some(Value::from(*value)),
+                )
+            })),
+            // The remaining indexes normalize what they store — uuid case,
+            // datetime offsets, float formatting — or hold no values to return
+            // at all, so their projection would disagree with the exact payload
+            // that a segment without this index returns.
+            ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => None,
         })
     }
 

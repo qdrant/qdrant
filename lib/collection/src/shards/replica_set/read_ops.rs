@@ -249,13 +249,24 @@ impl ShardReplicaSet {
 
     pub async fn query_batch(
         &self,
-        requests: Arc<Vec<ShardQueryRequest>>,
+        mut requests: Arc<Vec<ShardQueryRequest>>,
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        // Replica resolution compares payloads; an index projection and an
+        // exact fallback can differ even when stored documents are identical.
+        if read_consistency.unwrap_or_default() != ReadConsistency::Factor(1)
+            && requests
+                .iter()
+                .any(|request| request.with_payload.prefer_payload_index)
+        {
+            for request in Arc::make_mut(&mut requests) {
+                request.with_payload.prefer_payload_index = false;
+            }
+        }
         self.execute_and_resolve_read_operation(
             |shard| {
                 let requests = Arc::clone(&requests);

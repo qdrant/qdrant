@@ -28,6 +28,36 @@ use crate::types::{FieldCondition, IntPayloadType, Memory, PayloadKeyType, UuidI
 /// `usize` boundary). 4096 bits comfortably covers all current tests.
 const TEST_DELETED_BITS: usize = 4096;
 
+#[test]
+fn payload_index_projection_propagates_read_error() {
+    use crate::index::field_index::payload_value_retriever;
+
+    let dir = Builder::new().prefix("bad_projection").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&[vec![42]], dir.path(), IndexType::Mmap, |value| {
+        Value::from(*value)
+    });
+
+    // Point the range table past EOF, without truncating an active mmap.
+    // Opening the index only reads the header; accessing values must fail.
+    let path = dir.path().join("point_to_values.bin");
+    let mut bytes = fs_err::read(&path).unwrap();
+    let outside_file = bytes.len() as u64 + 64;
+    bytes[..8].copy_from_slice(&outside_file.to_ne_bytes());
+    fs_err::write(path, bytes).unwrap();
+
+    let index =
+        MapIndex::<IntPayloadType>::new_immutable(dir.path(), Memory::Cold, &empty_deleted())
+            .unwrap()
+            .unwrap();
+    let hw = HardwareCounterCell::new();
+    assert!(index.get_values(0, &hw).is_none());
+    let retrieve = payload_value_retriever::integer(&index, &hw);
+    assert!(
+        retrieve(0).is_err(),
+        "index read errors must not become an empty payload"
+    );
+}
+
 /// All-zero deletion bitslice for tests that don't care about deletions.
 fn empty_deleted() -> BitVec {
     BitVec::repeat(false, TEST_DELETED_BITS)

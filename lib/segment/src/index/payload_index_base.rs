@@ -30,12 +30,26 @@ pub enum BuildIndexResult {
     IncompatibleSchema,
 }
 
+pub type IndexedPayloadRetriever<'a> =
+    Box<dyn Fn(PointOffsetType) -> OperationResult<Payload> + 'a>;
+
 /// Read-only trait for payload index.
 ///
 /// Defines all read operations on the payload index. Search and retrieval logic
 /// only requires this trait, which makes it possible to implement read-only
 /// segments without duplicating index code.
 pub trait PayloadIndexRead {
+    /// Prepare an internal index-backed projection, or request exact fallback.
+    /// The closure is built once per segment and invoked after point-version
+    /// resolution, so it reads the same point offsets as ordinary retrieval.
+    fn indexed_payload_retriever<'a>(
+        &'a self,
+        _fields: &[JsonPath],
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> OperationResult<Option<IndexedPayloadRetriever<'a>>> {
+        Ok(None)
+    }
+
     /// Get indexed fields
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
