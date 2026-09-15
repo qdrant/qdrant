@@ -2,14 +2,12 @@ use std::cmp;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::iterator_ext::IteratorExt;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
 use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint};
-use shard::common::stopping_guard::StoppingGuard;
-use shard::query::query_context::init_query_context;
+use shard::query::query_context::init_query_context_with_stopping_flag;
 use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
 use shard::search_result_aggregator::BatchResultAggregator;
@@ -19,6 +17,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// This method is DEPRECATED and should be replaced with query.
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let [points] =
             self.search_batch(&[search])?
                 .try_into()
@@ -45,15 +44,15 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        self.check_stopped()?;
         if searches.is_empty() {
             return Ok(Vec::new());
         }
 
-        let is_stopped_guard = StoppingGuard::new();
-        let query_context = init_query_context(
+        let query_context = init_query_context_with_stopping_flag(
             searches,
             DEFAULT_FULL_SCAN_THRESHOLD,
-            &is_stopped_guard,
+            self.is_stopped.clone(),
             HwMeasurementAcc::disposable_edge(),
             |vector_name| {
                 self.config
@@ -69,11 +68,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .map(|search| self.config.get_distance(search.query.get_vector_name()))
             .collect::<OperationResult<Vec<_>>>()?;
 
-        let Some(context) = fill_query_context_over(
-            query_context,
-            &self.segments,
-            &is_stopped_guard.get_is_stopped(),
-        )?
+        let Some(context) =
+            fill_query_context_over(query_context, &self.segments, &self.is_stopped)?
         else {
             // No segments to search
             return Ok(vec![Vec::new(); searches.len()]);
@@ -90,6 +86,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
             let mut points_by_request = Vec::with_capacity(searches.len());
             for group in &groups {
+                self.check_stopped()?;
                 let query_vectors: Vec<_> = group.query_vectors.iter().collect();
                 let batched_points = segment.search_batch(
                     group.params.vector_name,
@@ -114,6 +111,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         aggregator.update_point_versions(points_by_segment.iter().flatten().flatten());
 
         for points_by_request in points_by_segment {
+            self.check_stopped()?;
             for (request_idx, points) in points_by_request.into_iter().enumerate() {
                 aggregator.update_batch_results(request_idx, points);
             }
@@ -185,11 +183,13 @@ fn fill_query_context_over<H: ReadSegmentHandle>(
         return Ok(None);
     }
 
-    for segment in segments.iter().stop_if(is_stopped) {
+    for segment in segments {
+        check_process_stopped(is_stopped)?;
         segment
             .read_segment()
             .fill_query_context(&mut query_context)?;
     }
 
+    check_process_stopped(is_stopped)?;
     Ok(Some(query_context))
 }
