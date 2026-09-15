@@ -1873,6 +1873,7 @@ where
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
+#[cfg_attr(any(test, feature = "testing"), derive(exhaustive::Exhaustive))]
 #[serde(rename_all = "snake_case")]
 pub enum Memory {
     // Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
