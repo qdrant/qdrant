@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use common::flags::{FeatureFlags, init_feature_flags};
+use common::tar_unpack::tar_unpack_file;
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
@@ -2793,9 +2794,7 @@ fn restore_snapshotted_segment(snapshot_file: &Path, segment_uuid: uuid::Uuid) -
     use segment::segment_constructor::load_segment;
 
     let restore_dir = Builder::new().prefix("restore_dir").tempdir().unwrap();
-    tar::Archive::new(fs_err::File::open(snapshot_file).unwrap())
-        .unpack(restore_dir.path())
-        .unwrap();
+    tar_unpack_file(snapshot_file, restore_dir.path()).unwrap();
     let restored_path = restore_dir
         .path()
         .join(segment_uuid.to_string())

@@ -1241,6 +1241,7 @@ mod tests {
     }
 
     thread_local! {
+        #[allow(clippy::type_complexity)]
         pub(super) static BEFORE_VERSION_SAVE_HOOK: std::cell::RefCell<
             Option<Box<dyn FnMut() -> OperationResult<()>>>,
         > = const { std::cell::RefCell::new(None) };
@@ -1287,7 +1288,7 @@ mod tests {
 
         let optimized_segment = build_segment_1(dir.path());
         let optimized_path = optimized_segment.segment_path.clone();
-        std::fs::remove_file(optimized_path.join(VERSION_FILE)).unwrap();
+        fs_err::remove_file(optimized_path.join(VERSION_FILE)).unwrap();
 
         let mut proxy = ProxySegment::new(wrapped.clone());
 
