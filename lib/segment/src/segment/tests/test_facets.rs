@@ -258,3 +258,76 @@ fn sampling_selective_filter_iterates_filter() {
     assert!(hits.len() < N_FILTER_ITER);
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
+
+/// Fixture with multi-valued `tag`: every point carries one shared value
+/// (`common_{i % 50}`, 50 distinct) plus one point-unique value
+/// (`unique_{i}`). Points pass a candidate-merged filter via the common
+/// value, so the other value they carry must not be counted unless it was
+/// itself sampled as a candidate.
+#[cfg(not(windows))]
+fn build_segment_multi_tags_n(n: usize) -> (TempDir, Segment) {
+    let hw_counter = HardwareCounterCell::new();
+    let dir = Builder::new().prefix("facet_segment_multi").tempdir().unwrap();
+
+    let dim = 2;
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let vector: Vec<f32> = (0..dim).map(|i| i as f32 / 10.0).collect();
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
+
+    let mut op = 0u64;
+    for i in 0..n {
+        let point_id = PointIdType::from(i as u64 + 1);
+        segment
+            .insert_new_vectors(point_id, op, &vectors, &hw_counter)
+            .unwrap();
+        op += 1;
+
+        let payload = payload_json! {
+            TAG_KEY: [format!("common_{}", i % 50), format!("unique_{i}")],
+            SEQ_KEY: i as f64,
+        };
+        segment
+            .set_full_payload(op, point_id, &payload, &hw_counter)
+            .unwrap();
+        op += 1;
+    }
+
+    for (key, schema) in [
+        (TAG_KEY, PayloadSchemaType::Keyword),
+        (SEQ_KEY, PayloadSchemaType::Float),
+    ] {
+        segment
+            .create_field_index(
+                op,
+                &JsonPath::new(key),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+                &hw_counter,
+            )
+            .unwrap();
+        op += 1;
+    }
+
+    (dir, segment)
+}
+
+/// sampling → filter iter must count only sampled candidates. A point passes
+/// the merged filter via its `common_*` value, so hashing every value it
+/// carries leaks its `unique_*` value into the result. Candidates are capped
+/// at `sample_target = max(LIMIT * 10, 1000) = 1000`; the leak adds up to one
+/// never-sampled value per matched point (≈ 9% of 200k here) on top.
+#[cfg(not(windows))]
+#[test]
+fn sampling_selective_filter_counts_only_candidates() {
+    let (_dir, segment) = build_segment_multi_tags_n(N_FILTER_ITER);
+    let filter = seq_below(N_FILTER_ITER * 9 / 100);
+
+    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+
+    assert!(!hits.is_empty());
+    assert!(
+        hits.len() <= 1000,
+        "filter-iter must hash only sampled candidates, got {} values",
+        hits.len()
+    );
+    assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
+}
