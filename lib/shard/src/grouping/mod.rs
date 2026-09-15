@@ -80,8 +80,10 @@ fn shape_candidates_query(
     query.with_payload = group_by_to_payload_selector(group_by);
 }
 
+/// Recursively scale prefetch limits by `group_size` using saturating multiplication,
+/// ensuring enough candidate points survive every rescoring stage without arithmetic overflow.
 fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
-    shard_prefetch.limit *= group_size;
+    shard_prefetch.limit = shard_prefetch.limit.saturating_mul(group_size);
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
         increase_limit_for_group(prefetch, group_size);
     });
@@ -134,4 +136,32 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
     }
 
     any_variants
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_increase_limit_for_group_saturates_on_overflow() {
+        let mut prefetch = ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![],
+                query: None,
+                limit: usize::MAX,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: None,
+            limit: usize::MAX,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+
+        increase_limit_for_group(&mut prefetch, 2);
+        assert_eq!(prefetch.limit, usize::MAX);
+        assert_eq!(prefetch.prefetches[0].limit, usize::MAX);
+    }
 }
