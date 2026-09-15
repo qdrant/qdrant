@@ -35,11 +35,20 @@ impl FullTextIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
+        let scoring = config.scoring();
         let Some(on_disk_index) =
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
         else {
             return Ok(None);
         };
+
+        // Lengths cannot be recovered from anything else on disk, so report the
+        // index absent and let the caller rebuild it from payload. The decision
+        // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
+        // stack never builds, and would drop the field instead.
+        if scoring && !on_disk_index.records_doc_len() {
+            return Ok(None);
+        }
 
         let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
@@ -80,8 +89,9 @@ impl FullTextIndex {
         config: TextIndexParams,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        scoring: bool,
     ) -> FullTextMmapIndexBuilder {
-        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points)
+        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points, scoring)
     }
 
     pub fn builder_gridstore(
