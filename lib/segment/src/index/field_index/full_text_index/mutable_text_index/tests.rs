@@ -2,11 +2,14 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use rstest::rstest;
 use tempfile::Builder;
 
 use super::super::FullTextIndex;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 use crate::json_path::JsonPath;
 use crate::types::{FieldCondition, Match};
 
@@ -56,7 +59,7 @@ fn test_full_text_indexing() {
 
     {
         let mut index =
-            FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config.clone(), true)
+            gridstore_index(temp_dir.path().join("test_db"), config.clone(), true, true)
                 .unwrap()
                 .unwrap();
 
@@ -129,7 +132,7 @@ fn test_full_text_indexing() {
     }
 
     {
-        let mut index = FullTextIndex::new_gridstore(temp_dir.path().join("test_db"), config, true)
+        let mut index = gridstore_index(temp_dir.path().join("test_db"), config, true, true)
             .unwrap()
             .unwrap();
 
@@ -179,4 +182,268 @@ fn test_full_text_indexing() {
         index.remove_point(3).unwrap();
         assert_eq!(index.count_indexed_points().unwrap(), 2);
     }
+}
+
+/// Build a gridstore index with length recording forced on or off, so both
+/// shapes stay covered while `TextIndexParams::scoring` is a const saying
+/// `false`.
+fn gridstore_index(
+    path: std::path::PathBuf,
+    config: TextIndexParams,
+    create_if_missing: bool,
+    scoring: bool,
+) -> crate::common::operation_error::OperationResult<Option<FullTextIndex>> {
+    Ok(
+        super::MutableFullTextIndex::open_gridstore(path, config, create_if_missing, scoring)?
+            .map(FullTextIndex::Mutable),
+    )
+}
+
+/// Reach the in-memory lengths of a gridstore-backed index.
+fn doc_lens(index: &FullTextIndex) -> (Vec<u32>, u64) {
+    let FullTextIndex::Mutable(index) = index else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    let inverted = &index.inner.inverted_index;
+    let lens = inverted
+        .point_to_doc_len
+        .clone()
+        .expect("index was built with scoring enabled");
+    (lens, inverted.total_tokens)
+}
+
+fn length_config(phrase_matching: bool) -> TextIndexParams {
+    TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Whitespace,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: None,
+        phrase_matching: Some(phrase_matching),
+        on_disk: None,
+        memory: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+    }
+}
+
+/// `phrase_matching: false` is the case at risk: those tokens are deduplicated
+/// on the way to the gridstore, so a length derived from them after reopening
+/// would count distinct terms rather than all of them.
+#[rstest]
+fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
+    let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
+    let path = temp_dir.path().join("index");
+    let hw_counter = HardwareCounterCell::new();
+
+    // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
+    let payloads = [
+        serde_json::json!("alpha beta gamma"),
+        serde_json::json!("the cat sat on the mat the"),
+    ];
+    let expected = vec![3u32, 7];
+
+    {
+        let mut index = gridstore_index(path.clone(), length_config(phrase_matching), true, true)
+            .unwrap()
+            .unwrap();
+        for (idx, payload) in payloads.iter().enumerate() {
+            index
+                .add_point(idx as PointOffsetType, &[payload], &hw_counter)
+                .unwrap();
+        }
+        let (lens, total) = doc_lens(&index);
+        assert_eq!(lens, expected, "lengths wrong before reload");
+        assert_eq!(total, 10);
+        index.flusher()().unwrap();
+    }
+
+    let reopened = gridstore_index(path, length_config(phrase_matching), false, true)
+        .unwrap()
+        .unwrap();
+    let (lens, total) = doc_lens(&reopened);
+    assert_eq!(lens, expected, "lengths lost across reload");
+    assert_eq!(total, 10);
+}
+
+/// Array boundary sentinels hold a position so phrases cannot match across two
+/// elements, but they are not content and must not count toward length.
+#[test]
+fn doc_len_excludes_array_boundary_sentinels() {
+    let temp_dir = Builder::new().prefix("doc_len_sentinel").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Two elements, three tokens each, one sentinel between them with phrase
+    // matching on. The length must be six either way.
+    let payload = serde_json::json!(["alpha beta gamma", "delta epsilon zeta"]);
+
+    for phrase_matching in [false, true] {
+        let path = temp_dir.path().join(format!("index_{phrase_matching}"));
+        let mut index = gridstore_index(path, length_config(phrase_matching), true, true)
+            .unwrap()
+            .unwrap();
+        index.add_point(0, &[&payload], &hw_counter).unwrap();
+
+        let (lens, total) = doc_lens(&index);
+        assert_eq!(lens, vec![6], "phrase_matching = {phrase_matching}");
+        assert_eq!(total, 6, "phrase_matching = {phrase_matching}");
+    }
+}
+
+/// `tokenize_doc` does not strip the sentinel's own character from user text,
+/// so those tokens are indexed and must be counted. Filtering the count by
+/// value rather than by inserted count reads this document as two tokens long.
+#[test]
+fn doc_len_counts_sentinel_characters_in_user_text() {
+    let temp_dir = Builder::new().prefix("doc_len_nul").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut index = gridstore_index(
+        temp_dir.path().join("index"),
+        length_config(false),
+        true,
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    index
+        .add_point(
+            0,
+            &[&serde_json::json!("hello \u{0} \u{0} \u{0} world")],
+            &hw_counter,
+        )
+        .unwrap();
+
+    let (lens, total) = doc_lens(&index);
+    assert_eq!(lens, vec![5], "every indexed token counts");
+    assert_eq!(total, 5);
+}
+
+/// Removing a point takes its length back out of the running total, so `avgdl`
+/// is not inflated by documents that no longer exist.
+#[test]
+fn removing_a_point_discounts_its_length() {
+    let temp_dir = Builder::new().prefix("doc_len_remove").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut index = gridstore_index(
+        temp_dir.path().join("index"),
+        length_config(false),
+        true,
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    index
+        .add_point(0, &[&serde_json::json!("alpha beta gamma")], &hw_counter)
+        .unwrap();
+    index
+        .add_point(1, &[&serde_json::json!("delta epsilon")], &hw_counter)
+        .unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 2], 5));
+
+    index.remove_point(1).unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 0], 3));
+
+    // Removing twice must not double-discount.
+    index.remove_point(1).unwrap();
+    assert_eq!(doc_lens(&index), (vec![3, 0], 3));
+}
+
+/// Overwriting a point replaces its length instead of adding to it.
+#[test]
+fn overwriting_a_point_replaces_its_length() {
+    use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+
+    let hw_counter = HardwareCounterCell::new();
+
+    // Through the inverted index rather than `add_point`, which removes the
+    // point first and so always hands `set_doc_len` a zeroed slot. Live reload
+    // is the caller that overwrites in place.
+    let mut index = MutableInvertedIndex::new(false, true);
+    index
+        .index_str_tokens(0, ["alpha", "beta", "gamma"], Some(3), &hw_counter)
+        .unwrap();
+    assert_eq!(index.point_to_doc_len, Some(vec![3]));
+    assert_eq!(index.total_tokens, 3);
+
+    index
+        .index_str_tokens(0, ["delta", "epsilon"], Some(2), &hw_counter)
+        .unwrap();
+    assert_eq!(
+        (index.point_to_doc_len.clone(), index.total_tokens),
+        (Some(vec![2]), 2),
+        "the previous length must be replaced, not added to",
+    );
+
+    // A record with no length zeroes the slot rather than leaving a stale one.
+    index
+        .index_str_tokens(0, ["zeta"], None, &hw_counter)
+        .unwrap();
+    assert_eq!(
+        (index.point_to_doc_len, index.total_tokens),
+        (Some(vec![0]), 0)
+    );
+}
+
+/// With scoring off nothing is measured and nothing is stored: no in-memory
+/// vector, and no `doc_len` key in the record.
+#[rstest]
+fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) {
+    let temp_dir = Builder::new().prefix("doc_len_off").tempdir().unwrap();
+    let path = temp_dir.path().join("index");
+    let hw_counter = HardwareCounterCell::new();
+
+    {
+        let mut index = gridstore_index(path.clone(), length_config(phrase_matching), true, false)
+            .unwrap()
+            .unwrap();
+        index
+            .add_point(
+                0,
+                &[&serde_json::json!("the cat sat on the mat the")],
+                &hw_counter,
+            )
+            .unwrap();
+
+        let FullTextIndex::Mutable(inner) = &index else {
+            panic!("expected a mutable (gridstore) index");
+        };
+        assert!(
+            inner.inner.inverted_index.point_to_doc_len.is_none(),
+            "no length vector when scoring is off",
+        );
+        assert_eq!(inner.inner.inverted_index.total_tokens, 0);
+
+        // The tokens still round-trip; only the length is absent.
+        assert!(inner.get_doc(0).is_some_and(|tokens| !tokens.is_empty()));
+        index.flusher()().unwrap();
+    }
+
+    // Scoped, so the store is never open twice: both handles are writable and
+    // nothing locks the directory.
+    {
+        let reopened = gridstore_index(path.clone(), length_config(phrase_matching), false, false)
+            .unwrap()
+            .unwrap();
+        let FullTextIndex::Mutable(inner) = &reopened else {
+            panic!("expected a mutable (gridstore) index");
+        };
+        assert!(inner.inner.inverted_index.point_to_doc_len.is_none());
+        assert_eq!(inner.get_doc_len(0), None, "no length reached the record");
+    }
+
+    // An index that does record lengths reads that record as absent, not as a
+    // zero-length document: that is what tells it from a stopword-only one.
+    let as_scoring = gridstore_index(path, length_config(phrase_matching), false, true)
+        .unwrap()
+        .unwrap();
+    let FullTextIndex::Mutable(inner) = &as_scoring else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    assert_eq!(inner.inner.inverted_index.point_to_doc_len, Some(vec![0]));
+    assert_eq!(inner.inner.inverted_index.total_tokens, 0);
+    assert_eq!(inner.get_doc_len(0), None);
 }

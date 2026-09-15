@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use itertools::Itertools as _;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
@@ -14,7 +14,7 @@ use super::inverted_index::ARRAY_BOUNDARY_SENTINEL;
 use super::mutable_text_index::MutableFullTextIndex;
 use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::tokenizers::Tokenizer;
-use super::{FullTextGridstoreIndexBuilder, FullTextIndex};
+use super::{FullTextGridstoreIndexBuilder, FullTextIndex, StoredDocument};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
@@ -56,7 +56,8 @@ impl FullTextIndex {
         config: TextIndexParams,
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
-        let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing)?;
+        let scoring = config.scoring();
+        let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing, scoring)?;
         Ok(index.map(Self::Mutable))
     }
 
@@ -116,6 +117,24 @@ impl FullTextIndex {
         str_tokens
     }
 
+    /// Number of tokens in a document, for BM25 length normalization.
+    ///
+    /// Discounts the boundaries [`Self::tokenize_document`] inserted by count
+    /// rather than by value: `tokenize_doc` does not strip the sentinel from
+    /// user text the way `tokenize_query` does, so a payload containing it has
+    /// those tokens indexed, and they must be counted.
+    pub(super) fn document_length(
+        str_tokens: &[Cow<str>],
+        phrase_matching: bool,
+        values: &[String],
+    ) -> u32 {
+        let boundaries = match phrase_matching && values.len() > 1 {
+            true => values.len() - 1,
+            false => 0,
+        };
+        str_tokens.len().saturating_sub(boundaries) as u32
+    }
+
     /// Encode a point's tokens as the document the storage holds.
     ///
     /// Phrase matching needs them in the order they were written; without it
@@ -123,6 +142,7 @@ impl FullTextIndex {
     pub(super) fn serialize_stored_document(
         str_tokens: Vec<Cow<str>>,
         phrase_matching: bool,
+        doc_len: Option<u32>,
     ) -> OperationResult<Vec<u8>> {
         let tokens = if phrase_matching {
             str_tokens
@@ -130,30 +150,29 @@ impl FullTextIndex {
             str_tokens.into_iter().sorted().dedup().collect()
         };
 
-        Self::serialize_document(tokens)
+        Self::serialize_document(tokens, doc_len)
     }
 
-    pub(super) fn serialize_document(tokens: Vec<Cow<str>>) -> OperationResult<Vec<u8>> {
+    pub(super) fn serialize_document(
+        tokens: Vec<Cow<str>>,
+        doc_len: Option<u32>,
+    ) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
-        struct StoredDocument<'a> {
+        struct StoredDocumentRef<'a> {
             tokens: Vec<Cow<'a, str>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            doc_len: Option<u32>,
         }
-        let doc = StoredDocument { tokens };
+        let doc = StoredDocumentRef { tokens, doc_len };
         serde_cbor::to_vec(&doc).map_err(|e| {
             OperationError::service_error(format!("Failed to serialize document: {e}"))
         })
     }
 
-    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<Vec<String>> {
-        #[derive(Deserialize)]
-        struct StoredDocument {
-            tokens: Vec<String>,
-        }
-        serde_cbor::from_slice::<StoredDocument>(data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Failed to deserialize document: {e}"))
-            })
-            .map(|doc| doc.tokens)
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<StoredDocument> {
+        serde_cbor::from_slice::<StoredDocument>(data).map_err(|e| {
+            OperationError::service_error(format!("Failed to deserialize document: {e}"))
+        })
     }
 
     pub fn get_mutability_type(&self) -> IndexMutability {

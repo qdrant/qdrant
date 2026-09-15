@@ -440,6 +440,27 @@ pub enum StopwordsInterface {
     Set(StopwordsSet),
 }
 
+/// Whether text indexes record per-document lengths, which BM25 needs for
+/// length normalization.
+///
+/// Stands in for a `scoring` field on [`TextIndexParams`] until ranked queries
+/// exist. Not persisted, so `classify()` cannot see it change: it has to be
+/// replaced by the real field rather than flipped.
+const TEXT_INDEX_SCORING: bool = false;
+
+impl TextIndexParams {
+    /// Whether an index built from these params records document lengths.
+    ///
+    /// When the `scoring` field lands it must also normalize `phrase_matching`
+    /// to `true`, since tf comes from the positions that flag stores. Every
+    /// site derives positions from `phrase_matching`, so normalizing the field
+    /// is the whole change; without it a scoring index can be built with no
+    /// positions, and tf is then not slow to compute but impossible.
+    pub fn scoring(&self) -> bool {
+        TEXT_INDEX_SCORING
+    }
+}
+
 impl StopwordsInterface {
     #[cfg(feature = "testing")]
     pub fn new_custom(custom: &[&str]) -> Self {

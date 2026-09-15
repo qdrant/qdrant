@@ -46,10 +46,13 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                     };
                     // The stored document is already tokenized, so we replay the
                     // post-tokenization half of `MutableFullTextIndex::add_many`.
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    inner
-                        .inverted_index
-                        .index_str_tokens(point_offset, str_tokens, hw_counter)?;
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    inner.inverted_index.index_str_tokens(
+                        point_offset,
+                        doc.tokens,
+                        doc.doc_len,
+                        hw_counter,
+                    )?;
                     Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),

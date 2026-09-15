@@ -419,7 +419,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rstest::rstest;
 
-    use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
+    use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -478,7 +478,7 @@ mod tests {
         deleted_count: u32,
         with_positions: bool,
     ) -> MutableInvertedIndex {
-        let mut index = MutableInvertedIndex::new(with_positions);
+        let mut index = MutableInvertedIndex::new(with_positions, true);
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -486,14 +486,11 @@ mod tests {
             // Generate 10 to 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
             let tokens: Vec<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let token_ids = index.register_tokens(&tokens);
-            if with_positions {
-                index
-                    .index_document(idx, Document(token_ids.clone()), &hw_counter)
-                    .unwrap();
-            }
-            let token_set = TokenSet::from_iter(token_ids);
-            index.index_tokens(idx, token_set, &hw_counter).unwrap();
+            // Through the same entry point the write paths use, so the fixture
+            // records lengths too.
+            index
+                .index_str_tokens(idx, &tokens, Some(doc_len as u32), &hw_counter)
+                .unwrap();
         }
 
         // Remove some points
