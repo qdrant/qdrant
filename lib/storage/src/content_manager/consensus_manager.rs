@@ -32,7 +32,7 @@ use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::consensus_shadow::{ShadowMode, ShadowStateMachine};
 use super::consensus_state_machine::ApplyOutcome;
-use super::errors::StorageError;
+use super::errors::{StorageError, StorageResult};
 use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
@@ -111,8 +111,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     next_peer_metadata_update_attempt: Mutex<Instant>,
     /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
     applied_log: AppliedEntryRing,
-    /// State machine applying every entry alongside the handlers below, to compare the two.
-    /// `None` unless the shadow run is enabled.
+    /// Consensus state machine used to check `ToC` operation handlers. `None` when disabled.
     shadow: Option<Mutex<ShadowStateMachine>>,
 }
 
@@ -162,7 +161,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         })
     }
 
-    /// Run the state machine alongside this manager, comparing the two after every entry
+    /// Configure consensus state machine validation
     pub fn with_shadow(mut self, mode: ShadowMode) -> Self {
         self.shadow = mode.build();
         self
@@ -375,8 +374,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
         let result = self.apply_entries_impl(raw_node);
 
-        // An entry that failed here is applied again after the restart, on top of whatever it
-        // wrote before it failed
+        // Consensus reapplies a failed entry after restart.
+        //
+        // An operation handler may return an error after persisting only part of the operation,
+        // while consensus state machine may have applied it completely.
+        //
+        // Invalidate state machine so it reloads state left by the handler
+        // and both paths have the same state for the retry.
         if result.is_err() {
             self.invalidate_shadow();
         }
@@ -394,16 +398,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         loop {
             let unapplied_index = self.persistent.read().current_unapplied_entry();
+
             let Some(entry_index) = unapplied_index else {
                 break;
             };
+
             log::debug!("Applying committed entry with index {entry_index}");
+
             let entry = self
                 .wal
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
+
             let apply_started = Instant::now();
+
             let stop_consensus: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
                 false
@@ -411,53 +420,67 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
                         let operation_result = self.apply_normal_entry(&entry);
+
                         match operation_result {
-                            Ok(result) => {
+                            Ok(status) => {
                                 log::debug!(
-                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                                    "Successfully applied consensus operation entry. \
+                                     Index: {}, status: {status}",
                                     entry.index,
                                 );
+
                                 false
                             }
+
                             Err(err @ StorageError::ServiceError { .. }) => {
                                 // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
                                 return Err(err)
                                     .context("Failed to apply collection meta operation entry");
                             }
+
                             Err(err) => {
                                 log::warn!(
                                     "Failed to apply collection meta operation entry with user error: {err}",
                                 );
+
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
                                 false
                             }
                         }
                     }
+
                     EntryType::EntryConfChangeV2 => {
                         let stop_consensus = self
                             .apply_conf_change_entry(&entry, raw_node)
                             .context("Failed to apply configuration change entry")?;
+
                         log::debug!(
-                            "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
+                            "Successfully applied configuration change entry. \
+                             Index: {}, stop consensus: {stop_consensus}",
                             entry.index,
-                            stop_consensus
                         );
+
                         stop_consensus
                     }
+
                     ty @ EntryType::EntryConfChange => {
                         return Err(anyhow!("Unexpected entry type: {ty:?}"));
                     }
                 }
             };
+
             if stop_consensus {
                 return Ok(stop_consensus);
             }
+
             self.persistent
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
+
             self.applied_log.record(&entry, apply_started.elapsed());
         }
+
         Ok(false) // do not stop consensus
     }
 
@@ -473,8 +496,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
-        // Peer changes are not modeled yet, and removing one drops its replicas from every
-        // collection
+        // Consensus state machine does not handle peer changes yet.
+        // Invalidate it so it reloads state after this handler runs.
         self.invalidate_shadow();
 
         let conf_state = raw_node.apply_conf_change(&change)?;
@@ -569,103 +592,119 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ///
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
-        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        let shadow = self.shadow_apply(&operation);
-        let result = match operation {
-            ConsensusOperations::CollectionMeta(operation) => {
-                self.toc.perform_collection_meta_op(*operation)
-            }
 
-            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
-                // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
-                // So we do not expect to receive these operations as a normal entry.
-                // This is a debug assert so production migrations should be ok.
-                // TODO: parse into CollectionMetaOperation as we will not handle other cases here, but this removes compatibility with previous entry storage
-                debug_assert!(
-                    false,
-                    "Do not expect RemovePeer or AddPeer to be directly proposed"
-                );
-                Ok(false)
+        // Apply to consensus state machine before operation handler changes applied state
+        let outcome = self.shadow_apply(&operation);
+
+        // If consensus state machine is enabled, we need to clone the operation,
+        // because `apply_consensus_op` consumes it
+        let shadow_op = if self.shadow.is_some() {
+            operation.clone()
+        } else {
+            // Consensus state machine is disabled, this is a dummy operation that is never used
+            ConsensusOperations::RequestSnapshot
+        };
+
+        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        let result = self.apply_consensus_op(operation);
+
+        // Compare operation handler with consensus state machine
+        if let Some(outcome) = outcome {
+            self.shadow_compare(&shadow_op, &outcome, &result);
+        }
+
+        if let Some(on_apply) = on_apply
+            && on_apply.send(result.clone()).is_err()
+        {
+            log::debug!(
+                "Failed to notify subscribers on consensus operation completion: \
+                 broadcast channel closed",
+            );
+        }
+
+        result
+    }
+
+    fn apply_consensus_op(&self, operation: ConsensusOperations) -> StorageResult<bool> {
+        let status = match operation {
+            ConsensusOperations::CollectionMeta(operation) => {
+                self.toc.perform_collection_meta_op(*operation)?
             }
 
             ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
                 self.persistent
                     .write()
                     .update_peer_metadata(peer_id, metadata)?;
-                Ok(true)
+
+                true
             }
 
             ConsensusOperations::UpdateClusterMetadata { key, value } => {
                 self.persistent
                     .write()
                     .update_cluster_metadata_key(key, value);
-                Ok(true)
+
+                true
             }
 
             ConsensusOperations::SetQuotaConfig(config) => {
-                self.toc.set_quota_config(config).map(|()| true)
+                self.toc.set_quota_config(config)?;
+                true
+            }
+
+            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
+                // `AddPeer` and `RemovePeer` carry peer changes to consensus thread.
+                // Consensus thread converts them into `ConfChangeV2` Raft entries
+                // instead of committing them as normal entries.
+
+                unreachable!()
             }
 
             ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {
+                // `RequestSnapshot` and `ReportSnapshot` carry internal signals to consensus thread.
+                // Consensus thread handles them directly instead of committing them as Raft entries.
+
                 unreachable!()
             }
         };
 
-        if let Some((operation, outcome)) = shadow {
-            self.shadow_compare(&operation, &outcome, &result);
-        }
-
-        if let Some(on_apply) = on_apply
-            && on_apply.send(result.clone()).is_err()
-        {
-            log::warn!(
-                "Failed to notify on consensus operation completion: channel receiver is dropped",
-            )
-        }
-        result
+        Ok(status)
     }
 
-    /// Apply `operation` to the shadow state, when the shadow run is enabled.
-    ///
-    /// Hands the operation back as well, since applying it authoritatively consumes it before
-    /// the compare, which reads the collections it names.
-    fn shadow_apply(
-        &self,
-        operation: &ConsensusOperations,
-    ) -> Option<(ConsensusOperations, ApplyOutcome)> {
+    fn shadow_apply(&self, operation: &ConsensusOperations) -> Option<ApplyOutcome> {
         let shadow = self.shadow.as_ref()?;
+        let persistent = self.persistent.read();
+
         let outcome = shadow
             .lock()
-            .apply(&*self.toc, &self.persistent.read(), operation);
+            .apply(self.toc.as_ref(), &persistent, operation);
 
-        Some((operation.clone(), outcome))
+        Some(outcome)
     }
 
-    /// Drop the shadow state, so the next entry builds a machine from `TableOfContent`
-    fn invalidate_shadow(&self) {
-        if let Some(shadow) = &self.shadow {
-            shadow.lock().invalidate();
-        }
-    }
-
-    /// Compare the shadow against what the authoritative apply left behind
     fn shadow_compare(
         &self,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &Result<bool, StorageError>,
+        result: &StorageResult<bool>,
     ) {
         let Some(shadow) = self.shadow.as_ref() else {
             return;
         };
 
-        shadow.lock().compare(
-            &*self.toc,
-            &self.persistent.read(),
-            operation,
-            outcome,
-            result,
-        );
+        let persistent = self.persistent.read();
+
+        shadow
+            .lock()
+            .compare(self.toc.as_ref(), &persistent, operation, outcome, result);
+    }
+
+    fn invalidate_shadow(&self) {
+        let Some(shadow) = &self.shadow else {
+            return;
+        };
+
+        shadow.lock().invalidate();
     }
 
     // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
@@ -675,8 +714,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
 
-        // Recovery deliberately leaves state no operation asked for: it discards proxies,
-        // forces recovery of local replicas it just created and proposes transfer aborts
+        // Snapshot recovery replaces applied state without updating consensus state machine.
+        // Invalidate it so it rebuilds from recovered state on next entry.
         self.invalidate_shadow();
 
         let SnapshotData {
@@ -1570,33 +1609,6 @@ mod tests {
             super::CollectionsSnapshot::default()
         }
 
-        // Only the shadow run reads these, and these tests never enable it
-
-        fn collection_state(
-            &self,
-            _collection: &str,
-        ) -> Option<collection::collection_state::State> {
-            unimplemented!()
-        }
-
-        fn collection_names(&self) -> std::collections::BTreeSet<collection::shards::CollectionId> {
-            unimplemented!()
-        }
-
-        fn alias_mapping(&self) -> crate::content_manager::alias_mapping::AliasMapping {
-            unimplemented!()
-        }
-
-        fn node_context(&self) -> crate::content_manager::consensus_state_machine::NodeContext {
-            unimplemented!()
-        }
-
-        fn take_dirty_collections(
-            &self,
-        ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
-            std::collections::BTreeSet::new()
-        }
-
         fn apply_collections_snapshot(
             &self,
             _data: super::CollectionsSnapshot,
@@ -1628,6 +1640,33 @@ mod tests {
             _config: QuotaConfig,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
+        }
+
+        // Only consensus state machine validation reads these, and these tests never enable it
+
+        fn node_context(&self) -> crate::content_manager::consensus_state_machine::NodeContext {
+            unimplemented!()
+        }
+
+        fn collection_names(&self) -> std::collections::BTreeSet<collection::shards::CollectionId> {
+            unimplemented!()
+        }
+
+        fn alias_mapping(&self) -> crate::content_manager::alias_mapping::AliasMapping {
+            unimplemented!()
+        }
+
+        fn collection_state(
+            &self,
+            _collection: &str,
+        ) -> Option<collection::collection_state::State> {
+            unimplemented!()
+        }
+
+        fn take_dirty_collections(
+            &self,
+        ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
+            std::collections::BTreeSet::new()
         }
     }
 

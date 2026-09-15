@@ -1,7 +1,4 @@
-//! Common test fixtures.
-//!
-//! `consensus_shadow` builds collection states out of these too, so the two sides of a compare
-//! are the same shape.
+//! Fixtures shared by state-machine and validation tests
 
 mod context;
 mod ops;

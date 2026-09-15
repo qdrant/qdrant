@@ -1,25 +1,22 @@
 //! In-memory consensus state machine.
 //!
-//! [`ClusterState`] holds everything consensus decides on. [`ConsensusStateMachine::apply`] reads
-//! it and returns the [`Action`]s an operation applies, in order. Each action is one call to a
-//! state change method on `TableOfContent`, `Collection` or `ShardHolder`, which checks only that
-//! the object it touches exists and then persists the change. Every decision is made here.
+//! [`ConsensusStateMachine::apply`] evaluates an operation against [`ClusterState`].
+//! For accepted operations, it returns ordered [`Action`]s to be applied to `TableOfContent`
+//! and applies the same actions to in-memory state; rejected operations leave state unchanged.
 //!
-//! [`ClusterState::apply_action`] is the only way an operation changes the state, and it cannot
-//! fail. So a rejected operation leaves the state untouched, and applying the first N actions of
-//! an operation gives the state that a crash after N writes leaves behind.
+//! [`ClusterState::apply_action`] cannot fail.
+//! Applying the first N actions reproduces state left by a crash after N writes.
 //!
-//! Two rules every operation follows:
+//! Operations follow two replay-safety rules:
 //!
-//! 1. Never reject a partially applied operation: rejecting one makes the partial state permanent.
-//!    An operation that was fully applied may be rejected, since the state is already complete.
-//!    E.g., `CreateCollection` rejects a collection that is already there.
-//! 2. Emit only the actions left to reach the goal state, each idempotent, and the action that
-//!    records the operation as applied last.
+//! 1. Never reject a partially applied operation; rejection would make partial state permanent.
+//!    A fully applied operation may be rejected because state is already complete.
+//! 2. Emit only missing idempotent actions.
+//!    Emit the action that records the operation as applied last.
 //!
-//! Rule 2 is measured against [`ClusterState`]. An action whose applier also does work outside it,
-//! such as propagating a payload index to local shards, is emitted even when the state already
-//! matches.
+//! Missing actions are determined from [`ClusterState`]. Actions that also affect state outside
+//! [`ClusterState`], such as propagating a payload index to local shards, are emitted even when
+//! cluster state already matches.
 
 pub mod action;
 pub mod state;
@@ -70,12 +67,7 @@ impl ConsensusStateMachine {
         &self.context
     }
 
-    /// Replace the state of one collection with state read back from `TableOfContent`, `None`
-    /// removing it.
-    ///
-    /// Actions are the only way an *operation* changes the state. This is for the shadow run,
-    /// after an operation the machine does not model: the collections that operation touched
-    /// are read back, so the next one plans against what the legacy path left behind.
+    /// Replace collection state after an unmodeled or external change
     pub fn resync_collection(
         &mut self,
         collection: &CollectionId,
@@ -220,8 +212,7 @@ impl NodeContext {
         peer_id: PeerId,
         is_distributed: bool,
     ) -> Self {
-        // Naming every field forces a new storage config option to be either read here, or
-        // dismissed as one no operation reads
+        // Keep ignored fields explicit so StorageConfig additions require review
         #[expect(deprecated)]
         let StorageConfig {
             collection,
@@ -247,8 +238,7 @@ impl NodeContext {
             handle_collection_load_errors: _,
             recovery_mode: _,
             update_concurrency: _,
-            // Seeds the quota manager on first start only; `SetQuotaConfig` carries the config
-            // consensus decides on
+            // Only the initial value; consensus owns later changes
             quotas: _,
         } = config;
 

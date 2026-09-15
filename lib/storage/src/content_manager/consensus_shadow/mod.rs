@@ -1,7 +1,4 @@
-//! Shadow run of the consensus state machine against the legacy apply path.
-//!
-//! `TableOfContent` stays authoritative. The machine applies every entry to its own copy of the
-//! state, and a compare after the entry reports where the two disagree.
+//! Run consensus state machine alongside operation handlers and report divergences
 
 pub mod diff;
 
@@ -12,7 +9,7 @@ use collection::shards::CollectionId;
 use parking_lot::Mutex;
 use serde::Deserialize;
 
-use self::diff::ActualState;
+use self::diff::ShallowState;
 use crate::content_manager::CollectionContainer;
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::consensus::persistent::Persistent;
@@ -23,48 +20,65 @@ use crate::content_manager::consensus_state_machine::{
 };
 use crate::content_manager::errors::{StorageError, StorageResult};
 
-/// State machine applying every entry alongside the legacy handlers
+/// Consensus state machine validation mode
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ShadowMode {
+    #[default]
+    Disabled,
+    Log,
+    Panic,
+}
+
+impl ShadowMode {
+    pub fn build(self) -> Option<Mutex<ShadowStateMachine>> {
+        let panic_on_divergence = match self {
+            ShadowMode::Disabled => return None,
+            ShadowMode::Log => false,
+            ShadowMode::Panic => true,
+        };
+
+        Some(Mutex::new(ShadowStateMachine::new(panic_on_divergence)))
+    }
+}
+
+/// Consensus state machine used to check operation handlers
 pub struct ShadowStateMachine {
-    /// Built from `TableOfContent` on first use, and again after every invalidation
-    machine: Option<ConsensusStateMachine>,
-    /// Fail the peer on a divergence, rather than logging it and carrying on
+    /// Initialized from applied state on first use and after invalidation
+    state_machine: Option<ConsensusStateMachine>,
     panic_on_divergence: bool,
 }
 
 impl ShadowStateMachine {
     fn new(panic_on_divergence: bool) -> Self {
         Self {
-            machine: None,
+            state_machine: None,
             panic_on_divergence,
         }
     }
 
-    /// Drop the state, so the next entry builds a machine out of `TableOfContent` again
     pub fn invalidate(&mut self) {
-        self.machine = None;
+        self.state_machine = None;
     }
 
-    /// Apply `operation` to the shadow state, building the machine when there is none
     pub fn apply(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
     ) -> ApplyOutcome {
-        // Planning reads the state of every collection it touches, so what something other
-        // than consensus wrote since the last entry is read back first
+        // Partial snapshot recovery can change payload index schema without a consensus operation.
+        // Refresh affected collections so state machine applies next operation to recovered state.
         self.resync(toc, toc.take_dirty_collections());
 
-        let machine = self.machine.get_or_insert_with(|| {
-            let state = scrape_cluster_state(toc, persistent);
+        let state_machine = self.state_machine.get_or_insert_with(|| {
+            let state = read_cluster_state(toc, persistent);
             ConsensusStateMachine::new(state, toc.node_context())
         });
 
-        machine.apply(operation)
+        state_machine.apply(operation)
     }
 
-    /// Compare the shadow against the state the authoritative apply left behind, and report a
-    /// divergence the way this node is configured to
     pub fn compare(
         &mut self,
         toc: &impl CollectionContainer,
@@ -78,16 +92,12 @@ impl ShadowStateMachine {
         };
 
         if self.panic_on_divergence {
-            panic!("shadow state machine diverged: {report}");
+            panic!("Consensus state machine diverged from applied state: {report}");
         }
 
-        log::error!("Shadow state machine diverged: {report}");
+        log::error!("Consensus state machine diverged from applied state: {report}");
     }
 
-    /// How the shadow differs from the state the authoritative apply left behind.
-    ///
-    /// The machine is invalidated whenever the two cannot be compared, and whenever they
-    /// disagree, so one bug is reported once.
     fn diff(
         &mut self,
         toc: &impl CollectionContainer,
@@ -96,26 +106,27 @@ impl ShadowStateMachine {
         outcome: &ApplyOutcome,
         result: &StorageResult<bool>,
     ) -> Option<String> {
-        let Some(machine) = &self.machine else {
+        let Some(state_machine) = &self.state_machine else {
             return None;
         };
 
-        // A service error kills the consensus thread and the entry is applied again after
-        // restart. What the failed apply wrote before it gave up is not something the machine
-        // predicts.
+        // Handler may have persisted only part of operation before returning a service error,
+        // while consensus state machine applied it completely. Invalidate instead of comparing.
         if matches!(result, Err(StorageError::ServiceError { .. })) {
-            self.machine = None;
+            self.invalidate();
             return None;
         }
 
-        let collections = compared_collections(operation, machine.state());
+        let collections = target_collections(operation, state_machine.state());
 
-        // An operation the machine does not model leaves the state of the collections it names
-        // behind, so those are read back instead of compared. One that names none, `RemovePeer`
-        // above all, can have changed any of them.
+        // State machine cannot apply an uncovered operation.
+        // Resync collections the operation may have changed.
+        //
+        // If operation does not name a collection, it may have changed any of them,
+        // so invalidate the entire consensus state machine.
         if matches!(outcome, ApplyOutcome::NotCovered) {
             if collections.is_empty() {
-                self.machine = None;
+                self.invalidate();
             } else {
                 self.resync(toc, collections);
             }
@@ -123,27 +134,28 @@ impl ShadowStateMachine {
             return None;
         }
 
-        // Something other than consensus may have changed a collection while the entry was
-        // being applied, and what it wrote is not a divergence
+        // Partial snapshot recovery can change payload index schema
+        // after state machine applies an operation but before comparison.
+        //
+        // Refresh affected collections so recovered state is not reported as a divergence.
         self.resync(toc, toc.take_dirty_collections());
 
-        let Some(machine) = &self.machine else {
+        let Some(state_machine) = &self.state_machine else {
             return None;
         };
 
-        let actual = scrape_actual_state(toc, persistent);
+        let applied = read_shallow_state(toc, persistent);
 
         let mut report = Vec::from_iter(diff::outcome(outcome, result));
-        report.extend(diff::cluster(machine.state(), &actual));
+        report.extend(diff::cluster(state_machine.state(), &applied));
 
-        // Reading a collection's state is the expensive part, so only the ones this operation
-        // could have changed are read. A collection only one side holds is already reported.
+        // Collection state is expensive to read, so limit it to possible changes
         for collection in collections {
-            let shadow = machine.state().collection(&collection);
-            let actual = toc.collection_state(&collection);
+            let machine_collection = state_machine.state().collection(&collection);
+            let applied_collection = toc.collection_state(&collection);
 
-            if let (Some(shadow), Some(actual)) = (shadow, actual) {
-                report.extend(diff::collection(&collection, shadow, &actual));
+            if let (Some(machine), Some(applied)) = (machine_collection, applied_collection) {
+                report.extend(diff::collection(&collection, machine, &applied));
             }
         }
 
@@ -151,61 +163,32 @@ impl ShadowStateMachine {
             return None;
         }
 
-        self.machine = None;
+        // Consensus state machine has diverged from operation handlers.
+        // Invalidate it so it reinitializes from applied state on next operation.
+        self.invalidate();
 
-        Some(report.join(", "))
+        let report = report.join(", ");
+        Some(report)
     }
 
-    /// Read the state of `collections` back into the machine
     fn resync(
         &mut self,
         toc: &impl CollectionContainer,
         collections: impl IntoIterator<Item = CollectionId>,
     ) {
-        let Some(machine) = &mut self.machine else {
+        let Some(state_machine) = &mut self.state_machine else {
             return;
         };
 
         for collection in collections {
             let state = toc.collection_state(&collection);
-            machine.resync_collection(&collection, state);
+            state_machine.resync_collection(&collection, state);
         }
     }
 }
 
-/// Whether to run the shadow, and what it does with a divergence it finds
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ShadowMode {
-    /// Do not run the machine at all
-    #[default]
-    Disabled,
-    /// Log the difference and carry on, for production and cloud
-    Log,
-    /// Fail the peer, for chaos and end-to-end tests
-    Panic,
-}
-
-impl ShadowMode {
-    /// The shadow to run, `None` when it is disabled
-    pub fn build(self) -> Option<Mutex<ShadowStateMachine>> {
-        let panic_on_divergence = match self {
-            ShadowMode::Disabled => return None,
-            ShadowMode::Log => false,
-            ShadowMode::Panic => true,
-        };
-
-        Some(Mutex::new(ShadowStateMachine::new(panic_on_divergence)))
-    }
-}
-
-/// Read the whole cluster state back, to build a machine that starts from it.
-///
-/// Reads the state of every collection, so this runs when a machine is built, not per entry.
-pub fn scrape_cluster_state(
-    toc: &impl CollectionContainer,
-    persistent: &Persistent,
-) -> ClusterState {
+/// Read complete applied state to initialize consensus state machine
+pub fn read_cluster_state(toc: &impl CollectionContainer, persistent: &Persistent) -> ClusterState {
     let CollectionsSnapshot {
         collections,
         aliases,
@@ -221,9 +204,9 @@ pub fn scrape_cluster_state(
     }
 }
 
-/// Read back everything an entry's compare reads, leaving out the contents of collections
-pub fn scrape_actual_state(toc: &impl CollectionContainer, persistent: &Persistent) -> ActualState {
-    ActualState {
+/// Read applied state without loading full collection state
+pub fn read_shallow_state(toc: &impl CollectionContainer, persistent: &Persistent) -> ShallowState {
+    ShallowState {
         collections: toc.collection_names(),
         aliases: toc.alias_mapping(),
         peer_address_by_id: persistent.peer_address_by_id.read().clone(),
@@ -233,34 +216,27 @@ pub fn scrape_actual_state(toc: &impl CollectionContainer, persistent: &Persiste
     }
 }
 
-/// Collections whose state the compare after `operation` reads.
-///
-/// Both the name the operation carries and the collection it resolves to, since planning
-/// resolves aliases and the legacy handlers do so per operation.
-fn compared_collections(
-    operation: &ConsensusOperations,
-    state: &ClusterState,
-) -> Vec<CollectionId> {
+/// Collections an operation might change, including any alias target
+fn target_collections(operation: &ConsensusOperations, state: &ClusterState) -> Vec<CollectionId> {
     let ConsensusOperations::CollectionMeta(operation) = operation else {
         return Vec::new();
     };
 
-    let collection = match &**operation {
-        CollectionMetaOperations::CreateCollection(operation) => &operation.collection_name,
-        CollectionMetaOperations::UpdateCollection(operation) => &operation.collection_name,
-        CollectionMetaOperations::DeleteCollection(operation) => &operation.0,
-        CollectionMetaOperations::SetShardReplicaState(operation) => &operation.collection_name,
-        CollectionMetaOperations::CreateShardKey(operation) => &operation.collection_name,
-        CollectionMetaOperations::DropShardKey(operation) => &operation.collection_name,
-        CollectionMetaOperations::CreatePayloadIndex(operation) => &operation.collection_name,
-        CollectionMetaOperations::DropPayloadIndex(operation) => &operation.collection_name,
-        CollectionMetaOperations::CreateNamedVector(operation) => &operation.collection_name,
-        CollectionMetaOperations::DeleteNamedVector(operation) => &operation.collection_name,
+    let collection = match operation.as_ref() {
+        CollectionMetaOperations::CreateCollection(op) => &op.collection_name,
+        CollectionMetaOperations::UpdateCollection(op) => &op.collection_name,
+        CollectionMetaOperations::DeleteCollection(op) => &op.0,
+        CollectionMetaOperations::CreateShardKey(op) => &op.collection_name,
+        CollectionMetaOperations::DropShardKey(op) => &op.collection_name,
+        CollectionMetaOperations::SetShardReplicaState(op) => &op.collection_name,
         CollectionMetaOperations::Resharding(collection, _) => collection,
         CollectionMetaOperations::TransferShard(collection, _) => collection,
+        CollectionMetaOperations::CreateNamedVector(op) => &op.collection_name,
+        CollectionMetaOperations::DeleteNamedVector(op) => &op.collection_name,
+        CollectionMetaOperations::CreatePayloadIndex(op) => &op.collection_name,
+        CollectionMetaOperations::DropPayloadIndex(op) => &op.collection_name,
 
-        // Change no collection. Alias changes are covered by the compare of the whole mapping.
-        CollectionMetaOperations::ChangeAliases(_) | CollectionMetaOperations::Nop { .. } => {
+        CollectionMetaOperations::Nop { .. } | CollectionMetaOperations::ChangeAliases(_) => {
             return Vec::new();
         }
 
@@ -270,9 +246,10 @@ fn compared_collections(
     };
 
     match state.aliases.get(collection) {
-        Some(resolved) if resolved != collection => {
+        Some(resolved) if collection != resolved => {
             vec![collection.clone(), resolved.clone()]
         }
+
         _ => vec![collection.clone()],
     }
 }

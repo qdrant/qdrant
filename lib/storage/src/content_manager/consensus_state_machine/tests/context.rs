@@ -1,5 +1,3 @@
-//! Scraping [`NodeContext`] out of this node's storage config
-
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -31,12 +29,9 @@ fn from_storage_config() {
     assert_eq!(context, expected);
 }
 
-/// Every option an operation reads is set away from its default.
-///
-/// Two pairs of read and ignored options share a type — `on_disk_payload` with
-/// `handle_collection_load_errors`, `max_collections` with `update_queue_size` — so each of the
-/// four gets a value that tells it apart from the other three.
 fn storage_config() -> StorageConfig {
+    // Give copied and ignored fields of the same type different values,
+    // so the test catches mapping the wrong field into `NodeContext`
     StorageConfig {
         collection: Some(collection_defaults()),
         shard_transfer_method: Some(ShardTransferMethod::StreamRecords),
