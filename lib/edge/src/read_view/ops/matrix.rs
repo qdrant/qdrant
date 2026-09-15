@@ -22,6 +22,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         request: SearchMatrixRequest,
     ) -> OperationResult<SearchMatrixResponse> {
+        self.check_stopped()?;
         let SearchMatrixRequest {
             sample_size,
             limit_per_sample,

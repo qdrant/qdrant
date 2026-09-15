@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
@@ -12,6 +11,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
+        self.check_stopped()?;
         let CountRequestInternal { filter, exact } = request;
 
         let points_count = if exact {
@@ -20,7 +20,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     None,
                     None,
                     filter.as_ref(),
-                    &AtomicBool::new(false),
+                    &self.is_stopped,
                     &HardwareCounterCell::disposable(),
                     DeferredBehavior::VisibleOnly,
                 )

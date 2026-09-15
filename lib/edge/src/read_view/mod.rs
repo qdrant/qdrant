@@ -1,17 +1,20 @@
 mod handle;
 mod ops;
 mod shard_read;
+mod shard_read_with_cancellation;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 
 pub use self::handle::ReadSegmentHandle;
 pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
+pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
 use crate::EdgeConfig;
 
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,
@@ -27,6 +30,8 @@ pub struct EdgeReadView<H: ReadSegmentHandle> {
     pub(crate) config: Arc<EdgeConfig>,
     /// Shard search thread pool, used to run per-segment reads in parallel.
     pub(crate) pool: Arc<ThreadPool>,
+    /// Shared by every stage and segment of this read. Never reset or set by the read itself.
+    pub(crate) is_stopped: Arc<AtomicBool>,
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -35,7 +40,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             segments,
             config,
             pool,
+            is_stopped: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub(crate) fn check_stopped(&self) -> OperationResult<()> {
+        check_process_stopped(&self.is_stopped)?;
+        Ok(())
     }
 
     /// Owned read handles for the retrieval / version-dedup path.
@@ -59,12 +70,21 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         F: Fn(&H) -> OperationResult<R> + Send + Sync,
         R: Send,
     {
-        if self.pool.current_num_threads() <= 1 {
-            self.segments.iter().map(f).collect()
+        self.check_stopped()?;
+        let checked = |segment: &H| {
+            self.check_stopped()?;
+            let result = f(segment);
+            self.check_stopped()?;
+            result
+        };
+        let result = if self.pool.current_num_threads() <= 1 {
+            self.segments.iter().map(checked).collect()
         } else {
             self.pool
-                .install(|| self.segments.par_iter().map(f).collect())
-        }
+                .install(|| self.segments.par_iter().map(checked).collect())
+        };
+        self.check_stopped()?;
+        result
     }
 }
 

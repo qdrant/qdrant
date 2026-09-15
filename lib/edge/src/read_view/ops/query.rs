@@ -1,6 +1,5 @@
 use std::mem;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -27,6 +26,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let [points] =
             self.query_batch(vec![request])?
                 .try_into()
@@ -53,6 +53,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         requests: Vec<ShardQueryRequest>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        self.check_stopped()?;
         let planned_query = PlannedQuery::try_from(requests)?;
 
         let PlannedQuery {
@@ -65,11 +66,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         let mut scroll_results = Vec::with_capacity(scrolls.len());
         for scroll in &scrolls {
+            self.check_stopped()?;
             scroll_results.push(self.query_scroll(scroll)?);
         }
 
         let mut scored_points_batch = Vec::with_capacity(root_plans.len());
         for root_plan in root_plans {
+            self.check_stopped()?;
             let scored_points = self.resolve_plan(
                 root_plan,
                 &mut search_results,
@@ -90,6 +93,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let RootPlan {
             merge_plan,
             with_payload,
@@ -129,6 +133,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let MergePlan {
             sources: merge_plan_sources,
             rescore_stages,
@@ -139,6 +144,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         // We need to preserve the order of the sources for some fusion strategies
         for source in merge_plan_sources {
+            self.check_stopped()?;
             match source {
                 Source::SearchesIdx(idx) => {
                     sources.push(take_prefetched_source(search_results, idx)?)
@@ -205,6 +211,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         rescore_params: RescoreParams,
         hw_counter_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let RescoreParams {
             rescore,
             score_threshold,
@@ -325,12 +332,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         score_threshold: Option<ScoreType>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let ctx = FormulaContext {
             formula,
             prefetches_results,
             limit,
             score_threshold,
-            is_stopped: Arc::new(AtomicBool::new(false)),
+            is_stopped: self.is_stopped.clone(),
         };
 
         let ctx = Arc::new(ctx);
@@ -362,6 +370,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         limit: usize,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let points_with_vector = self
             .fill_with_payload_or_vectors(
                 sources,
@@ -405,6 +414,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_vector: WithVector,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<ShardQueryResponse> {
+        self.check_stopped()?;
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
         }
@@ -421,10 +431,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &point_ids,
             &WithPayload::from(with_payload),
             &with_vector,
-            &AtomicBool::new(false),
+            &self.is_stopped,
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
         )?;
+        self.check_stopped()?;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results

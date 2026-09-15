@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
@@ -23,6 +22,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         request: ScrollRequestInternal,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
+        self.check_stopped()?;
         let ScrollRequestInternal {
             offset,
             limit,
@@ -78,6 +78,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         request: &QueryScrollRequestInternal,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        self.check_stopped()?;
         let QueryScrollRequestInternal {
             limit,
             with_vector,
@@ -137,12 +138,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
+        self.check_stopped()?;
         let per_segment = self.par_map_segments(|segment| {
             segment.read_segment().read_filtered(
                 offset,
                 Some(limit),
                 filter,
-                &AtomicBool::new(false),
+                &self.is_stopped,
                 &hw_measurement_acc.get_counter_cell(),
                 DeferredBehavior::VisibleOnly,
             )
@@ -161,10 +163,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            &AtomicBool::new(false),
+            &self.is_stopped,
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
         )?;
+        self.check_stopped()?;
 
         let ordered_points = point_ids
             .iter()
@@ -183,12 +186,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         order_by: &OrderBy,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
+        self.check_stopped()?;
         let read_results = self.par_map_segments(|segment| {
             segment.read_segment().read_ordered_filtered(
                 Some(limit),
                 filter,
                 order_by,
-                &AtomicBool::new(false),
+                &self.is_stopped,
                 &hw_measurement_acc.get_counter_cell(),
                 DeferredBehavior::VisibleOnly,
             )
@@ -209,10 +213,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            &AtomicBool::new(false),
+            &self.is_stopped,
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
         )?;
+        self.check_stopped()?;
 
         let ordered_points = point_ids
             .iter()
@@ -235,6 +240,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         filter: Option<&Filter>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<RecordInternal>> {
+        self.check_stopped()?;
         let per_segment = self.par_map_segments(|segment| {
             let segment = segment.read_segment();
 
@@ -242,7 +248,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             let point_ids = segment.read_random_filtered(
                 limit,
                 filter,
-                &AtomicBool::new(false),
+                &self.is_stopped,
                 &hw_measurement_acc.get_counter_cell(),
             )?;
 
@@ -279,6 +285,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         // points from other segments. In total, the complexity is guaranteed to
         // be O(limit).
         while random_point_ids.len() < limit {
+            self.check_stopped()?;
             let segment_idx = rng.sample(&distribution);
             let segment_point_ids = &mut point_ids[segment_idx];
 
@@ -297,6 +304,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         // Therefore, we can ignore "proper" distribution, as it won't be accurate anyway.
         if random_point_ids.len() < limit {
             for point_id in point_ids.into_iter().flatten() {
+                self.check_stopped()?;
                 random_point_ids.insert(point_id);
                 if random_point_ids.len() >= limit {
                     break;
@@ -311,7 +319,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &random_point_ids,
             &WithPayload::from(with_payload_interface),
             with_vector,
-            &AtomicBool::new(false),
+            &self.is_stopped,
             hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
         )?
