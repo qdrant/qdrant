@@ -227,6 +227,88 @@ fn hnsw_quantized_search_test(
     }
 }
 
+fn binary_quantized_non_rescored_search_is_ordered(distance: Distance) {
+    const TOP: usize = 5;
+
+    let seed = vec![
+        vec![-0.049_468_09, -1.582_220_1],
+        vec![-0.580_718_46, -1.302_400_2],
+        vec![-0.222_284_47, 1.090_568_4],
+        vec![-0.557_575_64, 0.653_279],
+        vec![0.773_439_17, -0.274_751_9],
+    ];
+    let updated_point = vec![-0.205_718_46, -1.302_400_2];
+    let query: QueryVector = vec![1.374_882_6, -1.041_541_3].into();
+
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+    let mut rng = StdRng::seed_from_u64(42);
+    let quantization_config: QuantizationConfig = BinaryQuantizationConfig {
+        memory: None,
+        always_ram: Some(true),
+        encoding: None,
+        query_encoding: None,
+    }
+    .into();
+    let (mut segment, hnsw_index, _dirs) = build_quantized_hnsw_for_compare(
+        &seed,
+        distance,
+        &quantization_config,
+        4,
+        64,
+        0,
+        &mut rng,
+        &stopped,
+    );
+    segment
+        .upsert_point(
+            seed.len() as u64,
+            1.into(),
+            only_default_vector(&updated_point),
+            &hw_counter,
+        )
+        .unwrap();
+    let results = hnsw_index
+        .search(
+            &[&query],
+            None,
+            TOP,
+            Some(&SearchParams {
+                hnsw_ef: Some(256),
+                exact: false,
+                quantization: Some(QuantizationSearchParams {
+                    rescore: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            &Default::default(),
+        )
+        .unwrap();
+    let scores: Vec<_> = results[0]
+        .iter()
+        .map(|result| distance.postprocess_score(result.score))
+        .collect();
+
+    assert_eq!(scores.len(), TOP);
+    assert!(
+        scores
+            .windows(2)
+            .all(|window| window[0] <= window[1] + 2e-5),
+        "{distance:?} scores were not ordered by reported distance: {scores:?}"
+    );
+}
+
+#[test]
+fn binary_quantized_non_rescored_euclid_scores_are_ordered() {
+    binary_quantized_non_rescored_search_is_ordered(Distance::Euclid);
+}
+
+#[test]
+fn binary_quantized_non_rescored_manhattan_scores_are_ordered() {
+    binary_quantized_non_rescored_search_is_ordered(Distance::Manhattan);
+}
+
 pub fn check_matches(
     query_vectors: &[QueryVector],
     segment: &Segment,
