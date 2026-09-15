@@ -2,19 +2,21 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use collection::collection_state;
+use collection::collection_state::{self, ShardInfo};
 use collection::config::ShardingMethod;
 use collection::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use collection::operations::types::{
     PeerMetadata, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
 };
 use collection::shards::CollectionId;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use proptest::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vector_name_config::*;
 use segment::json_path::JsonPath;
 use segment::types::*;
+use tonic::transport::Uri;
 
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
@@ -23,7 +25,7 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::quota::QuotaConfig;
-use crate::types::PeerMetadataById;
+use crate::types::{PeerAddressById, PeerMetadataById};
 
 const COLLECTION_NAMES: &[&str] = &["alpha", "beta", "gamma"];
 const MISSING_COLLECTION_NAME: &str = "missing";
@@ -33,6 +35,7 @@ const DANGLING_ALIAS_NAME: &str = "dangling";
 
 const VECTOR_NAMES: &[&str] = &["", "text", "image"];
 const FIELD_NAMES: &[&str] = &["city", "count", "nested.key"];
+const SHARD_KEYWORDS: &[&str] = &["north", "south"];
 
 /// This node, and one other peer
 const PEER_IDS: &[PeerId] = &[PEER_ID, OTHER_PEER_ID];
@@ -65,21 +68,29 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
         let state = (
             Just(collections),
             arb_aliases(names),
+            arb_peer_address_by_id(),
             arb_peer_metadata_by_id(),
             arb_cluster_metadata(),
             arb_quota_config(),
         );
 
         state.prop_map(|state| {
-            let (collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config) = state;
+            let (
+                collections,
+                aliases,
+                peer_address_by_id,
+                peer_metadata_by_id,
+                cluster_metadata,
+                quota_config,
+            ) = state;
 
             ClusterState {
                 collections,
                 aliases,
+                peer_address_by_id,
                 peer_metadata_by_id,
                 cluster_metadata,
                 quota_config,
-                ..Default::default()
             }
         })
     })
@@ -89,12 +100,47 @@ fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
     let vectors =
         proptest::collection::btree_map(arb_vector_name(), arb_vector_name_config(), 0..3);
     let indexes = proptest::collection::hash_map(arb_field_name(), arb_field_schema(), 0..3);
+    let sharding_method = proptest::option::of(prop_oneof![
+        Just(ShardingMethod::Auto),
+        Just(ShardingMethod::Custom),
+    ]);
+    let shards = proptest::collection::vec(
+        (
+            arb_shard_key(),
+            proptest::collection::vec(arb_peer_id(), 1..3),
+        ),
+        0..3,
+    );
 
-    (vectors, indexes).prop_map(|(vectors, indexes)| {
-        let mut state = collection_state(vectors.into_iter().collect());
-        state.payload_index_schema.schema = indexes;
-        state
-    })
+    (vectors, indexes, sharding_method, shards).prop_map(
+        |(vectors, indexes, sharding_method, shards)| {
+            let mut state = collection_state(vectors.into_iter().collect());
+            state.payload_index_schema.schema = indexes;
+            state.config.params.sharding_method = sharding_method;
+
+            let custom_sharding = sharding_method.unwrap_or_default() == ShardingMethod::Custom;
+
+            for (shard_id, (shard_key, peers)) in shards.into_iter().enumerate() {
+                let shard_id = shard_id as ShardId;
+                let replicas = peers
+                    .into_iter()
+                    .map(|peer_id| (peer_id, ReplicaState::Active))
+                    .collect();
+
+                state.shards.insert(shard_id, ShardInfo { replicas });
+
+                if custom_sharding {
+                    state
+                        .shards_key_mapping
+                        .entry(shard_key)
+                        .or_default()
+                        .insert(shard_id);
+                }
+            }
+
+            state
+        },
+    )
 }
 
 fn arb_aliases(collections: Vec<CollectionId>) -> impl Strategy<Value = AliasMapping> {
@@ -127,6 +173,15 @@ fn arb_peer_metadata_by_id() -> impl Strategy<Value = PeerMetadataById> {
     proptest::collection::hash_map(arb_peer_id(), arb_peer_metadata(), 0..3)
 }
 
+fn arb_peer_address_by_id() -> impl Strategy<Value = PeerAddressById> {
+    proptest::collection::hash_set(arb_peer_id(), 0..3).prop_map(|peer_ids| {
+        peer_ids
+            .into_iter()
+            .map(|peer_id| (peer_id, peer_address(peer_id)))
+            .collect()
+    })
+}
+
 fn arb_peer_id() -> impl Strategy<Value = PeerId> {
     proptest::sample::select(PEER_IDS)
 }
@@ -134,6 +189,19 @@ fn arb_peer_id() -> impl Strategy<Value = PeerId> {
 fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
     proptest::sample::select(PEER_VERSIONS)
         .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
+}
+
+fn peer_address(peer_id: PeerId) -> Uri {
+    format!("http://peer-{peer_id}")
+        .parse()
+        .expect("valid peer URI")
+}
+
+fn arb_shard_key() -> impl Strategy<Value = ShardKey> {
+    prop_oneof![
+        proptest::sample::select(SHARD_KEYWORDS).prop_map(ShardKey::from),
+        (1_u64..=2).prop_map(ShardKey::from),
+    ]
 }
 
 /// Cluster metadata never holds a null value: that is how a key is removed
