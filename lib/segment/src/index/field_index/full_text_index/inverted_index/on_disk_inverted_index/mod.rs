@@ -9,8 +9,8 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -43,12 +43,14 @@ pub(in crate::index::field_index::full_text_index) mod types;
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
+pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 /// Mmap-backed immutable full-text inverted index.
 ///
 /// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
-/// `deleted_mask.bin`) is written once during [`Self::create`] and not
+/// `point_to_doc_len.dat`, `deleted_mask.bin`) is written once during
+/// [`Self::create`] and not
 /// mutated afterwards: `deleted_mask.bin` (legacy `deleted_points.dat` on
 /// older segments) records only the points whose document was empty at build
 /// time.
@@ -71,6 +73,14 @@ pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRe
     pub(in crate::index::field_index::full_text_index) vocab: UniversalHashMap<str, TokenId, S>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count:
         TypedStorage<S, usize>,
+    /// Total tokens per point, for BM25 length normalization. `None` when the
+    /// index does not record lengths.
+    ///
+    /// Written once at build time and never masked, like
+    /// `point_to_tokens_count`, so anything summing these must filter through
+    /// `deleted_points` first.
+    pub(in crate::index::field_index::full_text_index) point_to_doc_len:
+        Option<TypedStorage<S, u32>>,
     pub(in crate::index::field_index::full_text_index) deleted_points: DeletedBitVec,
 }
 
@@ -80,6 +90,7 @@ impl<S: UniversalRead> Storage<S> {
             postings: _,
             vocab: _,
             point_to_tokens_count: _,
+            point_to_doc_len: _,
             deleted_points,
         } = self;
 
@@ -93,6 +104,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             points_count: _,
         } = inverted_index;
 
@@ -101,6 +113,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         match postings {
             ImmutablePostings::Ids(postings) => create_postings_file(postings_path, postings)?,
@@ -131,6 +144,12 @@ impl OnDiskInvertedIndex<MmapFile> {
         let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
+
+        // No segment total is written: deletions are applied on open, so it can
+        // only be summed after masking.
+        if let Some(lens) = point_to_doc_len {
+            MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?;
+        }
 
         Ok(())
     }
@@ -182,6 +201,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             None,
         );
 
+        // Scheduled unconditionally: the scheduler records a missing path as a
+        // ready not-found rather than erroring.
+        fs.schedule_open(
+            &path.join(POINT_TO_DOC_LEN_FILE),
+            Some(Self::open_options(populate, AdviceSetting::Global)),
+            None,
+        );
+
         // "No tokens" mask
         preopen_deleted_mask(
             fs,
@@ -203,6 +230,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         let postings_open_options =
             Self::open_options(populate, AdviceSetting::Advice(Advice::Normal));
@@ -239,6 +267,17 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             Default::default(),
         )?);
 
+        // Absent unless this index records lengths. What that means is the
+        // caller's call, not this one's: see `FullTextIndex::new_mmap`.
+        let point_to_doc_len = fs
+            .open(
+                &point_to_doc_len_path,
+                Self::open_options(populate, AdviceSetting::Global),
+                Default::default(),
+            )
+            .ok_not_found()?
+            .map(TypedStorage::<S, u32>::new);
+
         // `deleted` length must match `point_to_tokens_count.len()` because it
         // only tracks the index's contents. The id-tracker's deleted mask can
         // be shorter or longer; if shorter, the missing entries default to
@@ -246,6 +285,15 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // shorter mask just means it doesn't yet know about those higher
         // offsets).
         let total_count = point_to_tokens_count.len()? as usize;
+
+        // A sidecar shorter than the counts can only come from a partially
+        // copied file set. Treated as absent: padding it would give every point
+        // past the truncation a zero that reads like a real length.
+        let point_to_doc_len = match point_to_doc_len {
+            Some(storage) if (storage.len()? as usize) < total_count => None,
+            other => other,
+        };
+
         let mut deleted = deleted_points.to_owned();
         deleted.resize(total_count, false);
         let compact_deleted_mask = bitor_deleted_mask(
@@ -264,6 +312,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 postings,
                 vocab,
                 point_to_tokens_count,
+                point_to_doc_len,
                 deleted_points: deleted,
             },
             compact_deleted_mask,
@@ -277,6 +326,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage
             .vocab
             .for_each_entry(|k, v| f(k, unwrap_token(v)))
+    }
+
+    /// Whether this index has document lengths on disk.
+    pub fn records_doc_len(&self) -> bool {
+        self.storage.point_to_doc_len.is_some()
     }
 
     /// Returns whether the point id is valid and active.
@@ -621,12 +675,17 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             self.path.join(POSTINGS_FILE),
             self.path.join(VOCAB_FILE),
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
-        ]
+        ];
+        // Listed only when it exists: this list feeds the snapshot file set.
+        if self.storage.point_to_doc_len.is_some() {
+            files.push(self.path.join(POINT_TO_DOC_LEN_FILE));
+        }
+        files
     }
 
     /// Every file of this index is written once at build time, so the full file
@@ -653,6 +712,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.postings.populate()?;
         self.storage.vocab.populate()?;
         self.storage.point_to_tokens_count.populate()?;
+        if let Some(point_to_doc_len) = &self.storage.point_to_doc_len {
+            point_to_doc_len.populate()?;
+        }
         Ok(())
     }
 
@@ -667,11 +729,15 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             deleted_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
         point_to_tokens_count.clear_ram_cache()?;
+        if let Some(point_to_doc_len) = point_to_doc_len {
+            point_to_doc_len.clear_ram_cache()?;
+        }
         clear_disk_cache(&deleted_mask_file(
             path,
             *compact_deleted_mask,

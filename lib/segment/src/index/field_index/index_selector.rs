@@ -510,11 +510,13 @@ impl IndexSelector<'_> {
     ) -> FieldIndexBuilder {
         match self {
             IndexSelector::NonAppendable { dir, memory } => {
+                let scoring = config.scoring();
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
                     config,
                     !memory.is_heap(),
                     deleted_points,
+                    scoring,
                 ))
             }
             IndexSelector::Appendable { dir } => FieldIndexBuilder::FullTextGridstoreIndex(
