@@ -3,6 +3,7 @@
 #![allow(deprecated)]
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 use collection::config::{
     CollectionConfigInternal, CollectionParams, IdTrackerParams, PayloadStorageParams,
@@ -36,6 +37,9 @@ use validator::Validate;
 pub use super::staging::{TestSlowDown, TestTransientError};
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+
+pub(crate) static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 // *Operation wrapper structure is only required for better OpenAPI generation
 
