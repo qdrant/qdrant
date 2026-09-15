@@ -414,7 +414,7 @@ mod tests {
 
     use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFs, Populate};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::RngExt;
     use rand::seq::SliceRandom;
     use rstest::rstest;
@@ -422,7 +422,9 @@ mod tests {
     use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::{
+        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE,
+    };
 
     fn generate_word() -> String {
         let mut rng = rand::rng();
@@ -510,6 +512,11 @@ mod tests {
         // todo: test with phrase-enabled
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
+        // Deleted points included: `remove` zeroes them on both sides.
+        assert_eq!(
+            immutable.point_to_doc_len, mutable.point_to_doc_len,
+            "document lengths lost converting to the immutable index",
+        );
         assert!(immutable.vocab.len() < mutable.vocab.len());
         assert!(immutable.postings.len() < mutable.postings.len());
         assert!(!immutable.vocab.is_empty());
@@ -609,6 +616,22 @@ mod tests {
             .read_whole()
             .unwrap()
             .into_owned();
+        let mmap_doc_lens = mmap
+            .storage
+            .point_to_doc_len
+            .as_ref()
+            .expect("sidecar written for a scoring index")
+            .read_whole()
+            .unwrap()
+            .into_owned();
+        let immutable_doc_lens = immutable
+            .point_to_doc_len
+            .as_ref()
+            .expect("lengths recorded");
+        let imm_mmap_doc_lens = imm_mmap
+            .point_to_doc_len
+            .as_ref()
+            .expect("lengths read back");
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
             // Check same deleted points
             assert_eq!(
@@ -620,11 +643,161 @@ mod tests {
             // Check same count
             assert_eq!(mmap_counts[point_id], *count);
             assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
+
+            // Check same document length, masked identically
+            assert_eq!(mmap_doc_lens[point_id], immutable_doc_lens[point_id]);
+            assert_eq!(
+                imm_mmap_doc_lens[point_id], immutable_doc_lens[point_id],
+                "point_id: {point_id}",
+            );
+        }
+
+        // A deleted point contributes nothing to the live total.
+        for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
+            if *count == 0 {
+                assert_eq!(
+                    imm_mmap_doc_lens[point_id], 0,
+                    "deleted point {point_id} still carries a length",
+                );
+            }
         }
 
         // Check same points count
         assert_eq!(immutable.points_count, mmap.points_count());
         assert_eq!(immutable.points_count, imm_mmap.points_count);
+    }
+
+    /// A missing sidecar makes the index report no lengths, never makes it
+    /// report itself absent. `files()` is keyed off what is on disk, which is
+    /// what decides whether a snapshot carries the sidecar.
+    #[rstest]
+    fn missing_doc_len_sidecar_reports_no_lengths(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
+
+        let open = || {
+            OnDiskInvertedIndex::<MmapFile>::open(
+                &MmapFs,
+                mmap_dir.path().to_path_buf(),
+                Populate::No,
+                phrase_matching,
+                &empty_deleted,
+            )
+        };
+
+        {
+            let opened = open().unwrap().expect("a freshly built index opens");
+            assert!(opened.records_doc_len());
+            assert!(
+                opened.files().contains(&sidecar),
+                "a sidecar on disk belongs to the snapshot file set",
+            );
+        }
+
+        fs_err::remove_file(&sidecar).unwrap();
+
+        let without = open()
+            .unwrap()
+            .expect("a missing sidecar must not make the index absent");
+        assert!(!without.records_doc_len());
+        assert!(
+            !without.files().contains(&sidecar),
+            "a file that is not on disk must not reach the snapshot file set",
+        );
+    }
+
+    /// Masking on load exists for a point deleted through the id-tracker after
+    /// the index was built. The congruence tests cannot reach it: they delete on
+    /// the mutable index, so those lengths are zero before `create` runs.
+    #[rstest]
+    fn doc_len_is_masked_for_runtime_deletions(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(64, 0, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+        let lens_at_build = immutable
+            .point_to_doc_len
+            .clone()
+            .expect("the fixture records lengths");
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+
+        // A point that is live and non-empty on disk, deleted only at runtime.
+        let victim = lens_at_build
+            .iter()
+            .position(|&len| len > 0)
+            .expect("some document has tokens");
+        let mut deleted = BitVec::repeat(false, lens_at_build.len());
+        deleted.set(victim, true);
+
+        let mmap = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &deleted,
+        )
+        .unwrap()
+        .unwrap();
+
+        let on_disk = mmap
+            .storage
+            .point_to_doc_len
+            .as_ref()
+            .unwrap()
+            .read_whole()
+            .unwrap()
+            .into_owned();
+        assert_eq!(
+            on_disk[victim], lens_at_build[victim],
+            "the file itself is written once and keeps the original length",
+        );
+
+        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        assert_eq!(
+            imm_mmap.point_to_doc_len.as_ref().unwrap()[victim],
+            0,
+            "a runtime deletion must be masked out on load",
+        );
+    }
+
+    /// A truncated sidecar is treated as absent rather than padded, since the
+    /// padding would read exactly like real zero-length documents.
+    #[rstest]
+    fn truncated_doc_len_sidecar_is_ignored(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+
+        let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
+        let full = fs_err::metadata(&sidecar).unwrap().len();
+        fs_err::OpenOptions::new()
+            .write(true)
+            .open(&sidecar)
+            .unwrap()
+            .set_len(full - size_of::<u32>() as u64)
+            .unwrap();
+
+        let empty_deleted = BitVec::new();
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .expect("the index still opens");
+        assert!(
+            !opened.records_doc_len(),
+            "a truncated sidecar must not be padded into looking complete",
+        );
     }
 
     #[rstest]

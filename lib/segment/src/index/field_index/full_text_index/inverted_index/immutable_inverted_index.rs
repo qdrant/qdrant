@@ -44,6 +44,14 @@ pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) postings: ImmutablePostings,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<usize>,
+
+    /// Total tokens per point, for BM25 length normalization. `None` when this
+    /// index does not record lengths.
+    ///
+    /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
+    /// so summing it never counts a deleted document. A zero can still be a
+    /// live document whose tokens were all filtered.
+    pub(in crate::index::field_index::full_text_index) point_to_doc_len: Option<Vec<u32>>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
 }
 
@@ -283,6 +291,13 @@ impl InvertedIndex for ImmutableInvertedIndex {
             return false; // Already removed or never actually existed
         }
         self.point_to_tokens_count[idx as usize] = 0;
+        if let Some(doc_len) = self
+            .point_to_doc_len
+            .as_mut()
+            .and_then(|lens| lens.get_mut(idx as usize))
+        {
+            *doc_len = 0;
+        }
         self.points_count = self.points_count.saturating_sub(1);
         true
     }
@@ -367,9 +382,9 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             vocab,
             point_to_tokens,
             point_to_doc,
-            // Dropped until the immutable index grows its own `doc_len`
-            // sidecar. Nothing reads document length yet.
-            point_to_doc_len: _,
+            mut point_to_doc_len,
+            // Not carried: deletions are masked on load, so a total written at
+            // build time would be stale. Whoever needs it sums the vector.
             total_tokens: _,
             points_count,
         } = index;
@@ -387,18 +402,29 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             }
         };
 
+        let point_to_tokens_count: Vec<usize> = point_to_tokens
+            .iter()
+            .map(|tokenset| {
+                tokenset
+                    .as_ref()
+                    .map(|tokenset| tokenset.len())
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        // Only pads a trailing point that was never given a length. The two
+        // are written as parallel files and indexed by point offset, so they
+        // have to stay the same length.
+        if let Some(lens) = point_to_doc_len.as_mut() {
+            debug_assert!(lens.len() <= point_to_tokens_count.len());
+            lens.resize(point_to_tokens_count.len(), 0);
+        }
+
         ImmutableInvertedIndex {
             postings,
             vocab,
-            point_to_tokens_count: point_to_tokens
-                .iter()
-                .map(|tokenset| {
-                    tokenset
-                        .as_ref()
-                        .map(|tokenset| tokenset.len())
-                        .unwrap_or(0)
-                })
-                .collect(),
+            point_to_tokens_count,
+            point_to_doc_len,
             points_count,
         }
     }
@@ -541,10 +567,31 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
             }
         }
 
+        // Document lengths are masked the same way, so that whoever sums them
+        // gets the live total rather than one inflated by deleted points.
+        let point_to_doc_len = match &index.storage.point_to_doc_len {
+            None => None,
+            Some(storage) => {
+                let mut lens = storage.read_whole()?.into_owned();
+                lens.resize(point_to_tokens_count.len(), 0);
+                for (idx, doc_len) in lens.iter_mut().enumerate() {
+                    if !index
+                        .storage
+                        .deleted_points
+                        .is_active(idx as PointOffsetType)
+                    {
+                        *doc_len = 0;
+                    }
+                }
+                Some(lens)
+            }
+        };
+
         Ok(ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             points_count: index.points_count(),
         })
     }
@@ -557,6 +604,7 @@ impl ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             points_count: _,
         } = self;
 
@@ -568,6 +616,10 @@ impl ImmutableInvertedIndex {
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
         let pttc_bytes = point_to_tokens_count.capacity() * size_of::<usize>();
-        postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes
+        let doc_len_bytes = point_to_doc_len
+            .as_ref()
+            .map(|lens| lens.capacity() * size_of::<u32>())
+            .unwrap_or(0);
+        postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes + doc_len_bytes
     }
 }
