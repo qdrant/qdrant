@@ -2,7 +2,7 @@ use common::types::ScoreType;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::NamedQuery;
-use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{Condition, Filter, SearchParams, WithPayloadInterface, WithVector};
 
 use super::query_enum::QueryEnum;
 use super::scroll::{QueryScrollRequestInternal, ScrollOrder};
@@ -343,8 +343,16 @@ fn recurse_prefetches(
             score_threshold,
         } = prefetch;
 
-        // Filters are propagated into the leaves
-        let filter = Filter::merge_opts(propagate_filter.clone(), filter);
+        // Filters are propagated into the leaves. The propagated filter is
+        // nested rather than flattened: `merge_owned` unions `should` lists
+        // and `min_should` conditions, which would turn the intended AND of
+        // the propagated and prefetch filters into an OR.
+        let filter = Filter::merge_opts(
+            propagate_filter
+                .clone()
+                .map(|filter| Filter::new_must(Condition::Filter(filter))),
+            filter,
+        );
 
         let source = if prefetches.is_empty() {
             // This is a leaf prefetch. Fetch this info from the segments
