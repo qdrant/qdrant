@@ -628,8 +628,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     fn apply_consensus_op(&self, operation: ConsensusOperations) -> StorageResult<bool> {
         let status = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
-                let status = self.toc.perform_collection_meta_op(*operation)?;
-                status
+                self.toc.perform_collection_meta_op(*operation)?
             }
 
             ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
