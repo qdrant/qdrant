@@ -508,6 +508,13 @@ ACTION_ACCESS = {
         "qdrant.Points/ClearPayload",
         coll_prw=True,
     ),
+    "block_hashes": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/block-hashes",
+        coll_prw=True,
+    ),
     "scroll_points": EndpointAccess(
         True,
         True,
@@ -1765,6 +1772,14 @@ def test_clear_payload():
             "points": {"points": {"ids": [{"num": 1}]}},
             **SHARD_KEY_SELECTOR,
         },
+    )
+
+
+def test_block_hashes():
+    check_access(
+        "block_hashes",
+        rest_request={"payload_key": "sync.fingerprint", "block_count": 16},
+        path_params={"collection_name": COLL_NAME},
     )
 
 
