@@ -39,7 +39,7 @@ fn build_hnsw(
     path: &Path,
     segment: &Segment,
     hnsw_config: HnswConfig,
-    gpu_device: Option<&LockedGpuDevice>,
+    gpu_device: Option<&mut LockedGpuDevice>,
     stopped: &AtomicBool,
 ) -> HNSWIndex {
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
@@ -250,12 +250,12 @@ fn test_gpu_filterable_hnsw() {
 
     let hnsw_dir_gpu_no_idx = Builder::new().prefix("hnsw_gpu_no_idx").tempdir().unwrap();
     let hnsw_gpu_no_idx = {
-        let locked = LockedGpuDevice::new(gpu_device.lock());
+        let mut locked = LockedGpuDevice::new(gpu_device.lock());
         build_hnsw(
             hnsw_dir_gpu_no_idx.path(),
             &segment_no_idx,
             hnsw_config,
-            Some(&locked),
+            Some(&mut locked),
             &stopped,
         )
     };
@@ -284,12 +284,12 @@ fn test_gpu_filterable_hnsw() {
 
     let hnsw_dir_gpu_idx = Builder::new().prefix("hnsw_gpu_idx").tempdir().unwrap();
     let hnsw_gpu_idx = {
-        let locked = LockedGpuDevice::new(gpu_device.lock());
+        let mut locked = LockedGpuDevice::new(gpu_device.lock());
         build_hnsw(
             hnsw_dir_gpu_idx.path(),
             &segment_idx,
             hnsw_config,
-            Some(&locked),
+            Some(&mut locked),
             &stopped,
         )
     };
