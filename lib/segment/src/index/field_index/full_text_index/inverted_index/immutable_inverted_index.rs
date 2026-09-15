@@ -41,9 +41,9 @@ fn get_all_or_none<'a, V: PostingValue>(
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
 pub struct ImmutableInvertedIndex {
-    pub(in crate::index::field_index::full_text_index) postings: ImmutablePostings,
-    pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
-    pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<usize>,
+    pub postings: ImmutablePostings,
+    pub vocab: HashMap<String, TokenId>,
+    pub point_to_tokens_count: Vec<usize>,
 
     /// Total tokens per point, for BM25 length normalization. `None` when this
     /// index does not record lengths.
@@ -51,8 +51,8 @@ pub struct ImmutableInvertedIndex {
     /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
     /// so summing it never counts a deleted document. A zero can still be a
     /// live document whose tokens were all filtered.
-    pub(in crate::index::field_index::full_text_index) point_to_doc_len: Option<Vec<u32>>,
-    pub(in crate::index::field_index::full_text_index) points_count: usize,
+    pub point_to_doc_len: Option<Vec<u32>>,
+    pub points_count: usize,
 }
 
 impl ImmutableInvertedIndex {
