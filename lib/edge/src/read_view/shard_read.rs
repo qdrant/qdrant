@@ -14,7 +14,7 @@ use crate::requests::{
     ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
 
-mod sealed {
+pub(super) mod sealed {
     /// Empty marker supertrait of [`EdgeShardRead`](super::EdgeShardRead). Unnameable outside the
     /// crate, so downstream crates cannot implement `EdgeShardRead`; it carries no methods, so
     /// nothing internal becomes callable through it.
@@ -152,7 +152,7 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
 
 /// Build a one-shot read snapshot for a shard. Private so it is not part of the trait's surface —
 /// the snapshot is an implementation detail of the blanket [`EdgeShardRead`] impl.
-fn view<T: ReadViewProvider + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
+pub(super) fn view<T: ReadViewProvider + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
     EdgeReadView::new(
         shard.read_segments(),
         shard.config_snapshot(),

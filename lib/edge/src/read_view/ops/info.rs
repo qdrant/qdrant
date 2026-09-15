@@ -24,12 +24,14 @@ pub struct ShardInfo {
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn info(&self) -> OperationResult<ShardInfo> {
+        self.check_stopped()?;
         let mut segments_count = 0;
         let mut points_count = 0;
         let mut indexed_vectors_count = 0;
         let mut payload_schema = HashMap::new();
 
         for segment in &self.segments {
+            self.check_stopped()?;
             segments_count += 1;
 
             let segment_info = segment.read_segment().info()?;

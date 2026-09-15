@@ -25,7 +25,10 @@ pub use edge_shard::EdgeShard;
 pub use read_only::{
     LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
 };
-pub use read_view::{EdgeShardRead, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
+pub use read_view::{
+    EdgeShardRead, EdgeShardReadWithCancellation, Group, ReadSegmentHandle, SearchMatrixResponse,
+    ShardInfo,
+};
 pub use reexports::*;
 pub use requests::{
     CountRequest, FacetRequest, GroupRequest, Prefetch, QueryBatchRequest, QueryRequest,

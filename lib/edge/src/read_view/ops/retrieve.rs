@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicBool;
-
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
@@ -16,6 +14,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_payload: Option<WithPayloadInterface>,
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
+        self.check_stopped()?;
         let with_payload =
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));
@@ -25,10 +24,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             point_ids,
             &with_payload,
             &with_vector,
-            &AtomicBool::new(false),
+            &self.is_stopped,
             HwMeasurementAcc::disposable_edge(),
             DeferredBehavior::VisibleOnly,
         )?;
+        self.check_stopped()?;
 
         let points: Vec<_> = point_ids
             .iter()
