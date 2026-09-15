@@ -11,8 +11,8 @@ use shard::retrieve::record_internal::RecordInternal;
 use super::shard_read::{sealed, view};
 use super::{EdgeReadView, Group, ReadViewProvider, SearchMatrixResponse, ShardInfo};
 use crate::requests::{
-    CountRequest, FacetRequest, GroupRequest, QueryRequest, RetrieveRequest, ScrollRequest,
-    SearchMatrixRequest, SearchRequest,
+    CountRequest, FacetRequest, GroupRequest, QueryBatchRequest, QueryRequest, RetrieveRequest,
+    ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
 use crate::{EdgeConfig, ReadOnlyEdgeShard};
 
@@ -57,7 +57,7 @@ pub trait EdgeShardReadWithCancellation: sealed::Sealed {
     /// Returns one result list per request, in request order.
     fn query_batch(
         &self,
-        requests: Vec<QueryRequest>,
+        request: QueryBatchRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
@@ -130,11 +130,12 @@ where
 
     fn query_batch(
         &self,
-        request: Vec<QueryRequest>,
+        request: QueryBatchRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         run(self, is_stopped, |view| {
-            view.query_batch(request.into_iter().map(Into::into).collect())
+            let QueryBatchRequest { queries } = request;
+            view.query_batch(queries.into_iter().map(Into::into).collect())
         })
     }
 
@@ -255,7 +256,7 @@ mod tests {
         assert_cancelled(api.path(stopped.clone()));
         assert_cancelled(api.search(SearchRequest::new(nearest(), 3), stopped.clone()));
         assert_cancelled(api.query(query(), stopped.clone()));
-        assert_cancelled(api.query_batch(vec![], stopped.clone()));
+        assert_cancelled(api.query_batch(QueryBatchRequest::new(vec![]), stopped.clone()));
         assert_cancelled(api.scroll(ScrollRequest::new(), stopped.clone()));
         assert_cancelled(api.retrieve(RetrieveRequest::new(vec![]), stopped.clone()));
         assert_cancelled(api.count(CountRequest::new(), stopped.clone()));
@@ -287,9 +288,16 @@ mod tests {
             EdgeShardRead::query(&shard, query()).unwrap()
         );
         assert_eq!(
-            api.query_batch(vec![query(), QueryRequest::new(2)], stopped.clone())
-                .unwrap(),
-            EdgeShardRead::query_batch(&shard, vec![query(), QueryRequest::new(2)]).unwrap()
+            api.query_batch(
+                QueryBatchRequest::new(vec![query(), QueryRequest::new(2)]),
+                stopped.clone(),
+            )
+            .unwrap(),
+            EdgeShardRead::query_batch(
+                &shard,
+                QueryBatchRequest::new(vec![query(), QueryRequest::new(2)]),
+            )
+            .unwrap()
         );
         assert_eq!(api.count(CountRequest::new(), stopped.clone()).unwrap(), 5);
         assert_eq!(
@@ -311,7 +319,11 @@ mod tests {
         assert_eq!(api.info(stopped.clone()).unwrap().points_count, 5);
         assert_eq!(api.path(stopped.clone()).unwrap(), dir.path());
         api.config_snapshot(stopped.clone()).unwrap();
-        assert!(api.query_batch(vec![], stopped.clone()).unwrap().is_empty());
+        assert!(
+            api.query_batch(QueryBatchRequest::new(vec![]), stopped.clone())
+                .unwrap()
+                .is_empty()
+        );
         assert!(!stopped.load(Ordering::Relaxed));
 
         // A cancellation is scoped to its flag, not stored on the shard.

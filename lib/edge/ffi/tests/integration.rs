@@ -4295,7 +4295,9 @@ fn query_batch_matches_individual_queries() {
     ];
 
     let batches = shard
-        .query_batch(requests.clone())
+        .query_batch(qdrant_edge_ffi::QueryBatchRequest {
+            queries: requests.clone(),
+        })
         .expect("query_batch failed");
 
     assert_eq!(batches.len(), 3);
@@ -4327,7 +4329,11 @@ fn query_batch_empty_returns_empty() {
     let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
     upsert_three(&shard);
 
-    let batches = shard.query_batch(Vec::new()).expect("query_batch failed");
+    let batches = shard
+        .query_batch(qdrant_edge_ffi::QueryBatchRequest {
+            queries: Vec::new(),
+        })
+        .expect("query_batch failed");
 
     assert!(batches.is_empty());
 }

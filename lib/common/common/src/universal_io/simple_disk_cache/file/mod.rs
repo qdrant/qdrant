@@ -9,8 +9,9 @@ use aligned_vec::{AVec, RuntimeAlign};
 use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
-use super::DiskCacheRemote;
 use super::local_state::LocalState;
+use super::stats::{DiskCacheStats, FetchStats};
+use super::{DiskCacheFs, DiskCacheRemote};
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
 
@@ -44,6 +45,7 @@ where
 {
     /// Clone of the remote filesystem handle, used to lazily open `remote`.
     remote_fs: R::Fs,
+    pub(super) stats: DiskCacheStats,
     /// Backend-specific per-open extras for the remote.
     remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
     /// Path to the remote file. Used to lazily open `remote`.
@@ -85,11 +87,15 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
     /// `PreferBackground`.
-    OpenPrefill { pipeline: OwnedPipeline<R, ()> },
+    OpenPrefill {
+        pipeline: OwnedPipeline<R, ()>,
+        fetch: FetchStats,
+    },
     /// Open-time partial prefill
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
+        fetch: FetchStats,
     },
 }
 
@@ -171,7 +177,7 @@ where
     R: DiskCacheRemote,
 {
     pub(super) fn new(
-        remote_fs: R::Fs,
+        fs: &DiskCacheFs<R>,
         remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
         remote_path: impl AsRef<Path>,
         local_path: PathBuf,
@@ -181,7 +187,8 @@ where
     ) -> Self {
         let is_ready = state.is_ready();
         Self {
-            remote_fs,
+            remote_fs: fs.remote_fs.clone(),
+            stats: fs.stats.clone(),
             remote_extra,
             remote_path: remote_path.as_ref().to_owned(),
             open_options: options,

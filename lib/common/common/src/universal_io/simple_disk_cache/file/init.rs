@@ -2,8 +2,9 @@
 
 use std::ops::Range;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
-use super::{DiskCache, State};
+use super::{DiskCache, FetchStats, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{OwnedPipeline, UioResult};
@@ -60,10 +61,14 @@ where
 
         let (remote, local) = match std::mem::replace(&mut *state, State::Uninit) {
             State::Uninit => self.init_from_scratch(self.open_remote()?)?,
-            State::OpenPrefill { pipeline } => self.init_from_open_prefill(pipeline)?,
-            State::PartialPrefill { pipeline, len } => {
-                self.init_from_partial_prefill(pipeline, len)?
+            State::OpenPrefill { pipeline, fetch } => {
+                self.init_from_open_prefill(pipeline, fetch)?
             }
+            State::PartialPrefill {
+                pipeline,
+                len,
+                fetch,
+            } => self.init_from_partial_prefill(pipeline, len, fetch)?,
             State::Ready { .. } => {
                 unreachable!("We just observed `!ready` while holding the mutex lock")
             }
@@ -88,8 +93,11 @@ where
     pub(super) fn init_from_open_prefill(
         &self,
         mut pipeline: OwnedPipeline<R, ()>,
+        fetch: FetchStats,
     ) -> UioResult<(R, LocalState)> {
-        match pipeline.wait()? {
+        let completion = pipeline.wait()?;
+        fetch.complete(completion.as_ref().map_or(0, |(_, bytes)| bytes.len()));
+        match completion {
             Some((_, bytes)) => {
                 // `bytes` covers the whole file, so its length is the remote length.
                 let local =
@@ -116,10 +124,13 @@ where
         &self,
         mut pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
+        fetch: FetchStats,
     ) -> UioResult<(R, LocalState)> {
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
 
-        match pipeline.wait()? {
+        let completion = pipeline.wait()?;
+        fetch.complete(completion.as_ref().map_or(0, |(_, bytes)| bytes.len()));
+        match completion {
             Some((blocks_range, bytes)) if !bytes.is_empty() => {
                 // SAFETY: `start` is block-aligned and `bytes` covers
                 // `blocks_range` exactly (up to EOF), and the remote is
@@ -148,8 +159,12 @@ where
         if state.is_uninit() {
             // Use the remote's `schedule_whole` to avoid an extra `len` call.
             let mut pipeline = OwnedPipeline::new(self.open_remote()?)?;
+            let started = Instant::now();
             pipeline.schedule_whole((), 0)?;
-            *state = State::OpenPrefill { pipeline };
+            *state = State::OpenPrefill {
+                pipeline,
+                fetch: self.stats.fetch(started),
+            };
         }
 
         Ok(())

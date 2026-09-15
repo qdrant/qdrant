@@ -59,7 +59,8 @@ mod qdrant_edge {
     use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
     use super::query::{
-        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
+        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest, PyQueryRequest,
+        PySample,
     };
     #[pymodule_export]
     use super::scroll::PyScrollRequest;
@@ -148,10 +149,9 @@ impl PyEdgeShard {
     /// Execute several queries as one planned batch.
     ///
     /// Cheaper than one `query` per request: the batch shares a single pass over the segments.
-    /// Returns one result list per request, in the same order as `queries`.
-    pub fn query_batch(&self, queries: Vec<PyQueryRequest>) -> Result<Vec<Vec<PyScoredPoint>>> {
-        let requests = queries.into_iter().map(Into::into).collect();
-        let batches = self.get_shard()?.query_batch(requests)?;
+    /// Returns one result list per request, in the same order as `request.queries`.
+    pub fn query_batch(&self, request: PyQueryBatchRequest) -> Result<Vec<Vec<PyScoredPoint>>> {
+        let batches = self.get_shard()?.query_batch(request.into())?;
         Ok(batches.into_iter().map(PyScoredPoint::wrap_vec).collect())
     }
 

@@ -31,8 +31,8 @@ pub use read_view::{
 };
 pub use reexports::*;
 pub use requests::{
-    CountRequest, FacetRequest, GroupRequest, Prefetch, QueryRequest, RetrieveRequest,
-    ScrollRequest, SearchMatrixRequest, SearchRequest,
+    CountRequest, FacetRequest, GroupRequest, Prefetch, QueryBatchRequest, QueryRequest,
+    RetrieveRequest, ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
 pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
