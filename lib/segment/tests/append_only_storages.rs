@@ -134,8 +134,14 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     drop(segment);
 
     // Everything survives a reload through the ordinary loader.
-    let mut segment =
-        load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let mut segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
     assert!(segment.append_only_mutations);
 
     // The repair every shard loader runs; deleting the leftovers it finds would

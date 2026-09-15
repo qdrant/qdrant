@@ -927,8 +927,14 @@ fn create_field_index_pins_pending_payload_state() {
     // Simulated crash: dropped without any flush after the op.
     drop(holder);
 
-    let mut segment = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false))
-        .expect("segment must load after simulated crash");
+    let mut segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load after simulated crash");
 
     // The pre-build flush persisted the pending clear together with the index.
     let reloaded = segment.payload(0.into(), &hw_counter).unwrap();
@@ -1137,7 +1143,14 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
     );
 
     drop(holder);
-    let reloaded = load_segment(&segment_path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let reloaded = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
     let hits = reloaded
         .read_filtered(
             None,

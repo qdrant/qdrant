@@ -207,8 +207,14 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment =
-        load_segment(&entry.path(), Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let restored_segment = load_segment(
+        &entry.path(),
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

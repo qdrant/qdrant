@@ -83,9 +83,10 @@ fn test_snapshot_all() {
 /// as `active`.
 #[test]
 fn test_snapshot_includes_segment_manifest() {
-    let mut flags = FeatureFlags::default();
-    flags.write_segment_manifest = true;
-    init_feature_flags(flags);
+    init_feature_flags(FeatureFlags {
+        write_segment_manifest: true,
+        ..Default::default()
+    });
 
     // Another test in this process may have initialized the feature flags first; the manifest is
     // only written when the flag is actually enabled.

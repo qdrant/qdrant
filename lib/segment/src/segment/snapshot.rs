@@ -17,6 +17,7 @@ use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
+use crate::pending_changes::list_pending_changes_log_files;
 use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
@@ -174,13 +175,20 @@ impl Segment {
                 (file, FileVersion::from(version))
             });
 
+        // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
+        // segment. Carried in snapshots so recovery replays them onto the segment.
+        let pending_changes_files = list_pending_changes_log_files(&self.segment_path)
+            .into_iter()
+            .map(|file| (file, FileVersion::Unversioned));
+
         let mut file_versions = HashMap::with_capacity(files.len());
 
         let files = files
             .chain(vector_storage_files)
             .chain(payload_storage_files)
             .chain(immutable_files)
-            .chain(payload_index_files);
+            .chain(payload_index_files)
+            .chain(pending_changes_files);
 
         for (path, version) in files {
             // All segment files should be contained within segment directory
@@ -347,6 +355,14 @@ pub fn snapshot_files(
     let version_file_path = segment.segment_path.join(VERSION_FILE);
     tar.blocking_append_file(&version_file_path, Path::new(VERSION_FILE))
         .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
+
+    // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
+    // segment; replayed onto the segment when it is loaded on recovery
+    for file in list_pending_changes_log_files(&segment.segment_path) {
+        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
+        tar.blocking_append_file(&file, stripped_path)
+            .map_err(|err| failed_to_add("pending changes log file", &file, err))?;
+    }
 
     Ok(())
 }
