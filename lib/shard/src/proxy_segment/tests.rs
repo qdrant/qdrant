@@ -505,7 +505,7 @@ fn test_take_snapshot() {
 
     let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
     eprintln!("Snapshot into {:?}", snapshot_file.path());
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
+    let tar = tar_ext::BuilderExt::new_file(snapshot_file.path()).unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
     proxy_segment

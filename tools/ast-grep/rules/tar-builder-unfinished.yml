@@ -1,0 +1,63 @@
+id: tar-builder-unfinished
+language: rust
+severity: error
+message: >-
+  `tar_ext::BuilderExt` is constructed here, but never `finish()`ed in this
+  scope.
+note: |
+  `tar_ext::BuilderExt` does *not* finalize the archive on drop.
+  Call `blocking_finish()` (sync) or `finish().await` (async) on the builder
+  explicitly.
+ignores:
+  - lib/edge/publish/**
+utils:
+  # `fn` or closure body — the innermost one is the scope we search.
+  scope:
+    any:
+      - kind: function_item
+      - kind: closure_expression
+  # `$VAR.finish()` / `$VAR.blocking_finish()`. When the constructor result is
+  # not bound to a name, `$VAR` stays free and matches any receiver.
+  finish-call:
+    any:
+      - kind: call_expression
+        has:
+          field: function
+          kind: field_expression
+          all:
+            - has: { field: value, pattern: $VAR }
+            - has: { field: field, regex: '^(blocking_)?finish$' }
+      # Macro bodies are unparsed tokens, e.g. `assert!(tar.finish().await…)`.
+      - kind: token_tree
+        regex: '\.(blocking_)?finish\s*\('
+rule:
+  kind: call_expression
+  all:
+    # `[tar_ext::]BuilderExt::{new_file,new_{seekable,streaming}_{owned,borrowed}}(…)`
+    - has:
+        field: function
+        kind: scoped_identifier
+        all:
+          - has:
+              field: path
+              regex: '\bBuilderExt$'
+          - has:
+              field: name
+              regex: '^new_(file|(seekable|streaming)_(owned|borrowed))$'
+    # Bind the name the builder is stored under, if any. The constructor is
+    # usually wrapped in `?` or `.unwrap()`, so climb until the `let`, but not
+    # past the innermost scope.
+    - any:
+        - inside:
+            kind: let_declaration
+            stopBy: { matches: scope }
+            has: { field: pattern, pattern: $VAR }
+        - not:
+            inside:
+              kind: let_declaration
+              stopBy: { matches: scope }
+    - inside:
+        matches: scope
+        stopBy: { matches: scope }
+        not:
+          has: { matches: finish-call, stopBy: end }

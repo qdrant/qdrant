@@ -5,9 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use fs_err::File;
 use tap::Tap;
 use tokio::sync::Mutex;
 use tokio::task::JoinError;
+
+use crate::zeros::WriteZerosExt as _;
 
 /// A wrapper around [`tar::Builder`] that:
 /// 1. Usable both in sync and async contexts.
@@ -80,8 +83,15 @@ impl<W: Seek> Seek for FusedWriteSeek<W> {
     }
 }
 
+/// NOTE: don't forget to explicitly finalize the archive with
+/// [`Self::finish`]/[`Self::blocking_finish`].
 impl BuilderExt<OwnedOutput> {
-    pub fn new_seekable_owned(output: impl Write + Seek + Send + 'static) -> Self {
+    pub fn new_file(path: &Path) -> io::Result<Self> {
+        let f = File::create(path)?;
+        Ok(Self::new_seekable_owned(SparseWriter::new(f)))
+    }
+
+    fn new_seekable_owned(output: impl Write + Seek + Send + 'static) -> Self {
         Self::new(Box::new(output))
     }
 
@@ -90,8 +100,10 @@ impl BuilderExt<OwnedOutput> {
     }
 }
 
+/// See the NOTE above.
 impl<'a> BuilderExt<BorrowedOutput<'a>> {
-    pub fn new_seekable_borrowed(output: impl Write + Seek + 'a) -> Self {
+    #[cfg(test)]
+    fn new_seekable_borrowed(output: impl Write + Seek + 'a) -> Self {
         Self::new(Box::new(output))
     }
 
@@ -270,6 +282,105 @@ fn join_relative(base: &Path, rel_path: &Path) -> io::Result<PathBuf> {
     Ok(base.join(rel_path))
 }
 
+/// [`Write`] impl that skips writing zero-byte sequences and uses [`Seek`]
+/// instead.
+///
+/// I.e. [`SparseWriter<File>`] writes tar archives as fs-sparse files.
+///
+/// Caveat: "doesn't write zeros" implies it wouldn't overwrite/clear old pre-
+/// existing data (if any). [`BuilderExt::new_file`] is OK because it wraps
+/// newly created empty file, and this module don't expose other ways to create
+/// [`SparseWriter`].
+///
+/// # Rationale
+///
+/// Terminology first:
+///
+/// - "fs-sparse" are files that are sparse on a filesystem level.
+///   E.g., Qdrant WAL files are usually sparse. Keywords: `lseek(SEEK_HOLE)`,
+///   see <https://en.wikipedia.org/wiki/Sparse_file>.
+///
+/// - "tar-sparse" entries - on-wire format that `tar` implementations use to
+///   encode sparse files. Keywords: tar header, `type='s'`, see
+///   <http://www.gnu.org/software/tar/manual/html_node/Sparse-Formats.html>.
+///
+/// The problem: On macOS, tar-rs doesn't (yet) encode fs-sparse files as
+/// tar-sparse entries, due to reliability issues.
+/// See <https://github.com/qdrant/qdrant/issues/9858>.
+///
+/// Our workaround: if we can't write tar archives with tar-sparse entries,
+/// let's write tar archives as fs-sparse files instead.
+struct SparseWriter<W: Write + Seek> {
+    output: W,
+    /// Bytes of an all-zero run not yet materialized in `output`.
+    pending_hole: u64,
+    /// True unless [`io::ErrorKind::NotSeekable`] encountered.
+    is_seekable: bool,
+}
+
+impl<W: Write + Seek> SparseWriter<W> {
+    fn new(output: W) -> Self {
+        Self {
+            output,
+            pending_hole: 0,
+            is_seekable: true,
+        }
+    }
+
+    fn materialize_pending_hole(&mut self) -> io::Result<()> {
+        match self.pending_hole {
+            0 => Ok(()),
+            // Avoid seeks for very small holes.
+            pending @ ..=4096 => {
+                self.pending_hole = 0;
+                self.output.write_zeros(pending as usize)
+            }
+            pending => {
+                self.pending_hole = 0;
+                match self.output.seek(io::SeekFrom::Current(pending as i64 - 1)) {
+                    Ok(_) => self.output.write_all(&[0]),
+                    Err(err) if err.kind() == io::ErrorKind::NotSeekable => {
+                        self.is_seekable = false;
+                        self.output.write_zeros(pending as usize)
+                    }
+                    Err(err) => Err(err),
+                }
+            }
+        }
+    }
+}
+
+impl<W: Write + Seek> Drop for SparseWriter<W> {
+    fn drop(&mut self) {
+        // We use `SparseWriter` only for `std::fs::File`, so it's crash-safe
+        // to performs writes in `Drop` (unlike `SyncIoBridge`).
+        let _ = self.materialize_pending_hole();
+    }
+}
+
+impl<W: Write + Seek> Write for SparseWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.is_seekable && !buf.is_empty() && buf.iter().all(|&byte| byte == 0) {
+            self.pending_hole += buf.len() as u64;
+            return Ok(buf.len());
+        }
+        self.materialize_pending_hole()?;
+        self.output.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.materialize_pending_hole()?;
+        self.output.flush()
+    }
+}
+
+impl<W: Write + Seek> Seek for SparseWriter<W> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        self.materialize_pending_hole()?;
+        self.output.seek(pos)
+    }
+}
+
 /// A wrapper that provides "dummy" [`io::Seek`] implementation to [`io::Write`] stream.
 struct SeekWrapper<T>(T);
 
@@ -342,6 +453,7 @@ mod tests {
     #[tokio::test]
     async fn test_dummy_drop_fail() {
         let data = Arc::new(Mutex::new(Vec::new()));
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(true, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
@@ -350,6 +462,7 @@ mod tests {
     #[tokio::test]
     async fn test_dummy_drop_ok() {
         let data = Arc::new(Mutex::new(Vec::new()));
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(false, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
@@ -368,6 +481,7 @@ mod tests {
 
     #[test]
     fn test_write_fail() {
+        // ast-grep-ignore: tar-builder-unfinished
         let tar = BuilderExt::new_streaming_borrowed(Vec::new());
         tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
         let result = tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"));
@@ -382,5 +496,155 @@ mod tests {
             .unwrap()
             .unwrap();
         tar.blocking_finish().unwrap();
+    }
+
+    // -------------------------------------------------------------------------
+    // --------------------------- Hole skipping tests -------------------------
+    // -------------------------------------------------------------------------
+
+    /// Counts the bytes physically written, to observe hole skipping.
+    struct CountingWriter {
+        inner: io::Cursor<Vec<u8>>,
+        written: u64,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.written += buf.len() as u64;
+            self.inner.write(buf)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    impl Seek for CountingWriter {
+        fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    /// Contents mimicking a preallocated sparse storage page: data at the start,
+    /// a long run of zeros, data in the middle, and a zero run at the end.
+    fn zero_heavy_contents() -> Vec<u8> {
+        let mut contents = vec![0_u8; 4 * 1024 * 1024];
+        contents[..6].copy_from_slice(b"header");
+        contents[2 * 1024 * 1024..2 * 1024 * 1024 + 4].copy_from_slice(b"data");
+        contents
+    }
+
+    fn unpack_single_entry(archive: &[u8]) -> Vec<u8> {
+        let mut ar = tar::Archive::new(io::Cursor::new(archive));
+        let mut entries = ar.entries().unwrap();
+        let mut entry = entries.next().unwrap().unwrap();
+        let mut contents = Vec::new();
+        io::Read::read_to_end(&mut entry, &mut contents).unwrap();
+        assert!(entries.next().is_none());
+        contents
+    }
+
+    #[test]
+    fn test_append_file_skips_zero_runs() {
+        let contents = zero_heavy_contents();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("page_0.dat");
+        fs_err::write(&src, &contents).unwrap();
+
+        let mut output = CountingWriter {
+            inner: io::Cursor::new(Vec::new()),
+            written: 0,
+        };
+        let tar = BuilderExt::new_seekable_borrowed(SparseWriter::new(&mut output));
+        tar.blocking_append_file(&src, Path::new("page_0.dat"))
+            .unwrap();
+        tar.blocking_finish().unwrap();
+
+        // The archive is logically complete but the zero runs were seeked over,
+        // not written (headers + data + footer stay well under one zero run).
+        let archive = output.inner.into_inner();
+        assert!(archive.len() as u64 > contents.len() as u64);
+        assert!(
+            output.written < 64 * 1024,
+            "expected zero runs to be skipped, but {} bytes were written",
+            output.written
+        );
+
+        assert_eq!(unpack_single_entry(&archive), contents);
+    }
+
+    #[test]
+    fn test_append_dir_all_skips_zero_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("storage");
+        fs_err::create_dir_all(src.join("nested")).unwrap();
+        let contents = zero_heavy_contents();
+        fs_err::write(src.join("nested").join("page_0.dat"), &contents).unwrap();
+        fs_err::write(src.join("meta.json"), b"{}").unwrap();
+
+        let mut output = CountingWriter {
+            inner: io::Cursor::new(Vec::new()),
+            written: 0,
+        };
+        let tar = BuilderExt::new_seekable_borrowed(SparseWriter::new(&mut output));
+        tar.blocking_append_dir_all(&src, Path::new("storage"))
+            .unwrap();
+        tar.blocking_finish().unwrap();
+
+        let archive = output.inner.into_inner();
+        assert!(archive.len() as u64 > contents.len() as u64);
+        assert!(
+            output.written < 64 * 1024,
+            "expected zero runs to be skipped, but {} bytes were written",
+            output.written
+        );
+
+        let unpack_dir = tempfile::tempdir().unwrap();
+        crate::tar_unpack::tar_unpack_reader(io::Cursor::new(archive), unpack_dir.path()).unwrap();
+        let unpacked = unpack_dir.path().join("storage");
+        assert_eq!(
+            fs_err::read(unpacked.join("nested").join("page_0.dat")).unwrap(),
+            contents
+        );
+        assert_eq!(fs_err::read(unpacked.join("meta.json")).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn test_append_file_streaming_writes_zero_runs() {
+        let contents = zero_heavy_contents();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("page_0.dat");
+        fs_err::write(&src, &contents).unwrap();
+
+        // Streaming aka non-seekable output: holes must be written out as zeros.
+        let mut archive = Vec::new();
+        let tar = BuilderExt::new_seekable_borrowed(SparseWriter::new(SeekWrapper(&mut archive)));
+        tar.blocking_append_file(&src, Path::new("page_0.dat"))
+            .unwrap();
+        tar.blocking_finish().unwrap();
+
+        assert_eq!(unpack_single_entry(&archive), contents);
+    }
+
+    #[test]
+    fn test_drop_without_finish_keeps_entry_data() {
+        let contents = zero_heavy_contents();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("page_0.dat");
+        fs_err::write(&src, &contents).unwrap();
+        let archive_path = dir.path().join("archive.tar");
+
+        // ast-grep-ignore: tar-builder-unfinished
+        let tar = BuilderExt::new_file(&archive_path).unwrap();
+        tar.blocking_append_file(&src, Path::new("page_0.dat"))
+            .unwrap();
+        drop(tar);
+
+        let len = fs_err::metadata(&archive_path).unwrap().len();
+        assert!(
+            len >= contents.len() as u64,
+            "archive truncated to {len} bytes, the entry data alone is {} bytes",
+            contents.len(),
+        );
     }
 }
