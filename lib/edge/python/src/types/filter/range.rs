@@ -12,6 +12,7 @@ use crate::repr::*;
 pub enum PyRange {
     Float(PyRangeFloat),
     DateTime(PyRangeDateTime),
+    Integer(PyRangeInteger),
 }
 
 impl Repr for PyRange {
@@ -19,6 +20,7 @@ impl Repr for PyRange {
         match self {
             PyRange::Float(float) => float.fmt(f),
             PyRange::DateTime(date_time) => date_time.fmt(f),
+            PyRange::Integer(integer) => integer.fmt(f),
         }
     }
 }
@@ -28,6 +30,7 @@ impl From<RangeInterface> for PyRange {
         match range {
             RangeInterface::Float(float) => PyRange::Float(PyRangeFloat(float)),
             RangeInterface::DateTime(date_time) => PyRange::DateTime(PyRangeDateTime(date_time)),
+            RangeInterface::Integer(integer) => PyRange::Integer(PyRangeInteger(integer)),
         }
     }
 }
@@ -37,6 +40,7 @@ impl From<PyRange> for RangeInterface {
         match range {
             PyRange::Float(float) => RangeInterface::Float(float.0),
             PyRange::DateTime(date_time) => RangeInterface::DateTime(date_time.0),
+            PyRange::Integer(integer) => RangeInterface::Integer(integer.0),
         }
     }
 }
@@ -142,6 +146,57 @@ impl PyRangeDateTime {
 }
 
 impl PyRangeDateTime {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Range {
+            gte: _,
+            gt: _,
+            lte: _,
+            lt: _,
+        } = self.0;
+    }
+}
+
+#[pyclass(name = "RangeInteger", from_py_object)]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyRangeInteger(pub Range<IntPayloadType>);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyRangeInteger {
+    #[new]
+    #[pyo3(signature = (gte=None, gt=None, lte=None, lt=None))]
+    pub fn new(
+        gte: Option<IntPayloadType>,
+        gt: Option<IntPayloadType>,
+        lte: Option<IntPayloadType>,
+        lt: Option<IntPayloadType>,
+    ) -> Self {
+        Self(Range { gte, gt, lte, lt })
+    }
+
+    #[getter]
+    pub fn gte(&self) -> Option<IntPayloadType> {
+        self.0.gte
+    }
+
+    #[getter]
+    pub fn gt(&self) -> Option<IntPayloadType> {
+        self.0.gt
+    }
+
+    #[getter]
+    pub fn lte(&self) -> Option<IntPayloadType> {
+        self.0.lte
+    }
+
+    #[getter]
+    pub fn lt(&self) -> Option<IntPayloadType> {
+        self.0.lt
+    }
+}
+
+impl PyRangeInteger {
     fn _getters(self) {
         // Every field should have a getter method
         let Range {
