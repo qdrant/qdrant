@@ -38,7 +38,8 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         dir: PathBuf,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config)?.map(Self::Appendable))
+        let scoring = config.scoring();
+        Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config, scoring)?.map(Self::Appendable))
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.

@@ -46,6 +46,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
+        scoring: bool,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
             BlobstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
@@ -58,14 +59,14 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
         let hw_counter = HardwareCounterCell::disposable();
-        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
 
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,
                 |idx, value: Vec<u8>| {
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    builder.add(idx, str_tokens);
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
                 hw_counter.ref_payload_index_io_read_counter(),

@@ -26,6 +26,7 @@ impl MutableFullTextIndex {
         path: PathBuf,
         config: TextIndexParams,
         create_if_missing: bool,
+        scoring: bool,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
@@ -52,13 +53,13 @@ impl MutableFullTextIndex {
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
 
         store
             .iter::<_, OperationError>(
                 |idx, value: Vec<u8>| {
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    builder.add(idx, str_tokens);
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -127,11 +128,20 @@ impl MutableFullTextIndex {
         let str_tokens =
             FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
+        // Measured here, before `serialize_stored_document` may deduplicate the
+        // stream: this is the only place that still sees every token.
+        let doc_len = self
+            .inner
+            .inverted_index
+            .records_doc_len()
+            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
+
         self.inner
             .inverted_index
-            .index_str_tokens(idx, &str_tokens, hw_counter)?;
+            .index_str_tokens(idx, &str_tokens, doc_len, hw_counter)?;
 
-        let db_document = FullTextIndex::serialize_stored_document(str_tokens, phrase_matching)?;
+        let db_document =
+            FullTextIndex::serialize_stored_document(str_tokens, phrase_matching, doc_len)?;
 
         // Update persisted storage
         self.storage
@@ -158,6 +168,16 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
+    /// Get the length stored for a given point ID. Only for testing purposes.
+    #[cfg(test)]
+    pub fn get_doc_len(&self, idx: PointOffsetType) -> Option<u32> {
+        use common::generic_consts::Random;
+        self.storage
+            .get_value::<Random>(idx, &HardwareCounterCell::disposable())
+            .unwrap()
+            .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
+    }
+
     /// Get the tokenized document stored for a given point ID. Only for testing purposes.
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
@@ -165,7 +185,7 @@ impl MutableFullTextIndex {
         self.storage
             .get_value::<Random>(idx, &HardwareCounterCell::disposable())
             .unwrap()
-            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap())
+            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }
 }
 
