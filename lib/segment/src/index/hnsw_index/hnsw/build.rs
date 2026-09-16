@@ -27,7 +27,6 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::PayloadBlockCondition;
-use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 #[cfg(feature = "gpu")]
@@ -41,6 +40,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::{HNSW_BUILD_MAX_PAR_LEN, HnswM};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -363,7 +363,11 @@ impl HNSWIndex {
             }
 
             if !ids.is_empty() {
-                pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+                pool.install(|| {
+                    ids.into_par_iter()
+                        .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                        .try_for_each(insert_point)
+                })?;
             }
 
             drop(progress_main_graph);
@@ -720,6 +724,7 @@ fn build_filtered_graph(
             points_to_index
                 .into_par_iter()
                 .skip(first_points)
+                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .try_for_each(insert_points)
         })?;
     }

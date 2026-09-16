@@ -4,13 +4,13 @@ use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::RwLock;
 use rayon::ThreadPool;
-use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
+use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
+use crate::index::hnsw_index::{HNSW_BUILD_MAX_PAR_LEN, HnswM};
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{RawScorer, VectorStorageEnum, VectorStorageRead, new_raw_scorer};
@@ -216,6 +216,7 @@ impl<'a> GraphLayersHealer<'a> {
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
                 .into_par_iter()
+                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
