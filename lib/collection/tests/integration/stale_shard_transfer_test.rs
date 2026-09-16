@@ -95,3 +95,47 @@ async fn test_clear_for_snapshot_recovery_refuses_unregistered_sender() {
         "clear for the registered source must replace the local shard with a dummy",
     );
 }
+
+/// Transfer restarts and aborts un-proxify the sender's local shard when applied. A dummy has
+/// nothing to revert, and an error here would be fatal to consensus: a peer replaying such an
+/// entry on startup would fail on every start.
+#[tokio::test]
+async fn test_abort_shard_transfer_with_dummy_local_shard_succeeds() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = receiving_collection(dir.path()).await;
+
+    // Clear the local shard the way a snapshot recovery does before downloading
+    collection
+        .clear_local_shard_for_snapshot_recovery(SHARD_ID, None)
+        .await
+        .unwrap();
+    assert!(is_dummy(&collection).await);
+
+    // This peer is the sender of a registered transfer
+    let transfer = transfer(THIS_PEER_ID, SOURCE_PEER_ID);
+    collection
+        .shards_holder()
+        .read()
+        .await
+        .register_start_shard_transfer(transfer.clone())
+        .unwrap();
+
+    collection
+        .abort_shard_transfer_and_resharding(transfer.key())
+        .await
+        .expect("aborting a transfer from a dummy local shard must not fail");
+
+    assert!(
+        collection
+            .shards_holder()
+            .read()
+            .await
+            .get_transfer(&transfer.key())
+            .is_none(),
+        "abort must unregister the transfer",
+    );
+    assert!(
+        is_dummy(&collection).await,
+        "abort must leave the dummy in place for recovery to replace",
+    );
+}
