@@ -42,7 +42,7 @@ use crate::proxy_segment::{
 };
 use crate::quota::{self, DiskFit};
 use crate::segment_holder::locked::LockedSegmentHolder;
-use crate::segment_holder::{PostFlushOutcome, SegmentId};
+use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::segment_manifest::NewSegmentToken;
 
 /// Result of optimization execution
@@ -112,76 +112,10 @@ pub fn unwrap_proxy(
     let segments_lock = segments.upgradable_read();
     let _update_guard = segments.acquire_updates_lock();
 
-    let proxies: Vec<_> = proxy_ids
-        .iter()
-        .filter_map(|&proxy_id| match segments_lock.get(proxy_id).cloned() {
-            Some(LockedSegment::Proxy(proxy_segment)) => Some((proxy_id, proxy_segment)),
-            _ => None,
-        })
-        .collect();
-    for (proxy_id, proxy_segment) in &proxies {
-        // Unwrapping a proxy whose changes did not reach the wrapped segment loses those deletes
-        // and index changes for good, so bail out instead. Every proxy stays installed and keeps
-        // serving its changes; nothing is unwrapped, so nothing is lost.
-        if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
-            log::error!(
-                "Propagating proxy segment {proxy_id} changes to wrapped segment failed: {err}",
-            );
-            return Err(err);
-        }
-    }
+    let write_segments =
+        SegmentHolder::unproxy_segments(segments_lock, proxy_ids).map_err(|(_lock, err)| err)?;
+    drop(write_segments); // Release the segment holder lock before the updates lock
 
-    let mut segments_lock = RwLockUpgradableReadGuard::upgrade(segments_lock);
-    for &proxy_id in proxy_ids {
-        if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
-            let locked_proxy_segment = proxy_segment_ref.clone();
-            match locked_proxy_segment {
-                LockedSegment::Original(_) => {
-                    // Already unwrapped. It should not actually be here
-                    log::warn!("Attempt to unwrap raw segment! Should not happen.");
-                }
-                LockedSegment::Proxy(proxy_segment) => {
-                    // The wrapped segment is put back into the segment holder, so all changes
-                    // buffered in the proxy must be propagated into it first. Failing to
-                    // propagate loses in-memory state, but is recovered on restart: the
-                    // persisted pending changes log stays behind and is replayed then, and
-                    // everything past it is replayed from the WAL.
-                    let propagated = proxy_segment.write().propagate_to_wrapped();
-                    if let Err(err) = &propagated {
-                        log::error!(
-                            "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
-                        );
-                    }
-
-                    let proxy_segment_read = proxy_segment.read();
-                    let wrapped_segment = proxy_segment_read.wrapped_segment.clone();
-                    let log_path = proxy_segment_read.pending_changes_log_path().to_path_buf();
-                    drop(proxy_segment_read);
-
-                    segments_lock.replace(proxy_id, wrapped_segment.clone())?;
-
-                    // Schedule proxy log file to delete after next flush cycle
-                    if propagated.is_ok() {
-                        let ready_at = wrapped_segment.get().read().version();
-                        segments_lock.register_post_flush_action(ready_at, ready_at, move || {
-                            match fs::remove_file(&log_path) {
-                                Ok(()) => {}
-                                // File may never have existed on disk at all if never flushed before unwrap
-                                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                                Err(err) => {
-                                    return Err(OperationError::service_error(format!(
-                                        "Failed to remove pending changes log {}: {err}",
-                                        log_path.display(),
-                                    )));
-                                }
-                            }
-                            Ok(PostFlushOutcome::Done)
-                        });
-                    }
-                }
-            }
-        }
-    }
     Ok(())
 }
 
