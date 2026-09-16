@@ -107,7 +107,7 @@ pub struct UpdateHandler {
     /// This is used when other bits of code still depend on information in the WAL, such as the
     /// queue proxy shard.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    pub(super) wal_keep_from: Arc<AtomicU64>,
+    pub(super) wal_ack_pin: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
@@ -174,7 +174,7 @@ impl UpdateHandler {
             flush_stop: None,
             runtime_handle,
             wal,
-            wal_keep_from: Arc::new(u64::MAX.into()),
+            wal_ack_pin: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -244,7 +244,7 @@ impl UpdateHandler {
 
         let segments = self.segments.clone();
         let wal = self.wal.clone();
-        let wal_keep_from = self.wal_keep_from.clone();
+        let wal_ack_pin = self.wal_ack_pin.clone();
         let clocks = self.clocks.clone();
         let flush_interval_sec = self.flush_interval_sec;
         let shard_path = self.shard_path.clone();
@@ -253,7 +253,7 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(UpdateWorkers::flush_worker_fn(
             segments,
             wal,
-            wal_keep_from,
+            wal_ack_pin,
             clocks,
             flush_interval_sec,
             flush_rx,

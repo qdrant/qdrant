@@ -42,7 +42,7 @@ impl UpdateWorkers {
     fn flush_worker_internal(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pin: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         applied_seq_handler: Arc<AppliedSeqHandler>,
@@ -88,19 +88,18 @@ impl UpdateWorkers {
             }
         };
 
-        // Acknowledge confirmed version in WAL, but don't acknowledge the specified
-        // `keep_from` index or higher.
+        // Acknowledge confirmed version in WAL, but don't acknowledge the pinned index or higher.
         // This is to prevent truncating WAL entries that other bits of code still depend on
         // such as the queue proxy shard.
-        // Default keep_from is `u64::MAX` to allow acknowledging all confirmed.
-        let keep_from = wal_keep_from.load(std::sync::atomic::Ordering::Relaxed);
+        // Default pin is `u64::MAX` to allow acknowledging all confirmed.
+        let ack_pin = wal_ack_pin.load(std::sync::atomic::Ordering::Relaxed);
 
         // If we should keep the first message, do not acknowledge at all
-        if keep_from == 0 {
+        if ack_pin == 0 {
             return;
         }
 
-        let ack = confirmed_version.min(keep_from.saturating_sub(1));
+        let ack = confirmed_version.min(ack_pin.saturating_sub(1));
 
         if let Err(err) = clocks.store_if_changed(&shard_path) {
             log::warn!("Failed to store clock maps to disk: {err}");
@@ -117,7 +116,7 @@ impl UpdateWorkers {
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pin: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
@@ -138,7 +137,7 @@ impl UpdateWorkers {
 
             let segments_clone = segments.clone();
             let wal_clone = wal.clone();
-            let wal_keep_from_clone = wal_keep_from.clone();
+            let wal_ack_pin_clone = wal_ack_pin.clone();
             let clocks_clone = clocks.clone();
             let shard_path_clone = shard_path.clone();
             let applied_seq_handler_clone = applied_seq_handler.clone();
@@ -147,7 +146,7 @@ impl UpdateWorkers {
                 Self::flush_worker_internal(
                     segments_clone,
                     wal_clone,
-                    wal_keep_from_clone,
+                    wal_ack_pin_clone,
                     clocks_clone,
                     shard_path_clone,
                     applied_seq_handler_clone,

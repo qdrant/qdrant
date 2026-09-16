@@ -170,12 +170,7 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let wal_keep_from = local_shard
-            .update_handler
-            .lock()
-            .await
-            .wal_keep_from
-            .clone();
+        let wal_ack_pin = local_shard.update_handler.lock().await.wal_ack_pin.clone();
 
         // Proxify local shard
         //
@@ -189,13 +184,13 @@ impl ShardReplicaSet {
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
             None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, wal_keep_from, progress).await)
+                Ok(QueueProxyShard::new(local_shard, remote_shard, wal_ack_pin, progress).await)
             }
             Some(from_version) => {
                 QueueProxyShard::new_from_version(
                     local_shard,
                     remote_shard,
-                    wal_keep_from,
+                    wal_ack_pin,
                     from_version,
                     progress,
                 )
