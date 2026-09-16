@@ -1,20 +1,30 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use collection::collection::vector_name_schema;
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::PeerMetadata;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::ShardTransferKey;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_state_machine::{
-    Action, NodeContext, apply_collection_config_diffs,
+    Action, NodeContext, TransferOutcome, apply_collection_config_diffs,
 };
 use crate::content_manager::toc::apply_alias_actions;
 
 type Actions = Vec<Action>;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AbortReshardingScope {
+    skip_replica: Option<(ShardId, PeerId)>,
+    skip_transfer: Option<ShardTransferKey>,
+}
 
 impl ClusterState {
     /// One action: `Collection::new` saves the config as its last step, and a collection whose
@@ -426,6 +436,406 @@ impl ClusterState {
         Ok(actions)
     }
 
+    pub fn plan_resharding(
+        &self,
+        context: &NodeContext,
+        collection_name: &str,
+        op: &ReshardingOperation,
+    ) -> StorageResult<Actions> {
+        let collection = self.resolve_collection(collection_name)?;
+
+        if !context.is_distributed {
+            return Err(StorageError::service_error(
+                "Can't handle resharding, this is a single node deployment",
+            ));
+        }
+
+        match op {
+            ReshardingOperation::Start(key) => self.plan_start_resharding(collection, key),
+
+            ReshardingOperation::CommitRead(key) => {
+                self.plan_commit_read_resharding(collection, key)
+            }
+
+            ReshardingOperation::CommitWrite(key) => {
+                self.plan_commit_write_resharding(collection, key)
+            }
+
+            ReshardingOperation::Finish(key) => self.plan_finish_resharding(collection, key),
+
+            ReshardingOperation::Abort(key) => self.plan_abort_resharding(
+                context,
+                collection,
+                key,
+                false,
+                AbortReshardingScope::default(),
+            ),
+        }
+    }
+
+    fn plan_start_resharding(
+        &self,
+        collection: String,
+        key: &ReshardKey,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(&collection).expect("collection exists");
+
+        let sharding_method = state.config.params.sharding_method.unwrap_or_default();
+
+        match (sharding_method, &key.shard_key) {
+            (ShardingMethod::Auto, Some(shard_key)) => {
+                return Err(StorageError::bad_request(format!(
+                    "cannot specify shard key {shard_key} on collection with auto sharding",
+                )));
+            }
+
+            (ShardingMethod::Custom, None) => {
+                return Err(StorageError::bad_request(
+                    "must specify shard key on collection with custom sharding",
+                ));
+            }
+
+            (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)) => {}
+        }
+
+        if let Some(current) = &state.resharding
+            && !current.matches(key)
+        {
+            return Err(StorageError::bad_request(format!(
+                "another resharding is in progress:\n{current:#?}"
+            )));
+        }
+
+        let is_new_resharding = state.resharding.is_none();
+
+        if is_new_resharding && key.direction == ReshardingDirection::Down {
+            let shard_ids = shard_ids_for_key(state, key.shard_key.as_ref());
+
+            if shard_ids.len() <= 1 {
+                return Err(StorageError::bad_request(format!(
+                    "cannot remove shard {} by resharding down, it is the last shard",
+                    key.shard_id,
+                )));
+            }
+
+            if !state.shards.contains_key(&key.shard_id) {
+                return Err(StorageError::bad_request(format!(
+                    "shard holder does not contain shard {} replica set",
+                    key.shard_id,
+                )));
+            }
+        }
+
+        let mut actions = Actions::new();
+
+        if key.direction == ReshardingDirection::Up && !state.shards.contains_key(&key.shard_id) {
+            actions.push(Action::CreateShard {
+                collection: collection.clone(),
+                shard_id: key.shard_id,
+                shard_key: key.shard_key.clone(),
+                replicas: vec![key.peer_id],
+                init_state: ReplicaState::Resharding,
+            });
+
+            actions.push(Action::RegisterShards {
+                collection: collection.clone(),
+                shard_key: key.shard_key.clone(),
+                shards: vec![(key.shard_id, vec![key.peer_id], ReplicaState::Resharding)],
+            });
+        }
+
+        if is_new_resharding {
+            let resharding = ReshardState::new(
+                key.uuid,
+                key.direction,
+                key.peer_id,
+                key.shard_id,
+                key.shard_key.clone(),
+            );
+
+            actions.push(Action::SetReshardingState {
+                collection: collection.clone(),
+                state: Some(resharding),
+            });
+        }
+
+        if key.direction == ReshardingDirection::Up && sharding_method == ShardingMethod::Auto {
+            let shard_number = key
+                .shard_id
+                .checked_add(1)
+                .and_then(NonZeroU32::new)
+                .expect("cannot have more than u32::MAX shards after resharding");
+
+            if state.config.params.shard_number != shard_number {
+                actions.push(Action::SetShardNumber {
+                    collection,
+                    shard_number,
+                });
+            }
+        }
+
+        Ok(actions)
+    }
+
+    fn plan_commit_read_resharding(
+        &self,
+        collection: String,
+        key: &ReshardKey,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(&collection).expect("collection exists");
+
+        let Some(resharding) = &state.resharding else {
+            return Ok(Actions::new());
+        };
+
+        if resharding.matches(key) && resharding.stage >= ReshardingStage::ReadHashRingCommitted {
+            return Ok(Actions::new());
+        }
+
+        check_resharding_state(resharding, key, ReshardingStage::MigratingPoints)?;
+
+        let shard_ids = match key.direction {
+            ReshardingDirection::Up => shard_ids_for_key(state, key.shard_key.as_ref())
+                .into_iter()
+                .filter(|&shard_id| shard_id != key.shard_id)
+                .collect(),
+
+            ReshardingDirection::Down => vec![key.shard_id],
+        };
+
+        Ok(vec![
+            Action::SetReshardingStage {
+                collection: collection.clone(),
+                stage: ReshardingStage::ReadHashRingCommitted,
+            },
+            Action::InvalidateCleanLocalShards {
+                collection,
+                shard_ids,
+            },
+        ])
+    }
+
+    fn plan_commit_write_resharding(
+        &self,
+        collection: String,
+        key: &ReshardKey,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(&collection).expect("collection exists");
+
+        let Some(resharding) = &state.resharding else {
+            return Ok(Actions::new());
+        };
+
+        if resharding.matches(key) && resharding.stage >= ReshardingStage::WriteHashRingCommitted {
+            return Ok(Actions::new());
+        }
+
+        check_resharding_state(resharding, key, ReshardingStage::ReadHashRingCommitted)?;
+
+        Ok(vec![Action::SetReshardingStage {
+            collection,
+            stage: ReshardingStage::WriteHashRingCommitted,
+        }])
+    }
+
+    fn plan_finish_resharding(
+        &self,
+        collection: String,
+        key: &ReshardKey,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(&collection).expect("collection exists");
+
+        let Some(resharding) = &state.resharding else {
+            return Ok(Actions::new());
+        };
+
+        check_resharding_state(resharding, key, ReshardingStage::WriteHashRingCommitted)?;
+
+        let mut actions = Actions::new();
+
+        if key.direction == ReshardingDirection::Down {
+            if let Some(shard_key) = &key.shard_key
+                && state
+                    .shards_key_mapping
+                    .get(shard_key)
+                    .is_some_and(|shard_ids| shard_ids.contains(&key.shard_id))
+            {
+                actions.push(Action::RemoveShardFromKeyMapping {
+                    collection: collection.clone(),
+                    shard_id: key.shard_id,
+                    shard_key: shard_key.clone(),
+                });
+            }
+
+            let is_auto_sharding =
+                state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
+
+            if is_auto_sharding {
+                let shard_number = NonZeroU32::new(key.shard_id)
+                    .expect("cannot have zero shards after finishing resharding down");
+
+                if state.config.params.shard_number != shard_number {
+                    actions.push(Action::SetShardNumber {
+                        collection: collection.clone(),
+                        shard_number,
+                    });
+                }
+            }
+
+            if state.shards.contains_key(&key.shard_id) {
+                actions.push(Action::DropShard {
+                    collection: collection.clone(),
+                    shard_id: key.shard_id,
+                });
+            }
+        }
+
+        actions.push(Action::SetReshardingState {
+            collection,
+            state: None,
+        });
+
+        Ok(actions)
+    }
+
+    fn plan_abort_resharding(
+        &self,
+        context: &NodeContext,
+        collection: String,
+        key: &ReshardKey,
+        force: bool,
+        scope: AbortReshardingScope,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(&collection).expect("collection exists");
+
+        if !force {
+            let Some(resharding) = &state.resharding else {
+                return Ok(Actions::new());
+            };
+
+            if !resharding.matches(key) {
+                return Ok(Actions::new());
+            }
+
+            if resharding.stage >= ReshardingStage::ReadHashRingCommitted {
+                return Err(StorageError::bad_request(format!(
+                    "can't abort resharding {key}, because read hash ring has been committed \
+                     already, resharding must be completed",
+                )));
+            }
+        }
+
+        let shard_ids = match key.direction {
+            ReshardingDirection::Up => vec![key.shard_id],
+            ReshardingDirection::Down => shard_ids_for_key(state, key.shard_key.as_ref()),
+        };
+
+        let mut actions = vec![Action::InvalidateCleanLocalShards {
+            collection: collection.clone(),
+            shard_ids,
+        }];
+
+        if key.direction == ReshardingDirection::Down {
+            for (&shard_id, shard) in &state.shards {
+                if shard_id == key.shard_id
+                    || !shard_belongs_to_key(state, shard_id, key.shard_key.as_ref())
+                {
+                    continue;
+                }
+
+                for (&peer_id, &replica_state) in &shard.replicas {
+                    if replica_state.is_resharding()
+                        && scope.skip_replica != Some((shard_id, peer_id))
+                    {
+                        actions.push(Action::SetReplicaState {
+                            collection: collection.clone(),
+                            shard_id,
+                            peer_id,
+                            state: ReplicaState::Active,
+                        });
+                    }
+                }
+            }
+
+            actions.push(Action::DeleteMigratedPoints {
+                collection: collection.clone(),
+                key: key.clone(),
+            });
+        }
+
+        actions.push(Action::RevertHashRing {
+            collection: collection.clone(),
+            key: key.clone(),
+        });
+
+        if key.direction == ReshardingDirection::Up {
+            let is_auto_sharding =
+                state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
+
+            if is_auto_sharding {
+                let shard_number = NonZeroU32::new(key.shard_id)
+                    .expect("cannot have zero shards after aborting resharding up");
+
+                if state.config.params.shard_number != shard_number {
+                    actions.push(Action::SetShardNumber {
+                        collection: collection.clone(),
+                        shard_number,
+                    });
+                }
+            }
+
+            if state.shards.contains_key(&key.shard_id) {
+                actions.push(Action::DropShard {
+                    collection: collection.clone(),
+                    shard_id: key.shard_id,
+                });
+            }
+        }
+
+        let mut transfers: Vec<_> = state
+            .transfers
+            .iter()
+            .filter(|transfer| {
+                transfer.is_related_to_resharding(key)
+                    && scope.skip_transfer != Some(transfer.key())
+            })
+            .collect();
+
+        transfers.sort_by_key(|transfer| {
+            let key = transfer.key();
+            (key.shard_id, key.to_shard_id, key.from, key.to)
+        });
+
+        for transfer in transfers {
+            let transfer_key = transfer.key();
+
+            actions.push(Action::StopTransferDriver {
+                collection: collection.clone(),
+                key: transfer_key,
+            });
+
+            if context.peer_id == transfer.from {
+                actions.push(Action::RevertProxyShard {
+                    collection: collection.clone(),
+                    shard_id: transfer.shard_id,
+                });
+            }
+
+            actions.push(Action::UnregisterTransfer {
+                collection: collection.clone(),
+                key: transfer_key,
+                outcome: TransferOutcome::Abort,
+            });
+        }
+
+        actions.push(Action::SetReshardingState {
+            collection,
+            state: None,
+        });
+
+        Ok(actions)
+    }
+
     pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {
         // Check if operation is already applied
         if self.peer_metadata_by_id.get(&peer_id) == Some(metadata) {
@@ -461,5 +871,58 @@ impl ClusterState {
         // `QuotaManager::set_config` additionally clears exceeded-quota flags,
         // so we always emit the action, even if the config is the same
         vec![Action::SetQuotaConfig { config }]
+    }
+}
+
+fn check_resharding_state(
+    state: &ReshardState,
+    key: &ReshardKey,
+    expected_stage: ReshardingStage,
+) -> StorageResult<()> {
+    if !state.matches(key) {
+        return Err(StorageError::bad_request(format!(
+            "another resharding is in progress:\n{state:#?}"
+        )));
+    }
+
+    if state.stage != expected_stage {
+        return Err(StorageError::bad_request(format!(
+            "expected resharding stage {expected_stage:?}, got {:?}",
+            state.stage,
+        )));
+    }
+
+    Ok(())
+}
+
+fn shard_ids_for_key(
+    state: &collection::collection_state::State,
+    shard_key: Option<&segment::types::ShardKey>,
+) -> Vec<ShardId> {
+    let mut shard_ids: Vec<_> = match shard_key {
+        Some(shard_key) => state
+            .shards_key_mapping
+            .get(shard_key)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect(),
+        None => state.shards.keys().copied().collect(),
+    };
+    shard_ids.sort_unstable();
+    shard_ids
+}
+
+fn shard_belongs_to_key(
+    state: &collection::collection_state::State,
+    shard_id: ShardId,
+    shard_key: Option<&segment::types::ShardKey>,
+) -> bool {
+    match shard_key {
+        Some(shard_key) => state
+            .shards_key_mapping
+            .get(shard_key)
+            .is_some_and(|shard_ids| shard_ids.contains(&shard_id)),
+        None => true,
     }
 }
