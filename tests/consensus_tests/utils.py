@@ -75,6 +75,7 @@ def kill_all_processes():
         while peer_proxies:
             _, proxy = peer_proxies.popitem()
             cleanup.callback(busy_ports.pop, proxy.port, None)
+            cleanup.callback(busy_ports.pop, proxy.http_port, None)
             cleanup.callback(proxy.close)
 
 
@@ -214,10 +215,11 @@ def get_peer_consensus_uri(p2p_port: int, use_peer_proxy: bool = False) -> str:
         while True:
             proxy = PeerProxy(f"127.0.0.1:{p2p_port}")
             # The peer's port triple is reserved but may not be listening yet.
-            if proxy.port not in busy_ports:
+            if proxy.port not in busy_ports and proxy.http_port not in busy_ports:
                 break
             proxy.close()
         _occupy_port(proxy.port)
+        _occupy_port(proxy.http_port)
         peer_proxies[p2p_port] = proxy
     return proxy.uri if proxy is not None else get_uri(p2p_port)
 
@@ -276,6 +278,8 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
+    if p2p_port in peer_proxies:
+        env.update(peer_proxies[p2p_port].env)
 
     if uris_in_env:
         env["QDRANT_BOOTSTRAP"] = bootstrap_uri
@@ -320,6 +324,8 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
+    if p2p_port in peer_proxies:
+        env.update(peer_proxies[p2p_port].env)
 
     if uris_in_env:
         env["QDRANT_URI"] = bootstrap_uri
@@ -340,10 +346,10 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
 
 
 def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix="", use_peer_proxy=False):
-    """Start a cluster, optionally routing internal RPCs through PeerProcess.proxy.
+    """Optionally route internal RPCs and snapshot downloads through each peer's proxy.
 
     Proxies survive restarts on the same P2P port and close during test cleanup.
-    REST and public gRPC keep their direct addresses.
+    Client-facing REST and public gRPC keep their direct addresses.
     """
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)

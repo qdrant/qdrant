@@ -1,64 +1,76 @@
-"""A test-only proxy for Qdrant's unary internal gRPC calls.
+"""A test-only peer proxy with gates for RPCs and snapshot downloads.
 
 The proxy forwards protobuf bytes unchanged. A gate holds one matching request
 before forwarding it. Later requests, including calls to the same method, pass
 through so recovery traffic can continue. Matchers run on the server loop and
 must not block. They can decode the bytes to select a collection or shard.
 
-This does not proxy REST snapshot downloads or streaming RPCs. A request body
-does not identify its source peer. Tests must establish which peer sends the
-selected request before creating a gate.
+RPC bodies do not identify the source peer. Tests must establish which peer
+sends the selected request. HTTP gates select the full source URL and intercept
+downloads made by the peer configured with this proxy's environment.
+
+Only unary gRPC and bodyless HTTP GETs to local peers are supported, not
+streaming RPCs, HTTPS, or a general-purpose HTTP proxy.
 """
 
 import asyncio
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
-from threading import Event, Thread
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import select
+import socket
+from threading import Event, Lock, Thread
 from typing import Callable
+from urllib.parse import quote, urlsplit
 
 import grpc
 
 
 class RequestGate:
-    def __init__(self, proxy, method: str, matches: Callable[[bytes], bool]):
-        self.method = method
+    def __init__(self, proxy, key, matches):
+        self._key = key
         self.cancelled = Event()
         self._proxy = proxy
         self._matches = matches
         self._arrived = Future()
-        self._released = asyncio.Event()
+        self._released = Future()
 
-    def wait_for_request(self, timeout: float = 30) -> bytes:
-        """Return the matching request's bytes once it is held before forwarding.
+    def wait_for_request(self, timeout: float = 30):
+        """Return the RPC bytes or download URL once held before forwarding.
 
         This does not prove that the transfer has copied any data.
         """
         try:
             return self._arrived.result(timeout)
         except FutureTimeoutError as error:
-            raise TimeoutError(f"No request reached the gate for {self.method}") from error
+            raise TimeoutError(f"No request reached the gate for {self._key[1]}") from error
 
     def release(self):
         """Release the held request, or remove a gate that has not been reached."""
-        if self._proxy._thread.is_alive():
-            self._proxy._submit(self._proxy._release(self))
+        with self._proxy._lock:
+            if self._proxy._gates.get(self._key) is self:
+                del self._proxy._gates[self._key]
+                self._arrived.cancel()
+            if not self._released.done():
+                self._released.set_result(None)
 
 
 class PeerProxy(grpc.GenericRpcHandler):
-    """Run an internal gRPC proxy in a background thread for synchronous tests.
+    """Own the peer's RPC and HTTP handlers, gates, and cleanup.
 
     `target` is the real peer's `host:port`. Advertise `uri` as the peer address
     when wiring a cluster through the proxy. Port zero lets the OS reserve a
     free port without racing pytest workers.
 
-    Use as a context manager. Closing cancels held and forwarded calls and
-    joins the server thread. Each instance can have one gate waiting for a
-    request at a time.
+    Pass `env` to the peer so its outgoing snapshot downloads use `http_uri`.
+    Use as a context manager. Closing cancels held and forwarded requests and
+    joins both listeners and their request handlers. One gate can wait for each
+    RPC method or download URL. Later matching requests pass through.
 
     With the peer configured to advertise the proxy URI, a test can use:
 
-        with proxy.hold("/qdrant.CollectionsInternal/GetShardRecoveryPoint") as gate:
+        with proxy.hold_rpc("/qdrant.CollectionsInternal/GetShardRecoveryPoint") as gate:
             replicate_shard(...)
             request = gate.wait_for_request()
             # Check the transfer identity, then remove or stop the source.
@@ -71,7 +83,9 @@ class PeerProxy(grpc.GenericRpcHandler):
     def __init__(self, target: str, port: int = 0):
         self._target = target
         self._port = port
-        self._gate = None
+        self._gates = {}
+        self._lock = Lock()
+        self._closed = Event()
         self._ready = Future()
         self._thread = Thread(target=self._run, name="consensus-peer-proxy", daemon=True)
         self._thread.start()
@@ -102,20 +116,54 @@ class PeerProxy(grpc.GenericRpcHandler):
             ) from error
 
     def close(self):
+        self._closed.set()
         if self._thread.is_alive():
             self._loop.call_soon_threadsafe(self._stop.set)
             self._thread.join(timeout=10)
             if self._thread.is_alive():
                 raise TimeoutError("Peer proxy did not stop")
 
+    def hold_rpc(self, method: str, matches: Callable[[bytes], bool] = lambda _: True):
+        """Hold one matching RPC before the peer receives it."""
+        if not method.startswith("/") or method.count("/") != 2:
+            raise ValueError("Use the full gRPC method path: /service/method")
+        return self._hold(("rpc", method), matches)
+
+    def hold_snapshot_download(self, source_uri: str, collection: str, shard_id: int):
+        """Hold this peer's download from the given source, collection, and shard.
+
+        For a shard transfer, the receiver has already cleared its old shard
+        when this request arrives. User-triggered URL recovery does not clear it.
+        """
+        source = _local_http_url(source_uri)
+        if source.path not in ("", "/") or source.query:
+            raise ValueError("Use the source peer's base HTTP URI without a path or query")
+        url = f"{source_uri.rstrip('/')}/collections/{quote(collection, safe='')}/shards/{shard_id}/snapshot"
+        return self._hold(("http", url), lambda _: True)
+
     @contextmanager
-    def hold(self, method: str, matches: Callable[[bytes], bool] = lambda _: True):
-        """Hold the next matching request until the gate is released."""
-        gate = self._submit(self._create_gate(method, matches))
+    def _hold(self, key, matches):
+        with self._lock:
+            if self._closed.is_set():
+                raise RuntimeError("Peer proxy is closed")
+            if key in self._gates:
+                raise RuntimeError(f"A gate is already waiting for {key[1]}")
+            gate = RequestGate(self, key, matches)
+            self._gates[key] = gate
         try:
             yield gate
         finally:
             gate.release()
+
+    def _take_gate(self, key, request):
+        with self._lock:
+            gate = self._gates.get(key)
+            if gate is not None and gate._matches(request):
+                # Another peer's recovery must not wait behind this request.
+                del self._gates[key]
+                gate._arrived.set_result(request)
+                return gate
+        return None
 
     def _submit(self, coroutine, timeout: float = 10):
         if not self._thread.is_alive():
@@ -127,21 +175,6 @@ class PeerProxy(grpc.GenericRpcHandler):
         except FutureTimeoutError:
             future.cancel()
             raise
-
-    async def _create_gate(self, method, matches):
-        if self._gate is not None:
-            raise RuntimeError("A gate is already waiting for a request")
-        if not method.startswith("/") or method.count("/") != 2:
-            raise ValueError("Use the full gRPC method path: /service/method")
-        gate = RequestGate(self, method, matches)
-        self._gate = gate
-        return gate
-
-    async def _release(self, gate):
-        if self._gate is gate:
-            self._gate = None
-            gate._arrived.cancel()
-        gate._released.set()
 
     def _run(self):
         try:
@@ -163,27 +196,45 @@ class PeerProxy(grpc.GenericRpcHandler):
         )
         self._channel = grpc.aio.insecure_channel(self._target, options=options)
         self._server = grpc.aio.server(handlers=(self,), options=options)
+        http_server = None
+        http_thread = None
         try:
             port = self._server.add_insecure_port(f"127.0.0.1:{self._port}")
             await self._server.start()
+            http_server = ThreadingHTTPServer(("127.0.0.1", 0), _DownloadHandler)
+            # Cleanup must join the HTTP request handlers as well as the listener.
+            http_server.daemon_threads = False
+            http_server.proxy = self
+            self.http_port = http_server.server_port
+            self.http_uri = f"http://127.0.0.1:{self.http_port}"
+            # Clear inherited bypass rules so local downloads use this peer's gate.
+            self.env = {"http_proxy": self.http_uri, "HTTP_PROXY": self.http_uri, "no_proxy": "", "NO_PROXY": ""}
+            http_thread = Thread(target=http_server.serve_forever, kwargs={"poll_interval": 0.05})
+            http_thread.start()
             self._ready.set_result(port)
             await self._stop.wait()
         finally:
-            if self._gate is not None:
-                self._gate._arrived.cancel()
+            self._closed.set()
+            with self._lock:
+                for gate in self._gates.values():
+                    gate._arrived.cancel()
+                self._gates.clear()
             await self._server.stop(0)
             await self._channel.close()
+            if http_server is not None:
+                if http_thread is not None:
+                    http_server.shutdown()
+                http_server.server_close()
+                if http_thread is not None:
+                    http_thread.join()
 
     def service(self, handler_call_details):
         async def forward(request, context):
-            gate = self._gate
-            if gate is not None and gate.method == handler_call_details.method and gate._matches(request):
-                # Consume the gate before waiting. Another peer's recovery must
-                # not get held just because it calls the same method.
-                self._gate = None
-                gate._arrived.set_result(request)
+            gate = self._take_gate(("rpc", handler_call_details.method), request)
+            if gate is not None:
                 try:
-                    await gate._released.wait()
+                    # RPC cancellation must not cancel the shared release future.
+                    await asyncio.shield(asyncio.wrap_future(gate._released))
                 except asyncio.CancelledError:
                     gate.cancelled.set()
                     raise
@@ -205,3 +256,85 @@ class PeerProxy(grpc.GenericRpcHandler):
                 call.cancel()
 
         return grpc.unary_unary_rpc_method_handler(forward)
+
+
+def _local_http_url(url):
+    parsed = urlsplit(url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port
+            or parsed.username is not None or parsed.password is not None or parsed.fragment):
+        raise ValueError("Use an HTTP URL with an explicit port on 127.0.0.1")
+    return parsed
+
+
+class _DownloadHandler(BaseHTTPRequestHandler):
+    timeout = 5
+
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        proxy = self.server.proxy
+        try:
+            target = _local_http_url(self.path)
+        except ValueError as error:
+            self.send_error(400, str(error))
+            return
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length", "0") != "0":
+            self.send_error(400, "Only bodyless snapshot GETs are supported")
+            return
+        if target.port == proxy.http_port:
+            self.send_error(400, "Cannot forward a download back to this proxy")
+            return
+
+        gate = proxy._take_gate(("http", self.path), self.path)
+        if gate is not None:
+            while not gate._released.done():
+                if proxy._closed.is_set() or self._client_disconnected():
+                    gate.cancelled.set()
+                    return
+                try:
+                    gate._released.result(timeout=0.05)
+                except FutureTimeoutError:
+                    pass
+            if proxy._closed.is_set() or self._client_disconnected():
+                gate.cancelled.set()
+                return
+
+        if proxy._closed.is_set():
+            return
+        try:
+            with socket.create_connection((target.hostname, target.port), timeout=self.timeout) as upstream:
+                path = target.path or "/"
+                if target.query:
+                    path += "?" + target.query
+                connection_headers = {
+                    name.strip().lower() for name in self.headers.get("Connection", "").split(",")
+                }
+                connection_headers.update({"connection", "proxy-connection", "proxy-authorization", "host"})
+                headers = "".join(
+                    f"{name}: {value}\r\n" for name, value in self.headers.items()
+                    if name.lower() not in connection_headers
+                )
+                upstream.sendall(
+                    f"GET {path} HTTP/1.1\r\nHost: {target.netloc}\r\n{headers}Connection: close\r\n\r\n".encode("latin-1")
+                )
+                # Relay bytes unchanged, including chunked snapshot framing.
+                # Watch the caller so cancellation also closes a stalled download.
+                while not proxy._closed.is_set():
+                    readable, _, _ = select.select([upstream, self.connection], [], [], 0.05)
+                    if self.connection in readable:
+                        return
+                    if upstream in readable:
+                        data = upstream.recv(64 * 1024)
+                        if not data:
+                            return
+                        self.connection.sendall(data)
+        except OSError:
+            # A new HTTP error could corrupt a response already in flight.
+            return
+        finally:
+            self.close_connection = True
+
+    def _client_disconnected(self):
+        readable, _, _ = select.select([self.connection], [], [], 0)
+        return bool(readable)

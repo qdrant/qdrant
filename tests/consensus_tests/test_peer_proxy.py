@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import grpc
 import pytest
 
-from .peer_proxy import PeerProxy
+from .peer_proxy import PeerProxy, RequestGate
 
 
 TRANSFER = "/qdrant.CollectionsInternal/GetShardRecoveryPoint"
@@ -85,7 +85,7 @@ def test_peer_proxy_preserves_payload_metadata_and_errors(upstream):
 def test_peer_proxy_holds_one_match_and_keeps_consensus_and_recovery_live(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         rpc = channel.unary_unary(TRANSFER)
-        with proxy.hold(TRANSFER, matches=lambda request: request == b"selected-shard") as gate:
+        with proxy.hold_rpc(TRANSFER, matches=lambda request: request == b"selected-shard") as gate:
             assert rpc(b"other-shard", timeout=TIMEOUT) == b"other-shard"
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"other-shard"
 
@@ -109,7 +109,7 @@ def test_peer_proxy_holds_one_match_and_keeps_consensus_and_recovery_live(upstre
 def test_peer_proxy_does_not_forward_cancelled_held_requests(upstream, expire):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         rpc = channel.unary_unary(TRANSFER)
-        with proxy.hold(TRANSFER) as gate:
+        with proxy.hold_rpc(TRANSFER) as gate:
             held = rpc.future(b"cancel-me", timeout=1 if expire else TIMEOUT)
             gate.wait_for_request(TIMEOUT)
             if expire:
@@ -141,7 +141,7 @@ def test_peer_proxy_cancels_upstream_work(upstream, expire):
 
 def test_peer_proxy_shutdown_cancels_held_requests(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
-        with proxy.hold(TRANSFER) as gate:
+        with proxy.hold_rpc(TRANSFER) as gate:
             held = channel.unary_unary(TRANSFER).future(b"held")
             gate.wait_for_request(TIMEOUT)
             proxy.close()
@@ -155,14 +155,14 @@ def test_peer_proxy_shutdown_cancels_held_requests(upstream):
 def test_peer_proxy_removes_unused_gate_after_test_error(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         with pytest.raises(ValueError, match="test failed"):
-            with proxy.hold(TRANSFER):
+            with proxy.hold_rpc(TRANSFER):
                 raise ValueError("test failed")
         assert channel.unary_unary(TRANSFER)(b"not-held", timeout=TIMEOUT) == b"not-held"
 
 
 def test_peer_proxy_reports_which_request_did_not_arrive(upstream):
     with PeerProxy(upstream.address) as proxy:
-        with proxy.hold(TRANSFER) as gate:
+        with proxy.hold_rpc(TRANSFER) as gate:
             with pytest.raises(TimeoutError, match="No request reached the gate for " + TRANSFER):
                 gate.wait_for_request(timeout=0)
 
@@ -170,7 +170,7 @@ def test_peer_proxy_reports_which_request_did_not_arrive(upstream):
 def test_peer_proxy_releases_held_request_after_test_error(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         with pytest.raises(ValueError, match="test failed"):
-            with proxy.hold(TRANSFER) as gate:
+            with proxy.hold_rpc(TRANSFER) as gate:
                 held = channel.unary_unary(TRANSFER).future(b"held", timeout=TIMEOUT)
                 gate.wait_for_request(TIMEOUT)
                 raise ValueError("test failed")
@@ -181,7 +181,7 @@ def test_peer_proxies_have_independent_gates(upstream):
     with PeerProxy(upstream.address) as first, PeerProxy(upstream.address) as second:
         assert first.port != second.port
         with grpc.insecure_channel(first.address) as a, grpc.insecure_channel(second.address) as b:
-            with first.hold(TRANSFER) as first_gate, second.hold(TRANSFER) as second_gate:
+            with first.hold_rpc(TRANSFER) as first_gate, second.hold_rpc(TRANSFER) as second_gate:
                 first_call = a.unary_unary(TRANSFER).future(b"first", timeout=TIMEOUT)
                 second_call = b.unary_unary(TRANSFER).future(b"second", timeout=TIMEOUT)
                 assert first_gate.wait_for_request(TIMEOUT) == b"first"
@@ -210,3 +210,25 @@ def test_peer_proxy_wait_for_peer_connection_has_a_deadline():
         with PeerProxy(f"127.0.0.1:{upstream.getsockname()[1]}") as proxy:
             with pytest.raises(TimeoutError, match=f"gRPC connection to {proxy._target} within 0 seconds"):
                 proxy.wait_for_peer_connection(timeout=0)
+
+
+def test_peer_proxy_shutdown_cancels_rpc_and_http_gates_together(upstream):
+    source_uri = "http://127.0.0.1:1"
+    snapshot_url = source_uri + "/collections/test/shards/0/snapshot"
+    with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
+        with proxy.hold_rpc(TRANSFER) as rpc_gate, proxy.hold_snapshot_download(source_uri, "test", 0) as http_gate:
+            assert isinstance(rpc_gate, RequestGate)
+            assert isinstance(http_gate, RequestGate)
+            held_rpc = channel.unary_unary(TRANSFER).future(b"held", timeout=TIMEOUT)
+            assert rpc_gate.wait_for_request(TIMEOUT) == b"held"
+            with socket.create_connection(("127.0.0.1", proxy.http_port), timeout=TIMEOUT) as caller:
+                caller.sendall(f"GET {snapshot_url} HTTP/1.1\r\nHost: ignored\r\n\r\n".encode())
+                assert http_gate.wait_for_request(TIMEOUT) == snapshot_url
+                assert not held_rpc.done()
+                proxy.close()
+                assert caller.recv(1) == b""
+            with pytest.raises(grpc.RpcError):
+                held_rpc.result(TIMEOUT)
+            assert rpc_gate.cancelled.is_set()
+            assert http_gate.cancelled.is_set()
+            assert_no_calls(upstream)
