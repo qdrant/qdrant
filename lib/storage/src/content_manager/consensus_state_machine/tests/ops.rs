@@ -424,6 +424,50 @@ fn update_collection_replica_changes() {
 }
 
 #[test]
+fn update_collection_replica_change_aborts_transfer_before_removal() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = transfer_state();
+    let transfer = shard_transfer(
+        PEER_ID,
+        OTHER_PEER_ID,
+        false,
+        ShardTransferMethod::StreamRecords,
+    );
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Partial);
+    collection.transfers.insert(transfer);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a transfer destination should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::StopTransferDriver { .. },
+            Action::RevertProxyShard { .. },
+            Action::UnregisterTransfer { .. },
+            Action::RemoveReplica {
+                shard_id: 0,
+                peer_id: OTHER_PEER_ID,
+                ..
+            },
+        ]
+    ));
+}
+
+#[test]
 fn update_collection_replica_change_order() {
     let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
     operation.update_collection.hnsw_config = Some(hnsw_diff(8));
