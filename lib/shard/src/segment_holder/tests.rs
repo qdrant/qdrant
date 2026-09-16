@@ -1948,6 +1948,11 @@ fn test_double_proxies() {
     )
     .unwrap();
 
+    // Release the outer proxies before unproxying the inner ones. One of them wraps the inner
+    // temporary segment, which the unproxy below removes: it can only drop its data once this
+    // holds no reference to it anymore, and blocks for `DROP_DATA_TIMEOUT` if it does.
+    drop(outer_proxies);
+
     // Unproxy twice
     let inner_proxy_ids: Vec<_> = inner_proxies.iter().map(|(id, _)| *id).collect();
     SegmentHolder::unproxy_all_segments(
