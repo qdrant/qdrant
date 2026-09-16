@@ -336,11 +336,17 @@ impl SegmentHolder {
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
+
             let removed_segment = self.non_appendable_segments.remove(remove_id);
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
         }
+
+        for remove_id in remove_ids {
+            self.flush_dependency.lock().remove_element(remove_id);
+        }
+
         removed_segments
     }
 
