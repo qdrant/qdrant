@@ -883,6 +883,40 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         self.storage.deleted_points.active_count()
     }
 
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
+        // The sidecar is written unmasked, so a deleted point still carries
+        // its length on disk. Ask the mask first, as `values_count` does.
+        if !self.storage.deleted_points.is_active(point_id) {
+            return Ok(None);
+        }
+        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
+            return Ok(None);
+        };
+        read_point_to_doc_len(storage, point_id)
+    }
+
+    /// Reads the whole sidecar and applies the deletion mask. Cheap enough
+    /// once, wasteful per query, and there is nowhere to cache it yet: the
+    /// deleted set that matters lives in the id tracker, which never tells the
+    /// index when it changes.
+    fn total_tokens(&self) -> OperationResult<Option<u64>> {
+        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
+            return Ok(None);
+        };
+        let doc_lens = storage.read_whole()?;
+        let total = doc_lens
+            .iter()
+            .enumerate()
+            .filter(|(point_id, _)| {
+                self.storage
+                    .deleted_points
+                    .is_active(*point_id as PointOffsetType)
+            })
+            .map(|(_, doc_len)| u64::from(*doc_len))
+            .sum();
+        Ok(Some(total))
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
@@ -922,4 +956,22 @@ fn read_point_to_tokens_count<S: UniversalRead>(
     let byte_offset = u64::from(point_id).checked_mul(size_of::<usize>() as u64)?;
     let cow = storage.read(ReadRange::one(byte_offset), Random).ok()?;
     cow.first().copied()
+}
+
+/// Read a single document length for `point_id` from the sidecar.
+///
+/// Unlike [`read_point_to_tokens_count`], an unreadable slot is an error
+/// rather than a missing value: `None` here means "no length recorded", which
+/// is exactly the distinction the sidecar exists to keep. Only a point id past
+/// the end of the file, which is not in the index at all, reads as `None`.
+fn read_point_to_doc_len<S: UniversalRead>(
+    storage: &TypedStorage<S, u32>,
+    point_id: PointOffsetType,
+) -> OperationResult<Option<u32>> {
+    if u64::from(point_id) >= storage.len()? {
+        return Ok(None);
+    }
+    let byte_offset = u64::from(point_id) * size_of::<u32>() as u64;
+    let doc_lens = storage.read(ReadRange::one(byte_offset), Random)?;
+    Ok(doc_lens.first().copied())
 }

@@ -54,6 +54,22 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.doc_len(point_id),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.doc_len(point_id),
+            ReadOnlyFullTextIndex::Immutable(index) => index.doc_len(point_id),
+        }
+    }
+
+    fn total_tokens(&self) -> OperationResult<Option<u64>> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.total_tokens(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.total_tokens(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.total_tokens(),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),

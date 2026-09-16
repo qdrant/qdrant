@@ -58,6 +58,17 @@ pub trait FullTextIndexRead {
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
+    /// Number of tokens indexed for `point_id`, repetitions included: `|d|` in
+    /// BM25. `None` when this index does not record lengths, and undefined for
+    /// a point with no indexed tokens; see the inverted index for the details.
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
+
+    /// Total tokens over the live points of this index. Paired with
+    /// [`Self::points_count`] it gives an average document length, but the
+    /// division belongs to whoever has summed both over every segment, not
+    /// here.
+    fn total_tokens(&self) -> OperationResult<Option<u64>>;
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,

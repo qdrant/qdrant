@@ -367,6 +367,24 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
+        Ok(self
+            .point_to_doc_len
+            .as_ref()
+            .and_then(|lens| lens.get(point_id as usize).copied()))
+    }
+
+    /// Linear scan of the in-RAM vector. It is masked when the index is loaded
+    /// and zeroed by `remove`, so deleted documents contribute nothing and no
+    /// separate total has to be stored. Not cached: the index is not told when
+    /// the deleted set changes.
+    fn total_tokens(&self) -> OperationResult<Option<u64>> {
+        Ok(self
+            .point_to_doc_len
+            .as_ref()
+            .map(|lens| lens.iter().copied().map(u64::from).sum()))
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,

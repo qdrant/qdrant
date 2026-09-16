@@ -340,6 +340,18 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
+        Ok(self
+            .point_to_doc_len
+            .as_ref()
+            .and_then(|lens| lens.get(point_id as usize).copied()))
+    }
+
+    /// Free: the running counter is maintained by `set_doc_len` and `remove`.
+    fn total_tokens(&self) -> OperationResult<Option<u64>> {
+        Ok(self.records_doc_len().then_some(self.total_tokens))
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
