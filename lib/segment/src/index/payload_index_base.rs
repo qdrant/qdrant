@@ -102,6 +102,7 @@ pub trait PayloadIndexRead {
         &self,
         field: PayloadKeyTypeRef,
         stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 

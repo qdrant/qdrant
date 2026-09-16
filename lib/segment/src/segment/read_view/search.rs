@@ -7,7 +7,7 @@ use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use smallvec::SmallVec;
 
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{
     IdfScopeStats, QueryContext, QueryIdfStats, SegmentQueryContext,
@@ -464,9 +464,8 @@ where
         }
 
         for (field, stats) in query_context.mut_text_stats().iter_mut() {
-            check_process_stopped(&is_stopped)?;
             self.payload_index
-                .fill_text_statistics(field, stats, &hw_counter)?;
+                .fill_text_statistics(field, stats, &is_stopped, &hw_counter)?;
         }
         Ok(())
     }
