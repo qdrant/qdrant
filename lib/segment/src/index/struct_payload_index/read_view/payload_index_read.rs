@@ -103,15 +103,19 @@ where
         &self,
         field: PayloadKeyTypeRef,
         stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(indexes) = self.field_indexes.get(field) else {
+            // Nothing to contribute, and nothing to report: a field whose text
+            // index is still being built leaves `N` summed over the segments
+            // that already have one.
             return Ok(());
         };
         for index in indexes {
             // At most one text index per field, so the first one that answers
             // is the only one that will.
-            if index.fill_text_statistics(stats, hw_counter)? {
+            if index.fill_text_statistics(stats, is_stopped, hw_counter)? {
                 break;
             }
         }

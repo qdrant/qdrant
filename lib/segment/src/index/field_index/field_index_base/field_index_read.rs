@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -71,12 +73,18 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
     /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all. Not an accessor returning the index, because the
-    /// read surface is not object safe and each variant holds a different
-    /// concrete type.
+    /// a text index at all.
+    ///
+    /// A filling method rather than an `as_full_text()` accessor in the shape
+    /// of its two neighbours. Object safety is not the reason, since those are
+    /// RPITIT too: `FullTextIndexRead` has no by-reference form, so returning
+    /// one needs a blanket impl over `&T` that nothing else wants yet. Worth
+    /// revisiting when a second caller appears, since each further BM25 need
+    /// would otherwise repeat this ladder.
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -8,7 +9,7 @@ use common::universal_io::UserData;
 
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::query_context::TextFieldStats;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
@@ -22,35 +23,63 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// Terms are resolved per segment on purpose. A `TokenId` is whatever this
 /// segment's vocabulary happened to assign, so the query's strings are the only
 /// key the segments share.
+/// **Seeded terms must already be tokenized.** Resolution is a bare vocabulary
+/// lookup, and the vocabulary holds post-tokenizer forms, so a term that is not
+/// lowercased, folded and stemmed the way this index tokenizes misses in every
+/// segment and keeps its seeded `df` of zero, which is the *largest* IDF the
+/// formula produces. The caller tokenizes once, as the query path already does
+/// to build a `ParsedQuery`; a debug build checks it here.
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
     stats: &mut TextFieldStats,
+    is_stopped: &AtomicBool,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    let terms: Vec<String> = stats.df.keys().cloned().collect();
-    let mut token_ids = vec![None; terms.len()];
+    debug_assert!(
+        stats.df.keys().all(|term| is_tokenized(index, term)),
+        "seeded terms must already be tokenized",
+    );
+
+    // The destination slot travels as the callback's user data, so no term has
+    // to be cloned and no second lookup is needed to store the count.
+    let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
     index.for_each_token_id(
-        terms.iter().map(String::as_str).enumerate(),
+        stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
         hw_counter,
-        |i, token_id| token_ids[i] = token_id,
+        |df, token_id| {
+            // A term this segment never saw contributes nothing, not zero: the
+            // seeded entry already holds the zero.
+            if let Some(token_id) = token_id {
+                counts.push((df, token_id as usize));
+            }
+        },
     )?;
 
-    for (term, token_id) in terms.iter().zip(token_ids) {
-        // A term this segment never saw contributes nothing, not zero: the
-        // seeded entry already holds the zero.
-        let Some(token_id) = token_id else {
-            continue;
-        };
-        let Some(posting_len) = index.posting_len(token_id, hw_counter)? else {
-            continue;
-        };
-        if let Some(df) = stats.df.get_mut(term) {
+    for (df, token_id) in counts {
+        check_process_stopped(is_stopped)?;
+        if let Some(posting_len) = index.posting_len(token_id as TokenId, hw_counter)? {
             *df += posting_len;
         }
     }
 
-    stats.add_segment(index.points_count(), index.total_tokens(hw_counter)?);
+    // Skipped once the corpus total is already poisoned: on disk this reads the
+    // whole sidecar, and the sum would be discarded.
+    let total_tokens = match stats.total_tokens {
+        Some(_) => index.total_tokens(hw_counter)?,
+        None => None,
+    };
+    stats.add_segment(index.points_count(), total_tokens);
     Ok(())
+}
+
+/// Whether `term` survives this index's tokenizer unchanged, which is what
+/// [`fill_text_statistics`] requires of the terms it is asked to count.
+fn is_tokenized<T: FullTextIndexRead>(index: &T, term: &str) -> bool {
+    let mut tokens = Vec::with_capacity(1);
+    index
+        .tokenizer()
+        .tokenize_query(term, |token| tokens.push(token.into_owned()));
+    tokens == [term]
 }
 
 /// Selects how a text query is parsed and matched against the payload.
@@ -122,11 +151,18 @@ pub trait FullTextIndexRead {
     /// Documents in this segment containing `token_id`: `df(t)` before it is
     /// summed across segments. `None` when the token is not in the vocabulary.
     ///
-    /// Counts deleted documents, which stay in the posting lists until the
-    /// segment is rebuilt, while [`Self::points_count`] does not count them.
-    /// In a segment with many deletions `df` is therefore inflated relative to
-    /// `N`, which understates IDF, so whoever turns the two into a score has
-    /// to cope with `df > N`.
+    /// **Counts what the posting list holds, which is not the same population
+    /// on every backend.** The mutable index removes a deleted point from its
+    /// postings, so its answer is exact; the immutable and on-disk ones leave
+    /// deleted points in place until the segment is rebuilt, and mask them only
+    /// when iterating. Neither counts the id tracker's deferred or shadowed
+    /// points, which [`Self::points_count`] does not exclude either.
+    ///
+    /// So `df` can exceed `N`, and the same data can report a different `df`
+    /// before and after an optimization. Whoever turns the two into a score has
+    /// to cope with both. Resolving it properly means counting `df` over the
+    /// same visible population as `N`, which is a posting-list intersection
+    /// rather than a length.
     fn posting_len(
         &self,
         token_id: TokenId,

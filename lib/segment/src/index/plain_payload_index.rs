@@ -202,6 +202,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         &self,
         _field: PayloadKeyTypeRef,
         _stats: &mut TextFieldStats,
+        _is_stopped: &AtomicBool,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Plain index has no field indexes, so no text statistics either.

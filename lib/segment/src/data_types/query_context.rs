@@ -49,7 +49,8 @@ pub struct IdfScopeStats {
     pub indexed_vectors: tiny_map::TinyMap<VectorNameBuf, usize>,
 }
 
-/// Corpus statistics for one text field, summed over every segment.
+/// Corpus statistics for one text field, summed over every segment of one
+/// local shard.
 ///
 /// Sibling of [`QueryIdfStats`] rather than part of it. The two share the
 /// carrier and the gather lifecycle, and nothing else: this one is keyed by
@@ -229,11 +230,16 @@ impl QueryContext {
     }
 
     /// Seed the terms a scored text query needs on `field`, so that every
-    /// segment reports their document frequencies.
+    /// segment of this shard reports their document frequencies.
     ///
-    /// Whole collection only. A corpus-scoped text statistic has to intersect
-    /// the posting lists with the corpus, which sparse does through its own
-    /// index, and nothing can ask for one yet.
+    /// **Terms must already be tokenized the way the index tokenizes**, since
+    /// resolution is a bare vocabulary lookup. An untokenized term misses
+    /// everywhere and keeps the `df` of zero seeded here, which is the largest
+    /// IDF the formula produces.
+    ///
+    /// No corpus filter. A corpus-scoped text statistic has to intersect the
+    /// posting lists with the corpus, which sparse does through its own index,
+    /// and nothing can ask for one yet.
     pub fn init_text_stats(
         &mut self,
         field: &PayloadKeyType,
@@ -413,7 +419,9 @@ impl Default for VectorQueryContext<'_> {
 }
 
 /// Corpus statistics as a scored text query consumes them: an IDF per term and
-/// an average document length, both over the whole collection.
+/// an average document length, both over the segments of one local shard.
+/// Shard-local, like the sparse statistics beside them: the gather runs per
+/// shard and nothing merges across shards.
 ///
 /// The sparse side applies the same statistic by scaling query weights in
 /// place, which only means anything when the query is itself a weight vector.
@@ -423,7 +431,7 @@ pub struct TextQueryContext<'a> {
 }
 
 impl TextQueryContext<'_> {
-    /// `N`: documents carrying the field, over the whole collection.
+    /// `N`: documents carrying the field, over this shard's segments.
     pub fn document_count(&self) -> usize {
         self.stats.documents
     }
@@ -434,11 +442,16 @@ impl TextQueryContext<'_> {
         self.stats.df.get(term).copied().unwrap_or(0)
     }
 
-    /// `IDF(t)`, zero for a term no segment reported.
+    /// `IDF(t)`. A term nothing reported keeps the `df` of zero it was seeded
+    /// with, which is the *largest* value this formula produces, not the
+    /// smallest. Such a term matches no document, so it contributes to no
+    /// score, but a caller reading the number for its own purposes should know
+    /// which end of the range it sits at.
     ///
-    /// Clamped at zero. Posting lists keep deleted documents while the document
-    /// count excludes them, so `df` can exceed `N` in a segment with many
-    /// deletions, and the unclamped formula would then flip that term's sign.
+    /// Clamped at zero at the other end. Posting lists keep deleted documents
+    /// while the document count excludes them, so `df` can exceed `N` in a
+    /// segment with many deletions, and the unclamped formula would then flip
+    /// that term's sign.
     pub fn idf(&self, term: &str) -> DimWeight {
         let df = self.stats.df.get(term).copied().unwrap_or(0);
         fancy_idf(self.stats.documents as DimWeight, df as DimWeight).max(0.0)

@@ -655,9 +655,10 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     let scoring_dir = Builder::new().prefix("stats_scoring").tempdir().unwrap();
     let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
     let hw_counter = HardwareCounterCell::new();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
 
     let mut stats = TextFieldStats::seeded(["the", "alpha", "absent"].map(str::to_string));
-    fill_text_statistics(&index, &mut stats, &hw_counter).unwrap();
+    fill_text_statistics(&index, &mut stats, &is_stopped, &hw_counter).unwrap();
 
     assert_eq!(stats.documents, 2);
     assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
@@ -669,7 +670,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     // corpus rather than letting it be taken over the segments that do.
     let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
     let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
-    fill_text_statistics(&plain, &mut stats, &hw_counter).unwrap();
+    fill_text_statistics(&plain, &mut stats, &is_stopped, &hw_counter).unwrap();
 
     assert_eq!(stats.documents, 4);
     assert_eq!(stats.df["the"], 2, "frequencies still sum");
