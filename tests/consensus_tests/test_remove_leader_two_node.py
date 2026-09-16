@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import requests
@@ -161,7 +162,15 @@ def test_remove_leader_from_two_node_cluster(tmp_path: pathlib.Path):
     assert follower_proxy is not None
 
     with follower_proxy.delay_rpc(RAFT_SEND, RAFT_SEND_DELAY_SEC):
-        _remove_peer(peer_api_uris[leader_idx], leader_id)
+        # Observe a leader→follower Raft/Send during remove, then release it so
+        # the delayed forward still runs under delay_rpc.
+        with follower_proxy.hold_rpc(RAFT_SEND) as gate, ThreadPoolExecutor(
+            max_workers=1
+        ) as pool:
+            remove = pool.submit(_remove_peer, peer_api_uris[leader_idx], leader_id)
+            gate.wait_for_request()
+            gate.release()
+            remove.result(timeout=60)
 
     # Drain any Raft/Send that entered the proxy before the address wipe.
     time.sleep(RAFT_SEND_DELAY_SEC + 0.1)
