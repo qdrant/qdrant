@@ -1616,6 +1616,106 @@ impl ClusterState {
         // so we always emit the action, even if the config is the same
         vec![Action::SetQuotaConfig { config }]
     }
+
+    pub fn plan_add_peer(&self, peer_id: PeerId, uri: &str) -> StorageResult<Actions> {
+        let uri = uri.parse().map_err(|err| {
+            StorageError::service_error(format!("failed to parse peer URI: {err}"))
+        })?;
+
+        if self.peer_address_by_id.get(&peer_id) == Some(&uri) {
+            return Ok(Actions::new());
+        }
+
+        Ok(vec![Action::AddPeer { peer_id, uri }])
+    }
+
+    pub fn plan_remove_peer(
+        &self,
+        context: &NodeContext,
+        peer_id: PeerId,
+    ) -> StorageResult<Actions> {
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+        let mut collections: Vec<_> = self.collections.keys().cloned().collect();
+        collections.sort();
+
+        for collection in collections {
+            let collection_actions =
+                planned.plan_remove_peer_from_collection(context, &collection, peer_id)?;
+            apply_actions(&mut planned, &collection_actions);
+            actions.extend(collection_actions);
+        }
+
+        if planned.peer_address_by_id.contains_key(&peer_id)
+            || planned.peer_metadata_by_id.contains_key(&peer_id)
+        {
+            actions.push(Action::RemovePeer { peer_id });
+        }
+
+        Ok(actions)
+    }
+
+    fn plan_remove_peer_from_collection(
+        &self,
+        context: &NodeContext,
+        collection: &str,
+        peer_id: PeerId,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(collection).expect("collection exists");
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+
+        if let Some(resharding) = state
+            .resharding
+            .as_ref()
+            .filter(|resharding| resharding.peer_id == peer_id)
+        {
+            let abort = self.plan_abort_resharding(
+                context,
+                collection.into(),
+                &resharding.key(),
+                true,
+                AbortReshardingScope::default(),
+            )?;
+            apply_actions(&mut planned, &abort);
+            actions.extend(abort);
+        }
+
+        let mut transfers: Vec<_> = planned
+            .collection(collection)
+            .expect("collection exists")
+            .transfers
+            .iter()
+            .filter(|transfer| transfer.from == peer_id || transfer.to == peer_id)
+            .map(ShardTransfer::key)
+            .collect();
+        transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+
+        for key in transfers {
+            let abort = planned.plan_abort_transfer(context, collection.into(), key)?;
+            apply_actions(&mut planned, &abort);
+            actions.extend(abort);
+        }
+
+        let mut shards: Vec<_> = planned
+            .collection(collection)
+            .expect("collection exists")
+            .shards
+            .iter()
+            .filter_map(|(&shard_id, shard)| {
+                shard.replicas.contains_key(&peer_id).then_some(shard_id)
+            })
+            .collect();
+        shards.sort_unstable();
+
+        actions.extend(shards.into_iter().map(|shard_id| Action::RemoveReplica {
+            collection: collection.into(),
+            shard_id,
+            peer_id,
+        }));
+
+        Ok(actions)
+    }
 }
 
 fn check_resharding_state(
