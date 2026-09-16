@@ -2820,7 +2820,12 @@ fn remove_peer_replay() {
     let ApplyOutcome::Accepted(actions) = outcome else {
         panic!("replaying peer removal should be accepted, got {outcome:?}");
     };
-    assert!(actions.is_empty());
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::RemovePeer {
+            peer_id: OTHER_PEER_ID,
+        }]
+    ));
     assert_eq!(machine.state(), &goal);
 }
 

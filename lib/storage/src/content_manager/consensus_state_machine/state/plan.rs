@@ -1646,11 +1646,9 @@ impl ClusterState {
             actions.extend(collection_actions);
         }
 
-        if planned.peer_address_by_id.contains_key(&peer_id)
-            || planned.peer_metadata_by_id.contains_key(&peer_id)
-        {
-            actions.push(Action::RemovePeer { peer_id });
-        }
+        // Channel-service cleanup is applier-internal, so the action is still needed when
+        // modeled peer state is already absent.
+        actions.push(Action::RemovePeer { peer_id });
 
         Ok(actions)
     }
