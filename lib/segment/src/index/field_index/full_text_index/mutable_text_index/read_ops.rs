@@ -32,12 +32,16 @@ impl FullTextIndexRead for MutableFullTextIndex {
         self.inner.values_is_empty(point_id)
     }
 
-    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
-        self.inner.doc_len(point_id)
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>> {
+        self.inner.doc_len(point_id, hw_counter)
     }
 
-    fn total_tokens(&self) -> OperationResult<Option<u64>> {
-        self.inner.total_tokens()
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+        self.inner.total_tokens(hw_counter)
     }
 
     fn for_each_token_id<'a, U: UserData>(

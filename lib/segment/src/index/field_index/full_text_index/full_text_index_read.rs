@@ -59,9 +59,15 @@ pub trait FullTextIndexRead {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
     /// Number of tokens indexed for `point_id`, repetitions included: `|d|` in
-    /// BM25. `None` when this index does not record lengths, and undefined for
-    /// a point with no indexed tokens; see the inverted index for the details.
-    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
+    /// BM25. `None` when this index does not record lengths or the point is
+    /// outside it, `Some(0)` when it holds no tokens for that point, whether
+    /// because the document was deleted or because its tokens were all
+    /// filtered away. Every backend answers identically for the same data.
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>>;
 
     /// Total tokens over the points this index still holds. Paired with
     /// [`Self::points_count`] it gives an average document length, but the
@@ -72,7 +78,7 @@ pub trait FullTextIndexRead {
     /// document whose tokens are all filtered away counts towards
     /// `points_count` in RAM and not on disk, so the ratio moves with the
     /// storage placement. Whoever divides has to settle that first.
-    fn total_tokens(&self) -> OperationResult<Option<u64>>;
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
 
     fn for_each_token_id<'a, U: UserData>(
         &self,

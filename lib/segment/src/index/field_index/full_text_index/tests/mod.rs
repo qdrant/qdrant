@@ -622,12 +622,13 @@ fn read_surface_exposes_doc_len_and_total() {
     let temp_dir = Builder::new().prefix("doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
 
-    assert_eq!(index.doc_len(0).unwrap(), Some(3));
-    assert_eq!(index.doc_len(1).unwrap(), Some(7));
-    assert_eq!(index.total_tokens().unwrap(), Some(10));
+    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(index.doc_len(0, &hw_counter).unwrap(), Some(3));
+    assert_eq!(index.doc_len(1, &hw_counter).unwrap(), Some(7));
+    assert_eq!(index.total_tokens(&hw_counter).unwrap(), Some(10));
     assert_eq!(index.points_count(), 2);
-    // Never indexed. Not a zero-length document.
-    assert_eq!(index.doc_len(2).unwrap(), None);
+    // Outside the index. Not a zero-length document.
+    assert_eq!(index.doc_len(2, &hw_counter).unwrap(), None);
 }
 
 /// The same surface on a non-recording index: absent, not zero.
@@ -636,8 +637,9 @@ fn read_surface_reports_absence_without_scoring() {
     let temp_dir = Builder::new().prefix("no_doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), false);
 
-    assert_eq!(index.doc_len(0).unwrap(), None);
-    assert_eq!(index.doc_len(1).unwrap(), None);
-    assert_eq!(index.total_tokens().unwrap(), None);
+    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(index.doc_len(0, &hw_counter).unwrap(), None);
+    assert_eq!(index.doc_len(1, &hw_counter).unwrap(), None);
+    assert_eq!(index.total_tokens(&hw_counter).unwrap(), None);
     assert_eq!(index.points_count(), 2);
 }

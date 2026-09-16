@@ -340,7 +340,11 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
-    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>> {
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>> {
         Ok(self
             .point_to_doc_len
             .as_ref()
@@ -348,7 +352,7 @@ impl InvertedIndex for MutableInvertedIndex {
     }
 
     /// Free: the running counter is maintained by `set_doc_len` and `remove`.
-    fn total_tokens(&self) -> OperationResult<Option<u64>> {
+    fn total_tokens(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
         Ok(self.records_doc_len().then_some(self.total_tokens))
     }
 

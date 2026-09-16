@@ -404,20 +404,26 @@ pub trait InvertedIndex {
     /// `|d|` in BM25, and it is stored, never derived: the token set is
     /// deduplicated and carries no lengths.
     ///
-    /// `None` when this index does not record lengths, or the point has no
-    /// length on record. Only defined for a point that appears in a posting
-    /// list. A point with no indexed tokens, whether deleted or tokenized to
-    /// nothing, reads back as `Some(0)` or `None` depending on the backend,
-    /// because the backends store "no tokens" differently and the two cases
-    /// are not distinguishable from storage alone.
-    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
+    /// `None` when this index does not record lengths, or when `point_id` is
+    /// past the point space it covers. `Some(0)` for a point it holds no tokens
+    /// for, which covers a deleted document and one whose tokens were all
+    /// filtered away alike: every backend encodes those the same way, and none
+    /// of them can tell the two apart.
+    ///
+    /// Every backend answers identically for the same data. That is not free on
+    /// disk, where the sidecar is written unmasked and keeps a deleted point's
+    /// original length, so the deletion mask is consulted first.
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>>;
 
     /// Total tokens over the points this index still holds, the numerator of
     /// `avgdl`. `None` when this index does not record lengths.
     ///
-    /// Not the converse of [`Self::doc_len`]: an on-disk index whose points are
-    /// all deleted answers `None` for every point and `Some(0)` here, so this
-    /// is the one to ask about capability.
+    /// This is the capability probe, not [`Self::doc_len`], which also answers
+    /// `None` for a point id outside the index.
     ///
     /// "Still holds" is not "live" under append-only deletion, where a dropped
     /// point never reaches `remove` and the in-RAM backends keep counting it.
@@ -427,7 +433,7 @@ pub trait InvertedIndex {
     /// Deliberately not divided by [`Self::points_count`] here. The average
     /// is a corpus statistic, and a per-segment average would drift from the
     /// one a search actually needs, which is summed over every segment.
-    fn total_tokens(&self) -> OperationResult<Option<u64>>;
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
 
     /// Resolve token -> token_id and call the closure for each token_id.
     fn for_each_token_id<'a, U: UserData>(
@@ -803,12 +809,22 @@ mod tests {
             .filter(|(point_id, _)| *point_id != victim)
             .map(|(_, doc_len)| u64::from(*doc_len))
             .sum();
+        let hw_counter = HardwareCounterCell::new();
         assert_eq!(
-            mmap.total_tokens().unwrap(),
+            mmap.total_tokens(&hw_counter).unwrap(),
             Some(live_total),
             "the total must not count a point the id tracker deleted",
         );
-        assert_eq!(imm_mmap.total_tokens().unwrap(), Some(live_total));
+        assert_eq!(
+            imm_mmap.total_tokens(&hw_counter).unwrap(),
+            Some(live_total)
+        );
+        assert_eq!(
+            mmap.doc_len(victim as PointOffsetType, &hw_counter)
+                .unwrap(),
+            Some(0),
+            "a runtime deletion must read as no tokens, not as the stale length",
+        );
     }
 
     /// Rebuilding the same directory without lengths must not leave the
@@ -927,14 +943,16 @@ mod tests {
         );
     }
 
-    /// Every backend answers `doc_len` with the same number for a point that
-    /// has tokens, and every total is the sum of those answers. This is the
-    /// whole contract a scorer gets from a segment, so it is pinned across all
-    /// four shapes rather than on the one that happens to be cheapest.
+    /// Every backend answers `doc_len` with the same number for every point,
+    /// including the ones it holds no tokens for, and every total is the sum of
+    /// those answers. This is the whole contract a scorer gets from a segment,
+    /// so it is pinned across all four shapes rather than on the one that
+    /// happens to be cheapest.
     #[rstest]
     fn doc_len_and_total_tokens_agree_across_backends(
         #[values(false, true)] phrase_matching: bool,
     ) {
+        let hw_counter = HardwareCounterCell::new();
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
@@ -954,28 +972,32 @@ mod tests {
 
         let mut live_total = 0;
         for point_id in 0..immutable.point_to_tokens_count.len() as PointOffsetType {
-            let expected = mutable.doc_len(point_id).unwrap();
-            assert_eq!(immutable.doc_len(point_id).unwrap(), expected);
-            assert_eq!(imm_mmap.doc_len(point_id).unwrap(), expected);
-
-            if immutable.values_is_empty(point_id) {
-                // Deleted, or tokenized to nothing. The in-memory backends keep
-                // a zero and the on-disk one reports nothing, which is the
-                // documented gap: only the guard is pinned here.
-                assert_eq!(mmap.doc_len(point_id).unwrap(), None);
-                continue;
-            }
-
-            assert_eq!(mmap.doc_len(point_id).unwrap(), expected);
-            live_total += u64::from(expected.expect("a point with tokens has a length"));
+            let expected = mutable.doc_len(point_id, &hw_counter).unwrap();
+            assert_eq!(immutable.doc_len(point_id, &hw_counter).unwrap(), expected);
+            assert_eq!(imm_mmap.doc_len(point_id, &hw_counter).unwrap(), expected);
+            assert_eq!(
+                mmap.doc_len(point_id, &hw_counter).unwrap(),
+                expected,
+                "point {point_id}, deleted or empty included",
+            );
+            live_total += u64::from(expected.expect("every point of the index has a length"));
         }
 
         assert!(live_total > 0, "the fixture indexed nothing");
+        // Only the on-disk backend reads anything to answer, and it bills it.
+        assert!(
+            hw_counter.payload_index_io_read_counter().get() > 0,
+            "on-disk reads must be measured",
+        );
+
         for (backend, total) in [
-            ("mutable", mutable.total_tokens().unwrap()),
-            ("immutable", immutable.total_tokens().unwrap()),
-            ("mmap", mmap.total_tokens().unwrap()),
-            ("immutable from mmap", imm_mmap.total_tokens().unwrap()),
+            ("mutable", mutable.total_tokens(&hw_counter).unwrap()),
+            ("immutable", immutable.total_tokens(&hw_counter).unwrap()),
+            ("mmap", mmap.total_tokens(&hw_counter).unwrap()),
+            (
+                "immutable from mmap",
+                imm_mmap.total_tokens(&hw_counter).unwrap(),
+            ),
         ] {
             assert_eq!(
                 total,
@@ -1014,13 +1036,13 @@ mod tests {
 
         assert!(!mmap.records_doc_len(), "nothing to write, nothing to read");
         for point_id in 0..16 {
-            assert_eq!(mutable.doc_len(point_id).unwrap(), None);
-            assert_eq!(immutable.doc_len(point_id).unwrap(), None);
-            assert_eq!(mmap.doc_len(point_id).unwrap(), None);
+            assert_eq!(mutable.doc_len(point_id, &hw_counter).unwrap(), None);
+            assert_eq!(immutable.doc_len(point_id, &hw_counter).unwrap(), None);
+            assert_eq!(mmap.doc_len(point_id, &hw_counter).unwrap(), None);
         }
-        assert_eq!(mutable.total_tokens().unwrap(), None);
-        assert_eq!(immutable.total_tokens().unwrap(), None);
-        assert_eq!(mmap.total_tokens().unwrap(), None);
+        assert_eq!(mutable.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(immutable.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(mmap.total_tokens(&hw_counter).unwrap(), None);
     }
 
     #[rstest]
