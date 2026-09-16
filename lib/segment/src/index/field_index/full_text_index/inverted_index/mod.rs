@@ -765,6 +765,87 @@ mod tests {
         );
     }
 
+    /// Rebuilding the same directory without lengths must not leave the
+    /// previous build's sidecar behind: `open` would read it as this build's,
+    /// at offsets that now belong to different documents.
+    #[rstest]
+    fn rebuilding_without_lengths_removes_the_sidecar(
+        #[values(false, true)] phrase_matching: bool,
+    ) {
+        let hw_counter = HardwareCounterCell::new();
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
+        let empty_deleted = BitVec::new();
+
+        let with_lengths =
+            ImmutableInvertedIndex::from(mutable_inverted_index(64, 0, phrase_matching));
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &with_lengths).unwrap();
+        assert!(sidecar.exists());
+
+        // The same points, indexed by a build that records nothing.
+        let mut without_lengths = MutableInvertedIndex::new(phrase_matching, false);
+        for idx in 0..64 {
+            let tokens: Vec<String> = (0..=idx % 8).map(|_| generate_word()).collect();
+            without_lengths
+                .index_str_tokens(idx, &tokens, None, &hw_counter)
+                .unwrap();
+        }
+        let without_lengths = ImmutableInvertedIndex::from(without_lengths);
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &without_lengths).unwrap();
+
+        assert!(
+            !sidecar.exists(),
+            "a stale sidecar outlived the build that wrote it"
+        );
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!opened.records_doc_len());
+        assert!(!opened.files().contains(&sidecar));
+    }
+
+    /// The other end of the same check: a sidecar covering more points than the
+    /// index has is as untrustworthy as one covering fewer, and used to be
+    /// accepted and then silently truncated when materialized.
+    #[rstest]
+    fn oversized_doc_len_sidecar_is_ignored(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(64, 0, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+
+        let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
+        let full = fs_err::metadata(&sidecar).unwrap().len();
+        fs_err::OpenOptions::new()
+            .write(true)
+            .open(&sidecar)
+            .unwrap()
+            .set_len(full + size_of::<u32>() as u64)
+            .unwrap();
+
+        let empty_deleted = BitVec::new();
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .expect("the index still opens");
+        assert!(
+            !opened.records_doc_len(),
+            "a sidecar longer than the index must not be trusted either",
+        );
+    }
+
     /// A truncated sidecar is treated as absent rather than padded, since the
     /// padding would read exactly like real zero-length documents.
     #[rstest]
