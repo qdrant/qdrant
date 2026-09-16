@@ -12,7 +12,7 @@ use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::ShardTransferKey;
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use segment::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
     VectorNameBuf,
@@ -115,6 +115,30 @@ pub enum Action {
         state: ReplicaState,
     },
 
+    RemoveReplica {
+        collection: CollectionId,
+        shard_id: ShardId,
+        peer_id: PeerId,
+    },
+
+    /// Build or reset the receiver's local shard before changing its replica state
+    InitLocalShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+        mode: LocalShardInitMode,
+    },
+
+    RegisterTransfer {
+        collection: CollectionId,
+        transfer: ShardTransfer,
+    },
+
+    SetTransferMethod {
+        collection: CollectionId,
+        key: ShardTransferKey,
+        method: ShardTransferMethod,
+    },
+
     /// Delete points copied from the scale-down target into the remaining shards
     DeleteMigratedPoints {
         collection: CollectionId,
@@ -147,6 +171,18 @@ pub enum Action {
     RevertProxyShard {
         collection: CollectionId,
         shard_id: ShardId,
+    },
+
+    /// Remove the sender's update proxy after a successful transfer
+    UnproxifyShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
+    /// Start the node-local transfer task if this peer is its sender
+    SpawnTransferDriver {
+        collection: CollectionId,
+        transfer: ShardTransfer,
     },
 
     UnregisterTransfer {
@@ -202,12 +238,18 @@ impl Action {
             | Action::SetShardNumber { collection, .. }
             | Action::RemoveShardFromKeyMapping { collection, .. }
             | Action::SetReplicaState { collection, .. }
+            | Action::RemoveReplica { collection, .. }
+            | Action::InitLocalShard { collection, .. }
+            | Action::RegisterTransfer { collection, .. }
+            | Action::SetTransferMethod { collection, .. }
             | Action::DeleteMigratedPoints { collection, .. }
             | Action::RevertHashRing { collection, .. }
             | Action::SetReshardingState { collection, .. }
             | Action::SetReshardingStage { collection, .. }
             | Action::StopTransferDriver { collection, .. }
             | Action::RevertProxyShard { collection, .. }
+            | Action::UnproxifyShard { collection, .. }
+            | Action::SpawnTransferDriver { collection, .. }
             | Action::UnregisterTransfer { collection, .. } => Some(collection),
 
             Action::UpdateAliases { .. }
@@ -226,6 +268,12 @@ impl Action {
 pub enum TransferOutcome {
     Finish,
     Abort,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalShardInitMode {
+    EnsureExists,
+    ResetToEmpty,
 }
 
 /// One of the config updates `UpdateCollection` makes, each a separate save today
