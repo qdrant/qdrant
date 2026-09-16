@@ -1,7 +1,6 @@
 import pathlib
 from .utils import *
-from .fixtures import upsert_random_points, create_collection
-from time import sleep
+from .fixtures import upsert_points, create_collection
 
 COLLECTION_NAME = "test_collection"
 N_PEERS = 3
@@ -18,33 +17,76 @@ def get_peer_id(peer_api_uri: str) -> int:
     assert response.status_code == 200, f"Failed to get peer ID: {response.text}"
     return response.json()["result"]["peer_id"]
 
+
+def peer_is_removed_from_cluster_and_transfers(peer_api_uri: str, removed_peer_id: int) -> bool:
+    peers = get_cluster_info(peer_api_uri)["peers"]
+    transfers = get_collection_cluster_info(peer_api_uri, COLLECTION_NAME)["shard_transfers"]
+    remaining_transfers = [
+        transfer for transfer in transfers
+        if removed_peer_id in (transfer["from"], transfer["to"])
+    ]
+    if str(removed_peer_id) in peers or remaining_transfers:
+        print(f"Waiting for peer {removed_peer_id} removal on {peer_api_uri}: peers={list(peers)}, transfers={remaining_transfers}")
+        return False
+    return True
+
+
 def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
-    assert_project_root()
+    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, use_peer_proxy=True)
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
-
-    create_collection(peer_api_uris[0], shard_number=2, replication_factor=3)
+    create_collection(peer_api_uris[0], shard_number=2, replication_factor=3, write_consistency_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
     )
 
-    peer_url_to_id = {}
-    for peer_api_uri in peer_api_uris:
-        peer_id = get_peer_id(peer_api_uri)
-        peer_url_to_id[peer_api_uri] = peer_id
+    from_peer_id = get_peer_id(peer_api_uris[-1])
+    to_peer_id = get_peer_id(peer_api_uris[0])
+    points = [
+        {
+            "id": index,
+            "vector": {
+                "": [float(index), 1.0, 0.0, 0.0],
+                "sparse-text": {"indices": [index % 1000], "values": [1.0]},
+            },
+            "payload": {"index": index},
+        }
+        for index in range(3000)
+    ]
+    assert_http_ok(upsert_points(peer_api_uris[0], points))
+    survivors = peer_api_uris[:-1]
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 3000)
+    with processes[0].proxy.hold_snapshot_download(peer_api_uris[-1], COLLECTION_NAME, 0) as gate:
+        replicate_shard(peer_api_uris[-1], COLLECTION_NAME, 0, from_peer_id, to_peer_id, method="snapshot")
+        # The receiver has cleared its old shard, but has received no snapshot data.
+        gate.wait_for_request()
+        receiver = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+        transfer, = receiver["shard_transfers"]
+        assert (transfer["from"], transfer["to"], transfer["shard_id"], transfer["method"]) == (
+            from_peer_id, to_peer_id, 0, "snapshot",
+        )
+        shard = next(shard for shard in receiver["local_shards"] if shard["shard_id"] == 0)
+        assert shard["state"] == "Recovery"
+        assert shard["points_count"] == 0
+        assert not gate.cancelled.is_set()
 
-    # Start a transfer from first peer to last peer ID
-    from_peer_id = peer_url_to_id[peer_api_uris[-1]]
-    to_peer_id = peer_url_to_id[peer_api_uris[0]]
-    replicate_shard(peer_api_uris[-1], COLLECTION_NAME, 0, from_peer_id, to_peer_id)
+        force_delete_peer(peer_api_uris[0], from_peer_id)
+        # Survivor-to-survivor recovery is allowed while the old download is held.
+        for uri in survivors:
+            wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
 
-    # Force delete 'from' peer ID by requesting remaining peers to do so
-    force_delete_peer(peer_api_uris[0], from_peer_id)
-
-    # We expect all transfers to be aborted (peer was force deleted before transfer finished) or finished
-    wait_for_collection_shard_transfers_count(
-        peer_api_uris[0], COLLECTION_NAME, 0
-    )
+    # Removal alone is not success. Both survivors must finish recovery and keep
+    # every point, including dense vectors, sparse vectors, and payloads.
+    for uri in survivors:
+        wait_for_collection_shard_transfers_count(uri, COLLECTION_NAME, 0)
+        wait_for_all_replicas_active(uri, COLLECTION_NAME, min_local_replicas=2)
+        cluster = get_collection_cluster_info(uri, COLLECTION_NAME)
+        assert len(cluster["local_shards"]) == 2
+        assert sum(shard["points_count"] for shard in cluster["local_shards"]) == len(points)
+        assert all(shard["peer_id"] != from_peer_id for shard in cluster["remote_shards"])
+        response = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll?consistency=all",
+            json={"limit": len(points), "with_payload": True, "with_vector": True}, timeout=10,
+        )
+        assert_http_ok(response)
+        assert response.json()["result"]["points"] == points
+        assert response.json()["result"]["next_page_offset"] is None
