@@ -343,10 +343,6 @@ impl SegmentHolder {
             }
         }
 
-        for remove_id in remove_ids {
-            self.flush_dependency.lock().remove_element(remove_id);
-        }
-
         removed_segments
     }
 
@@ -400,6 +396,11 @@ impl SegmentHolder {
             ));
         }
         debug_assert_eq!(removed.len(), 1);
+
+        // Dependencies belong to the removed segment incarnation. The replacement
+        // reuses its ID, so keeping them would incorrectly apply stale dependencies
+        // to the new segment and can create a circular flush topology.
+        self.flush_dependency.lock().remove_element(&segment_id);
 
         self.add_existing(segment_id, segment);
 
