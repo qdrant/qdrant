@@ -895,10 +895,14 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         read_point_to_doc_len(storage, point_id)
     }
 
-    /// Reads the whole sidecar and applies the deletion mask. Cheap enough
-    /// once, wasteful per query, and there is nowhere to cache it yet: the
-    /// deleted set that matters lives in the id tracker, which never tells the
-    /// index when it changes.
+    /// Reads the whole sidecar and applies the deletion mask: 4 bytes per
+    /// point, so several megabytes on a large segment, and under `Populate::No`
+    /// it faults in the file this placement exists to keep out of RAM. Cheap
+    /// enough once, wasteful per query.
+    ///
+    /// Not cached yet, rather than uncacheable: `remove` is the only mutation
+    /// of the mask after `open`, so a memo cleared there would be correct.
+    /// Left out until something calls this often enough to pay for it.
     fn total_tokens(&self) -> OperationResult<Option<u64>> {
         let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
             return Ok(None);
@@ -960,17 +964,20 @@ fn read_point_to_tokens_count<S: UniversalRead>(
 
 /// Read a single document length for `point_id` from the sidecar.
 ///
-/// Unlike [`read_point_to_tokens_count`], an unreadable slot is an error
-/// rather than a missing value: `None` here means "no length recorded", which
-/// is exactly the distinction the sidecar exists to keep. Only a point id past
-/// the end of the file, which is not in the index at all, reads as `None`.
+/// Unlike [`read_point_to_tokens_count`], a failed read is an error rather than
+/// a missing value: `None` here means "no length recorded", which is exactly
+/// the distinction the sidecar exists to keep.
+///
+/// Callers must gate on the deletion mask first, which also establishes the
+/// bounds: the mask is sized to `point_to_tokens_count` and never grows, it
+/// reports out-of-range ids inactive, and `open` drops a sidecar shorter than
+/// that count. Re-checking here would cost a `len()`, which is an fstat on
+/// io_uring and a blocking HEAD request on object storage, once per scored
+/// point.
 fn read_point_to_doc_len<S: UniversalRead>(
     storage: &TypedStorage<S, u32>,
     point_id: PointOffsetType,
 ) -> OperationResult<Option<u32>> {
-    if u64::from(point_id) >= storage.len()? {
-        return Ok(None);
-    }
     let byte_offset = u64::from(point_id) * size_of::<u32>() as u64;
     let doc_lens = storage.read(ReadRange::one(byte_offset), Random)?;
     Ok(doc_lens.first().copied())

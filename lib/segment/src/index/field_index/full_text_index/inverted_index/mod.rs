@@ -412,9 +412,17 @@ pub trait InvertedIndex {
     /// are not distinguishable from storage alone.
     fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
 
-    /// Total tokens over the live points of this index, the numerator of
-    /// `avgdl`. `None` when this index does not record lengths, which is the
-    /// same condition as [`Self::doc_len`] returning `None` everywhere.
+    /// Total tokens over the points this index still holds, the numerator of
+    /// `avgdl`. `None` when this index does not record lengths.
+    ///
+    /// Not the converse of [`Self::doc_len`]: an on-disk index whose points are
+    /// all deleted answers `None` for every point and `Some(0)` here, so this
+    /// is the one to ask about capability.
+    ///
+    /// "Still holds" is not "live" under append-only deletion, where a dropped
+    /// point never reaches `remove` and the in-RAM backends keep counting it.
+    /// The on-disk backend re-reads the id tracker's mask at `open` and does
+    /// not.
     ///
     /// Deliberately not divided by [`Self::points_count`] here. The average
     /// is a corpus statistic, and a per-segment average would drift from the
@@ -785,6 +793,22 @@ mod tests {
             0,
             "a runtime deletion must be masked out on load",
         );
+
+        // Summing has to mask too. The agreement test cannot catch this: its
+        // deletions happen before `create`, so every inactive slot is already
+        // zero on disk and dropping the mask there changes nothing.
+        let live_total: u64 = lens_at_build
+            .iter()
+            .enumerate()
+            .filter(|(point_id, _)| *point_id != victim)
+            .map(|(_, doc_len)| u64::from(*doc_len))
+            .sum();
+        assert_eq!(
+            mmap.total_tokens().unwrap(),
+            Some(live_total),
+            "the total must not count a point the id tracker deleted",
+        );
+        assert_eq!(imm_mmap.total_tokens().unwrap(), Some(live_total));
     }
 
     /// Rebuilding the same directory without lengths must not leave the
