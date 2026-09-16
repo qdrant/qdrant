@@ -945,8 +945,23 @@ fn drop_shard_key_resharding_same_key() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_shard_key_op(shard_key));
 
-    assert!(matches!(outcome, ApplyOutcome::NotCovered));
-    assert_eq!(machine.state(), &state);
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping a resharding shard key should be accepted, got {outcome:?}");
+    };
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::RemoveShardKey { .. }))
+    );
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert!(collection.resharding.is_none());
+    assert!(collection.shards_key_mapping.is_empty());
 }
 
 fn set_resharding(state: &mut ClusterState, shard_key: ShardKey, shard_id: ShardId) {

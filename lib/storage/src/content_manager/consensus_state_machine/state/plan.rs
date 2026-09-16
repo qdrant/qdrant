@@ -484,7 +484,11 @@ impl ClusterState {
         Ok(actions)
     }
 
-    pub fn plan_drop_shard_key(&self, op: &DropShardKey) -> StorageResult<Actions> {
+    pub fn plan_drop_shard_key(
+        &self,
+        context: &NodeContext,
+        op: &DropShardKey,
+    ) -> StorageResult<Actions> {
         let DropShardKey {
             collection_name,
             shard_key,
@@ -505,14 +509,34 @@ impl ClusterState {
             )));
         }
 
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+
+        if let Some(resharding) = collection_state
+            .resharding
+            .as_ref()
+            .filter(|resharding| resharding.shard_key.as_ref() == Some(shard_key))
+        {
+            let abort = self.plan_abort_resharding(
+                context,
+                collection.clone(),
+                &resharding.key(),
+                true,
+                AbortReshardingScope::default(),
+            )?;
+            apply_actions(&mut planned, &abort);
+            actions.extend(abort);
+        }
+
+        let collection_state = planned.collection(&collection).expect("collection exists");
         let Some(shard_ids) = collection_state.shards_key_mapping.get(shard_key) else {
-            return Ok(Actions::new());
+            return Ok(actions);
         };
 
         let mut shard_ids: Vec<_> = shard_ids.iter().copied().collect();
         shard_ids.sort_unstable();
 
-        let mut actions = vec![
+        actions.extend([
             Action::InvalidateCleanLocalShards {
                 collection: collection.clone(),
                 shard_ids: shard_ids.clone(),
@@ -521,7 +545,7 @@ impl ClusterState {
                 collection: collection.clone(),
                 shard_key: shard_key.clone(),
             },
-        ];
+        ]);
 
         actions.extend(shard_ids.into_iter().map(|shard_id| Action::DropShard {
             collection: collection.clone(),
