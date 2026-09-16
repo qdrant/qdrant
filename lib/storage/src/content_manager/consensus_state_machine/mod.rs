@@ -134,12 +134,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                // TODO: Removing replica may abort transfers and resharding, which are not implemented yet
-                if operation.has_shard_replica_changes() {
-                    ApplyOutcome::NotCovered
-                } else {
-                    ApplyOutcome::new(self.state.plan_update_collection(operation))
-                }
+                ApplyOutcome::new(self.state.plan_update_collection(&self.context, operation))
             }
 
             CollectionMetaOperations::DeleteCollection(operation) => {

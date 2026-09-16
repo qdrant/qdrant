@@ -393,7 +393,10 @@ fn update_collection_replica_changes() {
         CollectionMetaOperations::UpdateCollection(operation),
     ));
 
-    assert!(matches!(outcome, ApplyOutcome::NotCovered));
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
 
     assert_eq!(machine.state(), &state);
 }
