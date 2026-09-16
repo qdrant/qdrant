@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cancel::CancellationToken;
 use common::budget::ResourceBudget;
@@ -29,6 +29,7 @@ use crate::shards::update_tracker::UpdateTracker;
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::update_workers::internal_update_result::InternalUpdateResult;
+use crate::wal_ack_pin::WalAckPins;
 use crate::wal_delta::LockedWal;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -103,11 +104,12 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: LockedWal,
-    /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
-    /// This is used when other bits of code still depend on information in the WAL, such as the
-    /// queue proxy shard.
-    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    pub(super) wal_ack_pin: Arc<AtomicU64>,
+    /// The live WAL acknowledge pins of this shard.
+    ///
+    /// Each pin keeps its version and everything after it from being acknowledged/truncated from
+    /// the WAL. This is used when other bits of code still depend on information in the WAL, such
+    /// as the queue proxy shard. Without pins all confirmed versions are acknowledged.
+    pub(super) wal_ack_pins: Arc<WalAckPins>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
@@ -174,7 +176,7 @@ impl UpdateHandler {
             flush_stop: None,
             runtime_handle,
             wal,
-            wal_ack_pin: Arc::new(u64::MAX.into()),
+            wal_ack_pins: Default::default(),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -244,7 +246,7 @@ impl UpdateHandler {
 
         let segments = self.segments.clone();
         let wal = self.wal.clone();
-        let wal_ack_pin = self.wal_ack_pin.clone();
+        let wal_ack_pins = self.wal_ack_pins.clone();
         let clocks = self.clocks.clone();
         let flush_interval_sec = self.flush_interval_sec;
         let shard_path = self.shard_path.clone();
@@ -253,7 +255,7 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(UpdateWorkers::flush_worker_fn(
             segments,
             wal,
-            wal_ack_pin,
+            wal_ack_pins,
             clocks,
             flush_interval_sec,
             flush_rx,

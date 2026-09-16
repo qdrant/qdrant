@@ -1,7 +1,6 @@
 use std::cmp::min;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use common::panic;
@@ -15,6 +14,7 @@ use tokio::sync::oneshot;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
+use crate::wal_ack_pin::WalAckPins;
 use crate::wal_delta::LockedWal;
 
 impl UpdateWorkers {
@@ -42,7 +42,7 @@ impl UpdateWorkers {
     fn flush_worker_internal(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: Arc<WalAckPins>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         applied_seq_handler: Arc<AppliedSeqHandler>,
@@ -88,18 +88,15 @@ impl UpdateWorkers {
             }
         };
 
-        // Acknowledge confirmed version in WAL, but don't acknowledge the pinned index or higher.
-        // This is to prevent truncating WAL entries that other bits of code still depend on
-        // such as the queue proxy shard.
-        // Default pin is `u64::MAX` to allow acknowledging all confirmed.
-        let ack_pin = wal_ack_pin.load(std::sync::atomic::Ordering::Relaxed);
-
-        // If we should keep the first message, do not acknowledge at all
-        if ack_pin == 0 {
-            return;
-        }
-
-        let ack = confirmed_version.min(ack_pin.saturating_sub(1));
+        // Acknowledge confirmed version in WAL, but never at or past the lowest WAL acknowledge
+        // pin. This is to prevent truncating WAL entries that other bits of code still depend on,
+        // such as the queue proxy shard. Without pins we acknowledge all confirmed versions.
+        let ack = match wal_ack_pins.lowest() {
+            // If the very first message is pinned, we cannot acknowledge anything at all
+            Some(0) => return,
+            Some(lowest_pin) => confirmed_version.min(lowest_pin - 1),
+            None => confirmed_version,
+        };
 
         if let Err(err) = clocks.store_if_changed(&shard_path) {
             log::warn!("Failed to store clock maps to disk: {err}");
@@ -116,7 +113,7 @@ impl UpdateWorkers {
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: Arc<WalAckPins>,
         clocks: LocalShardClocks,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
@@ -137,7 +134,7 @@ impl UpdateWorkers {
 
             let segments_clone = segments.clone();
             let wal_clone = wal.clone();
-            let wal_ack_pin_clone = wal_ack_pin.clone();
+            let wal_ack_pins_clone = wal_ack_pins.clone();
             let clocks_clone = clocks.clone();
             let shard_path_clone = shard_path.clone();
             let applied_seq_handler_clone = applied_seq_handler.clone();
@@ -146,7 +143,7 @@ impl UpdateWorkers {
                 Self::flush_worker_internal(
                     segments_clone,
                     wal_clone,
-                    wal_ack_pin_clone,
+                    wal_ack_pins_clone,
                     clocks_clone,
                     shard_path_clone,
                     applied_seq_handler_clone,

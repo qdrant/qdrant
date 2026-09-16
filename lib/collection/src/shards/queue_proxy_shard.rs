@@ -40,6 +40,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_ack_pin::{WalAckPinGuard, WalAckPins};
 
 /// Maximum total serialized byte size of a single transfer batch.
 /// Each WAL operation can vary widely in size (a delete vs an upsert of many high-dimensional
@@ -81,11 +82,11 @@ impl QueueProxyShard {
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_ack_pin, progress).await),
+            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_ack_pins, progress).await),
         }
     }
 
@@ -104,7 +105,7 @@ impl QueueProxyShard {
     pub async fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
@@ -128,7 +129,7 @@ impl QueueProxyShard {
             inner: Some(Inner::new_from_version(
                 wrapped_shard,
                 remote_shard,
-                wal_ack_pin,
+                wal_ack_pins,
                 version,
                 progress,
             )),
@@ -249,7 +250,7 @@ impl QueueProxyShard {
     /// Forget all missed updates since creation of this queue proxy shard and finalize. This
     /// unwraps the inner wrapped and remote shard.
     ///
-    /// It also releases the max acknowledged WAL version.
+    /// It also releases our WAL acknowledge pin.
     ///
     /// # Warning
     ///
@@ -257,12 +258,11 @@ impl QueueProxyShard {
     /// The remote shard is therefore left in an inconsistent state, which should be resolved
     /// separately.
     pub fn forget_updates_and_finalize(mut self) -> (LocalShard, RemoteShard) {
-        // Unwrap queue proxy shards and release max acknowledged version for WAL
+        // Unwrap queue proxy shards, dropping the rest releases our WAL acknowledge pin
         let queue_proxy = self
             .inner
             .take()
             .expect("Queue proxy has already been finalized");
-        queue_proxy.set_wal_ack_pin(None);
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
@@ -492,11 +492,14 @@ struct Inner {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    /// Always keep this WAL version and later and prevent acknowledgment/truncation from the WAL.
-    /// We keep it here for access in `set_wal_ack_pin()` without needing async locks.
-    /// See `set_wal_ack_pin()` and `UpdateHandler::wal_ack_pin` for more details.
-    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    wal_ack_pin: Arc<AtomicU64>,
+    /// Keeps the WAL from acknowledging/truncating the operations we still have to transfer.
+    ///
+    /// Because this proxy shard relies on the WAL to obtain operations in the past, those
+    /// operations must not be truncated before we transferred them. This pin is moved forward as
+    /// we transfer, and releases everything as soon as it is dropped with this shard.
+    ///
+    /// See [`WalAckPins`] and `UpdateHandler::wal_ack_pins` for more details.
+    wal_ack_pin: WalAckPinGuard,
     /// Progression tracker.
     progress: Arc<ParkingMutex<TransferTaskProgress>>,
 }
@@ -505,14 +508,14 @@ impl Inner {
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
-            wal_ack_pin,
+            wal_ack_pins,
             start_from,
             progress,
         )
@@ -521,24 +524,21 @@ impl Inner {
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_ack_pin: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let shard = Self {
+        Self {
             wrapped_shard,
             remote_shard,
             transfer_from: version.into(),
             started_at: version,
             update_lock: Default::default(),
-            wal_ack_pin,
+            // Keep all WAL entries from `version` so we don't truncate them off when we still need
+            // to transfer them
+            wal_ack_pin: wal_ack_pins.pin(version),
             progress,
-        };
-
-        // Keep all WAL entries from `version` so we don't truncate them off when we still need to transfer
-        shard.set_wal_ack_pin(Some(version));
-
-        shard
+        }
     }
 
     /// Transfer all updates that the remote missed from WAL
@@ -593,9 +593,9 @@ impl Inner {
             batch = read_result?;
         }
 
-        // Set the WAL version to keep to the next item we should transfer
+        // Move the pin to the next item we should transfer, releasing what we transferred
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
-        self.set_wal_ack_pin(Some(transfer_from));
+        self.wal_ack_pin.set(transfer_from);
 
         Ok(())
     }
@@ -748,19 +748,6 @@ impl Inner {
         }
 
         Ok(())
-    }
-
-    /// Set or release what WAL versions to keep preventing acknowledgment/truncation.
-    ///
-    /// Because this proxy shard relies on the WAL to obtain operations in the past, it cannot be
-    /// truncated before all these update operations have been flushed.
-    /// Using this function we set the WAL not to acknowledge and truncate from a specific point.
-    ///
-    /// Providing `None` will release this limitation.
-    fn set_wal_ack_pin(&self, version: Option<u64>) {
-        log::trace!("set_wal_ack_pin {version:?}");
-        let version = version.unwrap_or(u64::MAX);
-        self.wal_ack_pin.store(version, Ordering::Relaxed);
     }
 }
 
