@@ -246,7 +246,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        10 => collection_meta,
+        11 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -265,12 +265,25 @@ fn arb_collection_meta_operation(
         arb_update_collection(collection_names.clone()),
         arb_delete_collection(collection_names.clone()),
         arb_create_shard_key(collection_names.clone(), peer_ids),
+        arb_drop_shard_key(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
+}
+
+fn arb_drop_shard_key(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let shard_key = arb_shard_key();
+
+    (collection_name, shard_key).prop_map(|(collection_name, shard_key)| {
+        CollectionMetaOperations::DropShardKey(DropShardKey {
+            collection_name,
+            shard_key,
+        })
+    })
 }
 
 fn arb_create_shard_key(
