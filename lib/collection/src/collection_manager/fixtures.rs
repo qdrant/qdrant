@@ -6,15 +6,17 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use rand::RngExt;
 use rand::rngs::ThreadRng;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::only_default_vector;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
 use segment::segment::Segment;
+use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
 use shard::operations::optimization::OptimizerThresholds;
+use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::segment_holder::locked::LockedSegmentHolder;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -94,8 +96,30 @@ pub fn random_multi_vec_segment(
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
+    let segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
+    fill_random(segment, opnum, num_vectors, dim)
+}
+
+/// Like [`random_segment`], but with `vector_config` parameter.
+pub fn random_segment_with_config(
+    path: &Path,
+    opnum: SeqNumberType,
+    num_vectors: u64,
+    config: &SegmentOptimizerConfig,
+) -> Segment {
+    let config = config.plain_segment_config();
+    let dim = config.vector_data[DEFAULT_VECTOR_NAME].size;
+    let segment = build_segment(path, &config, None, true).unwrap().0;
+    fill_random(segment, opnum, num_vectors, dim)
+}
+
+fn fill_random(
+    mut segment: Segment,
+    opnum: SeqNumberType,
+    num_vectors: u64,
+    dim: usize,
+) -> Segment {
     let mut id_gen = PointIdGenerator::default();
-    let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::rng();
     let payload_key = "number";
     let hw_counter = HardwareCounterCell::new();

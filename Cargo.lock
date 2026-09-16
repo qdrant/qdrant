@@ -1334,6 +1334,7 @@ dependencies = [
  "count-min-sketch",
  "criterion",
  "env_logger",
+ "exhaustive",
  "fnv",
  "fs-err",
  "fs_extra",
@@ -2524,6 +2525,26 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "exhaustive"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a251f510ddb0e940682578a2f92e0468c3bda3214f4d8f791293c161375708b"
+dependencies = [
+ "exhaustive_macros",
+]
+
+[[package]]
+name = "exhaustive_macros"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c47e5f652b733270405807ddae7631125a977b888e04e5185a01a3c6a0b7a36"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7142,6 +7163,7 @@ dependencies = [
  "duplicate",
  "ecow",
  "env_logger",
+ "exhaustive",
  "fnv",
  "fs-err",
  "fs_extra",

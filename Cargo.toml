@@ -225,6 +225,7 @@ data-encoding = "2.11.0"
 duplicate = { version = "2.0.1", default-features = false }
 ecow = { version = "0.3.0", features = ["serde"] }
 env_logger = "0.11"
+exhaustive = "0.2.2"
 fnv = "1.0"
 fs4 = "1.1.0"
 fs-err = { version = "3.3.0", features = ["tokio"] }

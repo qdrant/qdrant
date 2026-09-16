@@ -1387,6 +1387,7 @@ pub type CollectionResult<T> = Result<T, CollectionError>;
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
+#[cfg_attr(test, derive(exhaustive::Exhaustive))]
 #[serde(rename_all = "snake_case")]
 pub enum Datatype {
     #[default]

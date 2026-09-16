@@ -16,6 +16,7 @@ mod tests {
     use std::path::PathBuf;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use exhaustive::Exhaustive;
     use fs_err as fs;
     use itertools::Itertools;
     use rand::rng;
@@ -32,21 +33,27 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
-        Distance, HnswConfig, HnswGlobalConfig, Indexes, MultiVectorComparator, MultiVectorConfig,
+        BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
+        HnswConfig, HnswGlobalConfig, Indexes, Memory, MultiVectorComparator, MultiVectorConfig,
         PayloadSchemaType, QuantizationConfig, SegmentConfig, SegmentType, VectorDataConfig,
         VectorNameBuf, VectorStorageType,
     };
     use shard::operations::optimization::OptimizerThresholds;
-    use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::optimizers::config::SegmentOptimizerConfig;
+    use shard::optimizers::segment_optimizer::{Optimizer, SegmentOptimizer};
     use shard::segment_holder::locked::LockedSegmentHolder;
     use shard::segment_holder::{FlushMode, SegmentId};
     use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
+    use crate::collection_manager::fixtures::{
+        random_multi_vec_segment, random_segment, random_segment_with_config,
+    };
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
+    use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
+    use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
     use crate::config::CollectionParams;
     use crate::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
@@ -953,6 +960,178 @@ mod tests {
                     "segment must be on disk with mmap",
                 );
             });
+    }
+
+    /// Optimizers should settle after a few rounds of optimization, not stick
+    /// in an infinite optimization loop.
+    #[test]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "slow on non-Linux, not OS-specific"
+    )]
+    fn test_optimizers_should_settle() {
+        init();
+        let (point_count, dim) = (4, 512); // smallest size that crosses the 1 KiB threshold
+        let thresholds_config = OptimizerThresholds {
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: 1,
+            indexing_threshold_kb: 1,
+            deferred_internal_id: None,
+        };
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let new_holder = |config: &SegmentOptimizerConfig| {
+            let mut holder = SegmentHolder::default();
+            holder.add_new(random_segment_with_config(
+                dir.path(),
+                100,
+                point_count,
+                config,
+            ));
+            LockedSegmentHolder::new(holder)
+        };
+        let planned = |optimizers: &[Box<Optimizer>], holder: &LockedSegmentHolder| {
+            optimizers
+                .iter()
+                .filter(|optimizer| !optimizer.plan_optimizations_for_test(holder).is_empty())
+                .map(|optimizer| optimizer.name())
+                .collect_vec()
+        };
+
+        #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Exhaustive)]
+        struct QuantizedTestParams {
+            always_ram: Option<bool>,
+            memory: Option<Memory>,
+        }
+
+        #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Exhaustive)]
+        struct SettleTestParams {
+            // VectorParams
+            vectors_on_disk: Option<bool>,
+            vectors_memory: Option<Memory>,
+
+            // HnswConfig
+            hnsw_on_disk: Option<bool>,
+            hnsw_inline_storage: Option<bool>,
+
+            // QuantizationConfig
+            quantized: Option<QuantizedTestParams>,
+        }
+
+        let mut plain_holders = HashMap::new();
+        let mut optimized_holders = HashMap::new();
+        for params in SettleTestParams::iter_exhaustive(None) {
+            let vector_params = VectorParams {
+                size: NonZeroU64::new(dim as u64).unwrap(),
+                distance: Distance::Dot,
+                hnsw_config: None,
+                quantization_config: None,
+                on_disk: params.vectors_on_disk,
+                memory: params.vectors_memory,
+                datatype: None,
+                multivector_config: None,
+            };
+            let collection_params = CollectionParams {
+                vectors: VectorsConfig::Single(vector_params),
+                ..CollectionParams::empty()
+            };
+            let hnsw_config = HnswConfig {
+                memory: None,
+                m: 16,
+                ef_construct: 16,
+                full_scan_threshold: 1,
+                max_indexing_threads: 1,
+                on_disk: params.hnsw_on_disk,
+                payload_m: None,
+                inline_storage: params.hnsw_inline_storage,
+            };
+            let quantization_config = params.quantized.map(|quantized| {
+                QuantizationConfig::Binary(BinaryQuantization {
+                    binary: BinaryQuantizationConfig {
+                        always_ram: quantized.always_ram,
+                        memory: quantized.memory,
+                        encoding: Some(BinaryQuantizationEncoding::OneBit),
+                        query_encoding: None,
+                    },
+                })
+            });
+            let segment_config = build_segment_optimizer_config(
+                &collection_params,
+                &hnsw_config,
+                &quantization_config,
+            );
+            let optimizers: Vec<Box<Optimizer>> = vec![
+                Box::new(IndexingOptimizer::new(
+                    2,
+                    thresholds_config,
+                    dir.path().to_owned(),
+                    temp_dir.path().to_owned(),
+                    segment_config.clone(),
+                    HnswGlobalConfig::default(),
+                )),
+                Box::new(ConfigMismatchOptimizer::new(
+                    thresholds_config,
+                    dir.path().to_owned(),
+                    temp_dir.path().to_owned(),
+                    segment_config.clone(),
+                    hnsw_config,
+                    HnswGlobalConfig::default(),
+                )),
+                Box::new(VacuumOptimizer::new(
+                    0.2,
+                    0,
+                    thresholds_config,
+                    dir.path().to_owned(),
+                    temp_dir.path().to_owned(),
+                    segment_config.clone(),
+                    HnswGlobalConfig::default(),
+                )),
+                Box::new(MergeOptimizer::new(
+                    2,
+                    thresholds_config,
+                    dir.path().to_owned(),
+                    temp_dir.path().to_owned(),
+                    segment_config.clone(),
+                    HnswGlobalConfig::default(),
+                )),
+            ];
+
+            let dense_config = &segment_config.dense_vectors[DEFAULT_VECTOR_NAME];
+            let plain_config = segment_config.plain_segment_config();
+            let optimized_config = (
+                &plain_config,
+                dense_config.indexed(),
+                dense_config.memory_placement(),
+            );
+
+            // Round 1
+            let plain_holder = plain_holders
+                .entry(format!("{plain_config:?}"))
+                .or_insert_with(|| new_holder(&segment_config));
+            let planned_first = planned(&optimizers, plain_holder);
+            assert!(
+                !planned_first.is_empty(),
+                "round 1 must index the segment: {params:?}"
+            );
+
+            // Round 2
+            let optimized_holder = optimized_holders
+                .entry(format!("{optimized_config:?}"))
+                .or_insert_with(|| {
+                    let holder = new_holder(&segment_config);
+                    for optimizer in &optimizers {
+                        for batch in optimizer.plan_optimizations_for_test(&holder) {
+                            optimizer.optimize_for_test(holder.clone(), batch);
+                        }
+                    }
+                    holder
+                });
+            let planned_second = planned(&optimizers, optimized_holder);
+            assert!(
+                planned_second.is_empty(),
+                "not settled: {planned_first:?}, then {planned_second:?}: {params:?}"
+            );
+        }
     }
 
     /// Multi vectors with deferred points below the indexing threshold must not cause an
