@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use segment::common::BYTES_IN_KB;
@@ -149,6 +150,11 @@ pub struct SegmentOptimizerConfig {
     /// Live read of the collection's vector names, when wired in via
     /// [`SegmentOptimizerConfig::with_live_vector_names`]. `None` if no live source is available.
     pub live_vector_names: Option<LiveVectorNamesProvider>,
+    /// Directory holding the collection's HNSW training vectors (see
+    /// [`segment::index::hnsw_index::training_vectors`]). Every segment build started by this
+    /// optimizer reads its vector name's training set from here, so a projection-enabled
+    /// collection keeps the feature across optimizer-triggered rebuilds. `None` disables it.
+    pub hnsw_training_vectors_dir: Option<PathBuf>,
 }
 
 impl SegmentOptimizerConfig {
@@ -172,6 +178,13 @@ impl SegmentOptimizerConfig {
     #[must_use]
     pub fn with_live_vector_names(mut self, provider: LiveVectorNamesProvider) -> Self {
         self.live_vector_names = Some(provider);
+        self
+    }
+
+    /// Point segment builds at the collection's HNSW training vectors directory.
+    #[must_use]
+    pub fn with_hnsw_training_vectors_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.hnsw_training_vectors_dir = dir;
         self
     }
 

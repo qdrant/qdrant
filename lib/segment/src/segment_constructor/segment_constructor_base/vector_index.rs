@@ -13,6 +13,7 @@ use crate::id_tracker::IdTrackerEnum;
 use crate::index::VectorIndexEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
+use crate::index::hnsw_index::training_vectors::HnswTrainingVectorsSource;
 use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::{HnswGlobalConfig, Indexes, VectorDataConfig};
@@ -38,6 +39,11 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub hnsw_global_config: &'a HnswGlobalConfig,
     pub feature_flags: FeatureFlags,
     pub progress: ProgressTracker,
+    /// Where to read the HNSW training vectors of this vector name from, when the collection
+    /// has any. Only used when the index config carries a
+    /// [`projection`](crate::types::HnswConfig::projection) block; `None` builds a plain
+    /// HNSW graph, byte-identical to a build without this feature.
+    pub hnsw_training_vectors: Option<HnswTrainingVectorsSource<'a>>,
 }
 
 pub(crate) fn open_vector_index(

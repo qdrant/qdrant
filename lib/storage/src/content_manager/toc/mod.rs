@@ -2,6 +2,7 @@ mod collection_container;
 mod collection_meta_ops;
 mod create_collection;
 pub mod dispatcher;
+pub mod hnsw_training_vectors;
 mod point_ops;
 mod point_ops_internal;
 pub mod request_hw_counter;

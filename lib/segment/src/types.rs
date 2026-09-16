@@ -807,10 +807,107 @@ impl Indexes {
     }
 }
 
+/// Build-time "query-aware projection edges" for the HNSW graph.
+///
+/// When this block is present *and* the collection has training vectors uploaded for the
+/// vector name (see the `hnsw_training_vectors` API), a post-pass runs after the main HNSW
+/// insertion loop and rewrites the level-0 link lists: points that the same training vector
+/// retrieves together get an edge, so out-of-distribution queries can walk between them.
+///
+/// The degree cap (`m0`) is respected, so search cost is unchanged. Upper layers, entry
+/// points and the search code are untouched.
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
+)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct HnswProjectionConfig {
+    /// Maximum number of projected edges placed in front of a point's level-0 links.
+    /// Must not exceed `2 * m` (the level-0 degree cap). Default: 16.
+    #[serde(default = "default_projection_m")]
+    #[validate(range(min = 1, max = 4096))]
+    pub m: usize,
+    /// Size of the exact top-N list computed for every training vector. Default: 100.
+    #[serde(default = "default_projection_topn")]
+    #[validate(range(min = 1, max = 4096))]
+    pub topn: usize,
+    /// Maximum number of retrieving training vectors sampled per point. Default: 64.
+    #[serde(default = "default_projection_maxq")]
+    #[validate(range(min = 1, max = 65536))]
+    pub maxq: usize,
+    /// Maximum number of co-retrieval candidates considered per point. Default: 200.
+    #[serde(default = "default_projection_cands")]
+    #[validate(range(min = 1, max = 65536))]
+    pub cands: usize,
+    /// Seed of the per-point training-vector sub-sampling. Default: 0.
+    #[serde(default)]
+    pub seed: u64,
+    /// Upper bound on the number of training vectors actually used. Larger sets are sampled
+    /// down deterministically (seeded by `seed`), because the pass does an exact
+    /// `n_train x n_points x dim` scan. Default: 100000.
+    #[serde(default = "default_projection_max_training_vectors")]
+    #[validate(range(min = 1))]
+    pub max_training_vectors: usize,
+}
+
+pub const fn default_projection_m() -> usize {
+    16
+}
+
+pub const fn default_projection_topn() -> usize {
+    100
+}
+
+pub const fn default_projection_maxq() -> usize {
+    64
+}
+
+pub const fn default_projection_cands() -> usize {
+    200
+}
+
+pub const fn default_projection_max_training_vectors() -> usize {
+    100_000
+}
+
+impl Default for HnswProjectionConfig {
+    fn default() -> Self {
+        HnswProjectionConfig {
+            m: default_projection_m(),
+            topn: default_projection_topn(),
+            maxq: default_projection_maxq(),
+            cands: default_projection_cands(),
+            seed: 0,
+            max_training_vectors: default_projection_max_training_vectors(),
+        }
+    }
+}
+
+/// Cross-field validation of [`HnswConfig`]: the projected edges must fit into the level-0
+/// degree cap, which is `2 * m`.
+pub fn validate_hnsw_config(hnsw_config: &HnswConfig) -> Result<(), ValidationError> {
+    if let Some(projection) = &hnsw_config.projection
+        && projection.m > 2 * hnsw_config.m
+    {
+        let mut err = ValidationError::new("hnsw_projection_m_too_large");
+        err.message = Some(
+            format!(
+                "hnsw_config.projection.m ({}) must not exceed 2 * hnsw_config.m ({})",
+                projection.m,
+                2 * hnsw_config.m,
+            )
+            .into(),
+        );
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Config of HNSW index
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
 )]
+#[validate(schema(function = "validate_hnsw_config"))]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HnswConfig {
@@ -851,6 +948,11 @@ pub struct HnswConfig {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Build-time query-aware projection edges. `None` (the default) disables the feature and
+    /// the graph is built exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub projection: Option<HnswProjectionConfig>,
 }
 
 impl HnswConfig {
@@ -874,6 +976,7 @@ impl HnswConfig {
             on_disk: _,
             memory: _,
             inline_storage,
+            projection,
         } = *self;
 
         m != other.m
@@ -885,6 +988,7 @@ impl HnswConfig {
             // to flip this flag
             || self.memory_placement() != other.memory_placement()
             || inline_storage != other.inline_storage
+            || projection != other.projection
     }
 
     /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
@@ -1655,6 +1759,7 @@ impl Default for HnswConfig {
             memory: None,
             payload_m: None,
             inline_storage: None,
+            projection: None,
         }
     }
 }
@@ -4846,6 +4951,105 @@ mod tests {
             ..legacy
         };
         assert!(legacy.mismatch_requires_rebuild(&cached));
+    }
+
+    #[test]
+    fn test_hnsw_projection_defaults_and_serde() {
+        // The block is absent by default, and absent from the serialized config.
+        let config = HnswConfig::default();
+        assert_eq!(config.projection, None);
+        let json = serde_json::to_value(config).unwrap();
+        assert!(json.get("projection").is_none());
+
+        // An empty object means "on, with defaults". `HnswConfig` has required fields of its
+        // own, so they are spelled out around it.
+        let required = serde_json::json!({
+            "m": 16,
+            "ef_construct": 100,
+            "full_scan_threshold": 10_000,
+        });
+        let with_projection = |projection: serde_json::Value| {
+            let mut value = required.clone();
+            value["projection"] = projection;
+            serde_json::from_value::<HnswConfig>(value).unwrap()
+        };
+
+        let enabled = with_projection(serde_json::json!({}));
+        assert_eq!(enabled.projection, Some(HnswProjectionConfig::default()));
+        assert_eq!(
+            HnswProjectionConfig::default(),
+            HnswProjectionConfig {
+                m: 16,
+                topn: 100,
+                maxq: 64,
+                cands: 200,
+                seed: 0,
+                max_training_vectors: 100_000,
+            },
+        );
+
+        // Individual overrides keep the other defaults.
+        let partial = with_projection(serde_json::json!({ "m": 8, "seed": 3 }));
+        let projection = partial.projection.unwrap();
+        assert_eq!(projection.m, 8);
+        assert_eq!(projection.seed, 3);
+        assert_eq!(projection.topn, 100);
+    }
+
+    #[test]
+    fn test_hnsw_projection_validation() {
+        let base = HnswConfig::default();
+        assert!(base.validate().is_ok());
+
+        // Every projected edge has to fit into the level-0 degree cap of 2 * m.
+        let ok = HnswConfig {
+            projection: Some(HnswProjectionConfig {
+                m: 2 * base.m,
+                ..HnswProjectionConfig::default()
+            }),
+            ..base
+        };
+        assert!(ok.validate().is_ok());
+
+        let too_many = HnswConfig {
+            projection: Some(HnswProjectionConfig {
+                m: 2 * base.m + 1,
+                ..HnswProjectionConfig::default()
+            }),
+            ..base
+        };
+        assert!(too_many.validate().is_err());
+
+        // Nested field ranges are checked too.
+        let zero_topn = HnswConfig {
+            projection: Some(HnswProjectionConfig {
+                topn: 0,
+                ..HnswProjectionConfig::default()
+            }),
+            ..base
+        };
+        assert!(zero_topn.validate().is_err());
+    }
+
+    #[test]
+    fn test_hnsw_projection_change_requires_rebuild() {
+        let plain = HnswConfig::default();
+        let projected = HnswConfig {
+            projection: Some(HnswProjectionConfig::default()),
+            ..plain
+        };
+        assert!(plain.mismatch_requires_rebuild(&projected));
+        assert!(projected.mismatch_requires_rebuild(&plain));
+        assert!(!projected.mismatch_requires_rebuild(&projected.clone()));
+
+        let other_seed = HnswConfig {
+            projection: Some(HnswProjectionConfig {
+                seed: 1,
+                ..HnswProjectionConfig::default()
+            }),
+            ..plain
+        };
+        assert!(projected.mismatch_requires_rebuild(&other_seed));
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -38,6 +38,7 @@ use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerRead, for_each_unique_point};
 use crate::index::field_index::FieldIndex;
+use crate::index::hnsw_index::training_vectors::HnswTrainingVectorsSource;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
@@ -79,6 +80,11 @@ pub struct SegmentBuilder {
     // - absent here => a previously deleted vector whose data still lingers in older segment
     //   files, safe to prune. See the merge loop in `update`.
     live_vector_names: Option<HashSet<VectorNameBuf>>,
+
+    // Directory holding the collection's HNSW training vectors, when the caller wired one in.
+    // Only read when a vector's HNSW config carries a `projection` block; see
+    // [`crate::index::hnsw_index::training_vectors`].
+    hnsw_training_vectors_dir: Option<PathBuf>,
 }
 
 struct VectorData {
@@ -146,6 +152,7 @@ impl SegmentBuilder {
             segment_config: segment_config.clone(),
             hnsw_global_config: hnsw_global_config.clone(),
             temp_dir,
+            hnsw_training_vectors_dir: None,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
             live_vector_names: None,
@@ -154,6 +161,17 @@ impl SegmentBuilder {
 
     pub fn set_defragment_keys(&mut self, keys: Vec<PayloadKeyType>) {
         self.defragment_keys = keys;
+    }
+
+    /// Point the builder at the collection's HNSW training vectors directory.
+    ///
+    /// Only relevant for vectors whose HNSW config carries a
+    /// [`projection`](crate::types::HnswConfig::projection) block; without it (or without an
+    /// uploaded training set) the built graph is unchanged.
+    #[must_use]
+    pub fn with_hnsw_training_vectors_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.hnsw_training_vectors_dir = dir;
+        self
     }
 
     /// Set the vector names that currently exist in the live collection schema.
@@ -566,6 +584,7 @@ impl SegmentBuilder {
                 segment_config,
                 hnsw_global_config,
                 temp_dir,
+                hnsw_training_vectors_dir,
                 indexed_fields,
                 defragment_keys: _,
                 live_vector_names: _,
@@ -730,6 +749,9 @@ impl SegmentBuilder {
                         hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
                         progress: progress_vector_index.running_subtask(vector_name),
+                        hnsw_training_vectors: hnsw_training_vectors_dir
+                            .as_deref()
+                            .map(|dir| HnswTrainingVectorsSource { dir, vector_name }),
                     },
                 )?;
 

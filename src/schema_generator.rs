@@ -27,6 +27,7 @@ use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
+use storage::content_manager::toc::hnsw_training_vectors::SetHnswTrainingVectors;
 use storage::quota::QuotaStatus;
 use storage::types::ClusterStatus;
 
@@ -93,6 +94,8 @@ struct AllDefinitions {
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
     bs: QuotaStatus,
+    bt: SetHnswTrainingVectors,
+    bu: segment::index::hnsw_index::training_vectors::HnswTrainingVectorsHeader,
 }
 
 fn save_schema<T: JsonSchema>() {

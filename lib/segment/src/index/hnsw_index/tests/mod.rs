@@ -1,5 +1,6 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
+mod test_query_aware_projection;
 
 use common::types::PointOffsetType;
 use rand::Rng;

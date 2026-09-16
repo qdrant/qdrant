@@ -744,6 +744,38 @@ pub struct HnswConfigDiff {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "8")]
     pub memory: ::core::option::Option<i32>,
+    /// Build-time query-aware projection edges. Unset (the default) keeps the plain HNSW build.
+    /// Send an empty message to enable the feature with default parameters.
+    #[prost(message, optional, tag = "9")]
+    pub projection: ::core::option::Option<HnswProjectionConfig>,
+}
+/// Build-time "query-aware projection edges" for the HNSW graph.
+///
+/// Only has an effect when training vectors were uploaded for the vector name
+/// (see UpdateHnswTrainingVectors). All fields are optional and fall back to their defaults.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HnswProjectionConfig {
+    /// Maximum number of projected edges placed in front of a point's level-0 links.
+    /// Must not exceed 2 * m. Default: 16.
+    #[prost(uint64, optional, tag = "1")]
+    pub m: ::core::option::Option<u64>,
+    /// Size of the exact top-N list computed for every training vector. Default: 100.
+    #[prost(uint64, optional, tag = "2")]
+    pub topn: ::core::option::Option<u64>,
+    /// Maximum number of retrieving training vectors sampled per point. Default: 64.
+    #[prost(uint64, optional, tag = "3")]
+    pub maxq: ::core::option::Option<u64>,
+    /// Maximum number of co-retrieval candidates considered per point. Default: 200.
+    #[prost(uint64, optional, tag = "4")]
+    pub cands: ::core::option::Option<u64>,
+    /// Seed of the per-point training-vector sub-sampling. Default: 0.
+    #[prost(uint64, optional, tag = "5")]
+    pub seed: ::core::option::Option<u64>,
+    /// Upper bound on the number of training vectors actually used; larger sets are sampled
+    /// down deterministically. Default: 100000.
+    #[prost(uint64, optional, tag = "6")]
+    pub max_training_vectors: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2192,6 +2224,65 @@ pub struct ListShardKeysResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+/// One row of training vectors
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HnswTrainingVector {
+    #[prost(float, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateHnswTrainingVectorsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Name of the vector; empty or unset for the unnamed (default) vector
+    #[prost(string, optional, tag = "2")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Training vectors, one message per vector, each of the collection's configured size
+    #[prost(message, repeated, tag = "3")]
+    pub vectors: ::prost::alloc::vec::Vec<HnswTrainingVector>,
+    /// Append to the already uploaded training vectors (default true), or replace them
+    #[prost(bool, optional, tag = "4")]
+    pub append: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetHnswTrainingVectorsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Name of the vector; empty or unset for the unnamed (default) vector
+    #[prost(string, optional, tag = "2")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteHnswTrainingVectorsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Name of the vector; empty or unset for the unnamed (default) vector
+    #[prost(string, optional, tag = "2")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HnswTrainingVectorsResponse {
+    /// Name of the vector the training vectors belong to
+    #[prost(string, tag = "1")]
+    pub vector_name: ::prost::alloc::string::String,
+    /// Number of training vectors currently stored
+    #[prost(uint64, tag = "2")]
+    pub num_vectors: u64,
+    /// Dimension of a training vector; 0 when none are stored
+    #[prost(uint64, tag = "3")]
+    pub dim: u64,
+    /// Time spent to process
+    #[prost(double, tag = "4")]
+    pub time: f64,
+}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -3208,6 +3299,86 @@ pub mod collections_client {
                 .insert(GrpcMethod::new("qdrant.Collections", "ListShardKeys"));
             self.inner.unary(req, path, codec).await
         }
+        /// Upload training vectors for the query-aware HNSW projection edges of a vector name.
+        /// These are a build input only: never stored as points, never searchable.
+        pub async fn update_hnsw_training_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/UpdateHnswTrainingVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.Collections", "UpdateHnswTrainingVectors"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Row count and dimension of the uploaded training vectors of a vector name
+        pub async fn get_hnsw_training_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/GetHnswTrainingVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "GetHnswTrainingVectors"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Drop the uploaded training vectors of a vector name
+        pub async fn delete_hnsw_training_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/DeleteHnswTrainingVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.Collections", "DeleteHnswTrainingVectors"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -3333,6 +3504,31 @@ pub mod collections_server {
             request: tonic::Request<super::ListShardKeysRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListShardKeysResponse>,
+            tonic::Status,
+        >;
+        /// Upload training vectors for the query-aware HNSW projection edges of a vector name.
+        /// These are a build input only: never stored as points, never searchable.
+        async fn update_hnsw_training_vectors(
+            &self,
+            request: tonic::Request<super::UpdateHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
+            tonic::Status,
+        >;
+        /// Row count and dimension of the uploaded training vectors of a vector name
+        async fn get_hnsw_training_vectors(
+            &self,
+            request: tonic::Request<super::GetHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
+            tonic::Status,
+        >;
+        /// Drop the uploaded training vectors of a vector name
+        async fn delete_hnsw_training_vectors(
+            &self,
+            request: tonic::Request<super::DeleteHnswTrainingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::HnswTrainingVectorsResponse>,
             tonic::Status,
         >;
     }
@@ -4036,6 +4232,159 @@ pub mod collections_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListShardKeysSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/UpdateHnswTrainingVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateHnswTrainingVectorsSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<
+                        super::UpdateHnswTrainingVectorsRequest,
+                    > for UpdateHnswTrainingVectorsSvc<T> {
+                        type Response = super::HnswTrainingVectorsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::UpdateHnswTrainingVectorsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::update_hnsw_training_vectors(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateHnswTrainingVectorsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/GetHnswTrainingVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetHnswTrainingVectorsSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::GetHnswTrainingVectorsRequest>
+                    for GetHnswTrainingVectorsSvc<T> {
+                        type Response = super::HnswTrainingVectorsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetHnswTrainingVectorsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::get_hnsw_training_vectors(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetHnswTrainingVectorsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/DeleteHnswTrainingVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteHnswTrainingVectorsSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<
+                        super::DeleteHnswTrainingVectorsRequest,
+                    > for DeleteHnswTrainingVectorsSvc<T> {
+                        type Response = super::HnswTrainingVectorsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DeleteHnswTrainingVectorsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::delete_hnsw_training_vectors(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteHnswTrainingVectorsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

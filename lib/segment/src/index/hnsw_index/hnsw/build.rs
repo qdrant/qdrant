@@ -6,6 +6,7 @@ use common::bitvec::{BitSliceExt as _, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
+use common::generic_consts::Random;
 use common::progress_tracker::ProgressTracker;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
@@ -22,6 +23,7 @@ use super::{
 };
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -40,13 +42,17 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::query_aware_edges::{
+    ProjectionParams, ProjectionStats, add_query_aware_projection_edges,
+};
+use crate::index::hnsw_index::training_vectors::HnswTrainingVectorsSource;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::types::Condition::Field;
-use crate::types::{FieldCondition, Filter};
+use crate::types::{FieldCondition, Filter, HnswProjectionConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -83,6 +89,7 @@ impl HNSWIndex {
             hnsw_global_config,
             feature_flags,
             progress,
+            hnsw_training_vectors,
         } = build_args;
 
         fs::create_dir_all(path)?;
@@ -371,6 +378,50 @@ impl HNSWIndex {
             drop(old_index);
         }
 
+        check_process_stopped(stopped)?;
+
+        // Query-aware projection edges.
+        //
+        // A build-time post-pass that rewrites the level-0 link lists using the collection's
+        // training vectors, so points retrieved together by the same query get an edge. It
+        // runs here, after the main graph is complete (whether the CPU loop above or the GPU
+        // built it) and *before* the payload "additional links" phase below: that phase
+        // pushes links in past the degree cap via `merge_from_other`, and the rewrite would
+        // truncate them back to `m0`.
+        //
+        // Both `hnsw_config.projection` and an uploaded training set must be present. With
+        // either missing this is a no-op and the graph is what it would have been before.
+        if let Some(projection) = hnsw_config.projection {
+            let stats = Self::add_projection_edges(
+                &graph_layers_builder,
+                &projection,
+                hnsw_training_vectors,
+                vector_storage_ref.deref(),
+                quantized_vectors_ref.as_ref(),
+                id_tracker_ref.deref(),
+                &pool,
+                stopped,
+            )?;
+            if let Some(stats) = stats {
+                config.projection = Some(projection);
+                log::info!(
+                    "HNSW query-aware projection edges: {} training vectors, \
+                     {}/{} points rewritten, {} projected edges \
+                     ({:.2}/point, level-0 degree {:.2}), \
+                     {:.1}s (top lists {:.1}s, rewrite {:.1}s)",
+                    stats.num_train_queries,
+                    stats.points_with_candidates,
+                    stats.num_points,
+                    stats.projected_edges,
+                    stats.mean_projected_edges(),
+                    stats.mean_level0_degree(),
+                    stats.total_duration().as_secs_f64(),
+                    stats.top_lists_duration.as_secs_f64(),
+                    stats.rewrite_duration.as_secs_f64(),
+                );
+            }
+        }
+
         if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
             progress_additional_links.start();
 
@@ -605,6 +656,126 @@ impl HNSWIndex {
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
         })
+    }
+
+    /// Run the query-aware projection post-pass over a finished main graph.
+    ///
+    /// Returns `Ok(None)` when the pass did not run, which is not an error: the collection has
+    /// no training vectors for this vector name, the graph is empty, or the vector storage is
+    /// not a plain dense one. In that case the graph is left exactly as the standard build
+    /// produced it.
+    #[expect(clippy::too_many_arguments)]
+    fn add_projection_edges(
+        graph_layers_builder: &GraphLayersBuilder,
+        projection: &HnswProjectionConfig,
+        source: Option<HnswTrainingVectorsSource<'_>>,
+        vector_storage: &VectorStorageEnum,
+        quantized_vectors: Option<&QuantizedVectors>,
+        id_tracker: &IdTrackerEnum,
+        pool: &ThreadPool,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Option<ProjectionStats>> {
+        let Some(source) = source else {
+            log::debug!(
+                "HNSW projection edges configured, but no training vectors directory is wired \
+                 into this build; building a plain graph",
+            );
+            return Ok(None);
+        };
+        let Some(training) = source.load()? else {
+            log::debug!(
+                "HNSW projection edges configured, but no training vectors were uploaded for \
+                 vector `{}`; building a plain graph",
+                source.vector_name,
+            );
+            return Ok(None);
+        };
+
+        // Nothing to rewrite when there is no graph (`m = 0`) or no training data.
+        if graph_layers_builder.num_points() == 0
+            || graph_layers_builder.hnsw_m().m0 == 0
+            || training.is_empty()
+        {
+            return Ok(None);
+        }
+
+        // Dimension check against a real stored vector: the pass scores training vectors
+        // against stored ones, so a mismatch (or a multivector storage) has to be refused
+        // rather than guessed around.
+        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
+        let Some(probe_id) = id_tracker
+            .point_mappings()
+            .iter_internal_excluding(deleted_bitslice)
+            .next()
+        else {
+            return Ok(None);
+        };
+        let storage_dim = match vector_storage.get_vector_opt::<Random>(probe_id) {
+            Some(vector) => match vector.as_vec_ref() {
+                VectorRef::Dense(dense) => dense.len(),
+                VectorRef::Sparse(_) | VectorRef::MultiDense(_) => {
+                    log::warn!(
+                        "HNSW projection edges are only supported for dense vectors, \
+                         skipping for vector `{}`",
+                        source.vector_name,
+                    );
+                    return Ok(None);
+                }
+            },
+            None => return Ok(None),
+        };
+        if storage_dim != training.dim() {
+            return Err(OperationError::service_error(format!(
+                "HNSW training vectors for vector `{}` have dim {}, but the stored vectors \
+                 have dim {storage_dim}",
+                source.vector_name,
+                training.dim(),
+            )));
+        }
+
+        let training = training.sampled(projection.max_training_vectors, projection.seed);
+        let num_train = training.len();
+        let params = ProjectionParams {
+            proj_topn: projection.topn,
+            proj_maxq: projection.maxq,
+            proj_cands: projection.cands,
+            proj_m: projection.m,
+            proj_seed: projection.seed,
+        };
+
+        let point_deleted = id_tracker.deleted_point_bitslice();
+        let stats = pool.install(|| {
+            add_query_aware_projection_edges(
+                graph_layers_builder,
+                &params,
+                num_train,
+                |i| {
+                    // Deliberately no quantized vectors here: the edges are selected on the
+                    // raw vectors, which is what search will finally rank with.
+                    FilteredScorer::new(
+                        QueryVector::from(training.get(i)),
+                        vector_storage,
+                        None::<&QuantizedVectors>,
+                        None,
+                        point_deleted,
+                        HardwareCounterCell::disposable(),
+                    )
+                },
+                || {
+                    FilteredScorer::new_internal(
+                        probe_id,
+                        vector_storage,
+                        quantized_vectors,
+                        None,
+                        point_deleted,
+                        HardwareCounterCell::disposable(),
+                    )
+                },
+                stopped,
+            )
+        })?;
+
+        Ok(Some(stats))
     }
 }
 

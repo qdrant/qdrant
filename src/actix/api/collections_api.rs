@@ -6,11 +6,15 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use serde::Deserialize;
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
+};
+use storage::content_manager::toc::hnsw_training_vectors::{
+    HnswTrainingVectorsSelector, SetHnswTrainingVectors,
 };
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
@@ -322,6 +326,94 @@ fn get_collection_memory(
     })
 }
 
+/// Upload training vectors for the query-aware HNSW projection edges.
+///
+/// These are a *build input*: they are not stored as points, are never searchable and never
+/// returned by a query. They only matter for vectors whose `hnsw_config.projection` block is
+/// set; see `storage::content_manager::toc::hnsw_training_vectors`.
+#[put("/collections/{collection_name}/hnsw_training_vectors")]
+fn set_hnsw_training_vectors(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    request: Json<SetHnswTrainingVectors>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        let pass = new_unchecked_verification_pass();
+        let collection_pass = auth.check_collection_access(
+            &collection.collection_name,
+            AccessRequirements::new().write().extras(),
+            "set_hnsw_training_vectors",
+        )?;
+        let SetHnswTrainingVectors {
+            vector_name,
+            vectors,
+            append,
+        } = request.into_inner();
+        dispatcher
+            .toc(&auth, &pass)
+            .set_hnsw_training_vectors(
+                &collection_pass,
+                vector_name.as_deref().unwrap_or(DEFAULT_VECTOR_NAME),
+                vectors,
+                append,
+            )
+            .await
+    })
+}
+
+/// Row count and dimension of the uploaded training vectors of one vector name.
+#[get("/collections/{collection_name}/hnsw_training_vectors")]
+fn get_hnsw_training_vectors(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    params: Query<HnswTrainingVectorsSelector>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        let pass = new_unchecked_verification_pass();
+        let collection_pass = auth.check_collection_access(
+            &collection.collection_name,
+            AccessRequirements::new().extras(),
+            "get_hnsw_training_vectors",
+        )?;
+        let vector_name = params.into_inner().vector_name;
+        dispatcher
+            .toc(&auth, &pass)
+            .get_hnsw_training_vectors_info(
+                &collection_pass,
+                vector_name.as_deref().unwrap_or(DEFAULT_VECTOR_NAME),
+            )
+            .await
+    })
+}
+
+/// Drop the uploaded training vectors of one vector name.
+#[delete("/collections/{collection_name}/hnsw_training_vectors")]
+fn delete_hnsw_training_vectors(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    params: Query<HnswTrainingVectorsSelector>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        let pass = new_unchecked_verification_pass();
+        let collection_pass = auth.check_collection_access(
+            &collection.collection_name,
+            AccessRequirements::new().write().extras(),
+            "delete_hnsw_training_vectors",
+        )?;
+        let vector_name = params.into_inner().vector_name;
+        dispatcher
+            .toc(&auth, &pass)
+            .delete_hnsw_training_vectors(
+                &collection_pass,
+                vector_name.as_deref().unwrap_or(DEFAULT_VECTOR_NAME),
+            )
+            .await
+    })
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -338,6 +430,9 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_cluster_info)
         .service(get_optimizations)
         .service(get_collection_memory)
+        .service(set_hnsw_training_vectors)
+        .service(get_hnsw_training_vectors)
+        .service(delete_hnsw_training_vectors)
         .service(update_collection_cluster);
 }
 

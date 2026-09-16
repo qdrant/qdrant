@@ -75,6 +75,7 @@ mod tests {
             dense_vectors,
             sparse_vectors: Default::default(),
             live_vector_names: None,
+            hnsw_training_vectors_dir: None,
         }
     }
 

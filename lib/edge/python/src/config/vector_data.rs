@@ -162,6 +162,7 @@ impl PyHnswIndexConfig {
             memory: None,
             payload_m,
             inline_storage,
+            projection: None,
         })
     }
 
@@ -217,6 +218,7 @@ impl PyHnswIndexConfig {
             memory: _,
             payload_m: _,
             inline_storage: _,
+            projection: _,
         } = self.0;
     }
 }

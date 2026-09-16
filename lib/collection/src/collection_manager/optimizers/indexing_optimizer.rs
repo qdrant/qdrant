@@ -839,6 +839,7 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            projection: None,
         };
 
         {

@@ -5,6 +5,7 @@ use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
+use crate::types::HnswProjectionConfig;
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
@@ -31,6 +32,12 @@ pub struct HnswGraphConfig {
     pub payload_m0: Option<usize>,
     #[serde(default)]
     pub indexed_vector_count: Option<usize>,
+    /// Query-aware projection edges this graph was actually built with, if any.
+    ///
+    /// Recorded so a built index says what produced its level-0 links; `None` means the
+    /// graph is a plain HNSW graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<HnswProjectionConfig>,
 }
 
 impl HnswGraphConfig {
@@ -52,6 +59,7 @@ impl HnswGraphConfig {
             payload_m,
             payload_m0: payload_m.map(|v| v * 2),
             indexed_vector_count: Some(indexed_vector_count),
+            projection: None,
         }
     }
 

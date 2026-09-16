@@ -256,6 +256,30 @@ message HnswConfigDiff {
   // Memory placement of the HNSW graph.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 8;
+  // Build-time query-aware projection edges. Unset (the default) keeps the plain HNSW build.
+  // Send an empty message to enable the feature with default parameters.
+  optional HnswProjectionConfig projection = 9;
+}
+
+// Build-time "query-aware projection edges" for the HNSW graph.
+//
+// Only has an effect when training vectors were uploaded for the vector name
+// (see UpdateHnswTrainingVectors). All fields are optional and fall back to their defaults.
+message HnswProjectionConfig {
+  // Maximum number of projected edges placed in front of a point's level-0 links.
+  // Must not exceed 2 * m. Default: 16.
+  optional uint64 m = 1;
+  // Size of the exact top-N list computed for every training vector. Default: 100.
+  optional uint64 topn = 2;
+  // Maximum number of retrieving training vectors sampled per point. Default: 64.
+  optional uint64 maxq = 3;
+  // Maximum number of co-retrieval candidates considered per point. Default: 200.
+  optional uint64 cands = 4;
+  // Seed of the per-point training-vector sub-sampling. Default: 0.
+  optional uint64 seed = 5;
+  // Upper bound on the number of training vectors actually used; larger sets are sampled
+  // down deterministically. Default: 100000.
+  optional uint64 max_training_vectors = 6;
 }
 
 message SparseIndexConfig {
@@ -1231,4 +1255,45 @@ message ListShardKeysResponse {
   repeated ShardKeyDescription shard_keys = 1;
   // Time spent to process
   double time = 2;
+}
+
+// One row of training vectors
+message HnswTrainingVector {
+  repeated float data = 1;
+}
+
+message UpdateHnswTrainingVectorsRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Name of the vector; empty or unset for the unnamed (default) vector
+  optional string vector_name = 2;
+  // Training vectors, one message per vector, each of the collection's configured size
+  repeated HnswTrainingVector vectors = 3;
+  // Append to the already uploaded training vectors (default true), or replace them
+  optional bool append = 4;
+}
+
+message GetHnswTrainingVectorsRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Name of the vector; empty or unset for the unnamed (default) vector
+  optional string vector_name = 2;
+}
+
+message DeleteHnswTrainingVectorsRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Name of the vector; empty or unset for the unnamed (default) vector
+  optional string vector_name = 2;
+}
+
+message HnswTrainingVectorsResponse {
+  // Name of the vector the training vectors belong to
+  string vector_name = 1;
+  // Number of training vectors currently stored
+  uint64 num_vectors = 2;
+  // Dimension of a training vector; 0 when none are stored
+  uint64 dim = 3;
+  // Time spent to process
+  double time = 4;
 }

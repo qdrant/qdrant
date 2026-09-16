@@ -10,6 +10,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::index::hnsw_index::training_vectors::training_vectors_dir;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
@@ -258,6 +259,7 @@ pub fn build_segment_optimizer_config(
         dense_vectors,
         sparse_vectors,
         live_vector_names: None,
+        hnsw_training_vectors_dir: None,
     }
 }
 
@@ -283,9 +285,14 @@ pub fn build_optimizers(
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
+    // Training vectors for the query-aware HNSW projection edges live in the collection
+    // directory, one level above the shard, so every shard and every optimizer-triggered
+    // rebuild of this node reads the same set.
+    let hnsw_training_vectors_dir = shard_path.parent().map(training_vectors_dir);
     let segment_config =
         build_segment_optimizer_config(collection_params, hnsw_config, quantization_config)
-            .with_live_vector_names(live_vector_names_provider(collection_config));
+            .with_live_vector_names(live_vector_names_provider(collection_config))
+            .with_hnsw_training_vectors_dir(hnsw_training_vectors_dir);
     let num_indexing_threads = max_num_indexing_threads(&segment_config);
     let threshold_config = optimizers_config.optimizer_thresholds(
         num_indexing_threads,

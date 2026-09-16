@@ -38,4 +38,14 @@ service Collections {
   rpc DeleteShardKey(DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
   // List shard keys
   rpc ListShardKeys(ListShardKeysRequest) returns (ListShardKeysResponse) {}
+  // Upload training vectors for the query-aware HNSW projection edges of a vector name.
+  // These are a build input only: never stored as points, never searchable.
+  rpc UpdateHnswTrainingVectors(UpdateHnswTrainingVectorsRequest)
+      returns (HnswTrainingVectorsResponse) {}
+  // Row count and dimension of the uploaded training vectors of a vector name
+  rpc GetHnswTrainingVectors(GetHnswTrainingVectorsRequest)
+      returns (HnswTrainingVectorsResponse) {}
+  // Drop the uploaded training vectors of a vector name
+  rpc DeleteHnswTrainingVectors(DeleteHnswTrainingVectorsRequest)
+      returns (HnswTrainingVectorsResponse) {}
 }

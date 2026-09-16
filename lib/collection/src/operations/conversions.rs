@@ -249,6 +249,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = value;
         Self {
             m: m.map(|v| v as usize),
@@ -259,6 +260,7 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|v| v as usize),
             inline_storage,
+            projection: projection.map(Into::into),
         }
     }
 }
@@ -274,6 +276,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = value;
         Self {
             m: m.map(|v| v as u64),
@@ -284,6 +287,7 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             memory: convert_memory_to_proto(memory),
             payload_m: payload_m.map(|v| v as u64),
             inline_storage,
+            projection: projection.map(Into::into),
         }
     }
 }
@@ -459,6 +463,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = hnsw_config;
 
         let CollectionParams {
@@ -548,6 +553,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     memory: convert_memory_to_proto(memory),
                     payload_m: payload_m.map(|v| v as u64),
                     inline_storage,
+                    projection: projection.map(Into::into),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(deleted_threshold),
@@ -2042,5 +2048,58 @@ impl TryFrom<grpc::FeedbackStrategy> for FeedbackStrategy {
         };
 
         Ok(strategy)
+    }
+}
+
+#[cfg(test)]
+mod hnsw_projection_conversion_tests {
+    use segment::types::HnswProjectionConfig;
+
+    use crate::operations::config_diff::HnswConfigDiff;
+
+    #[test]
+    fn projection_survives_the_grpc_round_trip() {
+        let projection = HnswProjectionConfig {
+            m: 12,
+            topn: 64,
+            maxq: 32,
+            cands: 128,
+            seed: 7,
+            max_training_vectors: 50_000,
+        };
+        let diff = HnswConfigDiff {
+            m: Some(16),
+            projection: Some(projection),
+            ..Default::default()
+        };
+
+        let proto = api::grpc::qdrant::HnswConfigDiff::from(diff);
+        let proto_projection = proto.projection.unwrap();
+        assert_eq!(proto_projection.m, Some(12));
+        assert_eq!(proto_projection.topn, Some(64));
+        assert_eq!(proto_projection.maxq, Some(32));
+        assert_eq!(proto_projection.cands, Some(128));
+        assert_eq!(proto_projection.seed, Some(7));
+        assert_eq!(proto_projection.max_training_vectors, Some(50_000));
+
+        let back = HnswConfigDiff::from(proto);
+        assert_eq!(back.projection, Some(projection));
+        assert_eq!(back.m, Some(16));
+    }
+
+    #[test]
+    fn empty_grpc_projection_message_means_defaults() {
+        let proto = api::grpc::qdrant::HnswConfigDiff {
+            projection: Some(api::grpc::qdrant::HnswProjectionConfig::default()),
+            ..Default::default()
+        };
+        let diff = HnswConfigDiff::from(proto);
+        assert_eq!(diff.projection, Some(HnswProjectionConfig::default()));
+    }
+
+    #[test]
+    fn absent_grpc_projection_stays_absent() {
+        let proto = api::grpc::qdrant::HnswConfigDiff::default();
+        assert_eq!(HnswConfigDiff::from(proto).projection, None);
     }
 }

@@ -15,7 +15,9 @@ pub mod graph_links;
 pub mod hnsw;
 mod links_container;
 pub mod point_scorer;
+pub mod query_aware_edges;
 mod search_context;
+pub mod training_vectors;
 
 #[cfg(feature = "gpu")]
 pub mod gpu;

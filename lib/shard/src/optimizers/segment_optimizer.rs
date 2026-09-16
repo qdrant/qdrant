@@ -334,6 +334,11 @@ pub trait SegmentOptimizer: Sync {
             &optimized_config,
             self.hnsw_global_config(),
         )
+        .map(|builder| {
+            builder.with_hnsw_training_vectors_dir(
+                segment_optimizer_config.hnsw_training_vectors_dir.clone(),
+            )
+        })
     }
 
     /// Test wrapper for [`SegmentOptimizer::optimize`].

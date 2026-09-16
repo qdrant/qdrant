@@ -6,18 +6,22 @@ use api::grpc::qdrant::{
     ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
     CollectionExistsRequest, CollectionExistsResponse, CollectionOperationResponse,
     CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse, DeleteCollection,
-    DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
-    GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
+    DeleteHnswTrainingVectorsRequest, DeleteShardKeyRequest, DeleteShardKeyResponse,
+    GetCollectionInfoRequest, GetCollectionInfoResponse, GetHnswTrainingVectorsRequest,
+    HnswTrainingVectorsResponse, ListAliasesRequest, ListAliasesResponse,
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
     ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
     UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
+    UpdateHnswTrainingVectorsRequest,
 };
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
 use collection::operations::types::{AliasDescription, CollectionsAliasesResponse};
 use collection::operations::verification::new_unchecked_verification_pass;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::AccessRequirements;
 use tonic::{Request, Response, Status};
 
 use super::validate;
@@ -341,6 +345,115 @@ impl Collections for CollectionsService {
 
         Ok(Response::new(DeleteShardKeyResponse {
             result,
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn update_hnsw_training_vectors(
+        &self,
+        mut request: Request<UpdateHnswTrainingVectorsRequest>,
+    ) -> Result<Response<HnswTrainingVectorsResponse>, Status> {
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+        let pass = new_unchecked_verification_pass();
+
+        let UpdateHnswTrainingVectorsRequest {
+            collection_name,
+            vector_name,
+            vectors,
+            append,
+        } = request.into_inner();
+
+        let collection_pass = auth.check_collection_access(
+            &collection_name,
+            AccessRequirements::new().write().extras(),
+            "update_hnsw_training_vectors",
+        )?;
+        let vector_name = vector_name.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string());
+        let vectors = vectors.into_iter().map(|row| row.data).collect();
+
+        let header = self
+            .dispatcher
+            .toc(&auth, &pass)
+            .set_hnsw_training_vectors(
+                &collection_pass,
+                &vector_name,
+                vectors,
+                append.unwrap_or(true),
+            )
+            .await?;
+
+        Ok(Response::new(HnswTrainingVectorsResponse {
+            vector_name: header.vector_name,
+            num_vectors: header.num_vectors as u64,
+            dim: header.dim as u64,
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn get_hnsw_training_vectors(
+        &self,
+        mut request: Request<GetHnswTrainingVectorsRequest>,
+    ) -> Result<Response<HnswTrainingVectorsResponse>, Status> {
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+        let pass = new_unchecked_verification_pass();
+
+        let GetHnswTrainingVectorsRequest {
+            collection_name,
+            vector_name,
+        } = request.into_inner();
+
+        let collection_pass = auth.check_collection_access(
+            &collection_name,
+            AccessRequirements::new().extras(),
+            "get_hnsw_training_vectors",
+        )?;
+        let vector_name = vector_name.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string());
+
+        let header = self
+            .dispatcher
+            .toc(&auth, &pass)
+            .get_hnsw_training_vectors_info(&collection_pass, &vector_name)
+            .await?;
+
+        Ok(Response::new(HnswTrainingVectorsResponse {
+            num_vectors: header.as_ref().map_or(0, |h| h.num_vectors as u64),
+            dim: header.as_ref().map_or(0, |h| h.dim as u64),
+            vector_name,
+            time: timing.elapsed().as_secs_f64(),
+        }))
+    }
+
+    async fn delete_hnsw_training_vectors(
+        &self,
+        mut request: Request<DeleteHnswTrainingVectorsRequest>,
+    ) -> Result<Response<HnswTrainingVectorsResponse>, Status> {
+        let timing = Instant::now();
+        let auth = extract_auth(&mut request);
+        let pass = new_unchecked_verification_pass();
+
+        let DeleteHnswTrainingVectorsRequest {
+            collection_name,
+            vector_name,
+        } = request.into_inner();
+
+        let collection_pass = auth.check_collection_access(
+            &collection_name,
+            AccessRequirements::new().write().extras(),
+            "delete_hnsw_training_vectors",
+        )?;
+        let vector_name = vector_name.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string());
+
+        self.dispatcher
+            .toc(&auth, &pass)
+            .delete_hnsw_training_vectors(&collection_pass, &vector_name)
+            .await?;
+
+        Ok(Response::new(HnswTrainingVectorsResponse {
+            vector_name,
+            num_vectors: 0,
+            dim: 0,
             time: timing.elapsed().as_secs_f64(),
         }))
     }

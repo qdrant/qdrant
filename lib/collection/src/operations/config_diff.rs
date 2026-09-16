@@ -7,8 +7,8 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, Memory, ProductQuantization, ScalarQuantization,
-    StrictModeConfig, TurboQuantization,
+    BinaryQuantization, HnswConfig, HnswProjectionConfig, Memory, ProductQuantization,
+    ScalarQuantization, StrictModeConfig, TurboQuantization,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -80,6 +80,12 @@ pub struct HnswConfigDiff {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Build-time query-aware projection edges. Unset (the default) keeps the plain HNSW
+    /// build. Send an empty object to enable the feature with default parameters; it only
+    /// takes effect for vector names that also have training vectors uploaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub projection: Option<HnswProjectionConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -227,6 +233,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = diff;
 
         HnswConfig {
@@ -238,6 +245,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            projection: projection.or(self.projection),
         }
     }
 }
@@ -253,6 +261,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = diff;
 
         HnswConfigDiff {
@@ -264,6 +273,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            projection: projection.or(self.projection),
         }
     }
 }
@@ -418,6 +428,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = config;
 
         HnswConfigDiff {
@@ -429,6 +440,7 @@ impl From<HnswConfig> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            projection,
         }
     }
 }
@@ -542,11 +554,57 @@ impl Validate for QuantizationConfigDiff {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use segment::types::{Distance, HnswConfig};
+    use segment::types::{Distance, HnswConfig, HnswProjectionConfig};
 
     use super::*;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
+
+    #[test]
+    fn test_hnsw_projection_diff() {
+        let base = HnswConfig::default();
+        assert_eq!(base.projection, None);
+
+        // An empty `projection` object in the diff turns the feature on with defaults.
+        let diff: HnswConfigDiff =
+            serde_json::from_value(serde_json::json!({ "projection": {} })).unwrap();
+        assert_eq!(diff.projection, Some(HnswProjectionConfig::default()));
+        let updated = base.update(&diff);
+        assert_eq!(updated.projection, Some(HnswProjectionConfig::default()));
+        // Everything else is untouched.
+        assert_eq!(updated.m, base.m);
+        assert_eq!(updated.ef_construct, base.ef_construct);
+
+        // A diff without the field leaves an existing block in place.
+        let empty_diff: HnswConfigDiff = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(empty_diff.projection, None);
+        assert_eq!(updated.update(&empty_diff).projection, updated.projection);
+
+        // Diff-over-diff keeps the more specific one.
+        let override_diff: HnswConfigDiff =
+            serde_json::from_value(serde_json::json!({ "projection": { "m": 4 } })).unwrap();
+        assert_eq!(
+            empty_diff.update(&override_diff).projection.unwrap().m,
+            4,
+            "the newer diff wins",
+        );
+
+        // Round trip through the full config.
+        let round_trip = HnswConfigDiff::from(updated);
+        assert_eq!(round_trip.projection, updated.projection);
+    }
+
+    #[test]
+    fn test_hnsw_projection_diff_validation() {
+        // Nested validation of the block runs through the diff too.
+        let bad: HnswConfigDiff =
+            serde_json::from_value(serde_json::json!({ "projection": { "topn": 0 } })).unwrap();
+        assert!(bad.validate().is_err());
+
+        let good: HnswConfigDiff =
+            serde_json::from_value(serde_json::json!({ "projection": { "topn": 64 } })).unwrap();
+        assert!(good.validate().is_ok());
+    }
 
     #[test]
     fn test_update_collection_params() {

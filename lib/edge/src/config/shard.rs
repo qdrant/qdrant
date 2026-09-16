@@ -260,6 +260,7 @@ impl EdgeConfig {
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
+            hnsw_training_vectors_dir: None,
         }
     }
 

@@ -690,6 +690,9 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
             memory: memory.map(SegmentMemory::from),
             payload_m: payload_m.map(crate::error::clamp_usize),
             inline_storage: None,
+            // Not exposed over FFI: the query-aware projection edges are a server-side
+            // build-time feature that also needs collection-level training vectors.
+            projection: None,
         }
     }
 }
@@ -708,6 +711,8 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
             // Not exposed over FFI; requires quantization and is a
             // server-side disk/speed trade-off tuned at optimizer level.
             inline_storage: _,
+            // Not exposed over FFI; see above.
+            projection: _,
         } = c;
         HnswIndexConfig {
             m: m as u64,

@@ -91,6 +91,7 @@ mod tests {
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
+            hnsw_training_vectors_dir: None,
         }
     }
 
@@ -139,6 +140,7 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            projection: None,
         };
 
         let mut dense_overrides = HashMap::new();
@@ -290,6 +292,7 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            projection: None,
         };
 
         let mut hnsw_config_vector1 = hnsw_config_collection;

@@ -66,6 +66,7 @@ fn test_graph_connectivity() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        projection: None,
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
@@ -91,6 +92,7 @@ fn test_graph_connectivity() {
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
             progress: ProgressTracker::new_for_test(),
+            hnsw_training_vectors: None,
         },
     )
     .unwrap();

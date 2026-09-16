@@ -396,6 +396,75 @@ paths:
             default: 16 #! Keep in sync with DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT
       responses: #@ response(reference("OptimizationsResponse"))
 
+  /collections/{collection_name}/hnsw_training_vectors:
+    put:
+      tags:
+        - Collections
+      summary: Upload HNSW training vectors
+      description: |-
+        Upload training vectors used to build the query-aware HNSW projection edges of a vector
+        name. They are a build input only: never stored as points, never searchable and never
+        returned by a query. They only take effect for vectors whose `hnsw_config.projection`
+        block is set, and are picked up by the next index build of the collection.
+      operationId: set_hnsw_training_vectors
+      requestBody:
+        description: Training vectors to store
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetHnswTrainingVectors"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("HnswTrainingVectorsHeader"))
+
+    get:
+      tags:
+        - Collections
+      summary: Get HNSW training vectors info
+      description: Row count and dimension of the uploaded HNSW training vectors of a vector name
+      operationId: get_hnsw_training_vectors
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: vector_name
+          in: query
+          description: Name of the vector; omit for the unnamed (default) vector
+          required: false
+          schema:
+            type: string
+      responses: #@ response(reference("HnswTrainingVectorsHeader"))
+
+    delete:
+      tags:
+        - Collections
+      summary: Delete HNSW training vectors
+      description: Drop the uploaded HNSW training vectors of a vector name
+      operationId: delete_hnsw_training_vectors
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: vector_name
+          in: query
+          description: Name of the vector; omit for the unnamed (default) vector
+          required: false
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
+
   /collections/{collection_name}/aliases:
     get:
       tags:

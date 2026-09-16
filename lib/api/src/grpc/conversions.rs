@@ -57,9 +57,9 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     AcornSearchParams, CollectionDescription, CollectionOperationResponse, Condition, Distance,
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
-    HealthCheckReply, HnswConfigDiff, IdfParams, IntegerIndexParams, IsEmptyCondition,
-    IsNullCondition, ListCollectionsResponse, ListShardKeysResponse, Match, MinShould,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    HealthCheckReply, HnswConfigDiff, HnswProjectionConfig, IdfParams, IntegerIndexParams,
+    IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListShardKeysResponse, Match,
+    MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
     PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct,
     PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
@@ -2514,6 +2514,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            projection,
         } = hnsw_config;
         Self {
             m: m.unwrap_or_default() as usize,
@@ -2524,6 +2525,51 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|x| x as usize),
             inline_storage,
+            projection: projection.map(Into::into),
+        }
+    }
+}
+
+impl From<HnswProjectionConfig> for segment::types::HnswProjectionConfig {
+    fn from(value: HnswProjectionConfig) -> Self {
+        let HnswProjectionConfig {
+            m,
+            topn,
+            maxq,
+            cands,
+            seed,
+            max_training_vectors,
+        } = value;
+        let defaults = segment::types::HnswProjectionConfig::default();
+        Self {
+            m: m.map_or(defaults.m, |v| v as usize),
+            topn: topn.map_or(defaults.topn, |v| v as usize),
+            maxq: maxq.map_or(defaults.maxq, |v| v as usize),
+            cands: cands.map_or(defaults.cands, |v| v as usize),
+            seed: seed.unwrap_or(defaults.seed),
+            max_training_vectors: max_training_vectors
+                .map_or(defaults.max_training_vectors, |v| v as usize),
+        }
+    }
+}
+
+impl From<segment::types::HnswProjectionConfig> for HnswProjectionConfig {
+    fn from(value: segment::types::HnswProjectionConfig) -> Self {
+        let segment::types::HnswProjectionConfig {
+            m,
+            topn,
+            maxq,
+            cands,
+            seed,
+            max_training_vectors,
+        } = value;
+        Self {
+            m: Some(m as u64),
+            topn: Some(topn as u64),
+            maxq: Some(maxq as u64),
+            cands: Some(cands as u64),
+            seed: Some(seed),
+            max_training_vectors: Some(max_training_vectors as u64),
         }
     }
 }

@@ -271,9 +271,32 @@ impl GraphLayersBuilder {
             .collect()
     }
 
-    #[cfg(feature = "gpu")]
     pub fn hnsw_m(&self) -> HnswM {
         self.hnsw_m
+    }
+
+    /// Read the current level-0 links of a point into `out`.
+    ///
+    /// Unlike [`GraphLayersBase::for_each_link`] this does not filter by the
+    /// ready list, so it also sees the links of points that are still being
+    /// inserted. Meant for post-passes that run after the build finished.
+    pub fn level0_links(&self, point_id: PointOffsetType, out: &mut Vec<PointOffsetType>) {
+        out.clear();
+        out.extend(self.links_layers[point_id as usize][0].read().iter());
+    }
+
+    /// Replace the level-0 links of a point.
+    ///
+    /// The caller is responsible for respecting the `m0` degree cap; the links
+    /// are stored verbatim.
+    pub fn set_level0_links(
+        &self,
+        point_id: PointOffsetType,
+        links: impl Iterator<Item = PointOffsetType>,
+    ) {
+        self.links_layers[point_id as usize][0]
+            .write()
+            .fill_from(links);
     }
 
     #[cfg(feature = "gpu")]
@@ -380,7 +403,8 @@ impl GraphLayersBuilder {
             .merge_from_other(other.entry_points.into_inner());
     }
 
-    fn num_points(&self) -> usize {
+    /// Number of points the builder holds level lists for.
+    pub fn num_points(&self) -> usize {
         self.links_layers.len()
     }
 
