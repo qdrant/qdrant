@@ -63,7 +63,7 @@ def test_peer_proxy_preserves_payload_metadata_and_errors(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(
         proxy.address, options=(("grpc.max_receive_message_length", -1),)
     ) as channel:
-        proxy.wait_for_peer(timeout=TIMEOUT)
+        proxy.wait_for_peer_connection(timeout=TIMEOUT)
         rpc = channel.unary_unary(TRANSFER)
         # Larger than the default gRPC receive limit, as a shard batch can be.
         payload = b"\x00\xff" * (3 * 1024 * 1024)
@@ -90,7 +90,7 @@ def test_peer_proxy_holds_one_match_and_keeps_consensus_and_recovery_live(upstre
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"other-shard"
 
             held = rpc.future(b"selected-shard", timeout=TIMEOUT)
-            assert gate.wait(TIMEOUT) == b"selected-shard"
+            assert gate.wait_for_request(TIMEOUT) == b"selected-shard"
             assert_no_calls(upstream)
             assert not held.done()
 
@@ -111,7 +111,7 @@ def test_peer_proxy_does_not_forward_cancelled_held_requests(upstream, expire):
         rpc = channel.unary_unary(TRANSFER)
         with proxy.hold(TRANSFER) as gate:
             held = rpc.future(b"cancel-me", timeout=1 if expire else TIMEOUT)
-            gate.wait(TIMEOUT)
+            gate.wait_for_request(TIMEOUT)
             if expire:
                 with pytest.raises(grpc.RpcError) as failure:
                     held.result(TIMEOUT)
@@ -143,7 +143,7 @@ def test_peer_proxy_shutdown_cancels_held_requests(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         with proxy.hold(TRANSFER) as gate:
             held = channel.unary_unary(TRANSFER).future(b"held")
-            gate.wait(TIMEOUT)
+            gate.wait_for_request(TIMEOUT)
             proxy.close()
             with pytest.raises(grpc.RpcError):
                 held.result(TIMEOUT)
@@ -164,7 +164,7 @@ def test_peer_proxy_reports_which_request_did_not_arrive(upstream):
     with PeerProxy(upstream.address) as proxy:
         with proxy.hold(TRANSFER) as gate:
             with pytest.raises(TimeoutError, match="No request reached the gate for " + TRANSFER):
-                gate.wait(timeout=0)
+                gate.wait_for_request(timeout=0)
 
 
 def test_peer_proxy_releases_held_request_after_test_error(upstream):
@@ -172,7 +172,7 @@ def test_peer_proxy_releases_held_request_after_test_error(upstream):
         with pytest.raises(ValueError, match="test failed"):
             with proxy.hold(TRANSFER) as gate:
                 held = channel.unary_unary(TRANSFER).future(b"held", timeout=TIMEOUT)
-                gate.wait(TIMEOUT)
+                gate.wait_for_request(TIMEOUT)
                 raise ValueError("test failed")
         assert held.result(TIMEOUT) == b"held"
 
@@ -184,8 +184,8 @@ def test_peer_proxies_have_independent_gates(upstream):
             with first.hold(TRANSFER) as first_gate, second.hold(TRANSFER) as second_gate:
                 first_call = a.unary_unary(TRANSFER).future(b"first", timeout=TIMEOUT)
                 second_call = b.unary_unary(TRANSFER).future(b"second", timeout=TIMEOUT)
-                assert first_gate.wait(TIMEOUT) == b"first"
-                assert second_gate.wait(TIMEOUT) == b"second"
+                assert first_gate.wait_for_request(TIMEOUT) == b"first"
+                assert second_gate.wait_for_request(TIMEOUT) == b"second"
                 assert_no_calls(upstream)
                 first_gate.release()
                 assert first_call.result(TIMEOUT) == b"first"
@@ -202,11 +202,11 @@ def test_peer_proxy_reports_port_conflict(upstream):
             PeerProxy(upstream.address, port=occupied.getsockname()[1])
 
 
-def test_peer_proxy_wait_for_peer_has_a_deadline():
+def test_peer_proxy_wait_for_peer_connection_has_a_deadline():
     # A listening TCP socket is not enough: the upstream must speak gRPC.
     with socket.socket() as upstream:
         upstream.bind(("127.0.0.1", 0))
         upstream.listen()
         with PeerProxy(f"127.0.0.1:{upstream.getsockname()[1]}") as proxy:
-            with pytest.raises(TimeoutError):
-                proxy.wait_for_peer(timeout=0)
+            with pytest.raises(TimeoutError, match=f"gRPC connection to {proxy._target} within 0 seconds"):
+                proxy.wait_for_peer_connection(timeout=0)

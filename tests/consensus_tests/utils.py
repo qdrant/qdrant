@@ -292,7 +292,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     if processes[-1].proxy is not None:
-        processes[-1].proxy.wait_for_peer()
+        processes[-1].proxy.wait_for_peer_connection()
     return get_uri(http_port)
 
 
@@ -335,7 +335,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     if processes[-1].proxy is not None:
-        processes[-1].proxy.wait_for_peer()
+        processes[-1].proxy.wait_for_peer_connection()
     return get_uri(http_port), bootstrap_uri
 
 

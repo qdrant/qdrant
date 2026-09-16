@@ -9,6 +9,12 @@ COLLECTION_NAME = "test_collection"
 RECOVERY_POINT = "/qdrant.CollectionsInternal/GetShardRecoveryPoint"
 
 
+def peer_has_metadata_value(uri, metadata_path, expected_value):
+    response = requests.get(f"{uri}{metadata_path}", timeout=5)
+    assert_http_ok(response)
+    return response.json()["result"] == expected_value
+
+
 @pytest.mark.parametrize("uris_in_env", [False, True], ids=["cli-uri", "env-uri"])
 def test_peer_proxy_cluster_transfer_and_restart(tmp_path, uris_in_env):
     peer_uris, peer_dirs, bootstrap_uri = start_cluster(
@@ -36,7 +42,7 @@ def test_peer_proxy_cluster_transfer_and_restart(tmp_path, uris_in_env):
 
     with peers[0].proxy.hold(RECOVERY_POINT) as gate:
         replicate_shard(peer_uris[2], COLLECTION_NAME, 0, peer_ids[2], peer_ids[0], method="wal_delta")
-        gate.wait()
+        gate.wait_for_request()
         transfer = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)["shard_transfers"]
         assert len(transfer) == 1
         assert (transfer[0]["from"], transfer[0]["to"], transfer[0]["shard_id"]) == (
@@ -48,7 +54,7 @@ def test_peer_proxy_cluster_transfer_and_restart(tmp_path, uris_in_env):
         metadata_path = "/cluster/metadata/keys/proxy-check"
         assert_http_ok(requests.put(f"{peer_uris[1]}{metadata_path}?wait=true", json="while-held", timeout=10))
         for uri in peer_uris:
-            wait_for(lambda: requests.get(f"{uri}{metadata_path}", timeout=5).json()["result"] == "while-held")
+            wait_for(peer_has_metadata_value, uri, metadata_path, "while-held")
         assert not gate.cancelled.is_set()
 
     for uri in peer_uris:
