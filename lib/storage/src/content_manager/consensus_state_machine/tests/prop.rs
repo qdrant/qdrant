@@ -47,9 +47,10 @@ pub fn arb_state_and_operation() -> impl Strategy<Value = (ClusterState, Consens
     arb_cluster_state().prop_flat_map(|state| {
         let collections = state.collections.keys().cloned();
         let aliases = state.aliases.iter().map(|(alias, _)| alias.clone());
+        let peers = state.peer_address_by_id.keys().copied().collect();
 
         let names = collections.chain(aliases).collect();
-        let operations = arb_consensus_operation(names);
+        let operations = arb_consensus_operation(names, peers);
 
         (Just(state), operations)
     })
@@ -238,13 +239,14 @@ fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
 
 pub fn arb_consensus_operation(
     collection_names: Vec<String>,
+    peer_ids: Vec<PeerId>,
 ) -> impl Strategy<Value = ConsensusOperations> {
-    let collection_meta = arb_collection_meta_operation(collection_names)
+    let collection_meta = arb_collection_meta_operation(collection_names, peer_ids)
         .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)));
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        9 => collection_meta,
+        10 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -253,6 +255,7 @@ pub fn arb_consensus_operation(
 
 fn arb_collection_meta_operation(
     mut collection_names: Vec<String>,
+    peer_ids: Vec<PeerId>,
 ) -> impl Strategy<Value = CollectionMetaOperations> {
     collection_names.push(MISSING_COLLECTION_NAME.into());
 
@@ -261,12 +264,47 @@ fn arb_collection_meta_operation(
         arb_create_collection(collection_names.clone()),
         arb_update_collection(collection_names.clone()),
         arb_delete_collection(collection_names.clone()),
+        arb_create_shard_key(collection_names.clone(), peer_ids),
         arb_change_aliases(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
+}
+
+fn arb_create_shard_key(
+    collections: Vec<String>,
+    mut peer_ids: Vec<PeerId>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    // An empty peer map cannot produce a valid placement. Keep generating placement so those
+    // states exercise unknown-peer rejection as well as the empty-placement check.
+    if peer_ids.is_empty() {
+        peer_ids.extend(PEER_IDS);
+    }
+
+    let collection_name = arb_collection_name(collections);
+    let shard_key = arb_shard_key();
+    let placement = proptest::collection::vec(
+        proptest::collection::vec(proptest::sample::select(peer_ids), 1..3),
+        0..3,
+    );
+    let initial_state = proptest::option::of(proptest::sample::select(vec![
+        ReplicaState::Active,
+        ReplicaState::Initializing,
+        ReplicaState::Partial,
+    ]));
+
+    (collection_name, shard_key, placement, initial_state).prop_map(
+        |(collection_name, shard_key, placement, initial_state)| {
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name,
+                shard_key,
+                placement,
+                initial_state,
+            })
+        },
+    )
 }
 
 fn arb_update_peer_metadata() -> impl Strategy<Value = ConsensusOperations> {
