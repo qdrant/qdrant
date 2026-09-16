@@ -63,6 +63,7 @@ def test_peer_proxy_preserves_payload_metadata_and_errors(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(
         proxy.address, options=(("grpc.max_receive_message_length", -1),)
     ) as channel:
+        proxy.wait_for_peer(timeout=TIMEOUT)
         rpc = channel.unary_unary(TRANSFER)
         # Larger than the default gRPC receive limit, as a shard batch can be.
         payload = b"\x00\xff" * (3 * 1024 * 1024)
@@ -199,3 +200,13 @@ def test_peer_proxy_reports_port_conflict(upstream):
         occupied.listen()
         with pytest.raises(RuntimeError, match="Failed to bind"):
             PeerProxy(upstream.address, port=occupied.getsockname()[1])
+
+
+def test_peer_proxy_wait_for_peer_has_a_deadline():
+    # A listening TCP socket is not enough: the upstream must speak gRPC.
+    with socket.socket() as upstream:
+        upstream.bind(("127.0.0.1", 0))
+        upstream.listen()
+        with PeerProxy(f"127.0.0.1:{upstream.getsockname()[1]}") as proxy:
+            with pytest.raises(TimeoutError):
+                proxy.wait_for_peer(timeout=0)
