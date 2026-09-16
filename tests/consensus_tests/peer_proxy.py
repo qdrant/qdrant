@@ -18,6 +18,7 @@ from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import logging
 import select
 import socket
 from threading import Event, Lock, Thread
@@ -25,6 +26,11 @@ from typing import Callable
 from urllib.parse import quote, urlsplit
 
 import grpc
+
+
+logger = logging.getLogger(__name__)
+# Snapshot consumers can pause while unpacking or writing data to disk.
+RELAY_TIMEOUT = 30
 
 
 class RequestGate:
@@ -85,6 +91,7 @@ class PeerProxy(grpc.GenericRpcHandler):
         self._port = port
         self._gates = {}
         self._lock = Lock()
+        self._http_connections = set()
         self._closed = Event()
         self._ready = Future()
         self._thread = Thread(target=self._run, name="consensus-peer-proxy", daemon=True)
@@ -117,6 +124,13 @@ class PeerProxy(grpc.GenericRpcHandler):
 
     def close(self):
         self._closed.set()
+        # Interrupt slow writes instead of waiting for the longer relay timeout.
+        with self._lock:
+            for connection in self._http_connections:
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
         if self._thread.is_alive():
             self._loop.call_soon_threadsafe(self._stop.set)
             self._thread.join(timeout=10)
@@ -300,8 +314,11 @@ class _DownloadHandler(BaseHTTPRequestHandler):
                 gate.cancelled.set()
                 return
 
-        if proxy._closed.is_set():
-            return
+        with proxy._lock:
+            if proxy._closed.is_set():
+                return
+            proxy._http_connections.add(self.connection)
+        response_started = False
         try:
             with socket.create_connection((target.hostname, target.port), timeout=self.timeout) as upstream:
                 path = target.path or "/"
@@ -318,6 +335,7 @@ class _DownloadHandler(BaseHTTPRequestHandler):
                 upstream.sendall(
                     f"GET {path} HTTP/1.1\r\nHost: {target.netloc}\r\n{headers}Connection: close\r\n\r\n".encode("latin-1")
                 )
+                self.connection.settimeout(RELAY_TIMEOUT)
                 # Relay bytes unchanged, including chunked snapshot framing.
                 # Watch the caller so cancellation also closes a stalled download.
                 while not proxy._closed.is_set():
@@ -328,12 +346,24 @@ class _DownloadHandler(BaseHTTPRequestHandler):
                         data = upstream.recv(64 * 1024)
                         if not data:
                             return
+                        # sendall can transmit some bytes before raising an error.
+                        response_started = True
                         self.connection.sendall(data)
-        except OSError:
-            # A new HTTP error could corrupt a response already in flight.
-            return
+        except OSError as error:
+            # socket.timeout is an OSError too. Once output may have reached the
+            # caller, close the transfer without appending another HTTP response.
+            if response_started:
+                logger.warning("Snapshot transfer truncated while relaying %s: %s", self.path, error)
+            else:
+                logger.warning("Snapshot request failed before response output for %s: %s", self.path, error)
+                try:
+                    self.send_error(502, "Snapshot source request failed")
+                except OSError:
+                    pass
         finally:
             self.close_connection = True
+            with proxy._lock:
+                proxy._http_connections.discard(self.connection)
 
     def _client_disconnected(self):
         readable, _, _ = select.select([self.connection], [], [], 0)
