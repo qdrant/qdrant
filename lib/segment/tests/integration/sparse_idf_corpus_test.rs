@@ -138,10 +138,10 @@ fn sparse_idf_statistics_per_corpus() {
         let documents = scope.indexed_vectors.get(SPARSE_VECTOR_NAME).copied();
         assert_eq!(documents, Some(expected_n), "corpus {corpus:?}");
 
-        let idf = scope.idf.get(SPARSE_VECTOR_NAME).unwrap();
+        let df = scope.df.get(SPARSE_VECTOR_NAME).unwrap();
         for (dim, expected_df) in query_dims.iter().zip(expected_df) {
             assert_eq!(
-                idf.get(dim).copied(),
+                df.get(dim).copied(),
                 Some(expected_df),
                 "corpus {corpus:?}, dim {dim}"
             );
@@ -310,10 +310,10 @@ fn sparse_idf_statistics_corpus_strategies() {
             Some(expected_n),
             "tenant {tenant:?}"
         );
-        let idf = scope.idf.get(SPARSE_VECTOR_NAME).unwrap();
+        let df = scope.df.get(SPARSE_VECTOR_NAME).unwrap();
         for (dim, expected_df) in query_dims.iter().zip(expected_df) {
             assert_eq!(
-                idf.get(dim).copied(),
+                df.get(dim).copied(),
                 Some(expected_df),
                 "tenant {tenant:?}, dim {dim}"
             );

@@ -12,6 +12,7 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
 
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::TextFieldStats;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
@@ -96,6 +97,25 @@ where
         self.field_indexes
             .get(key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+    }
+
+    fn fill_text_statistics(
+        &self,
+        field: PayloadKeyTypeRef,
+        stats: &mut TextFieldStats,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let Some(indexes) = self.field_indexes.get(field) else {
+            return Ok(());
+        };
+        for index in indexes {
+            // At most one text index per field, so the first one that answers
+            // is the only one that will.
+            if index.fill_text_statistics(stats, hw_counter)? {
+                break;
+            }
+        }
+        Ok(())
     }
 
     fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {

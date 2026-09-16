@@ -14,6 +14,7 @@ use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::TextFieldStats;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
@@ -93,6 +94,16 @@ pub trait PayloadIndexRead {
     /// Used by faceting to enumerate values and per-value point sets. The
     /// concrete facet-index type is opaque per implementation.
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
+
+    /// Add this segment's contribution to the corpus statistics of a text
+    /// field: document frequency per seeded term, document count, and total
+    /// tokens. A field with no text index contributes nothing.
+    fn fill_text_statistics(
+        &self,
+        field: PayloadKeyTypeRef,
+        stats: &mut TextFieldStats,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Per-field-index telemetry data.
     fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>>;
