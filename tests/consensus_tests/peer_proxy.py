@@ -86,6 +86,13 @@ class PeerProxy(grpc.GenericRpcHandler):
     def __exit__(self, *_):
         self.close()
 
+    def wait_for_peer(self, timeout: float = 30):
+        """Wait for the proxy's connection to the real peer, including on restart."""
+        try:
+            self._submit(self._channel.channel_ready(), timeout=timeout)
+        except FutureTimeoutError as error:
+            raise TimeoutError(f"Peer at {self._target} did not become available within {timeout} seconds") from error
+
     def close(self):
         if self._thread.is_alive():
             self._loop.call_soon_threadsafe(self._stop.set)
@@ -102,11 +109,16 @@ class PeerProxy(grpc.GenericRpcHandler):
         finally:
             gate.release()
 
-    def _submit(self, coroutine):
+    def _submit(self, coroutine, timeout: float = 10):
         if not self._thread.is_alive():
             coroutine.close()
             raise RuntimeError("Peer proxy is closed")
-        return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(10)
+        future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        try:
+            return future.result(timeout)
+        except FutureTimeoutError:
+            future.cancel()
+            raise
 
     async def _create_gate(self, method, matches):
         if self._gate is not None:
