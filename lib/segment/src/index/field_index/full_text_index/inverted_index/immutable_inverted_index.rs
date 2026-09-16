@@ -376,8 +376,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
     /// Linear scan of the in-RAM vector. It is masked when the index is loaded
     /// and zeroed by `remove`, so deleted documents contribute nothing and no
-    /// separate total has to be stored. Not cached: the index is not told when
-    /// the deleted set changes.
+    /// separate total has to be stored.
+    ///
+    /// Not cached yet, rather than uncacheable: `remove` is the only mutation
+    /// after load, so a memo cleared there would be correct. Left out until
+    /// something calls this often enough to pay for the extra state.
     fn total_tokens(&self) -> OperationResult<Option<u64>> {
         Ok(self
             .point_to_doc_len

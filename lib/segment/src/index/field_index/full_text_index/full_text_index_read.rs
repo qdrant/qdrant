@@ -63,10 +63,15 @@ pub trait FullTextIndexRead {
     /// a point with no indexed tokens; see the inverted index for the details.
     fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
 
-    /// Total tokens over the live points of this index. Paired with
+    /// Total tokens over the points this index still holds. Paired with
     /// [`Self::points_count`] it gives an average document length, but the
     /// division belongs to whoever has summed both over every segment, not
     /// here.
+    ///
+    /// Beware that the two are not counted over the same population today: a
+    /// document whose tokens are all filtered away counts towards
+    /// `points_count` in RAM and not on disk, so the ratio moves with the
+    /// storage placement. Whoever divides has to settle that first.
     fn total_tokens(&self) -> OperationResult<Option<u64>>;
 
     fn for_each_token_id<'a, U: UserData>(
