@@ -496,10 +496,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
-        // Consensus state machine does not handle peer changes yet.
-        // Invalidate it so it reloads state after this handler runs.
-        self.invalidate_shadow();
-
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {conf_state:?}");
         self.persistent
@@ -513,7 +509,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     let context = entry.get_context();
 
                     if !context.is_empty() {
-                        let peer_uri = str::from_utf8(context)
+                        let peer_uri: Uri = str::from_utf8(context)
                             .map_err(|err| {
                                 StorageError::service_error(format!(
                                     "failed to parse peer URI: {err}"
@@ -526,7 +522,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                 ))
                             })?;
 
-                        self.add_peer(single_change.node_id, peer_uri)?;
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
+                        self.apply_with_shadow(&operation, || {
+                            self.add_peer(single_change.node_id, peer_uri)
+                                .map(|()| true)
+                        })?;
                     } else {
                         debug_assert!(
                             self.peer_address_by_id()
@@ -537,7 +540,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    stop_consensus |= self.on_peer_remove(single_change.node_id)?;
+                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
+
+                    // Detaching this node clears its outbound channel map rather than preserving
+                    // cluster state for another entry. It stops immediately, so there is no
+                    // subsequent state-machine decision to validate on this peer.
+                    let stop = if self.this_peer_id() == single_change.node_id {
+                        self.invalidate_shadow();
+                        self.on_peer_remove(single_change.node_id)?
+                    } else {
+                        self.apply_with_shadow(&operation, || {
+                            self.on_peer_remove(single_change.node_id)
+                        })?
+                    };
+                    stop_consensus |= stop;
                 }
                 ConfChangeType::AddLearnerNode => {
                     log::debug!("Adding learner node {}", single_change.node_id);
@@ -546,15 +562,19 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         .try_into()
                     {
                         let peer_uri: Uri = peer_uri;
+                        let operation = ConsensusOperations::AddPeer {
+                            peer_id: single_change.node_id,
+                            uri: peer_uri.to_string(),
+                        };
+
                         // Add peer to state
-                        self.add_peer(single_change.node_id, peer_uri.clone())?;
+                        self.apply_with_shadow(&operation, || {
+                            self.add_peer(single_change.node_id, peer_uri.clone())
+                                .map(|()| true)
+                        })?;
 
                         // Notify the submitter, that operation was performed
                         {
-                            let operation = ConsensusOperations::AddPeer {
-                                peer_id: single_change.node_id,
-                                uri: peer_uri.to_string(),
-                            };
                             let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                             if let Some(on_apply) = on_apply
                                 && on_apply.send(Ok(true)).is_err()
@@ -697,6 +717,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         shadow
             .lock()
             .compare(self.toc.as_ref(), &persistent, operation, outcome, result);
+    }
+
+    /// Run one non-normal-entry handler between state-machine planning and comparison
+    fn apply_with_shadow(
+        &self,
+        operation: &ConsensusOperations,
+        apply: impl FnOnce() -> StorageResult<bool>,
+    ) -> StorageResult<bool> {
+        let outcome = self.shadow_apply(operation);
+        let result = apply();
+
+        if let Some(outcome) = outcome {
+            self.shadow_compare(operation, &outcome, &result);
+        }
+
+        result
     }
 
     fn invalidate_shadow(&self) {
