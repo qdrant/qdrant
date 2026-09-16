@@ -1,16 +1,19 @@
 """Exercise snapshot gates over real HTTP sockets without a Qdrant binary."""
 
 from concurrent.futures import ThreadPoolExecutor
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Empty, Queue
 import socket
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock
 
 import pytest
 import requests
 
 from .peer_proxy import PeerProxy, RequestGate
+from . import peer_proxy
 
 
 TIMEOUT = 5
@@ -191,3 +194,87 @@ def test_snapshot_helper_matches_encoded_collection_and_exact_shard(snapshot_sou
             assert not held.done()
             gate.release()
             assert held.result(TIMEOUT).content == PAYLOAD
+
+
+@pytest.fixture
+def relay_handler(monkeypatch):
+    handler = peer_proxy._DownloadHandler.__new__(peer_proxy._DownloadHandler)
+    handler.path = "http://127.0.0.1:6333/snapshot"
+    handler.headers = Message()
+    handler.connection = Mock()
+    handler.send_error = Mock()
+    handler.server = SimpleNamespace(proxy=SimpleNamespace(
+        _closed=Event(), _lock=Lock(), _http_connections=set(),
+        _take_gate=Mock(return_value=None), http_port=6334,
+    ))
+    upstream = MagicMock()
+    upstream.__enter__.return_value = upstream
+    connect = Mock(return_value=upstream)
+    monkeypatch.setattr(peer_proxy.socket, "create_connection", connect)
+    monkeypatch.setattr(peer_proxy.select, "select", lambda *_: ([upstream], [], []))
+    return handler, upstream, connect
+
+
+@pytest.mark.parametrize("stage", ["connect", "request", "read"])
+@pytest.mark.parametrize("error_type", [socket.timeout, ConnectionResetError])
+def test_snapshot_proxy_reports_502_before_response_output(relay_handler, caplog, stage, error_type):
+    handler, upstream, connect = relay_handler
+    operation = {"connect": connect, "request": upstream.sendall, "read": upstream.recv}[stage]
+    operation.side_effect = error_type("source failed")
+
+    handler.do_GET()
+
+    handler.send_error.assert_called_once_with(502, "Snapshot source request failed")
+    handler.connection.sendall.assert_not_called()
+    assert "failed before response output" in caplog.text
+    assert handler.close_connection
+    assert not handler.server.proxy._http_connections
+
+
+@pytest.mark.parametrize("failed_write", [1, 2])
+@pytest.mark.parametrize("error_type", [socket.timeout, ConnectionResetError])
+def test_snapshot_proxy_does_not_append_error_after_partial_write(relay_handler, caplog, failed_write, error_type):
+    handler, upstream, connect = relay_handler
+    upstream.recv.side_effect = [b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n", b"snapshot data"]
+    transmitted = bytearray()
+
+    def partial_send(data):
+        if handler.connection.sendall.call_count == failed_write:
+            transmitted.extend(data[:5])
+            raise error_type("partial write failed")
+        transmitted.extend(data)
+
+    handler.connection.sendall.side_effect = partial_send
+    handler.do_GET()
+
+    assert transmitted.startswith(b"HTTP/")
+    handler.send_error.assert_not_called()
+    assert "Snapshot transfer truncated" in caplog.text
+    assert "partial write failed" in caplog.text
+    connect.assert_called_once_with(("127.0.0.1", 6333), timeout=handler.timeout)
+    handler.connection.settimeout.assert_called_once_with(peer_proxy.RELAY_TIMEOUT)
+    assert peer_proxy.RELAY_TIMEOUT > handler.timeout
+    assert handler.close_connection
+    assert not handler.server.proxy._http_connections
+
+
+def test_snapshot_proxy_shutdown_interrupts_blocked_relay_write(snapshot_source, monkeypatch):
+    blocked = Event()
+    original_sendall = socket.socket.sendall
+    with PeerProxy("127.0.0.1:1") as proxy:
+        def blocked_sendall(connection, data, *args):
+            if connection.getsockname()[1] == proxy.http_port:
+                blocked.set()
+                # A socket operation stays blocked until close() shuts it down.
+                assert connection.recv(1) == b""
+                raise ConnectionResetError("relay closed")
+            return original_sendall(connection, data, *args)
+
+        monkeypatch.setattr(socket.socket, "sendall", blocked_sendall)
+        with socket.create_connection(("127.0.0.1", proxy.http_port), timeout=TIMEOUT) as caller:
+            caller.sendall(f"GET {snapshot_source.uri}/blocked HTTP/1.1\r\nHost: ignored\r\n\r\n".encode())
+            assert blocked.wait(TIMEOUT)
+            proxy.close()
+            assert caller.recv(1) == b""
+        assert snapshot_source.disconnected.wait(TIMEOUT)
+        assert not proxy._http_connections

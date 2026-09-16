@@ -1,9 +1,11 @@
 import pathlib
+import pytest
 from .utils import *
 from .fixtures import upsert_points, create_collection
 
 COLLECTION_NAME = "test_collection"
 N_PEERS = 3
+RECOVERY_POINT = "/qdrant.CollectionsInternal/GetShardRecoveryPoint"
 
 def force_delete_peer(peer_api_uri: str, peer_id: int):
     response = requests.delete(
@@ -31,7 +33,8 @@ def peer_is_removed_from_cluster_and_transfers(peer_api_uri: str, removed_peer_i
     return True
 
 
-def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
+def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, transfer_method):
     peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, use_peer_proxy=True)
 
     create_collection(peer_api_uris[0], shard_number=2, replication_factor=3, write_consistency_factor=3)
@@ -54,23 +57,37 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     ]
     assert_http_ok(upsert_points(peer_api_uris[0], points))
     survivors = peer_api_uris[:-1]
+    initial_receiver = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    assert initial_receiver["shard_transfers"] == []
+    initial_shard_points = next(
+        shard["points_count"] for shard in initial_receiver["local_shards"] if shard["shard_id"] == 0
+    )
+    assert initial_shard_points > 0
 
-    with processes[0].proxy.hold_snapshot_download(peer_api_uris[-1], COLLECTION_NAME, 0) as gate:
-        replicate_shard(peer_api_uris[-1], COLLECTION_NAME, 0, from_peer_id, to_peer_id, method="snapshot")
-        # The receiver has cleared its old shard, but has received no snapshot data.
+    proxy = processes[0].proxy
+    if transfer_method == "snapshot":
+        # Pause after the receiver clears its shard, before snapshot data arrives.
+        gate_context = proxy.hold_snapshot_download(peer_api_uris[-1], COLLECTION_NAME, 0)
+    else:
+        # This is the only transfer. Pause the source's request for the receiver's
+        # recovery point, before resolving or copying a WAL delta.
+        gate_context = proxy.hold_rpc(RECOVERY_POINT)
+
+    with gate_context as gate:
+        replicate_shard(peer_api_uris[-1], COLLECTION_NAME, 0, from_peer_id, to_peer_id, method=transfer_method)
         gate.wait_for_request()
         receiver = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
         transfer, = receiver["shard_transfers"]
         assert (transfer["from"], transfer["to"], transfer["shard_id"], transfer["method"]) == (
-            from_peer_id, to_peer_id, 0, "snapshot",
+            from_peer_id, to_peer_id, 0, transfer_method,
         )
         shard = next(shard for shard in receiver["local_shards"] if shard["shard_id"] == 0)
         assert shard["state"] == "Recovery"
-        assert shard["points_count"] == 0
+        assert shard["points_count"] == (0 if transfer_method == "snapshot" else initial_shard_points)
         assert not gate.cancelled.is_set()
 
         force_delete_peer(peer_api_uris[0], from_peer_id)
-        # Survivor-to-survivor recovery is allowed while the old download is held.
+        # Survivor-to-survivor recovery is allowed while the old request is held.
         for uri in survivors:
             wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
 
