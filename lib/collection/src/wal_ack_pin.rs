@@ -96,3 +96,78 @@ impl fmt::Debug for WalAckPinGuard {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_without_pins() {
+        let pins = WalAckPins::default();
+        assert_eq!(pins.lowest(), None);
+    }
+
+    #[test]
+    fn test_pin_releases_on_drop() {
+        let pins = WalAckPins::default();
+
+        let pin = pins.pin(10);
+        assert_eq!(pins.lowest(), Some(10));
+
+        drop(pin);
+        assert_eq!(pins.lowest(), None);
+    }
+
+    #[test]
+    fn test_lowest_of_multiple_pins() {
+        let pins = WalAckPins::default();
+
+        let high = pins.pin(30);
+        let low = pins.pin(10);
+        let middle = pins.pin(20);
+        assert_eq!(pins.lowest(), Some(10));
+
+        // Releasing the lowest pin moves the bound up to the next one
+        drop(low);
+        assert_eq!(pins.lowest(), Some(20));
+
+        // Releasing a pin that isn't the lowest doesn't move the bound
+        drop(high);
+        assert_eq!(pins.lowest(), Some(20));
+
+        drop(middle);
+        assert_eq!(pins.lowest(), None);
+    }
+
+    #[test]
+    fn test_move_pin() {
+        let pins = WalAckPins::default();
+
+        let first = pins.pin(10);
+        let second = pins.pin(20);
+        assert_eq!(pins.lowest(), Some(10));
+
+        // Moving the lowest pin past the other makes that other one the lowest
+        first.set(25);
+        assert_eq!(pins.lowest(), Some(20));
+
+        // A pin may also move back
+        second.set(5);
+        assert_eq!(pins.lowest(), Some(5));
+    }
+
+    #[test]
+    fn test_released_pins_are_pruned() {
+        let pins = WalAckPins::default();
+
+        // Keep one pin alive so the list is never empty and can only be pruned selectively
+        let _pin = pins.pin(1);
+
+        for _ in 0..100 {
+            let _ = pins.pin(2);
+            assert_eq!(pins.lowest(), Some(1));
+        }
+
+        assert_eq!(pins.pins.lock().len(), 1);
+    }
+}
