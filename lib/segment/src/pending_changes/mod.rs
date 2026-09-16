@@ -318,7 +318,11 @@ impl PendingChanges {
     /// [`Self::persisted_version`] covers it.
     ///
     /// Returns `None` if there is nothing to persist and `target_version` is already covered.
-    pub fn flusher(&self, target_version: SeqNumberType) -> Option<Flusher> {
+    pub fn flusher(
+        &self,
+        target_version: SeqNumberType,
+        up_to: Option<SeqNumberType>,
+    ) -> Option<Flusher> {
         let changes = {
             let pending_persist = self.pending_persist.lock();
             if pending_persist.is_empty()
@@ -353,13 +357,18 @@ impl PendingChanges {
             // Only advance the covered version once the entries are durable. Operations
             // registered after this flusher was captured are not covered: they have a higher
             // version than the target captured with the entries.
-            let batch_version = changes
+            let mut batch_version = changes
                 .iter()
                 .map(PendingChange::version)
                 .max()
                 .map_or(target_version, |max_version| {
                     max_version.max(target_version)
                 });
+
+            if let Some(up_to) = up_to {
+                batch_version = batch_version.min(up_to);
+            }
+
             persisted_version.fetch_max(batch_version, Ordering::Relaxed);
 
             Ok(())
