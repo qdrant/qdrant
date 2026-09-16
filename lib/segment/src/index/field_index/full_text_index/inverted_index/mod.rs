@@ -400,6 +400,27 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
+    /// Number of tokens indexed for `point_id`, repetitions included. This is
+    /// `|d|` in BM25, and it is stored, never derived: the token set is
+    /// deduplicated and carries no lengths.
+    ///
+    /// `None` when this index does not record lengths, or the point has no
+    /// length on record. Only defined for a point that appears in a posting
+    /// list. A point with no indexed tokens, whether deleted or tokenized to
+    /// nothing, reads back as `Some(0)` or `None` depending on the backend,
+    /// because the backends store "no tokens" differently and the two cases
+    /// are not distinguishable from storage alone.
+    fn doc_len(&self, point_id: PointOffsetType) -> OperationResult<Option<u32>>;
+
+    /// Total tokens over the live points of this index, the numerator of
+    /// `avgdl`. `None` when this index does not record lengths, which is the
+    /// same condition as [`Self::doc_len`] returning `None` everywhere.
+    ///
+    /// Deliberately not divided by [`Self::points_count`] here. The average
+    /// is a corpus statistic, and a per-segment average would drift from the
+    /// one a search actually needs, which is summed over every segment.
+    fn total_tokens(&self) -> OperationResult<Option<u64>>;
+
     /// Resolve token -> token_id and call the closure for each token_id.
     fn for_each_token_id<'a, U: UserData>(
         &self,
@@ -414,6 +435,7 @@ mod tests {
 
     use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::RngExt;
     use rand::seq::SliceRandom;
@@ -879,6 +901,102 @@ mod tests {
             !opened.records_doc_len(),
             "a truncated sidecar must not be padded into looking complete",
         );
+    }
+
+    /// Every backend answers `doc_len` with the same number for a point that
+    /// has tokens, and every total is the sum of those answers. This is the
+    /// whole contract a scorer gets from a segment, so it is pinned across all
+    /// four shapes rather than on the one that happens to be cheapest.
+    #[rstest]
+    fn doc_len_and_total_tokens_agree_across_backends(
+        #[values(false, true)] phrase_matching: bool,
+    ) {
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+
+        let mut live_total = 0;
+        for point_id in 0..immutable.point_to_tokens_count.len() as PointOffsetType {
+            let expected = mutable.doc_len(point_id).unwrap();
+            assert_eq!(immutable.doc_len(point_id).unwrap(), expected);
+            assert_eq!(imm_mmap.doc_len(point_id).unwrap(), expected);
+
+            if immutable.values_is_empty(point_id) {
+                // Deleted, or tokenized to nothing. The in-memory backends keep
+                // a zero and the on-disk one reports nothing, which is the
+                // documented gap: only the guard is pinned here.
+                assert_eq!(mmap.doc_len(point_id).unwrap(), None);
+                continue;
+            }
+
+            assert_eq!(mmap.doc_len(point_id).unwrap(), expected);
+            live_total += u64::from(expected.expect("a point with tokens has a length"));
+        }
+
+        assert!(live_total > 0, "the fixture indexed nothing");
+        for (backend, total) in [
+            ("mutable", mutable.total_tokens().unwrap()),
+            ("immutable", immutable.total_tokens().unwrap()),
+            ("mmap", mmap.total_tokens().unwrap()),
+            ("immutable from mmap", imm_mmap.total_tokens().unwrap()),
+        ] {
+            assert_eq!(
+                total,
+                Some(live_total),
+                "{backend} disagrees with the sum of its own lengths",
+            );
+        }
+    }
+
+    /// Without recording, every accessor reports absence rather than zero. Zero
+    /// is a real length, so the two must not collapse into each other.
+    #[rstest]
+    fn accessors_report_absence_without_recording(#[values(false, true)] phrase_matching: bool) {
+        let hw_counter = HardwareCounterCell::new();
+        let mut mutable = MutableInvertedIndex::new(phrase_matching, false);
+        for idx in 0..16 {
+            let tokens: Vec<String> = (0..=idx).map(|_| generate_word()).collect();
+            mutable
+                .index_str_tokens(idx, &tokens, None, &hw_counter)
+                .unwrap();
+        }
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(!mmap.records_doc_len(), "nothing to write, nothing to read");
+        for point_id in 0..16 {
+            assert_eq!(mutable.doc_len(point_id).unwrap(), None);
+            assert_eq!(immutable.doc_len(point_id).unwrap(), None);
+            assert_eq!(mmap.doc_len(point_id).unwrap(), None);
+        }
+        assert_eq!(mutable.total_tokens().unwrap(), None);
+        assert_eq!(immutable.total_tokens().unwrap(), None);
+        assert_eq!(mmap.total_tokens().unwrap(), None);
     }
 
     #[rstest]
