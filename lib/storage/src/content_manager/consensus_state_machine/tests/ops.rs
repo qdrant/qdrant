@@ -384,21 +384,116 @@ fn update_collection_metadata_null_without_metadata() {
 #[test]
 fn update_collection_replica_changes() {
     let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
-    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, PEER_ID)]);
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
 
-    let state = cluster_state(Vec::new());
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
 
-    let mut machine = state_machine(state.clone());
+    let mut machine = state_machine(state);
     let outcome = machine.apply(&collection_meta_op(
         CollectionMetaOperations::UpdateCollection(operation),
     ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a replica should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::RemoveReplica {
+            peer_id: OTHER_PEER_ID,
+            ..
+        }]
+    ));
+    assert!(
+        !machine
+            .state()
+            .collection(COLLECTION)
+            .expect("collection")
+            .shards[&0]
+            .replicas
+            .contains_key(&OTHER_PEER_ID)
+    );
+}
+
+#[test]
+fn update_collection_replica_change_order() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.update_collection.hnsw_config = Some(hnsw_diff(8));
+    operation.update_collection.strict_mode_config = Some(strict_mode_diff(true));
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("updating config and replicas should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::UpdateCollectionConfig {
+                diff,
+                ..
+            },
+            Action::RemoveReplica { .. },
+            Action::UpdateCollectionConfig {
+                diff: strict,
+                ..
+            },
+        ] if matches!(**diff, CollectionConfigDiff::Hnsw(_))
+            && matches!(**strict, CollectionConfigDiff::StrictMode(_))
+    ));
+}
+
+#[test]
+fn update_collection_replica_change_replay_rejects_complete() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let op = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+    let mut machine = state_machine(state);
+    machine.apply(&op);
+    let goal = machine.state().clone();
+
+    let outcome = machine.apply(&op);
 
     assert!(matches!(
         outcome,
         ApplyOutcome::Rejected(StorageError::BadRequest { .. })
     ));
-
-    assert_eq!(machine.state(), &state);
+    assert_eq!(machine.state(), &goal);
 }
 
 #[test]
