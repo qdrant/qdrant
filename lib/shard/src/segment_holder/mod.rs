@@ -1,6 +1,6 @@
 mod flush;
 pub mod locked;
-pub use flush::FlushMode;
+pub use flush::{FlushMode, WalAckPin};
 mod proxy;
 pub mod read_points;
 mod snapshot;
@@ -120,6 +120,11 @@ pub struct SegmentHolder {
     /// concurrent flush cannot advance the WAL acknowledge past their pins during that window.
     /// Guarded by the `post_flush_actions` lock (always taken first) to stay consistent with it.
     in_flight_ack_floor: Mutex<Option<SeqNumberType>>,
+
+    /// Shared with every live [`WalAckPin`], so that this holding the only reference means no pin
+    /// is live and dropping a pin is all it takes to release it. While there is a pin, a flush
+    /// pass reports nothing to acknowledge. See [`SegmentHolder::pin_wal_ack`].
+    wal_ack_pin: Arc<()>,
 
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.

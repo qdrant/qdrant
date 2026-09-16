@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
@@ -19,6 +20,17 @@ pub enum FlushMode {
     /// Spawn a background flush thread. If one is already running, skip this pass and return the
     /// current persisted version.
     Background,
+}
+
+/// A live pin on the WAL acknowledge, see [`SegmentHolder::pin_wal_ack`].
+///
+/// Holds back what a flush pass reports, and thereby the WAL acknowledge, until it is dropped.
+#[must_use = "a WAL acknowledge pin is released the moment it is dropped"]
+#[derive(Debug)]
+pub struct WalAckPin {
+    /// Reference into [`SegmentHolder`]'s own, which counts it rather than reads it: dropping this
+    /// is what releases the pin.
+    _pin: Arc<()>,
 }
 
 impl SegmentHolder {
@@ -101,10 +113,7 @@ impl SegmentHolder {
             // Cap by pending post-flush actions like the main path below, but leave running them
             // to the next full pass.
             let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
-            return Ok(match self.pending_post_flush_ack_cap() {
-                Some(ack_cap) => min(persisted_version, ack_cap),
-                None => persisted_version,
-            });
+            return Ok(self.cap_ack(persisted_version, self.pending_post_flush_ack_cap()));
         }
 
         // This lock also prevents multiple parallel sync flushes
@@ -163,13 +172,12 @@ impl SegmentHolder {
         // Actions that are not yet ready cap the returned version (and with it the WAL
         // acknowledge): the data they have not cleaned up yet contradicts operations past their
         // pin, so those operations must stay replayable until the action runs. See
-        // [`SegmentHolder::register_post_flush_action`].
+        // [`SegmentHolder::register_post_flush_action`]. Live WAL acknowledge pins cap it the same
+        // way, for operations a snapshot in progress still needs in the WAL, see
+        // [`SegmentHolder::pin_wal_ack`].
         let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
         let pending_ack_cap = self.run_ready_post_flush_actions(persisted_version)?;
-        Ok(match pending_ack_cap {
-            Some(ack_cap) => min(persisted_version, ack_cap),
-            None => persisted_version,
-        })
+        Ok(self.cap_ack(persisted_version, pending_ack_cap))
     }
 
     /// Flushes a single segment outside `flush_all`, honoring its copy-on-write dependencies.
@@ -365,6 +373,48 @@ impl SegmentHolder {
             );
             max_persisted_version
         }
+    }
+
+    /// Hold the WAL acknowledge where it is: a flush pass reports nothing to acknowledge for as
+    /// long as the returned [`WalAckPin`] lives, so no WAL entry is truncated meanwhile.
+    ///
+    /// Snapshots that include the WAL take this before proxying the segments and hold it until the
+    /// WAL is archived. The segment files they copy are from this point in time, so every
+    /// operation applied while the snapshot runs must still be in the archived WAL to be
+    /// replayable on restore. Without the pin a flush pass acknowledges those operations away as
+    /// soon as the proxies persist them, into their pending changes logs while they are installed
+    /// and into the wrapped segments when they are unproxied: durable here, but in neither half of
+    /// the snapshot.
+    ///
+    /// Snapshots that exclude the WAL do not need this: they capture the clock maps before the
+    /// segments instead, so a shard recovered from them never claims a recovery point ahead of
+    /// its data.
+    pub fn pin_wal_ack(&self) -> WalAckPin {
+        trace!("Pinning WAL acknowledge");
+        WalAckPin {
+            _pin: Arc::clone(&self.wal_ack_pin),
+        }
+    }
+
+    /// The WAL acknowledge cap imposed by [`WalAckPin`]s: while any is live nothing may be
+    /// acknowledged at all, so the cap is zero. See [`SegmentHolder::pin_wal_ack`].
+    fn wal_ack_pin_cap(&self) -> Option<SeqNumberType> {
+        // The holder holds one reference itself, every other one is a live pin
+        (Arc::strong_count(&self.wal_ack_pin) > 1).then_some(0)
+    }
+
+    /// Apply every cap on the version a flush pass reports, and with it on the WAL acknowledge:
+    /// the pins of the post-flush actions that have not run yet (passed in, as the caller may just
+    /// have run the ready ones) and the live WAL acknowledge pins.
+    fn cap_ack(
+        &self,
+        persisted_version: SeqNumberType,
+        post_flush_ack_cap: Option<SeqNumberType>,
+    ) -> SeqNumberType {
+        [post_flush_ack_cap, self.wal_ack_pin_cap()]
+            .into_iter()
+            .flatten()
+            .fold(persisted_version, min)
     }
 
     /// Grab the RwLock's for all the given segment IDs.

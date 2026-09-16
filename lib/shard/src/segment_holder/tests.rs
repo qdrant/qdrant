@@ -2162,6 +2162,34 @@ fn test_post_flush_action_hard_failure_is_dropped() {
     assert_eq!(version, WATERLINE);
 }
 
+/// While a WAL acknowledge pin is held, a flush pass reports nothing to acknowledge, so no WAL
+/// entry is truncated. Snapshots that include the WAL hold one for their whole run.
+#[test]
+fn test_wal_ack_pin_holds_flush_all_until_dropped() {
+    const WATERLINE: SeqNumberType = 100;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+    // Something to acknowledge, so that the hold is observable
+    holder.bump_max_segment_version_overwrite(WATERLINE);
+
+    let pin = holder.pin_wal_ack();
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    assert_eq!(version, 0, "a pin must hold back the WAL acknowledge");
+
+    // The hold lasts until the last pin is released, in any order
+    let later_pin = holder.pin_wal_ack();
+    drop(pin);
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    assert_eq!(version, 0);
+
+    drop(later_pin);
+    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    assert_eq!(version, WATERLINE, "releasing the last pin lifts the hold");
+}
+
 /// Test that CoW deletes the source point when the destination copy is NOT deferred.
 ///
 /// This is the standard CoW behavior: after successfully moving a point to the appendable
@@ -2758,6 +2786,11 @@ fn snapshot_all_segments_with(
     schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     mut operation: impl FnMut(&SegmentHolder, &RwLock<dyn SegmentEntry>) -> OperationResult<()>,
 ) -> OperationResult<()> {
+    // Like a shard snapshot that includes the WAL, hold the WAL acknowledge from before proxying.
+    // These tests never get as far as capturing a WAL, which is what would release the pin, so
+    // leak it: it must stay in effect for the rest of the test.
+    std::mem::forget(holder.read().pin_wal_ack());
+
     let segments_lock = holder.upgradable_read();
     let (proxies, tmp_segment_id, segments_lock) =
         SegmentHolder::proxy_all_segments(segments_lock, segments_dir, None, schema, None)?;

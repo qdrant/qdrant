@@ -120,6 +120,13 @@ impl LocalShard {
             let handle = tokio::task::spawn_blocking(move || {
                 // Do not change segments while snapshotting
 
+                // For snapshots that include the WAL, pin the WAL acknowledge
+                // version. The WAL is added as very last step and we want to
+                // keep all changes that are still coming in until the WAL is
+                // captured. Not doing this would result in a snapshot that is
+                // inconsistent with the WAL.
+                let wal_ack_pin = save_wal.then(|| segments.read().pin_wal_ack());
+
                 // If the shard maintains a segment manifest (`segments_manifest.json`), include it
                 // in the snapshot so out-of-process readers can discover segments without scanning
                 // the filesystem. It lives next to (not inside) the `segments/` directory, so older
@@ -219,6 +226,9 @@ impl LocalShard {
                 } else {
                     Self::snapshot_empty_wal(wal_guard, &temp_path, &tar)?;
                 }
+
+                // Explicitly release WAL pin, WAL it is captured now
+                drop(wal_ack_pin);
 
                 CollectionResult::Ok(())
             });
