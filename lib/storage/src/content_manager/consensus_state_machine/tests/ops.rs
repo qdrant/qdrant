@@ -1148,6 +1148,37 @@ fn resharding_abort_up() {
 }
 
 #[test]
+fn resharding_abort_up_removes_custom_mapping() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[0, 1]);
+    set_resharding(&mut state, shard_key.clone(), 1);
+    let key = state
+        .collection(COLLECTION)
+        .and_then(|collection| collection.resharding.as_ref())
+        .map(ReshardState::key)
+        .expect("resharding");
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("aborting custom scale-up should be accepted, got {outcome:?}");
+    };
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        Action::RemoveShardFromKeyMapping { shard_id: 1, .. }
+    )));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.shards_key_mapping[&shard_key],
+        HashSet::from([0]),
+    );
+    assert!(!collection.shards.contains_key(&1));
+}
+
+#[test]
 fn resharding_abort_down_reverts_replicas() {
     let key = resharding_key(ReshardingDirection::Down, 1);
     let mut state = auto_resharding_state(2);

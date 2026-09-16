@@ -886,6 +886,17 @@ impl ClusterState {
                         shard_number,
                     });
                 }
+            } else if let Some(shard_key) = &key.shard_key
+                && state
+                    .shards_key_mapping
+                    .get(shard_key)
+                    .is_some_and(|shard_ids| shard_ids.contains(&key.shard_id))
+            {
+                actions.push(Action::RemoveShardFromKeyMapping {
+                    collection: collection.clone(),
+                    shard_id: key.shard_id,
+                    shard_key: shard_key.clone(),
+                });
             }
 
             if state.shards.contains_key(&key.shard_id) {
