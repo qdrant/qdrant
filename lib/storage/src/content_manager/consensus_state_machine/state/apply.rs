@@ -118,6 +118,43 @@ impl ClusterState {
                 }
             }
 
+            // Stops node-local tasks and does not change consensus state
+            Action::InvalidateCleanLocalShards { .. } => {}
+
+            Action::RemoveShardKey {
+                collection,
+                shard_key,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard_ids) = state.shards_key_mapping.remove(shard_key) else {
+                    return;
+                };
+
+                // The mapping is removed before the shard directories are deleted. If the node
+                // crashes between those steps, Qdrant ignores the leftover directories during
+                // startup because their shards are no longer in the mapping.
+                //
+                // Remove the shards from modeled state here to match the state after restart.
+                // Replaying the operation then has nothing left to do.
+                for shard_id in shard_ids {
+                    state.shards.remove(&shard_id);
+                }
+            }
+
+            Action::DropShard {
+                collection,
+                shard_id,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.shards.remove(shard_id);
+            }
+
             Action::UpdateAliases { set, remove } => {
                 for alias in remove {
                     self.aliases.remove(alias);

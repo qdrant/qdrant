@@ -377,6 +377,53 @@ impl ClusterState {
         Ok(actions)
     }
 
+    pub fn plan_drop_shard_key(&self, op: &DropShardKey) -> StorageResult<Actions> {
+        let DropShardKey {
+            collection_name,
+            shard_key,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+        let collection_state = self.collection(&collection).expect("collection exists");
+
+        let sharding_method = collection_state
+            .config
+            .params
+            .sharding_method
+            .unwrap_or_default();
+
+        if sharding_method != ShardingMethod::Custom {
+            return Err(StorageError::bad_request(format!(
+                "shard key {shard_key} cannot be removed with Auto sharding method"
+            )));
+        }
+
+        let Some(shard_ids) = collection_state.shards_key_mapping.get(shard_key) else {
+            return Ok(Actions::new());
+        };
+
+        let mut shard_ids: Vec<_> = shard_ids.iter().copied().collect();
+        shard_ids.sort_unstable();
+
+        let mut actions = vec![
+            Action::InvalidateCleanLocalShards {
+                collection: collection.clone(),
+                shard_ids: shard_ids.clone(),
+            },
+            Action::RemoveShardKey {
+                collection: collection.clone(),
+                shard_key: shard_key.clone(),
+            },
+        ];
+
+        actions.extend(shard_ids.into_iter().map(|shard_id| Action::DropShard {
+            collection: collection.clone(),
+            shard_id,
+        }));
+
+        Ok(actions)
+    }
+
     pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {
         // Check if operation is already applied
         if self.peer_metadata_by_id.get(&peer_id) == Some(metadata) {

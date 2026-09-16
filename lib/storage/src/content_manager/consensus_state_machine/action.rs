@@ -77,6 +77,23 @@ pub enum Action {
         shards: Vec<(ShardId, Vec<PeerId>, ReplicaState)>,
     },
 
+    /// Stop cleanup tasks before their shard directories disappear
+    InvalidateCleanLocalShards {
+        collection: CollectionId,
+        shard_ids: Vec<ShardId>,
+    },
+
+    /// Persist the replay gate before dropping shard directories
+    RemoveShardKey {
+        collection: CollectionId,
+        shard_key: ShardKey,
+    },
+
+    DropShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
     UpdateAliases {
         set: BTreeMap<String, CollectionId>,
         remove: BTreeSet<String>,
@@ -117,7 +134,10 @@ impl Action {
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. }
             | Action::CreateShard { collection, .. }
-            | Action::RegisterShards { collection, .. } => Some(collection),
+            | Action::RegisterShards { collection, .. }
+            | Action::InvalidateCleanLocalShards { collection, .. }
+            | Action::RemoveShardKey { collection, .. }
+            | Action::DropShard { collection, .. } => Some(collection),
 
             Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
