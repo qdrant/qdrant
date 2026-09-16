@@ -481,7 +481,7 @@ def leader_is_defined(peer_api_uri: str, headers={}) -> bool:
         r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
-        return leader is not None
+        return leader not in (None, 0)
     except requests.exceptions.ConnectionError:
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch leader info")
