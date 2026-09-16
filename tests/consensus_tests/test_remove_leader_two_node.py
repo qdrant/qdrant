@@ -19,8 +19,9 @@ from .utils import *  # noqa: F403
 
 N_PEERS = 2
 RAFT_SEND = "/qdrant.Raft/Send"
-# Long enough for self-remove apply + address wipe to win over delayed send.
-RAFT_SEND_DELAY_SEC = 0.05
+# Keep the follower Raft sender busy long enough for self-remove apply to wipe
+# peer URIs before the async commit notify looks them up.
+RAFT_SEND_DELAY_SEC = 0.5
 # Settle window: survivor must stay broken, not recover after a brief lag.
 STUCK_SETTLE_SEC = 10
 
@@ -85,24 +86,23 @@ def _assert_survivor_is_operational(survivor_uri: str):
 def _assert_survivor_stuck_after_leader_remove(survivor_uri: str):
     """Survivor keeps the removed peer and cannot elect (commit notify lost)."""
     deadline = time.time() + STUCK_SETTLE_SEC
-    last = None
     while time.time() < deadline:
         try:
-            last = get_cluster_info(survivor_uri)
-        except (requests.exceptions.ConnectionError, Exception) as err:
+            info = get_cluster_info(survivor_uri)
+        except requests.exceptions.RequestException as err:
             print(f"survivor probe failed: {err}")
             time.sleep(RETRY_INTERVAL_SEC)
             continue
-        raft = last["raft_info"]
+        raft = info["raft_info"]
         print(
-            f"survivor after leader remove: peers={len(last['peers'])} "
-            f"leader={raft.get('leader')} self={last['peer_id']} "
+            f"survivor after leader remove: peers={len(info['peers'])} "
+            f"leader={raft.get('leader')} self={info['peer_id']} "
             f"is_voter={raft.get('is_voter')} commit={raft.get('commit')}"
         )
         # If it recovers, the bug is gone (or delay was insufficient).
         if (
-            len(last["peers"]) == 1
-            and raft.get("leader") == last["peer_id"]
+            len(info["peers"]) == 1
+            and raft.get("leader") == info["peer_id"]
             and raft.get("is_voter") is True
         ):
             raise AssertionError(
@@ -110,7 +110,8 @@ def _assert_survivor_stuck_after_leader_remove(survivor_uri: str):
             )
         time.sleep(RETRY_INTERVAL_SEC)
 
-    assert last is not None, "survivor never answered /cluster"
+    # Require a current response instead of a cached successful probe.
+    last = get_cluster_info(survivor_uri)
     raft = last["raft_info"]
     assert len(last["peers"]) == 2, (
         f"expected survivor to still list both peers, got peers={list(last['peers'])}"

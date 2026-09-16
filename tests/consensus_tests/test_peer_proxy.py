@@ -107,37 +107,40 @@ def test_peer_proxy_holds_one_match_and_keeps_consensus_and_recovery_live(upstre
 
 
 def test_peer_proxy_delays_matching_rpc_before_forward(upstream):
+    delay_sec = 1.0
+    fast_limit_sec = 0.5
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         raft = channel.unary_unary(RAFT)
         transfer = channel.unary_unary(TRANSFER)
-        with proxy.delay_rpc(RAFT, 0.2):
+        with proxy.delay_rpc(RAFT, delay_sec):
             started = time.monotonic()
             assert raft(b"slow", timeout=TIMEOUT) == b"slow"
-            assert time.monotonic() - started >= 0.2
+            assert time.monotonic() - started >= delay_sec
             assert upstream.calls.get(timeout=TIMEOUT)[:2] == (RAFT, b"slow")
 
             # Unmatched methods are not delayed.
             started = time.monotonic()
             assert transfer(b"fast", timeout=TIMEOUT) == b"fast"
-            assert time.monotonic() - started < 0.2
+            assert time.monotonic() - started < fast_limit_sec
             assert upstream.calls.get(timeout=TIMEOUT)[:2] == (TRANSFER, b"fast")
 
         started = time.monotonic()
         assert raft(b"after", timeout=TIMEOUT) == b"after"
-        assert time.monotonic() - started < 0.2
+        assert time.monotonic() - started < fast_limit_sec
 
 
 def test_peer_proxy_delay_applies_after_gate_release(upstream):
+    delay_sec = 1.0
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         rpc = channel.unary_unary(RAFT)
-        with proxy.delay_rpc(RAFT, 0.2), proxy.hold_rpc(RAFT) as gate:
+        with proxy.delay_rpc(RAFT, delay_sec), proxy.hold_rpc(RAFT) as gate:
             held = rpc.future(b"held-then-delayed", timeout=TIMEOUT)
             gate.wait_for_request(TIMEOUT)
             assert_no_calls(upstream)
             released = time.monotonic()
             gate.release()
             assert held.result(TIMEOUT) == b"held-then-delayed"
-            assert time.monotonic() - released >= 0.2
+            assert time.monotonic() - released >= delay_sec
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"held-then-delayed"
 
 
