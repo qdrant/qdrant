@@ -23,7 +23,7 @@ use tempfile::{Builder, TempDir};
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex, SetShardReplicaState,
+    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_manager::{ConsensusManager, SnapshotData};
@@ -177,9 +177,11 @@ fn not_covered_resync() {
     // Add shard directly to `Container`, so its collection state no longer matches state machine
     shadow.container.add_shard(0);
 
-    // `set_replica_state` is not covered by consensus state machine yet, so it should trigger
-    // resync of the named collection
-    assert_eq!(shadow.apply(&set_replica_state()), None);
+    // Simulate an uncovered operation that names this collection
+    assert_eq!(
+        shadow.diff_as_not_covered(&drop_payload_index(COLLECTION)),
+        None
+    );
 
     // `drop_payload_index` makes `apply` compare collection states, which should match after resync
     assert_eq!(shadow.apply(&drop_payload_index(COLLECTION)), None);
@@ -197,7 +199,10 @@ fn not_covered_keeps_the_rest() {
     assert_eq!(shadow.apply(&nop()), None);
 
     shadow.container.add_alias(OTHER_ALIAS);
-    assert_eq!(shadow.apply(&set_replica_state()), None);
+    assert_eq!(
+        shadow.diff_as_not_covered(&drop_payload_index(COLLECTION)),
+        None
+    );
 
     assert_eq!(shadow.apply(&nop()).as_deref(), Some("aliases"));
 }
@@ -382,6 +387,17 @@ impl Shadow {
         self.apply_with(operation, &Ok(true))
     }
 
+    /// Test the resync path independently of which collection operations are implemented
+    fn diff_as_not_covered(&self, operation: &ConsensusOperations) -> Option<String> {
+        self.machine.lock().diff(
+            &self.container,
+            &self.persistent,
+            operation,
+            &ApplyOutcome::NotCovered,
+            &Ok(true),
+        )
+    }
+
     /// Apply `operation` and compare with the operation handler's `result`
     fn apply_with(
         &self,
@@ -502,21 +518,6 @@ fn drop_payload_index(collection: &str) -> ConsensusOperations {
 /// Operation not covered by the consensus state machine that names no collection
 fn remove_peer() -> ConsensusOperations {
     ConsensusOperations::RemovePeer(PEER_ID)
-}
-
-/// Operation not yet covered by the consensus state machine that names the collection it changes
-fn set_replica_state() -> ConsensusOperations {
-    let operation = SetShardReplicaState {
-        collection_name: COLLECTION.to_string(),
-        shard_id: 0,
-        peer_id: PEER_ID,
-        state: ReplicaState::Active,
-        from_state: None,
-    };
-
-    ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::SetShardReplicaState(
-        operation,
-    )))
 }
 
 /// `Persistent` state containing this peer's address and metadata plus one cluster metadata key

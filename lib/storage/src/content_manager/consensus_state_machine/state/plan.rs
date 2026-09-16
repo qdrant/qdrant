@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use collection::collection::vector_name_schema;
+use collection::collection::{ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION, vector_name_schema};
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::ReshardingDirection;
@@ -1329,6 +1329,128 @@ impl ClusterState {
         actions
     }
 
+    pub fn plan_set_shard_replica_state(
+        &self,
+        context: &NodeContext,
+        op: &SetShardReplicaState,
+    ) -> StorageResult<Actions> {
+        let &SetShardReplicaState {
+            ref collection_name,
+            shard_id,
+            peer_id,
+            state: new_state,
+            from_state,
+        } = op;
+        let collection = self.resolve_collection(collection_name)?;
+        let state = self.collection(&collection).expect("collection exists");
+
+        let Some(shard) = state.shards.get(&shard_id) else {
+            if new_state == ReplicaState::Dead
+                && let Some(resharding) = state
+                    .resharding
+                    .as_ref()
+                    .filter(|resharding| resharding.shard_id == shard_id)
+            {
+                return self.plan_abort_resharding(
+                    context,
+                    collection,
+                    &resharding.key(),
+                    false,
+                    AbortReshardingScope::default(),
+                );
+            }
+
+            return Err(StorageError::not_found(format!("shard {shard_id}")));
+        };
+
+        let current_state = shard.replicas.get(&peer_id).copied();
+        let peer_exists = self.peer_address_by_id.contains_key(&peer_id);
+        if !peer_exists && current_state.is_none() {
+            return Err(StorageError::bad_input(format!(
+                "Can't set replica {peer_id}:{shard_id} state to {new_state:?}, because replica \
+                 {peer_id}:{shard_id} does not exist and peer {peer_id} is not part of the cluster",
+            )));
+        }
+
+        if from_state.is_some() && current_state != from_state {
+            return Err(StorageError::bad_input(format!(
+                "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected \
+                 {from_state:?}"
+            )));
+        }
+
+        if is_last_source_of_truth(&shard.replicas, peer_id) && !new_state.is_active() {
+            return Err(StorageError::bad_input(format!(
+                "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
+            )));
+        }
+
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+
+        if new_state == ReplicaState::Dead
+            && current_state.is_some_and(|state| state.is_resharding())
+            && let Some(resharding) = &state.resharding
+        {
+            let abort = self.plan_abort_resharding(
+                context,
+                collection.clone(),
+                &resharding.key(),
+                false,
+                AbortReshardingScope {
+                    skip_replica: Some((shard_id, peer_id)),
+                    ..Default::default()
+                },
+            )?;
+            apply_actions(&mut planned, &abort);
+            actions.extend(abort);
+
+            if !planned
+                .collection(&collection)
+                .expect("collection exists")
+                .shards
+                .contains_key(&shard_id)
+            {
+                return Ok(actions);
+            }
+        }
+
+        if new_state == ReplicaState::Dead {
+            let planned_collection = planned.collection(&collection).expect("collection exists");
+            let fixed_cancellation =
+                planned.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+            let mut transfers: Vec<_> = planned_collection
+                .transfers
+                .iter()
+                .filter(|transfer| {
+                    if fixed_cancellation {
+                        transfer.is_source_or_target(peer_id, shard_id)
+                    } else {
+                        transfer.shard_id == shard_id
+                            && (transfer.from == peer_id || transfer.to == peer_id)
+                    }
+                })
+                .map(ShardTransfer::key)
+                .collect();
+            transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+
+            for key in transfers {
+                let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
+                apply_actions(&mut planned, &abort);
+                actions.extend(abort);
+            }
+        }
+
+        actions.push(Action::SetReplicaState {
+            collection,
+            shard_id,
+            peer_id,
+            state: new_state,
+        });
+
+        Ok(actions)
+    }
+
     pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {
         // Check if operation is already applied
         if self.peer_metadata_by_id.get(&peer_id) == Some(metadata) {
@@ -1439,6 +1561,32 @@ fn transfer_by_key(
         .transfers
         .iter()
         .find(|transfer| transfer.key() == key)
+}
+
+fn apply_actions(state: &mut ClusterState, actions: &[Action]) {
+    for action in actions {
+        state.apply_action(action);
+    }
+}
+
+fn is_last_source_of_truth(
+    replicas: &std::collections::HashMap<PeerId, ReplicaState>,
+    peer_id: PeerId,
+) -> bool {
+    let active_peers: Vec<_> = replicas
+        .iter()
+        .filter_map(|(&peer_id, &state)| state.is_active().then_some(peer_id))
+        .collect();
+
+    if active_peers.is_empty()
+        && replicas.get(&peer_id).is_some_and(|state| {
+            matches!(state, ReplicaState::Initializing | ReplicaState::Listener)
+        })
+    {
+        return true;
+    }
+
+    active_peers.len() == 1 && active_peers.contains(&peer_id)
 }
 
 fn missing_transfer(key: ShardTransferKey) -> StorageError {
