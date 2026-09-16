@@ -1,12 +1,13 @@
 //! Explicit tests asserting behavior of individual consensus operations
 //! and tests for cases that `proptest` is unlikely to generate or reach
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 
 use ahash::AHashMap;
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
@@ -15,12 +16,14 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::ReshardState;
 use collection::shards::shard::ShardId;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vector_name_config::*;
 use segment::types::*;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -710,6 +713,157 @@ fn create_shard_key_reject_unknown_peer() {
             Some(ReplicaState::Active),
         ),
     );
+}
+
+#[test]
+fn drop_shard_key() {
+    let shard_key = ShardKey::from("north");
+    let other_key = ShardKey::from("south");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[3, 1]);
+    add_shard_key(&mut state, other_key.clone(), &[5]);
+    set_resharding(&mut state, other_key.clone(), 5);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&drop_shard_key_op(shard_key.clone()));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping a shard key should be accepted, got {outcome:?}");
+    };
+
+    assert_eq!(
+        actions,
+        vec![
+            Action::InvalidateCleanLocalShards {
+                collection: COLLECTION.into(),
+                shard_ids: vec![1, 3],
+            },
+            Action::RemoveShardKey {
+                collection: COLLECTION.into(),
+                shard_key: shard_key.clone(),
+            },
+            Action::DropShard {
+                collection: COLLECTION.into(),
+                shard_id: 1,
+            },
+            Action::DropShard {
+                collection: COLLECTION.into(),
+                shard_id: 3,
+            },
+        ],
+    );
+
+    let collection = machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection exists");
+
+    assert!(!collection.shards_key_mapping.contains_key(&shard_key));
+    assert!(!collection.shards.contains_key(&1));
+    assert!(!collection.shards.contains_key(&3));
+    assert_eq!(
+        collection.shards_key_mapping[&other_key],
+        HashSet::from([5])
+    );
+    assert!(collection.shards.contains_key(&5));
+    assert_eq!(
+        collection
+            .resharding
+            .as_ref()
+            .and_then(|resharding| resharding.shard_key.as_ref()),
+        Some(&other_key),
+    );
+}
+
+#[test]
+fn drop_shard_key_replay() {
+    let state = custom_sharding_state();
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&drop_shard_key_op("north".into()));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replay of an applied shard-key drop should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &state, "replay should not change anything");
+}
+
+#[test]
+fn drop_shard_key_replay_after_mapping_removal() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1, 2]);
+
+    let operation = drop_shard_key_op(shard_key);
+    let mut uncrashed = state_machine(state.clone());
+    let outcome = uncrashed.apply(&operation);
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping a shard key should be accepted, got {outcome:?}");
+    };
+    let goal = uncrashed.state().clone();
+
+    assert!(matches!(&actions[1], Action::RemoveShardKey { .. }));
+
+    let mut crashed = state;
+    for action in &actions[..=1] {
+        crashed.apply_action(action);
+    }
+
+    let mut replay = state_machine(crashed);
+    let outcome = replay.apply(&operation);
+
+    let ApplyOutcome::Accepted(replay_actions) = outcome else {
+        panic!("replay after mapping removal should be accepted, got {outcome:?}");
+    };
+
+    assert!(replay_actions.is_empty());
+    assert_eq!(replay.state(), &goal);
+}
+
+#[test]
+fn drop_shard_key_reject_auto_sharding() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&drop_shard_key_op("north".into()));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn drop_shard_key_resharding_same_key() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1]);
+    set_resharding(&mut state, shard_key.clone(), 1);
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&drop_shard_key_op(shard_key));
+
+    assert!(matches!(outcome, ApplyOutcome::NotCovered));
+    assert_eq!(machine.state(), &state);
+}
+
+fn set_resharding(state: &mut ClusterState, shard_key: ShardKey, shard_id: ShardId) {
+    let resharding = ReshardState::new(
+        Uuid::nil(),
+        ReshardingDirection::Up,
+        PEER_ID,
+        shard_id,
+        Some(shard_key),
+    );
+
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection exists")
+        .resharding = Some(resharding);
 }
 
 #[test]
@@ -1625,6 +1779,13 @@ fn create_shard_key_op(
     }))
 }
 
+fn drop_shard_key_op(shard_key: ShardKey) -> ConsensusOperations {
+    collection_meta_op(CollectionMetaOperations::DropShardKey(DropShardKey {
+        collection_name: COLLECTION.into(),
+        shard_key,
+    }))
+}
+
 fn custom_sharding_state() -> ClusterState {
     let mut state = cluster_state(Vec::new());
     state
@@ -1635,6 +1796,27 @@ fn custom_sharding_state() -> ClusterState {
         .params
         .sharding_method = Some(ShardingMethod::Custom);
     state
+}
+
+fn add_shard_key(state: &mut ClusterState, shard_key: ShardKey, shard_ids: &[ShardId]) {
+    let collection = state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection exists");
+
+    for &shard_id in shard_ids {
+        collection.shards.insert(
+            shard_id,
+            ShardInfo {
+                replicas: HashMap::from([(PEER_ID, ReplicaState::Active)]),
+            },
+        );
+        collection
+            .shards_key_mapping
+            .entry(shard_key.clone())
+            .or_default()
+            .insert(shard_id);
+    }
 }
 
 fn add_peer(state: &mut ClusterState, peer_id: PeerId, version: Option<&str>) {
