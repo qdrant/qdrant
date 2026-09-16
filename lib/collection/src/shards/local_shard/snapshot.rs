@@ -422,7 +422,7 @@ where
     // Proxy all segments
     // Proxied segments are sorted by flush ordering
     log::trace!("Proxying all shard segments to apply function");
-    let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
+    let (proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
         segments_lock,
         segments_path,
         segment_config,
@@ -476,7 +476,6 @@ where
             match SegmentHolder::try_unproxy_segment(
                 segments_lock,
                 *segment_id,
-                proxy_segment.clone(),
                 segments.acquire_updates_lock(),
             ) {
                 Ok(lock) => {
@@ -487,14 +486,18 @@ where
             }
         }
     }
-    proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
+    let remaining_proxy_ids: Vec<_> = proxies
+        .iter()
+        .map(|(segment_id, _)| *segment_id)
+        .filter(|segment_id| !unproxied_segment_ids.contains(segment_id))
+        .collect();
 
     // Unproxy all segments
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
     SegmentHolder::unproxy_all_segments(
         segments_lock,
-        proxies,
+        &remaining_proxy_ids,
         tmp_segment_id,
         segments.acquire_updates_lock(),
     )?;

@@ -1939,18 +1939,20 @@ fn test_double_proxies() {
     assert!(has_point, "Point should be present in double proxy");
 
     // Unproxy once
+    let outer_proxy_ids: Vec<_> = outer_proxies.iter().map(|(id, _)| *id).collect();
     SegmentHolder::unproxy_all_segments(
         outer_segments_lock,
-        outer_proxies,
+        &outer_proxy_ids,
         outer_tmp_segment,
         holder.acquire_updates_lock(),
     )
     .unwrap();
 
     // Unproxy twice
+    let inner_proxy_ids: Vec<_> = inner_proxies.iter().map(|(id, _)| *id).collect();
     SegmentHolder::unproxy_all_segments(
         holder.upgradable_read(),
-        inner_proxies,
+        &inner_proxy_ids,
         inner_tmp_segment,
         holder.acquire_updates_lock(),
     )
@@ -2767,9 +2769,10 @@ fn snapshot_all_segments_with(
         let wrapped = proxy.read().wrapped_segment.clone();
         operation(&segments_lock, wrapped.get())?;
     }
+    let proxy_ids: Vec<_> = proxies.iter().map(|(segment_id, _)| *segment_id).collect();
     SegmentHolder::unproxy_all_segments(
         segments_lock,
-        proxies,
+        &proxy_ids,
         tmp_segment_id,
         holder.acquire_updates_lock(),
     )

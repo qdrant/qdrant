@@ -129,13 +129,12 @@ impl SegmentHolder {
     pub fn try_unproxy_segment<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segment_id: SegmentId,
-        proxy_segment: LockedSegment,
         updates_guard: UpdatesGuard<'a>,
     ) -> Result<
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     > {
-        if !matches!(proxy_segment, LockedSegment::Proxy(_)) {
+        if !matches!(segments_lock.get(segment_id), Some(LockedSegment::Proxy(_))) {
             log::warn!(
                 "Unproxying segment {segment_id} that is not proxified, that is unexpected, skipping",
             );
@@ -159,7 +158,7 @@ impl SegmentHolder {
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`].
     pub fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
-        proxies: Vec<(SegmentId, LockedSegment)>,
+        proxy_ids: &[SegmentId],
         tmp_segment_id: SegmentId,
         updates_guard: UpdatesGuard<'_>,
     ) -> OperationResult<()> {
@@ -167,8 +166,7 @@ impl SegmentHolder {
         // segments back into the segment holder. On failure nothing is unwrapped: every proxy
         // stays installed and keeps serving its changes, and the temp segment they write into is
         // left in place.
-        let proxy_ids: Vec<_> = proxies.iter().map(|(segment_id, _)| *segment_id).collect();
-        let mut write_segments = SegmentHolder::unproxy_segments(segments_lock, &proxy_ids)
+        let mut write_segments = SegmentHolder::unproxy_segments(segments_lock, proxy_ids)
             .map_err(|(_segments_lock, err)| err)?;
 
         debug_assert!(
