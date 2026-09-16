@@ -106,16 +106,13 @@ jobs:
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           branch="${BRANCH//\//-}" # replace all / with -
-          sha="$(git rev-parse HEAD)" # actual commit built from the chosen branch
           base="${GCS_ENDPOINT}/${GCS_BUCKET}/debug-tools"
 
-          # Upload under a moving branch prefix (always latest) and an immutable
-          # per-commit prefix (history). Public read is granted at the bucket/IAM
-          # level (allUsers -> Storage Object Viewer), so no per-object ACL here.
-          for prefix in "$branch" "$branch-${sha}"; do
-            aws s3 cp debug-tools/ "s3://${GCS_BUCKET}/debug-tools/${prefix}/" \
-              --recursive --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
-          done
+          # Upload under the branch prefix, overwriting the previous build.
+          # Public read is granted at the bucket/IAM level (allUsers ->
+          # Storage Object Viewer), so no per-object ACL here.
+          aws s3 cp debug-tools/ "s3://${GCS_BUCKET}/debug-tools/${branch}/" \
+            --recursive --endpoint-url "$GCS_ENDPOINT" --region "$AWS_REGION"
 
           # Surface direct links in the job summary
           echo "## Debug tools uploaded" >> "$GITHUB_STEP_SUMMARY"
@@ -123,4 +120,3 @@ jobs:
           for bin in $DEBUG_BINS $EDGE_BINS; do
             echo "- [\`$bin\`]($base/$branch/$bin)" >> "$GITHUB_STEP_SUMMARY"
           done
-          echo "Immutable: \`$base/$branch-${sha}/<bin>\`" >> "$GITHUB_STEP_SUMMARY"
