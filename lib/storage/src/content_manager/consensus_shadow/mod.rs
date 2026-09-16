@@ -218,8 +218,19 @@ pub fn read_shallow_state(toc: &impl CollectionContainer, persistent: &Persisten
 
 /// Collections an operation might change, including any alias target
 fn target_collections(operation: &ConsensusOperations, state: &ClusterState) -> Vec<CollectionId> {
-    let ConsensusOperations::CollectionMeta(operation) = operation else {
-        return Vec::new();
+    let operation = match operation {
+        ConsensusOperations::RemovePeer(_) => {
+            let mut collections: Vec<_> = state.collections.keys().cloned().collect();
+            collections.sort();
+            return collections;
+        }
+        ConsensusOperations::CollectionMeta(operation) => operation,
+        ConsensusOperations::AddPeer { .. }
+        | ConsensusOperations::UpdatePeerMetadata { .. }
+        | ConsensusOperations::UpdateClusterMetadata { .. }
+        | ConsensusOperations::SetQuotaConfig(_)
+        | ConsensusOperations::RequestSnapshot
+        | ConsensusOperations::ReportSnapshot { .. } => return Vec::new(),
     };
 
     let collection = match operation.as_ref() {

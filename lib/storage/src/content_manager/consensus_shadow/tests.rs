@@ -37,6 +37,7 @@ use crate::types::{PeerAddressById, PeerMetadataById};
 const COLLECTION: &str = "books";
 const ALIAS: &str = "novels";
 const OTHER_ALIAS: &str = "crime";
+const OTHER_PEER_ID: PeerId = PEER_ID + 1;
 const METADATA_KEY: &str = "owner";
 /// Collection absent from consensus state machine and `Container`
 const MISSING: &str = "outis";
@@ -113,6 +114,21 @@ fn diverged_collection_under_alias() {
 
     assert_eq!(
         shadow.apply(&drop_payload_index(ALIAS)).as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
+}
+
+/// Peer removal can change every collection, so validation must compare all of them
+#[test]
+fn remove_peer_compares_collections() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+    shadow.container.add_shard_for(0, OTHER_PEER_ID);
+
+    assert_eq!(shadow.apply(&nop()), None);
+    assert_eq!(
+        shadow
+            .apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID))
+            .as_deref(),
         Some(format!("collections[{COLLECTION}].shards").as_str()),
     );
 }
@@ -593,7 +609,11 @@ impl Container {
 
     /// Add shard to `Container` without updating consensus state machine
     fn add_shard(&self, shard_id: ShardId) {
-        let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+        self.add_shard_for(shard_id, PEER_ID);
+    }
+
+    fn add_shard_for(&self, shard_id: ShardId, peer_id: PeerId) {
+        let replicas = HashMap::from([(peer_id, ReplicaState::Active)]);
 
         self.collections
             .lock()
