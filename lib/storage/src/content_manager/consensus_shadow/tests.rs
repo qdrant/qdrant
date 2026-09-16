@@ -162,7 +162,7 @@ fn rejected_by_apply_only() {
 /// so validation should invalidate the entire consensus state machine
 #[test]
 fn not_covered_invalidates() {
-    invalidates(&remove_peer(), &Ok(true));
+    invalidates(&ConsensusOperations::RequestSnapshot, &Ok(true));
 }
 
 /// When an uncovered operation names a collection, validation should reload only that collection
@@ -513,11 +513,6 @@ fn drop_payload_index(collection: &str) -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::DropPayloadIndex(
         operation,
     )))
-}
-
-/// Operation not covered by the consensus state machine that names no collection
-fn remove_peer() -> ConsensusOperations {
-    ConsensusOperations::RemovePeer(PEER_ID)
 }
 
 /// `Persistent` state containing this peer's address and metadata plus one cluster metadata key
