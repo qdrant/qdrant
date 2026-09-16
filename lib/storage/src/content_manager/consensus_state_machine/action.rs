@@ -8,9 +8,10 @@ use collection::operations::config_diff::{
 };
 use collection::operations::types::{PeerMetadata, SparseVectorsConfig, VectorsConfigDiff};
 use collection::shards::CollectionId;
-use collection::shards::shard::PeerId;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
 use segment::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, StrictModeConfig,
+    Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
     VectorNameBuf,
 };
 use shard::operations::vector_name_ops::VectorNameConfig;
@@ -60,6 +61,22 @@ pub enum Action {
         field_name: PayloadKeyType,
     },
 
+    /// Build a shard's replica set on disk. The shard becomes visible through `RegisterShards`.
+    CreateShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+        replicas: Vec<PeerId>,
+        init_state: ReplicaState,
+    },
+
+    /// Register built shards and record them under `shard_key` in one mapping write.
+    RegisterShards {
+        collection: CollectionId,
+        shard_key: Option<ShardKey>,
+        shards: Vec<(ShardId, Vec<PeerId>, ReplicaState)>,
+    },
+
     UpdateAliases {
         set: BTreeMap<String, CollectionId>,
         remove: BTreeSet<String>,
@@ -98,7 +115,9 @@ impl Action {
             | Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }
-            | Action::DropPayloadIndex { collection, .. } => Some(collection),
+            | Action::DropPayloadIndex { collection, .. }
+            | Action::CreateShard { collection, .. }
+            | Action::RegisterShards { collection, .. } => Some(collection),
 
             Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
