@@ -22,8 +22,6 @@ impl MutableInvertedIndexBuilder {
         str_tokens: impl IntoIterator<Item = String>,
         doc_len: Option<u32>,
     ) {
-        self.index.points_count += 1;
-
         // resize point_to_* structures if needed
         if self.index.point_to_tokens.len() <= idx as usize {
             self.index
@@ -45,6 +43,12 @@ impl MutableInvertedIndexBuilder {
 
         // insert as tokenset
         let tokens_set = TokenSet::from_iter(tokens);
+        // Same definition as `index_tokens`: a value that tokenizes to nothing
+        // is not a document. The builder visits each point once, so no
+        // transition tracking is needed here.
+        if !tokens_set.is_empty() {
+            self.index.points_count += 1;
+        }
         self.index.point_to_tokens[idx as usize] = Some(tokens_set);
     }
 
