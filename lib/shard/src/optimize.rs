@@ -675,11 +675,11 @@ fn finish_optimization(
     // old segment data is already dropped.
     read_segment_holder.sync_segment_manifest(None)?;
 
-    // Failure point for tests: everything past the swap above must already be crash-safe, the
-    // optimized segment is durable and loadable and the proxies' data is pinned until it is
-    // cleaned up.
+    // Tests fail the optimization here to assert that everything past the swap above is already
+    // crash-safe: the optimized segment is durable and loadable, and the proxies' data is pinned
+    // until it is cleaned up.
     #[cfg(test)]
-    tests::before_version_save_hook()?;
+    tests::post_swap_failure_hook()?;
 
     drop(read_segment_holder);
     // Allow updates again
@@ -1196,28 +1196,32 @@ mod tests {
 
     thread_local! {
         #[allow(clippy::type_complexity)]
-        pub(super) static BEFORE_VERSION_SAVE_HOOK: std::cell::RefCell<
+        pub(super) static POST_SWAP_FAILURE_HOOK: std::cell::RefCell<
             Option<Box<dyn FnMut() -> OperationResult<()>>>,
         > = const { std::cell::RefCell::new(None) };
     }
 
-    /// Test hook run by `finish_optimization` right before it saves the optimized segment
-    /// version, on the calling thread only.
-    pub(super) fn before_version_save_hook() -> OperationResult<()> {
-        BEFORE_VERSION_SAVE_HOOK.with(|hook| match hook.borrow_mut().as_mut() {
+    /// Test hook run by `finish_optimization` in the window after it swapped the optimized segment
+    /// in, on the calling thread only. Returning an error stands in for a failure or crash there.
+    pub(super) fn post_swap_failure_hook() -> OperationResult<()> {
+        POST_SWAP_FAILURE_HOOK.with(|hook| match hook.borrow_mut().as_mut() {
             Some(hook) => hook(),
             None => Ok(()),
         })
     }
 
-    /// Between `swap_new` and `SegmentVersion::save` the proxies are out of the holder, so nothing
-    /// pins the WAL acknowledge at their persisted log, while the optimized segment, the only
-    /// durable home of the changes propagated past that log, is not loadable yet. A flush pass in
-    /// that window acknowledges past the log; a failure (or crash) before the version file is
-    /// written then loses those changes: `normalize_segment_dir` deletes the optimized segment on
-    /// the next load, the old segment comes back without them, and the WAL no longer has them.
+    /// From `swap_new` onwards the proxies are out of the holder, so a flush pass no longer sees
+    /// them as unsaved work holding the WAL acknowledge at their persisted log, while their source
+    /// files (and pending changes logs) are still on disk contradicting everything propagated past
+    /// it. A failure or crash anywhere in that window must still leave the shard recoverable, which
+    /// takes both halves of the swap: the proxies' `ack_pin` registered under the same write lock
+    /// that evicted them, so no flush can acknowledge past their log in between, and the optimized
+    /// segment's version file written before the swap, so it is loadable and not deleted by
+    /// `normalize_segment_dir` on the next load. Without either, the changes are gone from every
+    /// location: the old segment comes back with only what its log persisted, and the WAL no longer
+    /// has the rest.
     #[test]
-    fn finish_optimization_version_save_window_keeps_acknowledged_changes_recoverable() {
+    fn finish_optimization_post_swap_failure_keeps_acknowledged_changes_recoverable() {
         use std::sync::Arc;
 
         use common::storage_version::VERSION_FILE;
@@ -1264,12 +1268,12 @@ mod tests {
         {
             let holder = holder.clone();
             let acknowledged = acknowledged.clone();
-            BEFORE_VERSION_SAVE_HOOK.with(|hook| {
+            POST_SWAP_FAILURE_HOOK.with(|hook| {
                 *hook.borrow_mut() = Some(Box::new(move || {
                     let version = holder.read().flush_all(FlushMode::Sync, false)?;
                     *acknowledged.lock() = Some(version);
                     Err(OperationError::service_error(
-                        "simulated failure before the optimized segment version is saved",
+                        "simulated failure after the optimized segment was swapped in",
                     ))
                 }));
             });
@@ -1285,7 +1289,7 @@ mod tests {
             &AtomicBool::new(false),
             &hw_counter,
         );
-        BEFORE_VERSION_SAVE_HOOK.with(|hook| *hook.borrow_mut() = None);
+        POST_SWAP_FAILURE_HOOK.with(|hook| *hook.borrow_mut() = None);
         assert!(result.is_err(), "the injected failure must surface");
         let acknowledged_version = (*acknowledged.lock()).expect("hook must have run");
 
