@@ -238,7 +238,7 @@ impl JsonPath {
         // the other.  For example, `a.b` and `a.b.c` intersect, but `a.b` and `a.c` don't. More
         // nuanced cases include wildcard indexes, e.g., `a[0].b` and `a[].b` intersect.
         // Additionally, we consider path with incompatible types (e.g. `a[0]` and `a.b`) to
-        // intersect because `valuse_set` could override the subtree by replacing an array with an
+        // intersect because `value_set` could override the subtree by replacing an array with an
         // object (or vice versa), deleting indexed fields.
 
         let Some(path_to_set) = path_to_set else {
