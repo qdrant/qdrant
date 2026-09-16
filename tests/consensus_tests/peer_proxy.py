@@ -29,8 +29,11 @@ class RequestGate:
         self._arrived = Future()
         self._released = asyncio.Event()
 
-    def wait(self, timeout: float = 30) -> bytes:
-        """Wait until the request is held and return its protobuf bytes."""
+    def wait_for_request(self, timeout: float = 30) -> bytes:
+        """Return the matching request's bytes once it is held before forwarding.
+
+        This does not prove that the transfer has copied any data.
+        """
         try:
             return self._arrived.result(timeout)
         except FutureTimeoutError as error:
@@ -57,7 +60,7 @@ class PeerProxy(grpc.GenericRpcHandler):
 
         with proxy.hold("/qdrant.CollectionsInternal/GetShardRecoveryPoint") as gate:
             replicate_shard(...)
-            request = gate.wait()
+            request = gate.wait_for_request()
             # Check the transfer identity, then remove or stop the source.
             gate.release()
 
@@ -86,12 +89,17 @@ class PeerProxy(grpc.GenericRpcHandler):
     def __exit__(self, *_):
         self.close()
 
-    def wait_for_peer(self, timeout: float = 30):
-        """Wait for the proxy's connection to the real peer, including on restart."""
+    def wait_for_peer_connection(self, timeout: float = 30):
+        """Wait for the internal gRPC connection, including after a restart.
+
+        This does not check peer health, consensus progress, or replica state.
+        """
         try:
             self._submit(self._channel.channel_ready(), timeout=timeout)
         except FutureTimeoutError as error:
-            raise TimeoutError(f"Peer at {self._target} did not become available within {timeout} seconds") from error
+            raise TimeoutError(
+                f"Proxy did not establish a gRPC connection to {self._target} within {timeout} seconds"
+            ) from error
 
     def close(self):
         if self._thread.is_alive():
