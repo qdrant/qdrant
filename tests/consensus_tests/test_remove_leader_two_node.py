@@ -25,6 +25,9 @@ RAFT_SEND = "/qdrant.Raft/Send"
 RAFT_SEND_DELAY_SEC = 0.5
 # Settle window: survivor must stay broken, not recover after a brief lag.
 STUCK_SETTLE_SEC = 10
+# Server-side consensus wait (?timeout=) vs client HTTP bound (must be lower).
+REMOVE_PEER_SERVER_TIMEOUT_SEC = 60
+REMOVE_PEER_CLIENT_TIMEOUT_SEC = 30
 
 
 def _leader_follower_indices(peer_api_uris: list[str]) -> tuple[int, int, int]:
@@ -38,7 +41,10 @@ def _leader_follower_indices(peer_api_uris: list[str]) -> tuple[int, int, int]:
 
 
 def _remove_peer(via_uri: str, peer_id: int):
-    res = requests.delete(f"{via_uri}/cluster/peer/{peer_id}?timeout=60")
+    res = requests.delete(
+        f"{via_uri}/cluster/peer/{peer_id}?timeout={REMOVE_PEER_SERVER_TIMEOUT_SEC}",
+        timeout=REMOVE_PEER_CLIENT_TIMEOUT_SEC,
+    )
     assert_http_ok(res)
 
 
@@ -168,9 +174,13 @@ def test_remove_leader_from_two_node_cluster(tmp_path: pathlib.Path):
             max_workers=1
         ) as pool:
             remove = pool.submit(_remove_peer, peer_api_uris[leader_idx], leader_id)
-            gate.wait_for_request()
-            gate.release()
-            remove.result(timeout=60)
+            try:
+                gate.wait_for_request()
+                gate.release()
+                remove.result(timeout=REMOVE_PEER_SERVER_TIMEOUT_SEC)
+            finally:
+                # Best-effort only: cancel does not interrupt a running DELETE.
+                remove.cancel()
 
     # Drain any Raft/Send that entered the proxy before the address wipe.
     time.sleep(RAFT_SEND_DELAY_SEC + 0.1)
