@@ -66,6 +66,18 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.posting_len(token_id, hw_counter),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.posting_len(token_id, hw_counter),
+            ReadOnlyFullTextIndex::Immutable(index) => index.posting_len(token_id, hw_counter),
+        }
+    }
+
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.total_tokens(hw_counter),

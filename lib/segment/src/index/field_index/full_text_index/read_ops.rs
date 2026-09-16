@@ -67,6 +67,18 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
+    fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        match self {
+            Self::Mutable(index) => index.posting_len(token_id, hw_counter),
+            Self::Immutable(index) => index.posting_len(token_id, hw_counter),
+            Self::OnDisk(index) => index.posting_len(token_id, hw_counter),
+        }
+    }
+
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
         match self {
             Self::Mutable(index) => index.total_tokens(hw_counter),

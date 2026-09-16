@@ -17,6 +17,7 @@ use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::query_context::TextFieldStats;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::facet_index::FacetIndexEnum;
@@ -195,6 +196,16 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn facet_index_for(&self, _key: &JsonPath) -> Option<impl FacetIndex + '_> {
         // Plain index has no field indexes; the type tag is just a placeholder.
         None::<FacetIndexEnum<'_>>
+    }
+
+    fn fill_text_statistics(
+        &self,
+        _field: PayloadKeyTypeRef,
+        _stats: &mut TextFieldStats,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // Plain index has no field indexes, so no text statistics either.
+        Ok(())
     }
 
     fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {

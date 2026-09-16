@@ -58,6 +58,14 @@ impl FullTextIndexRead for MutableFullTextIndexInner {
         self.inverted_index.doc_len(point_id, hw_counter)
     }
 
+    fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        self.inverted_index.get_posting_len(token_id, hw_counter)
+    }
+
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
         self.inverted_index.total_tokens(hw_counter)
     }

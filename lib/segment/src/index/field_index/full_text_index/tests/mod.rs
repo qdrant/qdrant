@@ -643,3 +643,35 @@ fn read_surface_reports_absence_without_scoring() {
     assert_eq!(index.total_tokens(&hw_counter).unwrap(), None);
     assert_eq!(index.points_count(), 2);
 }
+
+/// The per-segment half of the corpus gather, over an index that does record
+/// lengths. The segment-level path cannot reach this while
+/// `TextIndexParams::scoring()` is a const `false`.
+#[test]
+fn text_statistics_gather_sums_lengths_and_frequencies() {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::fill_text_statistics;
+
+    let scoring_dir = Builder::new().prefix("stats_scoring").tempdir().unwrap();
+    let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut stats = TextFieldStats::seeded(["the", "alpha", "absent"].map(str::to_string));
+    fill_text_statistics(&index, &mut stats, &hw_counter).unwrap();
+
+    assert_eq!(stats.documents, 2);
+    assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
+    assert_eq!(stats.df["the"], 1, "repeats in one document are still one");
+    assert_eq!(stats.df["alpha"], 1);
+    assert_eq!(stats.df["absent"], 0);
+
+    // A segment that records no lengths poisons the average for the whole
+    // corpus rather than letting it be taken over the segments that do.
+    let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
+    let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
+    fill_text_statistics(&plain, &mut stats, &hw_counter).unwrap();
+
+    assert_eq!(stats.documents, 4);
+    assert_eq!(stats.df["the"], 2, "frequencies still sum");
+    assert_eq!(stats.total_tokens, None);
+}

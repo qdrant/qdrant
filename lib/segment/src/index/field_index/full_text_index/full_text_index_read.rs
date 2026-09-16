@@ -9,10 +9,49 @@ use common::universal_io::UserData;
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::TextFieldStats;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
+
+/// Add one segment's contribution to a text field's corpus statistics: the
+/// document frequency of every seeded term, the document count, and the total
+/// tokens behind `avgdl`.
+///
+/// Terms are resolved per segment on purpose. A `TokenId` is whatever this
+/// segment's vocabulary happened to assign, so the query's strings are the only
+/// key the segments share.
+pub fn fill_text_statistics<T: FullTextIndexRead>(
+    index: &T,
+    stats: &mut TextFieldStats,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    let terms: Vec<String> = stats.df.keys().cloned().collect();
+    let mut token_ids = vec![None; terms.len()];
+    index.for_each_token_id(
+        terms.iter().map(String::as_str).enumerate(),
+        hw_counter,
+        |i, token_id| token_ids[i] = token_id,
+    )?;
+
+    for (term, token_id) in terms.iter().zip(token_ids) {
+        // A term this segment never saw contributes nothing, not zero: the
+        // seeded entry already holds the zero.
+        let Some(token_id) = token_id else {
+            continue;
+        };
+        let Some(posting_len) = index.posting_len(token_id, hw_counter)? else {
+            continue;
+        };
+        if let Some(df) = stats.df.get_mut(term) {
+            *df += posting_len;
+        }
+    }
+
+    stats.add_segment(index.points_count(), index.total_tokens(hw_counter)?);
+    Ok(())
+}
 
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
@@ -79,6 +118,20 @@ pub trait FullTextIndexRead {
     /// token. A value that tokenizes to nothing is in neither, so the ratio
     /// does not move with the storage placement.
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+
+    /// Documents in this segment containing `token_id`: `df(t)` before it is
+    /// summed across segments. `None` when the token is not in the vocabulary.
+    ///
+    /// Counts deleted documents, which stay in the posting lists until the
+    /// segment is rebuilt, while [`Self::points_count`] does not count them.
+    /// In a segment with many deletions `df` is therefore inflated relative to
+    /// `N`, which understates IDF, so whoever turns the two into a score has
+    /// to cope with `df > N`.
+    fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>>;
 
     fn for_each_token_id<'a, U: UserData>(
         &self,
