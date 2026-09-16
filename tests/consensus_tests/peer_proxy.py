@@ -1,9 +1,11 @@
-"""A test-only peer proxy with gates for RPCs and snapshot downloads.
+"""A test-only peer proxy with gates and delays for RPCs and snapshot downloads.
 
 The proxy forwards protobuf bytes unchanged. A gate holds one matching request
 before forwarding it. Later requests, including calls to the same method, pass
-through so recovery traffic can continue. Matchers run on the server loop and
-must not block. They can decode the bytes to select a collection or shard.
+through so recovery traffic can continue. A delay sleeps before every matching
+RPC forward so tests can widen races without holding traffic forever. Matchers
+run on the server loop and must not block. They can decode the bytes to select a
+collection or shard.
 
 RPC bodies do not identify the source peer. Tests must establish which peer
 sends the selected request. HTTP gates select the full source URL and intercept
@@ -90,6 +92,7 @@ class PeerProxy(grpc.GenericRpcHandler):
         self._target = target
         self._port = port
         self._gates = {}
+        self._rpc_delays = {}
         self._lock = Lock()
         self._http_connections = set()
         self._closed = Event()
@@ -142,6 +145,31 @@ class PeerProxy(grpc.GenericRpcHandler):
         if not method.startswith("/") or method.count("/") != 2:
             raise ValueError("Use the full gRPC method path: /service/method")
         return self._hold(("rpc", method), matches)
+
+    @contextmanager
+    def delay_rpc(self, method: str, delay_sec: float):
+        """Sleep before forwarding every matching RPC for the duration of the block.
+
+        Unlike `hold_rpc`, every match is delayed rather than held once. Use this
+        to widen races (for example leader→follower Raft/Send) without blocking
+        commit progress forever.
+        """
+        if not method.startswith("/") or method.count("/") != 2:
+            raise ValueError("Use the full gRPC method path: /service/method")
+        if delay_sec < 0:
+            raise ValueError("delay_sec must be non-negative")
+        with self._lock:
+            if self._closed.is_set():
+                raise RuntimeError("Peer proxy is closed")
+            if method in self._rpc_delays:
+                raise RuntimeError(f"A delay is already configured for {method}")
+            self._rpc_delays[method] = delay_sec
+        try:
+            yield
+        finally:
+            with self._lock:
+                if self._rpc_delays.get(method) == delay_sec:
+                    del self._rpc_delays[method]
 
     def hold_snapshot_download(self, source_uri: str, collection: str, shard_id: int):
         """Hold this peer's download from the given source, collection, and shard.
@@ -233,6 +261,7 @@ class PeerProxy(grpc.GenericRpcHandler):
                 for gate in self._gates.values():
                     gate._arrived.cancel()
                 self._gates.clear()
+                self._rpc_delays.clear()
             await self._server.stop(0)
             await self._channel.close()
             if http_server is not None:
@@ -241,6 +270,10 @@ class PeerProxy(grpc.GenericRpcHandler):
                 http_server.server_close()
                 if http_thread is not None:
                     http_thread.join()
+
+    def _rpc_delay_sec(self, method: str):
+        with self._lock:
+            return self._rpc_delays.get(method)
 
     def service(self, handler_call_details):
         async def forward(request, context):
@@ -252,6 +285,10 @@ class PeerProxy(grpc.GenericRpcHandler):
                 except asyncio.CancelledError:
                     gate.cancelled.set()
                     raise
+
+            delay_sec = self._rpc_delay_sec(handler_call_details.method)
+            if delay_sec:
+                await asyncio.sleep(delay_sec)
 
             call = self._channel.unary_unary(handler_call_details.method)(
                 request,
