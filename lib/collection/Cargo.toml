@@ -19,6 +19,7 @@ staging = ["shard/staging"]
 
 [dev-dependencies]
 criterion = { workspace = true }
+exhaustive = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rand_distr = { workspace = true }
