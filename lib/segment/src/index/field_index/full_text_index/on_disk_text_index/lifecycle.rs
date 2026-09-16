@@ -144,8 +144,10 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         }
 
         // Through the shared helper: `document_length` subtracts the sentinels
-        // it inserts, so the two rules have to agree.
-        let phrase_matching = self.mutable_index.point_to_doc.is_some();
+        // it inserts, so the two rules have to agree. Read from the config like
+        // the other two callers, rather than from whether a container happens
+        // to be allocated, so that the two halves cannot drift apart.
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let str_tokens =
             FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
 

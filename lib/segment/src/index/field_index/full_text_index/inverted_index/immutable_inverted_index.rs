@@ -50,7 +50,10 @@ pub struct ImmutableInvertedIndex {
     ///
     /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
     /// so summing it never counts a deleted document. A zero can still be a
-    /// live document whose tokens were all filtered.
+    /// live document whose tokens were all filtered, but only until the index
+    /// is written out: `create` puts every point with no tokens into the "no
+    /// tokens" mask, so after a round trip through disk that document is
+    /// indistinguishable from a deleted one.
     pub point_to_doc_len: Option<Vec<u32>>,
     pub points_count: usize,
 }
@@ -412,11 +415,13 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             })
             .collect();
 
-        // Only pads a trailing point that was never given a length. The two
-        // are written as parallel files and indexed by point offset, so they
-        // have to stay the same length.
+        // The two are written as parallel files and indexed by point offset,
+        // so they have to stay the same length. Every writer already keeps them
+        // equal, since `index_str_tokens` is the only way in and it resizes
+        // both to `point_id + 1`; the resize is the release-build fallback for
+        // a writer that stops doing that.
         if let Some(lens) = point_to_doc_len.as_mut() {
-            debug_assert!(lens.len() <= point_to_tokens_count.len());
+            debug_assert_eq!(lens.len(), point_to_tokens_count.len());
             lens.resize(point_to_tokens_count.len(), 0);
         }
 

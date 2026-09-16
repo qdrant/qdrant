@@ -46,6 +46,16 @@ const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
+/// Whether a document length sidecar is on disk, without opening the index.
+///
+/// The scoring gate needs the answer *before* `open`, which populates the whole
+/// file set: on the first start after scoring is enabled every existing segment
+/// would otherwise fault in its postings, its vocabulary and its counts only to
+/// be discarded and rebuilt from payload.
+pub(in super::super) fn has_doc_len_sidecar(path: &Path) -> bool {
+    path.join(POINT_TO_DOC_LEN_FILE).exists()
+}
+
 /// Mmap-backed immutable full-text inverted index.
 ///
 /// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
@@ -145,8 +155,17 @@ impl OnDiskInvertedIndex<MmapFile> {
 
         // No segment total is written: deletions are applied on open, so it can
         // only be summed after masking.
-        if let Some(lens) = point_to_doc_len {
-            MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?;
+        match point_to_doc_len {
+            Some(lens) => MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?,
+            // Every other file here is rewritten in place, so this is the only
+            // one that could survive a rebuild. `open` would then read a
+            // previous build's lengths as this build's, at offsets that now
+            // belong to different documents. `save_deleted_mask` unlinks its
+            // own stale file for the same reason.
+            None => match fs_err::remove_file(&point_to_doc_len_path) {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+                result => result?,
+            },
         }
 
         Ok(())
@@ -284,12 +303,27 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // offsets).
         let total_count = point_to_tokens_count.len()? as usize;
 
-        // A sidecar shorter than the counts can only come from a partially
-        // copied file set. Treated as absent: padding it would give every point
-        // past the truncation a zero that reads like a real length.
+        // A sidecar that does not cover exactly the index's points can only
+        // come from a partially copied or stale file set, and is not trusted to
+        // locate lengths: a short one would have to be padded with zeroes that
+        // read like real lengths, and a long one would be silently truncated
+        // when it is materialized. Treated as absent, with a warning, the way
+        // `SortedBlockIndex::open` treats a stale block index.
         let point_to_doc_len = match point_to_doc_len {
-            Some(storage) if (storage.len()? as usize) < total_count => None,
-            other => other,
+            Some(storage) => {
+                let sidecar_count = storage.len()? as usize;
+                if sidecar_count == total_count {
+                    Some(storage)
+                } else {
+                    log::warn!(
+                        "Ignoring document length sidecar {path}: it covers {sidecar_count} \
+                         points while the index has {total_count}",
+                        path = point_to_doc_len_path.display(),
+                    );
+                    None
+                }
+            }
+            None => None,
         };
 
         let mut deleted = deleted_points.to_owned();
@@ -679,7 +713,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
         ];
-        // Listed only when it exists: this list feeds the snapshot file set.
+        // Listed only when the index loaded it, which is not the same as the
+        // file existing: one rejected at `open` is deliberately left out of the
+        // snapshot file set, since restoring it would only get it rejected
+        // again. `wipe` removes the directory rather than this list, so the
+        // rejected file does not outlive the index.
         if self.storage.point_to_doc_len.is_some() {
             files.push(self.path.join(POINT_TO_DOC_LEN_FILE));
         }
