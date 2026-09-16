@@ -115,8 +115,7 @@ def test_snapshot_download_gate_pauses_after_receiver_is_cleared(tmp_path, resta
         wait_for_peer_online(peer_uris[0])
         wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_uris)
         # Readiness does not mean the restarted peer has learned the new leader.
-        wait_for(leader_is_defined, peer_uris[0])
-        wait_for_uniform_cluster_status(peer_uris, get_leader(peer_uris[0]))
+        wait_for_uniform_cluster_status(peer_uris)
 
     with (
         peers[0].proxy.hold_snapshot_download(peer_uris[2], COLLECTION_NAME, 0) as gate,

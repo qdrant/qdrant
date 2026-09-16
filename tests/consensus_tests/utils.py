@@ -503,7 +503,19 @@ def check_cluster_size(peer_api_uri: str, expected_size: int, headers={}) -> boo
         return False
 
 
-def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str, headers={}) -> bool:
+def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: Optional[str] = None, headers={}) -> bool:
+    if expected_leader is None:
+        # Elections can change the leader between polls, especially after a restart.
+        if not peer_api_uris:
+            return False
+        try:
+            expected_leader = get_leader(peer_api_uris[0], headers=headers)
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {peer_api_uris[0]} to fetch cluster leader")
+            return False
+        if expected_leader in (None, 0):
+            return False
+
     expected_size = len(peer_api_uris)
     for uri in peer_api_uris:
         if check_leader(uri, expected_leader, headers=headers) and check_cluster_size(uri, expected_size, headers=headers):
@@ -792,7 +804,8 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, header
         raise e
 
 
-def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str, headers={}):
+def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: Optional[str] = None, headers={}):
+    """Wait for membership size and leader agreement, optionally requiring a specific leader."""
     try:
         wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader, headers=headers)
     except Exception as e:
