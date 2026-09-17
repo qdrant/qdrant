@@ -50,11 +50,8 @@ cd lib/edge/python
 python -m venv .venv
 source .venv/bin/activate
 
-pip install --user maturin
-
 # Build and install the package:
-cd lib/edge/python
-maturin develop --no-default-features
+uvx maturin develop --no-default-features
 
 # Run example:
 python examples/demo.py
