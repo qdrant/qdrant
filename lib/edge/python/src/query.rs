@@ -4,9 +4,10 @@ use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use edge::{Prefetch, QueryBatchRequest, QueryRequest};
 use ordered_float::OrderedFloat;
-use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, PyTypeInfo};
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, StartFrom};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::index::field_index::full_text_index::Bm25Params;
@@ -18,6 +19,7 @@ use shard::query::*;
 
 use super::*;
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 /// Queries executed together as one planned batch.
 #[pyclass(name = "QueryBatchRequest", from_py_object)]
@@ -245,6 +247,7 @@ impl<'py> IntoPyObject<'py> for &PyPrefetch {
     type Target = PyPrefetch;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyPrefetch::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -255,21 +258,27 @@ impl<'py> IntoPyObject<'py> for &PyPrefetch {
 #[repr(transparent)]
 pub struct PyScoringQuery(ScoringQuery);
 
+pub const SCORING_QUERY: Alias = Alias {
+    name: "ScoringQueryType",
+    definition: ScoringQueryHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum ScoringQueryHelper {
+    Vector(PyQuery),
+    Fusion(PyFusion),
+    OrderBy(PyOrderBy),
+    Formula(PyFormula),
+    Sample(PySample),
+    Mmr(PyMmr),
+    Text(PyTextQuery),
+}
+
 impl FromPyObject<'_, '_> for PyScoringQuery {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = SCORING_QUERY.hint();
 
     fn extract(query: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Vector(PyQuery),
-            Fusion(PyFusion),
-            OrderBy(PyOrderBy),
-            Formula(PyFormula),
-            Sample(PySample),
-            Mmr(PyMmr),
-            Text(PyTextQuery),
-        }
-
         fn _variants(query: ScoringQuery) {
             match query {
                 ScoringQuery::Vector(_) => {}
@@ -283,13 +292,19 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
         }
 
         let query = match query.extract()? {
-            Helper::Vector(query) => ScoringQuery::Vector(QueryEnum::from(query)),
-            Helper::Fusion(fusion) => ScoringQuery::Fusion(FusionInternal::from(fusion)),
-            Helper::OrderBy(order_by) => ScoringQuery::OrderBy(OrderBy::from(order_by)),
-            Helper::Formula(formula) => ScoringQuery::Formula(ParsedFormula::from(formula)),
-            Helper::Sample(sample) => ScoringQuery::Sample(SampleInternal::from(sample)),
-            Helper::Mmr(mmr) => ScoringQuery::Mmr(MmrInternal::from(mmr)),
-            Helper::Text(text) => ScoringQuery::Text(TextScoringQuery::from(text)),
+            ScoringQueryHelper::Vector(query) => ScoringQuery::Vector(QueryEnum::from(query)),
+            ScoringQueryHelper::Fusion(fusion) => {
+                ScoringQuery::Fusion(FusionInternal::from(fusion))
+            }
+            ScoringQueryHelper::OrderBy(order_by) => ScoringQuery::OrderBy(OrderBy::from(order_by)),
+            ScoringQueryHelper::Formula(formula) => {
+                ScoringQuery::Formula(ParsedFormula::from(formula))
+            }
+            ScoringQueryHelper::Sample(sample) => {
+                ScoringQuery::Sample(SampleInternal::from(sample))
+            }
+            ScoringQueryHelper::Mmr(mmr) => ScoringQuery::Mmr(MmrInternal::from(mmr)),
+            ScoringQueryHelper::Text(text) => ScoringQuery::Text(TextScoringQuery::from(text)),
         };
 
         Ok(Self(query))
@@ -300,17 +315,19 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = SCORING_QUERY.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            ScoringQuery::Vector(vector) => PyQuery(vector).into_bound_py_any(py),
-            ScoringQuery::Fusion(fusion) => PyFusion::from(fusion).into_bound_py_any(py),
-            ScoringQuery::OrderBy(order_by) => PyOrderBy(order_by).into_bound_py_any(py),
-            ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
-            ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
-            ScoringQuery::Mmr(mmr) => PyMmr(mmr).into_bound_py_any(py),
-            ScoringQuery::Text(text) => PyTextQuery(text).into_bound_py_any(py),
+            ScoringQuery::Vector(vector) => ScoringQueryHelper::Vector(PyQuery(vector)),
+            ScoringQuery::Fusion(fusion) => ScoringQueryHelper::Fusion(fusion.into()),
+            ScoringQuery::OrderBy(order_by) => ScoringQueryHelper::OrderBy(PyOrderBy(order_by)),
+            ScoringQuery::Formula(formula) => ScoringQueryHelper::Formula(PyFormula(formula)),
+            ScoringQuery::Sample(sample) => ScoringQueryHelper::Sample(sample.into()),
+            ScoringQuery::Mmr(mmr) => ScoringQueryHelper::Mmr(PyMmr(mmr)),
+            ScoringQuery::Text(text) => ScoringQueryHelper::Text(PyTextQuery(text)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -318,6 +335,7 @@ impl<'py> IntoPyObject<'py> for &PyScoringQuery {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = SCORING_QUERY.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -501,17 +519,23 @@ impl From<PyDirection> for Direction {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyStartFrom(StartFrom);
 
+pub const START_FROM: Alias = Alias {
+    name: "StartFromType",
+    definition: StartFromHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject)]
+enum StartFromHelper {
+    Integer(IntPayloadType),
+    Float(FloatPayloadType),
+    DateTime(String),
+}
+
 impl FromPyObject<'_, '_> for PyStartFrom {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = START_FROM.hint();
 
     fn extract(start_from: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Integer(IntPayloadType),
-            Float(FloatPayloadType),
-            DateTime(String),
-        }
-
         fn _variants(start_from: StartFrom) {
             match start_from {
                 StartFrom::Integer(_) => {}
@@ -521,9 +545,9 @@ impl FromPyObject<'_, '_> for PyStartFrom {
         }
 
         let start_from = match start_from.extract()? {
-            Helper::Integer(int) => StartFrom::Integer(int),
-            Helper::Float(float) => StartFrom::Float(float),
-            Helper::DateTime(date_time) => {
+            StartFromHelper::Integer(int) => StartFrom::Integer(int),
+            StartFromHelper::Float(float) => StartFrom::Float(float),
+            StartFromHelper::DateTime(date_time) => {
                 let date_time = date_time.parse().map_err(|err| {
                     PyValueError::new_err(format!("failed to parse date-time: {err}"))
                 })?;
@@ -540,6 +564,7 @@ impl<'py> IntoPyObject<'py> for PyStartFrom {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = START_FROM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -550,6 +575,7 @@ impl<'py> IntoPyObject<'py> for &PyStartFrom {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = START_FROM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {

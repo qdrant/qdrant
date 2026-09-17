@@ -5,10 +5,12 @@ use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
 use crate::repr::*;
+use crate::type_hint::ANY;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -29,6 +31,7 @@ impl PyValue {
 
 impl FromPyObject<'_, '_> for PyValue {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = ANY;
 
     fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
@@ -72,6 +75,7 @@ impl<'py> IntoPyObject<'py> for PyValue {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = ANY;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -82,6 +86,7 @@ impl<'py> IntoPyObject<'py> for &PyValue {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = ANY;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {

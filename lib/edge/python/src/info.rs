@@ -5,6 +5,8 @@ use std::mem;
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use edge::ShardInfo;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::PayloadIndexInfo;
@@ -108,6 +110,7 @@ impl<'py> IntoPyObject<'py> for &PyPayloadIndexInfo {
     type Target = PyPayloadIndexInfo;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyPayloadIndexInfo::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         IntoPyObject::into_pyobject(self.clone(), py)
