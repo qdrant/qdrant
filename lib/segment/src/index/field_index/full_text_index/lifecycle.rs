@@ -114,8 +114,9 @@ impl FullTextIndex {
     pub fn builder_gridstore(
         dir: PathBuf,
         config: TextIndexParams,
+        scoring: bool,
     ) -> FullTextGridstoreIndexBuilder {
-        FullTextGridstoreIndexBuilder::new(dir, config)
+        FullTextGridstoreIndexBuilder::new(dir, config, scoring)
     }
 
     /// Tokenize a point's text values into the token stream the index is built
@@ -305,10 +306,11 @@ impl PayloadFieldIndex for FullTextIndex {
 }
 
 impl FullTextGridstoreIndexBuilder {
-    pub fn new(dir: PathBuf, config: TextIndexParams) -> Self {
+    pub fn new(dir: PathBuf, config: TextIndexParams, scoring: bool) -> Self {
         Self {
             dir,
             config,
+            scoring,
             index: None,
         }
     }
@@ -350,15 +352,18 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
             self.index.is_none(),
             "index must be initialized exactly once",
         );
-        self.index.replace(
-            FullTextIndex::new_gridstore(self.dir.clone(), self.config.clone(), true)?.ok_or_else(
-                || {
-                    OperationError::service_error(
-                        "Failed to create and open mutable full text index on gridstore",
-                    )
-                },
-            )?,
-        );
+        let index = MutableFullTextIndex::open_gridstore(
+            self.dir.clone(),
+            self.config.clone(),
+            true,
+            self.scoring,
+        )?
+        .ok_or_else(|| {
+            OperationError::service_error(
+                "Failed to create and open mutable full text index on gridstore",
+            )
+        })?;
+        self.index.replace(FullTextIndex::Mutable(index));
         Ok(())
     }
 

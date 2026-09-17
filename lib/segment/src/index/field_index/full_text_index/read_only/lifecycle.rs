@@ -9,6 +9,7 @@ use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::has_doc_len_sidecar;
 use crate::index::payload_config::IndexMutability;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
@@ -84,12 +85,33 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let populate = Populate::from(!effective_is_on_disk);
+        let scoring = config.scoring();
+
+        // Same probe as `new_mmap`, same answer: an index that records no
+        // lengths under scoring is not an index. This side cannot rebuild, so
+        // `None` drops the field until the writer has, which is already what
+        // happens for any other missing file. Opening it instead would answer
+        // `None` per point here and real lengths on the writer.
+        if scoring && !has_doc_len_sidecar(&path) {
+            log::info!(
+                "Text index at {path} records no document lengths, not opened read-only",
+                path = path.display(),
+            );
+            return Ok(None);
+        }
 
         let Some(on_disk_index) =
             OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
         else {
             return Ok(None);
         };
+
+        // Reachable past the probe when the sidecar exists but `open` rejected
+        // it, so the log says which of the two happened.
+        if scoring && !on_disk_index.records_doc_len() {
+            log::info!("Text index rejected its document length sidecar, not opened read-only");
+            return Ok(None);
+        }
 
         let index = if effective_is_on_disk {
             Self::OnDisk(on_disk_index)
