@@ -59,6 +59,8 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
+    use super::info::{PyPayloadIndexInfo, PyShardInfo};
+    #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest, PyQueryRequest,
         PySample,
