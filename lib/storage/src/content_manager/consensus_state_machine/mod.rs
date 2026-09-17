@@ -38,7 +38,7 @@ use collection::shards::CollectionId;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
-use segment::types::HnswConfig;
+use segment::types::{HnswConfig, ShardKey};
 
 pub use self::action::{Action, CollectionConfigDiff, apply_collection_config_diffs};
 pub use self::state::ClusterState;
@@ -131,11 +131,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                // TODO:
-                //
-                // Replica changes remove a replica *and* abort its transfers and resharding,
-                // so they need `Transfer::Abort`/`Resharding::Abort` to be implemented first
-
+                // TODO: Removing replica may abort transfers and resharding, which are not implemented yet
                 if operation.has_shard_replica_changes() {
                     ApplyOutcome::NotCovered
                 } else {
@@ -147,15 +143,26 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
             }
 
-            CollectionMetaOperations::CreateShardKey(_)
-            | CollectionMetaOperations::DropShardKey(_)
-            | CollectionMetaOperations::SetShardReplicaState(_)
-            | CollectionMetaOperations::TransferShard(_, _)
-            | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
-
             CollectionMetaOperations::ChangeAliases(operation) => {
                 ApplyOutcome::new(self.state.plan_change_aliases(operation))
             }
+
+            CollectionMetaOperations::CreateShardKey(operation) => {
+                ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
+            }
+
+            CollectionMetaOperations::DropShardKey(operation) => {
+                // TODO: Dropping shard key may abort resharding, which are not implemented yet
+                if self.is_reshardng(&operation.collection_name, Some(&operation.shard_key)) {
+                    ApplyOutcome::NotCovered
+                } else {
+                    ApplyOutcome::new(self.state.plan_drop_shard_key(operation))
+                }
+            }
+
+            CollectionMetaOperations::SetShardReplicaState(_)
+            | CollectionMetaOperations::TransferShard(_, _)
+            | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
@@ -182,6 +189,22 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])
             }
         }
+    }
+
+    fn is_reshardng(&self, collection: &str, shard_key: Option<&ShardKey>) -> bool {
+        let Ok(collection_name) = self.state.resolve_collection(collection) else {
+            return false;
+        };
+
+        let Some(collection) = self.state.collection(&collection_name) else {
+            return false;
+        };
+
+        let Some(resharding) = collection.resharding.as_ref() else {
+            return false;
+        };
+
+        resharding.shard_key.as_ref() == shard_key
     }
 }
 

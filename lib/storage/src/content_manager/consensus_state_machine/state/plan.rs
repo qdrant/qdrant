@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use collection::collection::vector_name_schema;
 use collection::collection_state::ShardInfo;
+use collection::config::ShardingMethod;
 use collection::operations::types::PeerMetadata;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::shard::PeerId;
+use collection::shards::shard::{PeerId, ShardId};
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -276,6 +277,153 @@ impl ClusterState {
             collection,
             field_name: field_name.clone(),
         }])
+    }
+
+    pub fn plan_create_shard_key(
+        &self,
+        context: &NodeContext,
+        op: &CreateShardKey,
+    ) -> StorageResult<Actions> {
+        let CreateShardKey {
+            collection_name,
+            shard_key,
+            placement,
+            initial_state,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+        let collection_state = self.collection(&collection).expect("collection exists");
+
+        let sharding_method = collection_state
+            .config
+            .params
+            .sharding_method
+            .unwrap_or_default();
+
+        if sharding_method != ShardingMethod::Custom {
+            return Err(StorageError::bad_request(format!(
+                "Shard Key {shard_key} cannot be created with Auto sharding method"
+            )));
+        }
+
+        if collection_state.shards_key_mapping.contains_key(shard_key) {
+            return Err(StorageError::bad_request(format!(
+                "Shard key {shard_key} already exists"
+            )));
+        }
+
+        // TODO: Check that nested *replica* placement lists are not empty (e.g., `[[], [], []]`)
+
+        if placement.is_empty() {
+            return Err(StorageError::bad_request(format!(
+                "Shard key {shard_key} placement cannot be empty"
+            )));
+        }
+
+        let unknown_peers: Vec<_> = placement
+            .iter()
+            .flatten()
+            .filter(|peer_id| !self.peer_address_by_id.contains_key(peer_id))
+            .collect();
+
+        if !unknown_peers.is_empty() {
+            return Err(StorageError::bad_request(format!(
+                "Shard Key {shard_key} placement contains unknown peers: {unknown_peers:?}"
+            )));
+        }
+
+        let max_id = collection_state
+            .shards_key_mapping
+            .iter_shard_ids()
+            .max()
+            .unwrap_or(0);
+
+        let base_id = max_id + 1;
+
+        let init_state = initial_state.unwrap_or_else(|| {
+            if context.is_distributed
+                && self.all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE)
+            {
+                ReplicaState::Initializing
+            } else {
+                ReplicaState::Active
+            }
+        });
+
+        let shards: Vec<_> = placement
+            .iter()
+            .enumerate()
+            .map(|(idx, replicas)| (base_id + idx as ShardId, replicas.clone(), init_state))
+            .collect();
+
+        let mut actions: Actions = shards
+            .iter()
+            .map(|&(shard_id, ref replicas, init_state)| {
+                // inhibit rustfmt
+                Action::CreateShard {
+                    collection: collection.clone(),
+                    shard_id,
+                    shard_key: Some(shard_key.clone()),
+                    replicas: replicas.clone(),
+                    init_state,
+                }
+            })
+            .collect();
+
+        actions.push(Action::RegisterShards {
+            collection,
+            shard_key: Some(shard_key.clone()),
+            shards,
+        });
+
+        Ok(actions)
+    }
+
+    pub fn plan_drop_shard_key(&self, op: &DropShardKey) -> StorageResult<Actions> {
+        let DropShardKey {
+            collection_name,
+            shard_key,
+        } = op;
+
+        let collection = self.resolve_collection(collection_name)?;
+        let collection_state = self.collection(&collection).expect("collection exists");
+
+        let sharding_method = collection_state
+            .config
+            .params
+            .sharding_method
+            .unwrap_or_default();
+
+        if sharding_method != ShardingMethod::Custom {
+            return Err(StorageError::bad_request(format!(
+                "shard key {shard_key} cannot be removed with Auto sharding method"
+            )));
+        }
+
+        let Some(shard_ids) = collection_state.shards_key_mapping.get(shard_key) else {
+            return Ok(Actions::new());
+        };
+
+        let mut shard_ids: Vec<_> = shard_ids.iter().copied().collect();
+        shard_ids.sort_unstable();
+
+        let mut actions = vec![
+            Action::InvalidateCleanLocalShards {
+                collection: collection.clone(),
+                shard_ids: shard_ids.clone(),
+            },
+            Action::RemoveShardKey {
+                collection: collection.clone(),
+                shard_key: shard_key.clone(),
+            },
+        ];
+
+        actions.extend(shard_ids.into_iter().map(|shard_id| Action::DropShard {
+            collection: collection.clone(),
+            shard_id,
+        }));
+
+        Ok(actions)
     }
 
     pub fn plan_update_peer_metadata(&self, peer_id: PeerId, metadata: &PeerMetadata) -> Actions {

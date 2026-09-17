@@ -2,19 +2,21 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use collection::collection_state;
+use collection::collection_state::{self, ShardInfo};
 use collection::config::ShardingMethod;
 use collection::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use collection::operations::types::{
     PeerMetadata, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
 };
 use collection::shards::CollectionId;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use proptest::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vector_name_config::*;
 use segment::json_path::JsonPath;
 use segment::types::*;
+use tonic::transport::Uri;
 
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
@@ -23,7 +25,10 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::quota::QuotaConfig;
-use crate::types::PeerMetadataById;
+use crate::types::{PeerAddressById, PeerMetadataById};
+
+const PEER_IDS: &[PeerId] = &[PEER_ID, OTHER_PEER_ID];
+const PEER_VERSIONS: &[&str] = &["1.14.0", "1.15.0"];
 
 const COLLECTION_NAMES: &[&str] = &["alpha", "beta", "gamma"];
 const MISSING_COLLECTION_NAME: &str = "missing";
@@ -31,12 +36,10 @@ const MISSING_COLLECTION_NAME: &str = "missing";
 const ALIAS_NAMES: &[&str] = &["primary", "secondary"];
 const DANGLING_ALIAS_NAME: &str = "dangling";
 
+const SHARD_KEYS: &[&str] = &["north", "south"];
+
 const VECTOR_NAMES: &[&str] = &["", "text", "image"];
 const FIELD_NAMES: &[&str] = &["city", "count", "nested.key"];
-
-/// This node, and one other peer
-const PEER_IDS: &[PeerId] = &[PEER_ID, OTHER_PEER_ID];
-const PEER_VERSIONS: &[&str] = &["1.14.0", "1.15.0"];
 
 const METADATA_KEYS: &[&str] = &["region", "tier"];
 
@@ -44,9 +47,9 @@ pub fn arb_state_and_operation() -> impl Strategy<Value = (ClusterState, Consens
     arb_cluster_state().prop_flat_map(|state| {
         let collections = state.collections.keys().cloned();
         let aliases = state.aliases.iter().map(|(alias, _)| alias.clone());
-
         let names = collections.chain(aliases).collect();
-        let operations = arb_consensus_operation(names);
+        let peers = state.peer_address_by_id.keys().copied().collect();
+        let operations = arb_consensus_operation(names, peers);
 
         (Just(state), operations)
     })
@@ -65,21 +68,29 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
         let state = (
             Just(collections),
             arb_aliases(names),
+            arb_peer_address_by_id(),
             arb_peer_metadata_by_id(),
             arb_cluster_metadata(),
             arb_quota_config(),
         );
 
         state.prop_map(|state| {
-            let (collections, aliases, peer_metadata_by_id, cluster_metadata, quota_config) = state;
+            let (
+                collections,
+                aliases,
+                peer_address_by_id,
+                peer_metadata_by_id,
+                cluster_metadata,
+                quota_config,
+            ) = state;
 
             ClusterState {
                 collections,
                 aliases,
+                peer_address_by_id,
                 peer_metadata_by_id,
                 cluster_metadata,
                 quota_config,
-                ..Default::default()
             }
         })
     })
@@ -88,11 +99,48 @@ pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
 fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
     let vectors =
         proptest::collection::btree_map(arb_vector_name(), arb_vector_name_config(), 0..3);
+
+    let sharding_method = proptest::option::of(prop_oneof![
+        Just(ShardingMethod::Auto),
+        Just(ShardingMethod::Custom),
+    ]);
+
+    let replicas = proptest::collection::vec(arb_peer_id(), 1..3);
+    let shard_key = arb_shard_key();
+    let shards = proptest::collection::vec((replicas, shard_key), 0..3);
+
     let indexes = proptest::collection::hash_map(arb_field_name(), arb_field_schema(), 0..3);
 
-    (vectors, indexes).prop_map(|(vectors, indexes)| {
+    let state = (vectors, sharding_method, indexes, shards);
+
+    state.prop_map(|state| {
+        let (vectors, sharding_method, indexes, shards) = state;
+
         let mut state = collection_state(vectors.into_iter().collect());
+        state.config.params.sharding_method = sharding_method;
         state.payload_index_schema.schema = indexes;
+
+        let is_custom_sharding = sharding_method.unwrap_or_default() == ShardingMethod::Custom;
+
+        for (shard_id, (replicas, shard_key)) in shards.into_iter().enumerate() {
+            let shard_id = shard_id as ShardId;
+
+            let replicas = replicas
+                .into_iter()
+                .map(|peer_id| (peer_id, ReplicaState::Active))
+                .collect();
+
+            state.shards.insert(shard_id, ShardInfo { replicas });
+
+            if is_custom_sharding {
+                state
+                    .shards_key_mapping
+                    .entry(shard_key)
+                    .or_default()
+                    .insert(shard_id);
+            }
+        }
+
         state
     })
 }
@@ -127,6 +175,15 @@ fn arb_peer_metadata_by_id() -> impl Strategy<Value = PeerMetadataById> {
     proptest::collection::hash_map(arb_peer_id(), arb_peer_metadata(), 0..3)
 }
 
+fn arb_peer_address_by_id() -> impl Strategy<Value = PeerAddressById> {
+    proptest::collection::hash_set(arb_peer_id(), 0..3).prop_map(|peer_ids| {
+        peer_ids
+            .into_iter()
+            .map(|peer_id| (peer_id, peer_address(peer_id)))
+            .collect()
+    })
+}
+
 fn arb_peer_id() -> impl Strategy<Value = PeerId> {
     proptest::sample::select(PEER_IDS)
 }
@@ -134,6 +191,19 @@ fn arb_peer_id() -> impl Strategy<Value = PeerId> {
 fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
     proptest::sample::select(PEER_VERSIONS)
         .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
+}
+
+fn peer_address(peer_id: PeerId) -> Uri {
+    format!("http://peer-{peer_id}")
+        .parse()
+        .expect("valid peer URI")
+}
+
+fn arb_shard_key() -> impl Strategy<Value = ShardKey> {
+    prop_oneof![
+        proptest::sample::select(SHARD_KEYS).prop_map(ShardKey::from),
+        (1_u64..=2).prop_map(ShardKey::from),
+    ]
 }
 
 /// Cluster metadata never holds a null value: that is how a key is removed
@@ -170,13 +240,14 @@ fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
 
 pub fn arb_consensus_operation(
     collection_names: Vec<String>,
+    peer_ids: Vec<PeerId>,
 ) -> impl Strategy<Value = ConsensusOperations> {
-    let collection_meta = arb_collection_meta_operation(collection_names)
+    let collection_meta = arb_collection_meta_operation(collection_names, peer_ids)
         .prop_map(|operation| ConsensusOperations::CollectionMeta(Box::new(operation)));
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        9 => collection_meta,
+        11 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -185,6 +256,7 @@ pub fn arb_consensus_operation(
 
 fn arb_collection_meta_operation(
     mut collection_names: Vec<String>,
+    peer_ids: Vec<PeerId>,
 ) -> impl Strategy<Value = CollectionMetaOperations> {
     collection_names.push(MISSING_COLLECTION_NAME.into());
 
@@ -194,11 +266,59 @@ fn arb_collection_meta_operation(
         arb_update_collection(collection_names.clone()),
         arb_delete_collection(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
+        arb_create_shard_key(collection_names.clone(), peer_ids),
+        arb_drop_shard_key(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
+}
+
+fn arb_drop_shard_key(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection_name = arb_collection_name(collections);
+    let shard_key = arb_shard_key();
+
+    (collection_name, shard_key).prop_map(|(collection_name, shard_key)| {
+        CollectionMetaOperations::DropShardKey(DropShardKey {
+            collection_name,
+            shard_key,
+        })
+    })
+}
+
+fn arb_create_shard_key(
+    collections: Vec<String>,
+    mut peer_ids: Vec<PeerId>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    // An empty peer map cannot produce a valid placement. Keep generating placement so those
+    // states exercise unknown-peer rejection as well as the empty-placement check.
+    if peer_ids.is_empty() {
+        peer_ids.extend(PEER_IDS);
+    }
+
+    let collection_name = arb_collection_name(collections);
+    let shard_key = arb_shard_key();
+    let placement = proptest::collection::vec(
+        proptest::collection::vec(proptest::sample::select(peer_ids), 1..3),
+        0..3,
+    );
+    let initial_state = proptest::option::of(proptest::sample::select(vec![
+        ReplicaState::Active,
+        ReplicaState::Initializing,
+        ReplicaState::Partial,
+    ]));
+
+    (collection_name, shard_key, placement, initial_state).prop_map(
+        |(collection_name, shard_key, placement, initial_state)| {
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name,
+                shard_key,
+                placement,
+                initial_state,
+            })
+        },
+    )
 }
 
 fn arb_update_peer_metadata() -> impl Strategy<Value = ConsensusOperations> {

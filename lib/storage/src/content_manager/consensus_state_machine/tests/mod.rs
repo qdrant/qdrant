@@ -4,6 +4,7 @@ mod context;
 mod ops;
 mod prop;
 mod replay;
+mod state;
 
 use std::num::NonZeroU32;
 

@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::LazyLock;
 
 use collection::collection::AbortReshardingScope;
 use collection::collection_state;
@@ -21,9 +20,6 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::apply_collection_config_diffs;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-
-static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
-    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
