@@ -34,8 +34,10 @@ def peer_is_removed_from_cluster_and_transfers(peer_api_uri: str, removed_peer_i
 
 
 @pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
-def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, transfer_method):
+@pytest.mark.parametrize("stop_source", [False, True], ids=["source-running", "source-stopped"])
+def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, transfer_method, stop_source):
     peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, use_peer_proxy=True)
+    source = processes[-1]
 
     create_collection(peer_api_uris[0], shard_number=2, replication_factor=3, write_consistency_factor=3)
     wait_collection_exists_and_active_on_all_peers(
@@ -90,6 +92,16 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, trans
         # Survivor-to-survivor recovery is allowed while the old request is held.
         for uri in survivors:
             wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
+
+        if stop_source:
+            # Membership removal does not prove that the source has stopped work.
+            # Wait for process exit before releasing the request so recovery cannot
+            # use a snapshot or WAL delta from the removed source.
+            source.kill()
+            processes.remove(source)
+        else:
+            # Also cover removal while the old source can still finish in-flight work.
+            assert source.proc.poll() is None
 
     # Removal alone is not success. Both survivors must finish recovery and keep
     # every point, including dense vectors, sparse vectors, and payloads.
