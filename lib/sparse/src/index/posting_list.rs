@@ -53,6 +53,23 @@ impl PostingList {
     /// Worst case is adding a new element at the end of the list with a very large weight.
     /// This forces to propagate it as potential max_next_weight to all the previous elements.
     pub fn upsert(&mut self, posting_element: PostingElementEx) {
+        // Fast path: a record id past every id already stored. This is what a sequential
+        // upload does for every single point, and it avoids a binary search that walks
+        // `log2(len)` cache lines of a list that can be millions of elements long.
+        match self.elements.last() {
+            None => {
+                // `max_next_weight` of a lone element is already `DEFAULT_MAX_NEXT_WEIGHT`
+                self.elements.push(posting_element);
+                return;
+            }
+            Some(last) if last.record_id < posting_element.record_id => {
+                self.elements.push(posting_element);
+                self.propagate_max_next_weight_to_the_left(self.elements.len() - 1);
+                return;
+            }
+            Some(_) => {}
+        }
+
         // find insertion point in sorted posting list (most expensive operation for large posting list)
         let index = self
             .elements
@@ -103,6 +120,13 @@ impl PostingList {
 
         // propagate max_next_weight update to the previous entries
         for element in self.elements[..up_to_index].iter_mut().rev() {
+            // Every entry holds `max_next_weight[i] = max(max_next_weight[i + 1], weight[i + 1])`,
+            // the same recurrence this loop walks. So once an entry already holds the value we
+            // are about to write, every entry further left is already correct too and the
+            // propagation can stop -- which is what the doc comment above always promised.
+            if element.max_next_weight == max_next_weight {
+                return;
+            }
             // update max_next_weight for element
             element.max_next_weight = max_next_weight;
             max_next_weight = max_next_weight.max(element.weight);
@@ -547,6 +571,89 @@ mod tests {
                 std::iter::zip(&posting_list1.elements, &posting_list2.elements,)
                     .all(|(e1, e2)| e1.max_next_weight >= e2.max_next_weight),
             );
+        }
+    }
+
+    /// Appending a weight that is already dominated by what follows an entry must leave
+    /// that entry — and everything before it — untouched. This is what lets
+    /// `propagate_max_next_weight_to_the_left` stop instead of walking the whole list on
+    /// every insert.
+    #[test]
+    fn test_upsert_append_stops_propagating_early() {
+        let mut builder = PostingBuilder::new();
+        builder.add(1, 1.0);
+        builder.add(2, 9.0);
+        builder.add(3, 2.0);
+
+        let mut posting_list = builder.build();
+
+        assert_eq!(posting_list.elements[0].max_next_weight, 9.0);
+        assert_eq!(posting_list.elements[1].max_next_weight, 2.0);
+
+        // 0.5 is smaller than the 2.0 already ahead of element 1, so only the entry that
+        // used to be last can change.
+        posting_list.upsert(PostingElementEx::new(4, 0.5));
+
+        assert_eq!(posting_list.elements[0].max_next_weight, 9.0);
+        assert_eq!(posting_list.elements[1].max_next_weight, 2.0);
+        assert_eq!(posting_list.elements[2].max_next_weight, 0.5);
+        assert_eq!(
+            posting_list.elements[3].max_next_weight,
+            DEFAULT_MAX_NEXT_WEIGHT
+        );
+    }
+
+    /// A posting list grown with `upsert` must be exactly what `PostingBuilder` produces
+    /// for the same elements, `max_next_weight` included — that equivalence is what the
+    /// early exit relies on, and it is also what a segment reload assumes, since loading
+    /// rebuilds the index through the builder while an upload grows it through `upsert`.
+    #[test]
+    fn test_upsert_matches_builder() {
+        use rand::RngExt;
+        use rand::seq::SliceRandom;
+        let mut rng = rand::rng();
+        for _ in 0..100 {
+            let mut ids = Vec::new();
+            let mut cur_id = 0;
+            for _ in 0..64 {
+                cur_id += rng.random_range(1..10);
+                ids.push(cur_id);
+            }
+            let weights: Vec<DimWeight> = (0..ids.len())
+                .map(|_| rng.random_range(0..100) as f32 / 10.0)
+                .collect();
+
+            let mut builder = PostingBuilder::new();
+            for (&id, &weight) in ids.iter().zip(&weights) {
+                builder.add(id, weight);
+            }
+            let expected = builder.build();
+
+            // ascending ids, which is what an upload does
+            let mut appended = PostingList::default();
+            for (&id, &weight) in ids.iter().zip(&weights) {
+                appended.upsert(PostingElementEx::new(id, weight));
+            }
+            assert_eq!(appended, expected);
+
+            // shuffled ids, so the inserts land in the middle of the list
+            let mut order = (0..ids.len()).collect_vec();
+            order.shuffle(&mut rng);
+            let mut shuffled = PostingList::default();
+            for &i in &order {
+                shuffled.upsert(PostingElementEx::new(ids[i], weights[i]));
+            }
+            assert_eq!(shuffled, expected);
+
+            // overwriting every weight in place must converge on the same list
+            let mut overwritten = PostingList::default();
+            for (&id, &weight) in ids.iter().zip(&weights) {
+                overwritten.upsert(PostingElementEx::new(id, weight + 1.0));
+            }
+            for &i in &order {
+                overwritten.upsert(PostingElementEx::new(ids[i], weights[i]));
+            }
+            assert_eq!(overwritten, expected);
         }
     }
 }
