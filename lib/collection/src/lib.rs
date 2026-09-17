@@ -14,6 +14,7 @@ pub mod recommendations;
 pub mod shards;
 pub mod telemetry;
 mod update_handler;
+pub mod wal_ack_pin;
 pub mod wal_delta;
 
 pub mod events;
