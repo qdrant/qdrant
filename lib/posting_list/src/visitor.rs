@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 use crate::iterator::PostingIterator;
 use crate::value_handler::{PostingValue, ValueHandler};
 use crate::view::PostingListView;
-use crate::{CHUNK_LEN, PostingElement};
+use crate::{CHUNK_LEN, PostingElement, PostingLen, SizedTypeFor};
 
 /// A visitor for a posting list which caches the latest decompressed chunk of ids.
 pub struct PostingVisitor<'a, V: PostingValue> {
@@ -134,6 +134,34 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
     }
 
     pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<V>> {
+        self.with_raw_element(offset, |id, sized_value, next_sized_value, var_data| {
+            let value = V::Handler::get_value(sized_value, next_sized_value, var_data);
+            PostingElement { id, value }
+        })
+    }
+
+    /// The id at `offset` and the byte length of its value, without reading
+    /// the value. See [`ValueHandler::value_len`].
+    pub(crate) fn value_len_by_offset(&mut self, offset: usize) -> Option<PostingLen> {
+        self.with_raw_element(offset, |id, sized_value, next_sized_value, var_data| {
+            let value_len = V::Handler::value_len(sized_value, next_sized_value, var_data.len());
+            PostingLen { id, value_len }
+        })
+    }
+
+    /// Resolve `offset` to its id, its sized value, a lookup for the next sized
+    /// value, and the variable-size data, and hand them to `f`. The two readers
+    /// above differ only in what they do with those.
+    fn with_raw_element<R>(
+        &mut self,
+        offset: usize,
+        f: impl FnOnce(
+            PointOffsetType,
+            SizedTypeFor<V>,
+            &dyn Fn() -> Option<SizedTypeFor<V>>,
+            &[u8],
+        ) -> R,
+    ) -> Option<R> {
         let chunk_idx = offset / CHUNK_LEN;
         let local_offset = offset % CHUNK_LEN;
 
@@ -161,23 +189,23 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
                     .or_else(|| self.list.get_remainder(0).map(|e| e.value))
             };
 
-            let value =
-                V::Handler::get_value(sized_value, next_sized_value, self.list.var_size_data);
-
-            return Some(PostingElement { id, value });
+            return Some(f(
+                id,
+                sized_value,
+                &next_sized_value,
+                self.list.var_size_data,
+            ));
         }
 
         // else, get from remainder
-        self.list.get_remainder(local_offset).map(|e| {
-            let id = e.id;
-            let next_sized_value = || self.list.get_remainder(local_offset + 1).map(|r| r.value);
-            let value = V::Handler::get_value(e.value, next_sized_value, self.list.var_size_data);
-
-            PostingElement {
-                id: id.get(),
-                value,
-            }
-        })
+        let e = self.list.get_remainder(local_offset)?;
+        let next_sized_value = || self.list.get_remainder(local_offset + 1).map(|r| r.value);
+        Some(f(
+            e.id.get(),
+            e.value,
+            &next_sized_value,
+            self.list.var_size_data,
+        ))
     }
 }
 

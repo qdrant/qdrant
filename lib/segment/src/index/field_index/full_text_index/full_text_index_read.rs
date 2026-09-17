@@ -4,13 +4,14 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 
+use super::inverted_index::bm25::{Bm25Params, Bm25Query, Bm25Term};
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::data_types::query_context::TextFieldStats;
+use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -86,6 +87,55 @@ fn is_tokenized<T: FullTextIndexRead>(index: &T, term: &str) -> bool {
     tokens == [term]
 }
 
+/// Score `terms` against one segment by BM25 and return the `limit` best
+/// documents, highest first.
+///
+/// `terms` are resolved to this segment's token ids; a term the segment never
+/// saw contributes nothing. Their `IDF` and the average document length come
+/// from `context`, which was gathered over every segment of the shard, so a
+/// document scores the same whichever segment holds it. **Seeded terms must
+/// already be tokenized**, for the same reason as in [`fill_text_statistics`].
+///
+/// `accept` decides which documents may be scored at all: the id tracker's
+/// deletions and any outer filter. Deletions the index itself knows about are
+/// applied inside.
+#[allow(clippy::too_many_arguments)]
+pub fn score_bm25<T: FullTextIndexRead>(
+    index: &T,
+    terms: &[String],
+    context: &TextQueryContext<'_>,
+    params: Bm25Params,
+    accept: &dyn Fn(PointOffsetType) -> bool,
+    limit: usize,
+    is_stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    debug_assert!(
+        terms.iter().all(|term| is_tokenized(index, term)),
+        "query terms must already be tokenized",
+    );
+
+    let mut resolved = Vec::with_capacity(terms.len());
+    index.for_each_token_id(
+        terms.iter().enumerate().map(|(i, term)| (i, term.as_str())),
+        hw_counter,
+        |i, token_id| {
+            if let Some(token_id) = token_id {
+                resolved.push(Bm25Term {
+                    token_id,
+                    idf: context.idf(&terms[i]),
+                });
+            }
+        },
+    )?;
+    if resolved.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query = Bm25Query::new(resolved, params, context.avg_doc_len());
+    index.score_bm25(&query, accept, limit, is_stopped, hw_counter)
+}
+
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
     /// All query tokens must be present in the document (any order).
@@ -151,6 +201,20 @@ pub trait FullTextIndexRead {
     /// token. A value that tokenizes to nothing is in neither, so the ratio
     /// does not move with the storage placement.
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. `query` carries corpus-wide `IDF` and `avgdl`
+    /// and this segment's token ids; see [`score_bm25`] for how it is built.
+    /// An index built without positions cannot compute term frequencies and
+    /// reports an error.
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     /// Documents in this segment containing `token_id`: `df(t)` before it is
     /// summed across segments. `None` when the token is not in the vocabulary.

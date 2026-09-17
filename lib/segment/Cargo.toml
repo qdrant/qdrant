@@ -231,3 +231,7 @@ harness = false
 [[bench]]
 name = "facets"
 harness = false
+
+[[bench]]
+name = "text_bm25_search"
+harness = false
