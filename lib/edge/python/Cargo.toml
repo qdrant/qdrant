@@ -7,7 +7,7 @@ edition = "2024"
 
 [lib]
 name = "qdrant_edge"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [lints]
 workspace = true
@@ -40,4 +40,4 @@ features = ["into"]
 
 [dependencies.pyo3]
 version = "0.29.0"
-features = ["uuid"]
+features = ["uuid", "experimental-inspect"]
