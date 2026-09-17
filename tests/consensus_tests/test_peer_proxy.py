@@ -208,8 +208,8 @@ def test_peer_proxy_wait_for_peer_connection_has_a_deadline():
         upstream.bind(("127.0.0.1", 0))
         upstream.listen()
         with PeerProxy(f"127.0.0.1:{upstream.getsockname()[1]}") as proxy:
-            with pytest.raises(TimeoutError, match=f"gRPC connection to {proxy._target} within 0 seconds"):
-                proxy.wait_for_peer_connection(timeout=0)
+            with pytest.raises(TimeoutError, match=f"gRPC connection to {proxy._target} within 1 seconds"):
+                proxy.wait_for_peer_connection(timeout=1)
 
 
 def test_peer_proxy_shutdown_cancels_rpc_and_http_gates_together(upstream):
