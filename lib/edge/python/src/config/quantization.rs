@@ -146,13 +146,6 @@ pub enum PyScalarType {
     Int8,
 }
 
-#[pymethods]
-impl PyScalarType {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyScalarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
@@ -231,13 +224,6 @@ pub enum PyCompressionRatio {
     X16,
     X32,
     X64,
-}
-
-#[pymethods]
-impl PyCompressionRatio {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyCompressionRatio {
@@ -343,13 +329,6 @@ pub enum PyBinaryQuantizationEncoding {
     OneAndHalfBits,
 }
 
-#[pymethods]
-impl PyBinaryQuantizationEncoding {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyBinaryQuantizationEncoding {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
@@ -393,13 +372,6 @@ pub enum PyBinaryQuantizationQueryEncoding {
     Binary,
     Scalar4Bits,
     Scalar8Bits,
-}
-
-#[pymethods]
-impl PyBinaryQuantizationQueryEncoding {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyBinaryQuantizationQueryEncoding {
@@ -496,13 +468,6 @@ pub enum PyTurboQuantBitSize {
     Bits1_5,
     Bits2,
     Bits4,
-}
-
-#[pymethods]
-impl PyTurboQuantBitSize {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyTurboQuantBitSize {
