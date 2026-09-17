@@ -24,8 +24,8 @@ pub(super) const REMOTE_READ_ALIGNMENT: usize = crate::universal_io::io_uring::K
 /// Default alignment on non-Linux platforms
 pub(super) const REMOTE_READ_ALIGNMENT: usize = 1;
 
-/// A remote fetch in flight where this pipeline is the leader.
-struct InFlightFetch<'file, R, U>
+/// A remote fetch in flight on `remote_pipeline`.
+struct RemoteFetch<'file, R>
 where
     R: UniversalRead + 'static,
 {
@@ -33,13 +33,17 @@ where
     guard: PlaceholderGuard,
     fetch: FetchStats,
     blocks_range: Range<u32>,
-    user_data: U,
-    range: Range<u64>,
-    is_sequential: bool,
 }
 
-/// A read piggybacking on an in-flight fetch across pipelines or within the same pipeline.
-struct PiggybackedRead<'file, R, U>
+impl<'file, R: UniversalRead> RemoteFetch<'file, R> {
+    #[inline]
+    fn contains(&self, file: &DiskCache<R>, range: &Range<u32>) -> bool {
+        std::ptr::eq(self.file, file) && self.guard.placeholder().contains(range)
+    }
+}
+
+/// A read scheduled on this pipeline waiting for blocks to be fetched into local mirror.
+struct ScheduledRead<'file, R, U>
 where
     R: UniversalRead + 'static,
 {
@@ -114,7 +118,7 @@ where
 /// # Safety
 /// `byte_range` must correspond to blocks already known to be local (typically
 /// because [`pick_source`] returned [`Source::Local`] for it, or
-/// [`commit_and_read`] just fetched them).
+/// [`commit_and_complete`] just fetched them).
 pub(super) unsafe fn read_local<R>(
     file: &DiskCache<R>,
     range: Range<u64>,
@@ -134,28 +138,21 @@ where
     }
 }
 
-/// Commit remote-fetched `bytes` into local mmap and resolve the leader read waiting
-/// on `fetch`, pushing the resulting slice to `results`.
+/// Commit remote-fetched `bytes` into local mmap and unblock all waiting reads.
 ///
 /// # Safety
-/// `bytes` must be the remote content of `fetch.blocks_range` (clamped to EOF),
-/// and `fetch.range` must be covered by those blocks.
-unsafe fn commit_and_read<'file, R, U>(
-    fetch: InFlightFetch<'file, R, U>,
+/// `bytes` must be the remote content of `fetch.blocks_range` (clamped to EOF).
+unsafe fn commit_and_complete<'file, R>(
+    fetch: RemoteFetch<'file, R>,
     bytes: &[u8],
-    results: &mut VecDeque<(U, &'file [u8])>,
 ) -> UioResult<()>
 where
     R: DiskCacheRemote,
-    U: UserData,
 {
-    let InFlightFetch {
+    let RemoteFetch {
         file,
         guard,
         blocks_range,
-        user_data,
-        range,
-        is_sequential,
         fetch: timing,
     } = fetch;
     timing.complete(bytes.len());
@@ -164,12 +161,6 @@ where
 
     unsafe {
         local.write_mmap_bytes(bytes, blocks_range);
-        let slice = if is_sequential {
-            local.read_mmap_bytes::<Sequential>(range)?
-        } else {
-            local.read_mmap_bytes::<Random>(range)?
-        };
-        results.push_back((user_data, slice));
     }
 
     guard.complete();
@@ -177,6 +168,7 @@ where
 }
 
 type RemotePipeline<'file, R> = <R as UniversalRead>::ReadPipeline<'file, u64>;
+
 pub struct DiskCachePipeline<'file, R, U>
 where
     R: UniversalRead + 'static,
@@ -187,9 +179,9 @@ where
     remote_pipeline: OnceCell<RemotePipeline<'file, R>>,
     /// One entry per remote read scheduled and not yet completed, keyed by
     /// the id passed to the remote pipeline as user data.
-    in_flight: Slab<InFlightFetch<'file, R, U>>,
-    /// Piggybacked reads waiting on a placeholder (either external or same pipeline).
-    piggybacked: VecDeque<PiggybackedRead<'file, R, U>>,
+    in_flight: Slab<RemoteFetch<'file, R>>,
+    /// Reads waiting on an in-flight fetch (their own or piggybacked).
+    pending: VecDeque<ScheduledRead<'file, R, U>>,
     /// Resolved reads, ready to be returned by `wait`.
     results: VecDeque<(U, &'file [u8])>,
 }
@@ -230,14 +222,14 @@ where
         Ok(Self {
             remote_pipeline: OnceCell::new(),
             in_flight: Slab::new(),
-            piggybacked: VecDeque::new(),
+            pending: VecDeque::new(),
             results: VecDeque::new(),
         })
     }
 
     fn can_schedule(&mut self) -> bool {
         self.results.is_empty()
-            && !self.piggybacked.iter().any(|read| read.placeholder.is_completed())
+            && !self.pending.iter().any(|read| read.placeholder.is_completed())
             && self
                 .remote_pipeline
                 .get_mut()
@@ -265,67 +257,55 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
-                let self_placeholder = self.in_flight.iter().find_map(|(_, inflight)| {
-                    if std::ptr::eq(inflight.file, file)
-                        && inflight.blocks_range.start <= blocks_range.start
-                        && blocks_range.end <= inflight.blocks_range.end
-                    {
-                        Some(inflight.guard.placeholder().clone())
-                    } else {
-                        None
+                let self_placeholder = self
+                    .in_flight
+                    .iter()
+                    .find(|(_, inflight)| inflight.contains(file, &blocks_range))
+                    .map(|(_, inflight)| inflight.guard.placeholder().clone());
+
+                let placeholder = if let Some(placeholder) = self_placeholder {
+                    placeholder
+                } else {
+                    match state.local.placeholders.get_or_register(
+                        state.local,
+                        blocks_range.clone(),
+                    ) {
+                        PlaceholderResult::AlreadyLocal => {
+                            let bytes = unsafe { read_local::<R>(file, range, P::IS_SEQUENTIAL)? };
+                            self.results.push_back((user_data, bytes));
+                            return Ok(());
+                        }
+                        PlaceholderResult::Piggyback(placeholder) => placeholder,
+                        PlaceholderResult::Leader(guard) => {
+                            let remote_pipeline =
+                                Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
+                            let entry = self.in_flight.vacant_entry();
+                            let started = Instant::now();
+                            remote_pipeline.schedule::<P>(
+                                entry.key() as u64,
+                                state.remote,
+                                blocks_byte_range,
+                                REMOTE_READ_ALIGNMENT,
+                            )?;
+                            let placeholder = guard.placeholder().clone();
+                            entry.insert(RemoteFetch {
+                                file,
+                                guard,
+                                fetch: file.stats.fetch(started),
+                                blocks_range,
+                            });
+                            placeholder
+                        }
                     }
+                };
+
+                self.pending.push_back(ScheduledRead {
+                    user_data,
+                    file,
+                    range,
+                    is_sequential: P::IS_SEQUENTIAL,
+                    placeholder,
                 });
-
-                if let Some(placeholder) = self_placeholder {
-                    self.piggybacked.push_back(PiggybackedRead {
-                        user_data,
-                        file,
-                        range,
-                        is_sequential: P::IS_SEQUENTIAL,
-                        placeholder,
-                    });
-                    return Ok(());
-                }
-
-                match state.local.placeholders.get_or_register(
-                    state.local,
-                    blocks_range.clone(),
-                ) {
-                    PlaceholderResult::AlreadyLocal => {
-                        let bytes = unsafe { read_local::<R>(file, range, P::IS_SEQUENTIAL)? };
-                        self.results.push_back((user_data, bytes));
-                    }
-                    PlaceholderResult::Piggyback(placeholder) => {
-                        self.piggybacked.push_back(PiggybackedRead {
-                            user_data,
-                            file,
-                            range,
-                            is_sequential: P::IS_SEQUENTIAL,
-                            placeholder,
-                        });
-                    }
-                    PlaceholderResult::Leader(guard) => {
-                        let remote_pipeline =
-                            Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
-                        let entry = self.in_flight.vacant_entry();
-                        let started = Instant::now();
-                        remote_pipeline.schedule::<P>(
-                            entry.key() as u64,
-                            state.remote,
-                            blocks_byte_range,
-                            REMOTE_READ_ALIGNMENT,
-                        )?;
-                        entry.insert(InFlightFetch {
-                            file,
-                            guard,
-                            fetch: file.stats.fetch(started),
-                            blocks_range,
-                            user_data,
-                            range,
-                            is_sequential: P::IS_SEQUENTIAL,
-                        });
-                    }
-                }
             }
         }
         Ok(())
@@ -356,11 +336,11 @@ where
         }
 
         if let Some(idx) = self
-            .piggybacked
+            .pending
             .iter()
             .position(|read| read.placeholder.is_completed())
         {
-            let read = self.piggybacked.remove(idx).expect("idx exists");
+            let read = self.pending.remove(idx).expect("idx exists");
             let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
             return Ok(Some((read.user_data, ACow::Borrowed(slice))));
         }
@@ -388,16 +368,19 @@ where
                 .expect("completed fetch has an in-flight entry");
 
             // SAFETY: `bytes` is the content of `fetch.blocks_range` as scheduled.
-            unsafe { commit_and_read(fetch, &bytes, &mut self.results)? };
+            unsafe { commit_and_complete(fetch, &bytes)? };
 
-            let (user_data, slice) = self
-                .results
-                .pop_front()
-                .expect("a completed fetch resolves at least one read");
-            return Ok(Some((user_data, ACow::Borrowed(slice))));
+            let idx = self
+                .pending
+                .iter()
+                .position(|read| read.placeholder.is_completed())
+                .expect("completed fetch resolves at least one read");
+            let read = self.pending.remove(idx).expect("idx exists");
+            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+            return Ok(Some((read.user_data, ACow::Borrowed(slice))));
         }
 
-        if let Some(read) = self.piggybacked.pop_front() {
+        if let Some(read) = self.pending.pop_front() {
             read.placeholder.wait()?;
             let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
             return Ok(Some((read.user_data, ACow::Borrowed(slice))));

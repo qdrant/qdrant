@@ -38,6 +38,11 @@ impl Placeholder {
         self.completed.load(Ordering::Acquire)
     }
 
+    #[inline]
+    pub(super) fn contains(&self, range: &Range<u32>) -> bool {
+        self.blocks_range.start <= range.start && range.end <= self.blocks_range.end
+    }
+
     pub(super) fn wait(&self) -> UioResult<()> {
         if self.is_completed() {
             return Ok(());
@@ -145,7 +150,7 @@ impl PlaceholderRegistry {
         let mut list = self.placeholders.lock();
 
         for p in list.iter() {
-            if p.blocks_range.start <= blocks_range.start && blocks_range.end <= p.blocks_range.end {
+            if p.contains(&blocks_range) {
                 // Different thread can safely piggyback; same thread avoids deadlock by fetching independently.
                 if p.leader.id() != std::thread::current().id() {
                     return PlaceholderResult::Piggyback(p.clone());
