@@ -54,6 +54,10 @@ impl ClusterState {
     /// Whether every known peer runs at least `version`.
     /// Implementation intentionally matches `ChannelService::all_peers_at_version`.
     pub fn all_peers_at_version(&self, version: &Version) -> bool {
+        // TODO:
+        // Check that peer address map and peer metadata map contain the same peers
+        // and each peer matches required version
+
         // More peer addresses than metadata means at least one version is unknown
         if self.peer_address_by_id.len() > self.peer_metadata_by_id.len() {
             return false;
