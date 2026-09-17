@@ -92,7 +92,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         // `None` drops the field until the writer has, which is already what
         // happens for any other missing file. Opening it instead would answer
         // `None` per point here and real lengths on the writer.
-        if scoring && !has_doc_len_sidecar(&path) {
+        if scoring && !has_doc_len_sidecar(fs, &path)? {
             log::info!(
                 "Text index at {path} records no document lengths, not opened read-only",
                 path = path.display(),
