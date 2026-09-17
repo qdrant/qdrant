@@ -1961,6 +1961,11 @@ impl PeerMetadata {
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
     }
+
+    /// Version reported by the peer
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
 }
 
 #[cfg(test)]

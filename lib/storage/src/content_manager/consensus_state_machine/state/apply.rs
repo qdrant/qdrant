@@ -1,4 +1,5 @@
 use collection::collection::vector_name_schema;
+use collection::collection_state::ShardInfo;
 
 use super::*;
 
@@ -89,6 +90,69 @@ impl ClusterState {
                 };
 
                 state.payload_index_schema.schema.remove(field_name);
+            }
+
+            // Builds a shard directory. Shards join collection state through `RegisterShards`.
+            Action::CreateShard { .. } => {}
+
+            Action::RegisterShards {
+                collection,
+                shard_key,
+                shards,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                for &(shard_id, ref peers, init_state) in shards {
+                    let replicas = peers.iter().map(|&peer_id| (peer_id, init_state)).collect();
+                    state.shards.insert(shard_id, ShardInfo { replicas });
+                }
+
+                if let Some(shard_key) = shard_key {
+                    state
+                        .shards_key_mapping
+                        .entry(shard_key.clone())
+                        .or_default()
+                        .extend(shards.iter().map(|&(shard_id, _, _)| shard_id));
+                }
+            }
+
+            // Stops node-local tasks and does not change consensus state
+            Action::InvalidateCleanLocalShards { .. } => {}
+
+            Action::RemoveShardKey {
+                collection,
+                shard_key,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard_ids) = state.shards_key_mapping.remove(shard_key) else {
+                    return;
+                };
+
+                // The mapping is removed before the shard directories are deleted. If the node
+                // crashes between those steps, Qdrant ignores the leftover directories during
+                // startup because their shards are no longer in the mapping.
+                //
+                // Remove the shards from modeled state here to match the state after restart.
+                // Replaying the operation then has nothing left to do.
+                for shard_id in shard_ids {
+                    state.shards.remove(&shard_id);
+                }
+            }
+
+            Action::DropShard {
+                collection,
+                shard_id,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.shards.remove(shard_id);
             }
 
             Action::UpdateAliases { set, remove } => {
