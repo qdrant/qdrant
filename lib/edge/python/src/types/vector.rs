@@ -4,6 +4,7 @@ use std::{fmt, mem};
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
@@ -11,22 +12,40 @@ use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyVector(VectorStructPersisted);
 
+pub const VECTOR: Alias = Alias {
+    name: "Vector",
+    definition: VectorHelper::INPUT_TYPE,
+};
+pub const NAMED_VECTOR: Alias = Alias {
+    name: "NamedVector",
+    definition: NamedVectorHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject)]
+enum VectorHelper {
+    Single(Vec<f32>),
+    MultiDense(Vec<Vec<f32>>),
+    Named(HashMap<VectorNameBuf, PyNamedVector>),
+}
+
+#[derive(FromPyObject)]
+enum NamedVectorHelper {
+    Dense(Vec<f32>),
+    Sparse(PySparseVector),
+    MultiDense(Vec<Vec<f32>>),
+}
+
 impl FromPyObject<'_, '_> for PyVector {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Single(Vec<f32>),
-            MultiDense(Vec<Vec<f32>>),
-            Named(HashMap<VectorNameBuf, PyNamedVector>),
-        }
-
         fn _variants(vector: VectorStructPersisted) {
             match vector {
                 VectorStructPersisted::Single(_) => {}
@@ -36,9 +55,11 @@ impl FromPyObject<'_, '_> for PyVector {
         }
 
         let vector = match vector.extract()? {
-            Helper::Single(single) => VectorStructPersisted::Single(single),
-            Helper::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
-            Helper::Named(named) => VectorStructPersisted::Named(PyNamedVector::peel_map(named)),
+            VectorHelper::Single(single) => VectorStructPersisted::Single(single),
+            VectorHelper::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
+            VectorHelper::Named(named) => {
+                VectorStructPersisted::Named(PyNamedVector::peel_map(named))
+            }
         };
 
         Ok(Self(vector))
@@ -49,6 +70,7 @@ impl<'py> IntoPyObject<'py> for PyVector {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -59,6 +81,7 @@ impl<'py> IntoPyObject<'py> for &PyVector {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
@@ -103,15 +126,9 @@ impl PyNamedVector {
 
 impl FromPyObject<'_, '_> for PyNamedVector {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Dense(Vec<f32>),
-            Sparse(PySparseVector),
-            MultiDense(Vec<Vec<f32>>),
-        }
-
         fn _variants(vector: VectorPersisted) {
             match vector {
                 VectorPersisted::Dense(_) => {}
@@ -121,9 +138,11 @@ impl FromPyObject<'_, '_> for PyNamedVector {
         }
 
         let vector = match vector.extract()? {
-            Helper::Dense(dense) => VectorPersisted::Dense(dense),
-            Helper::Sparse(sparse) => VectorPersisted::Sparse(SparseVector::from(sparse)),
-            Helper::MultiDense(multi) => VectorPersisted::MultiDense(multi),
+            NamedVectorHelper::Dense(dense) => VectorPersisted::Dense(dense),
+            NamedVectorHelper::Sparse(sparse) => {
+                VectorPersisted::Sparse(SparseVector::from(sparse))
+            }
+            NamedVectorHelper::MultiDense(multi) => VectorPersisted::MultiDense(multi),
         };
 
         Ok(Self(vector))
@@ -134,6 +153,7 @@ impl<'py> IntoPyObject<'py> for PyNamedVector {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -144,6 +164,7 @@ impl<'py> IntoPyObject<'py> for &PyNamedVector {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {

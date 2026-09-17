@@ -7,11 +7,13 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::IntoPyObjectExt;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, PyTypeInfo};
 use segment::data_types::index::*;
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -171,16 +173,22 @@ impl From<PyTokenizerType> for TokenizerType {
 #[repr(transparent)]
 pub struct PyStopwords(StopwordsInterface);
 
+pub const STOPWORDS: Alias = Alias {
+    name: "Stopwords",
+    definition: StopwordsHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum StopwordsHelper {
+    Language(PyLanguage),
+    Set(PyStopwordsSet),
+}
+
 impl FromPyObject<'_, '_> for PyStopwords {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn extract(stopwords: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Language(PyLanguage),
-            Set(PyStopwordsSet),
-        }
-
         fn _variants(stopwords: StopwordsInterface) {
             match stopwords {
                 StopwordsInterface::Language(_) => {}
@@ -189,8 +197,8 @@ impl FromPyObject<'_, '_> for PyStopwords {
         }
 
         let stopwords = match stopwords.extract()? {
-            Helper::Language(lang) => StopwordsInterface::Language(lang.into()),
-            Helper::Set(set) => StopwordsInterface::Set(set.into()),
+            StopwordsHelper::Language(lang) => StopwordsInterface::Language(lang.into()),
+            StopwordsHelper::Set(set) => StopwordsInterface::Set(set.into()),
         };
 
         Ok(Self(stopwords))
@@ -201,12 +209,14 @@ impl<'py> IntoPyObject<'py> for PyStopwords {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            StopwordsInterface::Language(lang) => PyLanguage::from(lang).into_bound_py_any(py),
-            StopwordsInterface::Set(set) => PyStopwordsSet(set).into_bound_py_any(py),
+            StopwordsInterface::Language(lang) => StopwordsHelper::Language(lang.into()),
+            StopwordsInterface::Set(set) => StopwordsHelper::Set(PyStopwordsSet(set)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -214,6 +224,7 @@ impl<'py> IntoPyObject<'py> for &PyStopwords {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -422,6 +433,7 @@ impl<'py> IntoPyObject<'py> for &PyStopwordsSet {
     type Target = PyStopwordsSet;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyStopwordsSet::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -432,16 +444,22 @@ impl<'py> IntoPyObject<'py> for &PyStopwordsSet {
 #[repr(transparent)]
 pub struct PyStemmingAlgorithm(StemmingAlgorithm);
 
+pub const STEMMING_ALGORITHM: Alias = Alias {
+    name: "StemmingAlgorithm",
+    definition: StemmingAlgorithmHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum StemmingAlgorithmHelper {
+    Snowball(PySnowballParams),
+    Disabled(PyDisabledStemmer),
+}
+
 impl FromPyObject<'_, '_> for PyStemmingAlgorithm {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn extract(algo: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Snowball(PySnowballParams),
-            Disabled(PyDisabledStemmer),
-        }
-
         fn _variants(algo: StemmingAlgorithm) {
             match algo {
                 StemmingAlgorithm::Snowball(_) => {}
@@ -450,8 +468,12 @@ impl FromPyObject<'_, '_> for PyStemmingAlgorithm {
         }
 
         let algo = match algo.extract()? {
-            Helper::Snowball(snowball) => StemmingAlgorithm::Snowball(snowball.into()),
-            Helper::Disabled(disabled) => StemmingAlgorithm::Disabled(disabled.into()),
+            StemmingAlgorithmHelper::Snowball(snowball) => {
+                StemmingAlgorithm::Snowball(snowball.into())
+            }
+            StemmingAlgorithmHelper::Disabled(disabled) => {
+                StemmingAlgorithm::Disabled(disabled.into())
+            }
         };
 
         Ok(Self(algo))
@@ -462,16 +484,18 @@ impl<'py> IntoPyObject<'py> for PyStemmingAlgorithm {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             StemmingAlgorithm::Snowball(snowball) => {
-                PySnowballParams(snowball).into_bound_py_any(py)
+                StemmingAlgorithmHelper::Snowball(PySnowballParams(snowball))
             }
             StemmingAlgorithm::Disabled(disabled) => {
-                PyDisabledStemmer(disabled).into_bound_py_any(py)
+                StemmingAlgorithmHelper::Disabled(PyDisabledStemmer(disabled))
             }
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -479,6 +503,7 @@ impl<'py> IntoPyObject<'py> for &PyStemmingAlgorithm {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)

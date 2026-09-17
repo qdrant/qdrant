@@ -7,12 +7,14 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt as _, PyTypeInfo};
 use segment::types::*;
 
 use super::quantization::*;
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
@@ -62,16 +64,22 @@ impl From<PyDistance> for Distance {
 #[repr(transparent)]
 pub struct PyIndexes(Indexes);
 
+pub const INDEXES: Alias = Alias {
+    name: "IndexType",
+    definition: IndexesHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum IndexesHelper {
+    Plain(PyPlainIndexConfig),
+    Hnsw(PyHnswIndexConfig),
+}
+
 impl FromPyObject<'_, '_> for PyIndexes {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = INDEXES.hint();
 
     fn extract(indexes: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Plain(PyPlainIndexConfig),
-            Hnsw(PyHnswIndexConfig),
-        }
-
         fn _variants(indexes: Indexes) {
             match indexes {
                 Indexes::Plain {} => (),
@@ -80,8 +88,8 @@ impl FromPyObject<'_, '_> for PyIndexes {
         }
 
         let indexes = match indexes.extract()? {
-            Helper::Plain(_) => Indexes::Plain {},
-            Helper::Hnsw(hnsw) => Indexes::Hnsw(HnswConfig::from(hnsw)),
+            IndexesHelper::Plain(_) => Indexes::Plain {},
+            IndexesHelper::Hnsw(hnsw) => Indexes::Hnsw(HnswConfig::from(hnsw)),
         };
 
         Ok(Self(indexes))
@@ -92,12 +100,14 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = INDEXES.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            Indexes::Plain {} => PyPlainIndexConfig.into_bound_py_any(py),
-            Indexes::Hnsw(hnsw) => PyHnswIndexConfig(hnsw).into_bound_py_any(py),
+            Indexes::Plain {} => IndexesHelper::Plain(PyPlainIndexConfig),
+            Indexes::Hnsw(hnsw) => IndexesHelper::Hnsw(PyHnswIndexConfig(hnsw)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -413,6 +423,7 @@ impl<'py> IntoPyObject<'py> for &PyEdgeVectorParams {
     type Target = PyEdgeVectorParams;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyEdgeVectorParams::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)

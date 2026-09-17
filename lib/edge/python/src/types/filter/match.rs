@@ -3,33 +3,41 @@ use std::hash::Hash;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use pyo3::{IntoPyObjectExt as _, PyTypeInfo, type_hint_subscript};
 use segment::types::*;
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatch(pub Match);
 
+pub const MATCH: Alias = Alias {
+    name: "MatchType",
+    definition: MatchHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum MatchHelper {
+    Value(PyMatchValue),
+    Text(PyMatchText),
+    TextAny(PyMatchTextAny),
+    Phrase(PyMatchPhrase),
+    Prefix(PyMatchPrefix),
+    Substring(PyMatchSubstring),
+    Any(PyMatchAny),
+    Except(PyMatchExcept),
+}
+
 impl FromPyObject<'_, '_> for PyMatch {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = MATCH.hint();
 
     fn extract(filter: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Value(PyMatchValue),
-            Text(PyMatchText),
-            TextAny(PyMatchTextAny),
-            Phrase(PyMatchPhrase),
-            Prefix(PyMatchPrefix),
-            Substring(PyMatchSubstring),
-            Any(PyMatchAny),
-            Except(PyMatchExcept),
-        }
-
         fn _variants(filter: Match) {
             match filter {
                 Match::Value(_) => {}
@@ -44,14 +52,14 @@ impl FromPyObject<'_, '_> for PyMatch {
         }
 
         let filter = match filter.extract()? {
-            Helper::Value(value) => Match::Value(MatchValue::from(value)),
-            Helper::Text(text) => Match::Text(MatchText::from(text)),
-            Helper::TextAny(text_any) => Match::TextAny(MatchTextAny::from(text_any)),
-            Helper::Phrase(phrase) => Match::Phrase(MatchPhrase::from(phrase)),
-            Helper::Prefix(prefix) => Match::Prefix(MatchPrefix::from(prefix)),
-            Helper::Substring(substring) => Match::Substring(MatchSubstring::from(substring)),
-            Helper::Any(any) => Match::Any(MatchAny::from(any)),
-            Helper::Except(except) => Match::Except(MatchExcept::from(except)),
+            MatchHelper::Value(value) => Match::Value(MatchValue::from(value)),
+            MatchHelper::Text(text) => Match::Text(MatchText::from(text)),
+            MatchHelper::TextAny(text_any) => Match::TextAny(MatchTextAny::from(text_any)),
+            MatchHelper::Phrase(phrase) => Match::Phrase(MatchPhrase::from(phrase)),
+            MatchHelper::Prefix(prefix) => Match::Prefix(MatchPrefix::from(prefix)),
+            MatchHelper::Substring(substring) => Match::Substring(MatchSubstring::from(substring)),
+            MatchHelper::Any(any) => Match::Any(MatchAny::from(any)),
+            MatchHelper::Except(except) => Match::Except(MatchExcept::from(except)),
         };
 
         Ok(Self(filter))
@@ -62,18 +70,20 @@ impl<'py> IntoPyObject<'py> for PyMatch {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = MATCH.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            Match::Value(value) => PyMatchValue(value).into_bound_py_any(py),
-            Match::Text(text) => PyMatchText(text).into_bound_py_any(py),
-            Match::TextAny(text_any) => PyMatchTextAny(text_any).into_bound_py_any(py),
-            Match::Phrase(phrase) => PyMatchPhrase(phrase).into_bound_py_any(py),
-            Match::Prefix(prefix) => PyMatchPrefix(prefix).into_bound_py_any(py),
-            Match::Substring(substring) => PyMatchSubstring(substring).into_bound_py_any(py),
-            Match::Any(any) => PyMatchAny(any).into_bound_py_any(py),
-            Match::Except(except) => PyMatchExcept(except).into_bound_py_any(py),
+            Match::Value(value) => MatchHelper::Value(PyMatchValue(value)),
+            Match::Text(text) => MatchHelper::Text(PyMatchText(text)),
+            Match::TextAny(text_any) => MatchHelper::TextAny(PyMatchTextAny(text_any)),
+            Match::Phrase(phrase) => MatchHelper::Phrase(PyMatchPhrase(phrase)),
+            Match::Prefix(prefix) => MatchHelper::Prefix(PyMatchPrefix(prefix)),
+            Match::Substring(substring) => MatchHelper::Substring(PyMatchSubstring(substring)),
+            Match::Any(any) => MatchHelper::Any(PyMatchAny(any)),
+            Match::Except(except) => MatchHelper::Except(PyMatchExcept(except)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -124,17 +134,18 @@ impl PyMatchValue {
 #[repr(transparent)]
 pub struct PyValueVariants(ValueVariants);
 
+#[derive(FromPyObject, IntoPyObject)]
+enum ValueVariantsHelper {
+    String(String),
+    Integer(IntPayloadType),
+    Bool(bool),
+}
+
 impl FromPyObject<'_, '_> for PyValueVariants {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = ValueVariantsHelper::INPUT_TYPE;
 
     fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            String(String),
-            Integer(IntPayloadType),
-            Bool(bool),
-        }
-
         fn _variants(value: ValueVariants) {
             match value {
                 ValueVariants::String(_) => {}
@@ -144,9 +155,9 @@ impl FromPyObject<'_, '_> for PyValueVariants {
         }
 
         let value = match value.extract()? {
-            Helper::String(str) => ValueVariants::String(str),
-            Helper::Integer(int) => ValueVariants::Integer(int),
-            Helper::Bool(bool) => ValueVariants::Bool(bool),
+            ValueVariantsHelper::String(str) => ValueVariants::String(str),
+            ValueVariantsHelper::Integer(int) => ValueVariants::Integer(int),
+            ValueVariantsHelper::Bool(bool) => ValueVariants::Bool(bool),
         };
 
         Ok(Self(value))
@@ -157,6 +168,7 @@ impl<'py> IntoPyObject<'py> for PyValueVariants {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = <&PyValueVariants>::OUTPUT_TYPE;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -167,6 +179,7 @@ impl<'py> IntoPyObject<'py> for &PyValueVariants {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = ValueVariantsHelper::OUTPUT_TYPE;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
@@ -405,16 +418,17 @@ impl PyMatchExcept {
 #[repr(transparent)]
 pub struct PyAnyVariants(AnyVariants);
 
+#[derive(FromPyObject, IntoPyObject)]
+enum AnyVariantsHelper {
+    Strings(PyIndexSet<String>),
+    Integers(PyIndexSet<i64>),
+}
+
 impl FromPyObject<'_, '_> for PyAnyVariants {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = AnyVariantsHelper::INPUT_TYPE;
 
     fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Strings(#[pyo3(from_py_with = index_set_from_py)] IndexSet<String>),
-            Integers(#[pyo3(from_py_with = index_set_from_py)] IndexSet<i64>),
-        }
-
         fn _variants(value: AnyVariants) {
             match value {
                 AnyVariants::Strings(_) => {}
@@ -423,8 +437,8 @@ impl FromPyObject<'_, '_> for PyAnyVariants {
         }
 
         let value = match value.extract()? {
-            Helper::Strings(str) => AnyVariants::Strings(str),
-            Helper::Integers(int) => AnyVariants::Integers(int),
+            AnyVariantsHelper::Strings(str) => AnyVariants::Strings(str.into()),
+            AnyVariantsHelper::Integers(int) => AnyVariants::Integers(int.into()),
         };
 
         Ok(Self(value))
@@ -435,6 +449,7 @@ impl<'py> IntoPyObject<'py> for PyAnyVariants {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = <&PyAnyVariants>::OUTPUT_TYPE;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -445,11 +460,12 @@ impl<'py> IntoPyObject<'py> for &PyAnyVariants {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = AnyVariantsHelper::OUTPUT_TYPE;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
-            AnyVariants::Strings(str) => index_set_into_py::<String>(str, py),
-            AnyVariants::Integers(int) => index_set_into_py::<i64>(int, py),
+            AnyVariants::Strings(str) => PyIndexSet::wrap_ref(str).into_pyobject(py),
+            AnyVariants::Integers(int) => PyIndexSet::wrap_ref(int).into_pyobject(py),
         }
     }
 }
@@ -465,31 +481,62 @@ impl Repr for PyAnyVariants {
 
 type IndexSet<T, S = fnv::FnvBuildHasher> = indexmap::IndexSet<T, S>;
 
-fn index_set_from_py<T>(list: &Bound<'_, PyAny>) -> PyResult<IndexSet<T>>
+/// An order-preserving set, converted to and from a Python `list`.
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+struct PyIndexSet<T>(IndexSet<T>);
+
+impl<'py, T> FromPyObject<'_, 'py> for PyIndexSet<T>
 where
-    T: for<'py> FromPyObjectOwned<'py, Error = PyErr> + Eq + Hash,
+    T: FromPyObjectOwned<'py, Error = PyErr> + Eq + Hash,
 {
-    let list = list.cast::<PyList>()?;
+    type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = type_hint_subscript!(PyList::TYPE_HINT, T::INPUT_TYPE);
 
-    let mut set = IndexSet::with_capacity_and_hasher(list.len(), Default::default());
+    fn extract(list: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        let list = list.cast::<PyList>()?;
 
-    for value in list.iter() {
-        let value = value.extract()?;
-        set.insert(value);
+        let mut set = IndexSet::with_capacity_and_hasher(list.len(), Default::default());
+
+        for value in list.iter() {
+            let value = value.extract()?;
+            set.insert(value);
+        }
+
+        Ok(Self(set))
     }
-
-    Ok(set)
 }
 
-fn index_set_into_py<'py, T>(set: &IndexSet<T>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>>
+impl<'py, T> IntoPyObject<'py> for PyIndexSet<T>
 where
     for<'a> &'a T: IntoPyObject<'py>,
 {
-    let list = PyList::empty(py);
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = <&PyIndexSet<T>>::OUTPUT_TYPE;
 
-    for value in set {
-        list.append(value)?;
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(&self, py)
     }
+}
 
-    Ok(list.into_any())
+impl<'a, 'py, T> IntoPyObject<'py> for &'a PyIndexSet<T>
+where
+    &'a T: IntoPyObject<'py>,
+{
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = type_hint_subscript!(PyList::TYPE_HINT, <&T>::OUTPUT_TYPE);
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        let list = PyList::empty(py);
+
+        for value in &self.0 {
+            list.append(value)?;
+        }
+
+        Ok(list.into_any())
+    }
 }
