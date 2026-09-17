@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::entry_point::SegmentEntry;
@@ -75,6 +76,9 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
 /// context, and the formula is applied once on the totals.
 #[test]
 fn text_statistics_are_summed_across_segments() {
+    // The const is `false`; this is what lets a segment record lengths.
+    let _scoring = TextIndexParams::override_scoring(true);
+
     let first_dir = Builder::new().prefix("text_stats_a").tempdir().unwrap();
     let second_dir = Builder::new().prefix("text_stats_b").tempdir().unwrap();
 
@@ -115,9 +119,29 @@ fn text_statistics_are_summed_across_segments() {
         "an unseeded term is treated as held by nobody, not as an error",
     );
 
-    // Document lengths are not recorded while `TextIndexParams::scoring()` is a
-    // const `false`, and one segment without them poisons the average for the
-    // whole corpus rather than averaging over part of it.
+    // 4 + 3 + 4 + 2 tokens over 4 documents, summed across both segments
+    // before the division.
+    assert_eq!(text.avg_doc_len(), Some(13.0 / 4.0));
+}
+
+/// Without the override nothing records lengths, and one segment without them
+/// poisons the average for the whole corpus rather than averaging over the
+/// part that has them.
+#[test]
+fn unrecorded_lengths_leave_no_average() {
+    let dir = Builder::new()
+        .prefix("text_stats_no_len")
+        .tempdir()
+        .unwrap();
+    let segment = build_text_segment(&dir.path().join("segment"), &["the quick brown fox"]);
+
+    let mut query_context = QueryContext::default();
+    query_context.init_text_stats(&field(), ["quick".to_string()]);
+    segment.fill_query_context(&mut query_context).unwrap();
+
+    let segment_context = query_context.get_segment_query_context();
+    let text = segment_context.get_text_context(&field()).unwrap();
+    assert_eq!(text.document_frequency("quick"), 1);
     assert_eq!(text.avg_doc_len(), None);
 }
 

@@ -448,6 +448,27 @@ pub enum StopwordsInterface {
 /// replaced by the real field rather than flipped.
 const TEXT_INDEX_SCORING: bool = false;
 
+#[cfg(feature = "testing")]
+thread_local! {
+    /// See [`TextIndexParams::override_scoring`].
+    static TEXT_INDEX_SCORING_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous [`TextIndexParams::scoring`] override when dropped.
+#[cfg(feature = "testing")]
+#[must_use = "the override lasts only as long as the guard lives"]
+pub struct TextIndexScoringOverride {
+    previous: Option<bool>,
+}
+
+#[cfg(feature = "testing")]
+impl Drop for TextIndexScoringOverride {
+    fn drop(&mut self) {
+        TEXT_INDEX_SCORING_OVERRIDE.set(self.previous);
+    }
+}
+
 impl TextIndexParams {
     /// Whether an index built from these params records document lengths.
     ///
@@ -457,7 +478,24 @@ impl TextIndexParams {
     /// is the whole change; without it a scoring index can be built with no
     /// positions, and tf is then not slow to compute but impossible.
     pub fn scoring(&self) -> bool {
+        #[cfg(feature = "testing")]
+        if let Some(scoring) = TEXT_INDEX_SCORING_OVERRIDE.get() {
+            return scoring;
+        }
         TEXT_INDEX_SCORING
+    }
+
+    /// Make [`Self::scoring`] answer `scoring` on this thread until the guard
+    /// is dropped, so a test can build a recording index through the same
+    /// constructors production uses while the const stays `false`.
+    ///
+    /// Thread-local on purpose: tests in one binary run concurrently, and an
+    /// index build runs on the thread that asked for it.
+    #[cfg(feature = "testing")]
+    pub fn override_scoring(scoring: bool) -> TextIndexScoringOverride {
+        TextIndexScoringOverride {
+            previous: TEXT_INDEX_SCORING_OVERRIDE.replace(Some(scoring)),
+        }
     }
 }
 
