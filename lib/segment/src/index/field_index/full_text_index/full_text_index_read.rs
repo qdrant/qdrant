@@ -132,7 +132,7 @@ pub fn score_bm25<T: FullTextIndexRead>(
         return Ok(Vec::new());
     }
 
-    let query = Bm25Query::new(resolved, params, context.avg_doc_len());
+    let query = Bm25Query::new(resolved, params, context.avg_doc_len())?;
     index.score_bm25(&query, accept, limit, is_stopped, hw_counter)
 }
 

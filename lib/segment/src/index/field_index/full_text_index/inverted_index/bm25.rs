@@ -21,7 +21,7 @@ use posting_list::{PostingLenIterator, PostingListView};
 use super::positions::Positions;
 use super::posting_list::{Posting, PostingList as MutablePostingList};
 use super::{Document, TokenId};
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 
 /// Saturation and length normalization. Request-time parameters: they are not
 /// part of the index, so changing them never rebuilds anything.
@@ -57,12 +57,44 @@ pub struct Bm25Query {
     avg_doc_len: Option<ScoreType>,
 }
 
+impl Bm25Params {
+    /// The domain in which a term's contribution stays under its MaxScore
+    /// bound: finite `k1 >= 0` and finite `b` in `[0, 1]`. Outside it the
+    /// length normalization can shrink the denominator below `tf`, a term
+    /// can score above `idf * (k1 + 1)`, and pruning would drop documents
+    /// that belong in the top `k`.
+    pub fn validate(&self) -> OperationResult<()> {
+        let Self { k1, b } = *self;
+        if !(k1.is_finite() && k1 >= 0.0) {
+            return Err(OperationError::validation_error(format!(
+                "BM25 k1 must be finite and non-negative, got {k1}"
+            )));
+        }
+        if !(b.is_finite() && (0.0..=1.0).contains(&b)) {
+            return Err(OperationError::validation_error(format!(
+                "BM25 b must be finite and within [0, 1], got {b}"
+            )));
+        }
+        Ok(())
+    }
+}
+
 impl Bm25Query {
+    /// Fails when `params` leave the domain the MaxScore bound holds in, or
+    /// when the average length is not a finite positive number.
     pub fn new(
         terms: impl IntoIterator<Item = Bm25Term>,
         params: Bm25Params,
         avg_doc_len: Option<ScoreType>,
-    ) -> Self {
+    ) -> OperationResult<Self> {
+        params.validate()?;
+        if let Some(avg) = avg_doc_len
+            && !(avg.is_finite() && avg > 0.0)
+        {
+            return Err(OperationError::validation_error(format!(
+                "BM25 average document length must be finite and positive, got {avg}"
+            )));
+        }
         let mut terms: Vec<Bm25Term> = terms.into_iter().collect();
         // A repeated query term counts once. BM25 has a query-frequency factor
         // in some formulations; this one, like the sparse route, does not.
@@ -70,11 +102,11 @@ impl Bm25Query {
         terms.dedup_by_key(|term| term.token_id);
         // The bound is `idf * (k1 + 1)`, so ordering by idf orders by bound.
         terms.sort_by(|a, b| a.idf.total_cmp(&b.idf));
-        Self {
+        Ok(Self {
             terms,
             params,
             avg_doc_len,
-        }
+        })
     }
 
     pub fn terms(&self) -> &[Bm25Term] {
@@ -521,7 +553,7 @@ mod tests {
                 idf: fancy_idf(live, df).max(0.0),
             })
         });
-        Bm25Query::new(terms, params, Some(avg))
+        Bm25Query::new(terms, params, Some(avg)).unwrap()
     }
 
     /// Plain BM25 over every live document, by definition rather than by
@@ -720,7 +752,8 @@ mod tests {
                 .copied(),
             Bm25Params::default(),
             None,
-        );
+        )
+        .unwrap();
         let actual = mutable
             .score_bm25(&without_average, &|_| true, 20, &is_stopped, &hw_counter)
             .unwrap();
@@ -758,7 +791,8 @@ mod tests {
             }],
             Bm25Params::default(),
             None,
-        );
+        )
+        .unwrap();
         assert!(
             without_positions
                 .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
@@ -777,7 +811,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let is_stopped = AtomicBool::new(false);
         let mutable = fixture(3, 50, &[]);
-        let empty = Bm25Query::new([], Bm25Params::default(), None);
+        let empty = Bm25Query::new([], Bm25Params::default(), None).unwrap();
         assert!(
             mutable
                 .score_bm25(&empty, &|_| true, 10, &is_stopped, &hw_counter)
@@ -826,7 +860,8 @@ mod tests {
             ],
             Bm25Params::default(),
             None,
-        );
+        )
+        .unwrap();
         let ids: Vec<_> = query.terms().iter().map(|term| term.token_id).collect();
         assert_eq!(ids, [1, 3]);
     }
@@ -873,7 +908,8 @@ mod tests {
             }),
             Bm25Params::default(),
             Some(avg),
-        );
+        )
+        .unwrap();
         let actual = run(&immutable, &inflated, |_| true, 20);
 
         let by_id: HashMap<PointOffsetType, ScoreType> =
@@ -926,7 +962,8 @@ mod tests {
         for terms in queries() {
             let scored = query(&with_frequencies, &terms, Bm25Params { k1: 1.2, b: 0.0 });
             // Same token ids on both: the same tokens were registered in the same order.
-            let query = Bm25Query::new(scored.terms().iter().copied(), Bm25Params::default(), None);
+            let query = Bm25Query::new(scored.terms().iter().copied(), Bm25Params::default(), None)
+                .unwrap();
             let expected = reference(&with_frequencies, &query, |_| true);
             assert_top_k(&run(&with_frequencies, &query, |_| true, 15), &expected, 15);
             assert_top_k(&run(&ids_only, &query, |_| true, 15), &expected, 15);
@@ -964,5 +1001,38 @@ mod tests {
                 "postings of {term} differ",
             );
         }
+    }
+
+    /// Parameters outside the domain the MaxScore bound holds in are refused
+    /// rather than pruned wrongly.
+    #[test]
+    fn parameters_outside_the_bound_domain_are_rejected() {
+        let term = [Bm25Term {
+            token_id: 0,
+            idf: 1.0,
+        }];
+        for params in [
+            Bm25Params { k1: 1.2, b: 2.0 },
+            Bm25Params { k1: 1.2, b: -0.1 },
+            Bm25Params { k1: -1.0, b: 0.75 },
+            Bm25Params {
+                k1: ScoreType::NAN,
+                b: 0.75,
+            },
+            Bm25Params {
+                k1: ScoreType::INFINITY,
+                b: 0.75,
+            },
+        ] {
+            assert!(
+                Bm25Query::new(term, params, None).is_err(),
+                "{params:?} must be rejected"
+            );
+        }
+        assert!(Bm25Query::new(term, Bm25Params::default(), Some(0.0)).is_err());
+        assert!(Bm25Query::new(term, Bm25Params::default(), Some(ScoreType::NAN)).is_err());
+        // The edges of the domain are inside it.
+        assert!(Bm25Query::new(term, Bm25Params { k1: 0.0, b: 0.0 }, None).is_ok());
+        assert!(Bm25Query::new(term, Bm25Params { k1: 1.2, b: 1.0 }, Some(1.0)).is_ok());
     }
 }
