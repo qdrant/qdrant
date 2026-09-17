@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use slab::Slab;
 
-use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult};
+use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
 use super::stats::FetchStats;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
@@ -37,8 +37,8 @@ where
 
 impl<'file, R: UniversalRead> RemoteFetch<'file, R> {
     #[inline]
-    fn contains(&self, file: &DiskCache<R>, range: &Range<u32>) -> bool {
-        std::ptr::eq(self.file, file) && self.guard.placeholder().contains(range)
+    fn covers(&self, file: &DiskCache<R>, range: &Range<u32>) -> bool {
+        std::ptr::eq(self.file, file) && self.guard.placeholder().covers(range)
     }
 }
 
@@ -260,7 +260,7 @@ where
                 let self_placeholder = self
                     .in_flight
                     .iter()
-                    .find(|(_, inflight)| inflight.contains(file, &blocks_range))
+                    .find(|(_, inflight)| inflight.covers(file, &blocks_range))
                     .map(|(_, inflight)| inflight.guard.placeholder().clone());
 
                 let placeholder = if let Some(placeholder) = self_placeholder {
@@ -269,6 +269,7 @@ where
                     match state.local.placeholders.get_or_register(
                         state.local,
                         blocks_range.clone(),
+                        blocks_byte_range.clone(),
                     ) {
                         PlaceholderResult::AlreadyLocal => {
                             let bytes = unsafe { read_local::<R>(file, range, P::IS_SEQUENTIAL)? };
@@ -381,9 +382,45 @@ where
         }
 
         if let Some(read) = self.pending.pop_front() {
-            read.placeholder.wait()?;
-            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
-            return Ok(Some((read.user_data, ACow::Borrowed(slice))));
+            match read.placeholder.wait()? {
+                WaitResult::Completed => {
+                    let slice =
+                        unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+                    return Ok(Some((read.user_data, ACow::Borrowed(slice))));
+                }
+                WaitResult::Promoted(guard) => {
+                    let remote_pipeline =
+                        Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
+                    let entry = self.in_flight.vacant_entry();
+                    let started = Instant::now();
+                    let blocks_byte_range = guard.placeholder().blocks_byte_range.clone();
+                    let blocks_range = guard.placeholder().blocks_range.clone();
+                    let state = read.file.state()?;
+                    if read.is_sequential {
+                        remote_pipeline.schedule::<Sequential>(
+                            entry.key() as u64,
+                            state.remote,
+                            blocks_byte_range,
+                            REMOTE_READ_ALIGNMENT,
+                        )?;
+                    } else {
+                        remote_pipeline.schedule::<Random>(
+                            entry.key() as u64,
+                            state.remote,
+                            blocks_byte_range,
+                            REMOTE_READ_ALIGNMENT,
+                        )?;
+                    }
+                    entry.insert(RemoteFetch {
+                        file: read.file,
+                        guard,
+                        fetch: read.file.stats.fetch(started),
+                        blocks_range,
+                    });
+                    self.pending.push_front(read);
+                    return self.wait();
+                }
+            }
         }
 
         Ok(None)

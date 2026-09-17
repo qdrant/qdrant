@@ -900,13 +900,14 @@ mod tests_mod {
         handle2.join().unwrap();
     }
 
-    /// When the leader pipeline drops without completing, piggybacked pipelines
-    /// unblock with an error rather than hanging.
+    /// When the leader pipeline drops without completing, the waiting follower is
+    /// promoted to leader, retries the fetch, and succeeds.
     #[test]
-    fn cross_pipeline_leader_abandons_waiter_errors() {
+    fn cross_pipeline_leader_abandons_follower_promotes_and_succeeds() {
         let scn = Scenario::new(BLOCK_SIZE * 2);
         let file = Arc::new(scn.open::<R>(false));
         let file_clone = file.clone();
+        let expected_2 = scn.data[20..40].to_vec();
 
         let (t1_scheduled_tx, t1_scheduled_rx) = std::sync::mpsc::channel();
         let (t2_waiting_tx, t2_waiting_rx) = std::sync::mpsc::channel();
@@ -929,11 +930,62 @@ mod tests_mod {
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
             t2_waiting_tx.send(()).unwrap();
-            assert!(pipeline.wait().is_err());
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
         });
 
         handle1.join().unwrap();
         handle2.join().unwrap();
+    }
+
+    /// When leader drops and first promoted follower also drops, the succession
+    /// chain continues to the next waiting follower.
+    #[test]
+    fn cross_pipeline_multi_follower_chain_succession() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_2 = file.clone();
+        let file_3 = file.clone();
+        let expected_3 = scn.data[30..45].to_vec();
+
+        let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t2_wait_tx, t2_wait_rx) = std::sync::mpsc::channel();
+        let (t3_wait_tx, t3_wait_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            t1_sched_tx.send(()).unwrap();
+            t2_wait_rx.recv().unwrap();
+            t3_wait_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            drop(pipeline);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_sched_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(2, &file_2, 20..40, 1).unwrap();
+            t2_wait_tx.send(()).unwrap();
+
+            // Enters wait, gets promoted when handle1 drops, but drops pipeline without completing
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = pipeline.wait();
+            }));
+        });
+
+        let handle3 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(3, &file_3, 30..45, 1).unwrap();
+            t3_wait_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&3], expected_3);
+        });
+
+        handle1.join().unwrap();
+        let _ = handle2.join();
+        handle3.join().unwrap();
     }
 
     /// When two distinct pipelines run on the same thread (e.g. nested calls),
