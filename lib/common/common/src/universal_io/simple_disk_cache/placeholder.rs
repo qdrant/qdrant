@@ -6,7 +6,6 @@ use std::thread::{Thread, ThreadId};
 use parking_lot::Mutex;
 
 use super::local_state::LocalState;
-use crate::universal_io::{UioResult, UniversalIoError};
 
 #[derive(Debug)]
 enum PlaceholderState {
@@ -69,9 +68,9 @@ impl Placeholder {
         }
     }
 
-    pub(super) fn wait(self: &Arc<Self>) -> UioResult<WaitResult> {
+    pub(super) fn wait(self: &Arc<Self>) -> WaitResult {
         if self.is_completed() {
-            return Ok(WaitResult::Completed);
+            return WaitResult::Completed;
         }
 
         let current = std::thread::current();
@@ -79,12 +78,21 @@ impl Placeholder {
             {
                 let mut state = self.state.lock();
                 match &mut *state {
-                    PlaceholderState::Completed => return Ok(WaitResult::Completed),
+                    PlaceholderState::Completed => return WaitResult::Completed,
                     PlaceholderState::Abandoned => {
-                        return Err(UniversalIoError::Io(std::io::Error::new(
-                            std::io::ErrorKind::Interrupted,
-                            "remote fetch abandoned",
-                        )));
+                        // Previous leader abandoned before we entered wait().
+                        // Promote ourselves to take over the fetch.
+                        *state = PlaceholderState::Loading {
+                            leader: current.id(),
+                            waiters: Vec::new(),
+                        };
+                        self.registry.re_register(self);
+                        let guard = PlaceholderGuard {
+                            placeholder: self.clone(),
+                            registry: self.registry.clone(),
+                            completed: false,
+                        };
+                        return WaitResult::Promoted(guard);
                     }
                     PlaceholderState::Loading { leader, waiters } => {
                         if *leader == current.id() {
@@ -94,7 +102,7 @@ impl Placeholder {
                                 registry: self.registry.clone(),
                                 completed: false,
                             };
-                            return Ok(WaitResult::Promoted(guard));
+                            return WaitResult::Promoted(guard);
                         }
                         if !waiters.iter().any(|w| w.id() == current.id()) {
                             waiters.push(current.clone());
@@ -186,6 +194,13 @@ impl PlaceholderRegistry {
     fn remove(&self, placeholder: &Arc<Placeholder>) {
         let mut list = self.placeholders.lock();
         list.retain(|p| !Arc::ptr_eq(p, placeholder));
+    }
+
+    fn re_register(&self, placeholder: &Arc<Placeholder>) {
+        let mut list = self.placeholders.lock();
+        if !list.iter().any(|p| Arc::ptr_eq(p, placeholder)) {
+            list.push(placeholder.clone());
+        }
     }
 
     pub(super) fn get_or_register(

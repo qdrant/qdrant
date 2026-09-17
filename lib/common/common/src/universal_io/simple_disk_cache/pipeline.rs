@@ -336,6 +336,7 @@ where
             return Ok(Some((user_data, ACow::Borrowed(slice))));
         }
 
+        // Check if a piggybacking request is done
         if let Some(idx) = self
             .pending
             .iter()
@@ -346,6 +347,7 @@ where
             return Ok(Some((read.user_data, ACow::Borrowed(slice))));
         }
 
+        // Check and wait for a fetch that this pipeline is leading.
         if !self.in_flight.is_empty() {
             let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
                 return Ok(None);
@@ -381,8 +383,9 @@ where
             return Ok(Some((read.user_data, ACow::Borrowed(slice))));
         }
 
+        // Wait for a piggybacking read to complete.
         if let Some(read) = self.pending.pop_front() {
-            match read.placeholder.wait()? {
+            match read.placeholder.wait() {
                 WaitResult::Completed => {
                     let slice =
                         unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };

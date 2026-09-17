@@ -988,6 +988,47 @@ mod tests_mod {
         handle3.join().unwrap();
     }
 
+    /// When the leader drops before the follower enters wait(), the follower
+    /// detects abandonment upon calling wait(), promotes itself, and succeeds.
+    #[test]
+    fn follower_calls_wait_after_leader_dropped_promotes_and_succeeds() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t2_sched_tx, t2_sched_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline1 = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline1.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline1.in_flight_fetches(), 1);
+            t1_sched_tx.send(()).unwrap();
+            t2_sched_rx.recv().unwrap();
+            // Leader drops BEFORE follower enters wait()!
+            drop(pipeline1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_sched_rx.recv().unwrap();
+            let mut pipeline2 = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline2.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            assert_eq!(pipeline2.in_flight_fetches(), 0);
+            t2_sched_tx.send(()).unwrap();
+
+            // Give thread 1 time to drop
+            std::thread::sleep(std::time::Duration::from_millis(20));
+
+            // Follower calls wait() after abandonment: it should self-promote and succeed!
+            let results = drain_pipeline(&mut pipeline2);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
     /// When two distinct pipelines run on the same thread (e.g. nested calls),
     /// the second pipeline does not piggyback to prevent same-thread deadlock.
     #[test]
