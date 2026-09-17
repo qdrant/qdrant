@@ -14613,6 +14613,14 @@ pub struct RaftMessage {
     pub message: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ResignLeaderRequest {
+    #[prost(uint64, tag = "1")]
+    pub term: u64,
+    #[prost(uint64, tag = "2")]
+    pub timeout_ms: u64,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllPeers {
     #[prost(message, repeated, tag = "1")]
@@ -14763,6 +14771,25 @@ pub mod raft_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Raft", "Send"));
             self.inner.unary(req, path, codec).await
         }
+        /// Resign without choosing a successor. Membership is unchanged.
+        pub async fn resign_leader(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ResignLeaderRequest>,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/ResignLeader");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Raft", "ResignLeader"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Send to bootstrap peer
         /// Returns uri by id if bootstrap knows this peer
         pub async fn who_is(
@@ -14852,6 +14879,11 @@ pub mod raft_server {
         async fn send(
             &self,
             request: tonic::Request<super::RaftMessage>,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Resign without choosing a successor. Membership is unchanged.
+        async fn resign_leader(
+            &self,
+            request: tonic::Request<super::ResignLeaderRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Send to bootstrap peer
         /// Returns uri by id if bootstrap knows this peer
@@ -14980,6 +15012,49 @@ pub mod raft_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SendSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Raft/ResignLeader" => {
+                    #[allow(non_camel_case_types)]
+                    struct ResignLeaderSvc<T: Raft>(pub Arc<T>);
+                    impl<T: Raft> tonic::server::UnaryService<super::ResignLeaderRequest>
+                    for ResignLeaderSvc<T> {
+                        type Response = ();
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ResignLeaderRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Raft>::resign_leader(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ResignLeaderSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

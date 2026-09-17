@@ -8,6 +8,8 @@ import "google/protobuf/empty.proto";
 service Raft {
   // Send Raft message to another peer
   rpc Send(RaftMessage) returns (google.protobuf.Empty);
+  // Resign without choosing a successor. Membership is unchanged.
+  rpc ResignLeader(ResignLeaderRequest) returns (google.protobuf.Empty);
   // Send to bootstrap peer
   // Returns uri by id if bootstrap knows this peer
   rpc WhoIs(PeerId) returns (Uri);
@@ -25,6 +27,11 @@ service Raft {
 
 message RaftMessage {
   bytes message = 1;
+}
+
+message ResignLeaderRequest {
+  uint64 term = 1;
+  uint64 timeout_ms = 2;
 }
 
 message AllPeers {
