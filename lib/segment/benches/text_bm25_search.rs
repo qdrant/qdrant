@@ -1,7 +1,9 @@
 //! BM25 over the text payload index, per index shape.
 //!
 //! The number to set against `lib/collection/benches/bm25_sparse_bench.rs`:
-//! the same corpus shape, the same query shape, the same limit. Each query is
+//! the same corpus shape, the same query shape, the same limit. Ten times the
+//! documents of that baseline's first cut, so the on-disk paths see a corpus
+//! that does not fit a page-cache warm-up trivially. Each query is
 //! timed with its statistics gather included, since the shard-level sparse
 //! search gathers IDF per query as well. What this leaves out is everything
 //! above one segment: routing, the merge across segments, and the id tracker.
@@ -26,7 +28,7 @@ use segment::index::field_index::full_text_index::{Bm25Params, FullTextIndex};
 use segment::json_path::JsonPath;
 use tempfile::{Builder, TempDir};
 
-const POINT_COUNT: usize = 20_000;
+const POINT_COUNT: usize = 200_000;
 const VOCAB_SIZE: usize = 20_000;
 const DOC_LEN: std::ops::RangeInclusive<usize> = 20..=200;
 const QUERY_TERMS: std::ops::RangeInclusive<usize> = 2..=5;
