@@ -1,5 +1,5 @@
 //! A replica receiving a shard transfer, and the dummy shard a snapshot recovery puts in its place
-//! before downloading. Only the registered source may trigger that clear, and a transfer from a
+//! before downloading. Only a registered transfer may trigger that clear, and a transfer from a
 //! peer left with such a dummy must still abort cleanly.
 
 use std::path::Path;
@@ -96,6 +96,25 @@ async fn test_clear_for_snapshot_recovery_refuses_unregistered_sender() {
     );
 }
 
+#[tokio::test]
+async fn test_clear_for_snapshot_recovery_refuses_without_registered_transfer() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = receiving_collection(dir.path()).await;
+
+    // A sender that does not identify itself - an older peer - still needs a transfer
+    let result = collection
+        .clear_local_shard_for_snapshot_recovery(SHARD_ID, None)
+        .await;
+    assert!(
+        matches!(result, Err(CollectionError::BadRequest { .. })),
+        "clearing without any registered transfer must be refused, got {result:?}",
+    );
+    assert!(
+        !is_dummy(&collection).await,
+        "refused clear must leave the local shard in place",
+    );
+}
+
 /// Transfer restarts and aborts un-proxify the sender's local shard when applied. A dummy has
 /// nothing to revert, and an error here would be fatal to consensus: a peer replaying such an
 /// entry on startup would fail on every start.
@@ -103,6 +122,12 @@ async fn test_clear_for_snapshot_recovery_refuses_unregistered_sender() {
 async fn test_abort_shard_transfer_with_dummy_local_shard_succeeds() {
     let dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = receiving_collection(dir.path()).await;
+    collection
+        .shards_holder()
+        .read()
+        .await
+        .register_start_shard_transfer(transfer(SOURCE_PEER_ID, THIS_PEER_ID))
+        .unwrap();
 
     // Clear the local shard the way a snapshot recovery does before downloading
     collection
