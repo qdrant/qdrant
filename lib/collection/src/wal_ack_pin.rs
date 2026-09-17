@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn test_move_pin() {
+    fn test_move_pin_forward() {
         let pins = WalAckPins::default();
 
         let first = pins.pin(10);
@@ -158,9 +158,19 @@ mod tests {
         first.set(25);
         assert_eq!(pins.lowest(), Some(20));
 
-        // A pin may also move back
-        second.set(5);
-        assert_eq!(pins.lowest(), Some(5));
+        // A pin may also stay
+        second.set(20);
+        assert_eq!(pins.lowest(), Some(20));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_move_pin_backward() {
+        let pins = WalAckPins::default();
+        let pin = pins.pin(10);
+
+        // A pin should not move back
+        pin.set(5);
     }
 
     #[test]
