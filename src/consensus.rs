@@ -1435,12 +1435,15 @@ impl Consensus {
         let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
             .context("Failed to handle committed entries")?;
 
+        // Advance the Raft regardless of `stop_consensus`: raft-rs requires every `Ready` to be
+        // advanced, and this node's own removal does not exempt it from that contract, even
+        // though nothing reads the returned `LightReady` once consensus is stopping.
+        let light_rd = self.node.advance(ready);
+
         if stop_consensus {
             return Ok((None, None, false));
         }
 
-        // Advance the Raft.
-        let light_rd = self.node.advance(ready);
         Ok((Some(light_rd), role_change, is_idle))
     }
 
