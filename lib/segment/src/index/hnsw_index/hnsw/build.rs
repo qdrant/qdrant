@@ -83,6 +83,7 @@ impl HNSWIndex {
             stopped,
             hnsw_global_config,
             feature_flags,
+            inline_vectors,
             progress,
         } = build_args;
 
@@ -556,17 +557,19 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph_links_vectors = hnsw_config
-            .inline_storage
-            .unwrap_or_default()
+        let graph_links_vectors = inline_vectors
             .then(|| {
-                // NOTE: the configuration is silently ignored if try_new fails.
                 StorageGraphLinksVectors::try_new(
                     &vector_storage_ref,
                     quantized_vectors_ref.as_ref(),
                 )
+                .ok_or_else(|| {
+                    OperationError::service_error(
+                        "Inline vectors requested, but the storages cannot provide them",
+                    )
+                })
             })
-            .flatten();
+            .transpose()?;
         let format_param = match graph_links_vectors.as_ref() {
             Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
             None => GraphLinksFormatParam::Compressed,

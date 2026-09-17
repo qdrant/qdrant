@@ -412,6 +412,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             stopped: &AtomicBool::new(false),
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: feature_flags(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

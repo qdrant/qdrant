@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::flags::FeatureFlags;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
@@ -145,6 +146,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         segment_builder_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
     let hw_counter = HardwareCounterCell::new();

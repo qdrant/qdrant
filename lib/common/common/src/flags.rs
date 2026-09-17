@@ -80,6 +80,12 @@ pub struct FeatureFlags {
     /// serverless deployments where storage and compute is separated.
     pub persist_proxy_segments: bool,
 
+    /// When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage
+    /// (aka inline-storage without standalone vector storage) for new segments.
+    ///
+    /// Existing `GraphInline` segments are always readable, regardless of this flag.
+    pub combined_vector_storage: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`]
     /// and [`Self::persist_proxy_segments`].
@@ -104,6 +110,7 @@ impl Default for FeatureFlags {
             transfer_raw_points: false,
             transfer_raw_payloads: false,
             persist_proxy_segments: false,
+            combined_vector_storage: true,
             serverless_compatible: false,
         }
     }
@@ -140,6 +147,7 @@ impl FeatureFlags {
             transfer_raw_points: false,
             transfer_raw_payloads: false,
             persist_proxy_segments: true,
+            combined_vector_storage: true,
             serverless_compatible: false,
         }
     }

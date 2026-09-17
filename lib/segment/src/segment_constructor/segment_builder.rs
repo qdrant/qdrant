@@ -12,7 +12,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::feature_flags;
+use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
@@ -50,12 +50,12 @@ use crate::segment_constructor::{
 };
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, Memory, PayloadFieldSchema,
-    PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
+    PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf, VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead, graph_inline};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -65,6 +65,7 @@ pub struct SegmentBuilder {
     vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
     hnsw_global_config: HnswGlobalConfig,
+    feature_flags: FeatureFlags,
 
     // The temporary segment directory
     temp_dir: TempDir,
@@ -91,6 +92,7 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
         hnsw_global_config: &HnswGlobalConfig,
+        feature_flags: FeatureFlags,
     ) -> OperationResult<Self> {
         let temp_dir = create_temp_dir(temp_dir)?;
 
@@ -145,6 +147,7 @@ impl SegmentBuilder {
             vector_data,
             segment_config: segment_config.clone(),
             hnsw_global_config: hnsw_global_config.clone(),
+            feature_flags,
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
@@ -570,8 +573,9 @@ impl SegmentBuilder {
                 id_tracker,
                 payload_storage,
                 mut vector_data,
-                segment_config,
+                mut segment_config,
                 hnsw_global_config,
+                feature_flags,
                 temp_dir,
                 indexed_fields,
                 defragment_keys: _,
@@ -661,7 +665,7 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
 
-                old_indices.insert(vector_name, vector_info.old_indices);
+                old_indices.insert(vector_name.to_owned(), vector_info.old_indices);
 
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
@@ -719,7 +723,8 @@ impl SegmentBuilder {
             check_process_stopped(stopped)?;
 
             progress_vector_index.start();
-            for (vector_name, vector_config) in &segment_config.vector_data {
+            for (vector_name, vector_config) in segment_config.vector_data.iter_mut() {
+                let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
                 let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
                 let quantized_vectors =
                     Arc::new(AtomicRefCell::new(quantized_vectors.remove(vector_name)));
@@ -740,7 +745,8 @@ impl SegmentBuilder {
                         stopped,
                         rng,
                         hnsw_global_config: &hnsw_global_config,
-                        feature_flags: feature_flags(),
+                        feature_flags,
+                        inline_vectors: vector_config.inline_vectors_in_graph(),
                         progress: progress_vector_index.running_subtask(vector_name),
                     },
                 )?;
@@ -758,6 +764,24 @@ impl SegmentBuilder {
                 // Index if always loaded on-disk=true from build function
                 // So we may clear unconditionally
                 index.clear_cache()?;
+
+                if feature_flags.combined_vector_storage && vector_config.inline_vectors_in_graph()
+                {
+                    // Reclaim the build storage from its other holders and
+                    // become the sole owner of it.
+                    drop(index);
+                    payload_index_arc
+                        .borrow_mut()
+                        .unregister_vector_storage(vector_name);
+                    let vector_storage = Arc::into_inner(vector_storage)
+                        .map(AtomicRefCell::into_inner)
+                        .ok_or(OperationError::service_error(
+                            "failed to reclaim vector storage for graph-inline finalization",
+                        ))?;
+
+                    graph_inline::finalize(&vector_storage_path, vector_storage)?;
+                    vector_config.storage_type = VectorStorageType::GraphInline;
+                }
             }
             drop(progress_vector_index);
 

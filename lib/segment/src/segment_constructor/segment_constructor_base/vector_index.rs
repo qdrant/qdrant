@@ -37,6 +37,10 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub stopped: &'a AtomicBool,
     pub hnsw_global_config: &'a HnswGlobalConfig,
     pub feature_flags: FeatureFlags,
+    /// Write in graph-with-vectors format.
+    /// If set, but not supported, the build will fail.
+    /// See: [`VectorDataConfig::inline_vectors_in_graph`]
+    pub inline_vectors: bool,
     pub progress: ProgressTracker,
 }
 

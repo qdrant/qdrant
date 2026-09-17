@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
@@ -113,8 +114,13 @@ fn build_immutable_segment_with_data(
     };
     assert!(!target_config.is_appendable());
 
-    let mut builder =
-        SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_path,
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
 
     let stopped = AtomicBool::new(false);
     builder.update(&[&source], &stopped, &hw()).unwrap();
