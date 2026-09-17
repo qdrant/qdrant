@@ -240,7 +240,7 @@ fn test_phrase_matching() {
     };
 
     let mut mutable_index =
-        FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config.clone())
+        FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config.clone(), false)
             .make_empty()
             .unwrap();
 

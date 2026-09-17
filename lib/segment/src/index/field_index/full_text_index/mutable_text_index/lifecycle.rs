@@ -28,6 +28,8 @@ impl MutableFullTextIndex {
         create_if_missing: bool,
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
+        // Only for the message below: the store takes the path by value.
+        let dir = path.clone();
         let store = if create_if_missing {
             Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
                 |err| {
@@ -54,11 +56,15 @@ impl MutableFullTextIndex {
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
+        let mut records_without_length = 0usize;
 
         store
             .iter::<_, OperationError>(
                 |idx, value: Vec<u8>| {
                     let doc = FullTextIndex::deserialize_document(&value)?;
+                    if scoring && doc.doc_len.is_none() {
+                        records_without_length += 1;
+                    }
                     builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
@@ -69,6 +75,20 @@ impl MutableFullTextIndex {
                     "Failed to load mutable full text index from gridstore: {err}"
                 ))
             })?;
+
+        // The builder stores a zero for a record without a length, which the
+        // accessors would then serve as a real length of zero. Lengths cannot
+        // be recovered from the records, so report the index absent and let
+        // the caller rebuild it from payload, as `new_mmap` does for a missing
+        // sidecar.
+        if records_without_length > 0 {
+            log::info!(
+                "Text index at {dir} has {records_without_length} records without a document \
+                 length, rebuilding it from payload",
+                dir = dir.display(),
+            );
+            return Ok(None);
+        }
 
         Ok(Some(Self {
             inner: MutableFullTextIndexInner {
