@@ -22,7 +22,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// Read-only operations supported by every map-index storage variant
 /// ([`super::mutable_map_index::MutableMapIndex`],
 /// [`super::immutable_map_index::ImmutableMapIndex`],
-/// [`super::universal_map_index::UniversalMapIndex`]).
+/// [`super::on_disk_map_index::OnDiskMapIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
 /// [`MapIndex`] can call them generically. Variants that don't need
