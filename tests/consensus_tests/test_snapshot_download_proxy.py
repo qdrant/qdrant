@@ -97,6 +97,36 @@ def test_snapshot_proxy_holds_one_exact_url_and_allows_later_downloads(snapshot_
             assert held.result(TIMEOUT).content == PAYLOAD
 
 
+def test_snapshot_proxies_have_independent_download_gates(snapshot_source):
+    url = snapshot_source.uri + "/collections/test/shards/0/snapshot"
+    with (
+        PeerProxy("127.0.0.1:1") as first,
+        PeerProxy("127.0.0.1:1") as second,
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        with (
+            first.hold_snapshot_download(snapshot_source.uri, "test", 0) as first_gate,
+            second.hold_snapshot_download(snapshot_source.uri, "test", 0) as second_gate,
+        ):
+            first_download = executor.submit(download, first, url, headers={"receiver": "first"})
+            second_download = executor.submit(download, second, url, headers={"receiver": "second"})
+            assert first_gate.wait_for_request(TIMEOUT) == url
+            assert second_gate.wait_for_request(TIMEOUT) == url
+            with pytest.raises(Empty):
+                snapshot_source.calls.get_nowait()
+
+            first_gate.release()
+            assert first_download.result(TIMEOUT).content == PAYLOAD
+            assert snapshot_source.calls.get(timeout=TIMEOUT)[1]["receiver"] == "first"
+            assert not second_download.done()
+            with pytest.raises(Empty):
+                snapshot_source.calls.get_nowait()
+
+            second_gate.release()
+            assert second_download.result(TIMEOUT).content == PAYLOAD
+            assert snapshot_source.calls.get(timeout=TIMEOUT)[1]["receiver"] == "second"
+
+
 def test_snapshot_proxy_does_not_forward_cancelled_held_download(snapshot_source):
     url = snapshot_source.uri + "/collections/test/shards/0/snapshot"
     with PeerProxy("127.0.0.1:1") as proxy, proxy.hold_snapshot_download(snapshot_source.uri, "test", 0) as gate:

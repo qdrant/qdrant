@@ -117,14 +117,9 @@ def test_snapshot_download_gate_pauses_after_receiver_is_cleared(tmp_path, resta
         # Readiness does not mean the restarted peer has learned the new leader.
         wait_for_uniform_cluster_status(peer_uris)
 
-    with (
-        peers[0].proxy.hold_snapshot_download(peer_uris[2], COLLECTION_NAME, 0) as gate,
-        peers[1].proxy.hold_snapshot_download(peer_uris[2], COLLECTION_NAME, 0) as other_receiver_gate,
-    ):
+    with peers[0].proxy.hold_snapshot_download(peer_uris[2], COLLECTION_NAME, 0) as gate:
         replicate_shard(peer_uris[2], COLLECTION_NAME, 0, peer_ids[2], peer_ids[0], method="snapshot")
         gate.wait_for_request()
-        with pytest.raises(TimeoutError, match="No request reached the gate"):
-            other_receiver_gate.wait_for_request(timeout=0)
         receiver = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)
         transfer, = receiver["shard_transfers"]
         assert (transfer["from"], transfer["to"], transfer["shard_id"], transfer["method"]) == (
