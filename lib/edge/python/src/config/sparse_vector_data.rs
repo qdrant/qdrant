@@ -84,6 +84,7 @@ impl<'py> IntoPyObject<'py> for &PyEdgeSparseVectorParams {
 #[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {
+    #[pyo3(name = "None_")]
     None,
     Idf,
 }
@@ -98,7 +99,7 @@ impl PyModifier {
 impl Repr for PyModifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
-            Self::None => "None",
+            Self::None => "None_",
             Self::Idf => "Idf",
         };
 
