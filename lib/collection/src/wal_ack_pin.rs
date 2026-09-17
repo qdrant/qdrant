@@ -83,9 +83,16 @@ impl WalAckPinGuard {
     /// Move this pin to `version`.
     ///
     /// Use this to release WAL entries the holder no longer needs, while keeping the pin itself.
+    ///
+    /// This is not expected to move the version backwards, gated by a debug assertion.
     pub fn set(&self, version: u64) {
         log::trace!("Moving WAL acknowledge pin to {version}");
-        self.version.store(version, Ordering::Relaxed);
+        let previous = self.version.swap(version, Ordering::Relaxed);
+
+        debug_assert!(
+            version >= previous,
+            "WAL acknowledge pin moved backwards from {previous} to {version}",
+        );
     }
 }
 
