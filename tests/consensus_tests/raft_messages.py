@@ -10,6 +10,7 @@ from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 MSG_APPEND = 3
 MSG_APPEND_RESPONSE = 4
+MSG_REQUEST_VOTE = 5
 ENTRY_CONF_CHANGE_V2 = 2
 REMOVE_NODE = 1
 
@@ -36,6 +37,7 @@ def _message(name, fields):
 _message("Envelope", [(1, "message", _field.TYPE_BYTES, False)])
 _message("Entry", [
     (1, "entry_type", _field.TYPE_UINT32, False),
+    (2, "term", _field.TYPE_UINT64, False),
     (3, "index", _field.TYPE_UINT64, False),
     (4, "data", _field.TYPE_BYTES, False),
 ])
@@ -43,6 +45,7 @@ _message("Message", [
     (1, "msg_type", _field.TYPE_UINT32, False),
     (2, "to", _field.TYPE_UINT64, False),
     (3, "from_peer", _field.TYPE_UINT64, False),
+    (4, "term", _field.TYPE_UINT64, False),
     (6, "index", _field.TYPE_UINT64, False),
     (7, "entries", "Entry", True),
     (8, "commit", _field.TYPE_UINT64, False),

@@ -1,6 +1,7 @@
 use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
-    AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
+    AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes,
+    ResignLeaderRequest, Uri as UriStr,
 };
 use itertools::Itertools;
 use raft::eraftpb::Message as RaftMessage;
@@ -35,6 +36,30 @@ impl RaftService {
 
 #[async_trait]
 impl Raft for RaftService {
+    async fn resign_leader(
+        &self,
+        request: Request<ResignLeaderRequest>,
+    ) -> Result<Response<()>, Status> {
+        let request = request.into_inner();
+        let deadline = std::time::Instant::now()
+            .checked_add(std::time::Duration::from_millis(request.timeout_ms))
+            .ok_or_else(|| Status::invalid_argument("Invalid resignation timeout"))?;
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        self.message_sender
+            .send(consensus::Message::ResignLeader {
+                term: request.term,
+                deadline,
+                reply,
+            })
+            .await
+            .map_err(|_| Status::internal("Consensus stopped"))?;
+        receiver
+            .await
+            .map_err(|_| Status::internal("Consensus stopped"))?
+            .map_err(|err| Status::failed_precondition(err.to_string()))?;
+        Ok(Response::new(()))
+    }
+
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
         let message =
             <RaftMessage as prost_for_raft::Message>::decode(&request.get_mut().message[..])
