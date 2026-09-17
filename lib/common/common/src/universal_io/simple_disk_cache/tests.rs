@@ -818,6 +818,146 @@ mod tests_mod {
         assert_eq!(results[&1], &scn.data[40..60]);
     }
 
+    /// Multiple pipelines on different threads reading the same remote blocks
+    /// piggyback on a single remote fetch.
+    #[test]
+    fn cross_pipeline_reads_share_one_fetch() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_ready_tx, t1_ready_rx) = std::sync::mpsc::channel();
+        let (t2_scheduled_tx, t2_scheduled_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_ready_tx.send(()).unwrap();
+            t2_scheduled_rx.recv().unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_ready_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_scheduled_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// A piggybacked pipeline calling wait() before the leader completes
+    /// blocks until the leader commits the remote fetch.
+    #[test]
+    fn cross_pipeline_wait_before_leader_completes() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_scheduled_tx, t1_scheduled_rx) = std::sync::mpsc::channel();
+        let (t2_waiting_tx, t2_waiting_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_scheduled_tx.send(()).unwrap();
+            t2_waiting_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_scheduled_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_waiting_tx.send(()).unwrap();
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// When the leader pipeline drops without completing, piggybacked pipelines
+    /// unblock with an error rather than hanging.
+    #[test]
+    fn cross_pipeline_leader_abandons_waiter_errors() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+
+        let (t1_scheduled_tx, t1_scheduled_rx) = std::sync::mpsc::channel();
+        let (t2_waiting_tx, t2_waiting_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_scheduled_tx.send(()).unwrap();
+            t2_waiting_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            drop(pipeline);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_scheduled_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_waiting_tx.send(()).unwrap();
+            assert!(pipeline.wait().is_err());
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// When two distinct pipelines run on the same thread (e.g. nested calls),
+    /// the second pipeline does not piggyback to prevent same-thread deadlock.
+    #[test]
+    fn nested_pipelines_on_same_thread_do_not_deadlock() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = scn.open::<R>(false);
+
+        let mut outer = DiskCachePipeline::<R, u32>::new().unwrap();
+        outer.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+        assert_eq!(outer.in_flight_fetches(), 1);
+
+        let mut inner = DiskCachePipeline::<R, u32>::new().unwrap();
+        inner.schedule::<Random>(2, &file, 20..40, 1).unwrap();
+        assert_eq!(inner.in_flight_fetches(), 1);
+
+        let inner_res = drain_pipeline(&mut inner);
+        assert_eq!(inner_res[&2], &scn.data[20..40]);
+
+        let outer_res = drain_pipeline(&mut outer);
+        assert_eq!(outer_res[&1], &scn.data[10..50]);
+    }
+
     /// End-to-end `read_batch` with many reads clustered in shared blocks:
     /// every read resolves with its own user data and correct bytes.
     #[test]
@@ -1376,5 +1516,56 @@ mod statistics {
         assert_eq!(delta.remote_fetches_started, 1);
         assert_eq!(delta.remote_fetches_completed, 1);
         assert_eq!(delta.downloaded_bytes, 200); // includes the old partial block
+    }
+
+    #[test]
+    fn cross_pipeline_remote_fetches_are_shared_and_counted_once() {
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let fs = scn.fs::<MmapFile>();
+        let observer = fs.stats();
+        let file = Arc::new(
+            fs.clone()
+                .open(&scn.remote_path, options(Populate::No), Default::default())
+                .unwrap(),
+        );
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_ready_tx, t1_ready_rx) = std::sync::mpsc::channel();
+        let (t2_scheduled_tx, t2_scheduled_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<MmapFile, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(0, &file, 10..50, 1)
+                .unwrap();
+            t1_ready_tx.send(()).unwrap();
+            t2_scheduled_rx.recv().unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&0], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_ready_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<MmapFile, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(1, &file_clone, 20..40, 1)
+                .unwrap();
+            t2_scheduled_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+
+        let snapshot = observer.snapshot();
+        assert_eq!(snapshot.remote_fetches_started, 1);
+        assert_eq!(snapshot.remote_fetches_completed, 1);
+        assert_eq!(snapshot.remote_fetches_abandoned, 0);
+        assert_eq!(snapshot.downloaded_bytes, BLOCK_SIZE as u64);
     }
 }
