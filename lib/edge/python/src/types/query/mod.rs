@@ -6,6 +6,8 @@ use std::fmt;
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::vector_storage::query::*;
@@ -22,6 +24,7 @@ pub struct PyQuery(pub QueryEnum);
 
 impl FromPyObject<'_, '_> for PyQuery {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = PyQueryInterface::TYPE_HINT;
 
     fn extract(query: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let query = match query.extract()? {
@@ -70,6 +73,7 @@ impl<'py> IntoPyObject<'py> for PyQuery {
     type Target = PyQueryInterface;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible?
+    const OUTPUT_TYPE: PyStaticExpr = PyQueryInterface::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let query = match self.0 {
@@ -118,6 +122,7 @@ impl<'py> IntoPyObject<'py> for &PyQuery {
     type Target = PyQueryInterface;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible
+    const OUTPUT_TYPE: PyStaticExpr = PyQueryInterface::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -385,6 +390,7 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     type Target = PyContextPair;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible
+    const OUTPUT_TYPE: PyStaticExpr = PyContextPair::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -488,6 +494,7 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     type Target = PyFeedbackItem;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible
+    const OUTPUT_TYPE: PyStaticExpr = PyFeedbackItem::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)

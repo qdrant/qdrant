@@ -9,6 +9,8 @@ pub mod value_count;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::types::{Filter, MinShould};
 
@@ -96,6 +98,7 @@ impl<'py> IntoPyObject<'py> for &PyFilter {
     type Target = PyFilter;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyFilter::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)

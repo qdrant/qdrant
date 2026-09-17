@@ -5,13 +5,14 @@ use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use segment::data_types::vectors::*;
 use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::vector::PySparseVector;
+use super::vector::{NAMED_VECTOR, PySparseVector, VECTOR};
 use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -20,6 +21,7 @@ pub struct PyVectorInternal(VectorStructInternal);
 
 impl FromPyObject<'_, '_> for PyVectorInternal {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
@@ -55,6 +57,7 @@ impl<'py> IntoPyObject<'py> for PyVectorInternal {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -65,6 +68,7 @@ impl<'py> IntoPyObject<'py> for &PyVectorInternal {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {
@@ -109,6 +113,7 @@ impl PyNamedVectorInternal {
 
 impl FromPyObject<'_, '_> for PyNamedVectorInternal {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn extract(vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         #[derive(FromPyObject)]
@@ -134,6 +139,7 @@ impl<'py> IntoPyObject<'py> for PyNamedVectorInternal {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -144,6 +150,7 @@ impl<'py> IntoPyObject<'py> for &PyNamedVectorInternal {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = NAMED_VECTOR.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match &self.0 {

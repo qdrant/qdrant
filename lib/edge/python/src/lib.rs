@@ -8,6 +8,7 @@ pub mod repr;
 pub mod scroll;
 pub mod search;
 pub mod snapshots;
+pub mod type_hint;
 pub mod types;
 pub mod update;
 pub mod utils;
