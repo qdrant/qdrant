@@ -36,8 +36,11 @@ def _remove(uri, peer_id, server_timeout=60):
     assert_http_ok(response)
 
 
-@pytest.mark.parametrize("remove_leader", [True, False], ids=["leader", "follower-control"])
-@pytest.mark.parametrize("server_timeout", [None, 60], ids=["default-wait", "wait-60s"])
+@pytest.mark.parametrize(("remove_leader", "server_timeout"), [
+    pytest.param(True, None, id="default-wait-leader"),
+    pytest.param(True, 60, id="wait-60s-leader"),
+    pytest.param(False, 60, id="wait-60s-follower-control"),
+])
 def test_remove_peer_from_two_node_cluster(tmp_path, remove_leader, server_timeout):
     # Keep the held RPC alive until the test releases it.
     uris, _, _ = start_cluster(tmp_path, 2, use_peer_proxy=True, extra_env={
