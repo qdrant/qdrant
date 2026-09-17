@@ -1,3 +1,5 @@
+maturin := "maturin@1.15.0"
+
 # Print available recipes
 help:
   @just --unsorted --list
@@ -59,7 +61,7 @@ py-build:
   unset VIRTUAL_ENV
   uv venv --allow-existing
   uv pip install requests
-  maturin develop --no-default-features --features abi3
+  uvx {{maturin}} develop --no-default-features --features abi3
 
 # 🐍 Run Python examples; Specify example with `-e examples/demo.py`
 [working-directory: 'python', script]

@@ -43,7 +43,6 @@ mkShell {
     pkgs.gnuplot # optional runtime dep for criterion
     pkgs.jq # used in ./tests and ./tools
     pkgs.just # for lib/edge/Justfile
-    pkgs.maturin # mentioned in lib/edge/python/README.md
     pkgs.nixfmt # to format this file
     pkgs.npins # used in tools/nix/update.py
     pkgs.python3 # used in ./tests, ./tools, lib/edge
