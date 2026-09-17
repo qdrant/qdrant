@@ -246,7 +246,7 @@ impl ClusterState {
                 })
                 .map(ShardTransfer::key)
                 .collect();
-            transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+            transfers.sort_by_key(|&key| transfer_sort_key(key));
             validated.push((shard_id, peer_id, transfers));
         }
 
@@ -933,10 +933,7 @@ impl ClusterState {
             })
             .collect();
 
-        transfers.sort_by_key(|transfer| {
-            let key = transfer.key();
-            (key.shard_id, key.to_shard_id, key.from, key.to)
-        });
+        transfers.sort_by_key(|transfer| transfer_sort_key(transfer.key()));
 
         for transfer in transfers {
             let transfer_key = transfer.key();
@@ -1561,7 +1558,7 @@ impl ClusterState {
                 })
                 .map(ShardTransfer::key)
                 .collect();
-            transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+            transfers.sort_by_key(|&key| transfer_sort_key(key));
 
             for key in transfers {
                 let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
@@ -1687,7 +1684,7 @@ impl ClusterState {
             .filter(|transfer| transfer.from == peer_id || transfer.to == peer_id)
             .map(ShardTransfer::key)
             .collect();
-        transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+        transfers.sort_by_key(|&key| transfer_sort_key(key));
 
         for key in transfers {
             // An earlier resharding abort can unregister other related transfers
@@ -1798,6 +1795,10 @@ fn transfer_by_key(
         .transfers
         .iter()
         .find(|transfer| transfer.key() == key)
+}
+
+fn transfer_sort_key(key: ShardTransferKey) -> (ShardId, Option<ShardId>, PeerId, PeerId) {
+    (key.shard_id, key.to_shard_id, key.from, key.to)
 }
 
 fn apply_actions(state: &mut ClusterState, actions: &[Action]) {
