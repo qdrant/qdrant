@@ -41,7 +41,7 @@ impl FullTextIndex {
         // Checked before the open, not after: opening populates the whole file
         // set, and on the first start after scoring is enabled every existing
         // segment would fault in its postings only to be discarded here.
-        if scoring && !has_doc_len_sidecar(&path) {
+        if scoring && !has_doc_len_sidecar(&MmapFs, &path)? {
             log::info!(
                 "Text index at {path} records no document lengths, rebuilding it from payload",
                 path = path.display(),

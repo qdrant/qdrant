@@ -9,7 +9,7 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
     UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
@@ -52,8 +52,14 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// file set: on the first start after scoring is enabled every existing segment
 /// would otherwise fault in its postings, its vocabulary and its counts only to
 /// be discarded and rebuilt from payload.
-pub(in super::super) fn has_doc_len_sidecar(path: &Path) -> bool {
-    path.join(POINT_TO_DOC_LEN_FILE).exists()
+///
+/// Asked of the filesystem handle rather than the host path: a read-only
+/// index may sit behind object storage, where the host path holds nothing.
+pub(in super::super) fn has_doc_len_sidecar(
+    fs: &impl UniversalReadFs,
+    path: &Path,
+) -> UioResult<bool> {
+    fs.exists(&path.join(POINT_TO_DOC_LEN_FILE))
 }
 
 /// Mmap-backed immutable full-text inverted index.
