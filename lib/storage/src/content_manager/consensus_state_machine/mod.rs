@@ -143,6 +143,10 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
             }
 
+            CollectionMetaOperations::ChangeAliases(operation) => {
+                ApplyOutcome::new(self.state.plan_change_aliases(operation))
+            }
+
             CollectionMetaOperations::CreateShardKey(operation) => {
                 ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
             }
@@ -159,10 +163,6 @@ impl ConsensusStateMachine {
             CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
-
-            CollectionMetaOperations::ChangeAliases(operation) => {
-                ApplyOutcome::new(self.state.plan_change_aliases(operation))
-            }
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))

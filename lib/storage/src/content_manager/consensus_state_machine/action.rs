@@ -127,17 +127,17 @@ impl Action {
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
             Action::CreateCollection { collection, .. }
-            | Action::DropCollection { collection }
             | Action::UpdateCollectionConfig { collection, .. }
-            | Action::AddNamedVector { collection, .. }
-            | Action::DropNamedVector { collection, .. }
-            | Action::SetPayloadIndex { collection, .. }
-            | Action::DropPayloadIndex { collection, .. }
+            | Action::DropCollection { collection }
             | Action::CreateShard { collection, .. }
             | Action::RegisterShards { collection, .. }
             | Action::InvalidateCleanLocalShards { collection, .. }
             | Action::RemoveShardKey { collection, .. }
-            | Action::DropShard { collection, .. } => Some(collection),
+            | Action::DropShard { collection, .. }
+            | Action::AddNamedVector { collection, .. }
+            | Action::DropNamedVector { collection, .. }
+            | Action::SetPayloadIndex { collection, .. }
+            | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
             Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
