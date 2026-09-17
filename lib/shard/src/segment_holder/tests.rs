@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use common::flags::{FeatureFlags, init_feature_flags};
-use common::tar_unpack::tar_unpack_file;
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
@@ -2167,34 +2166,6 @@ fn test_post_flush_action_hard_failure_is_dropped() {
     assert_eq!(version, WATERLINE);
 }
 
-/// While a WAL acknowledge pin is held, a flush pass reports nothing to acknowledge, so no WAL
-/// entry is truncated. Snapshots that include the WAL hold one for their whole run.
-#[test]
-fn test_wal_ack_pin_holds_flush_all_until_dropped() {
-    const WATERLINE: SeqNumberType = 100;
-
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-
-    let mut holder = SegmentHolder::default();
-    holder.add_new(empty_segment(dir.path()));
-    // Something to acknowledge, so that the hold is observable
-    holder.bump_max_segment_version_overwrite(WATERLINE);
-
-    let pin = holder.pin_wal_ack();
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
-    assert_eq!(version, 0, "a pin must hold back the WAL acknowledge");
-
-    // The hold lasts until the last pin is released, in any order
-    let later_pin = holder.pin_wal_ack();
-    drop(pin);
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
-    assert_eq!(version, 0);
-
-    drop(later_pin);
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
-    assert_eq!(version, WATERLINE, "releasing the last pin lifts the hold");
-}
-
 /// Test that CoW deletes the source point when the destination copy is NOT deferred.
 ///
 /// This is the standard CoW behavior: after successfully moving a point to the appendable
@@ -2791,11 +2762,6 @@ fn snapshot_all_segments_with(
     schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     mut operation: impl FnMut(&SegmentHolder, &RwLock<dyn SegmentEntry>) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    // Like a shard snapshot that includes the WAL, hold the WAL acknowledge from before proxying.
-    // These tests never get as far as capturing a WAL, which is what would release the pin, so
-    // leak it: it must stay in effect for the rest of the test.
-    std::mem::forget(holder.read().pin_wal_ack());
-
     let segments_lock = holder.upgradable_read();
     let (proxies, tmp_segment_id, segments_lock) =
         SegmentHolder::proxy_all_segments(segments_lock, segments_dir, None, schema, None)?;
@@ -2823,30 +2789,6 @@ fn delete_through_proxies(
         }
     }
     Ok(())
-}
-
-fn restore_snapshotted_segment(snapshot_file: &Path, segment_uuid: uuid::Uuid) -> Segment {
-    use segment::pending_changes::{PersistedProxyChanges, recover_pending_changes};
-    use segment::segment_constructor::load_segment;
-
-    let restore_dir = Builder::new().prefix("restore_dir").tempdir().unwrap();
-    tar_unpack_file(snapshot_file, restore_dir.path()).unwrap();
-    let restored_path = restore_dir
-        .path()
-        .join(segment_uuid.to_string())
-        .join("files");
-    let mut restored = load_segment(
-        &restored_path,
-        segment_uuid,
-        None,
-        &AtomicBool::new(false),
-        false,
-    )
-    .unwrap();
-    let _recovered = recover_pending_changes(&mut restored, PersistedProxyChanges::Replay).unwrap();
-    // Keep the directory alive as long as the segment, it is memory mapped from there
-    std::mem::forget(restore_dir);
-    restored
 }
 
 /// Snapshotting proxies every segment, and a proxy persists the changes buffered meanwhile into
@@ -2890,107 +2832,5 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
     assert!(
         list_pending_changes_log_files(&segment_path).is_empty(),
         "pending changes logs of snapshot proxies must be removed once the wrapped segment flushed",
-    );
-}
-
-/// While a segment is snapshotted it is proxied, and the proxy persists changes buffered meanwhile
-/// into its log, so the WAL can be acknowledged past them before the snapshot copies the WAL. The
-/// segment's files were already copied without that log, so the snapshot holds neither the change
-/// nor the WAL entry that would replay it.
-#[test]
-fn test_snapshot_keeps_changes_made_during_segment_copy_replayable() {
-    use common::tar_ext;
-    use segment::types::SnapshotFormat;
-
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
-    let segment = build_segment_1(dir.path());
-    let segment_uuid = segment.segment_uuid();
-    let mut holder = SegmentHolder::default();
-    holder.add_new(segment);
-    let holder = LockedSegmentHolder::new(holder);
-    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(
-        fs_err::File::create(snapshot_file.path()).unwrap(),
-    );
-    let schema =
-        Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
-
-    let mut acknowledged = None;
-    snapshot_all_segments_with(&holder, segments_dir.path(), schema, |segments, wrapped| {
-        wrapped
-            .read()
-            .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)?;
-        delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
-        acknowledged = Some(segments.flush_all(FlushMode::Sync, false)?);
-        Ok(())
-    })
-    .unwrap();
-    drop(tar);
-    let acknowledged = acknowledged.unwrap();
-
-    let restored = restore_snapshotted_segment(snapshot_file.path(), segment_uuid);
-    let point_1_restored = restored.has_point(1.into(), DeferredBehavior::WithDeferred);
-    assert!(
-        !point_1_restored || acknowledged < 100,
-        "the snapshot lacks the delete at 100 (point 1 restored: {point_1_restored}) while the WAL \
-         was acknowledged at {acknowledged} during the copy, so a WAL copied afterwards cannot \
-         replay it either",
-    );
-}
-
-/// The same gap after the segment is unproxied, independent of persisted proxy changes: the
-/// propagated delete is flushed by the wrapped segment itself and acknowledged, while the
-/// segment's files were copied before it arrived.
-#[test]
-fn test_snapshot_keeps_changes_made_after_segment_copy_replayable() {
-    use common::tar_ext;
-    use segment::types::SnapshotFormat;
-
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
-    let segment = build_segment_1(dir.path());
-    let segment_uuid = segment.segment_uuid();
-    let mut holder = SegmentHolder::default();
-    holder.add_new(segment);
-    let holder = LockedSegmentHolder::new(holder);
-    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar = tar_ext::BuilderExt::new_seekable_owned(
-        fs_err::File::create(snapshot_file.path()).unwrap(),
-    );
-    let schema =
-        Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
-
-    snapshot_all_segments_with(&holder, segments_dir.path(), schema, |segments, wrapped| {
-        wrapped
-            .read()
-            .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)?;
-        delete_through_proxies(segments, 100, 1.into(), &hw_counter)
-    })
-    .unwrap();
-    drop(tar);
-
-    let acknowledged = holder.read().flush_all(FlushMode::Sync, false).unwrap();
-
-    let restored = restore_snapshotted_segment(snapshot_file.path(), segment_uuid);
-    let point_1_restored = restored.has_point(1.into(), DeferredBehavior::WithDeferred);
-    assert!(
-        !point_1_restored || acknowledged < 100,
-        "the snapshot lacks the delete at 100 (point 1 restored: {point_1_restored}) while the WAL \
-         was acknowledged at {acknowledged} after unproxying",
     );
 }

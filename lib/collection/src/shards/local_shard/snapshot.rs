@@ -58,6 +58,9 @@ impl LocalShard {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let segments = self.segments.clone();
         let wal = self.wal.wal.clone();
+        // The pin set this shard's flush worker consults before acknowledging the WAL. Taken here
+        // rather than in the blocking task below, which cannot await the update handler lock.
+        let wal_ack_pins = self.update_handler.lock().await.wal_ack_pins.clone();
         let payload_index_schema = self.payload_index_schema.clone();
 
         let shard_path = self.path.clone();
@@ -125,7 +128,14 @@ impl LocalShard {
                 // keep all changes that are still coming in until the WAL is
                 // captured. Not doing this would result in a snapshot that is
                 // inconsistent with the WAL.
-                let wal_ack_pin = save_wal.then(|| segments.read().pin_wal_ack());
+                //
+                // Pinned at the WAL's current first index, so nothing that is still in the WAL is
+                // truncated while the snapshot runs. The segment files are copied from this point
+                // in time, so every operation applied meanwhile only survives in the WAL archived
+                // at the end. The lock is taken and released right here; the task locks the WAL
+                // itself further down, once the segments are captured.
+                let wal_ack_pin =
+                    save_wal.then(|| wal_ack_pins.pin(wal.blocking_lock().first_index()));
 
                 // If the shard maintains a segment manifest (`segments_manifest.json`), include it
                 // in the snapshot so out-of-process readers can discover segments without scanning

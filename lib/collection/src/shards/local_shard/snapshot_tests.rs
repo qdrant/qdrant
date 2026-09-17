@@ -172,3 +172,125 @@ fn test_snapshot_includes_segment_manifest() {
         assert_eq!(*state, SegmentManifestState::Active);
     }
 }
+
+/// A snapshot that includes the WAL pins the WAL acknowledge before it copies the segment files,
+/// and holds that pin until the WAL is archived. Operations applied in between are persisted by
+/// the proxies — into their pending changes logs while installed, into the wrapped segments once
+/// unproxied — so a flush pass reports them durable and would otherwise have them acknowledged
+/// away. The copied segment files predate them, so they only survive in the archived WAL: the pin
+/// is what keeps them there.
+///
+/// This pins exactly as [`LocalShard::get_snapshot_creator`] does, then checks the version the
+/// flush worker would acknowledge.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
+    use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::operations::CollectionUpdateOperations;
+    use shard::operations::point_ops::{
+        PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    };
+    use shard::segment_holder::FlushMode;
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
+
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::shards::local_shard::LocalShard;
+    use crate::shards::shard_trait::{ShardOperation, WaitUntil};
+    use crate::tests::fixtures::{create_collection_config, delete_point_operation};
+    use crate::update_workers::flush_workers::wal_ack_version;
+
+    init_test_feature_flags();
+
+    let collection_dir = Builder::new().prefix("wal_snapshot_pin").tempdir().unwrap();
+    let config = create_collection_config();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema = Arc::new(
+        SaveOnDisk::load_or_init_default(
+            payload_index_schema_dir.path().join("payload-schema.json"),
+        )
+        .unwrap(),
+    );
+
+    let shard = LocalShard::build(
+        0,
+        "test".to_string(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        Handle::current(),
+        AdaptiveSearchHandle::current_for_tests(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Keep flushing and WAL acknowledging under the test's control
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+
+    // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
+    let total_points = 10u64;
+    for i in 0..total_points {
+        let point = PointStructPersisted {
+            id: i.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        shard
+            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .await
+            .unwrap();
+    }
+
+    // Pin the WAL acknowledge exactly as a WAL-including snapshot does, before the segment files
+    // would be copied
+    let wal_ack_pins = shard.update_handler.lock().await.wal_ack_pins.clone();
+    let wal_first_index = shard.wal.wal.lock().await.first_index();
+    let pin = wal_ack_pins.pin(wal_first_index);
+
+    // A change that lands while the snapshot runs, and is made durable by a flush
+    let delete_op_num = total_points + 1;
+    shard
+        .update(
+            delete_point_operation(3).into(),
+            WaitUntil::Visible,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+    let confirmed = shard
+        .segments()
+        .read()
+        .flush_all(FlushMode::Sync, true)
+        .unwrap();
+    assert!(
+        confirmed >= delete_op_num,
+        "the delete must be durable ({confirmed} >= {delete_op_num}), or this proves nothing",
+    );
+
+    // While the pin is held the delete must stay in the WAL, however durable it is
+    let acknowledged = wal_ack_version(confirmed, &wal_ack_pins);
+    assert!(
+        acknowledged.is_none_or(|acknowledged| acknowledged < delete_op_num),
+        "the snapshot copied the segment files before the delete at {delete_op_num}, but the WAL \
+         would be acknowledged at {acknowledged:?}, so a WAL copied afterwards cannot replay it",
+    );
+
+    // Releasing the pin, as the snapshot does once the WAL is archived, lifts the hold
+    drop(pin);
+    assert_eq!(
+        wal_ack_version(confirmed, &wal_ack_pins),
+        Some(confirmed),
+        "releasing the snapshot's pin must let the acknowledge catch up",
+    );
+}
