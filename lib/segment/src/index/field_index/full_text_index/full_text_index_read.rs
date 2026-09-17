@@ -40,6 +40,10 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         "seeded terms must already be tokenized",
     );
 
+    // Once up front as well as per term: with no term resolved the loop below
+    // never runs, and the total after it still reads the whole sidecar on disk.
+    check_process_stopped(is_stopped)?;
+
     // The destination slot travels as the callback's user data, so no term has
     // to be cloned and no second lookup is needed to store the count.
     let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());

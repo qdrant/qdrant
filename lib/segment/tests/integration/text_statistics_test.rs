@@ -9,7 +9,9 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
-use segment::types::{PayloadSchemaType, SegmentConfig, SeqNumberType};
+use segment::types::{
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, SegmentConfig, SeqNumberType,
+};
 use tempfile::Builder;
 
 /// Advanced IDF formula, as implemented by `fancy_idf`.
@@ -39,7 +41,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
         .create_field_index(
             op_num,
             &field(),
-            Some(&PayloadSchemaType::Text.into()),
+            Some(&PayloadFieldSchema::from(PayloadSchemaType::Text)),
             &hw_counter,
         )
         .unwrap();
@@ -49,7 +51,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
         segment
             .upsert_point(
                 op_num,
-                (point_id as u64).into(),
+                PointIdType::from(point_id as u64),
                 NamedVectors::default(),
                 &hw_counter,
             )
@@ -57,7 +59,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
         segment
             .set_payload(
                 op_num,
-                (point_id as u64).into(),
+                PointIdType::from(point_id as u64),
                 &payload_json! { "text": *document },
                 &None,
                 &hw_counter,
