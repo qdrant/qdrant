@@ -1,13 +1,12 @@
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use edge::FacetRequest;
-use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::data_types::facets::{FacetResponse, FacetValue, FacetValueHit};
-use segment::types::Filter;
+use segment::types::{Filter, ValueVariants};
 
 use crate::repr::*;
-use crate::types::{PyFilter, PyJsonPath};
+use crate::types::{PyFilter, PyJsonPath, PyValueVariants};
 
 #[pyclass(name = "FacetRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
@@ -56,8 +55,15 @@ pub struct PyFacetHit(FacetValueHit);
 #[pymethods]
 impl PyFacetHit {
     #[getter]
-    pub fn value<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        facet_value_into_py(&self.0.value, py)
+    pub fn value(&self) -> PyValueVariants {
+        PyValueVariants::wrap(match &self.0.value {
+            FacetValue::Keyword(str) => ValueVariants::String(str.clone()),
+            &FacetValue::Int(int) => ValueVariants::Integer(int),
+            &FacetValue::Uuid(uuid) => {
+                ValueVariants::String(uuid::Uuid::from_u128(uuid).to_string())
+            }
+            &FacetValue::Bool(bool) => ValueVariants::Bool(bool),
+        })
     }
 
     #[getter]
@@ -132,16 +138,5 @@ impl PyFacetHitIter {
 
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyFacetHit> {
         slf.inner.next().map(PyFacetHit)
-    }
-}
-
-fn facet_value_into_py<'py>(value: &FacetValue, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-    match value {
-        FacetValue::Keyword(s) => s.into_bound_py_any(py),
-        FacetValue::Int(i) => i.into_bound_py_any(py),
-        FacetValue::Uuid(uuid) => uuid::Uuid::from_u128(*uuid)
-            .to_string()
-            .into_bound_py_any(py),
-        FacetValue::Bool(b) => b.into_bound_py_any(py),
     }
 }

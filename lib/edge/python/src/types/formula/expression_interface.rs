@@ -1,6 +1,7 @@
 use std::fmt;
 
 use bytemuck::TransparentWrapper;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 
 use crate::repr::*;
@@ -199,6 +200,7 @@ where
     T: FromPyObject<'a, 'py>,
 {
     type Error = T::Error;
+    const INPUT_TYPE: PyStaticExpr = T::INPUT_TYPE;
 
     fn extract(any: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         any.extract().map(Boxed::from_inner)
@@ -212,6 +214,7 @@ where
     type Target = T::Target;
     type Output = T::Output;
     type Error = T::Error;
+    const OUTPUT_TYPE: PyStaticExpr = T::OUTPUT_TYPE;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         self.into_inner().into_pyobject(py)

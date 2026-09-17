@@ -7,40 +7,56 @@ use std::fmt;
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::types::*;
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyQuantizationConfig(pub QuantizationConfig);
 
+pub const QUANTIZATION_CONFIG: Alias = Alias {
+    name: "QuantizationConfigType",
+    definition: QuantizationConfigHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum QuantizationConfigHelper {
+    Scalar(PyScalarQuantizationConfig),
+    Product(PyProductQuantizationConfig),
+    Binary(PyBinaryQuantizationConfig),
+    Turbo(PyTurboQuantQuantizationConfig),
+}
+
 impl FromPyObject<'_, '_> for PyQuantizationConfig {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = QUANTIZATION_CONFIG.hint();
 
     fn extract(conf: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Scalar(PyScalarQuantizationConfig),
-            Product(PyProductQuantizationConfig),
-            Binary(PyBinaryQuantizationConfig),
-            Turbo(PyTurboQuantQuantizationConfig),
-        }
-
         let conf = match conf.extract()? {
-            Helper::Scalar(scalar) => QuantizationConfig::Scalar(ScalarQuantization {
-                scalar: ScalarQuantizationConfig::from(scalar),
-            }),
-            Helper::Product(product) => QuantizationConfig::Product(ProductQuantization {
-                product: ProductQuantizationConfig::from(product),
-            }),
-            Helper::Binary(binary) => QuantizationConfig::Binary(BinaryQuantization {
-                binary: BinaryQuantizationConfig::from(binary),
-            }),
-            Helper::Turbo(turbo) => QuantizationConfig::Turbo(TurboQuantization {
-                turbo: TurboQuantQuantizationConfig::from(turbo),
-            }),
+            QuantizationConfigHelper::Scalar(scalar) => {
+                QuantizationConfig::Scalar(ScalarQuantization {
+                    scalar: ScalarQuantizationConfig::from(scalar),
+                })
+            }
+            QuantizationConfigHelper::Product(product) => {
+                QuantizationConfig::Product(ProductQuantization {
+                    product: ProductQuantizationConfig::from(product),
+                })
+            }
+            QuantizationConfigHelper::Binary(binary) => {
+                QuantizationConfig::Binary(BinaryQuantization {
+                    binary: BinaryQuantizationConfig::from(binary),
+                })
+            }
+            QuantizationConfigHelper::Turbo(turbo) => {
+                QuantizationConfig::Turbo(TurboQuantization {
+                    turbo: TurboQuantQuantizationConfig::from(turbo),
+                })
+            }
         };
 
         Ok(Self(conf))
@@ -51,22 +67,24 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = QUANTIZATION_CONFIG.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                PyScalarQuantizationConfig(scalar).into_bound_py_any(py)
+                QuantizationConfigHelper::Scalar(PyScalarQuantizationConfig(scalar))
             }
             QuantizationConfig::Product(ProductQuantization { product }) => {
-                PyProductQuantizationConfig(product).into_bound_py_any(py)
+                QuantizationConfigHelper::Product(PyProductQuantizationConfig(product))
             }
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
+                QuantizationConfigHelper::Binary(PyBinaryQuantizationConfig(binary))
             }
             QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                PyTurboQuantQuantizationConfig(turbo).into_bound_py_any(py)
+                QuantizationConfigHelper::Turbo(PyTurboQuantQuantizationConfig(turbo))
             }
         }
+        .into_bound_py_any(py)
     }
 }
 

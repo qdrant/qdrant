@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fmt;
 
 use edge::EdgeSparseVectorParams;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::types::VectorStorageDatatype;
@@ -75,6 +77,7 @@ impl<'py> IntoPyObject<'py> for &PyEdgeSparseVectorParams {
     type Target = PyEdgeSparseVectorParams;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyEdgeSparseVectorParams::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
