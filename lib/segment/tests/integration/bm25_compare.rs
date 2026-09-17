@@ -129,7 +129,7 @@ impl Reference {
             let Some(posting) = self.postings.get(term) else {
                 continue;
             };
-            let idf = fancy_idf(n as ScoreType, posting.len() as ScoreType).max(0.0) as f64;
+            let idf = f64::from(fancy_idf(n as ScoreType, posting.len() as ScoreType).max(0.0));
             for &(doc, tf) in posting {
                 let tf = f64::from(tf);
                 let len = f64::from(self.lengths[doc as usize]);
@@ -596,7 +596,7 @@ fn bm25_sparse_vs_text_compare() {
             "avg_doc_len": reference.avg_doc_len,
             "rows": rows,
         });
-        std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+        fs_err::write(&path, serde_json::to_string_pretty(&report).unwrap()).unwrap();
         eprintln!("written {path}");
     }
 }
