@@ -35,6 +35,7 @@ rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
+bm25 = { path = "../bm25" }
 object_store = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
