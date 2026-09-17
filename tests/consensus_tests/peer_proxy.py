@@ -46,6 +46,10 @@ class RequestGate:
         """Return the RPC bytes or download URL once held before forwarding.
 
         This does not prove that the transfer has copied any data.
+
+        With timeout=0, return an already-arrived request or raise TimeoutError
+        immediately. This checks the current state without waiting for an
+        in-flight request.
         """
         try:
             return self._arrived.result(timeout)
