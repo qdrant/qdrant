@@ -94,7 +94,6 @@ jobs:
       - name: Install tools
         run: |
           uv tool install ast-grep-cli
-          uv tool install maturin
 
       - name: Setup Qdrant
         uses: ./.github/actions/setup-qdrant
