@@ -3,6 +3,7 @@ use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationError;
 
 use crate::locked_segment::LockedSegment;
+use crate::segment_holder::locked::{LockedSegmentHolder, UpdatesGuard};
 use crate::segment_holder::{PostFlushOutcome, SegmentHolder, SegmentId};
 
 /// The segment holder lock handed back when unproxying fails, with the error that caused it.
@@ -11,17 +12,27 @@ pub type UnproxyError<'a> = (RwLockUpgradableReadGuard<'a, SegmentHolder>, Opera
 impl SegmentHolder {
     /// Swap every proxy in `proxy_ids` back for the segment it wraps.
     ///
-    /// Changes buffered in a proxy (deleted points, index and vector-name changes) are propagated
-    /// into the wrapped segments first, while only the upgradable read lock is held. That can be
-    /// an expensive step, so it is important that it does not block reads.
+    /// Changes buffered in a proxy (deleted points, index and vector-name changes) must reach the
+    /// wrapped segment before the proxy is dropped. Propagating them can be expensive when a proxy
+    /// has been live for a while, so it is done in two phases:
+    ///
+    /// 1. The bulk of the changes is propagated while only the upgradable read lock is held and
+    ///    the updates lock is *not*. Reads keep running and updates keep landing, so the expensive
+    ///    part of unproxying blocks neither.
+    /// 2. The updates lock is taken, freezing updates, and every proxy is propagated once more to
+    ///    pick up whatever arrived during phase 1. That delta is bounded by how long phase 1 took,
+    ///    so it is normally empty or tiny, and the exclusive phase stays cheap. Only then is the
+    ///    write lock taken to swap the proxies out.
     ///
     /// Each unwrapped proxy's pending changes log file is deleted after the next segments flush
     /// cycle. It is left on disk now, but a post flush action is scheduled to remove it later.
     ///
     /// # Locking
     ///
-    /// Takes no lock of its own: the caller owns the updates lock and the returned write lock, and
-    /// decides when each of them is released.
+    /// Acquires the updates lock between the two phases and hands it back to the caller together
+    /// with the write lock, which decides when each of them is released. The caller must NOT hold
+    /// the updates lock already: that would block updates during phase 1 and collapse the split
+    /// into one exclusive pass (and, since the lock is not reentrant, deadlock).
     ///
     /// # Result
     ///
@@ -33,11 +44,12 @@ impl SegmentHolder {
     /// Unwrapping a proxy whose changes did not reach the wrapped segment would lose them for
     /// good, so we must not touch the holder in that case.
     pub(crate) fn unproxy_segments<'a>(
+        segments: &'a LockedSegmentHolder,
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         proxy_ids: &[SegmentId],
-    ) -> Result<RwLockWriteGuard<'a, SegmentHolder>, UnproxyError<'a>> {
-        // Propagate proxied changes back into the wrapped segments to not lose these in-memory
-        // changes, while we only hold the upgradable read lock
+    ) -> Result<(RwLockWriteGuard<'a, SegmentHolder>, UpdatesGuard<'a>), UnproxyError<'a>> {
+        // Phase 1: propagate the bulk of the buffered changes while holding only the upgradable
+        // read lock. Updates are deliberately left running, so this may take as long as it needs.
         let proxies: Vec<_> = proxy_ids
             .iter()
             .filter_map(|&proxy_id| match segments_lock.get(proxy_id) {
@@ -56,7 +68,12 @@ impl SegmentHolder {
             }
         }
 
-        // Swap out each proxy with its wrapped segment once changes are propagated
+        // Phase 2: freeze updates, then re-propagate whatever landed during phase 1 and swap the
+        // proxies out. The updates lock is taken before upgrading to the write lock, matching the
+        // [segment holder -> updates] order every non-update path uses; taking it while holding
+        // only the upgradable read lock still lets in-flight updates take their read lock and
+        // finish, so they drain instead of deadlocking against the upgrade below.
+        let updates_guard = segments.acquire_updates_lock();
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for &proxy_id in proxy_ids {
             let proxy_segment = match write_segments.get(proxy_id) {
@@ -69,10 +86,11 @@ impl SegmentHolder {
                 None => continue,
             };
 
-            // Points might have changed in between propagating above and taking the write lock, so
-            // propagate once more. Failing to propagate loses in-memory state, but is recovered on
-            // restart: the persisted pending changes log stays behind and is replayed then, and
-            // everything past it is replayed from the WAL.
+            // Points may have changed while phase 1 ran without the updates lock, so propagate
+            // once more. Updates are frozen now, so this catches everything and is the last word.
+            // Failing to propagate loses in-memory state, but is recovered on restart: the
+            // persisted pending changes log stays behind and is replayed then, and everything
+            // past it is replayed from the WAL.
             let propagated = proxy_segment.write().propagate_to_wrapped();
             if let Err(err) = &propagated {
                 log::error!(
@@ -112,6 +130,6 @@ impl SegmentHolder {
             }
         }
 
-        Ok(write_segments)
+        Ok((write_segments, updates_guard))
     }
 }

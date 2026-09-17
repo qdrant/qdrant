@@ -483,11 +483,7 @@ where
         // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
         let remaining = proxies.len() - unproxied_segment_ids.len();
         if remaining > 1 {
-            match SegmentHolder::try_unproxy_segment(
-                segments_lock,
-                *segment_id,
-                segments.acquire_updates_lock(),
-            ) {
+            match SegmentHolder::try_unproxy_segment(&segments, segments_lock, *segment_id) {
                 Ok(lock) => {
                     segments_lock = lock;
                     unproxied_segment_ids.push(*segment_id);
@@ -506,10 +502,10 @@ where
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
     SegmentHolder::unproxy_all_segments(
+        &segments,
         segments_lock,
         &remaining_proxy_ids,
         tmp_segment_id,
-        segments.acquire_updates_lock(),
     )?;
 
     result

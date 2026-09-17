@@ -14,7 +14,7 @@ use segment::types::SegmentConfig;
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::UnsyncedProxySegment;
-use crate::segment_holder::locked::UpdatesGuard;
+use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
@@ -127,9 +127,9 @@ impl SegmentHolder {
     /// If unproxying fails an error is returned with the lock and the proxy is left behind in the
     /// shard holder.
     pub fn try_unproxy_segment<'a>(
+        segments: &'a LockedSegmentHolder,
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segment_id: SegmentId,
-        updates_guard: UpdatesGuard<'a>,
     ) -> Result<
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
@@ -144,10 +144,11 @@ impl SegmentHolder {
         // Propagate changes to wrapped segment with segment holder read lock. On failure keep the
         // proxy installed rather than unwrapping into a segment that never got the changes;
         // `unproxy_all_segments` retries the propagation for every proxy left behind.
-        let write_segments = match SegmentHolder::unproxy_segments(segments_lock, &[segment_id]) {
-            Ok(write_segments) => write_segments,
-            Err((segments_lock, _err)) => return Err(segments_lock),
-        };
+        let (write_segments, updates_guard) =
+            match SegmentHolder::unproxy_segments(segments, segments_lock, &[segment_id]) {
+                Ok(unproxied) => unproxied,
+                Err((segments_lock, _err)) => return Err(segments_lock),
+            };
 
         drop(updates_guard); // Release updates lock as soon as possible
 
@@ -157,17 +158,18 @@ impl SegmentHolder {
 
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`].
     pub fn unproxy_all_segments(
+        segments: &LockedSegmentHolder,
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxy_ids: &[SegmentId],
         tmp_segment_id: SegmentId,
-        updates_guard: UpdatesGuard<'_>,
     ) -> OperationResult<()> {
         // Propagate all changes in the proxies into their wrapped segments and put the wrapped
         // segments back into the segment holder. On failure nothing is unwrapped: every proxy
         // stays installed and keeps serving its changes, and the temp segment they write into is
         // left in place.
-        let mut write_segments = SegmentHolder::unproxy_segments(segments_lock, proxy_ids)
-            .map_err(|(_segments_lock, err)| err)?;
+        let (mut write_segments, updates_guard) =
+            SegmentHolder::unproxy_segments(segments, segments_lock, proxy_ids)
+                .map_err(|(_segments_lock, err)| err)?;
 
         debug_assert!(
             write_segments.get(tmp_segment_id).is_some(),

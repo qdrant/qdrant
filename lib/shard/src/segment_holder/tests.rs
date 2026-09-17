@@ -1941,10 +1941,10 @@ fn test_double_proxies() {
     // Unproxy once
     let outer_proxy_ids: Vec<_> = outer_proxies.iter().map(|(id, _)| *id).collect();
     SegmentHolder::unproxy_all_segments(
+        &holder,
         outer_segments_lock,
         &outer_proxy_ids,
         outer_tmp_segment,
-        holder.acquire_updates_lock(),
     )
     .unwrap();
 
@@ -1956,10 +1956,10 @@ fn test_double_proxies() {
     // Unproxy twice
     let inner_proxy_ids: Vec<_> = inner_proxies.iter().map(|(id, _)| *id).collect();
     SegmentHolder::unproxy_all_segments(
+        &holder,
         holder.upgradable_read(),
         &inner_proxy_ids,
         inner_tmp_segment,
-        holder.acquire_updates_lock(),
     )
     .unwrap();
 
@@ -2808,12 +2808,7 @@ fn snapshot_all_segments_with(
         operation(&segments_lock, wrapped.get())?;
     }
     let proxy_ids: Vec<_> = proxies.iter().map(|(segment_id, _)| *segment_id).collect();
-    SegmentHolder::unproxy_all_segments(
-        segments_lock,
-        &proxy_ids,
-        tmp_segment_id,
-        holder.acquire_updates_lock(),
-    )
+    SegmentHolder::unproxy_all_segments(holder, segments_lock, &proxy_ids, tmp_segment_id)
 }
 
 fn delete_through_proxies(

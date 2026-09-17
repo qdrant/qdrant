@@ -108,13 +108,16 @@ pub fn unwrap_proxy(
     segments: &LockedSegmentHolder,
     proxy_ids: &[SegmentId],
 ) -> OperationResult<()> {
-    // Propagate proxied changes back into wrapped segment to not lose these in-memory changes
+    // Propagate proxied changes back into wrapped segment to not lose these in-memory changes.
+    // The updates lock is taken by `unproxy_segments` itself, between its two phases, so updates
+    // keep flowing while the bulk of the propagation runs.
     let segments_lock = segments.upgradable_read();
-    let _update_guard = segments.acquire_updates_lock();
 
-    let write_segments =
-        SegmentHolder::unproxy_segments(segments_lock, proxy_ids).map_err(|(_lock, err)| err)?;
+    let (write_segments, updates_guard) =
+        SegmentHolder::unproxy_segments(segments, segments_lock, proxy_ids)
+            .map_err(|(_lock, err)| err)?;
     drop(write_segments); // Release the segment holder lock before the updates lock
+    drop(updates_guard);
 
     Ok(())
 }
