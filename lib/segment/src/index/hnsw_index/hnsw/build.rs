@@ -40,7 +40,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::hnsw_index::{HNSW_BUILD_MAX_PAR_LEN, HnswM};
+use crate::index::hnsw_index::{HnswM, hnsw_build_max_par_len};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -363,9 +363,10 @@ impl HNSWIndex {
             }
 
             if !ids.is_empty() {
+                let max_len = hnsw_build_max_par_len(ids.len(), pool.current_num_threads());
                 pool.install(|| {
                     ids.into_par_iter()
-                        .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                        .with_max_len(max_len)
                         .try_for_each(insert_point)
                 })?;
             }
@@ -720,11 +721,15 @@ fn build_filtered_graph(
     // So that each thread will insert points in different parts of the graph,
     // it is less likely that they will compete for the same locks
     if points_to_index.len() > first_points {
+        let max_len = hnsw_build_max_par_len(
+            points_to_index.len() - first_points,
+            pool.current_num_threads(),
+        );
         pool.install(|| {
             points_to_index
                 .into_par_iter()
                 .skip(first_points)
-                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                .with_max_len(max_len)
                 .try_for_each(insert_points)
         })?;
     }

@@ -86,8 +86,11 @@ mod tests;
 ///
 /// Rayon's adaptive splitter stops splitting once its budget is spent unless a job gets stolen, so
 /// with a non-power-of-two thread count one thread can be left with up to half the points while
-/// the others idle. Capping the job length keeps the work stealable to the end.
-pub const HNSW_BUILD_MAX_PAR_LEN: usize = 64;
+/// the others idle. Capping the job length keeps the work stealable to the end. Sizing it from the
+/// work (about 16 jobs per thread) keeps each thread on long runs of consecutive points.
+pub fn hnsw_build_max_par_len(num_points: usize, num_threads: usize) -> usize {
+    (num_points / (num_threads.max(1) * 16)).max(1)
+}
 
 /// Number of threads to use with rayon for HNSW index building.
 ///

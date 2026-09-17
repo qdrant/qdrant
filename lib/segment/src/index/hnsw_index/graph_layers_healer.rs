@@ -10,7 +10,7 @@ use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
-use crate::index::hnsw_index::{HNSW_BUILD_MAX_PAR_LEN, HnswM};
+use crate::index::hnsw_index::{HnswM, hnsw_build_max_par_len};
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{RawScorer, VectorStorageEnum, VectorStorageRead, new_raw_scorer};
@@ -213,10 +213,11 @@ impl<'a> GraphLayersHealer<'a> {
         quantized_vectors: Option<&QuantizedVectors>,
         stopped: &std::sync::atomic::AtomicBool,
     ) -> OperationResult<()> {
+        let max_len = hnsw_build_max_par_len(self.to_heal.len(), pool.current_num_threads());
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
                 .into_par_iter()
-                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                .with_max_len(max_len)
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
