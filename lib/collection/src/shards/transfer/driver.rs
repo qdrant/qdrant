@@ -215,8 +215,9 @@ where
         // A driver spawned while this peer has no consensus leader acts on a view of consensus
         // that may be stale. On startup, committed but unapplied entries are replayed before this
         // peer joins consensus, so a `Start` for a transfer that has since been aborted still
-        // spawns its driver here. Hold off until a leader is established, so the entries that come
-        // with it, such as an abort of this transfer, are applied before we touch the remote.
+        // spawns its driver here. Hold off until a leader is established. Note this does not
+        // completely pause the transfer until this node caught up, but it does shrink the time
+        // window.
         progress.lock().set_stage(TransferStage::WaitingConsensus);
         if cancel::future::cancel_on_token(cancel.clone(), consensus.await_leader_established())
             .await
