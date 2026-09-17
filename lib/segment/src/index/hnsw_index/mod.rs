@@ -82,13 +82,6 @@ pub mod gpu {
 #[cfg(test)]
 mod tests;
 
-/// Longest run of points a rayon job inserts without splitting further during an HNSW build.
-///
-/// Rayon's adaptive splitter stops splitting once its budget is spent unless a job gets stolen, so
-/// with a non-power-of-two thread count one thread can be left with up to half the points while
-/// the others idle. Capping the job length keeps the work stealable to the end.
-pub const HNSW_BUILD_MAX_PAR_LEN: usize = 64;
-
 /// Number of threads to use with rayon for HNSW index building.
 ///
 /// Uses [`thread_count_for_hnsw`] heuristic but accepts a `max_indexing_threads` parameter to

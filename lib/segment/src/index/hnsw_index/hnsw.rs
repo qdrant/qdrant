@@ -39,6 +39,13 @@ pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
+/// Longest run of points a rayon job inserts without splitting further during an HNSW build.
+///
+/// Rayon's adaptive splitter stops splitting once its budget is spent unless a job gets stolen, so
+/// with a non-power-of-two thread count one thread can be left with up to half the points while
+/// the others idle. Capping the job length keeps the work stealable to the end.
+pub const HNSW_BUILD_MAX_PAR_LEN: usize = 64;
+
 pub(super) const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
 
 #[derive(Debug)]
