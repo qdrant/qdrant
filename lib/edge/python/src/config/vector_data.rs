@@ -77,13 +77,6 @@ pub enum PyDistance {
     Manhattan,
 }
 
-#[pymethods]
-impl PyDistance {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyDistance {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
@@ -323,13 +316,6 @@ pub enum PyMultiVectorComparator {
     MaxSim,
 }
 
-#[pymethods]
-impl PyMultiVectorComparator {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyMultiVectorComparator {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
@@ -365,13 +351,6 @@ pub enum PyVectorStorageDatatype {
     Turbo4,
     Turbo8,
     Turbo16,
-}
-
-#[pymethods]
-impl PyVectorStorageDatatype {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyVectorStorageDatatype {
