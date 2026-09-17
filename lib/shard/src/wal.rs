@@ -284,6 +284,16 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         self.wal.last_index()
     }
 
+    /// Index the next record written to this WAL will get.
+    ///
+    /// Note that this is *not* `last_index() + 1`: if the WAL is empty, `Wal::last_index` returns
+    /// `Wal::first_index`, so `last_index() + 1` is one too high. Use this instead whenever you
+    /// need the position a reader should resume from.
+    pub fn next_index(&self) -> u64 {
+        // Same expression `read_with_size` uses for the exclusive end of its range
+        self.first_index() + self.len(false)
+    }
+
     pub fn segment_capacity(&self) -> usize {
         self.options.segment_capacity
     }
@@ -568,6 +578,75 @@ mod tests {
         for ((idx_s, _size, record_s), (idx, record)) in with_size.iter().zip(without_size.iter()) {
             assert_eq!(idx_s, idx);
             assert_eq!(record_s, record);
+        }
+    }
+
+    /// `next_index` must be the index the next write actually gets, on an *empty* WAL.
+    ///
+    /// Regression test: `last_index() + 1` is one too high here, because `Wal::last_index` falls
+    /// back to `Wal::first_index` when there are no entries. A reader resuming from it skips the
+    /// first record ever written.
+    #[test]
+    fn test_next_index_on_empty_wal() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 32 * 1024 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+        assert!(wal.is_empty());
+
+        let next_index = wal.next_index();
+
+        // The trap this method exists for: with no entries `last_index` falls back to
+        // `first_index`, so it already *is* the next index and `last_index() + 1` overshoots
+        assert_eq!(wal.last_index(), next_index);
+
+        let record = TestRecord::Struct1(TestInternalStruct1 { data: 1 });
+        let written = wal.write(&WalRawRecord::new(&record).unwrap()).unwrap();
+
+        assert_eq!(
+            written, next_index,
+            "next_index must be the index the next write gets",
+        );
+
+        // And the entry is reachable from it, which is the property the queue proxy depends on
+        let entries: Vec<_> = wal.read(next_index).collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, next_index);
+    }
+
+    /// `next_index` must keep matching the next write as the WAL fills up and gets acknowledged.
+    #[test]
+    fn test_next_index_matches_write() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            // Small segments so the writes below roll over into closed segments
+            segment_capacity: 4 * 1024,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        for data in 0..64 {
+            let expected = wal.next_index();
+            let record = TestRecord::Struct1(TestInternalStruct1 { data });
+            let written = wal.write(&WalRawRecord::new(&record).unwrap()).unwrap();
+            assert_eq!(written, expected, "write {data} landed off next_index");
+
+            // Acknowledging part of the WAL must not move the next write position
+            if data % 8 == 7 {
+                let next_index = wal.next_index();
+                wal.ack(data as u64 / 2).unwrap();
+                assert_eq!(
+                    wal.next_index(),
+                    next_index,
+                    "ack moved next_index after write {data}",
+                );
+            }
         }
     }
 

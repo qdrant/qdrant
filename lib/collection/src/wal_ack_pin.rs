@@ -11,8 +11,21 @@ use parking_lot::Mutex;
 /// it replays operations from the WAL to catch up a remote shard.
 ///
 /// Any number of pins may be live at the same time, they never clobber each other. The WAL is
-/// never acknowledged at or past the lowest of them. If there are no pins, everything that is
-/// confirmed to be flushed is acknowledged.
+/// never acknowledged past the lowest of them. If there are no pins, everything that is confirmed
+/// to be flushed is acknowledged.
+///
+/// # Lock order
+///
+/// Installing a pin and acknowledging the WAL must be serialized against each other, otherwise a
+/// pin installed between reading the pins and acknowledging is truncated away regardless. Both
+/// sides therefore take the WAL lock first and the pin lock second, never the other way around:
+///
+/// - [`QueueProxyShard`] creation holds the WAL lock across [`WalAckPins::pin`]
+/// - the flush worker holds the WAL lock across [`WalAckPins::max_ack`] and the acknowledge
+///
+/// Never take the pin lock and then wait for the WAL lock.
+///
+/// [`QueueProxyShard`]: crate::shards::queue_proxy_shard::QueueProxyShard
 #[derive(Default)]
 pub struct WalAckPins {
     /// One entry per [`WalAckPinGuard`] handed out, holding the version that pin keeps.
@@ -40,9 +53,25 @@ impl WalAckPins {
         guard
     }
 
+    /// The version to acknowledge the WAL at, given everything up to `confirmed` is flushed.
+    ///
+    /// [`SerdeWal::ack`] is exclusive: it keeps the entry at the version it is given and drops
+    /// only what is strictly before it. Acknowledging at the lowest pin is therefore exactly what
+    /// keeps that pinned entry, no `- 1` needed.
+    ///
+    /// Must be called with the WAL lock held, see the lock order on [`WalAckPins`].
+    ///
+    /// [`SerdeWal::ack`]: shard::wal::SerdeWal::ack
+    pub fn max_ack(&self, confirmed: u64) -> u64 {
+        match self.lowest() {
+            Some(lowest_pin) => confirmed.min(lowest_pin),
+            None => confirmed,
+        }
+    }
+
     /// The lowest version pinned by any live [`WalAckPinGuard`], `None` if there are no pins.
     ///
-    /// The WAL must not be acknowledged at this version or any later version.
+    /// The WAL must not be acknowledged past this version.
     pub fn lowest(&self) -> Option<u64> {
         let mut pins = self.pins.lock();
         pins.retain(|pin| pin.strong_count() > 0);
@@ -171,6 +200,61 @@ mod tests {
 
         // A pin should not move back
         pin.set(5);
+    }
+
+    #[test]
+    fn test_max_ack_without_pins() {
+        let pins = WalAckPins::default();
+
+        // Everything confirmed flushed may be acknowledged
+        assert_eq!(pins.max_ack(0), 0);
+        assert_eq!(pins.max_ack(100), 100);
+        assert_eq!(pins.max_ack(u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn test_max_ack_is_capped_by_the_lowest_pin() {
+        let pins = WalAckPins::default();
+        let _pin = pins.pin(10);
+
+        // A pin ahead of what is confirmed doesn't hold anything back
+        assert_eq!(pins.max_ack(5), 5);
+
+        // `SerdeWal::ack` is exclusive, so acknowledging *at* the pin keeps the pinned entry
+        assert_eq!(pins.max_ack(10), 10);
+        assert_eq!(pins.max_ack(100), 10);
+    }
+
+    /// A pin at the very first WAL index must not stop the flush pass, it just caps the
+    /// acknowledge at 0, which truncates nothing.
+    ///
+    /// Regression test: this used to be a special case that abandoned the rest of the flush pass,
+    /// taking clock map persistence with it for the lifetime of the pin.
+    #[test]
+    fn test_max_ack_with_pin_at_zero() {
+        let pins = WalAckPins::default();
+        let _pin = pins.pin(0);
+
+        assert_eq!(pins.max_ack(0), 0);
+        assert_eq!(pins.max_ack(100), 0);
+    }
+
+    #[test]
+    fn test_max_ack_follows_pins_as_they_move_and_release() {
+        let pins = WalAckPins::default();
+
+        let first = pins.pin(10);
+        let second = pins.pin(20);
+        assert_eq!(pins.max_ack(100), 10);
+
+        // Moving the lowest pin forward releases WAL up to the next one
+        first.set(30);
+        assert_eq!(pins.max_ack(100), 20);
+
+        // Releasing the last pin lifts the cap entirely
+        drop(second);
+        drop(first);
+        assert_eq!(pins.max_ack(100), 100);
     }
 
     #[test]

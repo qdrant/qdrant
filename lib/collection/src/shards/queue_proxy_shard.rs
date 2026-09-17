@@ -511,7 +511,7 @@ impl Inner {
         wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
+        let start_from = wrapped_shard.wal.wal.lock().await.next_index();
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
