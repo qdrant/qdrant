@@ -343,9 +343,9 @@ pub struct PyMatchExcept(pub MatchExcept);
 #[pymethods]
 impl PyMatchExcept {
     #[new]
-    pub fn new(except: PyAnyVariants) -> Self {
+    pub fn new(value: PyAnyVariants) -> Self {
         Self(MatchExcept {
-            except: AnyVariants::from(except),
+            except: AnyVariants::from(value),
         })
     }
 
