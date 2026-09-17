@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::Arc;
 
-use common::flags::{FeatureFlags, init_feature_flags};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
@@ -17,6 +16,7 @@ use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use tempfile::Builder;
 
 use crate::shards::local_shard::snapshot::snapshot_all_segments;
+use crate::tests::fixtures::init_test_feature_flags;
 
 #[test]
 fn test_snapshot_all() {
@@ -83,16 +83,7 @@ fn test_snapshot_all() {
 /// as `active`.
 #[test]
 fn test_snapshot_includes_segment_manifest() {
-    init_feature_flags(FeatureFlags {
-        write_segment_manifest: true,
-        ..Default::default()
-    });
-
-    // Another test in this process may have initialized the feature flags first; the manifest is
-    // only written when the flag is actually enabled.
-    if !common::flags::feature_flags().write_segment_manifest {
-        return;
-    }
+    init_test_feature_flags();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment1 = build_segment_1(dir.path());
