@@ -74,10 +74,10 @@ pub trait FullTextIndexRead {
     /// division belongs to whoever has summed both over every segment, not
     /// here.
     ///
-    /// Beware that the two are not counted over the same population today: a
-    /// document whose tokens are all filtered away counts towards
-    /// `points_count` in RAM and not on disk, so the ratio moves with the
-    /// storage placement. Whoever divides has to settle that first.
+    /// Both are counted over the same population on every backend: the
+    /// documents this index still holds that carry at least one indexed
+    /// token. A value that tokenizes to nothing is in neither, so the ratio
+    /// does not move with the storage placement.
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
 
     fn for_each_token_id<'a, U: UserData>(
