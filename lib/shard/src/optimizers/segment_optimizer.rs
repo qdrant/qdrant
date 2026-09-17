@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::flags::feature_flags;
 use common::progress_tracker::ProgressTracker;
 #[cfg(any(test, feature = "testing"))]
 use itertools::Itertools;
@@ -334,6 +335,7 @@ pub trait SegmentOptimizer: Sync {
             self.temp_path(),
             &optimized_config,
             self.hnsw_global_config(),
+            feature_flags(),
         )
     }
 

@@ -183,6 +183,7 @@ fn hnsw_quantized_search_test(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )
@@ -919,6 +920,7 @@ fn build_quantized_hnsw_for_compare(
             stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )
@@ -1055,8 +1057,13 @@ fn test_build_hnsw_using_quantization() {
         inline_storage: None,
     });
 
-    let mut builder =
-        SegmentBuilder::new(temp_dir.path(), &config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     builder.update(&[&segment1], &stopped, &hw_counter).unwrap();

@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
@@ -119,8 +120,13 @@ fn build_immutable_segment(segments_path: &Path, temp_path: &Path) -> Segment {
     };
     assert!(!target_config.is_appendable());
 
-    let mut builder =
-        SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_path,
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
     builder
         .update(&[&source], &AtomicBool::new(false), &hw)
         .unwrap();

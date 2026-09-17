@@ -180,6 +180,7 @@ fn _test_filterable_hnsw(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )
@@ -348,6 +349,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

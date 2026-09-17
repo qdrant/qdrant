@@ -148,6 +148,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

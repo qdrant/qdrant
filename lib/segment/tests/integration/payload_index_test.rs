@@ -11,6 +11,7 @@ use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fnv::FnvBuildHasher;
 use fs_err as fs;
@@ -307,6 +308,7 @@ impl TestSegments {
             &path.with_extension("tmp"),
             &Self::make_simple_config(false),
             &HnswGlobalConfig::default(),
+            FeatureFlags::default(),
         )
         .unwrap();
 

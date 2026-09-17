@@ -4,6 +4,7 @@ const NUM_VECTORS_2: u64 = 500;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -91,6 +92,7 @@ fn test_rebuild_with_removed_vectors() {
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
 

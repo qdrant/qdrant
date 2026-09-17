@@ -164,6 +164,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             feature_flags: FeatureFlags::default().tap_mut(|flags| {
                 flags.incremental_hnsw_building = true;
             }),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )
