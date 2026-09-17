@@ -58,13 +58,13 @@ where
     }
 
     /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
-    /// (mmap-format) map index read-only through [`UniversalMapIndex::open`],
+    /// (mmap-format) map index read-only through [`OnDiskMapIndex::open`],
     /// threading every file open through the filesystem handle `fs`.
     ///
     /// The writable enum has two mmap variants (`Immutable` for in-RAM with
     /// mmap backing, `Mmap` for on-disk lazy); the read-only side collapses
     /// to a single [`Self::Immutable`] arm because `is_on_disk` (→ populate)
-    /// already covers the lazy/eager distinction inside [`UniversalMapIndex`].
+    /// already covers the lazy/eager distinction inside [`OnDiskMapIndex`].
     /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
     /// exist.
     ///
