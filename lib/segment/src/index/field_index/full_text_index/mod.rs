@@ -48,5 +48,8 @@ pub enum FullTextIndex {
 pub struct FullTextGridstoreIndexBuilder {
     dir: PathBuf,
     config: TextIndexParams,
+    /// Whether the built index records document lengths. Production passes
+    /// `config.scoring()`; tests override it, as they do for the mmap builder.
+    scoring: bool,
     index: Option<FullTextIndex>,
 }
