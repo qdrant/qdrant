@@ -19,7 +19,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use posting_list::{PostingLenIterator, PostingListView};
 
 use super::positions::Positions;
-use super::posting_list::PostingList as MutablePostingList;
+use super::posting_list::{Posting, PostingList as MutablePostingList};
 use super::{Document, TokenId};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 
@@ -185,18 +185,68 @@ impl TermCursors for PositionalCursors<'_> {
     }
 }
 
-/// A forward cursor over a mutable posting list.
-struct BitmapCursor<'a> {
-    iter: roaring::bitmap::Iter<'a>,
-    current: Option<PointOffsetType>,
+/// A forward cursor over one mutable posting list, in whichever shape it has.
+enum MutableCursor<'a> {
+    /// Ids only: the frequency has to come from the document.
+    Bitmap {
+        iter: roaring::bitmap::Iter<'a>,
+        current: Option<PointOffsetType>,
+    },
+    /// Ids with frequencies, sorted: tf is read off the current element.
+    Frequencies { postings: &'a [Posting], at: usize },
 }
 
-/// Cursors over the mutable index. Its postings are plain id sets, so a term's
-/// frequency comes from the document itself: the first time a candidate is
-/// asked about, its ordered token ids are scanned once and every query term's
-/// count is kept, so the scan is paid per document rather than per term.
+impl MutableCursor<'_> {
+    fn current(&self) -> Option<PointOffsetType> {
+        match self {
+            Self::Bitmap { current, .. } => *current,
+            Self::Frequencies { postings, at } => postings.get(*at).map(|p| p.id),
+        }
+    }
+
+    fn advance(&mut self) {
+        match self {
+            Self::Bitmap { iter, current } => *current = iter.next(),
+            Self::Frequencies { at, .. } => *at += 1,
+        }
+    }
+
+    fn seek(&mut self, target: PointOffsetType) -> Option<PointOffsetType> {
+        if self.current().is_some_and(|current| current >= target) {
+            return self.current();
+        }
+        match self {
+            Self::Bitmap { iter, current } => {
+                iter.advance_to(target);
+                *current = iter.next();
+            }
+            Self::Frequencies { postings, at } => {
+                // Gallop from the current position: a seek usually lands
+                // close to where the cursor already is.
+                let mut step = 1;
+                let mut hi = *at;
+                while hi < postings.len() && postings[hi].id < target {
+                    *at = hi;
+                    hi += step;
+                    step *= 2;
+                }
+                let hi = hi.min(postings.len());
+                *at += postings[*at..hi].partition_point(|p| p.id < target);
+            }
+        }
+        self.current()
+    }
+}
+
+/// Cursors over the mutable index, in both of its posting shapes.
+///
+/// With frequencies stored, tf is read off the posting and this is the same
+/// shape as [`PositionalCursors`]. With ids only, the frequency comes from the
+/// document itself: the first time a candidate is asked about, its ordered
+/// token ids are scanned once and every query term's count is kept, so the
+/// scan is paid per document rather than per term.
 pub struct MutableCursors<'a> {
-    cursors: Vec<Option<BitmapCursor<'a>>>,
+    cursors: Vec<Option<MutableCursor<'a>>>,
     documents: &'a [Option<Document>],
     /// `(token id, term index)` sorted by token id, for the scan.
     tokens: Vec<(TokenId, usize)>,
@@ -206,7 +256,7 @@ pub struct MutableCursors<'a> {
 
 impl<'a> MutableCursors<'a> {
     /// One posting list per query term, `None` for a term without one, plus the
-    /// documents the frequencies are counted from.
+    /// documents the frequencies are counted from when the postings carry none.
     pub fn new(
         postings: Vec<Option<&'a MutablePostingList>>,
         documents: &'a [Option<Document>],
@@ -216,9 +266,18 @@ impl<'a> MutableCursors<'a> {
         let cursors = postings
             .into_iter()
             .map(|posting| {
-                let mut iter = posting?.iter();
-                let current = Some(iter.next()?);
-                Some(BitmapCursor { iter, current })
+                let posting = posting?;
+                if posting.is_empty() {
+                    return None;
+                }
+                Some(match posting.frequencies() {
+                    Some(postings) => MutableCursor::Frequencies { postings, at: 0 },
+                    None => {
+                        let mut iter = posting.ids()?.iter();
+                        let current = iter.next();
+                        MutableCursor::Bitmap { iter, current }
+                    }
+                })
             })
             .collect();
         let mut tokens: Vec<(TokenId, usize)> = terms
@@ -239,13 +298,13 @@ impl<'a> MutableCursors<'a> {
 
 impl TermCursors for MutableCursors<'_> {
     fn current(&self, term: usize) -> Option<PointOffsetType> {
-        self.cursors[term].as_ref()?.current
+        self.cursors[term].as_ref()?.current()
     }
 
     fn advance(&mut self, term: usize) {
         if let Some(cursor) = self.cursors[term].as_mut() {
-            cursor.current = cursor.iter.next();
-            if cursor.current.is_none() {
+            cursor.advance();
+            if cursor.current().is_none() {
                 self.cursors[term] = None;
             }
         }
@@ -253,18 +312,19 @@ impl TermCursors for MutableCursors<'_> {
 
     fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {
         let cursor = self.cursors[term].as_mut()?;
-        if cursor.current.is_some_and(|current| current >= target) {
-            return cursor.current;
-        }
-        cursor.iter.advance_to(target);
-        cursor.current = cursor.iter.next();
-        if cursor.current.is_none() {
+        let found = cursor.seek(target);
+        if found.is_none() {
             self.cursors[term] = None;
         }
-        cursor_current(&self.cursors[term])
+        found
     }
 
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32 {
+        if let Some(MutableCursor::Frequencies { postings, at }) = &self.cursors[term] {
+            let posting = postings[*at];
+            debug_assert_eq!(posting.id, doc);
+            return posting.tf;
+        }
         if self.cached_doc != Some(doc) {
             self.cached_tf.fill(0);
             let document = self.documents[doc as usize]
@@ -279,10 +339,6 @@ impl TermCursors for MutableCursors<'_> {
         }
         self.cached_tf[term]
     }
-}
-
-fn cursor_current(cursor: &Option<BitmapCursor<'_>>) -> Option<PointOffsetType> {
-    cursor.as_ref()?.current
 }
 
 /// Score every document that contains at least one query term and keep the
@@ -838,5 +894,75 @@ mod tests {
             max_relative_deviation < 0.25,
             "deleted documents move scores by {max_relative_deviation}"
         );
+    }
+
+    /// An index with positions but no lengths keeps ids-only postings, so its
+    /// cursors fall back to counting frequencies from the document. Same
+    /// ranking as the frequency-carrying index over the same data, with
+    /// length normalization off since that index has no lengths.
+    #[test]
+    fn document_scan_fallback_matches_frequency_postings() {
+        let hw_counter = HardwareCounterCell::new();
+        let mut rng = StdRng::seed_from_u64(31);
+        let mut with_frequencies = MutableInvertedIndex::new(true, true);
+        let mut ids_only = MutableInvertedIndex::new(true, false);
+        for idx in 0..300 {
+            let len = rng.random_range(3..=60);
+            let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
+            with_frequencies
+                .index_str_tokens(idx, &tokens, Some(len), &hw_counter)
+                .unwrap();
+            ids_only
+                .index_str_tokens(idx, &tokens, None, &hw_counter)
+                .unwrap();
+        }
+        for idx in [4, 40, 44] {
+            with_frequencies.remove(idx);
+            ids_only.remove(idx);
+        }
+        assert!(with_frequencies.postings[0].frequencies().is_some());
+        assert!(ids_only.postings[0].frequencies().is_none());
+
+        for terms in queries() {
+            let scored = query(&with_frequencies, &terms, Bm25Params { k1: 1.2, b: 0.0 });
+            // Same token ids on both: the same tokens were registered in the same order.
+            let query = Bm25Query::new(scored.terms().iter().copied(), Bm25Params::default(), None);
+            let expected = reference(&with_frequencies, &query, |_| true);
+            assert_top_k(&run(&with_frequencies, &query, |_| true, 15), &expected, 15);
+            assert_top_k(&run(&ids_only, &query, |_| true, 15), &expected, 15);
+        }
+    }
+
+    /// The postings a reopen rebuilds through the builder carry the same
+    /// frequencies as the ones the live path built.
+    #[test]
+    fn builder_rebuilds_the_same_frequencies() {
+        use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
+
+        let live = fixture(17, 200, &[3, 30]);
+        let mut builder = MutableInvertedIndexBuilder::new(true, true);
+        let documents = live.point_to_doc.as_ref().unwrap();
+        let vocab: HashMap<TokenId, &str> =
+            live.vocab.iter().map(|(s, id)| (*id, s.as_str())).collect();
+        for (idx, document) in documents.iter().enumerate() {
+            let Some(document) = document else { continue };
+            let tokens: Vec<String> = document
+                .tokens()
+                .iter()
+                .map(|t| vocab[t].to_owned())
+                .collect();
+            let len = live.point_to_doc_len.as_ref().unwrap()[idx];
+            builder.add(idx as PointOffsetType, tokens, Some(len));
+        }
+        let rebuilt = builder.build();
+
+        for (term, &token_id) in &live.vocab {
+            let rebuilt_id = rebuilt.vocab[term];
+            assert_eq!(
+                live.postings[token_id as usize].frequencies(),
+                rebuilt.postings[rebuilt_id as usize].frequencies(),
+                "postings of {term} differ",
+            );
+        }
     }
 }
