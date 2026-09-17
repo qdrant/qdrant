@@ -89,13 +89,6 @@ pub enum PyModifier {
     Idf,
 }
 
-#[pymethods]
-impl PyModifier {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyModifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {

@@ -462,13 +462,6 @@ pub enum PyDirection {
     Desc,
 }
 
-#[pymethods]
-impl PyDirection {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
 impl Repr for PyDirection {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
@@ -574,13 +567,6 @@ impl Repr for PyStartFrom {
 #[derive(Copy, Clone, Debug)]
 pub enum PySample {
     Random,
-}
-
-#[pymethods]
-impl PySample {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PySample {
