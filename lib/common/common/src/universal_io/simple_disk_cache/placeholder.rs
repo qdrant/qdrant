@@ -1,6 +1,6 @@
 use std::ops::Range;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::thread::{Thread, ThreadId};
 
 use parking_lot::Mutex;
@@ -21,7 +21,7 @@ enum PlaceholderState {
 pub(super) struct Placeholder {
     pub(super) blocks_range: Range<u32>,
     pub(super) blocks_byte_range: Range<u64>,
-    registry: Arc<PlaceholderRegistry>,
+    registry: Weak<PlaceholderRegistry>,
     state: Mutex<PlaceholderState>,
     completed: AtomicBool,
 }
@@ -36,7 +36,7 @@ impl Placeholder {
         blocks_range: Range<u32>,
         blocks_byte_range: Range<u64>,
         leader: ThreadId,
-        registry: Arc<PlaceholderRegistry>,
+        registry: Weak<PlaceholderRegistry>,
     ) -> Self {
         Self {
             blocks_range,
@@ -51,6 +51,14 @@ impl Placeholder {
     }
 
     #[inline]
+    fn new_guard(self: &Arc<Self>) -> PlaceholderGuard {
+        PlaceholderGuard {
+            placeholder: self.clone(),
+            completed: false,
+        }
+    }
+
+    #[inline]
     pub(super) fn is_completed(&self) -> bool {
         self.completed.load(Ordering::Acquire)
     }
@@ -58,14 +66,6 @@ impl Placeholder {
     #[inline]
     pub(super) fn covers(&self, range: &Range<u32>) -> bool {
         self.blocks_range.start <= range.start && range.end <= self.blocks_range.end
-    }
-
-    pub(super) fn leader_id(&self) -> ThreadId {
-        let state = self.state.lock();
-        match &*state {
-            PlaceholderState::Loading { leader, .. } => *leader,
-            PlaceholderState::Completed | PlaceholderState::Abandoned => std::thread::current().id(),
-        }
     }
 
     pub(super) fn wait(self: &Arc<Self>) -> WaitResult {
@@ -80,29 +80,15 @@ impl Placeholder {
                 match &mut *state {
                     PlaceholderState::Completed => return WaitResult::Completed,
                     PlaceholderState::Abandoned => {
-                        // Previous leader abandoned before we entered wait().
-                        // Promote ourselves to take over the fetch.
                         *state = PlaceholderState::Loading {
                             leader: current.id(),
                             waiters: Vec::new(),
                         };
-                        self.registry.re_register(self);
-                        let guard = PlaceholderGuard {
-                            placeholder: self.clone(),
-                            registry: self.registry.clone(),
-                            completed: false,
-                        };
-                        return WaitResult::Promoted(guard);
+                        return WaitResult::Promoted(self.new_guard());
                     }
                     PlaceholderState::Loading { leader, waiters } => {
                         if *leader == current.id() {
-                            // This thread has been promoted to be the new leader.
-                            let guard = PlaceholderGuard {
-                                placeholder: self.clone(),
-                                registry: self.registry.clone(),
-                                completed: false,
-                            };
-                            return WaitResult::Promoted(guard);
+                            return WaitResult::Promoted(self.new_guard());
                         }
                         if !waiters.iter().any(|w| w.id() == current.id()) {
                             waiters.push(current.clone());
@@ -118,7 +104,6 @@ impl Placeholder {
 #[derive(Debug)]
 pub(super) struct PlaceholderGuard {
     placeholder: Arc<Placeholder>,
-    registry: Arc<PlaceholderRegistry>,
     completed: bool,
 }
 
@@ -140,7 +125,9 @@ impl PlaceholderGuard {
         for thread in waiters {
             thread.unpark();
         }
-        self.registry.remove(&self.placeholder);
+        if let Some(registry) = self.placeholder.registry.upgrade() {
+            registry.remove(&self.placeholder);
+        }
     }
 }
 
@@ -152,7 +139,6 @@ impl Drop for PlaceholderGuard {
                 match &mut *state {
                     PlaceholderState::Loading { leader, waiters } => {
                         if let Some(next_leader) = waiters.pop() {
-                            // Promote the next waiting follower to be the leader
                             *leader = next_leader.id();
                             Some(next_leader)
                         } else {
@@ -166,8 +152,10 @@ impl Drop for PlaceholderGuard {
 
             if let Some(next_leader) = next_to_unpark {
                 next_leader.unpark();
-            } else {
-                self.registry.remove(&self.placeholder);
+            } else if Arc::strong_count(&self.placeholder) <= 2
+                && let Some(registry) = self.placeholder.registry.upgrade()
+            {
+                registry.remove(&self.placeholder);
             }
         }
     }
@@ -196,13 +184,6 @@ impl PlaceholderRegistry {
         list.retain(|p| !Arc::ptr_eq(p, placeholder));
     }
 
-    fn re_register(&self, placeholder: &Arc<Placeholder>) {
-        let mut list = self.placeholders.lock();
-        if !list.iter().any(|p| Arc::ptr_eq(p, placeholder)) {
-            list.push(placeholder.clone());
-        }
-    }
-
     pub(super) fn get_or_register(
         self: &Arc<Self>,
         local: &LocalState,
@@ -211,16 +192,30 @@ impl PlaceholderRegistry {
     ) -> PlaceholderResult {
         let mut list = self.placeholders.lock();
 
+        list.retain(|p| !p.is_completed() && Arc::strong_count(p) > 1);
+
+        let current_thread_id = std::thread::current().id();
         for p in list.iter() {
             if p.covers(&blocks_range) {
-                // Different thread can safely piggyback; same thread avoids deadlock by fetching independently.
-                if p.leader_id() != std::thread::current().id() {
-                    return PlaceholderResult::Piggyback(p.clone());
+                let mut state = p.state.lock();
+                match &mut *state {
+                    PlaceholderState::Loading { leader, .. } => {
+                        if *leader != current_thread_id {
+                            return PlaceholderResult::Piggyback(p.clone());
+                        }
+                    }
+                    PlaceholderState::Abandoned => {
+                        *state = PlaceholderState::Loading {
+                            leader: current_thread_id,
+                            waiters: Vec::new(),
+                        };
+                        return PlaceholderResult::Leader(p.new_guard());
+                    }
+                    PlaceholderState::Completed => {}
                 }
             }
         }
 
-        // Avoid race where fetch committed and placeholder was removed right before we locked
         if local.contains(blocks_range.clone()) {
             return PlaceholderResult::AlreadyLocal;
         }
@@ -228,15 +223,11 @@ impl PlaceholderRegistry {
         let placeholder = Arc::new(Placeholder::new(
             blocks_range,
             blocks_byte_range,
-            std::thread::current().id(),
-            self.clone(),
+            current_thread_id,
+            Arc::downgrade(self),
         ));
         list.push(placeholder.clone());
 
-        PlaceholderResult::Leader(PlaceholderGuard {
-            placeholder,
-            registry: self.clone(),
-            completed: false,
-        })
+        PlaceholderResult::Leader(placeholder.new_guard())
     }
 }

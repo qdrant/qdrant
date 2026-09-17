@@ -846,7 +846,9 @@ mod tests_mod {
         let handle2 = std::thread::spawn(move || {
             t1_ready_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
             t2_scheduled_tx.send(()).unwrap();
@@ -888,7 +890,9 @@ mod tests_mod {
         let handle2 = std::thread::spawn(move || {
             t1_scheduled_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
             t2_waiting_tx.send(()).unwrap();
@@ -926,7 +930,9 @@ mod tests_mod {
         let handle2 = std::thread::spawn(move || {
             t1_scheduled_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
             t2_waiting_tx.send(()).unwrap();
@@ -1013,7 +1019,9 @@ mod tests_mod {
         let handle2 = std::thread::spawn(move || {
             t1_sched_rx.recv().unwrap();
             let mut pipeline2 = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline2.schedule::<Random>(2, &file_clone, 20..40, 1).unwrap();
+            pipeline2
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
             assert_eq!(pipeline2.in_flight_fetches(), 0);
             t2_sched_tx.send(()).unwrap();
 
@@ -1630,9 +1638,7 @@ mod statistics {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<MmapFile, u32>::new().unwrap();
-            pipeline
-                .schedule::<Random>(0, &file, 10..50, 1)
-                .unwrap();
+            pipeline.schedule::<Random>(0, &file, 10..50, 1).unwrap();
             t1_ready_tx.send(()).unwrap();
             t2_scheduled_rx.recv().unwrap();
 

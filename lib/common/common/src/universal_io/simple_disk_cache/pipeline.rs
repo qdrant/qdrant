@@ -32,7 +32,6 @@ where
     file: &'file DiskCache<R>,
     guard: PlaceholderGuard,
     fetch: FetchStats,
-    blocks_range: Range<u32>,
 }
 
 impl<'file, R: UniversalRead> RemoteFetch<'file, R> {
@@ -141,18 +140,14 @@ where
 /// Commit remote-fetched `bytes` into local mmap and unblock all waiting reads.
 ///
 /// # Safety
-/// `bytes` must be the remote content of `fetch.blocks_range` (clamped to EOF).
-unsafe fn commit_and_complete<'file, R>(
-    fetch: RemoteFetch<'file, R>,
-    bytes: &[u8],
-) -> UioResult<()>
+/// `bytes` must be the remote content of `fetch.guard.placeholder().blocks_range` (clamped to EOF).
+unsafe fn commit_and_complete<'file, R>(fetch: RemoteFetch<'file, R>, bytes: &[u8]) -> UioResult<()>
 where
     R: DiskCacheRemote,
 {
     let RemoteFetch {
         file,
         guard,
-        blocks_range,
         fetch: timing,
     } = fetch;
     timing.complete(bytes.len());
@@ -160,7 +155,7 @@ where
     let local = file.state()?.local;
 
     unsafe {
-        local.write_mmap_bytes(bytes, blocks_range);
+        local.write_mmap_bytes(bytes, guard.placeholder().blocks_range.clone());
     }
 
     guard.complete();
@@ -209,6 +204,46 @@ where
     pub(super) fn in_flight_fetches(&self) -> usize {
         self.in_flight.len()
     }
+
+    fn schedule_remote_fetch(
+        &mut self,
+        file: &'file DiskCache<R>,
+        guard: PlaceholderGuard,
+        is_sequential: bool,
+    ) -> UioResult<Arc<Placeholder>>
+    where
+        R: DiskCacheRemote,
+    {
+        let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
+        let entry = self.in_flight.vacant_entry();
+        let started = Instant::now();
+        let placeholder = guard.placeholder().clone();
+        let state = file.state()?;
+
+        if is_sequential {
+            remote_pipeline.schedule::<Sequential>(
+                entry.key() as u64,
+                state.remote,
+                placeholder.blocks_byte_range.clone(),
+                REMOTE_READ_ALIGNMENT,
+            )?;
+        } else {
+            remote_pipeline.schedule::<Random>(
+                entry.key() as u64,
+                state.remote,
+                placeholder.blocks_byte_range.clone(),
+                REMOTE_READ_ALIGNMENT,
+            )?;
+        }
+
+        entry.insert(RemoteFetch {
+            file,
+            guard,
+            fetch: file.stats.fetch(started),
+        });
+
+        Ok(placeholder)
+    }
 }
 
 impl<'file, R, U> ReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
@@ -229,7 +264,6 @@ where
 
     fn can_schedule(&mut self) -> bool {
         self.results.is_empty()
-            && !self.pending.iter().any(|read| read.placeholder.is_completed())
             && self
                 .remote_pipeline
                 .get_mut()
@@ -249,7 +283,6 @@ where
                 range,
                 is_sequential,
             } => {
-                // SAFETY: Source::Local confirms the range is local (or empty).
                 let bytes = unsafe { read_local::<R>(file, range, is_sequential)? };
                 self.results.push_back((user_data, bytes));
             }
@@ -268,8 +301,8 @@ where
                 } else {
                     match state.local.placeholders.get_or_register(
                         state.local,
-                        blocks_range.clone(),
-                        blocks_byte_range.clone(),
+                        blocks_range,
+                        blocks_byte_range,
                     ) {
                         PlaceholderResult::AlreadyLocal => {
                             let bytes = unsafe { read_local::<R>(file, range, P::IS_SEQUENTIAL)? };
@@ -278,24 +311,7 @@ where
                         }
                         PlaceholderResult::Piggyback(placeholder) => placeholder,
                         PlaceholderResult::Leader(guard) => {
-                            let remote_pipeline =
-                                Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
-                            let entry = self.in_flight.vacant_entry();
-                            let started = Instant::now();
-                            remote_pipeline.schedule::<P>(
-                                entry.key() as u64,
-                                state.remote,
-                                blocks_byte_range,
-                                REMOTE_READ_ALIGNMENT,
-                            )?;
-                            let placeholder = guard.placeholder().clone();
-                            entry.insert(RemoteFetch {
-                                file,
-                                guard,
-                                fetch: file.stats.fetch(started),
-                                blocks_range,
-                            });
-                            placeholder
+                            self.schedule_remote_fetch(file, guard, P::IS_SEQUENTIAL)?
                         }
                     }
                 };
@@ -332,100 +348,67 @@ where
     }
 
     fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
-        if let Some((user_data, slice)) = self.results.pop_front() {
-            return Ok(Some((user_data, ACow::Borrowed(slice))));
-        }
+        loop {
+            if let Some((user_data, slice)) = self.results.pop_front() {
+                return Ok(Some((user_data, ACow::Borrowed(slice))));
+            }
 
-        // Check if a piggybacking request is done
-        if let Some(idx) = self
-            .pending
-            .iter()
-            .position(|read| read.placeholder.is_completed())
-        {
-            let read = self.pending.remove(idx).expect("idx exists");
-            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
-            return Ok(Some((read.user_data, ACow::Borrowed(slice))));
-        }
-
-        // Check and wait for a fetch that this pipeline is leading.
-        if !self.in_flight.is_empty() {
-            let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
-                return Ok(None);
-            };
-            let completion = match remote_pipeline.wait() {
-                Ok(completion) => completion,
-                Err(err) => {
-                    // Let's just drop all in-flight requests.
-                    self.in_flight.clear();
-                    self.remote_pipeline.take();
-                    return Err(err);
-                }
-            };
-            let Some((fetch_id, bytes)) = completion else {
-                return Ok(None);
-            };
-
-            let fetch = self
-                .in_flight
-                .try_remove(fetch_id as usize)
-                .expect("completed fetch has an in-flight entry");
-
-            // SAFETY: `bytes` is the content of `fetch.blocks_range` as scheduled.
-            unsafe { commit_and_complete(fetch, &bytes)? };
-
-            let idx = self
+            // Check if a piggybacking or completed request is done
+            if let Some(idx) = self
                 .pending
                 .iter()
                 .position(|read| read.placeholder.is_completed())
-                .expect("completed fetch resolves at least one read");
-            let read = self.pending.remove(idx).expect("idx exists");
-            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
-            return Ok(Some((read.user_data, ACow::Borrowed(slice))));
-        }
+            {
+                let read = self.pending.remove(idx).expect("idx exists");
+                let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+                return Ok(Some((read.user_data, ACow::Borrowed(slice))));
+            }
 
-        // Wait for a piggybacking read to complete.
-        if let Some(read) = self.pending.pop_front() {
-            match read.placeholder.wait() {
-                WaitResult::Completed => {
-                    let slice =
-                        unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
-                    return Ok(Some((read.user_data, ACow::Borrowed(slice))));
-                }
-                WaitResult::Promoted(guard) => {
-                    let remote_pipeline =
-                        Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
-                    let entry = self.in_flight.vacant_entry();
-                    let started = Instant::now();
-                    let blocks_byte_range = guard.placeholder().blocks_byte_range.clone();
-                    let blocks_range = guard.placeholder().blocks_range.clone();
-                    let state = read.file.state()?;
-                    if read.is_sequential {
-                        remote_pipeline.schedule::<Sequential>(
-                            entry.key() as u64,
-                            state.remote,
-                            blocks_byte_range,
-                            REMOTE_READ_ALIGNMENT,
-                        )?;
-                    } else {
-                        remote_pipeline.schedule::<Random>(
-                            entry.key() as u64,
-                            state.remote,
-                            blocks_byte_range,
-                            REMOTE_READ_ALIGNMENT,
-                        )?;
+            // Drive remote fetches this pipeline is leading
+            if !self.in_flight.is_empty() {
+                let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
+                    return Ok(None);
+                };
+                let completion = match remote_pipeline.wait() {
+                    Ok(completion) => completion,
+                    Err(err) => {
+                        self.in_flight.clear();
+                        self.pending.clear();
+                        self.remote_pipeline.take();
+                        return Err(err);
                     }
-                    entry.insert(RemoteFetch {
-                        file: read.file,
-                        guard,
-                        fetch: read.file.stats.fetch(started),
-                        blocks_range,
-                    });
-                    self.pending.push_front(read);
-                    return self.wait();
+                };
+                let Some((fetch_id, bytes)) = completion else {
+                    return Ok(None);
+                };
+
+                let fetch = self
+                    .in_flight
+                    .try_remove(fetch_id as usize)
+                    .expect("completed fetch has an in-flight entry");
+
+                // SAFETY: `bytes` is the content of `fetch.guard.placeholder().blocks_range` as scheduled.
+                unsafe { commit_and_complete(fetch, &bytes)? };
+                continue;
+            }
+
+            // Wait for a piggybacking read to complete or promote to leader
+            if let Some(read) = self.pending.pop_front() {
+                match read.placeholder.wait() {
+                    WaitResult::Completed => {
+                        let slice =
+                            unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+                        return Ok(Some((read.user_data, ACow::Borrowed(slice))));
+                    }
+                    WaitResult::Promoted(guard) => {
+                        self.schedule_remote_fetch(read.file, guard, read.is_sequential)?;
+                        self.pending.push_front(read);
+                        continue;
+                    }
                 }
             }
-        }
 
-        Ok(None)
+            return Ok(None);
+        }
     }
 }

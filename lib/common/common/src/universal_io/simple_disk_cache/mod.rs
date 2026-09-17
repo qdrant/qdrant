@@ -5,8 +5,8 @@ mod fs;
 mod stats;
 
 mod local_state;
-mod placeholder;
 pub mod pipeline;
+mod placeholder;
 #[cfg(test)]
 mod tests;
 
