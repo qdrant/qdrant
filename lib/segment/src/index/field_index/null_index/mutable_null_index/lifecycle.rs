@@ -146,7 +146,7 @@ impl MutableNullIndex {
         self.storage.has_values_flags.set_immutable(id, false);
         self.storage.is_null_flags.set_immutable(id, false);
 
-        // N.B. We do not update total_point_count because it comes from the id tracker and is not not changed
+        // N.B. We do not update total_point_count because it comes from the id tracker and is not changed
         // in non-appendable segments.
 
         // N.B. No I/O, do not update hw_counter.

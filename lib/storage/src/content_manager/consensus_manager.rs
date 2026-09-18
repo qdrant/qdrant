@@ -1238,7 +1238,7 @@ fn recover_first_voter(
 
     // Try to recover first voter peer from WAL (if it was not removed from cluster yet!):
     // - collect a list of current peers
-    // - scroll WAL and *remove* a peer from the list when `AddPeer`/`AddLearnerPeer` operation encountered
+    // - scroll WAL and *remove* a peer from the list when `AddPeer`/`AddLearnerNode` operation encountered
     // - if there's exactly one peer left in the list at the end, this peer should be the first voter
 
     let mut peers: HashSet<_> = peers.iter().copied().collect();
