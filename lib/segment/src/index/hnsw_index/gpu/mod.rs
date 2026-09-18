@@ -11,6 +11,9 @@ pub mod shader_builder;
 #[cfg(test)]
 mod gpu_heap_tests;
 
+#[cfg(test)]
+mod relock_diagnostic_tests;
+
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use batched_points::BatchedPoints;
@@ -22,11 +25,26 @@ use crate::index::hnsw_index::HnswM;
 
 pub static GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
 
+/// Bounded wait for `GpuDevicesMaganer::lock_device()` to acquire a free device — see that
+/// function's own doc comment. Was previously unbounded: a device whose holder is stuck in a
+/// lower-level driver call that never returns (not a clean Vulkan error, which already
+/// recovers via the GPU_TIMEOUT/DEVICE_LOST path below) would hang every other caller forever
+/// with no visibility.
+///
+/// Must stay above GPU_TIMEOUT: a lock holder may legitimately run a single GPU operation for
+/// that long, so a shorter bound here would misreport healthy contention as a stuck device.
+/// Derived from GPU_TIMEOUT rather than an independent literal so the two can't drift back out
+/// of this relationship if either is tuned later.
+static GPU_LOCK_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(GPU_TIMEOUT.as_secs() * 2);
+
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.
 /// We cannot use too small timeout and check stopper in the loop because
 /// GPU resources should be alive while GPU operation is in progress.
-static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// Bumped from 60s: some workloads' individual GPU dispatches (e.g. large multivector segments)
+/// can genuinely take multiple minutes — not confirmed as an observed failure, just headroom.
+static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Warps count for GPU.
 /// In other words, how many parallel points can be indexed by GPU.
