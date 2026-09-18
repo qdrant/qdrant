@@ -68,6 +68,10 @@ impl SegmentHolder {
             }
         }
 
+        // Lets tests land a change between the phases, so phase 2 has a delta of its own
+        #[cfg(test)]
+        crate::segment_holder::tests::between_unproxy_phases_hook();
+
         // Phase 2: freeze updates, then re-propagate whatever landed during phase 1 and swap the
         // proxies out. The updates lock is taken before upgrading to the write lock, matching the
         // [segment holder -> updates] order every non-update path uses; taking it while holding

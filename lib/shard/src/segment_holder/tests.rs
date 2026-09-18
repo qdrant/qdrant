@@ -2834,3 +2834,116 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
         "pending changes logs of snapshot proxies must be removed once the wrapped segment flushed",
     );
 }
+
+thread_local! {
+    #[allow(clippy::type_complexity)]
+    pub(crate) static BETWEEN_UNPROXY_PHASES_HOOK: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Test hook run by `SegmentHolder::unproxy_segments` between its two propagation phases, on the
+/// calling thread only. Stands in for an update landing while phase 1 runs without the updates
+/// lock.
+pub(crate) fn between_unproxy_phases_hook() {
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook();
+        }
+    });
+}
+
+/// Phase 1 of `unproxy_segments` runs without the updates lock, so changes keep landing on the
+/// proxy and phase 2 has a delta of its own. A phase 2 failure is only logged and the proxy is
+/// unwrapped anyway, dropping that delta from memory. Nothing else holds it: it never reached the
+/// pending changes log, and the other segments make the operation durable, so the WAL is
+/// acknowledged past a change no segment has. The same failure in phase 1 keeps the proxy
+/// installed and reports the error, see `test_unwrap_proxy_reports_failed_propagation`.
+#[test]
+fn unproxy_phase_two_propagation_failure_loses_change_and_acknowledges_past_it() {
+    use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+    use segment::pending_changes::list_pending_changes_log_files;
+    use segment::segment_constructor::get_vector_storage_path;
+
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    init_feature_flags(FeatureFlags {
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+        size: 4,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    });
+
+    let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+    let wrapped_dir = wrapped.get().read().data_path();
+    let other = LockedSegment::new(build_segment_2(dir.path()));
+
+    let mut holder = SegmentHolder::default();
+    let proxy_id = holder.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped.clone())));
+    let _other_id = holder.add_new_locked(other.clone());
+    let holder = LockedSegmentHolder::new(holder);
+
+    let LockedSegment::Proxy(proxy) = holder.read().get(proxy_id).unwrap().clone() else {
+        panic!("segment must be a proxy");
+    };
+
+    // Operation 100 creates a new named vector on every segment. It lands while phase 1 already
+    // ran, so only phase 2 sees it for the proxied segment — where it is made to fail.
+    let hook_config = vector_config.clone();
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            fs_err::write(
+                get_vector_storage_path(&wrapped_dir, "v2"),
+                b"not a directory",
+            )
+            .unwrap();
+            proxy
+                .write()
+                .create_vector_name(100, "v2", &hook_config)
+                .unwrap();
+        }));
+    });
+
+    other
+        .get()
+        .write()
+        .create_vector_name(100, "v2", &vector_config)
+        .unwrap();
+
+    let result = unwrap_proxy(&holder, &[proxy_id]);
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| *hook.borrow_mut() = None);
+
+    assert!(
+        result.is_ok(),
+        "a phase 2 propagation failure is swallowed, unlike the same failure in phase 1",
+    );
+
+    let has_vector = wrapped
+        .get()
+        .read()
+        .vector_names()
+        .iter()
+        .any(|name| name == "v2");
+    assert!(
+        !has_vector,
+        "test setup must make the phase 2 propagation fail",
+    );
+
+    assert!(
+        list_pending_changes_log_files(&wrapped.get().read().data_path()).is_empty(),
+        "the lost change was never persisted, so a restart cannot replay it either",
+    );
+
+    let acknowledged = holder.read().flush_all(FlushMode::Sync, false).unwrap();
+    assert!(
+        acknowledged < 100,
+        "WAL acknowledged {acknowledged}, at or past operation 100 whose effect on the unwrapped \
+         segment was dropped and is recoverable from nowhere",
+    );
+}
