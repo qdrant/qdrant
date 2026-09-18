@@ -489,6 +489,9 @@ async fn recover_shard_snapshot(
             request.checksum,
             http_client.as_ref().clone(),
             request.api_key,
+            // No transfer sender to identify: this is a user request. The shard transfer
+            // priority, the only one that clears the shard, cannot be selected here anyway.
+            None,
         )
         .await?;
 
