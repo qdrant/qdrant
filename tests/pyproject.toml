@@ -19,6 +19,7 @@ dependencies = [
     "pytest-subtests>=0.14.1,<0.15",
     "qdrant-client>=1.19.0,<2",
     "tqdm>=4.67.1,<5",
+    "filelock>=3.20,<4",
 ]
 
 [tool.uv]
