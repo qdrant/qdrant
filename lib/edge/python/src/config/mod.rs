@@ -29,9 +29,7 @@ impl PyEdgeConfig {
     // Python-facing keyword arguments mirror EdgeConfig's fields one-to-one.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
-            HashMap<String, PyEdgeVectorParams>,
-        >,
+        vectors: Option<PyEdgeVectors>,
         sparse_vectors: Option<HashMap<String, PyEdgeSparseVectorParams>>,
         on_disk_payload: Option<bool>,
         hnsw_config: Option<PyHnswIndexConfig>,
@@ -40,7 +38,11 @@ impl PyEdgeConfig {
         max_search_threads: Option<usize>,
         search_pool_core: Option<usize>,
     ) -> PyResult<Self> {
-        let vectors = vectors.unwrap_or_default();
+        let vectors = match vectors {
+            Some(PyEdgeVectors::Default(default)) => HashMap::from([(String::new(), default)]),
+            Some(PyEdgeVectors::Explicit(map)) => map,
+            None => HashMap::new(),
+        };
         let sparse_vectors = sparse_vectors.unwrap_or_default();
         if vectors.is_empty() && sparse_vectors.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
@@ -125,30 +127,8 @@ impl PyEdgeConfig {
     }
 }
 
-fn option_edge_vectors_helper(
-    config: &Bound<'_, PyAny>,
-) -> PyResult<Option<HashMap<String, PyEdgeVectorParams>>> {
-    if config.is_none() {
-        return Ok(None);
-    }
-    edge_vectors_helper(config).map(Some)
-}
-
-fn edge_vectors_helper(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, PyEdgeVectorParams>> {
-    #[derive(FromPyObject)]
-    enum Helper {
-        Default(PyEdgeVectorParams),
-        Explicit(HashMap<String, PyEdgeVectorParams>),
-    }
-
-    let config = match config.extract()? {
-        Helper::Default(default) => {
-            let mut map = HashMap::new();
-            map.insert("".to_string(), default);
-            map
-        }
-        Helper::Explicit(map) => map,
-    };
-
-    Ok(config)
+#[derive(Clone, Debug, FromPyObject)]
+pub enum PyEdgeVectors {
+    Default(PyEdgeVectorParams),
+    Explicit(HashMap<String, PyEdgeVectorParams>),
 }

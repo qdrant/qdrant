@@ -180,6 +180,7 @@ impl PyEdgeShard {
         Ok(PyFacetResponse::new(response))
     }
 
+    #[pyo3(signature = (point_ids, with_payload = None, with_vector = None))]
     pub fn retrieve(
         &self,
         point_ids: Vec<PyPointId>,

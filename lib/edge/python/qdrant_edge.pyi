@@ -235,7 +235,7 @@ class EdgeConfig:
     def __new__(
         cls,
         /,
-        vectors=None,
+        vectors: EdgeVectorParams | dict[str, EdgeVectorParams] | None = None,
         sparse_vectors: dict[str, EdgeSparseVectorParams] | None = None,
         on_disk_payload: bool | None = None,
         hnsw_config: HnswIndexConfig | None = None,
@@ -323,8 +323,8 @@ class EdgeShard:
         self,
         /,
         point_ids: Sequence[PointId],
-        with_payload: WithPayloadType | None,
-        with_vector: WithVectorType | None,
+        with_payload: WithPayloadType | None = None,
+        with_vector: WithVectorType | None = None,
     ) -> list[Record]: ...
     def scroll(
         self, /, scroll: ScrollRequest
