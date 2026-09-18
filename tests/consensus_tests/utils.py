@@ -456,7 +456,7 @@ def print_collection_cluster_info(peer_api_uri: str, collection_name: str, heade
 
 
 def get_leader(peer_api_uri: str, headers={}) -> str:
-    r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     return r.json()["result"]["raft_info"]["leader"]
 
@@ -1039,7 +1039,7 @@ def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, targe
     r = requests.post(
         f"{source_uri}/collections/{collection_name}/cluster", json={
             "replicate_shard": payload
-        })
+        }, timeout=WAIT_TIME_SEC)
     assert_http_ok(r)
 
 

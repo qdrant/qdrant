@@ -34,7 +34,7 @@ def cluster_status(monkeypatch):
         for index in range(3)
     }
 
-    def get(url, headers):
+    def get(url, headers, timeout=None):
         assert headers == {"api-key": "test-key"}
         state = states[url.removesuffix("/cluster")]
         if isinstance(state, Exception):
