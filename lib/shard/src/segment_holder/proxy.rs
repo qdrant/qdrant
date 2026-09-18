@@ -78,6 +78,20 @@ impl SegmentHolder {
         // only the upgradable read lock still lets in-flight updates take their read lock and
         // finish, so they drain instead of deadlocking against the upgrade below.
         let updates_guard = segments.acquire_updates_lock();
+
+        // Points may have changed while phase 1 ran without the updates lock, so propagate once
+        // more. Updates are frozen now, so this catches everything and is the last word. Fails
+        // closed like phase 1: this delta never reached the pending changes log, so unwrapping
+        // regardless drops it while the next flush acknowledges the WAL past it.
+        for (proxy_id, proxy_segment) in &proxies {
+            if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
+                log::error!(
+                    "Propagating proxy segment {proxy_id} changes to wrapped segment failed: {err}",
+                );
+                return Err((segments_lock, err));
+            }
+        }
+
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for &proxy_id in proxy_ids {
             let proxy_segment = match write_segments.get(proxy_id) {
@@ -89,18 +103,6 @@ impl SegmentHolder {
                 }
                 None => continue,
             };
-
-            // Points may have changed while phase 1 ran without the updates lock, so propagate
-            // once more. Updates are frozen now, so this catches everything and is the last word.
-            // Failing to propagate loses in-memory state, but is recovered on restart: the
-            // persisted pending changes log stays behind and is replayed then, and everything
-            // past it is replayed from the WAL.
-            let propagated = proxy_segment.write().propagate_to_wrapped();
-            if let Err(err) = &propagated {
-                log::error!(
-                    "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
-                );
-            }
 
             let proxy_segment_read = proxy_segment.read();
             let wrapped_segment = proxy_segment_read.wrapped_segment.clone();
@@ -115,23 +117,21 @@ impl SegmentHolder {
             }
 
             // Schedule proxy log file to delete after next flush cycle
-            if propagated.is_ok() {
-                let ready_at = wrapped_segment.get().read().version();
-                write_segments.register_post_flush_action(ready_at, ready_at, move || {
-                    match fs::remove_file(&log_path) {
-                        Ok(()) => {}
-                        // File may never have existed on disk at all if never flushed before unwrap
-                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(err) => {
-                            return Err(OperationError::service_error(format!(
-                                "Failed to remove pending changes log {}: {err}",
-                                log_path.display(),
-                            )));
-                        }
+            let ready_at = wrapped_segment.get().read().version();
+            write_segments.register_post_flush_action(ready_at, ready_at, move || {
+                match fs::remove_file(&log_path) {
+                    Ok(()) => {}
+                    // File may never have existed on disk at all if never flushed before unwrap
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        return Err(OperationError::service_error(format!(
+                            "Failed to remove pending changes log {}: {err}",
+                            log_path.display(),
+                        )));
                     }
-                    Ok(PostFlushOutcome::Done)
-                });
-            }
+                }
+                Ok(PostFlushOutcome::Done)
+            });
         }
 
         Ok((write_segments, updates_guard))

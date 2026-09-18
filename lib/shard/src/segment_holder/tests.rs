@@ -2853,13 +2853,12 @@ pub(crate) fn between_unproxy_phases_hook() {
 }
 
 /// Phase 1 of `unproxy_segments` runs without the updates lock, so changes keep landing on the
-/// proxy and phase 2 has a delta of its own. A phase 2 failure is only logged and the proxy is
-/// unwrapped anyway, dropping that delta from memory. Nothing else holds it: it never reached the
-/// pending changes log, and the other segments make the operation durable, so the WAL is
-/// acknowledged past a change no segment has. The same failure in phase 1 keeps the proxy
-/// installed and reports the error, see `test_unwrap_proxy_reports_failed_propagation`.
+/// proxy and phase 2 has a delta of its own. That delta is held by the proxy alone: it never
+/// reached the pending changes log, and the other segments make the operation durable, so the WAL
+/// is acknowledged past it. Phase 2 must therefore fail closed like phase 1, see
+/// `test_unwrap_proxy_reports_failed_propagation`, or the change is recoverable from nowhere.
 #[test]
-fn unproxy_phase_two_propagation_failure_loses_change_and_acknowledges_past_it() {
+fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
     use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
     use segment::pending_changes::list_pending_changes_log_files;
     use segment::segment_constructor::get_vector_storage_path;
@@ -2920,8 +2919,8 @@ fn unproxy_phase_two_propagation_failure_loses_change_and_acknowledges_past_it()
     BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| *hook.borrow_mut() = None);
 
     assert!(
-        result.is_ok(),
-        "a phase 2 propagation failure is swallowed, unlike the same failure in phase 1",
+        result.is_err(),
+        "a phase 2 propagation failure must be reported, like the same failure in phase 1",
     );
 
     let has_vector = wrapped
@@ -2936,14 +2935,17 @@ fn unproxy_phase_two_propagation_failure_loses_change_and_acknowledges_past_it()
     );
 
     assert!(
-        list_pending_changes_log_files(&wrapped.get().read().data_path()).is_empty(),
-        "the lost change was never persisted, so a restart cannot replay it either",
+        matches!(holder.read().get(proxy_id), Some(LockedSegment::Proxy(_))),
+        "the proxy must stay installed, it is the only thing still holding the change",
     );
 
+    // The other segment makes operation 100 durable, so a flush acknowledges the WAL past it. That
+    // is safe only because the proxy is still here: flushing persists the change it kept into its
+    // pending changes log, from where a restart replays it.
     let acknowledged = holder.read().flush_all(FlushMode::Sync, false).unwrap();
     assert!(
-        acknowledged < 100,
-        "WAL acknowledged {acknowledged}, at or past operation 100 whose effect on the unwrapped \
-         segment was dropped and is recoverable from nowhere",
+        !list_pending_changes_log_files(&wrapped.get().read().data_path()).is_empty(),
+        "WAL acknowledged {acknowledged}, so operation 100 must be persisted in the pending \
+         changes log",
     );
 }
