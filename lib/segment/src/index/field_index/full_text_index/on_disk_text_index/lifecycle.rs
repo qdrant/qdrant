@@ -9,10 +9,10 @@ use serde_json::Value;
 
 use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
+use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
-use super::super::inverted_index::{ARRAY_BOUNDARY_SENTINEL, Document, InvertedIndex, TokenSet};
 use super::super::tokenizers::Tokenizer;
 use super::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use crate::common::Flusher;
@@ -51,16 +51,24 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         }))
     }
 
+    /// Whether this index has document lengths on disk.
+    pub fn records_doc_len(&self) -> bool {
+        self.inverted_index.records_doc_len()
+    }
+
     pub fn wipe(self) -> OperationResult<()> {
-        let files = self.inverted_index.files();
         let path = self.inverted_index.path.clone();
         // drop mmap handles before deleting files
         drop(self);
-        for file in files {
-            fs::remove_file(file)?;
+        // Remove the directory rather than the files `files()` reports. That
+        // list carries the `doc_len` sidecar only when the index loaded it, so
+        // a truncated one is omitted, and deleting file by file would leave it
+        // behind and keep the directory alive.
+        match fs::remove_dir_all(&path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
         }
-        let _ = fs::remove_dir(path);
-        Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) {
@@ -96,13 +104,13 @@ impl FullTextMmapIndexBuilder {
         config: TextIndexParams,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        scoring: bool,
     ) -> Self {
         let with_positions = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
         Self {
             path,
-            // No lengths yet: this backend has nowhere to keep them.
-            mutable_index: MutableInvertedIndex::new(with_positions, false),
+            mutable_index: MutableInvertedIndex::new(with_positions, scoring),
             config,
             is_on_disk,
             tokenizer,
@@ -135,32 +143,22 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        let phrase_matching = self.mutable_index.point_to_doc.is_some();
-        let insert_boundaries = phrase_matching && values.len() > 1;
+        // Through the shared helper: `document_length` subtracts the sentinels
+        // it inserts, so the two rules have to agree. Read from the config like
+        // the other two callers, rather than from whether a container happens
+        // to be allocated, so that the two halves cannot drift apart.
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+        let str_tokens =
+            FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
 
-        let mut str_tokens: Vec<std::borrow::Cow<str>> =
-            Vec::with_capacity((values.len() * 2).saturating_sub(1));
-        for (i, value) in values.iter().enumerate() {
-            if insert_boundaries && i > 0 {
-                str_tokens.push(std::borrow::Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
-            }
-            self.tokenizer.tokenize_doc(value, |token| {
-                str_tokens.push(token);
-            });
-        }
+        // Measured here, the last point at which every token exists.
+        let doc_len = self
+            .mutable_index
+            .records_doc_len()
+            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
 
-        let tokens = self.mutable_index.register_tokens(&str_tokens);
-
-        if phrase_matching {
-            let document = Document::new(tokens.clone());
-            self.mutable_index
-                .index_document(id, document, hw_counter)?;
-        }
-
-        let token_set = TokenSet::from_iter(tokens);
-        self.mutable_index.index_tokens(id, token_set, hw_counter)?;
-
-        Ok(())
+        self.mutable_index
+            .index_str_tokens(id, &str_tokens, doc_len, hw_counter)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

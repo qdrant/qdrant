@@ -248,6 +248,7 @@ fn test_phrase_matching() {
         config.clone(),
         true,
         &empty_deleted,
+        true,
     );
     mmap_builder.init().unwrap();
 
@@ -548,5 +549,65 @@ fn test_special_check_condition_match_text_any() {
         result,
         Some(false),
         "MatchTextAny must not match 'neutral text' for query 'good cheap'"
+    );
+}
+
+/// The mmap build path records lengths too, end to end: `add_many` measures,
+/// `create` writes the sidecar, and the index that comes back out of `finalize`
+/// carries them. With `TextIndexParams::scoring()` still a const `false`, the
+/// explicit builder parameter is the only way to reach this.
+#[test]
+fn mmap_builder_records_doc_len() {
+    use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+
+    let temp_dir = Builder::new().prefix("mmap_doc_len").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let config = TextIndexParams {
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Whitespace,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: Some(true),
+        phrase_matching: Some(false),
+        on_disk: None,
+        memory: None,
+        stopwords: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+    };
+
+    let empty_deleted = BitVec::new();
+    let mut builder = FullTextIndex::builder_mmap(
+        temp_dir.path().to_path_buf(),
+        config,
+        true,
+        &empty_deleted,
+        true,
+    );
+    builder.init().unwrap();
+    // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
+    builder
+        .add_many(0, vec!["alpha beta gamma".to_string()], &hw_counter)
+        .unwrap();
+    builder
+        .add_many(
+            1,
+            vec!["the cat sat on the mat the".to_string()],
+            &hw_counter,
+        )
+        .unwrap();
+
+    let index = builder.finalize().unwrap();
+    let FullTextIndex::OnDisk(on_disk) = &index else {
+        panic!("expected an on-disk index");
+    };
+    assert!(on_disk.records_doc_len(), "the sidecar was written");
+
+    let immutable = ImmutableInvertedIndex::try_from(&on_disk.inverted_index).unwrap();
+    assert_eq!(
+        immutable.point_to_doc_len,
+        Some(vec![3, 7]),
+        "lengths must survive the mmap build path, counting repeats",
     );
 }

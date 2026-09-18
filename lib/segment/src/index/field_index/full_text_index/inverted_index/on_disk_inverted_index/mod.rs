@@ -9,8 +9,8 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -38,17 +38,29 @@ mod create_postings;
 mod on_disk_postings;
 pub mod on_disk_postings_enum;
 mod raw_posting_list;
-pub(in crate::index::field_index::full_text_index) mod types;
+pub mod types;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
+pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
+
+/// Whether a document length sidecar is on disk, without opening the index.
+///
+/// The scoring gate needs the answer *before* `open`, which populates the whole
+/// file set: on the first start after scoring is enabled every existing segment
+/// would otherwise fault in its postings, its vocabulary and its counts only to
+/// be discarded and rebuilt from payload.
+pub(in super::super) fn has_doc_len_sidecar(path: &Path) -> bool {
+    path.join(POINT_TO_DOC_LEN_FILE).exists()
+}
 
 /// Mmap-backed immutable full-text inverted index.
 ///
 /// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
-/// `deleted_mask.bin`) is written once during [`Self::create`] and not
+/// `point_to_doc_len.dat`, `deleted_mask.bin`) is written once during
+/// [`Self::create`] and not
 /// mutated afterwards: `deleted_mask.bin` (legacy `deleted_points.dat` on
 /// older segments) records only the points whose document was empty at build
 /// time.
@@ -59,19 +71,25 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// deletion set (typically `id_tracker.deleted_point_bitslice()`) via the
 /// `deleted_points` argument to [`Self::open`] on reload.
 pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
-    pub(in crate::index::field_index::full_text_index) path: PathBuf,
-    pub(in crate::index::field_index::full_text_index) storage: Storage<S>,
+    pub path: PathBuf,
+    pub storage: Storage<S>,
     /// Whether the "no values" mask was read from the compact
     /// `deleted_mask.bin` or the legacy `deleted_points.dat`.
     compact_deleted_mask: bool,
 }
 
-pub(in crate::index::field_index::full_text_index) struct Storage<S: UniversalRead = MmapFile> {
-    pub(in crate::index::field_index::full_text_index) postings: OnDiskPostingsEnum<S>,
-    pub(in crate::index::field_index::full_text_index) vocab: UniversalHashMap<str, TokenId, S>,
-    pub(in crate::index::field_index::full_text_index) point_to_tokens_count:
-        TypedStorage<S, usize>,
-    pub(in crate::index::field_index::full_text_index) deleted_points: DeletedBitVec,
+pub struct Storage<S: UniversalRead = MmapFile> {
+    pub postings: OnDiskPostingsEnum<S>,
+    pub vocab: UniversalHashMap<str, TokenId, S>,
+    pub point_to_tokens_count: TypedStorage<S, usize>,
+    /// Total tokens per point, for BM25 length normalization. `None` when the
+    /// index does not record lengths.
+    ///
+    /// Written once at build time and never masked, like
+    /// `point_to_tokens_count`, so anything summing these must filter through
+    /// `deleted_points` first.
+    pub point_to_doc_len: Option<TypedStorage<S, u32>>,
+    pub deleted_points: DeletedBitVec,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -80,6 +98,7 @@ impl<S: UniversalRead> Storage<S> {
             postings: _,
             vocab: _,
             point_to_tokens_count: _,
+            point_to_doc_len: _,
             deleted_points,
         } = self;
 
@@ -93,6 +112,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             points_count: _,
         } = inverted_index;
 
@@ -101,6 +121,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         match postings {
             ImmutablePostings::Ids(postings) => create_postings_file(postings_path, postings)?,
@@ -131,6 +152,21 @@ impl OnDiskInvertedIndex<MmapFile> {
         let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
+
+        // No segment total is written: deletions are applied on open, so it can
+        // only be summed after masking.
+        match point_to_doc_len {
+            Some(lens) => MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?,
+            // Every other file here is rewritten in place, so this is the only
+            // one that could survive a rebuild. `open` would then read a
+            // previous build's lengths as this build's, at offsets that now
+            // belong to different documents. `save_deleted_mask` unlinks its
+            // own stale file for the same reason.
+            None => match fs_err::remove_file(&point_to_doc_len_path) {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+                result => result?,
+            },
+        }
 
         Ok(())
     }
@@ -182,6 +218,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             None,
         );
 
+        // Scheduled unconditionally: the scheduler records a missing path as a
+        // ready not-found rather than erroring.
+        fs.schedule_open(
+            &path.join(POINT_TO_DOC_LEN_FILE),
+            Some(Self::open_options(populate, AdviceSetting::Global)),
+            None,
+        );
+
         // "No tokens" mask
         preopen_deleted_mask(
             fs,
@@ -203,6 +247,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         let postings_open_options =
             Self::open_options(populate, AdviceSetting::Advice(Advice::Normal));
@@ -239,6 +284,17 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             Default::default(),
         )?);
 
+        // Absent unless this index records lengths. What that means is the
+        // caller's call, not this one's: see `FullTextIndex::new_mmap`.
+        let point_to_doc_len = fs
+            .open(
+                &point_to_doc_len_path,
+                Self::open_options(populate, AdviceSetting::Global),
+                Default::default(),
+            )
+            .ok_not_found()?
+            .map(TypedStorage::<S, u32>::new);
+
         // `deleted` length must match `point_to_tokens_count.len()` because it
         // only tracks the index's contents. The id-tracker's deleted mask can
         // be shorter or longer; if shorter, the missing entries default to
@@ -246,6 +302,30 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // shorter mask just means it doesn't yet know about those higher
         // offsets).
         let total_count = point_to_tokens_count.len()? as usize;
+
+        // A sidecar that does not cover exactly the index's points can only
+        // come from a partially copied or stale file set, and is not trusted to
+        // locate lengths: a short one would have to be padded with zeroes that
+        // read like real lengths, and a long one would be silently truncated
+        // when it is materialized. Treated as absent, with a warning, the way
+        // `SortedBlockIndex::open` treats a stale block index.
+        let point_to_doc_len = match point_to_doc_len {
+            Some(storage) => {
+                let sidecar_count = storage.len()? as usize;
+                if sidecar_count == total_count {
+                    Some(storage)
+                } else {
+                    log::warn!(
+                        "Ignoring document length sidecar {path}: it covers {sidecar_count} \
+                         points while the index has {total_count}",
+                        path = point_to_doc_len_path.display(),
+                    );
+                    None
+                }
+            }
+            None => None,
+        };
+
         let mut deleted = deleted_points.to_owned();
         deleted.resize(total_count, false);
         let compact_deleted_mask = bitor_deleted_mask(
@@ -264,6 +344,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 postings,
                 vocab,
                 point_to_tokens_count,
+                point_to_doc_len,
                 deleted_points: deleted,
             },
             compact_deleted_mask,
@@ -277,6 +358,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage
             .vocab
             .for_each_entry(|k, v| f(k, unwrap_token(v)))
+    }
+
+    /// Whether this index has document lengths on disk.
+    pub fn records_doc_len(&self) -> bool {
+        self.storage.point_to_doc_len.is_some()
     }
 
     /// Returns whether the point id is valid and active.
@@ -621,12 +707,21 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             self.path.join(POSTINGS_FILE),
             self.path.join(VOCAB_FILE),
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
-        ]
+        ];
+        // Listed only when the index loaded it, which is not the same as the
+        // file existing: one rejected at `open` is deliberately left out of the
+        // snapshot file set, since restoring it would only get it rejected
+        // again. `wipe` removes the directory rather than this list, so the
+        // rejected file does not outlive the index.
+        if self.storage.point_to_doc_len.is_some() {
+            files.push(self.path.join(POINT_TO_DOC_LEN_FILE));
+        }
+        files
     }
 
     /// Every file of this index is written once at build time, so the full file
@@ -653,6 +748,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.postings.populate()?;
         self.storage.vocab.populate()?;
         self.storage.point_to_tokens_count.populate()?;
+        if let Some(point_to_doc_len) = &self.storage.point_to_doc_len {
+            point_to_doc_len.populate()?;
+        }
         Ok(())
     }
 
@@ -667,11 +765,15 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc_len,
             deleted_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
         point_to_tokens_count.clear_ram_cache()?;
+        if let Some(point_to_doc_len) = point_to_doc_len {
+            point_to_doc_len.clear_ram_cache()?;
+        }
         clear_disk_cache(&deleted_mask_file(
             path,
             *compact_deleted_mask,
