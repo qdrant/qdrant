@@ -1,7 +1,10 @@
-use segment::types::Filter;
+use segment::types::{Filter, StrictModeConfig};
 
-use super::StrictModeVerification;
-use crate::operations::types::{RecommendGroupsRequestInternal, RecommendRequestInternal};
+use super::{StrictModeVerification, check_grouping_field};
+use crate::collection::Collection;
+use crate::operations::types::{
+    CollectionResult, RecommendGroupsRequestInternal, RecommendRequestInternal,
+};
 
 impl StrictModeVerification for RecommendRequestInternal {
     fn query_limit(&self) -> Option<usize> {
@@ -26,6 +29,16 @@ impl StrictModeVerification for RecommendRequestInternal {
 }
 
 impl StrictModeVerification for RecommendGroupsRequestInternal {
+    async fn check_custom(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        // check for unindexed fields targeted by group_by
+        check_grouping_field(&self.group_request.group_by, collection, strict_mode_config)?;
+        Ok(())
+    }
+
     fn query_limit(&self) -> Option<usize> {
         Some(self.group_request.limit as usize * self.group_request.group_size as usize)
     }
