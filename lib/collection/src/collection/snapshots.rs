@@ -175,7 +175,15 @@ impl Collection {
     ) -> CollectionResult<()> {
         match snapshot_data {
             SnapshotData::Packed(snapshot_path) => {
-                tar_unpack_file(&snapshot_path, target_dir)?;
+                // A malformed user-supplied archive is a client error (400),
+                // while a genuine local IO failure stays an internal error (500)
+                tar_unpack_file(&snapshot_path, target_dir).map_err(|err| {
+                    if err.kind() == std::io::ErrorKind::InvalidData {
+                        CollectionError::bad_input(format!("Malformed snapshot archive: {err}"))
+                    } else {
+                        CollectionError::from(err)
+                    }
+                })?;
                 snapshot_path.close()?;
             }
             SnapshotData::Unpacked(snapshot_dir) => {
@@ -453,5 +461,34 @@ impl Collection {
             .ok_or_else(|| shard_not_found_error(shard_id))?
             .get_partial_snapshot_manifest()
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_snapshot_rejects_malformed_archive_as_bad_request() {
+        let temp = std::env::temp_dir()
+            .join(format!("restore-snapshot-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        let archive_path = temp.join("malformed.tar");
+        std::fs::write(&archive_path, b"this is not a tar archive").unwrap();
+
+        let target_dir = temp.join("target");
+        let result = Collection::restore_snapshot(
+            SnapshotData::new_packed_persistent(&archive_path),
+            &target_dir,
+            0,
+            false,
+        );
+        match result {
+            Err(CollectionError::BadInput { .. }) => (),
+            other => panic!("expected BadInput, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&temp);
     }
 }
