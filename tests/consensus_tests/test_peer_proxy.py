@@ -139,22 +139,16 @@ def test_peer_proxy_holds_response_after_upstream_handled_request(upstream):
             assert dict(held.trailing_metadata())["upstream-trailer"] == "present"
 
 
-@pytest.mark.parametrize("expire", [False, True], ids=["cancel", "deadline"])
-def test_peer_proxy_cancels_held_response(upstream, expire):
+def test_peer_proxy_cancels_held_response(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         proxy.wait_for_peer_connection(timeout=TIMEOUT)
         grpc.channel_ready_future(channel).result(timeout=TIMEOUT)
         rpc = channel.unary_unary(RAFT)
         with proxy.hold_rpc_response(RAFT) as gate:
-            held = rpc.future(b"selected", timeout=1 if expire else TIMEOUT)
+            held = rpc.future(b"selected")
             gate.wait_for_request(TIMEOUT)
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"selected"
-            if expire:
-                with pytest.raises(grpc.RpcError) as failure:
-                    held.result(TIMEOUT)
-                assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
-            else:
-                assert held.cancel()
+            assert held.cancel()
             assert gate.cancelled.wait(TIMEOUT)
             gate.release()
             assert rpc(b"after", timeout=TIMEOUT) == b"after"
@@ -175,30 +169,23 @@ def test_peer_proxy_response_gate_reports_upstream_error(upstream):
             assert not gate.cancelled.is_set()
 
 
-@pytest.mark.parametrize("stop", ["cancel", "deadline", "shutdown"])
+@pytest.mark.parametrize("stop", ["cancel", "shutdown"])
 def test_peer_proxy_response_gate_cancels_before_upstream_response(upstream, stop):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         proxy.wait_for_peer_connection(timeout=TIMEOUT)
         grpc.channel_ready_future(channel).result(timeout=TIMEOUT)
         with proxy.hold_rpc_response(RAFT) as gate:
-            call = channel.unary_unary(RAFT).future(
-                b"block-upstream", timeout=1 if stop == "deadline" else TIMEOUT,
-            )
+            call = channel.unary_unary(RAFT).future(b"block-upstream")
             assert upstream.blocked.wait(TIMEOUT)
             if stop == "cancel":
                 assert call.cancel()
-            elif stop == "shutdown":
-                proxy.close()
             else:
-                with pytest.raises(grpc.RpcError) as failure:
-                    call.result(TIMEOUT)
-                assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+                proxy.close()
             assert gate.cancelled.wait(TIMEOUT)
-            # Either the server task or its upstream call can observe the deadline first.
             with pytest.raises((CancelledError, grpc.RpcError)) as failure:
                 gate.wait_for_request(TIMEOUT)
             if isinstance(failure.value, grpc.RpcError):
-                assert failure.value.code() in (grpc.StatusCode.CANCELLED, grpc.StatusCode.DEADLINE_EXCEEDED)
+                assert failure.value.code() == grpc.StatusCode.CANCELLED
             assert upstream.cancelled.wait(TIMEOUT)
 
 
@@ -218,19 +205,13 @@ def test_peer_proxy_response_gate_waits_for_upstream_response(upstream):
             assert held.result(TIMEOUT) == b"block-upstream"
 
 
-@pytest.mark.parametrize("expire", [False, True], ids=["cancel", "deadline"])
-def test_peer_proxy_does_not_forward_cancelled_held_requests(upstream, expire):
+def test_peer_proxy_does_not_forward_cancelled_held_requests(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         rpc = channel.unary_unary(TRANSFER)
         with proxy.hold_rpc(TRANSFER) as gate:
-            held = rpc.future(b"cancel-me", timeout=1 if expire else TIMEOUT)
+            held = rpc.future(b"cancel-me")
             gate.wait_for_request(TIMEOUT)
-            if expire:
-                with pytest.raises(grpc.RpcError) as failure:
-                    held.result(TIMEOUT)
-                assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
-            else:
-                assert held.cancel()
+            assert held.cancel()
             assert gate.cancelled.wait(TIMEOUT)
             gate.release()
             assert rpc(b"after-cancel", timeout=TIMEOUT) == b"after-cancel"
@@ -238,18 +219,47 @@ def test_peer_proxy_does_not_forward_cancelled_held_requests(upstream, expire):
             assert_no_calls(upstream)
 
 
-@pytest.mark.parametrize("expire", [False, True], ids=["cancel", "deadline"])
-def test_peer_proxy_cancels_upstream_work(upstream, expire):
+def test_peer_proxy_cancels_upstream_work(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
-        call = channel.unary_unary(TRANSFER).future(b"block-upstream", timeout=1 if expire else TIMEOUT)
+        call = channel.unary_unary(TRANSFER).future(b"block-upstream")
         assert upstream.blocked.wait(TIMEOUT)
-        if expire:
+        assert call.cancel()
+        assert upstream.cancelled.wait(TIMEOUT)
+
+
+@pytest.mark.parametrize("phase", ["request", "upstream", "response"])
+def test_peer_proxy_propagates_rpc_deadline(upstream, phase):
+    with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
+        proxy.wait_for_peer_connection(timeout=TIMEOUT)
+        grpc.channel_ready_future(channel).result(timeout=TIMEOUT)
+        rpc = channel.unary_unary(RAFT)
+        hold = proxy.hold_rpc if phase == "request" else proxy.hold_rpc_response
+        with hold(RAFT) as gate:
+            request = b"block-upstream" if phase == "upstream" else b"selected"
+            # The deadline starts at dispatch, so slow CI can expire it before the
+            # intended phase. The cancellation tests above control that ordering.
+            call = rpc.future(request, timeout=1)
+            if phase == "upstream":
+                assert upstream.blocked.wait(TIMEOUT)
+            else:
+                assert gate.wait_for_request(TIMEOUT) == request
+            if phase != "request":
+                assert upstream.calls.get(timeout=TIMEOUT)[1] == request
             with pytest.raises(grpc.RpcError) as failure:
                 call.result(TIMEOUT)
             assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
-        else:
-            assert call.cancel()
-        assert upstream.cancelled.wait(TIMEOUT)
+            assert gate.cancelled.wait(TIMEOUT)
+            if phase == "upstream":
+                # Either the server task or its upstream call can observe the deadline first.
+                with pytest.raises((CancelledError, grpc.RpcError)) as failure:
+                    gate.wait_for_request(TIMEOUT)
+                if isinstance(failure.value, grpc.RpcError):
+                    assert failure.value.code() in (grpc.StatusCode.CANCELLED, grpc.StatusCode.DEADLINE_EXCEEDED)
+                assert upstream.cancelled.wait(TIMEOUT)
+            gate.release()
+            assert rpc(b"after", timeout=TIMEOUT) == b"after"
+            assert upstream.calls.get(timeout=TIMEOUT)[1] == b"after"
+            assert_no_calls(upstream)
 
 
 def test_peer_proxy_shutdown_cancels_held_requests(upstream):
