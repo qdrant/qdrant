@@ -111,7 +111,7 @@ class BinaryQuantizationQueryEncoding:
 @final
 class Bm25:
     """
-    BM25 sparse-vector embedding model. No qdrant server / inference service required.
+    BM25 sparse-vector embedding model.
 
     Create a Bm25 model with the given configuration (defaults if `None`).
 
@@ -135,10 +135,6 @@ class Bm25:
 class Bm25Config:
     """
     Configuration for an edge-side BM25 model.
-
-    JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
-    portable between cloud and edge. Defaults match standard BM25
-    (k=1.2, b=0.75, avg_len=256) and English-language tokenization.
 
     Create a Bm25Config.
 
@@ -454,9 +450,6 @@ class Direction:
 class DisabledStemmer:
     """
     Explicitly disable stemming, overriding the language default.
-
-    Use together with an empty stopword set for language-neutral text
-    processing, instead of the deprecated ``language="none"`` hack.
 
     Create a DisabledStemmer.
     """
@@ -2231,7 +2224,7 @@ class MatchExcept:
     Create a MatchExcept.
 
     Args:
-        except_: List of values to exclude.
+        value: List of values to exclude.
     """
 
     def __new__(cls, /, value: list[str] | list[int]) -> MatchExcept: ...
@@ -3412,7 +3405,7 @@ class SearchParams:
         quantization: Quantization search parameters.
         indexed_only: Whether to search only indexed vectors.
         acorn: Acorn search parameters.
-        idf: Population sparse IDF statistics are computed over.
+        idf: Population over which sparse IDF statistics are computed.
     """
 
     def __new__(

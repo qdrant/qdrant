@@ -141,7 +141,7 @@ impl PySearchRequest {
 ///     quantization: Quantization search parameters.
 ///     indexed_only: Whether to search only indexed vectors.
 ///     acorn: Acorn search parameters.
-///     idf: Population sparse IDF statistics are computed over.
+///     idf: Population over which sparse IDF statistics are computed.
 #[pyclass(name = "SearchParams", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
