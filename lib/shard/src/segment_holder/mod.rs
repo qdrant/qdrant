@@ -336,11 +336,13 @@ impl SegmentHolder {
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
+
             let removed_segment = self.non_appendable_segments.remove(remove_id);
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
         }
+
         removed_segments
     }
 
@@ -394,6 +396,11 @@ impl SegmentHolder {
             ));
         }
         debug_assert_eq!(removed.len(), 1);
+
+        // Dependencies belong to the removed segment incarnation. The replacement
+        // reuses its ID, so keeping them would incorrectly apply stale dependencies
+        // to the new segment and can create a circular flush topology.
+        self.flush_dependency.lock().remove_element(&segment_id);
 
         self.add_existing(segment_id, segment);
 
