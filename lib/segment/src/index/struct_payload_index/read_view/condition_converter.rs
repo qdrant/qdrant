@@ -145,7 +145,7 @@ where
                                     point_id,
                                     &nested_indexes,
                                     hw,
-                                ) {
+                                )? {
                                     // If at least one nested object matches, return true
                                     return Ok(true);
                                 }
