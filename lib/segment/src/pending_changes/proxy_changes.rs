@@ -3,11 +3,11 @@
 use std::cmp::max;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use itertools::Itertools as _;
 
-use super::change::{DeletedPoints, ProxyIndexChange};
+use super::change::{DeletedPoints, PendingChange};
 use super::index_changes::ProxyIndexChanges;
-use super::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
+use super::vector_name_changes::ProxyVectorNameChanges;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::entry::entry_point::NonAppendableSegmentEntry;
 
@@ -16,9 +16,9 @@ use crate::entry::entry_point::NonAppendableSegmentEntry;
 ///
 /// Each kind keeps the latest change per key (point, payload field or vector name), along with
 /// the version of the operation that caused it. [`Self::propagate`] applies them to a real
-/// segment through its regular version-gated operations, which is the single way buffered
-/// changes reach a segment: the wrapped segment when a proxy is unwrapped, or the optimized
-/// segment when an optimization finishes.
+/// segment in operation version order, through its regular version-gated operations. It is the
+/// single way buffered changes reach a segment: the wrapped segment when a proxy is unwrapped, or
+/// the optimized segment when an optimization finishes.
 ///
 /// Changes of multiple proxies can be [merged](Self::merge) into one set to propagate them
 /// together.
@@ -100,78 +100,60 @@ impl ProxyChanges {
         });
     }
 
-    /// Apply all buffered changes to `segment`.
+    /// Iterate over all buffered changes, ordered by operation version.
     ///
-    /// Changes are applied through the segment's regular version-gated operations, so applying a
-    /// change the segment has already seen is a no-op. That makes propagating the same set twice
-    /// safe, though see [`Self::exclude_applied`] to avoid the cost of doing so.
+    /// The three kinds are interleaved by the version of the operation that caused each change,
+    /// so iterating yields them in the order the operations were originally applied to the proxy.
+    /// Point deletes of one operation share its version, changes of different kinds never do as
+    /// every operation is of one kind. Should they anyway, vector name changes come first, then
+    /// payload index changes, then point deletes.
+    pub fn iter_ordered(&self) -> impl Iterator<Item = PendingChange> + '_ {
+        let vector_name_changes =
+            self.vector_name_changes
+                .iter_ordered()
+                .map(|(vector_name, intent)| PendingChange::VectorNameChange {
+                    vector_name: vector_name.clone(),
+                    intent: intent.clone(),
+                });
+        let index_changes = self
+            .index_changes
+            .iter_ordered()
+            .map(|(field_name, change)| PendingChange::IndexChange {
+                field_name: field_name.clone(),
+                change: change.clone(),
+            });
+        let deleted_points = self
+            .deleted_points
+            .iter()
+            .sorted_unstable_by_key(|(_, versions)| versions.operation_version)
+            .map(|(&point_id, &versions)| PendingChange::DeletePoint { point_id, versions });
+
+        vector_name_changes
+            .merge_by(index_changes, |a, b| a.version() <= b.version())
+            .merge_by(deleted_points, |a, b| a.version() <= b.version())
+    }
+
+    /// Apply all buffered changes to `segment`, in operation version order.
     ///
-    /// Applies the changes in stages: vector name changes, then payload index changes, then
-    /// point deletes. Point deletes bump the segment version and would gate out the segment-level
-    /// changes if applied before them. A segment-level change may still be older than the
-    /// segment, if the segment already applied a higher-versioned change of another kind in an
-    /// earlier propagation pass; those are applied with the segment version instead so that they
-    /// are not ignored.
+    /// Every change is applied with the version of the operation that caused it, through the
+    /// segment's regular version-gated operations, in the same order those operations originally
+    /// arrived at the proxy (see [`Self::iter_ordered`]). Applying them in that order is what
+    /// makes the plain versions work: the segment version only ever grows to the version of the
+    /// change just applied, so no change of one kind is gated out by a later change of another
+    /// kind, as it would be if the kinds were applied one after the other.
+    ///
+    /// Applying a change the segment has already seen is a no-op, so propagating the same set
+    /// twice is safe, though see [`Self::exclude_applied`] to avoid the cost of doing so.
     ///
     /// Fails with a cancellation error if `stopped` is set while propagating.
     pub fn propagate<S>(&self, segment: &mut S, stopped: &AtomicBool) -> OperationResult<()>
     where
         S: NonAppendableSegmentEntry + ?Sized,
     {
-        // Internal operation, no need to measure hardware IO
-        let hw_counter = HardwareCounterCell::disposable();
-
-        // New named vectors must exist before indexes or points reference them
-        for (vector_name, intent) in self.vector_name_changes.iter_ordered() {
-            let op_num = max(intent.version(), segment.version());
-            match intent {
-                IntendedVector::Absent { .. } => {
-                    segment.delete_vector_name(op_num, vector_name)?;
-                }
-                IntendedVector::Present {
-                    config,
-                    version: _,
-                    supersedes_wrapped,
-                } => {
-                    if *supersedes_wrapped {
-                        // `create_vector_name` is idempotent and would silently keep the
-                        // segment's stale storage. Clear it first so the new schema actually
-                        // takes effect.
-                        segment.delete_vector_name(op_num, vector_name)?;
-                    }
-                    segment.create_vector_name(op_num, vector_name, config)?;
-                }
-            }
+        for change in self.iter_ordered() {
+            super::apply_change(segment, &change)?;
             check_process_stopped(stopped)?;
         }
-
-        for (field_name, change) in self.index_changes.iter_ordered() {
-            let op_num = max(change.version(), segment.version());
-            match change {
-                ProxyIndexChange::Create(schema, _) => {
-                    segment.create_field_index(op_num, field_name, Some(schema), &hw_counter)?;
-                }
-                ProxyIndexChange::Delete(_) => {
-                    segment.delete_field_index(op_num, field_name)?;
-                }
-                ProxyIndexChange::DeleteIfIncompatible(_, schema) => {
-                    segment.delete_field_index_if_incompatible(op_num, field_name, schema)?;
-                }
-            }
-            check_process_stopped(stopped)?;
-        }
-
-        for (point_id, versions) in &self.deleted_points {
-            // Note:
-            // The delete may have an older version than the point currently has in the segment.
-            // Such deletes are ignored because the point in the segment is considered to be
-            // newer. This is possible because different proxy segments can share state through a
-            // common write segment.
-            // See: <https://github.com/qdrant/qdrant/pull/7208>
-            segment.delete_point(versions.operation_version, *point_id, &hw_counter)?;
-            check_process_stopped(stopped)?;
-        }
-
         Ok(())
     }
 }
