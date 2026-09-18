@@ -16,7 +16,7 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::resharding::ReshardState;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::ShardId;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::data_types::modifier::Modifier;
@@ -864,6 +864,283 @@ fn set_resharding(state: &mut ClusterState, shard_key: ShardKey, shard_id: Shard
         .get_mut(COLLECTION)
         .expect("collection exists")
         .resharding = Some(resharding);
+}
+
+#[test]
+fn resharding_start_up() {
+    let state = auto_resharding_state(1);
+    let key = resharding_key(ReshardingDirection::Up, 1);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("starting scale-up resharding should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::CreateShard { .. },
+            Action::RegisterShards { .. },
+            Action::SetReshardingState { .. },
+            Action::SetShardNumber { .. },
+        ]
+    ));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.resharding.as_ref().map(ReshardState::key),
+        Some(key)
+    );
+    assert_eq!(collection.config.params.shard_number.get(), 2);
+    assert_eq!(
+        collection.shards[&1].replicas,
+        HashMap::from([(PEER_ID, ReplicaState::Resharding)]),
+    );
+}
+
+#[test]
+fn resharding_start_up_replay() {
+    let key = resharding_key(ReshardingDirection::Up, 1);
+    let mut machine = state_machine(auto_resharding_state(1));
+    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+
+    let goal = machine.state().clone();
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("replaying resharding start should be accepted, got {outcome:?}");
+    };
+
+    assert!(actions.is_empty());
+    assert_eq!(machine.state(), &goal);
+}
+
+#[test]
+fn resharding_start_down_reject_last_shard() {
+    let state = auto_resharding_state(1);
+    let key = resharding_key(ReshardingDirection::Down, 0);
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn resharding_commit_stages() {
+    let key = resharding_key(ReshardingDirection::Up, 1);
+    let mut machine = state_machine(auto_resharding_state(1));
+    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::CommitRead(key.clone())));
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("committing the read hash ring should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::SetReshardingStage {
+                stage: ReshardingStage::ReadHashRingCommitted,
+                ..
+            },
+            Action::InvalidateCleanLocalShards { .. },
+        ]
+    ));
+
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::CommitWrite(
+        key.clone(),
+    )));
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("committing the write hash ring should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetReshardingStage {
+            stage: ReshardingStage::WriteHashRingCommitted,
+            ..
+        }]
+    ));
+
+    assert_eq!(
+        machine
+            .state()
+            .collection(COLLECTION)
+            .and_then(|collection| collection.resharding.as_ref())
+            .map(|resharding| resharding.stage),
+        Some(ReshardingStage::WriteHashRingCommitted),
+    );
+}
+
+#[test]
+fn resharding_finish_down() {
+    let key = resharding_key(ReshardingDirection::Down, 1);
+    let mut state = auto_resharding_state(2);
+    let mut resharding = ReshardState::new(
+        key.uuid,
+        key.direction,
+        key.peer_id,
+        key.shard_id,
+        key.shard_key.clone(),
+    );
+    resharding.stage = ReshardingStage::WriteHashRingCommitted;
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .resharding = Some(resharding);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Finish(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("finishing scale-down resharding should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::SetShardNumber { .. },
+            Action::DropShard { shard_id: 1, .. },
+            Action::SetReshardingState { state: None, .. },
+        ]
+    ));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(collection.config.params.shard_number.get(), 1);
+    assert!(!collection.shards.contains_key(&1));
+    assert!(collection.resharding.is_none());
+}
+
+#[test]
+fn resharding_abort_up() {
+    let key = resharding_key(ReshardingDirection::Up, 1);
+    let mut machine = state_machine(auto_resharding_state(1));
+    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("aborting scale-up resharding should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::InvalidateCleanLocalShards { .. },
+            Action::RevertHashRing { .. },
+            Action::SetShardNumber { .. },
+            Action::DropShard { shard_id: 1, .. },
+            Action::SetReshardingState { state: None, .. },
+        ]
+    ));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(collection.config.params.shard_number.get(), 1);
+    assert!(!collection.shards.contains_key(&1));
+    assert!(collection.resharding.is_none());
+}
+
+#[test]
+fn resharding_abort_down_reverts_replicas() {
+    let key = resharding_key(ReshardingDirection::Down, 1);
+    let mut state = auto_resharding_state(2);
+
+    let resharding = ReshardState::new(
+        key.uuid,
+        key.direction,
+        key.peer_id,
+        key.shard_id,
+        key.shard_key.clone(),
+    );
+
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.resharding = Some(resharding);
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::ReshardingScaleDown);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("aborting scale-down resharding should be accepted, got {outcome:?}");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::InvalidateCleanLocalShards { .. },
+            Action::SetReplicaState {
+                shard_id: 0,
+                peer_id: OTHER_PEER_ID,
+                state: ReplicaState::Active,
+                ..
+            },
+            Action::DeleteMigratedPoints { .. },
+            Action::RevertHashRing { .. },
+            Action::SetReshardingState { state: None, .. },
+        ]
+    ));
+}
+
+#[test]
+fn resharding_abort_reject_after_read_commit() {
+    let key = resharding_key(ReshardingDirection::Up, 1);
+    let mut machine = state_machine(auto_resharding_state(1));
+    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+    machine.apply(&resharding_op(ReshardingOperation::CommitRead(key.clone())));
+    let state = machine.state().clone();
+
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
+    assert_eq!(machine.state(), &state);
+}
+
+fn auto_resharding_state(shard_count: u32) -> ClusterState {
+    let mut state = cluster_state(Vec::new());
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.config.params.shard_number = NonZeroU32::new(shard_count).unwrap();
+
+    for shard_id in 0..shard_count {
+        let shard = ShardInfo {
+            replicas: HashMap::from([(PEER_ID, ReplicaState::Active)]),
+        };
+
+        collection.shards.insert(shard_id, shard);
+    }
+
+    state
+}
+
+fn resharding_key(direction: ReshardingDirection, shard_id: ShardId) -> ReshardKey {
+    ReshardKey {
+        uuid: Uuid::nil(),
+        direction,
+        peer_id: PEER_ID,
+        shard_id,
+        shard_key: None,
+    }
+}
+
+fn resharding_op(operation: ReshardingOperation) -> ConsensusOperations {
+    let operation = CollectionMetaOperations::Resharding(COLLECTION.into(), operation);
+
+    collection_meta_op(operation)
 }
 
 #[test]

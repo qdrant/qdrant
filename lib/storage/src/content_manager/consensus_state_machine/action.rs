@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use collection::collection_state;
 use collection::config::CollectionConfigInternal;
@@ -9,7 +10,9 @@ use collection::operations::config_diff::{
 use collection::operations::types::{PeerMetadata, SparseVectorsConfig, VectorsConfigDiff};
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::ShardTransferKey;
 use segment::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
     VectorNameBuf,
@@ -94,6 +97,64 @@ pub enum Action {
         shard_id: ShardId,
     },
 
+    SetShardNumber {
+        collection: CollectionId,
+        shard_number: NonZeroU32,
+    },
+
+    RemoveShardFromKeyMapping {
+        collection: CollectionId,
+        shard_id: ShardId,
+        shard_key: ShardKey,
+    },
+
+    SetReplicaState {
+        collection: CollectionId,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+    },
+
+    /// Delete points copied from the scale-down target into the remaining shards
+    DeleteMigratedPoints {
+        collection: CollectionId,
+        key: ReshardKey,
+    },
+
+    /// Restore the hash ring that preceded `key`
+    RevertHashRing {
+        collection: CollectionId,
+        key: ReshardKey,
+    },
+
+    SetReshardingState {
+        collection: CollectionId,
+        state: Option<ReshardState>,
+    },
+
+    SetReshardingStage {
+        collection: CollectionId,
+        stage: ReshardingStage,
+    },
+
+    /// Stop the node-local transfer task if this peer is its sender
+    StopTransferDriver {
+        collection: CollectionId,
+        key: ShardTransferKey,
+    },
+
+    /// Restore a sender's proxied shard after an aborted transfer
+    RevertProxyShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
+    UnregisterTransfer {
+        collection: CollectionId,
+        key: ShardTransferKey,
+        outcome: TransferOutcome,
+    },
+
     UpdateAliases {
         set: BTreeMap<String, CollectionId>,
         remove: BTreeSet<String>,
@@ -137,7 +198,17 @@ impl Action {
             | Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }
-            | Action::DropPayloadIndex { collection, .. } => Some(collection),
+            | Action::DropPayloadIndex { collection, .. }
+            | Action::SetShardNumber { collection, .. }
+            | Action::RemoveShardFromKeyMapping { collection, .. }
+            | Action::SetReplicaState { collection, .. }
+            | Action::DeleteMigratedPoints { collection, .. }
+            | Action::RevertHashRing { collection, .. }
+            | Action::SetReshardingState { collection, .. }
+            | Action::SetReshardingStage { collection, .. }
+            | Action::StopTransferDriver { collection, .. }
+            | Action::RevertProxyShard { collection, .. }
+            | Action::UnregisterTransfer { collection, .. } => Some(collection),
 
             Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
@@ -149,6 +220,12 @@ impl Action {
             Action::TestSlowDown(_) | Action::TestTransientError(_) => None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransferOutcome {
+    Finish,
+    Abort,
 }
 
 /// One of the config updates `UpdateCollection` makes, each a separate save today

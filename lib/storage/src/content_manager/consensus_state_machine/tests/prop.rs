@@ -1,15 +1,18 @@
 //! Proptest generators for cluster state and consensus operations
 
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroU32;
 
 use collection::collection_state::{self, ShardInfo};
 use collection::config::ShardingMethod;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use collection::operations::types::{
     PeerMetadata, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
 };
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::ShardId;
 use proptest::prelude::*;
 use segment::data_types::modifier::Modifier;
@@ -17,6 +20,7 @@ use segment::data_types::vector_name_config::*;
 use segment::json_path::JsonPath;
 use segment::types::*;
 use tonic::transport::Uri;
+use uuid::Uuid;
 
 use super::*;
 use crate::content_manager::alias_mapping::AliasMapping;
@@ -104,17 +108,30 @@ fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
         Just(ShardingMethod::Auto),
         Just(ShardingMethod::Custom),
     ]);
-
     let replicas = proptest::collection::vec(arb_peer_id(), 1..3);
     let shard_key = arb_shard_key();
     let shards = proptest::collection::vec((replicas, shard_key), 0..3);
 
     let indexes = proptest::collection::hash_map(arb_field_name(), arb_field_schema(), 0..3);
 
-    let state = (vectors, sharding_method, indexes, shards);
+    let resharding = proptest::option::of((
+        prop_oneof![
+            Just(ReshardingDirection::Up),
+            Just(ReshardingDirection::Down),
+        ],
+        arb_peer_id(),
+        any::<proptest::sample::Index>(),
+        proptest::sample::select(vec![
+            ReshardingStage::MigratingPoints,
+            ReshardingStage::ReadHashRingCommitted,
+            ReshardingStage::WriteHashRingCommitted,
+        ]),
+    ));
+
+    let state = (vectors, sharding_method, indexes, shards, resharding);
 
     state.prop_map(|state| {
-        let (vectors, sharding_method, indexes, shards) = state;
+        let (vectors, sharding_method, indexes, shards, resharding) = state;
 
         let mut state = collection_state(vectors.into_iter().collect());
         state.config.params.sharding_method = sharding_method;
@@ -140,6 +157,50 @@ fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
                     .insert(shard_id);
             }
         }
+
+        if !is_custom_sharding && !state.shards.is_empty() {
+            state.config.params.shard_number = NonZeroU32::new(state.shards.len() as u32).unwrap();
+        }
+
+        state.resharding = resharding.and_then(|(direction, peer_id, target, stage)| {
+            let (shard_id, shard_key) = if is_custom_sharding {
+                let mut candidates: Vec<_> = state
+                    .shards_key_mapping
+                    .iter()
+                    .flat_map(|(shard_key, shard_ids)| {
+                        shard_ids
+                            .iter()
+                            .map(|&shard_id| (shard_id, shard_key.clone()))
+                    })
+                    .collect();
+
+                candidates.sort_unstable_by_key(|(shard_id, _)| *shard_id);
+
+                if candidates.is_empty() {
+                    return None;
+                }
+
+                let (shard_id, shard_key) = target.get(&candidates);
+                (*shard_id, Some(shard_key.clone()))
+            } else {
+                // Auto sharding derives the restored shard count from the target ID, so an
+                // in-progress resharding must target the last nonzero shard.
+                let shard_id = state.shards.keys().copied().max()?;
+                (shard_id > 0).then_some(())?;
+                (shard_id, None)
+            };
+
+            let resharding = ReshardState {
+                uuid: Uuid::nil(),
+                peer_id,
+                shard_id,
+                shard_key,
+                direction,
+                stage,
+            };
+
+            Some(resharding)
+        });
 
         state
     })
@@ -247,7 +308,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        11 => collection_meta,
+        16 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -268,11 +329,46 @@ fn arb_collection_meta_operation(
         arb_change_aliases(collection_names.clone()),
         arb_create_shard_key(collection_names.clone(), peer_ids),
         arb_drop_shard_key(collection_names.clone()),
+        arb_resharding(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
+}
+
+fn arb_resharding(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
+    let collection = arb_collection_name(collections);
+
+    let direction = prop_oneof![
+        Just(ReshardingDirection::Up),
+        Just(ReshardingDirection::Down),
+    ];
+    let peer_id = arb_peer_id();
+    let shard_id = 0..3_u32;
+    let shard_key = proptest::option::of(arb_shard_key());
+
+    let key = (direction, peer_id, shard_id, shard_key)
+        .prop_map(|(direction, peer_id, shard_id, shard_key)| ReshardKey {
+            uuid: Uuid::nil(),
+            direction,
+            peer_id,
+            shard_id,
+            shard_key,
+        })
+        .boxed();
+
+    let operation = prop_oneof![
+        key.clone().prop_map(ReshardingOperation::Start),
+        key.clone().prop_map(ReshardingOperation::CommitRead),
+        key.clone().prop_map(ReshardingOperation::CommitWrite),
+        key.clone().prop_map(ReshardingOperation::Finish),
+        key.prop_map(ReshardingOperation::Abort),
+    ];
+
+    (collection, operation).prop_map(|(collection, operation)| {
+        CollectionMetaOperations::Resharding(collection, operation)
+    })
 }
 
 fn arb_drop_shard_key(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
