@@ -386,7 +386,23 @@ impl Collection {
                             .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
                         rrf_scoring(intermediates, *k, weights_slice.as_deref())?
                     }
-                    FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
+                    FusionInternal::Dbsf => {
+                        let collection_params = self.collection_config.read().await.params.clone();
+                        let source_orders: Vec<Order> = request
+                            .prefetches
+                            .iter()
+                            .map(|prefetch| {
+                                shard_query::query_result_order(
+                                    prefetch.query.as_ref(),
+                                    &collection_params,
+                                )
+                                .ok()
+                                .flatten()
+                                .unwrap_or(Order::LargeBetter)
+                            })
+                            .collect();
+                        score_fusion(intermediates, ScoreFusion::dbsf_with_orders(source_orders))
+                    }
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused
