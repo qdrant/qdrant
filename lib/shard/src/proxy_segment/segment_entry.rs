@@ -852,7 +852,7 @@ impl StorageSegmentEntry for ProxySegment {
 
     fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
         let wrapped_flusher = self.wrapped_segment.get().read().flusher(force, up_to);
-        let pending_changes_flusher = self.pending_changes.flusher(self.version);
+        let pending_changes_flusher = self.pending_changes.flusher(self.version, up_to);
 
         match (wrapped_flusher, pending_changes_flusher) {
             (None, None) => None,

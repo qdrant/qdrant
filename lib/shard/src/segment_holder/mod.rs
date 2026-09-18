@@ -1,6 +1,7 @@
 mod flush;
 pub mod locked;
 pub use flush::FlushMode;
+mod proxy;
 pub mod read_points;
 mod snapshot;
 #[cfg(test)]

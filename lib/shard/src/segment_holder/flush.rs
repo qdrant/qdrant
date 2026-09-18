@@ -101,10 +101,10 @@ impl SegmentHolder {
             // Cap by pending post-flush actions like the main path below, but leave running them
             // to the next full pass.
             let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
-            return Ok(match self.pending_post_flush_ack_cap() {
-                Some(ack_cap) => min(persisted_version, ack_cap),
-                None => persisted_version,
-            });
+            return Ok(Self::cap_ack(
+                persisted_version,
+                self.pending_post_flush_ack_cap(),
+            ));
         }
 
         // This lock also prevents multiple parallel sync flushes
@@ -166,10 +166,7 @@ impl SegmentHolder {
         // [`SegmentHolder::register_post_flush_action`].
         let persisted_version = self.get_max_persisted_version(segment_reads, lock_order);
         let pending_ack_cap = self.run_ready_post_flush_actions(persisted_version)?;
-        Ok(match pending_ack_cap {
-            Some(ack_cap) => min(persisted_version, ack_cap),
-            None => persisted_version,
-        })
+        Ok(Self::cap_ack(persisted_version, pending_ack_cap))
     }
 
     /// Flushes a single segment outside `flush_all`, honoring its copy-on-write dependencies.
@@ -365,6 +362,19 @@ impl SegmentHolder {
             );
             max_persisted_version
         }
+    }
+
+    /// Apply every cap on the version a flush pass reports: the pins of the post-flush actions
+    /// that have not run yet (passed in, as the caller may just have run the ready ones).
+    ///
+    /// WAL acknowledge pins are *not* applied here. A flush pass reports what is durable; how much
+    /// of that may be acknowledged in the WAL is decided where the acknowledge happens, by
+    /// `WalAckPins` in the flush worker.
+    fn cap_ack(
+        persisted_version: SeqNumberType,
+        post_flush_ack_cap: Option<SeqNumberType>,
+    ) -> SeqNumberType {
+        post_flush_ack_cap.into_iter().fold(persisted_version, min)
     }
 
     /// Grab the RwLock's for all the given segment IDs.

@@ -24,7 +24,7 @@ impl LocalShard {
     #[cfg(feature = "testing")]
     pub async fn stop_flush_worker(&self) {
         let mut update_handler = self.update_handler.lock().await;
-        update_handler.stop_flush_worker()
+        update_handler.stop_and_wait_flush_worker().await
     }
 
     pub async fn wait_update_workers_stop(

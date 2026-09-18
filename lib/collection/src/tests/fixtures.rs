@@ -1,4 +1,5 @@
 use ahash::AHashSet;
+use common::flags::{FeatureFlags, init_feature_flags};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
@@ -120,4 +121,19 @@ pub fn delete_point_operation(idx: u64) -> CollectionUpdateOperations {
 
 pub fn filter_single_id(id: impl Into<PointIdType>) -> Filter {
     Filter::new_must(Condition::HasId(AHashSet::from([id.into()]).into()))
+}
+
+/// Initialize the process-global feature flags for this crate's unit tests.
+///
+/// [`init_feature_flags`] fills a `OnceLock`: the first caller wins and every later call only logs
+/// a warning. All tests in this binary therefore share one set of flags, so they must all ask for
+/// the same one. A test enabling just its own flag would silently run without it whenever another
+/// test got there first, quietly testing the disabled code path instead. Enable the union of the
+/// flags this binary's tests need, and route every test through here.
+pub fn init_test_feature_flags() {
+    init_feature_flags(FeatureFlags {
+        write_segment_manifest: true,
+        persist_proxy_segments: true,
+        ..Default::default()
+    });
 }

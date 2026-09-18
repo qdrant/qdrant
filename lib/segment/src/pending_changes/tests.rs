@@ -162,14 +162,14 @@ fn test_register_flush_load_roundtrip() {
     // Nothing is persisted yet
     assert!(!pending_changes.log_path().is_file());
 
-    let flusher = pending_changes.flusher(14).unwrap();
+    let flusher = pending_changes.flusher(14, None).unwrap();
     flusher().unwrap();
 
     assert!(pending_changes.log_path().is_file());
     assert_eq!(pending_changes.persisted_version(), 14);
 
     // The pending buffer is drained, a new flusher has nothing to do
-    assert!(pending_changes.flusher(14).is_none());
+    assert!(pending_changes.flusher(14, None).is_none());
 
     // Reconstruct the in-memory state from the log file
     let loaded = PendingChanges::load(pending_changes.log_path()).unwrap();
@@ -221,16 +221,16 @@ fn test_flusher_covers_version_without_changes() {
     let pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
 
     // Nothing registered and version 0 already covered
-    assert!(pending_changes.flusher(0).is_none());
+    assert!(pending_changes.flusher(0, None).is_none());
 
     // An operation that buffered nothing (e.g. a delete for an absent point) must still be
     // covered by the persisted version once flushed, without creating a log file
-    let flusher = pending_changes.flusher(7).unwrap();
+    let flusher = pending_changes.flusher(7, None).unwrap();
     flusher().unwrap();
     assert_eq!(pending_changes.persisted_version(), 7);
     assert!(!pending_changes.log_path().is_file());
 
-    assert!(pending_changes.flusher(7).is_none());
+    assert!(pending_changes.flusher(7, None).is_none());
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
     );
 
     // Capture a flusher, then register another operation before it runs
-    let flusher = pending_changes.flusher(10).unwrap();
+    let flusher = pending_changes.flusher(10, None).unwrap();
     pending_changes.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
@@ -260,7 +260,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
     // The captured operation is persisted and covered, the raced-in one is neither
     assert_eq!(pending_changes.persisted_version(), 10);
 
-    let flusher = pending_changes.flusher(11).unwrap();
+    let flusher = pending_changes.flusher(11, None).unwrap();
     flusher().unwrap();
     assert_eq!(pending_changes.persisted_version(), 11);
 
@@ -282,7 +282,7 @@ fn test_flusher_skipped_after_drop() {
     );
 
     let log_path = pending_changes.log_path().to_path_buf();
-    let flusher = pending_changes.flusher(10).unwrap();
+    let flusher = pending_changes.flusher(10, None).unwrap();
     drop(pending_changes);
 
     // A flusher captured before the component was dropped must be a no-op
@@ -302,7 +302,7 @@ fn test_torn_tail_is_truncated() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     let intact_len = fs::metadata(&log_path).unwrap().len();
@@ -338,7 +338,7 @@ fn test_torn_tail_is_truncated() {
             operation_version: 11,
         },
     );
-    resumed.flusher(11).unwrap()().unwrap();
+    resumed.flusher(11, None).unwrap()().unwrap();
 
     let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
@@ -364,7 +364,7 @@ fn test_corruption_in_middle_is_error() {
             operation_version: 11,
         },
     );
-    pending_changes.flusher(11).unwrap()().unwrap();
+    pending_changes.flusher(11, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     drop(pending_changes);
@@ -390,7 +390,7 @@ fn test_new_proxy_never_adopts_old_log() {
             operation_version: 10,
         },
     );
-    first.flusher(10).unwrap()().unwrap();
+    first.flusher(10, None).unwrap()().unwrap();
     let first_log_path = first.log_path().to_path_buf();
     drop(first);
 
@@ -408,7 +408,7 @@ fn test_new_proxy_never_adopts_old_log() {
             operation_version: 20,
         },
     );
-    second.flusher(20).unwrap()().unwrap();
+    second.flusher(20, None).unwrap()().unwrap();
     assert_eq!(second.persisted_version(), 20);
 
     // Both log files coexist, each still holding just its own proxy's entries
@@ -435,7 +435,7 @@ fn test_load_resumes_same_log_name() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     drop(pending_changes);
 
@@ -449,7 +449,7 @@ fn test_load_resumes_same_log_name() {
             operation_version: 20,
         },
     );
-    resumed.flusher(20).unwrap()().unwrap();
+    resumed.flusher(20, None).unwrap()().unwrap();
 
     assert_eq!(resumed.log_path(), log_path);
     assert_eq!(list_pending_changes_log_files(dir.path()), vec![log_path]);
@@ -479,7 +479,7 @@ fn test_recover_pending_changes() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 2),
     );
-    pending_changes.flusher(segment_version + 2).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(pending_changes);
 
     // The segment itself never saw the operations
@@ -536,7 +536,7 @@ fn test_recover_ignore_leaves_log_untouched() {
             operation_version: segment_version + 1,
         },
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     let log_len = fs::metadata(&log_path).unwrap().len();
     drop(pending_changes);
@@ -580,7 +580,7 @@ fn test_recover_stale_log_is_noop() {
             operation_version: op_version,
         },
     );
-    pending_changes.flusher(op_version).unwrap()().unwrap();
+    pending_changes.flusher(op_version, None).unwrap()().unwrap();
     drop(pending_changes);
 
     segment
@@ -626,7 +626,7 @@ fn test_recover_multiple_levels_in_order() {
         field("color"),
         ProxyIndexChange::Delete(segment_version + 2),
     );
-    inner.flusher(segment_version + 2).unwrap()().unwrap();
+    inner.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(inner);
 
     let mut outer = PendingChanges::new(&segment_dir, 1).unwrap();
@@ -641,7 +641,7 @@ fn test_recover_multiple_levels_in_order() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 4),
     );
-    outer.flusher(segment_version + 4).unwrap()().unwrap();
+    outer.flusher(segment_version + 4, None).unwrap()().unwrap();
     drop(outer);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -678,7 +678,7 @@ fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 1),
     );
-    first.flusher(segment_version + 1).unwrap()().unwrap();
+    first.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(first);
 
     // A second proxy generation at the very same level starts fresh (it does not adopt the first
@@ -688,7 +688,7 @@ fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
         field("size"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 2),
     );
-    second.flusher(segment_version + 2).unwrap()().unwrap();
+    second.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(second);
 
     assert_eq!(list_pending_changes_log_files(&segment_dir).len(), 2);
@@ -728,7 +728,7 @@ fn test_recover_vector_name_changes() {
         segment_version + 1,
         &segment_config,
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -787,7 +787,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(7, keyword_schema()),
     );
-    pending_changes.flusher(7).unwrap()().unwrap();
+    pending_changes.flusher(7, None).unwrap()().unwrap();
     drop(pending_changes);
 
     recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -801,7 +801,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(8, integer_schema()),
     );
-    pending_changes.flusher(8).unwrap()().unwrap();
+    pending_changes.flusher(8, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -855,7 +855,7 @@ fn test_recover_superseding_vector_name_change() {
         segment_version + 1,
         &segment_config,
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -895,7 +895,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     let intact_len = fs::metadata(&log_path).unwrap().len();
@@ -912,7 +912,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
             operation_version: 11,
         },
     );
-    pending_changes.flusher(11).unwrap()().unwrap();
+    pending_changes.flusher(11, None).unwrap()().unwrap();
 
     let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
@@ -935,7 +935,7 @@ fn test_torn_tail_truncation_sweep() {
             },
         );
     }
-    pending_changes.flusher(14).unwrap()().unwrap();
+    pending_changes.flusher(14, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     let pristine = fs::read(&log_path).unwrap();
     drop(pending_changes);
