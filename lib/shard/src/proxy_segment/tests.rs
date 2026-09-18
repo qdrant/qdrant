@@ -841,7 +841,7 @@ fn test_unproxy_leaves_pending_changes_log_without_adoption() {
 
     // Unproxy: propagate pending changes into the wrapped segment, then drop the proxy
     proxy_segment.propagate_to_wrapped().unwrap();
-    assert!(proxy_segment.get_deleted_points().is_empty());
+    assert!(proxy_segment.changes().deleted_points().is_empty());
     drop(proxy_segment);
 
     assert!(
@@ -867,7 +867,7 @@ fn test_unproxy_leaves_pending_changes_log_without_adoption() {
         proxy_segment.persistent_version(),
         wrapped_persistent_version
     );
-    assert!(proxy_segment.get_deleted_points().is_empty());
+    assert!(proxy_segment.changes().deleted_points().is_empty());
 
     proxy_segment
         .delete_point(110, 3.into(), &hw_counter)
@@ -1072,8 +1072,8 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
         .unwrap();
 
     // Both changes are pending on the proxy, not yet visible on the wrapped segment.
-    assert!(!proxy_segment.get_vector_name_changes().is_empty());
-    assert!(!proxy_segment.get_index_changes().is_empty());
+    assert!(!proxy_segment.changes().vector_name_changes().is_empty());
+    assert!(!proxy_segment.changes().index_changes().is_empty());
     assert!(
         !wrapped_segment
             .get()
@@ -1093,8 +1093,8 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
     proxy_segment.propagate_to_wrapped().unwrap();
 
     // The proxy has drained its pending changes...
-    assert!(proxy_segment.get_vector_name_changes().is_empty());
-    assert!(proxy_segment.get_index_changes().is_empty());
+    assert!(proxy_segment.changes().vector_name_changes().is_empty());
+    assert!(proxy_segment.changes().index_changes().is_empty());
 
     // ...and both changes actually landed on the wrapped segment.
     assert!(
