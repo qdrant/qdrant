@@ -1,0 +1,20 @@
+site_name: Qdrant Edge
+theme:
+  name: material
+plugins:
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            filters: ["!^_[^_]", "!^__repr__$"]
+            docstring_style: google
+            members_order: source
+            separate_signature: true
+            show_if_no_docstring: true
+            show_root_heading: true
+            show_signature_annotations: true
+            show_source: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true

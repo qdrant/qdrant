@@ -1,14 +1,14 @@
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use edge::FacetRequest;
-use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::data_types::facets::{FacetResponse, FacetValue, FacetValueHit};
-use segment::types::Filter;
+use segment::types::{Filter, ValueVariants};
 
 use crate::repr::*;
-use crate::types::{PyFilter, PyJsonPath};
+use crate::types::{PyFilter, PyJsonPath, PyValueVariants};
 
+/// Request for facet operation.
 #[pyclass(name = "FacetRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyFacetRequest(FacetRequest);
@@ -16,6 +16,13 @@ pub struct PyFacetRequest(FacetRequest);
 #[pyclass_repr]
 #[pymethods]
 impl PyFacetRequest {
+    /// Create a FacetRequest.
+    ///
+    /// Args:
+    ///     key: Payload field key to facet on.
+    ///     limit: Maximum number of facet hits to return.
+    ///     exact: Whether to count exactly or estimate.
+    ///     filter: Filter conditions.
     #[new]
     #[pyo3(signature = (key, limit = 10, exact = false, filter = None))]
     pub fn new(key: PyJsonPath, limit: usize, exact: bool, filter: Option<PyFilter>) -> Self {
@@ -27,27 +34,32 @@ impl PyFacetRequest {
         })
     }
 
+    /// Facet key.
     #[getter]
     pub fn key(&self) -> PyJsonPath {
         PyJsonPath(self.0.key.clone())
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> usize {
         self.0.limit
     }
 
+    /// Exact count flag.
     #[getter]
     pub fn exact(&self) -> bool {
         self.0.exact
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<&PyFilter> {
         self.0.filter.as_ref().map(PyFilter::wrap_ref)
     }
 }
 
+/// A facet hit with value and count.
 #[pyclass(name = "FacetHit", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
@@ -55,11 +67,20 @@ pub struct PyFacetHit(FacetValueHit);
 
 #[pymethods]
 impl PyFacetHit {
+    /// Facet value.
     #[getter]
-    pub fn value<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        facet_value_into_py(&self.0.value, py)
+    pub fn value(&self) -> PyValueVariants {
+        PyValueVariants::wrap(match &self.0.value {
+            FacetValue::Keyword(str) => ValueVariants::String(str.clone()),
+            &FacetValue::Int(int) => ValueVariants::Integer(int),
+            &FacetValue::Uuid(uuid) => {
+                ValueVariants::String(uuid::Uuid::from_u128(uuid).to_string())
+            }
+            &FacetValue::Bool(bool) => ValueVariants::Bool(bool),
+        })
     }
 
+    /// Count of points with this value.
     #[getter]
     pub fn count(&self) -> usize {
         self.0.count
@@ -80,6 +101,7 @@ impl Repr for PyFacetHit {
     }
 }
 
+/// Response for facet operation.
 #[pyclass(name = "FacetResponse", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
@@ -93,15 +115,18 @@ impl PyFacetResponse {
 
 #[pymethods]
 impl PyFacetResponse {
+    /// Facet hits.
     #[getter]
     pub fn hits(&self) -> Vec<PyFacetHit> {
         PyFacetHit::wrap_vec(self.0.hits.clone())
     }
 
+    /// Number of hits.
     fn __len__(&self) -> usize {
         self.0.hits.len()
     }
 
+    /// Iterate over hits.
     fn __iter__(&self) -> PyFacetHitIter {
         PyFacetHitIter {
             inner: self.0.hits.clone().into_iter(),
@@ -132,16 +157,5 @@ impl PyFacetHitIter {
 
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyFacetHit> {
         slf.inner.next().map(PyFacetHit)
-    }
-}
-
-fn facet_value_into_py<'py>(value: &FacetValue, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-    match value {
-        FacetValue::Keyword(s) => s.into_bound_py_any(py),
-        FacetValue::Int(i) => i.into_bound_py_any(py),
-        FacetValue::Uuid(uuid) => uuid::Uuid::from_u128(*uuid)
-            .to_string()
-            .into_bound_py_any(py),
-        FacetValue::Bool(b) => b.into_bound_py_any(py),
     }
 }

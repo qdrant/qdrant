@@ -9,6 +9,7 @@ use crate::query::PyOrderBy;
 use crate::repr::*;
 use crate::types::*;
 
+/// Request for scroll operation.
 #[pyclass(name = "ScrollRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyScrollRequest(ScrollRequest);
@@ -16,6 +17,15 @@ pub struct PyScrollRequest(ScrollRequest);
 #[pyclass_repr]
 #[pymethods]
 impl PyScrollRequest {
+    /// Create a ScrollRequest.
+    ///
+    /// Args:
+    ///     offset: Starting point ID.
+    ///     limit: Maximum number of results.
+    ///     filter: Filter conditions.
+    ///     with_payload: Whether to include payload.
+    ///     with_vector: Whether to include vectors.
+    ///     order_by: Order by configuration.
     #[new]
     #[pyo3(signature = (
         offset = None,
@@ -43,31 +53,37 @@ impl PyScrollRequest {
         })
     }
 
+    /// Offset point ID.
     #[getter]
     pub fn offset(&self) -> Option<PyPointId> {
         self.0.offset.map(PyPointId)
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> Option<usize> {
         self.0.limit
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<&PyFilter> {
         self.0.filter.as_ref().map(PyFilter::wrap_ref)
     }
 
+    /// With payload flag.
     #[getter]
     pub fn with_payload(&self) -> Option<&PyWithPayload> {
         self.0.with_payload.as_ref().map(PyWithPayload::wrap_ref)
     }
 
+    /// With vector flag.
     #[getter]
     pub fn with_vector(&self) -> &PyWithVector {
         PyWithVector::wrap_ref(&self.0.with_vector)
     }
 
+    /// Order by configuration.
     #[getter]
     pub fn order_by(&self) -> Option<PyOrderBy> {
         self.0.order_by.clone().map(PyOrderBy::from)

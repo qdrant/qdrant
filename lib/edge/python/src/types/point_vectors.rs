@@ -8,6 +8,7 @@ use shard::operations::vector_ops::PointVectorsPersisted;
 use crate::repr::*;
 use crate::types::{PyPointId, PyVector};
 
+/// Point ID with associated vectors for update operations.
 #[pyclass(name = "PointVectors", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -16,6 +17,11 @@ pub struct PyPointVectors(pub PointVectorsPersisted);
 #[pyclass_repr]
 #[pymethods]
 impl PyPointVectors {
+    /// Create a PointVectors.
+    ///
+    /// Args:
+    ///     id: Point ID.
+    ///     vector: Vector data.
     #[new]
     pub fn new(id: PyPointId, vector: PyVector) -> Self {
         Self(PointVectorsPersisted {
@@ -24,11 +30,13 @@ impl PyPointVectors {
         })
     }
 
+    /// Point ID.
     #[getter]
     pub fn id(&self) -> PyPointId {
         PyPointId(self.0.id)
     }
 
+    /// Vector data.
     #[getter]
     pub fn vector(&self) -> &PyVector {
         PyVector::wrap_ref(&self.0.vector)

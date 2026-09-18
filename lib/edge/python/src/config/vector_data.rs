@@ -7,13 +7,16 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt as _, PyTypeInfo};
 use segment::types::*;
 
 use super::quantization::*;
 use crate::repr::*;
+use crate::type_hint::Alias;
 
+/// Distance metrics for vector comparison.
 #[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDistance {
@@ -21,13 +24,6 @@ pub enum PyDistance {
     Euclid,
     Dot,
     Manhattan,
-}
-
-#[pymethods]
-impl PyDistance {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyDistance {
@@ -69,16 +65,22 @@ impl From<PyDistance> for Distance {
 #[repr(transparent)]
 pub struct PyIndexes(Indexes);
 
+pub const INDEXES: Alias = Alias {
+    name: "IndexType",
+    definition: IndexesHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum IndexesHelper {
+    Plain(PyPlainIndexConfig),
+    Hnsw(PyHnswIndexConfig),
+}
+
 impl FromPyObject<'_, '_> for PyIndexes {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = INDEXES.hint();
 
     fn extract(indexes: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Plain(PyPlainIndexConfig),
-            Hnsw(PyHnswIndexConfig),
-        }
-
         fn _variants(indexes: Indexes) {
             match indexes {
                 Indexes::Plain {} => (),
@@ -87,8 +89,8 @@ impl FromPyObject<'_, '_> for PyIndexes {
         }
 
         let indexes = match indexes.extract()? {
-            Helper::Plain(_) => Indexes::Plain {},
-            Helper::Hnsw(hnsw) => Indexes::Hnsw(HnswConfig::from(hnsw)),
+            IndexesHelper::Plain(_) => Indexes::Plain {},
+            IndexesHelper::Hnsw(hnsw) => Indexes::Hnsw(HnswConfig::from(hnsw)),
         };
 
         Ok(Self(indexes))
@@ -99,12 +101,14 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = INDEXES.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            Indexes::Plain {} => PyPlainIndexConfig.into_bound_py_any(py),
-            Indexes::Hnsw(hnsw) => PyHnswIndexConfig(hnsw).into_bound_py_any(py),
+            Indexes::Plain {} => IndexesHelper::Plain(PyPlainIndexConfig),
+            Indexes::Hnsw(hnsw) => IndexesHelper::Hnsw(PyHnswIndexConfig(hnsw)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -117,6 +121,7 @@ impl Repr for PyIndexes {
     }
 }
 
+/// Configuration for plain (brute-force) index.
 #[pyclass(name = "PlainIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
@@ -124,6 +129,7 @@ pub struct PyPlainIndexConfig;
 #[pyclass_repr]
 #[pymethods]
 impl PyPlainIndexConfig {
+    /// Create a PlainIndexConfig.
     #[new]
     pub fn new() -> Self {
         Self
@@ -134,6 +140,7 @@ impl PyPlainIndexConfig {
     }
 }
 
+/// Configuration for HNSW index.
 #[pyclass(name = "HnswIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -142,6 +149,16 @@ pub struct PyHnswIndexConfig(pub HnswConfig);
 #[pyclass_repr]
 #[pymethods]
 impl PyHnswIndexConfig {
+    /// Create an HnswIndexConfig.
+    ///
+    /// Args:
+    ///     m: Number of edges per node.
+    ///     ef_construct: Number of candidates during index construction.
+    ///     full_scan_threshold: Threshold for full scan.
+    ///     max_indexing_threads: Max threads for HNSW indexing (0 = auto).
+    ///     on_disk: Whether to store on disk.
+    ///     payload_m: Payload index m value.
+    ///     inline_storage: Whether to use inline storage.
     #[new]
     #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None))]
     pub fn new(
@@ -165,36 +182,43 @@ impl PyHnswIndexConfig {
         })
     }
 
+    /// Number of edges per node.
     #[getter]
     pub fn m(&self) -> usize {
         self.0.m
     }
 
+    /// ef_construct value.
     #[getter]
     pub fn ef_construct(&self) -> usize {
         self.0.ef_construct
     }
 
+    /// Full scan threshold.
     #[getter]
     pub fn full_scan_threshold(&self) -> usize {
         self.0.full_scan_threshold
     }
 
+    /// Max indexing threads (0 = auto).
     #[getter]
     pub fn max_indexing_threads(&self) -> usize {
         self.0.max_indexing_threads
     }
 
+    /// On-disk flag.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Payload m value.
     #[getter]
     pub fn payload_m(&self) -> Option<usize> {
         self.0.payload_m
     }
 
+    /// Inline storage flag.
     #[getter]
     pub fn inline_storage(&self) -> Option<bool> {
         self.0.inline_storage
@@ -221,6 +245,7 @@ impl PyHnswIndexConfig {
     }
 }
 
+/// Configuration for multi-vector storage.
 #[pyclass(name = "MultiVectorConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -229,6 +254,10 @@ pub struct PyMultiVectorConfig(MultiVectorConfig);
 #[pyclass_repr]
 #[pymethods]
 impl PyMultiVectorConfig {
+    /// Create a MultiVectorConfig.
+    ///
+    /// Args:
+    ///     comparator: Multi-vector comparator.
     #[new]
     pub fn new(comparator: PyMultiVectorComparator) -> Self {
         Self(MultiVectorConfig {
@@ -236,6 +265,7 @@ impl PyMultiVectorConfig {
         })
     }
 
+    /// Comparator.
     #[getter]
     pub fn comparator(&self) -> PyMultiVectorComparator {
         PyMultiVectorComparator::from(self.0.comparator)
@@ -253,17 +283,11 @@ impl PyMultiVectorConfig {
     }
 }
 
+/// Multi-vector comparison methods.
 #[pyclass(name = "MultiVectorComparator", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
     MaxSim,
-}
-
-#[pymethods]
-impl PyMultiVectorComparator {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyMultiVectorComparator {
@@ -292,6 +316,7 @@ impl From<PyMultiVectorComparator> for MultiVectorComparator {
     }
 }
 
+/// Vector storage data types.
 #[pyclass(name = "VectorStorageDatatype", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageDatatype {
@@ -299,13 +324,6 @@ pub enum PyVectorStorageDatatype {
     Float16,
     Uint8,
     Turbo4,
-}
-
-#[pymethods]
-impl PyVectorStorageDatatype {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyVectorStorageDatatype {
@@ -347,6 +365,7 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
 
 use edge::EdgeVectorParams;
 
+/// Dense vector parameters for EdgeConfig.
 #[pyclass(name = "EdgeVectorParams", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyEdgeVectorParams(pub EdgeVectorParams);
@@ -368,6 +387,16 @@ impl PyEdgeVectorParams {
 #[pyclass_repr]
 #[pymethods]
 impl PyEdgeVectorParams {
+    /// Create EdgeVectorParams.
+    ///
+    /// Args:
+    ///     size: Dimension of vectors.
+    ///     distance: Distance metric.
+    ///     on_disk: If True, store vectors on disk (mmap); otherwise in RAM.
+    ///     multivector_config: Optional multi-vector configuration.
+    ///     datatype: Optional storage datatype.
+    ///     quantization_config: Optional per-vector quantization override.
+    ///     hnsw_config: Optional per-vector HNSW config override.
     #[new]
     #[pyo3(signature = (size, distance, on_disk=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None))]
     pub fn new(
@@ -390,36 +419,43 @@ impl PyEdgeVectorParams {
         })
     }
 
+    /// Vector dimension.
     #[getter]
     pub fn size(&self) -> usize {
         self.0.size
     }
 
+    /// Distance metric.
     #[getter]
     pub fn distance(&self) -> PyDistance {
         PyDistance::from(self.0.distance)
     }
 
+    /// Whether vector storage is on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Multi-vector configuration.
     #[getter]
     pub fn multivector_config(&self) -> Option<PyMultiVectorConfig> {
         self.0.multivector_config.map(PyMultiVectorConfig)
     }
 
+    /// Storage datatype.
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
     }
 
+    /// Quantization configuration.
     #[getter]
     pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
         self.0.quantization_config.clone().map(PyQuantizationConfig)
     }
 
+    /// HNSW config override.
     #[getter]
     pub fn hnsw_config(&self) -> Option<PyHnswIndexConfig> {
         self.0.hnsw_config.map(PyHnswIndexConfig)
@@ -434,6 +470,7 @@ impl<'py> IntoPyObject<'py> for &PyEdgeVectorParams {
     type Target = PyEdgeVectorParams;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyEdgeVectorParams::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)

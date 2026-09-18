@@ -3,12 +3,16 @@ use std::fmt;
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
+use pyo3::PyTypeInfo;
 use pyo3::exceptions::PyValueError;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::types::*;
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
+/// A geographic point.
 #[pyclass(name = "GeoPoint", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -17,6 +21,11 @@ pub struct PyGeoPoint(pub GeoPoint);
 #[pyclass_repr]
 #[pymethods]
 impl PyGeoPoint {
+    /// Create a GeoPoint.
+    ///
+    /// Args:
+    ///     lon: Longitude (-180 to 180).
+    ///     lat: Latitude (-90 to 90).
     #[new]
     pub fn new(lon: f64, lat: f64) -> Result<Self, PyErr> {
         let point =
@@ -25,11 +34,13 @@ impl PyGeoPoint {
         Ok(Self(point))
     }
 
+    /// Longitude.
     #[getter]
     pub fn lon(&self) -> f64 {
         self.0.lon.into_inner()
     }
 
+    /// Latitude.
     #[getter]
     pub fn lat(&self) -> f64 {
         self.0.lat.into_inner()
@@ -51,12 +62,14 @@ impl<'py> IntoPyObject<'py> for &PyGeoPoint {
     type Target = PyGeoPoint;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyGeoPoint::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(*self, py)
     }
 }
 
+/// A geographic bounding box.
 #[pyclass(name = "GeoBoundingBox", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoBoundingBox(pub GeoBoundingBox);
@@ -64,6 +77,11 @@ pub struct PyGeoBoundingBox(pub GeoBoundingBox);
 #[pyclass_repr]
 #[pymethods]
 impl PyGeoBoundingBox {
+    /// Create a GeoBoundingBox.
+    ///
+    /// Args:
+    ///     top_left: Top-left corner.
+    ///     bottom_right: Bottom-right corner.
     #[new]
     pub fn new(top_left: PyGeoPoint, bottom_right: PyGeoPoint) -> Self {
         Self(GeoBoundingBox {
@@ -72,11 +90,13 @@ impl PyGeoBoundingBox {
         })
     }
 
+    /// Top-left corner.
     #[getter]
     pub fn top_left(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.top_left)
     }
 
+    /// Bottom-right corner.
     #[getter]
     pub fn bottom_right(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.bottom_right)
@@ -97,6 +117,7 @@ impl PyGeoBoundingBox {
     }
 }
 
+/// A geographic circle.
 #[pyclass(name = "GeoRadius", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoRadius(pub GeoRadius);
@@ -104,6 +125,11 @@ pub struct PyGeoRadius(pub GeoRadius);
 #[pyclass_repr]
 #[pymethods]
 impl PyGeoRadius {
+    /// Create a GeoRadius.
+    ///
+    /// Args:
+    ///     center: Center point.
+    ///     radius: Radius in meters.
     #[new]
     pub fn new(center: PyGeoPoint, radius: f64) -> Self {
         Self(GeoRadius {
@@ -112,11 +138,13 @@ impl PyGeoRadius {
         })
     }
 
+    /// Center point.
     #[getter]
     pub fn center(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.center)
     }
 
+    /// Radius in meters.
     #[getter]
     pub fn radius(&self) -> f64 {
         self.0.radius.into_inner()
@@ -137,6 +165,7 @@ impl PyGeoRadius {
     }
 }
 
+/// A geographic polygon.
 #[pyclass(name = "GeoPolygon", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyGeoPolygon(pub GeoPolygon);
@@ -144,6 +173,11 @@ pub struct PyGeoPolygon(pub GeoPolygon);
 #[pyclass_repr]
 #[pymethods]
 impl PyGeoPolygon {
+    /// Create a GeoPolygon.
+    ///
+    /// Args:
+    ///     exterior: Exterior ring points.
+    ///     interiors: Optional interior rings (holes).
     #[new]
     #[pyo3(signature = (exterior, interiors=None))]
     pub fn new(
@@ -161,11 +195,13 @@ impl PyGeoPolygon {
         Ok(Self(polygon))
     }
 
+    /// Exterior ring.
     #[getter]
     pub fn exterior(&self) -> &PyGeoLineString {
         PyGeoLineString::wrap_ref(&self.0.exterior)
     }
 
+    /// Interior rings (holes).
     #[getter]
     pub fn interiors(&self) -> Option<&[PyGeoLineString]> {
         self.0
@@ -193,11 +229,17 @@ impl PyGeoPolygon {
 #[repr(transparent)]
 pub struct PyGeoLineString(GeoLineString);
 
+pub const GEO_LINE_STRING: Alias = Alias {
+    name: "GeoLineString",
+    definition: Vec::<PyGeoPoint>::INPUT_TYPE,
+};
+
 impl FromPyObject<'_, '_> for PyGeoLineString {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = GEO_LINE_STRING.hint();
 
     fn extract(points: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        let points = points.extract()?;
+        let points: Vec<PyGeoPoint> = points.extract()?;
 
         Ok(Self(GeoLineString {
             points: PyGeoPoint::peel_vec(points),
@@ -209,6 +251,7 @@ impl<'py> IntoPyObject<'py> for PyGeoLineString {
     type Target = PyAny; // PyList
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible
+    const OUTPUT_TYPE: PyStaticExpr = GEO_LINE_STRING.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -219,6 +262,7 @@ impl<'py> IntoPyObject<'py> for &PyGeoLineString {
     type Target = PyAny; // PyList
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr; // Infallible
+    const OUTPUT_TYPE: PyStaticExpr = GEO_LINE_STRING.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         PyGeoPoint::wrap_slice(&self.0.points).into_pyobject(py)

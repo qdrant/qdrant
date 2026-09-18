@@ -8,6 +8,7 @@ use shard::query::query_enum::QueryEnum;
 use crate::repr::*;
 use crate::*;
 
+/// Request for search operation.
 #[pyclass(name = "SearchRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchRequest(SearchRequest);
@@ -15,6 +16,17 @@ pub struct PySearchRequest(SearchRequest);
 #[pyclass_repr]
 #[pymethods]
 impl PySearchRequest {
+    /// Create a SearchRequest.
+    ///
+    /// Args:
+    ///     query: Query (vector-based).
+    ///     limit: Maximum number of results.
+    ///     offset: Number of results to skip.
+    ///     filter: Filter conditions.
+    ///     params: Search parameters.
+    ///     with_vector: Whether to include vectors.
+    ///     with_payload: Whether to include payload.
+    ///     score_threshold: Minimum score threshold.
     #[new]
     #[pyo3(signature = (
         query,
@@ -49,41 +61,49 @@ impl PySearchRequest {
         })
     }
 
+    /// Query.
     #[getter]
     pub fn query(&self) -> &PyQuery {
         PyQuery::wrap_ref(&self.0.query)
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<&PyFilter> {
         self.0.filter.as_ref().map(PyFilter::wrap_ref)
     }
 
+    /// Search parameters.
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
         self.0.params.clone().map(PySearchParams)
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> usize {
         self.0.limit
     }
 
+    /// Result offset.
     #[getter]
     pub fn offset(&self) -> usize {
         self.0.offset
     }
 
+    /// With vector flag.
     #[getter]
     pub fn with_vector(&self) -> Option<&PyWithVector> {
         self.0.with_vector.as_ref().map(PyWithVector::wrap_ref)
     }
 
+    /// With payload flag.
     #[getter]
     pub fn with_payload(&self) -> Option<&PyWithPayload> {
         self.0.with_payload.as_ref().map(PyWithPayload::wrap_ref)
     }
 
+    /// Score threshold.
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
         self.0.score_threshold
@@ -110,6 +130,7 @@ impl PySearchRequest {
     }
 }
 
+/// Parameters for search operations.
 #[pyclass(name = "SearchParams", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
@@ -117,6 +138,15 @@ pub struct PySearchParams(pub SearchParams);
 #[pyclass_repr]
 #[pymethods]
 impl PySearchParams {
+    /// Create SearchParams.
+    ///
+    /// Args:
+    ///     hnsw_ef: ef parameter for HNSW search.
+    ///     exact: Whether to use exact search.
+    ///     quantization: Quantization search parameters.
+    ///     indexed_only: Whether to search only indexed vectors.
+    ///     acorn: Acorn search parameters.
+    ///     idf: Population over which sparse IDF statistics are computed.
     #[new]
     #[pyo3(signature = (
         hnsw_ef = None,
@@ -144,31 +174,37 @@ impl PySearchParams {
         })
     }
 
+    /// HNSW ef parameter.
     #[getter]
     pub fn hnsw_ef(&self) -> Option<usize> {
         self.0.hnsw_ef
     }
 
+    /// Exact search flag.
     #[getter]
     pub fn exact(&self) -> bool {
         self.0.exact
     }
 
+    /// Quantization parameters.
     #[getter]
     pub fn quantization(&self) -> Option<PyQuantizationSearchParams> {
         self.0.quantization.map(PyQuantizationSearchParams)
     }
 
+    /// Indexed only flag.
     #[getter]
     pub fn indexed_only(&self) -> bool {
         self.0.indexed_only
     }
 
+    /// Acorn parameters.
     #[getter]
     pub fn acorn(&self) -> Option<PyAcornSearchParams> {
         self.0.acorn.map(PyAcornSearchParams)
     }
 
+    /// IDF scope parameters.
     #[getter]
     pub fn idf(&self) -> Option<PyIdfParams> {
         self.0.idf.clone().map(PyIdfParams)
@@ -193,6 +229,9 @@ impl PySearchParams {
     }
 }
 
+/// Population over which sparse vector IDF statistics are computed - the IDF corpus.
+///
+/// Only applicable to sparse vectors with the IDF modifier enabled.
 #[pyclass(name = "IdfParams", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyIdfParams(pub IdfParams);
@@ -200,6 +239,12 @@ pub struct PyIdfParams(pub IdfParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyIdfParams {
+    /// Create IdfParams.
+    ///
+    /// Args:
+    ///     corpus: Filter defining the corpus: IDF statistics are computed over
+    ///         the points matching this filter. If None, statistics are
+    ///         collection-wide (global).
     #[new]
     #[pyo3(signature = (corpus = None))]
     pub fn new(corpus: Option<PyFilter>) -> Self {
@@ -212,6 +257,7 @@ impl PyIdfParams {
         })
     }
 
+    /// Corpus filter, None for global statistics.
     #[getter]
     pub fn corpus(&self) -> Option<&PyFilter> {
         self.0.corpus().map(PyFilter::wrap_ref)
@@ -222,6 +268,7 @@ impl PyIdfParams {
     }
 }
 
+/// Parameters for quantization during search.
 #[pyclass(name = "QuantizationSearchParams", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyQuantizationSearchParams(QuantizationSearchParams);
@@ -229,6 +276,12 @@ pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyQuantizationSearchParams {
+    /// Create QuantizationSearchParams.
+    ///
+    /// Args:
+    ///     ignore: Whether to ignore quantization.
+    ///     rescore: Whether to rescore with original vectors.
+    ///     oversampling: Oversampling factor.
     #[new]
     #[pyo3(signature = (ignore = false, rescore = None, oversampling = None))]
     pub fn new(ignore: bool, rescore: Option<bool>, oversampling: Option<f64>) -> Self {
@@ -239,16 +292,19 @@ impl PyQuantizationSearchParams {
         })
     }
 
+    /// Ignore quantization flag.
     #[getter]
     pub fn ignore(&self) -> bool {
         self.0.ignore
     }
 
+    /// Rescore flag.
     #[getter]
     pub fn rescore(&self) -> Option<bool> {
         self.0.rescore
     }
 
+    /// Oversampling factor.
     #[getter]
     pub fn oversampling(&self) -> Option<f64> {
         self.0.oversampling
@@ -270,6 +326,7 @@ impl PyQuantizationSearchParams {
     }
 }
 
+/// Parameters for Acorn filtered search.
 #[pyclass(name = "AcornSearchParams", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyAcornSearchParams(AcornSearchParams);
@@ -277,6 +334,11 @@ pub struct PyAcornSearchParams(AcornSearchParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyAcornSearchParams {
+    /// Create AcornSearchParams.
+    ///
+    /// Args:
+    ///     enable: Whether to enable Acorn.
+    ///     max_selectivity: Maximum filter selectivity for Acorn.
     #[new]
     #[pyo3(signature = (enable = false, max_selectivity = None))]
     pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
@@ -286,11 +348,13 @@ impl PyAcornSearchParams {
         })
     }
 
+    /// Enable flag.
     #[getter]
     pub fn enable(&self) -> bool {
         self.0.enable
     }
 
+    /// Maximum selectivity.
     #[getter]
     pub fn max_selectivity(&self) -> Option<f64> {
         self.0

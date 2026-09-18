@@ -89,7 +89,6 @@ jobs:
       - name: Install tools
         run: |
           uv tool install ast-grep-cli
-          uv tool install maturin
 
       - name: Setup Qdrant
         uses: ./.github/actions/setup-qdrant
@@ -141,6 +140,11 @@ jobs:
       - name: 🐍 Build Python edge
         working-directory: lib/edge/python
         run: just py-build
+
+      - name: 🐍 Check Python stubs
+        if: runner.os == 'Linux'
+        working-directory: lib/edge
+        run: just py-stubs
 
       - name: 🐍 Run Python examples
         working-directory: lib/edge
