@@ -274,11 +274,9 @@ impl UpdateHandler {
         }
     }
 
-    /// Stop the flush worker and wait for it to finish.
-    ///
-    /// [`Self::stop_flush_worker`] only signals. A pass already running keeps flushing segments,
-    /// persisting clocks and acknowledging the WAL after it returns, so callers that need the
-    /// shard to stop changing must wait here instead.
+    /// [`Self::stop_flush_worker`] only signals: a pass already in flight keeps flushing,
+    /// acknowledging the WAL and persisting clocks after it returns.
+    #[cfg(feature = "testing")]
     pub async fn stop_and_wait_flush_worker(&mut self) {
         self.stop_flush_worker();
 

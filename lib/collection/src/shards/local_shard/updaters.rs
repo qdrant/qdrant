@@ -19,7 +19,7 @@ impl LocalShard {
         let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
-    /// Stops flush worker only, and waits for it to finish.
+    /// Stops flush worker only.
     /// This is useful for testing purposes to prevent background flushes.
     #[cfg(feature = "testing")]
     pub async fn stop_flush_worker(&self) {
