@@ -185,6 +185,13 @@ impl Repr for PyNamedVector {
     }
 }
 
+/// A sparse vector representation.
+///
+/// Create a SparseVector.
+///
+/// Args:
+///     indices: Non-zero dimension indices.
+///     values: Values at the non-zero dimensions.
 #[pyclass(name = "SparseVector", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -198,11 +205,13 @@ impl PySparseVector {
         Self(SparseVector { indices, values })
     }
 
+    /// Non-zero dimension indices.
     #[getter]
     pub fn indices(&self) -> &[DimId] {
         self.0.indices.as_slice()
     }
 
+    /// Values at non-zero dimensions.
     #[getter]
     pub fn values(&self) -> &[DimWeight] {
         self.0.values.as_slice()

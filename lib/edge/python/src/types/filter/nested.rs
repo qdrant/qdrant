@@ -7,6 +7,13 @@ use segment::types::{Filter, Nested, NestedCondition};
 use crate::repr::*;
 use crate::types::*;
 
+/// Condition on nested objects.
+///
+/// Create a NestedCondition.
+///
+/// Args:
+///     key: Path to nested array.
+///     filter: Filter to apply to nested objects.
 #[pyclass(name = "NestedCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -25,11 +32,13 @@ impl PyNestedCondition {
         })
     }
 
+    /// Nested field key.
     #[getter]
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.nested.key)
     }
 
+    /// Nested filter.
     #[getter]
     pub fn filter(&self) -> &PyFilter {
         PyFilter::wrap_ref(&self.0.nested.filter)

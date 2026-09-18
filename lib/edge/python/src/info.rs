@@ -15,6 +15,7 @@ use crate::repr::*;
 use crate::types::PyJsonPath;
 use crate::types::payload_schema::*;
 
+/// Information about a shard.
 #[pyclass(name = "ShardInfo", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyShardInfo(pub ShardInfo);
@@ -22,21 +23,25 @@ pub struct PyShardInfo(pub ShardInfo);
 #[pyclass_repr]
 #[pymethods]
 impl PyShardInfo {
+    /// Number of segments.
     #[getter]
     pub fn segments_count(&self) -> usize {
         self.0.segments_count
     }
 
+    /// Number of points.
     #[getter]
     pub fn points_count(&self) -> usize {
         self.0.points_count
     }
 
+    /// Number of indexed vectors.
     #[getter]
     pub fn indexed_vectors_count(&self) -> usize {
         self.0.indexed_vectors_count
     }
 
+    /// Payload schema information.
     #[getter]
     pub fn payload_schema(&self) -> &HashMap<PyJsonPath, PyPayloadIndexInfo> {
         PyPayloadIndexInfo::wrap_map_ref(&self.0.payload_schema)
@@ -59,6 +64,7 @@ impl PyShardInfo {
     }
 }
 
+/// Information about a payload index.
 #[pyclass(name = "PayloadIndexInfo", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -79,16 +85,19 @@ impl PyPayloadIndexInfo {
 #[pyclass_repr]
 #[pymethods]
 impl PyPayloadIndexInfo {
+    /// Data type.
     #[getter]
     pub fn data_type(&self) -> PyPayloadSchemaType {
         PyPayloadSchemaType::from(self.0.data_type)
     }
 
+    /// Index parameters.
     #[getter]
     pub fn params(&self) -> Option<&PyPayloadSchemaParams> {
         self.0.params.as_ref().map(PyPayloadSchemaParams::wrap_ref)
     }
 
+    /// Number of points with this field.
     #[getter]
     pub fn points(&self) -> usize {
         self.0.points

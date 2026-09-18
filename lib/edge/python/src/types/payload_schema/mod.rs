@@ -57,6 +57,7 @@ impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
     }
 }
 
+/// Payload field schema types.
 #[pyclass(name = "PayloadSchemaType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadSchemaType {
@@ -238,6 +239,15 @@ impl Repr for PyPayloadSchemaParams {
     }
 }
 
+/// Index parameters for keyword fields.
+///
+/// Create KeywordIndexParams.
+///
+/// Args:
+///     is_tenant: Whether this field is used for tenant separation.
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     prefix: Whether to enable prefix matching for this field.
 #[pyclass(name = "KeywordIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -264,21 +274,25 @@ impl PyKeywordIndexParams {
         })
     }
 
+    /// Whether this field is used for tenant separation.
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// Whether prefix matching is enabled.
     #[getter]
     pub fn prefix(&self) -> Option<bool> {
         self.0.prefix
@@ -299,6 +313,16 @@ impl PyKeywordIndexParams {
     }
 }
 
+/// Index parameters for integer fields.
+///
+/// Create IntegerIndexParams.
+///
+/// Args:
+///     lookup: Enable exact match filtering.
+///     range: Enable range filtering.
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "IntegerIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -327,26 +351,31 @@ impl PyIntegerIndexParams {
         })
     }
 
+    /// Enable exact match filtering.
     #[getter]
     pub fn lookup(&self) -> Option<bool> {
         self.0.lookup
     }
 
+    /// Enable range filtering.
     #[getter]
     pub fn range(&self) -> Option<bool> {
         self.0.range
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -368,6 +397,14 @@ impl PyIntegerIndexParams {
     }
 }
 
+/// Index parameters for float fields.
+///
+/// Create FloatIndexParams.
+///
+/// Args:
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "FloatIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -392,16 +429,19 @@ impl PyFloatIndexParams {
         })
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -421,6 +461,13 @@ impl PyFloatIndexParams {
     }
 }
 
+/// Index parameters for geo fields.
+///
+/// Create GeoIndexParams.
+///
+/// Args:
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "GeoIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -440,11 +487,13 @@ impl PyGeoIndexParams {
         })
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -463,6 +512,13 @@ impl PyGeoIndexParams {
     }
 }
 
+/// Index parameters for boolean fields.
+///
+/// Create BoolIndexParams.
+///
+/// Args:
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "BoolIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -482,11 +538,13 @@ impl PyBoolIndexParams {
         })
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -505,6 +563,14 @@ impl PyBoolIndexParams {
     }
 }
 
+/// Index parameters for datetime fields.
+///
+/// Create DatetimeIndexParams.
+///
+/// Args:
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "DatetimeIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -529,16 +595,19 @@ impl PyDatetimeIndexParams {
         })
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -558,6 +627,14 @@ impl PyDatetimeIndexParams {
     }
 }
 
+/// Index parameters for UUID fields.
+///
+/// Create UuidIndexParams.
+///
+/// Args:
+///     is_tenant: Whether this field is used for tenant separation.
+///     on_disk: Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "UuidIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -578,16 +655,19 @@ impl PyUuidIndexParams {
         })
     }
 
+    /// Whether this field is used for tenant separation.
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw

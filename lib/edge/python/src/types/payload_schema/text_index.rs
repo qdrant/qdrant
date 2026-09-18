@@ -15,6 +15,21 @@ use segment::data_types::index::*;
 use crate::repr::*;
 use crate::type_hint::Alias;
 
+/// Index parameters for text fields.
+///
+/// Create TextIndexParams.
+///
+/// Args:
+///     tokenizer: Tokenizer type.
+///     min_token_len: Minimum token length.
+///     max_token_len: Maximum token length.
+///     lowercase: Convert to lowercase.
+///     ascii_folding: Apply ASCII folding.
+///     phrase_matching: Enable phrase matching.
+///     stopwords: Stopwords configuration.
+///     on_disk: Whether to store index on disk.
+///     stemmer: Stemming algorithm.
+///     enable_hnsw: Whether to enable HNSW index for this field.
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -54,51 +69,61 @@ impl PyTextIndexParams {
         })
     }
 
+    /// Tokenizer type.
     #[getter]
     pub fn tokenizer(&self) -> PyTokenizerType {
         PyTokenizerType::from(self.0.tokenizer)
     }
 
+    /// Minimum token length.
     #[getter]
     pub fn min_token_len(&self) -> Option<usize> {
         self.0.min_token_len
     }
 
+    /// Maximum token length.
     #[getter]
     pub fn max_token_len(&self) -> Option<usize> {
         self.0.max_token_len
     }
 
+    /// Convert to lowercase.
     #[getter]
     pub fn lowercase(&self) -> Option<bool> {
         self.0.lowercase
     }
 
+    /// Apply ASCII folding.
     #[getter]
     pub fn ascii_folding(&self) -> Option<bool> {
         self.0.ascii_folding
     }
 
+    /// Enable phrase matching.
     #[getter]
     pub fn phrase_matching(&self) -> Option<bool> {
         self.0.phrase_matching
     }
 
+    /// Stopwords configuration.
     #[getter]
     pub fn stopwords(&self) -> Option<&PyStopwords> {
         self.0.stopwords.as_ref().map(PyStopwords::wrap_ref)
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Stemming algorithm.
     #[getter]
     pub fn stemmer(&self) -> Option<&PyStemmingAlgorithm> {
         self.0.stemmer.as_ref().map(PyStemmingAlgorithm::wrap_ref)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -125,6 +150,7 @@ impl PyTextIndexParams {
     }
 }
 
+/// Text tokenizer types.
 #[pyclass(name = "TokenizerType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTokenizerType {
@@ -240,6 +266,7 @@ impl Repr for PyStopwords {
     }
 }
 
+/// Predefined stopword languages.
 #[pyclass(name = "Language", from_py_object)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PyLanguage {
@@ -388,6 +415,13 @@ impl From<PyLanguage> for Language {
     }
 }
 
+/// Custom stopwords set.
+///
+/// Create a StopwordsSet.
+///
+/// Args:
+///     languages: Predefined language stopwords to include.
+///     custom: Custom stopwords to add.
 #[pyclass(name = "StopwordsSet", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -405,6 +439,7 @@ impl PyStopwordsSet {
         })
     }
 
+    /// Predefined language stopwords.
     #[getter]
     pub fn languages(&self) -> Option<BTreeSet<PyLanguage>> {
         self.0
@@ -413,6 +448,7 @@ impl PyStopwordsSet {
             .map(|langs| langs.iter().copied().map(PyLanguage::from).collect())
     }
 
+    /// Custom stopwords.
     #[getter]
     pub fn custom(&self) -> Option<&BTreeSet<String>> {
         self.0.custom.as_ref()
@@ -519,6 +555,12 @@ impl Repr for PyStemmingAlgorithm {
     }
 }
 
+/// Snowball stemming algorithm parameters.
+///
+/// Create SnowballParams.
+///
+/// Args:
+///     language: Snowball language.
 #[pyclass(name = "SnowballParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -535,6 +577,7 @@ impl PySnowballParams {
         })
     }
 
+    /// Snowball language.
     #[getter]
     pub fn language(&self) -> PySnowballLanguage {
         PySnowballLanguage::from(self.0.language)
@@ -552,6 +595,8 @@ impl PySnowballParams {
 }
 
 /// Explicitly disable stemming, overriding the language default.
+///
+/// Create a DisabledStemmer.
 #[pyclass(name = "DisabledStemmer", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -583,6 +628,7 @@ impl PyDisabledStemmer {
     }
 }
 
+/// Snowball stemmer languages.
 #[pyclass(name = "SnowballLanguage", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySnowballLanguage {

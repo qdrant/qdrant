@@ -7,6 +7,7 @@ use super::PyOrderValue;
 use crate::repr::*;
 use crate::{PyPayload, PyPointId, PyVectorInternal};
 
+/// A point with a similarity score.
 #[pyclass(name = "ScoredPoint", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -15,31 +16,37 @@ pub struct PyScoredPoint(pub ScoredPoint);
 #[pyclass_repr]
 #[pymethods]
 impl PyScoredPoint {
+    /// Point ID.
     #[getter]
     pub fn id(&self) -> PyPointId {
         PyPointId(self.0.id)
     }
 
+    /// Point version.
     #[getter]
     pub fn version(&self) -> u64 {
         self.0.version
     }
 
+    /// Similarity score.
     #[getter]
     pub fn score(&self) -> f32 {
         self.0.score
     }
 
+    /// Vector data (if requested).
     #[getter]
     pub fn vector(&self) -> Option<&PyVectorInternal> {
         self.0.vector.as_ref().map(PyVectorInternal::wrap_ref)
     }
 
+    /// Payload (if requested).
     #[getter]
     pub fn payload(&self) -> Option<&PyPayload> {
         self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
 
+    /// Order value for order_by queries.
     #[getter]
     pub fn order_value(&self) -> Option<PyOrderValue> {
         self.0.order_value.map(PyOrderValue::from)
