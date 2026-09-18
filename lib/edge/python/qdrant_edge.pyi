@@ -6,8 +6,9 @@ ConditionType: TypeAlias = (
     | IsEmptyCondition
     | IsNullCondition
     | NestedCondition
+    | SliceCondition
 )
-ExpressionType: TypeAlias = Expression
+GeoLineString: TypeAlias = Sequence[GeoPoint]
 IndexType: TypeAlias = HnswIndexConfig | PlainIndexConfig
 JsonPath: TypeAlias = str
 MatchType: TypeAlias = (
@@ -19,8 +20,9 @@ MatchType: TypeAlias = (
     | MatchTextAny
     | MatchValue
 )
-NamedVector: TypeAlias = SparseVector | list[float] | list[list[float]]
+NamedVector: TypeAlias = Sequence[Sequence[float]] | Sequence[float] | SparseVector
 Payload: TypeAlias = dict[str, Any]
+PayloadFieldSchema: TypeAlias = PayloadSchemaParams | PayloadSchemaType
 PayloadSchemaParams: TypeAlias = (
     BoolIndexParams
     | DatetimeIndexParams
@@ -38,15 +40,15 @@ QuantizationConfigType: TypeAlias = (
     | ScalarQuantizationConfig
     | TurboQuantQuantizationConfig
 )
-RangeType: TypeAlias = RangeDateTime | RangeFloat
 ScoringQueryType: TypeAlias = Formula | Fusion | Mmr | OrderBy | Query | Sample
 StartFromType: TypeAlias = float | int | str
 StemmingAlgorithm: TypeAlias = DisabledStemmer | SnowballParams
 Stopwords: TypeAlias = Language | StopwordsSet
-Vector: TypeAlias = dict[str, NamedVector] | list[float] | list[list[float]]
-WithPayloadType: TypeAlias = PayloadSelector | bool | list[str]
-WithVectorType: TypeAlias = bool | list[str]
+Vector: TypeAlias = Sequence[Sequence[float]] | Sequence[float] | dict[str, NamedVector]
+WithPayloadType: TypeAlias = PayloadSelector | Sequence[JsonPath] | bool
+WithVectorType: TypeAlias = Sequence[str] | bool
 
+@final
 class AcornSearchParams:
     """Parameters for Acorn filtered search."""
 
@@ -57,6 +59,7 @@ class AcornSearchParams:
             enable: Whether to enable Acorn.
             max_selectivity: Maximum filter selectivity for Acorn."""
 
+    def __repr__() -> str: ...
     @property
     def enable() -> bool:
         """Enable flag."""
@@ -65,6 +68,7 @@ class AcornSearchParams:
     def max_selectivity() -> None | float:
         """Maximum selectivity."""
 
+@final
 class BinaryQuantizationConfig:
     """Configuration for binary quantization."""
 
@@ -80,6 +84,7 @@ class BinaryQuantizationConfig:
             encoding: Binary encoding type.
             query_encoding: Query encoding type."""
 
+    def __repr__() -> str: ...
     @property
     def always_ram() -> None | bool:
         """Always RAM flag."""
@@ -92,14 +97,19 @@ class BinaryQuantizationConfig:
     def query_encoding() -> BinaryQuantizationQueryEncoding | None:
         """Query encoding."""
 
-class BinaryQuantizationEncoding(Enum):
+@final
+class BinaryQuantizationEncoding:
     """Binary quantization encoding types."""
 
     OneAndHalfBits: Final[BinaryQuantizationEncoding]
     OneBit: Final[BinaryQuantizationEncoding]
     TwoBits: Final[BinaryQuantizationEncoding]
 
-class BinaryQuantizationQueryEncoding(Enum):
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
+class BinaryQuantizationQueryEncoding:
     """Binary quantization query encoding types."""
 
     Binary: Final[BinaryQuantizationQueryEncoding]
@@ -107,8 +117,12 @@ class BinaryQuantizationQueryEncoding(Enum):
     Scalar4Bits: Final[BinaryQuantizationQueryEncoding]
     Scalar8Bits: Final[BinaryQuantizationQueryEncoding]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class Bm25:
-    """BM25 sparse-vector embedding model. No qdrant server / inference service required."""
+    """BM25 sparse-vector embedding model."""
 
     def __new__(config: Bm25Config | None = None):
         """Create a Bm25 model with the given configuration (defaults if `None`).
@@ -123,12 +137,9 @@ class Bm25:
     def embed_query(text: str) -> SparseVector:
         """Embed `text` as a search query: each unique token gets weight 1.0."""
 
+@final
 class Bm25Config:
-    """Configuration for an edge-side BM25 model.
-
-    JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
-    portable between cloud and edge. Defaults match standard BM25
-    (k=1.2, b=0.75, avg_len=256) and English-language tokenization."""
+    """Configuration for an edge-side BM25 model."""
 
     def __new__(
         k: None | float = None,
@@ -181,6 +192,7 @@ class Bm25Config:
     @property
     def tokenizer() -> TokenizerType: ...
 
+@final
 class BoolIndexParams:
     """Index parameters for boolean fields."""
 
@@ -199,7 +211,8 @@ class BoolIndexParams:
     def on_disk() -> None | bool:
         """Whether to store index on disk."""
 
-class CompressionRatio(Enum):
+@final
+class CompressionRatio:
     """Product quantization compression ratios."""
 
     X16: Final[CompressionRatio]
@@ -208,6 +221,10 @@ class CompressionRatio(Enum):
     X64: Final[CompressionRatio]
     X8: Final[CompressionRatio]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class ContextPair:
     """A positive/negative pair for context-based queries."""
 
@@ -218,6 +235,7 @@ class ContextPair:
             positive: Positive example.
             negative: Negative example."""
 
+    def __repr__() -> str: ...
     @property
     def negative() -> NamedVector:
         """Negative example."""
@@ -226,19 +244,22 @@ class ContextPair:
     def positive() -> NamedVector:
         """Positive example."""
 
+@final
 class ContextQuery:
     """Query based on context pairs only."""
 
-    def __new__(pairs: list[ContextPair]):
+    def __new__(pairs: Sequence[ContextPair]):
         """Create a ContextQuery.
 
         Args:
             pairs: Context pairs."""
 
+    def __repr__() -> str: ...
     @property
     def pairs() -> list[ContextPair]:
         """Context pairs."""
 
+@final
 class CountRequest:
     """Request for count operation."""
 
@@ -257,6 +278,7 @@ class CountRequest:
     def filter() -> Filter | None:
         """Filter."""
 
+@final
 class DatetimeIndexParams:
     """Index parameters for datetime fields."""
 
@@ -284,38 +306,55 @@ class DatetimeIndexParams:
     def on_disk() -> None | bool:
         """Whether to store index on disk."""
 
-class DecayKind(Enum):
+@final
+class DecayKind:
     """Decay function kinds for scoring formulas."""
 
     Exp: Final[DecayKind]
+    """
+    Exponential decay function
+    """
     Gauss: Final[DecayKind]
+    """
+    Gaussian decay function
+    """
     Lin: Final[DecayKind]
+    """
+    Linear decay function
+    """
 
-class Direction(Enum):
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
+class Direction:
     """Sort direction."""
 
     Asc: Final[Direction]
     Desc: Final[Direction]
 
-class DisabledStemmer:
-    """Explicitly disable stemming, overriding the language default.
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
 
-    Use together with an empty stopword set for language-neutral text
-    processing, instead of the deprecated ``language="none"`` hack."""
+@final
+class DisabledStemmer:
+    """Explicitly disable stemming, overriding the language default."""
 
     def __new__():
         """Create a DisabledStemmer."""
 
+@final
 class DiscoverQuery:
     """Query for discovery using a target and context pairs."""
 
-    def __new__(target: NamedVector, pairs: list[ContextPair]):
+    def __new__(target: NamedVector, pairs: Sequence[ContextPair]):
         """Create a DiscoverQuery.
 
         Args:
             target: Target vector.
             pairs: Context pairs."""
 
+    def __repr__() -> str: ...
     @property
     def pairs() -> list[ContextPair]:
         """Context pairs."""
@@ -324,7 +363,8 @@ class DiscoverQuery:
     def target() -> NamedVector:
         """Target vector."""
 
-class Distance(Enum):
+@final
+class Distance:
     """Distance metrics for vector comparison."""
 
     Cosine: Final[Distance]
@@ -332,11 +372,15 @@ class Distance(Enum):
     Euclid: Final[Distance]
     Manhattan: Final[Distance]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class EdgeConfig:
     """Configuration for creating a new Qdrant Edge shard."""
 
     def __new__(
-        vectors: EdgeVectorParams | dict[str, EdgeVectorParams] | None = None,
+        vectors: EdgeVectorParams | None | dict[str, EdgeVectorParams] = None,
         sparse_vectors: None | dict[str, EdgeSparseVectorParams] = None,
         on_disk_payload: None | bool = None,
         hnsw_config: HnswIndexConfig | None = None,
@@ -371,6 +415,7 @@ class EdgeConfig:
                               bounding search compute to one core. None = OS scheduling.
         """
 
+    def __repr__() -> str: ...
     @property
     def hnsw_config() -> HnswIndexConfig | None:
         """Global HNSW config, or None if not specified."""
@@ -403,6 +448,7 @@ class EdgeConfig:
     def vectors() -> dict[str, EdgeVectorParams]:
         """Dense vector configurations."""
 
+@final
 class EdgeOptimizersConfig:
     """Optimizer-related configuration for EdgeConfig."""
 
@@ -427,6 +473,7 @@ class EdgeOptimizersConfig:
                 Updates with `wait=true` will only return after the deferred points become visible.
         """
 
+    def __repr__() -> str: ...
     @property
     def default_segment_number() -> None | int:
         """Default segment number."""
@@ -451,6 +498,7 @@ class EdgeOptimizersConfig:
     def vacuum_min_vector_number() -> None | int:
         """Vacuum min vector number."""
 
+@final
 class EdgeShard:
     """The main class representing a Qdrant Edge shard.
 
@@ -471,7 +519,7 @@ class EdgeShard:
             Number of points matching the filter."""
 
     @staticmethod
-    def create(path: str, config: EdgeConfig) -> EdgeShard:
+    def create(path: PathLike[str] | str, config: EdgeConfig) -> EdgeShard:
         """Create a new edge shard at path with the given configuration.
         Fails if the path already contains segment data.
 
@@ -501,7 +549,7 @@ class EdgeShard:
             Shard information."""
 
     @staticmethod
-    def load(path: str, config: EdgeConfig | None = None) -> EdgeShard:
+    def load(path: PathLike[str] | str, config: EdgeConfig | None = None) -> EdgeShard:
         """Load an edge shard from existing files at path.
 
         Args:
@@ -541,7 +589,7 @@ class EdgeShard:
             One list of scored points per request, in the same order."""
 
     def retrieve(
-        point_ids: list[PointId],
+        point_ids: Sequence[PointId],
         with_payload: None | WithPayloadType = None,
         with_vector: None | WithVectorType = None,
     ) -> list[Record]:
@@ -580,7 +628,9 @@ class EdgeShard:
             Snapshot manifest as a JSON-like value."""
 
     @staticmethod
-    def unpack_snapshot(snapshot_path: str, target_path: str) -> None:
+    def unpack_snapshot(
+        snapshot_path: PathLike[str] | str, target_path: PathLike[str] | str
+    ) -> None:
         """Unpack a snapshot to a target directory.
 
         Args:
@@ -593,13 +643,16 @@ class EdgeShard:
         Args:
             operation: The update operation to apply."""
 
-    def update_from_snapshot(snapshot_path: str, tmp_dir: None | str = None) -> None:
+    def update_from_snapshot(
+        snapshot_path: PathLike[str] | str, tmp_dir: None | PathLike[str] | str = None
+    ) -> None:
         """Update the shard from a snapshot.
 
         Args:
             snapshot_path: Path to the snapshot file.
             tmp_dir: Optional temporary directory for extraction."""
 
+@final
 class EdgeSparseVectorParams:
     """Sparse vector parameters for EdgeConfig."""
 
@@ -617,6 +670,7 @@ class EdgeSparseVectorParams:
             modifier: Optional modifier (e.g., IDF).
             datatype: Storage datatype."""
 
+    def __repr__() -> str: ...
     @property
     def datatype() -> None | VectorStorageDatatype:
         """Storage datatype."""
@@ -633,6 +687,7 @@ class EdgeSparseVectorParams:
     def on_disk() -> None | bool:
         """Whether sparse index is on disk."""
 
+@final
 class EdgeVectorParams:
     """Dense vector parameters for EdgeConfig."""
 
@@ -656,6 +711,7 @@ class EdgeVectorParams:
             quantization_config: Optional per-vector quantization override.
             hnsw_config: Optional per-vector HNSW config override."""
 
+    def __repr__() -> str: ...
     @property
     def datatype() -> None | VectorStorageDatatype:
         """Storage datatype."""
@@ -684,100 +740,238 @@ class EdgeVectorParams:
     def size() -> int:
         """Vector dimension."""
 
-class Expression(Enum):
+class Expression:
     """Expression types for formulas."""
 
-    @staticmethod
-    def Abs(expr: Expression) -> Expression:
+    @final
+    class Abs(Expression):
         """Create an absolute value expression."""
 
-    @staticmethod
-    def Acosh(expr: Expression) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Acosh(Expression):
         """Create an inverse hyperbolic cosine expression."""
 
-    @staticmethod
-    def Condition(cond: ConditionType) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Condition(Expression):
         """Create a condition expression (returns 1 if true, 0 if false)."""
 
-    @staticmethod
-    def Constant(val: float) -> Expression:
+        __match_args__: Final = ("cond",)
+
+        def __new__(cond: ConditionType): ...
+        @property
+        def cond() -> ConditionType: ...
+
+    @final
+    class Constant(Expression):
         """Create a constant expression."""
 
-    @staticmethod
-    def Datetime(date_time: str) -> Expression:
+        __match_args__: Final = ("val",)
+
+        def __new__(val: float): ...
+        @property
+        def val() -> float: ...
+
+    @final
+    class Datetime(Expression):
         """Create a datetime constant expression."""
 
-    @staticmethod
-    def DatetimeKey(path: JsonPath) -> Expression:
+        __match_args__: Final = ("date_time",)
+
+        def __new__(date_time: str): ...
+        @property
+        def date_time() -> str: ...
+
+    @final
+    class DatetimeKey(Expression):
         """Create a datetime field expression."""
 
-    @staticmethod
-    def Decay(
-        kind: DecayKind,
-        x: Expression,
-        target: Expression | None = None,
-        midpoint: None | float = None,
-        scale: None | float = None,
-    ) -> Expression:
+        __match_args__: Final = ("path",)
+
+        def __new__(path: JsonPath): ...
+        @property
+        def path() -> JsonPath: ...
+
+    @final
+    class Decay(Expression):
         """Create a decay expression."""
 
-    @staticmethod
-    def Div(
-        left: Expression, right: Expression, by_zero_default: None | float = None
-    ) -> Expression:
+        __match_args__: Final = ("kind", "x", "target", "midpoint", "scale")
+
+        def __new__(
+            kind: DecayKind,
+            x: Expression,
+            target: Expression | None,
+            midpoint: None | float,
+            scale: None | float,
+        ): ...
+        @property
+        def kind() -> DecayKind: ...
+        @property
+        def midpoint() -> None | float: ...
+        @property
+        def scale() -> None | float: ...
+        @property
+        def target() -> Expression | None: ...
+        @property
+        def x() -> Expression: ...
+
+    @final
+    class Div(Expression):
         """Create a division expression."""
 
-    @staticmethod
-    def Exp(expr: Expression) -> Expression:
+        __match_args__: Final = ("left", "right", "by_zero_default")
+
+        def __new__(
+            left: Expression, right: Expression, by_zero_default: None | float
+        ): ...
+        @property
+        def by_zero_default() -> None | float: ...
+        @property
+        def left() -> Expression: ...
+        @property
+        def right() -> Expression: ...
+
+    @final
+    class Exp(Expression):
         """Create an exponential expression."""
 
-    @staticmethod
-    def GeoDistance(origin: GeoPoint, to: JsonPath) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class GeoDistance(Expression):
         """Create a geo distance expression."""
 
-    @staticmethod
-    def Ln(expr: Expression) -> Expression:
+        __match_args__: Final = ("origin", "to")
+
+        def __new__(origin: GeoPoint, to: JsonPath): ...
+        @property
+        def origin() -> GeoPoint: ...
+        @property
+        def to() -> JsonPath: ...
+
+    @final
+    class Ln(Expression):
         """Create a natural log expression."""
 
-    @staticmethod
-    def Log10(expr: Expression) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Log10(Expression):
         """Create a log10 expression."""
 
-    @staticmethod
-    def Max(exprs: list[Expression]) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Max(Expression):
         """Create a maximum expression. Requires at least one operand."""
 
-    @staticmethod
-    def Min(exprs: list[Expression]) -> Expression:
+        __match_args__: Final = ("exprs",)
+
+        def __new__(exprs: Sequence[Expression]): ...
+        @property
+        def exprs() -> list[Expression]: ...
+
+    @final
+    class Min(Expression):
         """Create a minimum expression. Requires at least one operand."""
 
-    @staticmethod
-    def Mult(exprs: list[Expression]) -> Expression:
+        __match_args__: Final = ("exprs",)
+
+        def __new__(exprs: Sequence[Expression]): ...
+        @property
+        def exprs() -> list[Expression]: ...
+
+    @final
+    class Mult(Expression):
         """Create a multiplication expression."""
 
-    @staticmethod
-    def Neg(expr: Expression) -> Expression:
+        __match_args__: Final = ("exprs",)
+
+        def __new__(exprs: Sequence[Expression]): ...
+        @property
+        def exprs() -> list[Expression]: ...
+
+    @final
+    class Neg(Expression):
         """Create a negation expression."""
 
-    @staticmethod
-    def Pow(base: Expression, exponent: Expression) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Pow(Expression):
         """Create a power expression."""
 
-    @staticmethod
-    def Sqrt(expr: Expression) -> Expression:
+        __match_args__: Final = ("base", "exponent")
+
+        def __new__(base: Expression, exponent: Expression): ...
+        @property
+        def base() -> Expression: ...
+        @property
+        def exponent() -> Expression: ...
+
+    @final
+    class Sqrt(Expression):
         """Create a square root expression."""
 
-    @staticmethod
-    def Sum(exprs: list[Expression]) -> Expression:
+        __match_args__: Final = ("expr",)
+
+        def __new__(expr: Expression): ...
+        @property
+        def expr() -> Expression: ...
+
+    @final
+    class Sum(Expression):
         """Create a sum expression."""
 
-    @staticmethod
-    def Variable(var: str) -> Expression:
+        __match_args__: Final = ("exprs",)
+
+        def __new__(exprs: Sequence[Expression]): ...
+        @property
+        def exprs() -> list[Expression]: ...
+
+    @final
+    class Variable(Expression):
         """Create a variable expression."""
 
+        __match_args__: Final = ("var",)
+
+        def __new__(var: str): ...
+        @property
+        def var() -> str: ...
+
+@final
 class FacetHit:
     """A facet hit with value and count."""
 
+    def __repr__() -> str: ...
     @property
     def count() -> int:
         """Count of points with this value."""
@@ -786,6 +980,7 @@ class FacetHit:
     def value() -> bool | int | str:
         """Facet value."""
 
+@final
 class FacetRequest:
     """Request for facet operation."""
 
@@ -812,13 +1007,14 @@ class FacetRequest:
         """Filter."""
 
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Facet key."""
 
     @property
     def limit() -> int:
         """Result limit."""
 
+@final
 class FacetResponse:
     """Response for facet operation."""
 
@@ -828,10 +1024,12 @@ class FacetResponse:
     def __len__() -> int:
         """Number of hits."""
 
+    def __repr__() -> str: ...
     @property
     def hits() -> list[FacetHit]:
         """Facet hits."""
 
+@final
 class FeedbackItem:
     """A feedback item with vector and score."""
 
@@ -842,6 +1040,7 @@ class FeedbackItem:
             vector: Feedback vector.
             score: Feedback score."""
 
+    def __repr__() -> str: ...
     @property
     def score() -> float:
         """Feedback score."""
@@ -850,12 +1049,13 @@ class FeedbackItem:
     def vector() -> NamedVector:
         """Feedback vector."""
 
+@final
 class FeedbackNaiveQuery:
     """Query using naive feedback approach."""
 
     def __new__(
         target: NamedVector,
-        feedback: list[FeedbackItem],
+        feedback: Sequence[FeedbackItem],
         strategy: NaiveFeedbackStrategy,
     ):
         """Create a FeedbackNaiveQuery.
@@ -865,6 +1065,7 @@ class FeedbackNaiveQuery:
             feedback: Feedback items with scores.
             strategy: Feedback coefficients."""
 
+    def __repr__() -> str: ...
     @property
     def coefficients() -> NaiveFeedbackStrategy:
         """Coefficients."""
@@ -877,13 +1078,14 @@ class FeedbackNaiveQuery:
     def target() -> NamedVector:
         """Target vector."""
 
+@final
 class FieldCondition:
     """Condition on a payload field."""
 
     def __new__(
         key: JsonPath,
         match: MatchType | None = None,
-        range: None | RangeType = None,
+        range: None | RangeDateTime | RangeFloat = None,
         geo_bounding_box: GeoBoundingBox | None = None,
         geo_radius: GeoRadius | None = None,
         geo_polygon: GeoPolygon | None = None,
@@ -925,7 +1127,7 @@ class FieldCondition:
         """Is null flag."""
 
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Field key."""
 
     @property
@@ -933,20 +1135,21 @@ class FieldCondition:
         """Match condition."""
 
     @property
-    def range() -> None | RangeType:
+    def range() -> None | RangeDateTime | RangeFloat:
         """Range condition."""
 
     @property
     def values_count() -> None | ValuesCount:
         """Values count."""
 
+@final
 class Filter:
     """Filter conditions for queries."""
 
     def __new__(
-        must: None | list[ConditionType] = None,
-        should: None | list[ConditionType] = None,
-        must_not: None | list[ConditionType] = None,
+        must: None | Sequence[ConditionType] = None,
+        should: None | Sequence[ConditionType] = None,
+        must_not: None | Sequence[ConditionType] = None,
         min_should: MinShould | None = None,
     ):
         """Create a Filter.
@@ -957,6 +1160,7 @@ class Filter:
             must_not: Conditions that must not match.
             min_should: Minimum number of should conditions to match."""
 
+    def __repr__() -> str: ...
     @property
     def min_should() -> MinShould | None:
         """Minimum should configuration."""
@@ -973,6 +1177,7 @@ class Filter:
     def should() -> None | list[ConditionType]:
         """Should conditions."""
 
+@final
 class FloatIndexParams:
     """Index parameters for float fields."""
 
@@ -1000,25 +1205,32 @@ class FloatIndexParams:
     def on_disk() -> None | bool:
         """Whether to store index on disk."""
 
+@final
 class Formula:
     """A scoring formula for custom ranking."""
 
-    def __new__(formula: ExpressionType, defaults: None | dict[str, Any] = None):
+    def __new__(formula: Expression, defaults: None | dict[str, Any] = None):
         """Create a Formula.
 
         Args:
             formula: Expression tree.
             defaults: Default variable values."""
 
+    def __repr__() -> str: ...
+
 class Fusion:
     """Fusion methods for combining multiple prefetch results."""
 
-    class Dbsf:
+    @final
+    class Dbsf(Fusion):
         """DBSF (Distribution-Based Score Fusion)."""
+
+        __match_args__: Final = ()
 
         def __new__(): ...
 
-    class Rrf:
+    @final
+    class Rrf(Fusion):
         """RRF (Reciprocal Rank Fusion) with given parameters.
 
         Args:
@@ -1034,12 +1246,17 @@ class Fusion:
             # Weighted RRF - first prefetch has 3x weight
             Fusion.Rrf(k=2, weights=[3.0, 1.0])"""
 
-        def __new__(k: int, weights: None | list[float] = None): ...
+        __match_args__: Final = ("k", "weights")
+
+        def __new__(k: int, weights: None | Sequence[float] = None): ...
         @property
         def k() -> int: ...
         @property
         def weights() -> None | list[float]: ...
 
+    def __repr__() -> str: ...
+
+@final
 class GeoBoundingBox:
     """A geographic bounding box."""
 
@@ -1050,6 +1267,7 @@ class GeoBoundingBox:
             top_left: Top-left corner.
             bottom_right: Bottom-right corner."""
 
+    def __repr__() -> str: ...
     @property
     def bottom_right() -> GeoPoint:
         """Bottom-right corner."""
@@ -1058,6 +1276,7 @@ class GeoBoundingBox:
     def top_left() -> GeoPoint:
         """Top-left corner."""
 
+@final
 class GeoIndexParams:
     """Index parameters for geo fields."""
 
@@ -1076,6 +1295,7 @@ class GeoIndexParams:
     def on_disk() -> None | bool:
         """Whether to store index on disk."""
 
+@final
 class GeoPoint:
     """A geographic point."""
 
@@ -1086,6 +1306,7 @@ class GeoPoint:
             lon: Longitude (-180 to 180).
             lat: Latitude (-90 to 90)."""
 
+    def __repr__() -> str: ...
     @property
     def lat() -> float:
         """Latitude."""
@@ -1094,11 +1315,12 @@ class GeoPoint:
     def lon() -> float:
         """Longitude."""
 
+@final
 class GeoPolygon:
     """A geographic polygon."""
 
     def __new__(
-        exterior: list[GeoPoint], interiors: None | list[list[GeoPoint]] = None
+        exterior: GeoLineString, interiors: None | Sequence[GeoLineString] = None
     ):
         """Create a GeoPolygon.
 
@@ -1106,14 +1328,16 @@ class GeoPolygon:
             exterior: Exterior ring points.
             interiors: Optional interior rings (holes)."""
 
+    def __repr__() -> str: ...
     @property
-    def exterior() -> list[GeoPoint]:
+    def exterior() -> GeoLineString:
         """Exterior ring."""
 
     @property
-    def interiors() -> None | list[list[GeoPoint]]:
+    def interiors() -> None | list[GeoLineString]:
         """Interior rings (holes)."""
 
+@final
 class GeoRadius:
     """A geographic circle."""
 
@@ -1124,6 +1348,7 @@ class GeoRadius:
             center: Center point.
             radius: Radius in meters."""
 
+    def __repr__() -> str: ...
     @property
     def center() -> GeoPoint:
         """Center point."""
@@ -1132,6 +1357,7 @@ class GeoRadius:
     def radius() -> float:
         """Radius in meters."""
 
+@final
 class HasIdCondition:
     """Check if point ID is in a set."""
 
@@ -1141,10 +1367,12 @@ class HasIdCondition:
         Args:
             point_ids: Set of point IDs."""
 
+    def __repr__() -> str: ...
     @property
     def point_ids() -> set[PointId]:
         """Point IDs."""
 
+@final
 class HasVectorCondition:
     """Check if point has a specific vector."""
 
@@ -1154,10 +1382,12 @@ class HasVectorCondition:
         Args:
             vector: Vector name."""
 
+    def __repr__() -> str: ...
     @property
     def vector() -> str:
         """Vector name."""
 
+@final
 class HnswIndexConfig:
     """Configuration for HNSW index."""
 
@@ -1181,6 +1411,7 @@ class HnswIndexConfig:
             payload_m: Payload index m value.
             inline_storage: Whether to use inline storage."""
 
+    def __repr__() -> str: ...
     @property
     def ef_construct() -> int:
         """ef_construct value."""
@@ -1209,6 +1440,7 @@ class HnswIndexConfig:
     def payload_m() -> None | int:
         """Payload m value."""
 
+@final
 class IdfParams:
     """Population over which sparse vector IDF statistics are computed - the IDF corpus.
 
@@ -1222,10 +1454,12 @@ class IdfParams:
                 the points matching this filter. If None, statistics are
                 collection-wide (global)."""
 
+    def __repr__() -> str: ...
     @property
     def corpus() -> Filter | None:
         """Corpus filter, None for global statistics."""
 
+@final
 class IntegerIndexParams:
     """Index parameters for integer fields."""
 
@@ -1265,6 +1499,7 @@ class IntegerIndexParams:
     def range() -> None | bool:
         """Enable range filtering."""
 
+@final
 class IsEmptyCondition:
     """Check if a field is empty."""
 
@@ -1274,10 +1509,12 @@ class IsEmptyCondition:
         Args:
             key: Payload field path."""
 
+    def __repr__() -> str: ...
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Field key."""
 
+@final
 class IsNullCondition:
     """Check if a field is null."""
 
@@ -1287,10 +1524,12 @@ class IsNullCondition:
         Args:
             key: Payload field path."""
 
+    def __repr__() -> str: ...
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Field key."""
 
+@final
 class KeywordIndexParams:
     """Index parameters for keyword fields."""
 
@@ -1324,7 +1563,8 @@ class KeywordIndexParams:
     def prefix() -> None | bool:
         """Whether prefix matching is enabled."""
 
-class Language(Enum):
+@final
+class Language:
     """Predefined stopword languages."""
 
     Arabic: Final[Language]
@@ -1358,6 +1598,10 @@ class Language(Enum):
     Tajik: Final[Language]
     Turkish: Final[Language]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class MatchAny:
     """Match any of the values."""
 
@@ -1367,23 +1611,27 @@ class MatchAny:
         Args:
             any: List of values to match any of."""
 
+    def __repr__() -> str: ...
     @property
     def value() -> list[int] | list[str]:
         """Values."""
 
+@final
 class MatchExcept:
     """Match any value except these."""
 
-    def __new__(except_: list[int] | list[str]):
+    def __new__(value: list[int] | list[str]):
         """Create a MatchExcept.
 
         Args:
-            except_: List of values to exclude."""
+            value: List of values to exclude."""
 
+    def __repr__() -> str: ...
     @property
     def value() -> list[int] | list[str]:
         """Excluded values."""
 
+@final
 class MatchPhrase:
     """Match exact phrase."""
 
@@ -1393,10 +1641,12 @@ class MatchPhrase:
         Args:
             phrase: Phrase to match."""
 
+    def __repr__() -> str: ...
     @property
     def phrase() -> str:
         """Phrase."""
 
+@final
 class MatchPrefix:
     """Match keyword values starting with the given prefix."""
 
@@ -1406,10 +1656,12 @@ class MatchPrefix:
         Args:
             prefix: Prefix to match."""
 
+    def __repr__() -> str: ...
     @property
     def prefix() -> str:
         """Prefix."""
 
+@final
 class MatchText:
     """Full-text match."""
 
@@ -1419,10 +1671,12 @@ class MatchText:
         Args:
             text: Text to search for."""
 
+    def __repr__() -> str: ...
     @property
     def text() -> str:
         """Text."""
 
+@final
 class MatchTextAny:
     """Match any of the words in text."""
 
@@ -1432,10 +1686,12 @@ class MatchTextAny:
         Args:
             text_any: Space-separated words to match any of."""
 
+    def __repr__() -> str: ...
     @property
     def text_any() -> str:
         """Text."""
 
+@final
 class MatchValue:
     """Match exact value."""
 
@@ -1449,16 +1705,18 @@ class MatchValue:
     def value() -> bool | int | str:
         """Value."""
 
+@final
 class MinShould:
     """Minimum number of should conditions that must match."""
 
-    def __new__(conditions: list[ConditionType], min_count: int):
+    def __new__(conditions: Sequence[ConditionType], min_count: int):
         """Create a MinShould.
 
         Args:
             conditions: List of conditions.
             min_count: Minimum number that must match."""
 
+    def __repr__() -> str: ...
     @property
     def conditions() -> list[ConditionType]:
         """Conditions."""
@@ -1467,6 +1725,7 @@ class MinShould:
     def min_count() -> int:
         """Minimum count."""
 
+@final
 class Mmr:
     """Maximal Marginal Relevance for result diversification."""
 
@@ -1484,6 +1743,7 @@ class Mmr:
             candidates_limit: Number of candidates to consider.
             using: Named vector to use."""
 
+    def __repr__() -> str: ...
     @property
     def candidates_limit() -> int:
         """Candidates limit."""
@@ -1500,16 +1760,26 @@ class Mmr:
     def vector() -> NamedVector:
         """Query vector."""
 
-class Modifier(Enum):
+@final
+class Modifier:
     """Sparse vector modifiers."""
 
     Idf: Final[Modifier]
+    None_: Final[Modifier]
 
-class MultiVectorComparator(Enum):
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
+class MultiVectorComparator:
     """Multi-vector comparison methods."""
 
     MaxSim: Final[MultiVectorComparator]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class MultiVectorConfig:
     """Configuration for multi-vector storage."""
 
@@ -1519,10 +1789,12 @@ class MultiVectorConfig:
         Args:
             comparator: Multi-vector comparator."""
 
+    def __repr__() -> str: ...
     @property
     def comparator() -> MultiVectorComparator:
         """Comparator."""
 
+@final
 class NaiveFeedbackStrategy:
     """Coefficients for naive feedback query."""
 
@@ -1534,6 +1806,7 @@ class NaiveFeedbackStrategy:
             b: Coefficient b.
             c: Coefficient c."""
 
+    def __repr__() -> str: ...
     @property
     def a() -> float:
         """Coefficient a."""
@@ -1546,6 +1819,7 @@ class NaiveFeedbackStrategy:
     def c() -> float:
         """Coefficient c."""
 
+@final
 class NestedCondition:
     """Condition on nested objects."""
 
@@ -1556,14 +1830,16 @@ class NestedCondition:
             key: Path to nested array.
             filter: Filter to apply to nested objects."""
 
+    def __repr__() -> str: ...
     @property
     def filter() -> Filter:
         """Nested filter."""
 
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Nested field key."""
 
+@final
 class OrderBy:
     """Order results by a payload field."""
 
@@ -1579,18 +1855,20 @@ class OrderBy:
             direction: Sort direction.
             start_from: Starting value."""
 
+    def __repr__() -> str: ...
     @property
     def direction() -> Direction | None:
         """Sort direction."""
 
     @property
-    def key() -> str:
+    def key() -> JsonPath:
         """Field key."""
 
     @property
     def start_from() -> None | StartFromType:
         """Starting value."""
 
+@final
 class PayloadIndexInfo:
     """Information about a payload index."""
 
@@ -1606,7 +1884,8 @@ class PayloadIndexInfo:
     def points() -> int:
         """Number of points with this field."""
 
-class PayloadSchemaType(Enum):
+@final
+class PayloadSchemaType:
     """Payload field schema types."""
 
     Bool: Final[PayloadSchemaType]
@@ -1618,23 +1897,42 @@ class PayloadSchemaType(Enum):
     Text: Final[PayloadSchemaType]
     Uuid: Final[PayloadSchemaType]
 
-class PayloadSelector(Enum):
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+class PayloadSelector:
     """Select specific payload fields."""
 
-    @staticmethod
-    def Exclude(keys: list[str]) -> PayloadSelector:
+    @final
+    class Exclude(PayloadSelector):
         """Exclude specified fields."""
 
-    @staticmethod
-    def Include(keys: list[str]) -> PayloadSelector:
+        __match_args__: Final = ("keys",)
+
+        def __new__(keys: Sequence[JsonPath]): ...
+        @property
+        def keys() -> list[JsonPath]: ...
+
+    @final
+    class Include(PayloadSelector):
         """Include only specified fields."""
 
+        __match_args__: Final = ("keys",)
+
+        def __new__(keys: Sequence[JsonPath]): ...
+        @property
+        def keys() -> list[JsonPath]: ...
+
+@final
 class PlainIndexConfig:
     """Configuration for plain (brute-force) index."""
 
     def __new__():
         """Create a PlainIndexConfig."""
 
+    def __repr__() -> str: ...
+
+@final
 class Point:
     """A point with ID, vector(s), and optional payload."""
 
@@ -1646,6 +1944,7 @@ class Point:
             vector: Vector data.
             payload: Optional payload dictionary."""
 
+    def __repr__() -> str: ...
     @property
     def id() -> PointId:
         """Point ID."""
@@ -1658,6 +1957,7 @@ class Point:
     def vector() -> Vector:
         """Vector data."""
 
+@final
 class PointVectors:
     """Point ID with associated vectors for update operations."""
 
@@ -1668,6 +1968,7 @@ class PointVectors:
             id: Point ID.
             vector: Vector data."""
 
+    def __repr__() -> str: ...
     @property
     def id() -> PointId:
         """Point ID."""
@@ -1676,13 +1977,14 @@ class PointVectors:
     def vector() -> Vector:
         """Vector data."""
 
+@final
 class Prefetch:
     """A prefetch stage for multi-stage queries."""
 
     def __new__(
         limit: int,
         query: None | ScoringQueryType = None,
-        prefetches: None | list[Prefetch] = None,
+        prefetches: None | Sequence[Prefetch] = None,
         params: None | SearchParams = None,
         filter: Filter | None = None,
         score_threshold: None | float = None,
@@ -1697,6 +1999,7 @@ class Prefetch:
             filter: Filter conditions.
             score_threshold: Minimum score threshold."""
 
+    def __repr__() -> str: ...
     @property
     def filter() -> Filter | None:
         """Filter."""
@@ -1721,6 +2024,7 @@ class Prefetch:
     def score_threshold() -> None | float:
         """Score threshold."""
 
+@final
 class ProductQuantizationConfig:
     """Configuration for product quantization."""
 
@@ -1731,6 +2035,7 @@ class ProductQuantizationConfig:
             compression: Compression ratio.
             always_ram: Whether to keep in RAM."""
 
+    def __repr__() -> str: ...
     @property
     def always_ram() -> None | bool:
         """Always RAM flag."""
@@ -1739,6 +2044,7 @@ class ProductQuantizationConfig:
     def compression() -> CompressionRatio:
         """Compression ratio."""
 
+@final
 class QuantizationSearchParams:
     """Parameters for quantization during search."""
 
@@ -1754,6 +2060,7 @@ class QuantizationSearchParams:
             rescore: Whether to rescore with original vectors.
             oversampling: Oversampling factor."""
 
+    def __repr__() -> str: ...
     @property
     def ignore() -> bool:
         """Ignore quantization flag."""
@@ -1766,41 +2073,95 @@ class QuantizationSearchParams:
     def rescore() -> None | bool:
         """Rescore flag."""
 
-class Query(Enum):
+class Query:
     """Query types for vector search."""
 
-    @staticmethod
-    def Context(query: ContextQuery, using: None | str = None) -> Query:
+    @final
+    class Context(Query):
         """Create a context query."""
 
-    @staticmethod
-    def Discover(query: DiscoverQuery, using: None | str = None) -> Query:
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: ContextQuery, using: None | str = None): ...
+        @property
+        def query() -> ContextQuery: ...
+        @property
+        def using() -> None | str: ...
+
+    @final
+    class Discover(Query):
         """Create a discover query."""
 
-    @staticmethod
-    def FeedbackNaive(query: FeedbackNaiveQuery, using: None | str = None) -> Query:
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: DiscoverQuery, using: None | str = None): ...
+        @property
+        def query() -> DiscoverQuery: ...
+        @property
+        def using() -> None | str: ...
+
+    @final
+    class FeedbackNaive(Query):
         """Create a feedback naive query."""
 
-    @staticmethod
-    def Nearest(query: NamedVector, using: None | str = None) -> Query:
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: FeedbackNaiveQuery, using: None | str = None): ...
+        @property
+        def query() -> FeedbackNaiveQuery: ...
+        @property
+        def using() -> None | str: ...
+
+    @final
+    class Nearest(Query):
         """Create a nearest neighbor query."""
 
-    @staticmethod
-    def RecommendBestScore(query: RecommendQuery, using: None | str = None) -> Query:
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: NamedVector, using: None | str = None): ...
+        @property
+        def query() -> NamedVector: ...
+        @property
+        def using() -> None | str: ...
+
+    @final
+    class RecommendBestScore(Query):
         """Create a recommend query using best score."""
 
-    @staticmethod
-    def RecommendSumScores(query: RecommendQuery, using: None | str = None) -> Query:
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: RecommendQuery, using: None | str = None): ...
+        @property
+        def query() -> RecommendQuery: ...
+        @property
+        def using() -> None | str: ...
+
+    @final
+    class RecommendSumScores(Query):
         """Create a recommend query using sum of scores."""
 
+        __match_args__: Final = ("query", "using")
+
+        def __new__(query: RecommendQuery, using: None | str = None): ...
+        @property
+        def query() -> RecommendQuery: ...
+        @property
+        def using() -> None | str: ...
+
+    def __repr__() -> str: ...
+
+@final
 class QueryBatchRequest:
-    def __new__(queries: list[QueryRequest]):
+    """Queries executed together as one planned batch."""
+
+    def __new__(queries: Sequence[QueryRequest]):
         """Create a batch of queries, returning results in the same order."""
 
     def __repr__() -> str: ...
     @property
     def queries() -> list[QueryRequest]: ...
 
+@final
 class QueryRequest:
     """Request for query operation."""
 
@@ -1808,7 +2169,7 @@ class QueryRequest:
         limit: int,
         offset: None | int = None,
         query: None | ScoringQueryType = None,
-        prefetches: None | list[Prefetch] = None,
+        prefetches: None | Sequence[Prefetch] = None,
         with_vector: None | WithVectorType = None,
         with_payload: None | WithPayloadType = None,
         filter: Filter | None = None,
@@ -1828,6 +2189,7 @@ class QueryRequest:
             score_threshold: Minimum score threshold.
             params: Search parameters."""
 
+    def __repr__() -> str: ...
     @property
     def filter() -> Filter | None:
         """Filter."""
@@ -1864,6 +2226,7 @@ class QueryRequest:
     def with_vector() -> WithVectorType:
         """With vector flag."""
 
+@final
 class RangeDateTime:
     """Range condition for datetime values."""
 
@@ -1897,6 +2260,7 @@ class RangeDateTime:
     def lte() -> None | str:
         """Less than or equal."""
 
+@final
 class RangeFloat:
     """Range condition for float values."""
 
@@ -1930,16 +2294,18 @@ class RangeFloat:
     def lte() -> None | float:
         """Less than or equal."""
 
+@final
 class RecommendQuery:
     """Query for recommendation based on positive and negative examples."""
 
-    def __new__(positives: list[NamedVector], negatives: list[NamedVector]):
+    def __new__(positives: Sequence[NamedVector], negatives: Sequence[NamedVector]):
         """Create a RecommendQuery.
 
         Args:
             positives: Positive example vectors.
             negatives: Negative example vectors."""
 
+    def __repr__() -> str: ...
     @property
     def negatives() -> list[NamedVector]:
         """Negative examples."""
@@ -1948,15 +2314,17 @@ class RecommendQuery:
     def positives() -> list[NamedVector]:
         """Positive examples."""
 
+@final
 class Record:
     """A retrieved point record."""
 
+    def __repr__() -> str: ...
     @property
     def id() -> PointId:
         """Point ID."""
 
     @property
-    def order_value() -> None | (float | int):
+    def order_value() -> None | float | int:
         """Order value for order_by queries."""
 
     @property
@@ -1967,11 +2335,16 @@ class Record:
     def vector() -> None | Vector:
         """Vector data (if requested)."""
 
-class Sample(Enum):
+@final
+class Sample:
     """Sampling methods."""
 
     Random: Final[Sample]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class ScalarQuantizationConfig:
     """Configuration for scalar quantization."""
 
@@ -1985,6 +2358,7 @@ class ScalarQuantizationConfig:
             quantile: Quantile for normalization.
             always_ram: Whether to keep in RAM."""
 
+    def __repr__() -> str: ...
     @property
     def always_ram() -> None | bool:
         """Always RAM flag."""
@@ -1997,20 +2371,26 @@ class ScalarQuantizationConfig:
     def type() -> ScalarType:
         """Scalar type."""
 
-class ScalarType(Enum):
+@final
+class ScalarType:
     """Scalar quantization types."""
 
     Int8: Final[ScalarType]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class ScoredPoint:
     """A point with a similarity score."""
 
+    def __repr__() -> str: ...
     @property
     def id() -> PointId:
         """Point ID."""
 
     @property
-    def order_value() -> None | (float | int):
+    def order_value() -> None | float | int:
         """Order value for order_by queries."""
 
     @property
@@ -2029,6 +2409,7 @@ class ScoredPoint:
     def version() -> int:
         """Point version."""
 
+@final
 class ScrollRequest:
     """Request for scroll operation."""
 
@@ -2050,6 +2431,7 @@ class ScrollRequest:
             with_vector: Whether to include vectors.
             order_by: Order by configuration."""
 
+    def __repr__() -> str: ...
     @property
     def filter() -> Filter | None:
         """Filter."""
@@ -2074,6 +2456,7 @@ class ScrollRequest:
     def with_vector() -> WithVectorType:
         """With vector flag."""
 
+@final
 class SearchParams:
     """Parameters for search operations."""
 
@@ -2093,8 +2476,9 @@ class SearchParams:
             quantization: Quantization search parameters.
             indexed_only: Whether to search only indexed vectors.
             acorn: Acorn search parameters.
-            idf: Population sparse IDF statistics are computed over."""
+            idf: Population over which sparse IDF statistics are computed."""
 
+    def __repr__() -> str: ...
     @property
     def acorn() -> AcornSearchParams | None:
         """Acorn parameters."""
@@ -2119,6 +2503,7 @@ class SearchParams:
     def quantization() -> None | QuantizationSearchParams:
         """Quantization parameters."""
 
+@final
 class SearchRequest:
     """Request for search operation."""
 
@@ -2144,6 +2529,7 @@ class SearchRequest:
             with_payload: Whether to include payload.
             score_threshold: Minimum score threshold."""
 
+    def __repr__() -> str: ...
     @property
     def filter() -> Filter | None:
         """Filter."""
@@ -2176,15 +2562,17 @@ class SearchRequest:
     def with_vector() -> None | WithVectorType:
         """With vector flag."""
 
+@final
 class ShardInfo:
     """Information about a shard."""
 
+    def __repr__() -> str: ...
     @property
     def indexed_vectors_count() -> int:
         """Number of indexed vectors."""
 
     @property
-    def payload_schema() -> dict[str, PayloadIndexInfo]:
+    def payload_schema() -> dict[JsonPath, PayloadIndexInfo]:
         """Payload schema information."""
 
     @property
@@ -2195,7 +2583,17 @@ class ShardInfo:
     def segments_count() -> int:
         """Number of segments."""
 
-class SnowballLanguage(Enum):
+@final
+class SliceCondition:
+    def __new__(total: int, index: int): ...
+    def __repr__() -> str: ...
+    @property
+    def index() -> int: ...
+    @property
+    def total() -> int: ...
+
+@final
+class SnowballLanguage:
     """Snowball stemmer languages."""
 
     Arabic: Final[SnowballLanguage]
@@ -2218,6 +2616,10 @@ class SnowballLanguage(Enum):
     Tamil: Final[SnowballLanguage]
     Turkish: Final[SnowballLanguage]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class SnowballParams:
     """Snowball stemming algorithm parameters."""
 
@@ -2231,16 +2633,18 @@ class SnowballParams:
     def language() -> SnowballLanguage:
         """Snowball language."""
 
+@final
 class SparseVector:
     """A sparse vector representation."""
 
-    def __new__(indices: list[int], values: list[float]):
+    def __new__(indices: Sequence[int], values: Sequence[float]):
         """Create a SparseVector.
 
         Args:
             indices: Non-zero dimension indices.
             values: Values at the non-zero dimensions."""
 
+    def __repr__() -> str: ...
     @property
     def indices() -> list[int]:
         """Non-zero dimension indices."""
@@ -2249,6 +2653,7 @@ class SparseVector:
     def values() -> list[float]:
         """Values at non-zero dimensions."""
 
+@final
 class StopwordsSet:
     """Custom stopwords set."""
 
@@ -2267,6 +2672,7 @@ class StopwordsSet:
     def languages() -> None | set[Language]:
         """Predefined language stopwords."""
 
+@final
 class TextIndexParams:
     """Index parameters for text fields."""
 
@@ -2336,7 +2742,8 @@ class TextIndexParams:
     def tokenizer() -> TokenizerType:
         """Tokenizer type."""
 
-class TokenizerType(Enum):
+@final
+class TokenizerType:
     """Text tokenizer types."""
 
     Multilingual: Final[TokenizerType]
@@ -2344,7 +2751,11 @@ class TokenizerType(Enum):
     Whitespace: Final[TokenizerType]
     Word: Final[TokenizerType]
 
-class TurboQuantBitSize(Enum):
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
+class TurboQuantBitSize:
     """TurboQuant bit size for compressed codes."""
 
     Bits1: Final[TurboQuantBitSize]
@@ -2352,21 +2763,21 @@ class TurboQuantBitSize(Enum):
     Bits2: Final[TurboQuantBitSize]
     Bits4: Final[TurboQuantBitSize]
 
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
+
+@final
 class TurboQuantQuantizationConfig:
     """Configuration for TurboQuant quantization."""
 
-    def __new__(
-        always_ram: None | bool = None,
-        plus: None | bool = None,
-        bits: None | TurboQuantBitSize = None,
-    ):
+    def __new__(always_ram: None | bool = None, bits: None | TurboQuantBitSize = None):
         """Create a TurboQuantQuantizationConfig.
 
         Args:
             always_ram: Whether to keep in RAM.
-            plus: Enable the TurboQuant+ variant.
             bits: Bit size used for compressed codes."""
 
+    def __repr__() -> str: ...
     @property
     def always_ram() -> None | bool:
         """Always RAM flag."""
@@ -2375,11 +2786,8 @@ class TurboQuantQuantizationConfig:
     def bits() -> None | TurboQuantBitSize:
         """Bit size."""
 
-    @property
-    def plus() -> None | bool:
-        """TurboQuant+ flag."""
-
-class UpdateMode(Enum):
+@final
+class UpdateMode:
     """Defines the mode of the upsert operation."""
 
     InsertOnly: Final[UpdateMode]
@@ -2395,11 +2803,17 @@ class UpdateMode(Enum):
     Default mode - insert new points, update existing points.
     """
 
+    def __eq__(value: object) -> bool: ...
+    def __int__() -> int: ...
+    def __ne__(value: object) -> bool: ...
+    def __repr__() -> str: ...
+
+@final
 class UpdateOperation:
     """Operations for updating shard data."""
 
     @staticmethod
-    def clear_payload(point_ids: list[PointId]) -> UpdateOperation:
+    def clear_payload(point_ids: Sequence[PointId]) -> UpdateOperation:
         """Clear all payload from points.
 
         Args:
@@ -2431,7 +2845,7 @@ class UpdateOperation:
 
     @staticmethod
     def create_field_index(
-        field_name: str, schema: PayloadSchemaParams | PayloadSchemaType
+        field_name: JsonPath, schema: PayloadFieldSchema
     ) -> UpdateOperation:
         """Create an index on a payload field.
 
@@ -2453,14 +2867,16 @@ class UpdateOperation:
             datatype: Optional datatype for storing weights in the index."""
 
     @staticmethod
-    def delete_field_index(field_name: str) -> UpdateOperation:
+    def delete_field_index(field_name: JsonPath) -> UpdateOperation:
         """Delete an index from a payload field.
 
         Args:
             field_name: Path to the payload field."""
 
     @staticmethod
-    def delete_payload(point_ids: list[PointId], keys: list[str]) -> UpdateOperation:
+    def delete_payload(
+        point_ids: Sequence[PointId], keys: Sequence[JsonPath]
+    ) -> UpdateOperation:
         """Delete payload fields from points.
 
         Args:
@@ -2468,7 +2884,9 @@ class UpdateOperation:
             keys: Payload field keys to delete."""
 
     @staticmethod
-    def delete_payload_by_filter(filter: Filter, keys: list[str]) -> UpdateOperation:
+    def delete_payload_by_filter(
+        filter: Filter, keys: Sequence[JsonPath]
+    ) -> UpdateOperation:
         """Delete payload fields from points matching a filter.
 
         Args:
@@ -2476,7 +2894,7 @@ class UpdateOperation:
             keys: Payload field keys to delete."""
 
     @staticmethod
-    def delete_points(point_ids: list[PointId]) -> UpdateOperation:
+    def delete_points(point_ids: Sequence[PointId]) -> UpdateOperation:
         """Delete points by ID.
 
         Args:
@@ -2498,7 +2916,7 @@ class UpdateOperation:
 
     @staticmethod
     def delete_vectors(
-        point_ids: list[PointId], vector_names: list[str]
+        point_ids: Sequence[PointId], vector_names: Sequence[str]
     ) -> UpdateOperation:
         """Delete specific vectors from points.
 
@@ -2508,7 +2926,7 @@ class UpdateOperation:
 
     @staticmethod
     def delete_vectors_by_filter(
-        filter: Filter, vector_names: list[str]
+        filter: Filter, vector_names: Sequence[str]
     ) -> UpdateOperation:
         """Delete vectors from points matching a filter.
 
@@ -2518,7 +2936,7 @@ class UpdateOperation:
 
     @staticmethod
     def overwrite_payload(
-        point_ids: list[PointId], payload: Payload, key: None | str = None
+        point_ids: Sequence[PointId], payload: Payload, key: JsonPath | None = None
     ) -> UpdateOperation:
         """Overwrite entire payload on points.
 
@@ -2529,7 +2947,7 @@ class UpdateOperation:
 
     @staticmethod
     def overwrite_payload_by_filter(
-        filter: Filter, payload: Payload, key: None | str = None
+        filter: Filter, payload: Payload, key: JsonPath | None = None
     ) -> UpdateOperation:
         """Overwrite payload on points matching a filter.
 
@@ -2540,7 +2958,7 @@ class UpdateOperation:
 
     @staticmethod
     def set_payload(
-        point_ids: list[PointId], payload: Payload, key: None | str = None
+        point_ids: Sequence[PointId], payload: Payload, key: JsonPath | None = None
     ) -> UpdateOperation:
         """Set payload fields on points.
 
@@ -2551,7 +2969,7 @@ class UpdateOperation:
 
     @staticmethod
     def set_payload_by_filter(
-        filter: Filter, payload: Payload, key: None | str = None
+        filter: Filter, payload: Payload, key: JsonPath | None = None
     ) -> UpdateOperation:
         """Set payload on points matching a filter.
 
@@ -2562,7 +2980,7 @@ class UpdateOperation:
 
     @staticmethod
     def update_vectors(
-        point_vectors: list[PointVectors], condition: Filter | None = None
+        point_vectors: Sequence[PointVectors], condition: Filter | None = None
     ) -> UpdateOperation:
         """Update vectors of existing points.
 
@@ -2572,7 +2990,7 @@ class UpdateOperation:
 
     @staticmethod
     def upsert_points(
-        points: list[Point],
+        points: Sequence[Point],
         condition: Filter | None = None,
         update_mode: None | UpdateMode = None,
     ) -> UpdateOperation:
@@ -2587,6 +3005,7 @@ class UpdateOperation:
                 - UpdateMode.UpdateOnly: only update existing points, do not insert new points
         """
 
+@final
 class UuidIndexParams:
     """Index parameters for UUID fields."""
 
@@ -2614,6 +3033,7 @@ class UuidIndexParams:
     def on_disk() -> None | bool:
         """Whether to store index on disk."""
 
+@final
 class ValuesCount:
     """Condition on count of values in array field."""
 
@@ -2631,6 +3051,7 @@ class ValuesCount:
             lte: Less than or equal.
             gte: Greater than or equal."""
 
+    def __repr__() -> str: ...
     @property
     def gt() -> None | int:
         """Greater than."""
@@ -2647,9 +3068,14 @@ class ValuesCount:
     def lte() -> None | int:
         """Less than or equal."""
 
-class VectorStorageDatatype(Enum):
+@final
+class VectorStorageDatatype:
     """Vector storage data types."""
 
     Float16: Final[VectorStorageDatatype]
     Float32: Final[VectorStorageDatatype]
+    Turbo4: Final[VectorStorageDatatype]
     Uint8: Final[VectorStorageDatatype]
+
+    def __int__() -> int: ...
+    def __repr__() -> str: ...
