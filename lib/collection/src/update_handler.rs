@@ -119,7 +119,7 @@ pub struct UpdateHandler {
     pub prevent_unoptimized: bool,
 
     /// Highest and cutoff clocks for the shard WAL.
-    clocks: LocalShardClocks,
+    pub(crate) clocks: LocalShardClocks,
     shard_path: PathBuf,
     /// Whether we have ever triggered optimizers since starting.
     has_triggered_optimizers: Arc<AtomicBool>,

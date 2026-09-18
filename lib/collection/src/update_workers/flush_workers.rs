@@ -59,7 +59,7 @@ impl UpdateWorkers {
         })
     }
 
-    fn flush_worker_internal(
+    pub(crate) fn flush_worker_internal(
         segments: LockedSegmentHolder,
         wal: LockedWal,
         wal_ack_pins: Arc<WalAckPins>,

@@ -294,3 +294,143 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
         "releasing the snapshot's pin must let the acknowledge catch up",
     );
 }
+
+/// A WAL acknowledge pin at index 0 makes `wal_ack_version` return `None`, and the flush worker
+/// returns right there, above `clocks.store_if_changed`. The pin a WAL-including snapshot takes
+/// is `wal.first_index()`, which is 0 on a shard that never acknowledged, so it suppresses clock
+/// persistence for as long as it is held instead of only holding back the acknowledge.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
+    use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::files::NEWEST_CLOCKS_PATH;
+    use shard::operations::point_ops::{
+        PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    };
+    use shard::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
+
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::shards::local_shard::LocalShard;
+    use crate::shards::shard_trait::{ShardOperation, WaitUntil};
+    use crate::tests::fixtures::create_collection_config;
+    use crate::update_workers::UpdateWorkers;
+
+    init_test_feature_flags();
+
+    let collection_dir = Builder::new()
+        .prefix("wal_ack_pin_clocks")
+        .tempdir()
+        .unwrap();
+    let config = create_collection_config();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema = Arc::new(
+        SaveOnDisk::load_or_init_default(
+            payload_index_schema_dir.path().join("payload-schema.json"),
+        )
+        .unwrap(),
+    );
+
+    let shard = LocalShard::build(
+        0,
+        "test".to_string(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        Handle::current(),
+        AdaptiveSearchHandle::current_for_tests(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    shard.stop_flush_worker().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+    let upsert = |id: u64, tick: u64| {
+        let point = PointStructPersisted {
+            id: id.into(),
+            vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+            payload: None,
+        };
+        let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        OperationWithClockTag::new(op, Some(ClockTag::new(1, 0, tick)))
+    };
+
+    shard
+        .update(upsert(1, 1), WaitUntil::Visible, None, hw_acc.clone())
+        .await
+        .unwrap();
+
+    let shard_path = shard.path.clone();
+    let newest_clocks = shard_path.join(NEWEST_CLOCKS_PATH);
+    assert!(
+        !newest_clocks.exists(),
+        "clocks must not be persisted yet, or this proves nothing",
+    );
+
+    let (segments, wal, wal_ack_pins, clocks, applied_seq_handler) = {
+        let update_handler = shard.update_handler.lock().await;
+        (
+            shard.segments().clone(),
+            shard.wal.wal.clone(),
+            update_handler.wal_ack_pins.clone(),
+            update_handler.clocks.clone(),
+            shard.applied_seq_handler.clone(),
+        )
+    };
+
+    let flush_pass = || {
+        let segments = segments.clone();
+        let wal = wal.clone();
+        let wal_ack_pins = wal_ack_pins.clone();
+        let clocks = clocks.clone();
+        let shard_path = shard_path.clone();
+        let applied_seq_handler = applied_seq_handler.clone();
+        tokio::task::spawn_blocking(move || {
+            UpdateWorkers::flush_worker_internal(
+                segments,
+                wal,
+                wal_ack_pins,
+                clocks,
+                shard_path,
+                applied_seq_handler,
+            )
+        })
+    };
+
+    // Pin exactly as a WAL-including snapshot does on a shard that never acknowledged
+    let wal_first_index = wal.lock().await.first_index();
+    assert_eq!(
+        wal_first_index, 0,
+        "setup must reproduce the pin-at-zero case",
+    );
+    let pin = wal_ack_pins.pin(wal_first_index);
+    flush_pass().await.unwrap();
+    let clocks_stored_while_pinned = newest_clocks.exists();
+
+    // Same flush pass, same pending clock change, only the pin released
+    drop(pin);
+    shard
+        .update(upsert(2, 2), WaitUntil::Visible, None, hw_acc.clone())
+        .await
+        .unwrap();
+    flush_pass().await.unwrap();
+
+    assert!(
+        newest_clocks.exists(),
+        "control: without a pin the flush worker must persist the clock maps",
+    );
+    assert!(
+        clocks_stored_while_pinned,
+        "a WAL acknowledge pin must hold back the acknowledge only, but it also skipped \
+         persisting the clock maps for as long as it was held",
+    );
+}
