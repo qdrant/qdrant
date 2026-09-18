@@ -2,12 +2,14 @@ use std::cell::UnsafeCell;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs_err as fs;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
+use super::placeholder::PlaceholderRegistry;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
@@ -25,6 +27,8 @@ pub(crate) struct LocalState {
     /// Fast-path flag: when true, the mmap is fully populated and the
     /// `fetched` bitmap can be skipped on the read hot path.
     pub fully_populated: AtomicBool,
+    /// In-flight fetches across pipelines for this local mirror.
+    pub placeholders: Arc<PlaceholderRegistry>,
 }
 
 unsafe impl Sync for LocalState {}
@@ -69,6 +73,7 @@ impl LocalState {
             mmap: UnsafeCell::new(mmap),
             fetched: Mutex::new(RoaringBitmap::new()),
             fully_populated: AtomicBool::new(false),
+            placeholders: Arc::new(PlaceholderRegistry::new()),
         })
     }
 

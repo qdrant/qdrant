@@ -818,6 +818,247 @@ mod tests_mod {
         assert_eq!(results[&1], &scn.data[40..60]);
     }
 
+    /// Multiple pipelines on different threads reading the same remote blocks
+    /// piggyback on a single remote fetch.
+    #[test]
+    fn cross_pipeline_reads_share_one_fetch() {
+        let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_ready_tx, t1_ready_rx) = std::sync::mpsc::channel();
+        let (t2_scheduled_tx, t2_scheduled_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_ready_tx.send(()).unwrap();
+            t2_scheduled_rx.recv().unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_ready_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_scheduled_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// A piggybacked pipeline calling wait() before the leader completes
+    /// blocks until the leader commits the remote fetch.
+    #[test]
+    fn cross_pipeline_wait_before_leader_completes() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_scheduled_tx, t1_scheduled_rx) = std::sync::mpsc::channel();
+        let (t2_waiting_tx, t2_waiting_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_scheduled_tx.send(()).unwrap();
+            t2_waiting_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_scheduled_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_waiting_tx.send(()).unwrap();
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// When the leader pipeline drops without completing, the waiting follower is
+    /// promoted to leader, retries the fetch, and succeeds.
+    #[test]
+    fn cross_pipeline_leader_abandons_follower_promotes_and_succeeds() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_scheduled_tx, t1_scheduled_rx) = std::sync::mpsc::channel();
+        let (t2_waiting_tx, t2_waiting_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 1);
+
+            t1_scheduled_tx.send(()).unwrap();
+            t2_waiting_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            drop(pipeline);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_scheduled_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
+            assert_eq!(pipeline.in_flight_fetches(), 0);
+
+            t2_waiting_tx.send(()).unwrap();
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// When leader drops and first promoted follower also drops, the succession
+    /// chain continues to the next waiting follower.
+    #[test]
+    fn cross_pipeline_multi_follower_chain_succession() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_2 = file.clone();
+        let file_3 = file.clone();
+        let expected_3 = scn.data[30..45].to_vec();
+
+        let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t2_wait_tx, t2_wait_rx) = std::sync::mpsc::channel();
+        let (t3_wait_tx, t3_wait_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            t1_sched_tx.send(()).unwrap();
+            t2_wait_rx.recv().unwrap();
+            t3_wait_rx.recv().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            drop(pipeline);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_sched_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(2, &file_2, 20..40, 1).unwrap();
+            t2_wait_tx.send(()).unwrap();
+
+            // Enters wait, gets promoted when handle1 drops, but drops pipeline without completing
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = pipeline.wait();
+            }));
+        });
+
+        let handle3 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(3, &file_3, 30..45, 1).unwrap();
+            t3_wait_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&3], expected_3);
+        });
+
+        handle1.join().unwrap();
+        let _ = handle2.join();
+        handle3.join().unwrap();
+    }
+
+    /// When the leader drops before the follower enters wait(), the follower
+    /// detects abandonment upon calling wait(), promotes itself, and succeeds.
+    #[test]
+    fn follower_calls_wait_after_leader_dropped_promotes_and_succeeds() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t2_sched_tx, t2_sched_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline1 = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline1.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            assert_eq!(pipeline1.in_flight_fetches(), 1);
+            t1_sched_tx.send(()).unwrap();
+            t2_sched_rx.recv().unwrap();
+            // Leader drops BEFORE follower enters wait()!
+            drop(pipeline1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_sched_rx.recv().unwrap();
+            let mut pipeline2 = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline2
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
+            assert_eq!(pipeline2.in_flight_fetches(), 0);
+            t2_sched_tx.send(()).unwrap();
+
+            // Give thread 1 time to drop
+            std::thread::sleep(std::time::Duration::from_millis(20));
+
+            // Follower calls wait() after abandonment: it should self-promote and succeed!
+            let results = drain_pipeline(&mut pipeline2);
+            assert_eq!(results[&2], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
+    /// When two distinct pipelines run on the same thread (e.g. nested calls),
+    /// the second pipeline does not piggyback to prevent same-thread deadlock.
+    #[test]
+    fn nested_pipelines_on_same_thread_do_not_deadlock() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = scn.open::<R>(false);
+
+        let mut outer = DiskCachePipeline::<R, u32>::new().unwrap();
+        outer.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+        assert_eq!(outer.in_flight_fetches(), 1);
+
+        let mut inner = DiskCachePipeline::<R, u32>::new().unwrap();
+        inner.schedule::<Random>(2, &file, 20..40, 1).unwrap();
+        assert_eq!(inner.in_flight_fetches(), 1);
+
+        let inner_res = drain_pipeline(&mut inner);
+        assert_eq!(inner_res[&2], &scn.data[20..40]);
+
+        let outer_res = drain_pipeline(&mut outer);
+        assert_eq!(outer_res[&1], &scn.data[10..50]);
+    }
+
     /// End-to-end `read_batch` with many reads clustered in shared blocks:
     /// every read resolves with its own user data and correct bytes.
     #[test]
@@ -1376,5 +1617,54 @@ mod statistics {
         assert_eq!(delta.remote_fetches_started, 1);
         assert_eq!(delta.remote_fetches_completed, 1);
         assert_eq!(delta.downloaded_bytes, 200); // includes the old partial block
+    }
+
+    #[test]
+    fn cross_pipeline_remote_fetches_are_shared_and_counted_once() {
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let fs = scn.fs::<MmapFile>();
+        let observer = fs.stats();
+        let file = Arc::new(
+            fs.clone()
+                .open(&scn.remote_path, options(Populate::No), Default::default())
+                .unwrap(),
+        );
+        let file_clone = file.clone();
+        let expected_1 = scn.data[10..50].to_vec();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_ready_tx, t1_ready_rx) = std::sync::mpsc::channel();
+        let (t2_scheduled_tx, t2_scheduled_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<MmapFile, u32>::new().unwrap();
+            pipeline.schedule::<Random>(0, &file, 10..50, 1).unwrap();
+            t1_ready_tx.send(()).unwrap();
+            t2_scheduled_rx.recv().unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&0], expected_1);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_ready_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<MmapFile, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(1, &file_clone, 20..40, 1)
+                .unwrap();
+            t2_scheduled_tx.send(()).unwrap();
+
+            let results = drain_pipeline(&mut pipeline);
+            assert_eq!(results[&1], expected_2);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+
+        let snapshot = observer.snapshot();
+        assert_eq!(snapshot.remote_fetches_started, 1);
+        assert_eq!(snapshot.remote_fetches_completed, 1);
+        assert_eq!(snapshot.remote_fetches_abandoned, 0);
+        assert_eq!(snapshot.downloaded_bytes, BLOCK_SIZE as u64);
     }
 }
