@@ -165,7 +165,12 @@ impl<S: UniversalRead> HnswGraph<S> {
             SearchScorers::Regular(scorer) => scorer.filters(),
             SearchScorers::WithVectors(scorers) => scorers.links.filters(),
         };
-        let Some(entry) = self.get_entry_point(filters, custom_entry_points)? else {
+        let Some(entry) = self.get_entry_point(
+            filters,
+            custom_entry_points,
+            algorithm == SearchAlgorithm::PathSeer,
+        )?
+        else {
             return Ok(Vec::new());
         };
 
@@ -203,20 +208,26 @@ impl<S: UniversalRead> HnswGraph<S> {
         &self,
         filters: &ScorerFilters<'_>,
         custom_entry_points: Option<&[PointOffsetType]>,
+        unfiltered: bool,
     ) -> OperationResult<Option<EntryPoint>> {
+        // The "unfiltered" mode is designed for PathSeer, since PathSeer selects the level-0 entry point based only on vector similarity and does not require upper-layer points to satisfy the filter.
+        let accepts = |point_id| {
+            if unfiltered {
+                filters.check_live(point_id)
+            } else {
+                filters.check_vector(point_id)
+            }
+        };
         let custom_best = custom_entry_points
             .unwrap_or_default()
             .iter()
-            .filter(|&&point_id| filters.check_vector(point_id))
+            .filter(|&&point_id| accepts(point_id))
             .map(|&point_id| {
                 let level = self.point_level(point_id)?;
                 OperationResult::Ok(EntryPoint { point_id, level })
             })
             .process_results(|it| it.max_by_key(|ep| ep.level))?;
-        Ok(custom_best.or_else(|| {
-            self.entry_points()
-                .get_entry_point(|point_id| filters.check_vector(point_id))
-        }))
+        Ok(custom_best.or_else(|| self.entry_points().get_entry_point(accepts)))
     }
 
     fn point_level(&self, point_id: PointOffsetType) -> OperationResult<usize> {
