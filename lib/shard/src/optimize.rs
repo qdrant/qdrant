@@ -1201,6 +1201,102 @@ mod tests {
         );
     }
 
+    /// Regression test for stale schema change versions in optimization.
+    ///
+    /// Queue index v10, vector name v20, then delete v30. `build_new_segment` applies the
+    /// delete to the optimized segment first, bumping it to v30, so both schema changes are
+    /// stale when `finish_optimization` applies them and would be dropped without the
+    /// `max(version, segment.version())` bump.
+    #[test]
+    fn finish_optimization_applies_schema_change_older_than_build_deletes() {
+        use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
+        use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        let mut optimized_segment = build_segment_1(dir.path());
+
+        let mut proxy = ProxySegment::new(wrapped.clone());
+
+        // Payload index change queued at version 10, named vector change at version 20...
+        let field_name: PayloadKeyType = "color".parse().unwrap();
+        let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+        proxy
+            .create_field_index(10, &field_name, Some(&field_schema), &hw_counter)
+            .unwrap();
+
+        let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+            size: 4,
+            distance: Distance::Dot,
+            multivector_config: None,
+            datatype: None,
+        });
+        proxy
+            .create_vector_name(20, "extra_vector", &vector_config)
+            .unwrap();
+
+        // ...then a point delete queued at version 30.
+        proxy.delete_point(30, 1.into(), &hw_counter).unwrap();
+
+        // Emulate `build_new_segment`: its final step applies the queued deletes to the
+        // optimized segment, bumping the segment version to 30 before `finish_optimization`
+        // gets to the version-10 and version-20 schema changes.
+        let locked_proxy = LockedSegment::from(proxy);
+        let deleted_points = proxy_deleted_points(std::slice::from_ref(&locked_proxy));
+        for (point_id, versions) in &deleted_points {
+            optimized_segment
+                .delete_point(versions.operation_version, *point_id, &hw_counter)
+                .unwrap();
+        }
+        assert_eq!(
+            optimized_segment.version(),
+            30,
+            "delete must bump the optimized segment version",
+        );
+
+        let holder = LockedSegmentHolder::new(holder);
+        holder
+            .write()
+            .replace(segment_id, locked_proxy.clone())
+            .unwrap();
+
+        finish_optimization(
+            &holder,
+            vec![locked_proxy],
+            optimized_segment,
+            &DeletedPoints::new(),
+            &[segment_id],
+            None,
+            &AtomicBool::new(false),
+            &hw_counter,
+        )
+        .unwrap();
+
+        let result_segment = holder.read().iter().next().unwrap().1.clone();
+        let result_segment = result_segment.get();
+        let result_segment = result_segment.read();
+
+        assert!(
+            result_segment
+                .config()
+                .vector_data
+                .contains_key("extra_vector"),
+            "a named vector change queued before a later delete must still land on the \
+             optimized segment, even though the delete bumped the segment version first",
+        );
+        assert_eq!(
+            result_segment.get_indexed_fields().get(&field_name),
+            Some(&field_schema),
+            "a payload index change queued before a later delete must still land on the \
+             optimized segment, even though the delete bumped the segment version first",
+        );
+    }
+
     thread_local! {
         #[allow(clippy::type_complexity)]
         pub(super) static POST_SWAP_FAILURE_HOOK: std::cell::RefCell<
