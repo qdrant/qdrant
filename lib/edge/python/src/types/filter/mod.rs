@@ -24,6 +24,7 @@ pub use self::range::*;
 pub use self::value_count::*;
 use crate::repr::*;
 
+/// Filter conditions for queries.
 #[pyclass(name = "Filter", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -32,6 +33,13 @@ pub struct PyFilter(pub Filter);
 #[pyclass_repr]
 #[pymethods]
 impl PyFilter {
+    /// Create a Filter.
+    ///
+    /// Args:
+    ///     must: Conditions that must all match.
+    ///     should: Conditions where at least one should match.
+    ///     must_not: Conditions that must not match.
+    ///     min_should: Minimum number of should conditions to match.
     #[new]
     #[pyo3(signature = (must=None, should=None, must_not=None, min_should=None))]
     pub fn new(
@@ -48,6 +56,7 @@ impl PyFilter {
         })
     }
 
+    /// Must conditions.
     #[getter]
     pub fn must(&self) -> Option<&[PyCondition]> {
         self.0
@@ -56,6 +65,7 @@ impl PyFilter {
             .map(|must| PyCondition::wrap_slice(must))
     }
 
+    /// Should conditions.
     #[getter]
     pub fn should(&self) -> Option<&[PyCondition]> {
         self.0
@@ -64,6 +74,7 @@ impl PyFilter {
             .map(|should| PyCondition::wrap_slice(should))
     }
 
+    /// Must not conditions.
     #[getter]
     pub fn must_not(&self) -> Option<&[PyCondition]> {
         self.0
@@ -72,6 +83,7 @@ impl PyFilter {
             .map(|must_not| PyCondition::wrap_slice(must_not))
     }
 
+    /// Minimum should configuration.
     #[getter]
     pub fn min_should(&self) -> Option<PyMinShould> {
         self.0.min_should.clone().map(PyMinShould)

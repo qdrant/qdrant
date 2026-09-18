@@ -11,6 +11,7 @@ use segment::types::VectorStorageDatatype;
 use super::vector_data::*;
 use crate::repr::*;
 
+/// Sparse vector parameters for EdgeConfig.
 #[pyclass(name = "EdgeSparseVectorParams", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyEdgeSparseVectorParams(pub EdgeSparseVectorParams);
@@ -32,6 +33,13 @@ impl PyEdgeSparseVectorParams {
 #[pyclass_repr]
 #[pymethods]
 impl PyEdgeSparseVectorParams {
+    /// Create EdgeSparseVectorParams.
+    ///
+    /// Args:
+    ///     full_scan_threshold: Threshold for full scan vs index search.
+    ///     on_disk: If True, sparse index on disk; otherwise in RAM.
+    ///     modifier: Optional modifier (e.g., IDF).
+    ///     datatype: Storage datatype.
     #[new]
     #[pyo3(signature = (full_scan_threshold=None, on_disk=None, modifier=None, datatype=None))]
     pub fn new(
@@ -48,21 +56,25 @@ impl PyEdgeSparseVectorParams {
         })
     }
 
+    /// Full scan threshold.
     #[getter]
     pub fn full_scan_threshold(&self) -> Option<usize> {
         self.0.full_scan_threshold
     }
 
+    /// Whether sparse index is on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Modifier.
     #[getter]
     pub fn modifier(&self) -> Option<PyModifier> {
         self.0.modifier.map(PyModifier::from)
     }
 
+    /// Storage datatype.
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
@@ -84,6 +96,7 @@ impl<'py> IntoPyObject<'py> for &PyEdgeSparseVectorParams {
     }
 }
 
+/// Sparse vector modifiers.
 #[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {

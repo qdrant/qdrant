@@ -15,6 +15,7 @@ use segment::data_types::index::*;
 use crate::repr::*;
 use crate::type_hint::Alias;
 
+/// Index parameters for text fields.
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -23,6 +24,19 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyTextIndexParams {
+    /// Create TextIndexParams.
+    ///
+    /// Args:
+    ///     tokenizer: Tokenizer type.
+    ///     min_token_len: Minimum token length.
+    ///     max_token_len: Maximum token length.
+    ///     lowercase: Convert to lowercase.
+    ///     ascii_folding: Apply ASCII folding.
+    ///     phrase_matching: Enable phrase matching.
+    ///     stopwords: Stopwords configuration.
+    ///     on_disk: Whether to store index on disk.
+    ///     stemmer: Stemming algorithm.
+    ///     enable_hnsw: Whether to enable HNSW index for this field.
     #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None))]
@@ -54,51 +68,61 @@ impl PyTextIndexParams {
         })
     }
 
+    /// Tokenizer type.
     #[getter]
     pub fn tokenizer(&self) -> PyTokenizerType {
         PyTokenizerType::from(self.0.tokenizer)
     }
 
+    /// Minimum token length.
     #[getter]
     pub fn min_token_len(&self) -> Option<usize> {
         self.0.min_token_len
     }
 
+    /// Maximum token length.
     #[getter]
     pub fn max_token_len(&self) -> Option<usize> {
         self.0.max_token_len
     }
 
+    /// Convert to lowercase.
     #[getter]
     pub fn lowercase(&self) -> Option<bool> {
         self.0.lowercase
     }
 
+    /// Apply ASCII folding.
     #[getter]
     pub fn ascii_folding(&self) -> Option<bool> {
         self.0.ascii_folding
     }
 
+    /// Enable phrase matching.
     #[getter]
     pub fn phrase_matching(&self) -> Option<bool> {
         self.0.phrase_matching
     }
 
+    /// Stopwords configuration.
     #[getter]
     pub fn stopwords(&self) -> Option<&PyStopwords> {
         self.0.stopwords.as_ref().map(PyStopwords::wrap_ref)
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Stemming algorithm.
     #[getter]
     pub fn stemmer(&self) -> Option<&PyStemmingAlgorithm> {
         self.0.stemmer.as_ref().map(PyStemmingAlgorithm::wrap_ref)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
@@ -125,6 +149,7 @@ impl PyTextIndexParams {
     }
 }
 
+/// Text tokenizer types.
 #[pyclass(name = "TokenizerType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTokenizerType {
@@ -240,6 +265,7 @@ impl Repr for PyStopwords {
     }
 }
 
+/// Predefined stopword languages.
 #[pyclass(name = "Language", from_py_object)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PyLanguage {
@@ -388,6 +414,7 @@ impl From<PyLanguage> for Language {
     }
 }
 
+/// Custom stopwords set.
 #[pyclass(name = "StopwordsSet", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -396,6 +423,11 @@ pub struct PyStopwordsSet(StopwordsSet);
 #[pyclass_repr]
 #[pymethods]
 impl PyStopwordsSet {
+    /// Create a StopwordsSet.
+    ///
+    /// Args:
+    ///     languages: Predefined language stopwords to include.
+    ///     custom: Custom stopwords to add.
     #[new]
     #[pyo3(signature = (languages = None, custom = None))]
     pub fn new(languages: Option<BTreeSet<PyLanguage>>, custom: Option<BTreeSet<String>>) -> Self {
@@ -405,6 +437,7 @@ impl PyStopwordsSet {
         })
     }
 
+    /// Predefined language stopwords.
     #[getter]
     pub fn languages(&self) -> Option<BTreeSet<PyLanguage>> {
         self.0
@@ -413,6 +446,7 @@ impl PyStopwordsSet {
             .map(|langs| langs.iter().copied().map(PyLanguage::from).collect())
     }
 
+    /// Custom stopwords.
     #[getter]
     pub fn custom(&self) -> Option<&BTreeSet<String>> {
         self.0.custom.as_ref()
@@ -519,6 +553,7 @@ impl Repr for PyStemmingAlgorithm {
     }
 }
 
+/// Snowball stemming algorithm parameters.
 #[pyclass(name = "SnowballParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -527,6 +562,10 @@ pub struct PySnowballParams(SnowballParams);
 #[pyclass_repr]
 #[pymethods]
 impl PySnowballParams {
+    /// Create SnowballParams.
+    ///
+    /// Args:
+    ///     language: Snowball language.
     #[new]
     pub fn new(language: PySnowballLanguage) -> Self {
         Self(SnowballParams {
@@ -535,6 +574,7 @@ impl PySnowballParams {
         })
     }
 
+    /// Snowball language.
     #[getter]
     pub fn language(&self) -> PySnowballLanguage {
         PySnowballLanguage::from(self.0.language)
@@ -560,6 +600,7 @@ pub struct PyDisabledStemmer(DisabledStemmerParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyDisabledStemmer {
+    /// Create a DisabledStemmer.
     #[new]
     pub fn new() -> Self {
         Self(DisabledStemmerParams {
@@ -583,6 +624,7 @@ impl PyDisabledStemmer {
     }
 }
 
+/// Snowball stemmer languages.
 #[pyclass(name = "SnowballLanguage", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySnowballLanguage {

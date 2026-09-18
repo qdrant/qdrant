@@ -27,6 +27,7 @@ pub struct PyQueryBatchRequest(QueryBatchRequest);
 #[pyclass_repr]
 #[pymethods]
 impl PyQueryBatchRequest {
+    /// Create a batch of queries, returning results in the same order.
     #[new]
     pub fn new(queries: Vec<PyQueryRequest>) -> Self {
         Self(QueryBatchRequest::new(
@@ -44,6 +45,7 @@ impl PyQueryBatchRequest {
     }
 }
 
+/// Request for query operation.
 #[pyclass(name = "QueryRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryRequest(QueryRequest);
@@ -51,6 +53,18 @@ pub struct PyQueryRequest(QueryRequest);
 #[pyclass_repr]
 #[pymethods]
 impl PyQueryRequest {
+    /// Create a QueryRequest.
+    ///
+    /// Args:
+    ///     limit: Maximum number of results.
+    ///     offset: Number of results to skip.
+    ///     query: Scoring query (vector, fusion, order_by, etc.).
+    ///     prefetches: Prefetch stages for multi-stage queries.
+    ///     with_vector: Whether to include vectors.
+    ///     with_payload: Whether to include payload.
+    ///     filter: Filter conditions.
+    ///     score_threshold: Minimum score threshold.
+    ///     params: Search parameters.
     #[new]
     #[pyo3(signature = (
         limit,
@@ -90,46 +104,55 @@ impl PyQueryRequest {
         })
     }
 
+    /// Prefetch stages.
     #[getter]
     pub fn prefetches(&self) -> &[PyPrefetch] {
         PyPrefetch::wrap_slice(&self.0.prefetches)
     }
 
+    /// Scoring query.
     #[getter]
     pub fn query(&self) -> Option<&PyScoringQuery> {
         self.0.query.as_ref().map(PyScoringQuery::wrap_ref)
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<&PyFilter> {
         self.0.filter.as_ref().map(PyFilter::wrap_ref)
     }
 
+    /// Score threshold.
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
         self.0.score_threshold
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> usize {
         self.0.limit
     }
 
+    /// Result offset.
     #[getter]
     pub fn offset(&self) -> usize {
         self.0.offset
     }
 
+    /// Search parameters.
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
         self.0.params.clone().map(PySearchParams)
     }
 
+    /// With vector flag.
     #[getter]
     pub fn with_vector(&self) -> &PyWithVector {
         PyWithVector::wrap_ref(&self.0.with_vector)
     }
 
+    /// With payload flag.
     #[getter]
     pub fn with_payload(&self) -> &PyWithPayload {
         PyWithPayload::wrap_ref(&self.0.with_payload)
@@ -157,6 +180,7 @@ impl PyQueryRequest {
     }
 }
 
+/// A prefetch stage for multi-stage queries.
 #[pyclass(name = "Prefetch", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -165,6 +189,15 @@ pub struct PyPrefetch(Prefetch);
 #[pyclass_repr]
 #[pymethods]
 impl PyPrefetch {
+    /// Create a Prefetch stage.
+    ///
+    /// Args:
+    ///     limit: Maximum number of results for this stage.
+    ///     query: Scoring query.
+    ///     prefetches: Nested prefetch stages.
+    ///     params: Search parameters.
+    ///     filter: Filter conditions.
+    ///     score_threshold: Minimum score threshold.
     #[new]
     #[pyo3(signature = (
         limit,
@@ -192,31 +225,37 @@ impl PyPrefetch {
         })
     }
 
+    /// Nested prefetch stages.
     #[getter]
     pub fn prefetches(&self) -> &[PyPrefetch] {
         PyPrefetch::wrap_slice(&self.0.prefetches)
     }
 
+    /// Scoring query.
     #[getter]
     pub fn query(&self) -> Option<PyScoringQuery> {
         self.0.query.clone().map(PyScoringQuery)
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> usize {
         self.0.limit
     }
 
+    /// Search parameters.
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
         self.0.params.clone().map(PySearchParams)
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<PyFilter> {
         self.0.filter.clone().map(PyFilter)
     }
 
+    /// Score threshold.
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
         self.0.score_threshold
@@ -349,14 +388,27 @@ impl Repr for PyScoringQuery {
     }
 }
 
+/// Fusion methods for combining multiple prefetch results.
 #[pyclass(name = "Fusion", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyFusion {
+    /// RRF (Reciprocal Rank Fusion) with given parameters.
+    ///
+    /// Args:
+    ///     k: The RRF k parameter.
+    ///     weights: Optional weights for each prefetch source.
+    ///              Higher weight gives more influence on the final ranking.
+    ///              If not specified, all prefetches are weighted equally.
+    ///
+    /// Examples:
+    ///     # Basic RRF with k=2
+    ///     Fusion.Rrf(k=2)
+    ///
+    ///     # Weighted RRF - first prefetch has 3x weight
+    ///     Fusion.Rrf(k=2, weights=[3.0, 1.0])
     #[pyo3(constructor = (k, weights = None))]
-    Rrf {
-        k: usize,
-        weights: Option<Vec<f32>>,
-    },
+    Rrf { k: usize, weights: Option<Vec<f32>> },
+    /// DBSF (Distribution-Based Score Fusion).
     Dbsf {},
 }
 
@@ -406,6 +458,7 @@ impl From<PyFusion> for FusionInternal {
     }
 }
 
+/// Order results by a payload field.
 #[pyclass(name = "OrderBy", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -414,6 +467,12 @@ pub struct PyOrderBy(OrderBy);
 #[pyclass_repr]
 #[pymethods]
 impl PyOrderBy {
+    /// Create an OrderBy.
+    ///
+    /// Args:
+    ///     key: Payload field path.
+    ///     direction: Sort direction.
+    ///     start_from: Starting value.
     #[new]
     #[pyo3(signature = (key, direction = None, start_from = None))]
     pub fn new(
@@ -430,16 +489,19 @@ impl PyOrderBy {
         Ok(Self(order_by))
     }
 
+    /// Field key.
     #[getter]
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.key)
     }
 
+    /// Sort direction.
     #[getter]
     pub fn direction(&self) -> Option<PyDirection> {
         self.0.direction.map(PyDirection::from)
     }
 
+    /// Starting value.
     #[getter]
     pub fn start_from(&self) -> Option<PyStartFrom> {
         self.0.start_from.map(PyStartFrom)
@@ -473,6 +535,7 @@ impl From<PyOrderBy> for OrderByInterface {
     }
 }
 
+/// Sort direction.
 #[pyclass(name = "Direction", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDirection {
@@ -589,6 +652,7 @@ impl Repr for PyStartFrom {
     }
 }
 
+/// Sampling methods.
 #[pyclass(name = "Sample", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySample {
@@ -621,6 +685,7 @@ impl From<PySample> for SampleInternal {
     }
 }
 
+/// Maximal Marginal Relevance for result diversification.
 #[pyclass(name = "Mmr", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -629,6 +694,13 @@ pub struct PyMmr(MmrInternal);
 #[pyclass_repr]
 #[pymethods]
 impl PyMmr {
+    /// Create an MMR query.
+    ///
+    /// Args:
+    ///     vector: Query vector.
+    ///     lambda_: Balance between relevance and diversity (0-1).
+    ///     candidates_limit: Number of candidates to consider.
+    ///     using: Named vector to use.
     #[new]
     #[pyo3(signature = (vector, lambda_, candidates_limit, using = None))]
     pub fn new(
@@ -647,21 +719,25 @@ impl PyMmr {
         Self(mmr)
     }
 
+    /// Query vector.
     #[getter]
     pub fn vector(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.vector)
     }
 
+    /// Named vector.
     #[getter]
     pub fn using(&self) -> &str {
         &self.0.using
     }
 
+    /// Balance between relevance and diversity.
     #[getter]
     pub fn lambda_(&self) -> f32 {
         self.0.lambda.into_inner()
     }
 
+    /// Candidates limit.
     #[getter]
     pub fn candidates_limit(&self) -> usize {
         self.0.candidates_limit

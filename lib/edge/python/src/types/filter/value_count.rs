@@ -4,6 +4,7 @@ use segment::types::ValuesCount;
 
 use crate::repr::*;
 
+/// Condition on count of values in array field.
 #[pyclass(name = "ValuesCount", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyValuesCount(pub ValuesCount);
@@ -11,6 +12,13 @@ pub struct PyValuesCount(pub ValuesCount);
 #[pyclass_repr]
 #[pymethods]
 impl PyValuesCount {
+    /// Create a ValuesCount.
+    ///
+    /// Args:
+    ///     lt: Less than.
+    ///     gt: Greater than.
+    ///     lte: Less than or equal.
+    ///     gte: Greater than or equal.
     #[new]
     #[pyo3(signature = (lt=None, gt=None, lte=None, gte=None))]
     pub fn new(
@@ -22,21 +30,25 @@ impl PyValuesCount {
         Self(ValuesCount { lt, gt, lte, gte })
     }
 
+    /// Less than.
     #[getter]
     pub fn lt(&self) -> Option<usize> {
         self.0.lt
     }
 
+    /// Greater than.
     #[getter]
     pub fn gt(&self) -> Option<usize> {
         self.0.gt
     }
 
+    /// Less than or equal.
     #[getter]
     pub fn lte(&self) -> Option<usize> {
         self.0.lte
     }
 
+    /// Greater than or equal.
     #[getter]
     pub fn gte(&self) -> Option<usize> {
         self.0.gte

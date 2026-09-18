@@ -6,6 +6,7 @@ use segment::types::MinShould;
 use crate::repr::*;
 use crate::types::filter::condition::PyCondition;
 
+/// Minimum number of should conditions that must match.
 #[pyclass(name = "MinShould", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyMinShould(pub MinShould);
@@ -13,6 +14,11 @@ pub struct PyMinShould(pub MinShould);
 #[pyclass_repr]
 #[pymethods]
 impl PyMinShould {
+    /// Create a MinShould.
+    ///
+    /// Args:
+    ///     conditions: List of conditions.
+    ///     min_count: Minimum number that must match.
     #[new]
     pub fn new(conditions: Vec<PyCondition>, min_count: usize) -> Self {
         Self(MinShould {
@@ -21,11 +27,13 @@ impl PyMinShould {
         })
     }
 
+    /// Conditions.
     #[getter]
     pub fn conditions(&self) -> &[PyCondition] {
         PyCondition::wrap_slice(&self.0.conditions)
     }
 
+    /// Minimum count.
     #[getter]
     pub fn min_count(&self) -> usize {
         self.0.min_count

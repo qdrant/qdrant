@@ -41,6 +41,7 @@ impl From<PyRange> for RangeInterface {
     }
 }
 
+/// Range condition for float values.
 #[pyclass(name = "RangeFloat", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
@@ -48,6 +49,13 @@ pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
 #[pyclass_repr]
 #[pymethods]
 impl PyRangeFloat {
+    /// Create a RangeFloat.
+    ///
+    /// Args:
+    ///     gte: Greater than or equal.
+    ///     gt: Greater than.
+    ///     lte: Less than or equal.
+    ///     lt: Less than.
     #[new]
     #[pyo3(signature = (gte=None, gt=None, lte=None, lt=None))]
     pub fn new(
@@ -64,21 +72,25 @@ impl PyRangeFloat {
         })
     }
 
+    /// Greater than or equal.
     #[getter]
     pub fn gte(&self) -> Option<FloatPayloadType> {
         self.0.gte.map(|of| of.into_inner())
     }
 
+    /// Greater than.
     #[getter]
     pub fn gt(&self) -> Option<FloatPayloadType> {
         self.0.gt.map(|of| of.into_inner())
     }
 
+    /// Less than or equal.
     #[getter]
     pub fn lte(&self) -> Option<FloatPayloadType> {
         self.0.lte.map(|of| of.into_inner())
     }
 
+    /// Less than.
     #[getter]
     pub fn lt(&self) -> Option<FloatPayloadType> {
         self.0.lt.map(|of| of.into_inner())
@@ -97,6 +109,7 @@ impl PyRangeFloat {
     }
 }
 
+/// Range condition for datetime values.
 #[pyclass(name = "RangeDateTime", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
@@ -104,6 +117,13 @@ pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
 #[pyclass_repr]
 #[pymethods]
 impl PyRangeDateTime {
+    /// Create a RangeDateTime.
+    ///
+    /// Args:
+    ///     gte: Greater than or equal (ISO 8601 string).
+    ///     gt: Greater than (ISO 8601 string).
+    ///     lte: Less than or equal (ISO 8601 string).
+    ///     lt: Less than (ISO 8601 string).
     #[new]
     #[pyo3(signature = (gte=None, gt=None, lte=None, lt=None))]
     pub fn new(
@@ -120,21 +140,25 @@ impl PyRangeDateTime {
         }))
     }
 
+    /// Greater than or equal.
     #[getter]
     pub fn gte(&self) -> Option<String> {
         self.0.gte.map(|dt| dt.to_string())
     }
 
+    /// Greater than.
     #[getter]
     pub fn gt(&self) -> Option<String> {
         self.0.gt.map(|dt| dt.to_string())
     }
 
+    /// Less than or equal.
     #[getter]
     pub fn lte(&self) -> Option<String> {
         self.0.lte.map(|dt| dt.to_string())
     }
 
+    /// Less than.
     #[getter]
     pub fn lt(&self) -> Option<String> {
         self.0.lt.map(|dt| dt.to_string())

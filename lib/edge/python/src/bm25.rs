@@ -21,6 +21,20 @@ pub struct PyBm25Config(pub EdgeBm25Config);
 #[pyclass_repr]
 #[pymethods]
 impl PyBm25Config {
+    /// Create a Bm25Config.
+    ///
+    /// Args:
+    ///     k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
+    ///     b: Length normalization. 0=none, 1=full. Default 0.75.
+    ///     avg_len: Expected average document length in tokens. Default 256.
+    ///     tokenizer: Tokenizer type to use.
+    ///     language: Language for default stopwords/stemmer (e.g., "english").
+    ///     lowercase: Lowercase before tokenization. Default True.
+    ///     ascii_folding: Fold accents to ASCII. Default False.
+    ///     stopwords: Custom stopwords (language or set). Defaults to language.
+    ///     stemmer: Stemming algorithm. Defaults to language-appropriate stemmer.
+    ///     min_token_len: Drop tokens shorter than this.
+    ///     max_token_len: Drop tokens longer than this.
     #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
@@ -156,6 +170,10 @@ pub struct PyBm25(EdgeBm25);
 
 #[pymethods]
 impl PyBm25 {
+    /// Create a Bm25 model with the given configuration (defaults if `None`).
+    ///
+    /// Raises `ValueError` for invalid configuration: unsupported `language`,
+    /// non-positive `avg_len`, `b` outside `[0.0, 1.0]`, or negative `k`.
     #[new]
     #[pyo3(signature = (config = None))]
     pub fn new(config: Option<PyBm25Config>) -> PyResult<Self> {

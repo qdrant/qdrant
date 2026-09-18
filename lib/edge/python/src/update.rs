@@ -11,12 +11,22 @@ use shard::operations::*;
 
 use crate::*;
 
+/// Operations for updating shard data.
 #[pyclass(name = "UpdateOperation", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyUpdateOperation(CollectionUpdateOperations);
 
 #[pymethods]
 impl PyUpdateOperation {
+    /// Insert or update points.
+    ///
+    /// Args:
+    ///     points: Points to upsert.
+    ///     condition: Optional condition for conditional upsert.
+    ///     update_mode: Optional mode of the upsert operation:
+    ///         - UpdateMode.Upsert (default): insert new points, update existing points
+    ///         - UpdateMode.InsertOnly: only insert new points, do not update existing points
+    ///         - UpdateMode.UpdateOnly: only update existing points, do not insert new points
     #[staticmethod]
     #[pyo3(signature = (points, condition=None, update_mode=None))]
     pub fn upsert_points(
@@ -50,6 +60,10 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PointOperation(operation))
     }
 
+    /// Delete points by ID.
+    ///
+    /// Args:
+    ///     point_ids: IDs of points to delete.
     #[staticmethod]
     pub fn delete_points(point_ids: Vec<PyPointId>) -> Self {
         let operation = point_ops::PointOperations::DeletePoints {
@@ -59,12 +73,21 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PointOperation(operation))
     }
 
+    /// Delete points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points to delete.
     #[staticmethod]
     pub fn delete_points_by_filter(filter: PyFilter) -> Self {
         let operation = point_ops::PointOperations::DeletePointsByFilter(Filter::from(filter));
         Self(CollectionUpdateOperations::PointOperation(operation))
     }
 
+    /// Update vectors of existing points.
+    ///
+    /// Args:
+    ///     point_vectors: Point IDs with new vectors.
+    ///     condition: Optional filter condition.
     #[staticmethod]
     #[pyo3(signature = (point_vectors, condition=None))]
     pub fn update_vectors(point_vectors: Vec<PyPointVectors>, condition: Option<PyFilter>) -> Self {
@@ -76,6 +99,11 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::VectorOperation(operation))
     }
 
+    /// Delete specific vectors from points.
+    ///
+    /// Args:
+    ///     point_ids: Point IDs.
+    ///     vector_names: Names of vectors to delete.
     #[staticmethod]
     pub fn delete_vectors(point_ids: Vec<PyPointId>, vector_names: Vec<VectorNameBuf>) -> Self {
         let operation = vector_ops::VectorOperations::DeleteVectors(
@@ -86,6 +114,11 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::VectorOperation(operation))
     }
 
+    /// Delete vectors from points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points.
+    ///     vector_names: Names of vectors to delete.
     #[staticmethod]
     pub fn delete_vectors_by_filter(filter: PyFilter, vector_names: Vec<VectorNameBuf>) -> Self {
         let operation =
@@ -94,6 +127,12 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::VectorOperation(operation))
     }
 
+    /// Set payload fields on points.
+    ///
+    /// Args:
+    ///     point_ids: Point IDs.
+    ///     payload: Payload to set.
+    ///     key: Optional nested key path.
     #[staticmethod]
     #[pyo3(signature = (point_ids, payload, key=None))]
     pub fn set_payload(
@@ -111,6 +150,12 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Set payload on points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points.
+    ///     payload: Payload to set.
+    ///     key: Optional nested key path.
     #[staticmethod]
     #[pyo3(signature = (filter, payload, key=None))]
     pub fn set_payload_by_filter(
@@ -128,6 +173,11 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Delete payload fields from points.
+    ///
+    /// Args:
+    ///     point_ids: Point IDs.
+    ///     keys: Payload field keys to delete.
     #[staticmethod]
     pub fn delete_payload(point_ids: Vec<PyPointId>, keys: Vec<PyJsonPath>) -> Self {
         let operation = payload_ops::PayloadOps::DeletePayload(payload_ops::DeletePayloadOp {
@@ -139,6 +189,11 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Delete payload fields from points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points.
+    ///     keys: Payload field keys to delete.
     #[staticmethod]
     pub fn delete_payload_by_filter(filter: PyFilter, keys: Vec<PyJsonPath>) -> Self {
         let operation = payload_ops::PayloadOps::DeletePayload(payload_ops::DeletePayloadOp {
@@ -150,6 +205,10 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Clear all payload from points.
+    ///
+    /// Args:
+    ///     point_ids: Point IDs.
     #[staticmethod]
     pub fn clear_payload(point_ids: Vec<PyPointId>) -> Self {
         let operation = payload_ops::PayloadOps::ClearPayload {
@@ -159,12 +218,22 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Clear all payload from points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points.
     #[staticmethod]
     pub fn clear_payload_by_filter(filter: PyFilter) -> Self {
         let operation = payload_ops::PayloadOps::ClearPayloadByFilter(Filter::from(filter));
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Overwrite entire payload on points.
+    ///
+    /// Args:
+    ///     point_ids: Point IDs.
+    ///     payload: New payload.
+    ///     key: Optional nested key path.
     #[staticmethod]
     #[pyo3(signature = (point_ids, payload, key=None))]
     pub fn overwrite_payload(
@@ -182,6 +251,12 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Overwrite payload on points matching a filter.
+    ///
+    /// Args:
+    ///     filter: Filter for points.
+    ///     payload: New payload.
+    ///     key: Optional nested key path.
     #[staticmethod]
     #[pyo3(signature = (filter, payload, key=None))]
     pub fn overwrite_payload_by_filter(
@@ -199,6 +274,11 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::PayloadOperation(operation))
     }
 
+    /// Create an index on a payload field.
+    ///
+    /// Args:
+    ///     field_name: Path to the payload field.
+    ///     schema: Schema type or index parameters for the field.
     #[staticmethod]
     pub fn create_field_index(field_name: PyJsonPath, schema: PyPayloadFieldSchema) -> Self {
         let operation = FieldIndexOperations::CreateIndex(CreateIndex {
@@ -209,6 +289,10 @@ impl PyUpdateOperation {
         Self(CollectionUpdateOperations::FieldIndexOperation(operation))
     }
 
+    /// Delete an index from a payload field.
+    ///
+    /// Args:
+    ///     field_name: Path to the payload field.
     #[staticmethod]
     pub fn delete_field_index(field_name: PyJsonPath) -> Self {
         let operation = FieldIndexOperations::DeleteIndex(JsonPath::from(field_name));

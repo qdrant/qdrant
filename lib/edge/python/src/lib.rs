@@ -101,6 +101,11 @@ mod qdrant_edge {
     use super::update::{PyUpdateMode, PyUpdateOperation};
 }
 
+/// The main class representing a Qdrant Edge shard.
+///
+/// A shard is a self-contained unit of storage that can be loaded, queried,
+/// and updated independently. Use load() to open existing data, or create()
+/// to create a new shard.
 #[pyclass(name = "EdgeShard")]
 #[derive(Debug)]
 pub struct PyEdgeShard(Option<edge::EdgeShard>);
@@ -124,25 +129,42 @@ impl PyEdgeShard {
         Ok(Self(Some(shard)))
     }
 
+    /// Flush all pending changes to disk.
     pub fn flush(&self) -> Result<()> {
         self.get_shard()?.flush()?;
         Ok(())
     }
 
+    /// Run segment optimizers in-process, blocking until no more optimizations are planned.
+    ///
+    /// Returns:
+    ///     True if any segments were optimized, False if already optimal.
     pub fn optimize(&self) -> Result<bool> {
         let optimized = self.get_shard()?.optimize()?;
         Ok(optimized)
     }
 
+    /// Close the shard and release all resources.
     pub fn close(&mut self) {
         self.0.take(); // `edge::Shard` is automatically flushed on drop
     }
 
+    /// Apply an update operation to the shard.
+    ///
+    /// Args:
+    ///     operation: The update operation to apply.
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
         self.get_shard()?.update(operation.into())?;
         Ok(())
     }
 
+    /// Execute a query against the shard.
+    ///
+    /// Args:
+    ///     query: The query request.
+    ///
+    /// Returns:
+    ///     List of scored points matching the query.
     pub fn query(&self, query: PyQueryRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.get_shard()?.query(query.into())?;
         let points = PyScoredPoint::wrap_vec(points);
@@ -158,28 +180,65 @@ impl PyEdgeShard {
         Ok(batches.into_iter().map(PyScoredPoint::wrap_vec).collect())
     }
 
+    /// Execute a search against the shard.
+    ///
+    /// Args:
+    ///     search: The search request.
+    ///
+    /// Returns:
+    ///     List of scored points matching the search.
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
         let points = self.get_shard()?.search(search.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
 
+    /// Scroll through points in the shard.
+    ///
+    /// Args:
+    ///     scroll: The scroll request.
+    ///
+    /// Returns:
+    ///     Tuple of (points, next_offset).
     pub fn scroll(&self, scroll: PyScrollRequest) -> Result<(Vec<PyRecord>, Option<PyPointId>)> {
         let (points, next_offset) = self.get_shard()?.scroll(scroll.into())?;
         let points = PyRecord::wrap_vec(points);
         Ok((points, next_offset.map(PyPointId)))
     }
 
+    /// Count points in the shard.
+    ///
+    /// Args:
+    ///     count: The count request.
+    ///
+    /// Returns:
+    ///     Number of points matching the filter.
     pub fn count(&self, count: PyCountRequest) -> Result<usize> {
         let points_count = self.get_shard()?.count(count.into())?;
         Ok(points_count)
     }
 
+    /// Get facets for a payload field.
+    ///
+    /// Args:
+    ///     facet: The facet request.
+    ///
+    /// Returns:
+    ///     Facet response with hits and counts.
     pub fn facet(&self, facet: PyFacetRequest) -> Result<PyFacetResponse> {
         let response = self.get_shard()?.facet(facet.into())?;
         Ok(PyFacetResponse::new(response))
     }
 
+    /// Retrieve specific points by their IDs.
+    ///
+    /// Args:
+    ///     point_ids: List of point IDs to retrieve.
+    ///     with_payload: Whether to include payload in results.
+    ///     with_vector: Whether to include vectors in results.
+    ///
+    /// Returns:
+    ///     List of records.
     #[pyo3(signature = (point_ids, with_payload = None, with_vector = None))]
     pub fn retrieve(
         &self,
@@ -197,6 +256,10 @@ impl PyEdgeShard {
         Ok(points)
     }
 
+    /// Get information about the shard.
+    ///
+    /// Returns:
+    ///     Shard information.
     pub fn info(&self) -> Result<PyShardInfo> {
         let info = self.get_shard()?.info()?;
         let info = PyShardInfo(info);
@@ -205,17 +268,31 @@ impl PyEdgeShard {
 
     // ------- Snapshot related methods -------
 
+    /// Unpack a snapshot to a target directory.
+    ///
+    /// Args:
+    ///     snapshot_path: Path to the snapshot file.
+    ///     target_path: Path to extract the snapshot to.
     #[staticmethod]
     pub fn unpack_snapshot(snapshot_path: PathBuf, target_path: PathBuf) -> Result<()> {
         edge::EdgeShard::unpack_snapshot(&snapshot_path, &target_path)?;
         Ok(())
     }
 
+    /// Get the snapshot manifest.
+    ///
+    /// Returns:
+    ///     Snapshot manifest as a JSON-like value.
     pub fn snapshot_manifest(&self) -> Result<PyValue> {
         let manifest = self.get_shard()?.snapshot_manifest()?;
         Ok(PyValue::new(serde_json::to_value(&manifest).unwrap()))
     }
 
+    /// Update the shard from a snapshot.
+    ///
+    /// Args:
+    ///     snapshot_path: Path to the snapshot file.
+    ///     tmp_dir: Optional temporary directory for extraction.
     #[pyo3(signature = (snapshot_path, tmp_dir=None))]
     pub fn update_from_snapshot(
         &mut self,

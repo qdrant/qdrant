@@ -97,6 +97,7 @@ impl Repr for PyMatch {
     }
 }
 
+/// Match exact value.
 #[pyclass(name = "MatchValue", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -105,6 +106,10 @@ pub struct PyMatchValue(pub MatchValue);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchValue {
+    /// Create a MatchValue.
+    ///
+    /// Args:
+    ///     value: Value to match.
     #[new]
     pub fn new(value: PyValueVariants) -> Self {
         Self(MatchValue {
@@ -112,6 +117,7 @@ impl PyMatchValue {
         })
     }
 
+    /// Value.
     #[getter]
     pub fn value(&self) -> &PyValueVariants {
         PyValueVariants::wrap_ref(&self.0.value)
@@ -195,6 +201,7 @@ impl Repr for PyValueVariants {
     }
 }
 
+/// Full-text match.
 #[pyclass(name = "MatchText", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -203,11 +210,16 @@ pub struct PyMatchText(pub MatchText);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchText {
+    /// Create a MatchText.
+    ///
+    /// Args:
+    ///     text: Text to search for.
     #[new]
     pub fn new(text: String) -> Self {
         Self(MatchText { text })
     }
 
+    /// Text.
     #[getter]
     pub fn text(&self) -> &str {
         &self.0.text
@@ -225,6 +237,7 @@ impl PyMatchText {
     }
 }
 
+/// Match any of the words in text.
 #[pyclass(name = "MatchTextAny", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -233,11 +246,16 @@ pub struct PyMatchTextAny(pub MatchTextAny);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchTextAny {
+    /// Create a MatchTextAny.
+    ///
+    /// Args:
+    ///     text_any: Space-separated words to match any of.
     #[new]
     pub fn new(text_any: String) -> Self {
         Self(MatchTextAny { text_any })
     }
 
+    /// Text.
     #[getter]
     pub fn text_any(&self) -> &str {
         &self.0.text_any
@@ -255,6 +273,7 @@ impl PyMatchTextAny {
     }
 }
 
+/// Match exact phrase.
 #[pyclass(name = "MatchPhrase", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -263,11 +282,16 @@ pub struct PyMatchPhrase(pub MatchPhrase);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchPhrase {
+    /// Create a MatchPhrase.
+    ///
+    /// Args:
+    ///     phrase: Phrase to match.
     #[new]
     pub fn new(phrase: String) -> Self {
         Self(MatchPhrase { phrase })
     }
 
+    /// Phrase.
     #[getter]
     pub fn phrase(&self) -> &str {
         &self.0.phrase
@@ -285,6 +309,7 @@ impl PyMatchPhrase {
     }
 }
 
+/// Match keyword values starting with the given prefix.
 #[pyclass(name = "MatchPrefix", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -293,11 +318,16 @@ pub struct PyMatchPrefix(pub MatchPrefix);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchPrefix {
+    /// Create a MatchPrefix.
+    ///
+    /// Args:
+    ///     prefix: Prefix to match.
     #[new]
     pub fn new(prefix: String) -> Self {
         Self(MatchPrefix { prefix })
     }
 
+    /// Prefix.
     #[getter]
     pub fn prefix(&self) -> &str {
         &self.0.prefix
@@ -315,6 +345,7 @@ impl PyMatchPrefix {
     }
 }
 
+/// Match any of the values.
 #[pyclass(name = "MatchAny", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -323,6 +354,10 @@ pub struct PyMatchAny(pub MatchAny);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchAny {
+    /// Create a MatchAny.
+    ///
+    /// Args:
+    ///     any: List of values to match any of.
     #[new]
     pub fn new(any: PyAnyVariants) -> Self {
         Self(MatchAny {
@@ -330,6 +365,7 @@ impl PyMatchAny {
         })
     }
 
+    /// Values.
     #[getter]
     pub fn value(&self) -> &PyAnyVariants {
         PyAnyVariants::wrap_ref(&self.0.any)
@@ -347,6 +383,7 @@ impl PyMatchAny {
     }
 }
 
+/// Match any value except these.
 #[pyclass(name = "MatchExcept", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -355,6 +392,10 @@ pub struct PyMatchExcept(pub MatchExcept);
 #[pyclass_repr]
 #[pymethods]
 impl PyMatchExcept {
+    /// Create a MatchExcept.
+    ///
+    /// Args:
+    ///     except_: List of values to exclude.
     #[new]
     pub fn new(value: PyAnyVariants) -> Self {
         Self(MatchExcept {
@@ -362,6 +403,7 @@ impl PyMatchExcept {
         })
     }
 
+    /// Excluded values.
     #[getter]
     pub fn value(&self) -> &PyAnyVariants {
         PyAnyVariants::wrap_ref(&self.0.except)
