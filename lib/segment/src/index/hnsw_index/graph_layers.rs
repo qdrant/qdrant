@@ -406,7 +406,6 @@ pub trait GraphLayersBase {
     /// and switches phases once the result heap is full. The second phase only
     /// explores one-hop neighbors with distance-prioritized traversal and uses parent-fail strategy to reduce
     /// unnecessary distance computations.
-
     fn search_on_level_pathseer(
         &self,
         level_entry: ScoredPointOffset,

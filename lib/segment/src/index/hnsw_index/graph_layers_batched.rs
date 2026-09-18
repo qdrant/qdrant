@@ -220,6 +220,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
     /// Batched counterpart of
     /// [`super::graph_layers::GraphLayersBase::search_on_level_pathseer`].
+    #[allow(clippy::too_many_arguments)]
     fn search_on_level_pathseer(
         &self,
         level_entry: ScoredPointOffset,
