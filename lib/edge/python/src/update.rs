@@ -300,6 +300,13 @@ impl PyUpdateOperation {
     }
 
     /// Create a new dense named vector on the collection.
+    ///
+    /// Args:
+    ///     vector_name: Name for the new vector.
+    ///     size: Dimensionality of the vectors.
+    ///     distance: Distance function (Cosine, Euclid, Dot, Manhattan).
+    ///     multivector_config: Optional multi-vector configuration (e.g., for ColBERT).
+    ///     datatype: Optional element storage type (Float32, Float16, Uint8).
     #[staticmethod]
     #[pyo3(signature = (vector_name, size, distance, multivector_config=None, datatype=None))]
     pub fn create_dense_vector(
@@ -323,6 +330,11 @@ impl PyUpdateOperation {
     }
 
     /// Create a new sparse named vector on the collection.
+    ///
+    /// Args:
+    ///     vector_name: Name for the new sparse vector.
+    ///     modifier: Optional value modifier (e.g., Modifier.Idf).
+    ///     datatype: Optional datatype for storing weights in the index.
     #[staticmethod]
     #[pyo3(signature = (vector_name, modifier=None, datatype=None))]
     pub fn create_sparse_vector(
@@ -343,6 +355,9 @@ impl PyUpdateOperation {
     }
 
     /// Delete a named vector from the collection.
+    ///
+    /// Args:
+    ///     vector_name: Name of the vector to delete.
     #[staticmethod]
     pub fn delete_vector_name(vector_name: String) -> Self {
         let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name });
@@ -350,16 +365,16 @@ impl PyUpdateOperation {
     }
 }
 
-/// Defines the mode of the upsert operation
+/// Defines the mode of the upsert operation.
 #[pyclass(name = "UpdateMode", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PyUpdateMode {
-    /// Default mode - insert new points, update existing points
+    /// Default mode - insert new points, update existing points.
     #[default]
     Upsert = 0,
-    /// Only insert new points, do not update existing points
+    /// Only insert new points, do not update existing points.
     InsertOnly = 1,
-    /// Only update existing points, do not insert new points
+    /// Only update existing points, do not insert new points.
     UpdateOnly = 2,
 }
 

@@ -772,8 +772,9 @@ impl PyMmr {
     }
 }
 
-/// BM25 over the text index of a payload field. The index must be created
-/// with `scoring` on.
+/// BM25 over the text index of a payload field.
+///
+/// The field's index must be created with `TextIndexParams(scoring=True)`.
 ///
 /// Create a TextQuery.
 ///
@@ -834,7 +835,7 @@ impl PyTextQuery {
     }
 }
 
-/// BM25 parameters of a [`PyTextQuery`].
+/// BM25 parameters of a TextQuery.
 ///
 /// Create Bm25Params.
 ///
@@ -864,7 +865,7 @@ impl PyBm25Params {
         self.0.k1
     }
 
-    /// Document length normalization, within `[0, 1]`.
+    /// Document length normalization.
     #[getter]
     pub fn b(&self) -> f32 {
         self.0.b
