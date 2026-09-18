@@ -1,8 +1,6 @@
-"""Reproduce the lost commit notification during leader self-removal."""
+"""Require survivors to remain operational after intentional peer removal."""
 
-import re
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 import requests
@@ -12,7 +10,6 @@ from .raft_messages import MSG_APPEND_RESPONSE, decode_raft_message, removal_ent
 from .utils import (
     all_peers_are_voters,
     every_test,  # noqa: F401 -- process cleanup fixture
-    init_pytest_log_folder,
     processes,
     start_cluster,
     wait_for,
@@ -73,6 +70,11 @@ def test_remove_peer_from_two_node_cluster(tmp_path, remove_leader, server_timeo
                 and message.from_peer == follower_id and message.to == leader_id
                 and message.index == removal_index)
 
+    def is_commit_notification(request):
+        message = decode_raft_message(request)
+        return (message.from_peer == leader_id and message.to == follower_id
+                and message.commit >= removal_index)
+
     # The Raft ACK travels separately from the gRPC response. Holding the response
     # keeps A's sender busy while the ACK allows A to commit the removal.
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -87,42 +89,28 @@ def test_remove_peer_from_two_node_cluster(tmp_path, remove_leader, server_timeo
                 assert _cluster(uris[1])["raft_info"]["commit"] < removal_index
                 ack_gate.release()
 
-                # DELETE succeeds before B commits, even with timeout=60.
+                # The held response keeps B behind A's committed removal.
                 remove.result(timeout=TIMEOUT)
                 assert not response_gate.cancelled.is_set()
                 detached = _cluster(uris[0])
                 assert detached["raft_info"]["commit"] >= removal_index
-                assert str(follower_id) not in detached["peers"]
                 assert _cluster(uris[1])["raft_info"]["commit"] < removal_index
-                response_gate.release()
+                if remove_leader:
+                    with follower_process.proxy.hold_rpc(RAFT_SEND, is_commit_notification) as commit_gate:
+                        response_gate.release()
+                        try:
+                            commit_gate.wait_for_request(TIMEOUT)
+                        except TimeoutError:
+                            pytest.fail("Survivor did not receive the committed leader removal after releasing the sender")
+                else:
+                    response_gate.release()
 
     if not remove_leader:
         _assert_operational([uris[0]], {leader_id})
         return
 
-    # With both gates released and A still alive, the commit notification must
-    # fail because B's address was removed.
-    log_path = Path(init_pytest_log_folder()) / "peer_0_0.log"
-
-    def commit_notification_lost_address():
-        for line in log_path.read_text().splitlines():
-            if ("Failed to send Raft message" in line and "No bootstrap URI provided" in line
-                    and f"to: {follower_id}" in line):
-                commit = re.search(r"commit: (\d+)", line)
-                if commit and int(commit[1]) >= removal_index:
-                    return True
-        return False
-
-    # NOTE: This reproducer passes when B is stuck. Once leader removal is fixed,
-    # replace these failure checks with _assert_operational([uris[1]], {follower_id}).
-    wait_for(commit_notification_lost_address, wait_for_timeout=TIMEOUT)
-    wait_for(lambda: _cluster(uris[1])["raft_info"]["leader"] in (None, 0), wait_for_timeout=TIMEOUT)
-    survivor = _cluster(uris[1])
-    assert set(survivor["peers"]) == {str(leader_id), str(follower_id)}
-    assert survivor["raft_info"]["leader"] in (None, 0)
-    assert survivor["raft_info"]["commit"] < removal_index
-    assert survivor["raft_info"]["is_voter"] is True
-    assert leader_process.proc.poll() is None
+    _assert_operational([uris[1]], {follower_id})
+    assert _cluster(uris[1])["raft_info"]["commit"] >= removal_index
 
 
 def _assert_operational(uris, peer_ids):
