@@ -592,6 +592,9 @@ impl PySnowballParams {
 }
 
 /// Explicitly disable stemming, overriding the language default.
+///
+/// Use together with an empty stopword set for language-neutral text
+/// processing, instead of the deprecated ``language="none"`` hack.
 #[pyclass(name = "DisabledStemmer", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]

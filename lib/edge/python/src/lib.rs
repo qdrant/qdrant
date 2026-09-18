@@ -112,8 +112,15 @@ pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
 impl PyEdgeShard {
-    /// Load an edge shard from existing files at `path`.
-    /// Optional `config`: if provided, compatibility is checked and config is overwritten on disk.
+    /// Load an edge shard from existing files at path.
+    ///
+    /// Args:
+    ///     path: Path to the shard directory.
+    ///     config: Optional; if provided, compatibility is checked and config
+    ///             is overwritten on disk.
+    ///
+    /// Returns:
+    ///     Loaded EdgeShard instance.
     #[staticmethod]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
@@ -121,8 +128,15 @@ impl PyEdgeShard {
         Ok(Self(Some(shard)))
     }
 
-    /// Create a new edge shard at `path` with the given configuration.
+    /// Create a new edge shard at path with the given configuration.
     /// Fails if the path already contains segment data.
+    ///
+    /// Args:
+    ///     path: Path to the shard directory (must not contain existing segments).
+    ///     config: Configuration for the new shard.
+    ///
+    /// Returns:
+    ///     New EdgeShard instance.
     #[staticmethod]
     pub fn create(path: PathBuf, config: PyEdgeConfig) -> Result<Self> {
         let shard = edge::EdgeShard::new(&path, config.0)?;
@@ -173,8 +187,15 @@ impl PyEdgeShard {
 
     /// Execute several queries as one planned batch.
     ///
-    /// Cheaper than one `query` per request: the batch shares a single pass over the segments.
-    /// Returns one result list per request, in the same order as `request.queries`.
+    /// Cheaper than calling `query` once per request: the batch is planned as a
+    /// whole, so its searches share one pass over the segments and queries that
+    /// differ only in their vector are scored together.
+    ///
+    /// Args:
+    ///     request: The batch of query requests to run together.
+    ///
+    /// Returns:
+    ///     One list of scored points per request, in the same order.
     pub fn query_batch(&self, request: PyQueryBatchRequest) -> Result<Vec<Vec<PyScoredPoint>>> {
         let batches = self.get_shard()?.query_batch(request.into())?;
         Ok(batches.into_iter().map(PyScoredPoint::wrap_vec).collect())

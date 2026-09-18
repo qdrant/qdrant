@@ -106,8 +106,7 @@ class BinaryQuantizationQueryEncoding:
 @final
 class Bm25:
     """
-    BM25 sparse-vector embedding model. Construct once with a [`Bm25Config`],
-    then call [`embed_query`] / [`embed_document`] to get sparse vectors.
+    BM25 sparse-vector embedding model. No qdrant server / inference service required.
     """
 
     def __new__(cls, /, config: Bm25Config | None = None) -> Bm25:
@@ -120,7 +119,8 @@ class Bm25:
 
     def embed_document(self, /, text: str) -> SparseVector:
         """
-        Embed `text` as an indexed document: term-frequency weights with `(k, b, avg_len)`.
+        Embed `text` as an indexed document: term-frequency weights with
+        `(k, b, avg_len)` from the model config.
         """
 
     def embed_query(self, /, text: str) -> SparseVector:
@@ -132,6 +132,10 @@ class Bm25:
 class Bm25Config:
     """
     Configuration for an edge-side BM25 model.
+
+    JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
+    portable between cloud and edge. Defaults match standard BM25
+    (k=1.2, b=0.75, avg_len=256) and English-language tokenization.
     """
 
     def __new__(
@@ -386,6 +390,9 @@ class Direction:
 class DisabledStemmer:
     """
     Explicitly disable stemming, overriding the language default.
+
+    Use together with an empty stopword set for language-neutral text
+    processing, instead of the deprecated ``language="none"`` hack.
     """
 
     def __new__(cls, /) -> DisabledStemmer:
@@ -626,8 +633,15 @@ class EdgeShard:
     @staticmethod
     def create(path: str | PathLike[str], config: EdgeConfig) -> EdgeShard:
         """
-        Create a new edge shard at `path` with the given configuration.
+        Create a new edge shard at path with the given configuration.
         Fails if the path already contains segment data.
+
+        Args:
+            path: Path to the shard directory (must not contain existing segments).
+            config: Configuration for the new shard.
+
+        Returns:
+            New EdgeShard instance.
         """
 
     def facet(self, /, facet: FacetRequest) -> FacetResponse:
@@ -657,8 +671,15 @@ class EdgeShard:
     @staticmethod
     def load(path: str | PathLike[str], config: EdgeConfig | None = None) -> EdgeShard:
         """
-        Load an edge shard from existing files at `path`.
-        Optional `config`: if provided, compatibility is checked and config is overwritten on disk.
+        Load an edge shard from existing files at path.
+
+        Args:
+            path: Path to the shard directory.
+            config: Optional; if provided, compatibility is checked and config
+                    is overwritten on disk.
+
+        Returns:
+            Loaded EdgeShard instance.
         """
 
     def optimize(self, /) -> bool:
@@ -684,8 +705,15 @@ class EdgeShard:
         """
         Execute several queries as one planned batch.
 
-        Cheaper than one `query` per request: the batch shares a single pass over the segments.
-        Returns one result list per request, in the same order as `request.queries`.
+        Cheaper than calling `query` once per request: the batch is planned as a
+        whole, so its searches share one pass over the segments and queries that
+        differ only in their vector are scored together.
+
+        Args:
+            request: The batch of query requests to run together.
+
+        Returns:
+            One list of scored points per request, in the same order.
         """
 
     def retrieve(
@@ -3645,20 +3673,20 @@ class TurboQuantQuantizationConfig:
 @final
 class UpdateMode:
     """
-    Defines the mode of the upsert operation
+    Defines the mode of the upsert operation.
     """
 
     InsertOnly: Final[UpdateMode]
     """
-    Only insert new points, do not update existing points
+    Only insert new points, do not update existing points.
     """
     UpdateOnly: Final[UpdateMode]
     """
-    Only update existing points, do not insert new points
+    Only update existing points, do not insert new points.
     """
     Upsert: Final[UpdateMode]
     """
-    Default mode - insert new points, update existing points
+    Default mode - insert new points, update existing points.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __int__(self, /) -> int: ...
@@ -3699,6 +3727,13 @@ class UpdateOperation:
     ) -> UpdateOperation:
         """
         Create a new dense named vector on the collection.
+
+        Args:
+            vector_name: Name for the new vector.
+            size: Dimensionality of the vectors.
+            distance: Distance function (Cosine, Euclid, Dot, Manhattan).
+            multivector_config: Optional multi-vector configuration (e.g., for ColBERT).
+            datatype: Optional element storage type (Float32, Float16, Uint8).
         """
 
     @staticmethod
@@ -3721,6 +3756,11 @@ class UpdateOperation:
     ) -> UpdateOperation:
         """
         Create a new sparse named vector on the collection.
+
+        Args:
+            vector_name: Name for the new sparse vector.
+            modifier: Optional value modifier (e.g., Modifier.Idf).
+            datatype: Optional datatype for storing weights in the index.
         """
 
     @staticmethod
@@ -3778,6 +3818,9 @@ class UpdateOperation:
     def delete_vector_name(vector_name: str) -> UpdateOperation:
         """
         Delete a named vector from the collection.
+
+        Args:
+            vector_name: Name of the vector to delete.
         """
 
     @staticmethod
