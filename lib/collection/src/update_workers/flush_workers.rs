@@ -108,14 +108,18 @@ impl UpdateWorkers {
             }
         };
 
-        let Some(ack) = wal_ack_version(confirmed_version, &wal_ack_pins) else {
-            return;
-        };
-
+        // Persist the clock maps before acknowledging, so the WAL is never truncated past clocks
+        // that are still only in memory. A pin holds back the acknowledge, not this: the clocks
+        // are durable state of their own, and a pin at the very first entry would otherwise
+        // suppress persisting them for as long as it is held.
         if let Err(err) = clocks.store_if_changed(&shard_path) {
             log::warn!("Failed to store clock maps to disk: {err}");
             segments.write().report_optimizer_error(err);
         }
+
+        let Some(ack) = wal_ack_version(confirmed_version, &wal_ack_pins) else {
+            return;
+        };
 
         if let Err(err) = wal.blocking_lock().ack(ack) {
             log::warn!("Failed to acknowledge WAL version: {err}");

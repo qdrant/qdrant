@@ -295,10 +295,10 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     );
 }
 
-/// A WAL acknowledge pin at index 0 makes `wal_ack_version` return `None`, and the flush worker
-/// returns right there, above `clocks.store_if_changed`. The pin a WAL-including snapshot takes
-/// is `wal.first_index()`, which is 0 on a shard that never acknowledged, so it suppresses clock
-/// persistence for as long as it is held instead of only holding back the acknowledge.
+/// A WAL acknowledge pin at index 0 makes `wal_ack_version` return `None`, so a flush pass
+/// acknowledges nothing at all. It must still persist the clock maps, which are durable state of
+/// their own: the pin a WAL-including snapshot takes is `wal.first_index()`, which is 0 on a shard
+/// that never acknowledged, and it is held for the entire snapshot.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
     use common::budget::ResourceBudget;
@@ -430,7 +430,6 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
     );
     assert!(
         clocks_stored_while_pinned,
-        "a WAL acknowledge pin must hold back the acknowledge only, but it also skipped \
-         persisting the clock maps for as long as it was held",
+        "a WAL acknowledge pin must hold back the acknowledge only, not clock persistence",
     );
 }
