@@ -310,7 +310,9 @@ impl<'a> From<&'a CoreSearchRequest> for BatchSearchParams<'a> {
                     .unwrap_or(&WithPayloadInterface::Bool(false)),
             ),
             with_vector: with_vector.clone().unwrap_or_default(),
-            top: limit + offset,
+            // saturating_add so an unbounded user-supplied limit/offset can't overflow here
+            // either — same idiom as the collection-level merge boundaries for this issue.
+            top: limit.saturating_add(*offset),
             params: params.as_ref(),
         }
     }

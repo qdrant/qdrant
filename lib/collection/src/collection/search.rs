@@ -78,11 +78,25 @@ impl Collection {
 
         let metadata_required = is_payload_required || with_vectors;
 
-        let sum_limits: usize = request.searches.iter().map(|s| s.limit).sum();
-        let sum_offsets: usize = request.searches.iter().map(|s| s.offset).sum();
+        // Saturating fold instead of `.sum()`/`+`/`*` so a batch with very large or
+        // usize::MAX limits/offsets can't overflow this heuristic (debug panic / release
+        // wraparound), matching the saturating_add idiom used for the per-request take() above.
+        let sum_limits: usize = request
+            .searches
+            .iter()
+            .fold(0usize, |sum, search| sum.saturating_add(search.limit));
+        let sum_offsets: usize = request
+            .searches
+            .iter()
+            .fold(0usize, |sum, search| sum.saturating_add(search.offset));
 
         // Number of records we need to retrieve to fill the search result.
-        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
+        let require_transfers = self
+            .shards_holder
+            .read()
+            .await
+            .len()
+            .saturating_mul(sum_limits.saturating_add(sum_offsets));
         // Actually used number of records.
         let used_transfers = sum_limits;
 
@@ -325,7 +339,11 @@ impl Collection {
                     .take(request.limit)
                     .collect()
             } else {
-                merged_iter.take(request.offset + request.limit).collect()
+                // Use saturating_add so an unbounded user-supplied limit/offset cannot overflow
+                // (debug panic / release wraparound to a tiny take) — it clamps to usize::MAX instead.
+                merged_iter
+                    .take(request.offset.saturating_add(request.limit))
+                    .collect()
             };
 
             top_results.push(top_res);
