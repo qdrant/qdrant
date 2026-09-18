@@ -18,8 +18,8 @@ use rayon::prelude::*;
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{
-    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs,
-    SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
+    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, HNSWIndex,
+    HnswIndexOpenArgs, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -364,7 +364,11 @@ impl HNSWIndex {
             }
 
             if !ids.is_empty() {
-                pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+                pool.install(|| {
+                    ids.into_par_iter()
+                        .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                        .try_for_each(insert_point)
+                })?;
             }
 
             drop(progress_main_graph);
@@ -723,6 +727,7 @@ fn build_filtered_graph(
             points_to_index
                 .into_par_iter()
                 .skip(first_points)
+                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .try_for_each(insert_points)
         })?;
     }
