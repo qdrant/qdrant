@@ -14,10 +14,6 @@ use crate::types::vector::PySparseVector;
 
 /// Configuration for an edge-side BM25 model.
 ///
-/// JSON shape mirrors the Qdrant REST/gRPC `Bm25Config` so configs are
-/// portable between cloud and edge. Defaults match standard BM25
-/// (k=1.2, b=0.75, avg_len=256) and English-language tokenization.
-///
 /// Create a Bm25Config.
 ///
 /// Args:
@@ -167,7 +163,7 @@ impl PyBm25Config {
     }
 }
 
-/// BM25 sparse-vector embedding model. No qdrant server / inference service required.
+/// BM25 sparse-vector embedding model.
 ///
 /// Create a Bm25 model with the given configuration (defaults if `None`).
 ///
