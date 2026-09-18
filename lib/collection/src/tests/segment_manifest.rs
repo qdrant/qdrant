@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::flags::{FeatureFlags, init_feature_flags};
 use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use shard::files::segment_manifest_path;
@@ -12,16 +11,13 @@ use tokio::sync::RwLock;
 
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::shards::local_shard::LocalShard;
-use crate::tests::fixtures::create_collection_config;
+use crate::tests::fixtures::{create_collection_config, init_test_feature_flags};
 
 /// With the `write_segment_manifest` flag enabled, building a shard writes `segments_manifest.json`
 /// (next to the `segments/` directory) listing the shard's segments as `active`.
 #[tokio::test]
 async fn writes_segment_manifest_when_flag_enabled() {
-    init_feature_flags(FeatureFlags {
-        write_segment_manifest: true,
-        ..Default::default()
-    });
+    init_test_feature_flags();
 
     let collection_dir = Builder::new().prefix("segment-manifest").tempdir().unwrap();
     let payload_schema_dir = Builder::new().prefix("payload-schema").tempdir().unwrap();

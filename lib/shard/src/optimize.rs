@@ -42,7 +42,7 @@ use crate::proxy_segment::{
 };
 use crate::quota::{self, DiskFit};
 use crate::segment_holder::locked::LockedSegmentHolder;
-use crate::segment_holder::{PostFlushOutcome, SegmentId};
+use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::segment_manifest::NewSegmentToken;
 
 /// Result of optimization execution
@@ -108,80 +108,17 @@ pub fn unwrap_proxy(
     segments: &LockedSegmentHolder,
     proxy_ids: &[SegmentId],
 ) -> OperationResult<()> {
-    // Propagate proxied changes back into wrapped segment to not lose these in-memory changes
+    // Propagate proxied changes back into wrapped segment to not lose these in-memory changes.
+    // The updates lock is taken by `unproxy_segments` itself, between its two phases, so updates
+    // keep flowing while the bulk of the propagation runs.
     let segments_lock = segments.upgradable_read();
-    let _update_guard = segments.acquire_updates_lock();
 
-    let proxies: Vec<_> = proxy_ids
-        .iter()
-        .filter_map(|&proxy_id| match segments_lock.get(proxy_id).cloned() {
-            Some(LockedSegment::Proxy(proxy_segment)) => Some((proxy_id, proxy_segment)),
-            _ => None,
-        })
-        .collect();
-    for (proxy_id, proxy_segment) in &proxies {
-        // Unwrapping a proxy whose changes did not reach the wrapped segment loses those deletes
-        // and index changes for good, so bail out instead. Every proxy stays installed and keeps
-        // serving its changes; nothing is unwrapped, so nothing is lost.
-        if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
-            log::error!(
-                "Propagating proxy segment {proxy_id} changes to wrapped segment failed: {err}",
-            );
-            return Err(err);
-        }
-    }
+    let (write_segments, updates_guard) =
+        SegmentHolder::unproxy_segments(segments, segments_lock, proxy_ids)
+            .map_err(|(_lock, err)| err)?;
+    drop(write_segments); // Release the segment holder lock before the updates lock
+    drop(updates_guard);
 
-    let mut segments_lock = RwLockUpgradableReadGuard::upgrade(segments_lock);
-    for &proxy_id in proxy_ids {
-        if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
-            let locked_proxy_segment = proxy_segment_ref.clone();
-            match locked_proxy_segment {
-                LockedSegment::Original(_) => {
-                    // Already unwrapped. It should not actually be here
-                    log::warn!("Attempt to unwrap raw segment! Should not happen.");
-                }
-                LockedSegment::Proxy(proxy_segment) => {
-                    // The wrapped segment is put back into the segment holder, so all changes
-                    // buffered in the proxy must be propagated into it first. Failing to
-                    // propagate loses in-memory state, but is recovered on restart: the
-                    // persisted pending changes log stays behind and is replayed then, and
-                    // everything past it is replayed from the WAL.
-                    let propagated = proxy_segment.write().propagate_to_wrapped();
-                    if let Err(err) = &propagated {
-                        log::error!(
-                            "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
-                        );
-                    }
-
-                    let proxy_segment_read = proxy_segment.read();
-                    let wrapped_segment = proxy_segment_read.wrapped_segment.clone();
-                    let log_path = proxy_segment_read.pending_changes_log_path().to_path_buf();
-                    drop(proxy_segment_read);
-
-                    segments_lock.replace(proxy_id, wrapped_segment.clone())?;
-
-                    // Schedule proxy log file to delete after next flush cycle
-                    if propagated.is_ok() {
-                        let ready_at = wrapped_segment.get().read().version();
-                        segments_lock.register_post_flush_action(ready_at, ready_at, move || {
-                            match fs::remove_file(&log_path) {
-                                Ok(()) => {}
-                                // File may never have existed on disk at all if never flushed before unwrap
-                                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                                Err(err) => {
-                                    return Err(OperationError::service_error(format!(
-                                        "Failed to remove pending changes log {}: {err}",
-                                        log_path.display(),
-                                    )));
-                                }
-                            }
-                            Ok(PostFlushOutcome::Done)
-                        });
-                    }
-                }
-            }
-        }
-    }
     Ok(())
 }
 
@@ -649,10 +586,23 @@ fn finish_optimization(
     // not help us here, because all proapgated changes are already acknowledged in the WAL.
     optimized_segment.flush(true)?;
 
+    // All propagated changes are applied and durable: make the segment loadable on restart.
+    // `SegmentBuilder::build` postponed the version file exactly until this point (its `ready`
+    // parameter), because a segment loaded without them would resurrect points deleted through
+    // the proxy.
+    //
+    // This must happen before the swap below, not after it. From the swap onwards the proxies are
+    // out of the holder and their data is only kept alive by the deferred destruction registered
+    // right after it; the moment that destruction runs, this segment is the only home of the
+    // propagated changes. A failure or crash anywhere in between must find it loadable, otherwise
+    // `normalize_segment_dir` deletes it on the next load, the old segments come back holding only
+    // what their pending changes logs persisted, and everything past that is lost.
+    let optimized_segment_path = optimized_segment.segment_path.clone();
+    SegmentVersion::save(&optimized_segment_path)?;
+
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
     let optimized_segment_version = optimized_segment.version();
-    let optimized_segment_path = optimized_segment.segment_path.clone();
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
     let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
@@ -662,6 +612,44 @@ fn finish_optimization(
         "swapped different number of proxies"
     );
 
+    let mut deferred_points_set = AHashSet::new();
+    for proxy in &proxies {
+        deferred_points_set.extend(proxy.get().read().deferred_point_ids());
+    }
+    let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
+
+    // Don't destroy the replaced segments' data yet. Points were copy-on-write moved out of them
+    // (and out of the optimized segment's in-memory state, which the next optimization bakes into
+    // its build output) while their new copies may still sit unflushed in appendable segments. WAL
+    // replay can only re-derive those moves from the on-disk pre-images, so the files must survive
+    // until a flush proves this optimization durable. Register the destruction as a post-flush
+    // action: it runs once the durable waterline covers `optimized_segment_version`, and until then
+    // the WAL acknowledge stays capped at each source's persisted version (the same pin the proxy
+    // imposed while the optimization ran), so every operation the files contradict, deletions in
+    // particular, is replayed and re-applied on a restart. See
+    // `SegmentHolder::register_post_flush_action`.
+    //
+    // This cap has to be tracked at the holder level because the proxy can no longer
+    // impose it. While a proxy was a member of the holder, `flush_all` accounted for it like any
+    // other segment: its `persistent_version` covers the wrapped source's durable point plus
+    // whatever the proxy persisted into its pending changes log, and anything buffered past that
+    // showed up as unsaved work capping the ack. The `swap_new` above evicted the proxies, so
+    // that contribution is gone from the holder's flush accounting even though the source files
+    // (and their pending changes logs) it protected are still on disk, while the optimized
+    // segment holding the same operations is durable but not yet cleaned up after.
+    // `register_segment_drop` re-expresses the same pin independently of segment membership,
+    // snapshotting each proxy's final `persistent_version` as `ack_pin`.
+    //
+    // Registering happens here, under the same write lock that performed the swap, so no flush
+    // pass can ever observe the holder with the proxies evicted but their pin not yet in place.
+    // In that window `flush_all` would acknowledge the WAL past what the proxies persisted, while
+    // their source files are still on disk contradicting the newer state, and a restart would
+    // resurrect points deleted past the pin.
+    for proxy in proxies {
+        let ack_pin = proxy.get().read().persistent_version();
+        writable_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);
+    }
+
     if let Some(cow_segment_id) = cow_segment_id_opt {
         // Temp segment might be taken into another parallel optimization
         // so it is not necessary exist by this time
@@ -670,12 +658,6 @@ fn finish_optimization(
 
     let read_segment_holder = RwLockWriteGuard::downgrade(writable_segment_holder);
     // Can read, but can't yet write updates.
-
-    let mut deferred_points_set = AHashSet::new();
-    for proxy in &proxies {
-        deferred_points_set.extend(proxy.get().read().deferred_point_ids());
-    }
-    let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
 
     if !deferred_points.is_empty() {
         const CHUNK_SIZE: usize = 100;
@@ -696,34 +678,11 @@ fn finish_optimization(
     // old segment data is already dropped.
     read_segment_holder.sync_segment_manifest(None)?;
 
-    // All pending proxy changes are now applied — safe to make loadable on restart.
-    SegmentVersion::save(&optimized_segment_path)?;
-
-    // Don't destroy the replaced segments' data yet. Points were copy-on-write moved out of them
-    // (and out of the optimized segment's in-memory state, which the next optimization bakes into
-    // its build output) while their new copies may still sit unflushed in appendable segments. WAL
-    // replay can only re-derive those moves from the on-disk pre-images, so the files must survive
-    // until a flush proves this optimization durable. Register the destruction as a post-flush
-    // action: it runs once the durable waterline covers `optimized_segment_version`, and until then
-    // the WAL acknowledge stays capped at each source's persisted version (the same pin the proxy
-    // imposed while the optimization ran), so every operation the files contradict, deletions in
-    // particular, is replayed and re-applied on a restart. See
-    // `SegmentHolder::register_post_flush_action`.
-    //
-    // This cap has to be tracked at the holder level because the proxy can no longer
-    // impose it. While a proxy was a member of the holder, `flush_all` accounted for it like any
-    // other segment: its `persistent_version` covers the wrapped source's durable point plus
-    // whatever the proxy persisted into its pending changes log, and anything buffered past that
-    // showed up as unsaved work capping the ack. The `swap_new` above evicted the proxies, so
-    // that contribution is gone from the holder's flush accounting even though the source files
-    // (and their pending changes logs) it protected are still on disk, while the optimized
-    // segment holding the same operations is not durable yet. `register_segment_drop`
-    // re-expresses the same pin independently of segment membership, snapshotting each proxy's
-    // final `persistent_version` as `ack_pin`.
-    for proxy in proxies {
-        let ack_pin = proxy.get().read().persistent_version();
-        read_segment_holder.register_segment_drop(optimized_segment_version, ack_pin, proxy);
-    }
+    // Tests fail the optimization here to assert that everything past the swap above is already
+    // crash-safe: the optimized segment is durable and loadable, and the proxies' data is pinned
+    // until it is cleaned up.
+    #[cfg(test)]
+    tests::post_swap_failure_hook()?;
 
     drop(read_segment_holder);
     // Allow updates again
@@ -1235,6 +1194,129 @@ mod tests {
         assert!(
             !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred),
             "point delete must land on the optimized segment",
+        );
+    }
+
+    thread_local! {
+        #[allow(clippy::type_complexity)]
+        pub(super) static POST_SWAP_FAILURE_HOOK: std::cell::RefCell<
+            Option<Box<dyn FnMut() -> OperationResult<()>>>,
+        > = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Test hook run by `finish_optimization` in the window after it swapped the optimized segment
+    /// in, on the calling thread only. Returning an error stands in for a failure or crash there.
+    pub(super) fn post_swap_failure_hook() -> OperationResult<()> {
+        POST_SWAP_FAILURE_HOOK.with(|hook| match hook.borrow_mut().as_mut() {
+            Some(hook) => hook(),
+            None => Ok(()),
+        })
+    }
+
+    /// From `swap_new` onwards the proxies are out of the holder, so a flush pass no longer sees
+    /// them as unsaved work holding the WAL acknowledge at their persisted log, while their source
+    /// files (and pending changes logs) are still on disk contradicting everything propagated past
+    /// it. A failure or crash anywhere in that window must still leave the shard recoverable, which
+    /// takes both halves of the swap: the proxies' `ack_pin` registered under the same write lock
+    /// that evicted them, so no flush can acknowledge past their log in between, and the optimized
+    /// segment's version file written before the swap, so it is loadable and not deleted by
+    /// `normalize_segment_dir` on the next load. Without either, the changes are gone from every
+    /// location: the old segment comes back with only what its log persisted, and the WAL no longer
+    /// has the rest.
+    #[test]
+    fn finish_optimization_post_swap_failure_keeps_acknowledged_changes_recoverable() {
+        use std::sync::Arc;
+
+        use common::storage_version::VERSION_FILE;
+        use segment::pending_changes::{PersistedProxyChanges, recover_pending_changes};
+        use segment::segment_constructor::{load_segment, normalize_segment_dir};
+
+        use crate::segment_holder::FlushMode;
+
+        init_feature_flags(FeatureFlags {
+            persist_proxy_segments: true,
+            ..Default::default()
+        });
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let wrapped_segment = build_segment_1(dir.path());
+        let wrapped_path = wrapped_segment.segment_path.clone();
+        let wrapped = LockedSegment::new(wrapped_segment);
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+
+        let optimized_segment = build_segment_1(dir.path());
+        let optimized_path = optimized_segment.segment_path.clone();
+        fs_err::remove_file(optimized_path.join(VERSION_FILE)).unwrap();
+
+        let mut proxy = ProxySegment::new(wrapped.clone());
+
+        proxy.delete_point(10, 1.into(), &hw_counter).unwrap();
+        proxy.flush(false).unwrap();
+        assert_eq!(proxy.persistent_version(), 10);
+
+        proxy.delete_point(20, 2.into(), &hw_counter).unwrap();
+        assert_eq!(proxy.version(), 20);
+
+        let holder = LockedSegmentHolder::new(holder);
+        let locked_proxy = LockedSegment::from(proxy);
+        holder
+            .write()
+            .replace(segment_id, locked_proxy.clone())
+            .unwrap();
+
+        let acknowledged = Arc::new(parking_lot::Mutex::new(None));
+        {
+            let holder = holder.clone();
+            let acknowledged = acknowledged.clone();
+            POST_SWAP_FAILURE_HOOK.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new(move || {
+                    let version = holder.read().flush_all(FlushMode::Sync, false)?;
+                    *acknowledged.lock() = Some(version);
+                    Err(OperationError::service_error(
+                        "simulated failure after the optimized segment was swapped in",
+                    ))
+                }));
+            });
+        }
+
+        let result = finish_optimization(
+            &holder,
+            vec![locked_proxy],
+            optimized_segment,
+            &DeletedPoints::new(),
+            &[segment_id],
+            None,
+            &AtomicBool::new(false),
+            &hw_counter,
+        );
+        POST_SWAP_FAILURE_HOOK.with(|hook| *hook.borrow_mut() = None);
+        assert!(result.is_err(), "the injected failure must surface");
+        let acknowledged_version = (*acknowledged.lock()).expect("hook must have run");
+
+        drop(holder);
+        drop(wrapped);
+        let optimized_loadable = normalize_segment_dir(&optimized_path).unwrap().is_some();
+        let (old_path, old_uuid) = normalize_segment_dir(&wrapped_path).unwrap().unwrap();
+        let mut old_segment =
+            load_segment(&old_path, old_uuid, None, &AtomicBool::new(false), false).unwrap();
+        let _recovered =
+            recover_pending_changes(&mut old_segment, PersistedProxyChanges::Replay).unwrap();
+        let point_2_alive = old_segment.has_point(2.into(), DeferredBehavior::WithDeferred);
+
+        assert!(
+            acknowledged_version <= 10,
+            "WAL acknowledged {acknowledged_version} past the proxies' persisted log (10) while \
+             their source files are still on disk; after replaying the log the old segment still \
+             holds point 2 ({point_2_alive}), whose delete at 20 is no longer in the WAL; the \
+             optimized segment holding it is loadable on restart: {optimized_loadable}",
+        );
+        assert!(
+            optimized_loadable,
+            "the optimized segment stays live in the holder but has no version file, so it is \
+             deleted on the next load",
         );
     }
 }

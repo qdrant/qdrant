@@ -119,7 +119,7 @@ pub struct UpdateHandler {
     pub prevent_unoptimized: bool,
 
     /// Highest and cutoff clocks for the shard WAL.
-    clocks: LocalShardClocks,
+    pub(crate) clocks: LocalShardClocks,
     shard_path: PathBuf,
     /// Whether we have ever triggered optimizers since starting.
     has_triggered_optimizers: Arc<AtomicBool>,
@@ -271,6 +271,19 @@ impl UpdateHandler {
             && let Err(()) = flush_stop.send(())
         {
             log::warn!("Failed to stop flush worker as it is already stopped.");
+        }
+    }
+
+    /// [`Self::stop_flush_worker`] only signals: a pass already in flight keeps flushing,
+    /// acknowledging the WAL and persisting clocks after it returns.
+    #[cfg(feature = "testing")]
+    pub async fn stop_and_wait_flush_worker(&mut self) {
+        self.stop_flush_worker();
+
+        if let Some(flush_worker) = self.flush_worker.take()
+            && let Err(err) = flush_worker.await
+        {
+            log::warn!("Flush worker failed while stopping: {err}");
         }
     }
 
