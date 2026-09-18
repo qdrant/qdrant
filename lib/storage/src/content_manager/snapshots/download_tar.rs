@@ -225,6 +225,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use futures::StreamExt;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
     use super::*;
 
@@ -317,5 +318,81 @@ mod tests {
         })
         .await
         .expect("Task was not cancelled properly");
+    }
+
+    /// The source cuts the download short, either killing the connection or ending the body
+    /// cleanly like when creating a streamed snapshot fails halfway.
+    #[tokio::test]
+    async fn test_download_cut_short() {
+        for (terminate_body, expected) in [
+            (
+                false,
+                "Connection or stream closed while reading tar archive",
+            ),
+            (
+                true,
+                "Connection or stream closed before tar archive was complete",
+            ),
+        ] {
+            let (url, server) = serve_partial_snapshot(terminate_body).await;
+            let temp_dir = tempfile::tempdir().unwrap();
+
+            let err =
+                download_and_unpack_tar(&reqwest::Client::new(), &url, temp_dir.path(), false)
+                    .await
+                    .unwrap_err();
+            server.await.unwrap();
+
+            let message = err.to_string();
+            assert!(message.contains(expected), "{message}");
+            assert!(!message.contains("Malformed tar archive"), "{message}");
+        }
+    }
+
+    /// Serves the first bytes of the test snapshot as a chunked HTTP/1.1 response, cut in the
+    /// middle of a tar entry. The body is either terminated properly or the connection is
+    /// closed without the terminating chunk.
+    async fn serve_partial_snapshot(terminate_body: bool) -> (Url, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!(
+            "http://{}/test-shard.snapshot",
+            listener.local_addr().unwrap(),
+        ))
+        .unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+
+            // Read the whole request head, closing a socket with unread data would reset the
+            // connection before the response is delivered
+            let mut request = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let n = socket.read(&mut buf).await.unwrap();
+                assert!(n > 0, "client closed connection before sending a request");
+                request.extend_from_slice(&buf[..n]);
+            }
+
+            let body = &include_bytes!("./test-shard.snapshot")[..600];
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\n\
+                 Content-Type: application/octet-stream\r\n\
+                 Transfer-Encoding: chunked\r\n\
+                 \r\n\
+                 {:x}\r\n",
+                body.len(),
+            )
+            .into_bytes();
+            response.extend_from_slice(body);
+            response.extend_from_slice(b"\r\n");
+            if terminate_body {
+                response.extend_from_slice(b"0\r\n\r\n");
+            }
+
+            socket.write_all(&response).await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+
+        (url, server)
     }
 }
