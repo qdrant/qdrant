@@ -923,9 +923,9 @@ def wait_for_strict_mode_disabled(peer_api_uri: str, collection_name: str):
 
 
 def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
-    start = time.time()
+    start = time.monotonic()
     while not condition(*args, **kwargs):
-        elapsed = time.time() - start
+        elapsed = time.monotonic() - start
         if elapsed > wait_for_timeout:
             raise Exception(
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {wait_for_timeout} seconds")
