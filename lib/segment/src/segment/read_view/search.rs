@@ -441,14 +441,14 @@ where
         for scope in scopes.iter_mut() {
             let IdfScopeStats {
                 corpus,
-                idf,
+                df,
                 indexed_vectors,
             } = scope;
 
-            for (vector_name, idf) in idf.iter_mut() {
+            for (vector_name, df) in df.iter_mut() {
                 if let Some(vector_data) = self.vector_data.get(vector_name) {
                     let document_count = vector_data.vector_index().fill_idf_statistics(
-                        idf,
+                        df,
                         corpus.as_ref(),
                         &is_stopped,
                         &hw_counter,
@@ -461,6 +461,11 @@ where
                     }
                 }
             }
+        }
+
+        for (field, stats) in query_context.mut_text_stats().iter_mut() {
+            self.payload_index
+                .fill_text_statistics(field, stats, &is_stopped, &hw_counter)?;
         }
         Ok(())
     }

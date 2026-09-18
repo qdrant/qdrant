@@ -40,6 +40,14 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         self.inner.doc_len(point_id, hw_counter)
     }
 
+    fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        self.inner.posting_len(token_id, hw_counter)
+    }
+
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
         self.inner.total_tokens(hw_counter)
     }
