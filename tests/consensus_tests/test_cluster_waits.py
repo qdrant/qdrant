@@ -137,6 +137,23 @@ def test_cluster_wait_retries_offline_peers(cluster_status, peer):
     )
 
 
+@pytest.mark.parametrize("error", [requests.ConnectTimeout, requests.ReadTimeout])
+def test_cluster_wait_retries_initial_leader_timeout(monkeypatch, cluster_status, error):
+    first_peer = "http://peer0"
+    recovered = cluster_status[first_peer]
+    cluster_status[first_peer] = error()
+
+    def recover(_):
+        cluster_status[first_peer] = recovered
+
+    sleep = Mock(side_effect=recover)
+    monkeypatch.setattr(utils.time, "sleep", sleep)
+
+    utils.wait_for_uniform_cluster_status(list(cluster_status), headers={"api-key": "test-key"})
+
+    sleep.assert_called_once_with(utils.RETRY_INTERVAL_SEC)
+
+
 def test_cluster_wait_still_checks_membership_size(cluster_status):
     cluster_status["http://peer2"]["peers"].pop("2")
 

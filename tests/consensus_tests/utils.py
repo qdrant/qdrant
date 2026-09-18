@@ -510,7 +510,7 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: Opt
             return False
         try:
             expected_leader = get_leader(peer_api_uris[0], headers=headers)
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             print(f"Could not contact peer {peer_api_uris[0]} to fetch cluster leader")
             return False
         if expected_leader in (None, 0):
