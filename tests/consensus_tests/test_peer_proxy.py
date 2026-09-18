@@ -105,6 +105,23 @@ def test_peer_proxy_holds_one_match_and_keeps_consensus_and_recovery_live(upstre
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"selected-shard"
 
 
+def test_peer_proxy_blocks_all_calls_to_one_method(upstream):
+    with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
+        raft = channel.unary_unary(RAFT)
+        with proxy.block_rpc(RAFT, matches=lambda request: request != b"survivor"):
+            for request in (b"first", b"retry"):
+                with pytest.raises(grpc.RpcError) as failure:
+                    raft(request, timeout=TIMEOUT)
+                assert failure.value.code() == grpc.StatusCode.UNAVAILABLE
+            assert_no_calls(upstream)
+            assert raft(b"survivor", timeout=TIMEOUT) == b"survivor"
+            assert upstream.calls.get(timeout=TIMEOUT)[:2] == (RAFT, b"survivor")
+            assert channel.unary_unary(TRANSFER)(b"transfer", timeout=TIMEOUT) == b"transfer"
+            assert upstream.calls.get(timeout=TIMEOUT)[:2] == (TRANSFER, b"transfer")
+        assert raft(b"resumed", timeout=TIMEOUT) == b"resumed"
+        assert upstream.calls.get(timeout=TIMEOUT)[:2] == (RAFT, b"resumed")
+
+
 def test_peer_proxy_holds_response_after_upstream_handled_request(upstream):
     with PeerProxy(upstream.address) as proxy, grpc.insecure_channel(proxy.address) as channel:
         rpc = channel.unary_unary(RAFT)

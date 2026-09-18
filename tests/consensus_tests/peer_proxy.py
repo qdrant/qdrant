@@ -95,6 +95,7 @@ class PeerProxy(grpc.GenericRpcHandler):
         self._target = target
         self._port = port
         self._gates = {}
+        self._blocked_rpcs = {}
         self._lock = Lock()
         self._http_connections = set()
         self._closed = Event()
@@ -168,6 +169,23 @@ class PeerProxy(grpc.GenericRpcHandler):
             raise ValueError("Use the source peer's base HTTP URI without a path or query")
         url = f"{source_uri.rstrip('/')}/collections/{quote(collection, safe='')}/shards/{shard_id}/snapshot"
         return self._hold(("http", url), lambda _: True)
+
+    @contextmanager
+    def block_rpc(self, method: str, matches: Callable[[bytes], bool] = lambda _: True):
+        """Reject every matching call to this method until the context exits.
+
+        Other methods stay live, so a test can separate consensus delivery from
+        an in-flight shard transfer on the same peer.
+        """
+        with self._lock:
+            if method in self._blocked_rpcs:
+                raise RuntimeError(f"RPC is already blocked: {method}")
+            self._blocked_rpcs[method] = matches
+        try:
+            yield
+        finally:
+            with self._lock:
+                del self._blocked_rpcs[method]
 
     @contextmanager
     def _hold(self, key, matches):
@@ -268,6 +286,11 @@ class PeerProxy(grpc.GenericRpcHandler):
 
     def service(self, handler_call_details):
         async def forward(request, context):
+            with self._lock:
+                matches = self._blocked_rpcs.get(handler_call_details.method)
+                blocked = matches is not None and matches(request)
+            if blocked:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, "RPC blocked by test")
             gate = self._take_gate_and_notify(("rpc", handler_call_details.method), request)
             if gate is not None:
                 try:
