@@ -394,7 +394,7 @@ def make_peer_folders(base_path: Path, n_peers: int) -> List[Path]:
 
 
 def get_cluster_info(peer_api_uri: str, headers={}) -> dict:
-    r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     res = r.json()["result"]
     return res
@@ -425,7 +425,7 @@ def fetch_highest_peer_id(peer_api_uris: [str]) -> str:
 
 
 def get_collection_cluster_info(peer_api_uri: str, collection_name: str, headers={}) -> dict:
-    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     res = r.json()["result"]
     return res
@@ -934,7 +934,7 @@ def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_S
 
 def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}{path}")
+        r = requests.get(f"{peer_api_uri}{path}", timeout=10)
         return r.status_code == 200
     except:
         return False

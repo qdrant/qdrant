@@ -15,12 +15,13 @@ RAFT_SEND = "/qdrant.Raft/Send"
 def force_delete_peer(peer_api_uri: str, peer_id: int):
     response = requests.delete(
         f"{peer_api_uri}/cluster/peer/{peer_id}?force=true",
+        timeout=WAIT_TIME_SEC,
     )
     assert response.status_code == 200, f"Failed to force delete peer: {response.text}"
 
 
 def get_peer_id(peer_api_uri: str) -> int:
-    response = requests.get(f"{peer_api_uri}/cluster")
+    response = requests.get(f"{peer_api_uri}/cluster", timeout=10)
     assert response.status_code == 200, f"Failed to get peer ID: {response.text}"
     return response.json()["result"]["peer_id"]
 
