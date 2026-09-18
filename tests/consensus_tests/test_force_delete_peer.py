@@ -1,11 +1,16 @@
 import pathlib
+from contextlib import ExitStack
 import pytest
 from .utils import *
 from .fixtures import upsert_points, create_collection
+from .raft_messages import decode_raft_message
 
 COLLECTION_NAME = "test_collection"
 N_PEERS = 3
 RECOVERY_POINT = "/qdrant.CollectionsInternal/GetShardRecoveryPoint"
+RECOVER_SNAPSHOT = "/qdrant.ShardSnapshots/Recover"
+UPDATE_BATCH = "/qdrant.PointsInternal/UpdateBatch"
+RAFT_SEND = "/qdrant.Raft/Send"
 
 def force_delete_peer(peer_api_uri: str, peer_id: int):
     response = requests.delete(
@@ -33,19 +38,15 @@ def peer_is_removed_from_cluster_and_transfers(peer_api_uri: str, removed_peer_i
     return True
 
 
-@pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
-@pytest.mark.parametrize("stop_source", [False, True], ids=["source-running", "source-stopped"])
-def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, transfer_method, stop_source):
+@pytest.fixture
+def transfer_cluster(tmp_path: pathlib.Path):
     peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, use_peer_proxy=True)
-    source = processes[-1]
 
     create_collection(peer_api_uris[0], shard_number=2, replication_factor=3, write_consistency_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
     )
 
-    from_peer_id = get_peer_id(peer_api_uris[-1])
-    to_peer_id = get_peer_id(peer_api_uris[0])
     points = [
         {
             "id": index,
@@ -58,6 +59,15 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, trans
         for index in range(3000)
     ]
     assert_http_ok(upsert_points(peer_api_uris[0], points))
+    return peer_api_uris, points
+
+
+@pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
+def test_force_delete_stopped_source_during_transfer(transfer_cluster, transfer_method):
+    peer_api_uris, points = transfer_cluster
+    source = processes[-1]
+    from_peer_id = get_peer_id(peer_api_uris[-1])
+    to_peer_id = get_peer_id(peer_api_uris[0])
     survivors = peer_api_uris[:-1]
     initial_receiver = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     assert initial_receiver["shard_transfers"] == []
@@ -93,16 +103,94 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path, trans
         for uri in survivors:
             wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
 
-        if stop_source:
-            # Membership removal does not prove that the source has stopped work.
-            # Wait for process exit before releasing the request so recovery cannot
-            # use a snapshot or WAL delta from the removed source.
-            source.kill()
-            processes.remove(source)
-        else:
-            # Also cover removal while the old source can still finish in-flight work.
-            assert source.proc.poll() is None
+        # Wait for process exit so the held request cannot use the removed source.
+        source.kill()
+        processes.remove(source)
 
+    assert_survivors_recovered(survivors, from_peer_id, points)
+
+
+@pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
+def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_method):
+    peer_api_uris, points = transfer_cluster
+    leader = get_leader(peer_api_uris[0])
+    source_index = next(
+        index for index in (2, 1) if get_peer_id(peer_api_uris[index]) != leader
+    )
+    source = processes[source_index]
+    source_uri = peer_api_uris[source_index]
+    receiver_uri = peer_api_uris[0]
+    survivors = [uri for uri in peer_api_uris if uri != source_uri]
+    from_peer_id = get_peer_id(source_uri)
+    to_peer_id = get_peer_id(receiver_uri)
+    proxy = processes[0].proxy
+
+    if transfer_method == "wal_delta":
+        # Keep writes possible while the receiver is in Recovery, so its WAL
+        # falls behind and the old transfer has actual updates to send.
+        assert_http_ok(requests.patch(
+            f"{source_uri}/collections/{COLLECTION_NAME}",
+            json={"params": {"write_consistency_factor": 2}}, timeout=10,
+        ))
+
+    with ExitStack() as gates:
+        if transfer_method == "snapshot":
+            completion = gates.enter_context(proxy.hold_rpc_response(RECOVER_SNAPSHOT))
+            pending = gates.enter_context(proxy.hold_snapshot_download(source_uri, COLLECTION_NAME, 0))
+        else:
+            pending = gates.enter_context(proxy.hold_rpc(RECOVERY_POINT))
+
+        replicate_shard(source_uri, COLLECTION_NAME, 0, from_peer_id, to_peer_id, method=transfer_method)
+        pending.wait_for_request()
+        transfer, = get_collection_cluster_info(receiver_uri, COLLECTION_NAME)["shard_transfers"]
+        assert (transfer["from"], transfer["to"], transfer["shard_id"], transfer["method"]) == (
+            from_peer_id, to_peer_id, 0, transfer_method,
+        )
+
+        if transfer_method == "wal_delta":
+            for point in points:
+                point["payload"]["updated"] = True
+            assert_http_ok(requests.put(
+                f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                json={"points": points}, timeout=10,
+            ))
+            batch = gates.enter_context(proxy.hold_rpc(UPDATE_BATCH))
+            pending.release()
+            batch.wait_for_request()
+            pending = batch
+
+        # Isolate the source's Raft traffic in both directions: it must miss
+        # removal without disrupting the survivors with election requests.
+        assert get_cluster_info(source_uri)["raft_info"]["leader"] != from_peer_id
+        gates.enter_context(source.proxy.block_rpc(RAFT_SEND))
+        for peer in processes:
+            if peer is not source:
+                gates.enter_context(peer.proxy.block_rpc(
+                    RAFT_SEND, matches=lambda request: decode_raft_message(request).from_peer == from_peer_id,
+                ))
+        force_delete_peer(receiver_uri, from_peer_id)
+        for uri in survivors:
+            wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
+        assert str(from_peer_id) in get_cluster_info(source_uri)["peers"]
+        assert not pending.cancelled.is_set()
+
+        if transfer_method == "wal_delta":
+            # A Dead replica rejects updates. Deliver the old batch only after
+            # survivor recovery so acceptance does not race replica activation.
+            for uri in survivors:
+                wait_for_all_replicas_active(uri, COLLECTION_NAME, min_local_replicas=2)
+            # Arm this after survivor recovery so its batches cannot take the gate.
+            completion = gates.enter_context(proxy.hold_rpc_response(UPDATE_BATCH))
+        pending.release()
+        completion.wait_for_request()
+        completion.release()
+
+        source.kill()
+        processes.remove(source)
+    assert_survivors_recovered(survivors, from_peer_id, points)
+
+
+def assert_survivors_recovered(survivors, from_peer_id, points):
     # Removal alone is not success. Both survivors must finish recovery and keep
     # every point, including dense vectors, sparse vectors, and payloads.
     for uri in survivors:
