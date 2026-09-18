@@ -21,7 +21,12 @@ TIMEOUT = 5
 def upstream():
     calls = Queue()
     blocked = Event()
-    cancelled = Event()
+    released = Event()
+    terminated = Event()
+
+    def on_termination():
+        terminated.set()
+        released.set()
 
     class Handler(grpc.GenericRpcHandler):
         def service(self, details):
@@ -32,9 +37,11 @@ def upstream():
                 if request == b"error":
                     context.abort(grpc.StatusCode.FAILED_PRECONDITION, "replica is not ready")
                 if request == b"block-upstream":
-                    context.add_callback(cancelled.set)
+                    if not context.add_callback(on_termination):
+                        on_termination()
                     blocked.set()
-                    assert cancelled.wait(TIMEOUT), "Proxy did not cancel the upstream call"
+                    # Teardown releases this too, without looking like RPC termination.
+                    released.wait()
                 return request
 
             return grpc.unary_unary_rpc_method_handler(echo)
@@ -48,9 +55,12 @@ def upstream():
         port = server.add_insecure_port("127.0.0.1:0")
         server.start()
         try:
-            yield SimpleNamespace(address=f"127.0.0.1:{port}", calls=calls, blocked=blocked, cancelled=cancelled)
+            yield SimpleNamespace(
+                address=f"127.0.0.1:{port}", calls=calls, blocked=blocked,
+                released=released, terminated=terminated,
+            )
         finally:
-            cancelled.set()
+            released.set()
             server.stop(0).wait(TIMEOUT)
 
 
@@ -186,7 +196,7 @@ def test_peer_proxy_response_gate_cancels_before_upstream_response(upstream, sto
                 gate.wait_for_request(TIMEOUT)
             if isinstance(failure.value, grpc.RpcError):
                 assert failure.value.code() == grpc.StatusCode.CANCELLED
-            assert upstream.cancelled.wait(TIMEOUT)
+            assert upstream.terminated.wait(TIMEOUT)
 
 
 def test_peer_proxy_response_gate_waits_for_upstream_response(upstream):
@@ -198,7 +208,7 @@ def test_peer_proxy_response_gate_waits_for_upstream_response(upstream):
             # The upstream is blocked, so the response gate must not have notified yet.
             with pytest.raises(TimeoutError):
                 gate.wait_for_request(timeout=0)
-            upstream.cancelled.set()
+            upstream.released.set()
             assert gate.wait_for_request(TIMEOUT) == b"block-upstream"
             assert not held.done()
             gate.release()
@@ -224,7 +234,7 @@ def test_peer_proxy_cancels_upstream_work(upstream):
         call = channel.unary_unary(TRANSFER).future(b"block-upstream")
         assert upstream.blocked.wait(TIMEOUT)
         assert call.cancel()
-        assert upstream.cancelled.wait(TIMEOUT)
+        assert upstream.terminated.wait(TIMEOUT)
 
 
 @pytest.mark.parametrize("phase", ["request", "upstream", "response"])
@@ -255,7 +265,7 @@ def test_peer_proxy_propagates_rpc_deadline(upstream, phase):
                     gate.wait_for_request(TIMEOUT)
                 if isinstance(failure.value, grpc.RpcError):
                     assert failure.value.code() in (grpc.StatusCode.CANCELLED, grpc.StatusCode.DEADLINE_EXCEEDED)
-                assert upstream.cancelled.wait(TIMEOUT)
+                assert upstream.terminated.wait(TIMEOUT)
             gate.release()
             assert rpc(b"after", timeout=TIMEOUT) == b"after"
             assert upstream.calls.get(timeout=TIMEOUT)[1] == b"after"
