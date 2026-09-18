@@ -6,6 +6,18 @@ import requests
 from . import utils
 
 
+@pytest.mark.parametrize("diagnostic_error", [requests.ConnectionError, requests.ReadTimeout])
+def test_readiness_failure_survives_diagnostic_error(monkeypatch, diagnostic_error):
+    readiness_error = RuntimeError("Peer did not become ready")
+    monkeypatch.setattr(utils, "wait_for", Mock(side_effect=readiness_error))
+    monkeypatch.setattr(utils.requests, "get", Mock(side_effect=diagnostic_error))
+
+    with pytest.raises(RuntimeError) as failure:
+        utils.wait_for_peer_online("http://peer")
+
+    assert failure.value is readiness_error
+
+
 @pytest.mark.parametrize("leader, expected", [(None, False), (0, False), (123, True)])
 def test_leader_is_defined(monkeypatch, leader, expected):
     response = Mock(status_code=200)

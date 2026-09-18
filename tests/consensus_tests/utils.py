@@ -405,8 +405,8 @@ def print_clusters_info(peer_api_uris: [str], headers={}):
         try:
             # do not crash if the peer is not online
             print(json.dumps(get_cluster_info(uri, headers=headers), indent=4))
-        except requests.exceptions.ConnectionError:
-            print(f"Can't retrieve cluster info for offline peer {uri}")
+        except requests.exceptions.RequestException as error:
+            print(f"Can't retrieve cluster info for peer {uri}: {error}")
 
 
 def fetch_highest_peer_id(peer_api_uris: [str]) -> str:
