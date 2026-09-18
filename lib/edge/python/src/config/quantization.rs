@@ -480,7 +480,6 @@ impl PyTurboQuantQuantizationConfig {
     ///
     /// Args:
     ///     always_ram: Whether to keep in RAM.
-    ///     plus: Enable the TurboQuant+ variant.
     ///     bits: Bit size used for compressed codes.
     #[new]
     #[pyo3(signature = (always_ram = None, bits = None))]

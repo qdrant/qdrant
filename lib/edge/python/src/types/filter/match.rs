@@ -395,7 +395,7 @@ impl PyMatchExcept {
     /// Create a MatchExcept.
     ///
     /// Args:
-    ///     except_: List of values to exclude.
+    ///     value: List of values to exclude.
     #[new]
     pub fn new(value: PyAnyVariants) -> Self {
         Self(MatchExcept {
