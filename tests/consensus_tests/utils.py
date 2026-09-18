@@ -463,14 +463,14 @@ def get_leader(peer_api_uri: str, headers={}) -> str:
 
 def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
         correct_leader = leader == expected_leader
         if not correct_leader:
             print(f"Cluster leader invalid for peer {peer_api_uri} {leader}/{expected_leader}")
         return correct_leader
-    except requests.exceptions.ConnectionError:
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch cluster leader")
         return False
@@ -490,14 +490,14 @@ def leader_is_defined(peer_api_uri: str, headers={}) -> bool:
 
 def check_cluster_size(peer_api_uri: str, expected_size: int, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
         assert_http_ok(r)
         peers = r.json()["result"]["peers"]
         correct_size = len(peers) == expected_size
         if not correct_size:
             print(f"Cluster size invalid for peer {peer_api_uri} {len(peers)}/{expected_size}")
         return correct_size
-    except requests.exceptions.ConnectionError:
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch cluster size")
         return False

@@ -6,6 +6,41 @@ import requests
 from . import utils
 
 
+@pytest.mark.parametrize("check, expected", [(utils.check_leader, 123), (utils.check_cluster_size, 1)])
+@pytest.mark.parametrize("error", [requests.ConnectionError, requests.ConnectTimeout, requests.ReadTimeout])
+def test_cluster_checks_retry_request_failures(monkeypatch, check, expected, error):
+    response = Mock(status_code=200)
+    response.json.return_value = {"result": {"raft_info": {"leader": 123}, "peers": {"123": {}}}}
+    get = Mock(side_effect=[error(), response])
+    monkeypatch.setattr(utils.requests, "get", get)
+    monkeypatch.setattr(utils.time, "sleep", Mock())
+
+    utils.wait_for(check, "http://peer", expected)
+
+    assert get.call_count == 2
+    assert all(call.kwargs["timeout"] == 10 for call in get.call_args_list)
+
+
+@pytest.mark.parametrize("check", [utils.check_leader, utils.check_cluster_size])
+def test_cluster_check_timeouts_respect_polling_deadline(monkeypatch, check):
+    monkeypatch.setattr(utils.requests, "get", Mock(side_effect=requests.ReadTimeout))
+    monkeypatch.setattr(utils.time, "monotonic", Mock(side_effect=[0, 2]))
+
+    with pytest.raises(Exception, match=f"Timeout waiting for condition {check.__name__}"):
+        utils.wait_for(check, "http://peer", 1, wait_for_timeout=1)
+
+
+@pytest.mark.parametrize("check", [utils.check_leader, utils.check_cluster_size])
+def test_cluster_checks_preserve_http_errors(monkeypatch, check):
+    response = requests.Response()
+    response.status_code = 503
+    response.url = "http://peer/cluster"
+    monkeypatch.setattr(utils.requests, "get", Mock(return_value=response))
+
+    with pytest.raises(Exception, match="failed with status code 503"):
+        check("http://peer", 1)
+
+
 @pytest.mark.parametrize("diagnostic_error", [requests.ConnectionError, requests.ReadTimeout])
 def test_readiness_failure_survives_diagnostic_error(monkeypatch, diagnostic_error):
     readiness_error = RuntimeError("Peer did not become ready")
