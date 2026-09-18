@@ -55,6 +55,26 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>> {
+        match self {
+            Self::Mutable(index) => index.doc_len(point_id, hw_counter),
+            Self::Immutable(index) => index.doc_len(point_id, hw_counter),
+            Self::OnDisk(index) => index.doc_len(point_id, hw_counter),
+        }
+    }
+
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+        match self {
+            Self::Mutable(index) => index.total_tokens(hw_counter),
+            Self::Immutable(index) => index.total_tokens(hw_counter),
+            Self::OnDisk(index) => index.total_tokens(hw_counter),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             Self::Mutable(index) => index.values_is_empty(point_id),

@@ -90,6 +90,10 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// `deleted_points` first.
     pub point_to_doc_len: Option<TypedStorage<S, u32>>,
     pub deleted_points: DeletedBitVec,
+    /// Slots in the per-point files, live or not. The point space this index
+    /// covers, so that a point id past it can be told apart from one this index
+    /// holds no tokens for.
+    pub total_points: usize,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -100,6 +104,7 @@ impl<S: UniversalRead> Storage<S> {
             point_to_tokens_count: _,
             point_to_doc_len: _,
             deleted_points,
+            total_points: _,
         } = self;
 
         deleted_points.ram_usage_bytes()
@@ -113,6 +118,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens: _,
             points_count: _,
         } = inverted_index;
 
@@ -346,6 +352,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_tokens_count,
                 point_to_doc_len,
                 deleted_points: deleted,
+                total_points: total_count,
             },
             compact_deleted_mask,
         }))
@@ -767,6 +774,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             point_to_tokens_count,
             point_to_doc_len,
             deleted_points: _,
+            total_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
@@ -883,6 +891,61 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         self.storage.deleted_points.active_count()
     }
 
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>> {
+        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
+            return Ok(None);
+        };
+        // Past the point space this index covers. The in-RAM backends answer
+        // the same way, by the length of their vector.
+        if point_id as usize >= self.storage.total_points {
+            return Ok(None);
+        }
+        // Deleted, or empty when the index was built. The sidecar is written
+        // unmasked and still holds the old length, while the in-RAM backends
+        // hold a zero: answer the zero, so the same data reads the same way
+        // whichever backend a host happens to load.
+        if !self.storage.deleted_points.is_active(point_id) {
+            return Ok(Some(0));
+        }
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<u32>());
+        read_point_to_doc_len(storage, point_id)
+    }
+
+    /// Reads the whole sidecar and applies the deletion mask: 4 bytes per
+    /// point, so several megabytes on a large segment, and under `Populate::No`
+    /// it faults in the file this placement exists to keep out of RAM. Cheap
+    /// enough once, wasteful per query.
+    ///
+    /// Not cached yet, rather than uncacheable: `remove` is the only mutation
+    /// of the mask after `open`, so a memo cleared there would be correct.
+    /// Left out until something calls this often enough to pay for it.
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
+            return Ok(None);
+        };
+        let doc_lens = storage.read_whole()?;
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of_val(doc_lens.as_ref()));
+        let total = doc_lens
+            .iter()
+            .enumerate()
+            .filter(|(point_id, _)| {
+                self.storage
+                    .deleted_points
+                    .is_active(*point_id as PointOffsetType)
+            })
+            .map(|(_, doc_len)| u64::from(*doc_len))
+            .sum();
+        Ok(Some(total))
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
@@ -922,4 +985,23 @@ fn read_point_to_tokens_count<S: UniversalRead>(
     let byte_offset = u64::from(point_id).checked_mul(size_of::<usize>() as u64)?;
     let cow = storage.read(ReadRange::one(byte_offset), Random).ok()?;
     cow.first().copied()
+}
+
+/// Read a single document length for `point_id` from the sidecar.
+///
+/// Unlike [`read_point_to_tokens_count`], a failed read is an error rather than
+/// a missing value: `None` here means "no length recorded", which is exactly
+/// the distinction the sidecar exists to keep.
+///
+/// Callers must bound `point_id` by `Storage::total_points` first, which is
+/// enough: `open` drops a sidecar shorter than `point_to_tokens_count`. Doing
+/// it here instead would cost a `len()`, which is an fstat on io_uring and a
+/// blocking HEAD request on object storage, once per scored point.
+fn read_point_to_doc_len<S: UniversalRead>(
+    storage: &TypedStorage<S, u32>,
+    point_id: PointOffsetType,
+) -> OperationResult<Option<u32>> {
+    let byte_offset = u64::from(point_id) * size_of::<u32>() as u64;
+    let doc_lens = storage.read(ReadRange::one(byte_offset), Random)?;
+    Ok(doc_lens.first().copied())
 }

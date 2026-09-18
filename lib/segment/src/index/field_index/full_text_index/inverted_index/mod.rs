@@ -400,6 +400,41 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
+    /// Number of tokens indexed for `point_id`, repetitions included. This is
+    /// `|d|` in BM25, and it is stored, never derived: the token set is
+    /// deduplicated and carries no lengths.
+    ///
+    /// `None` when this index does not record lengths, or when `point_id` is
+    /// past the point space it covers. `Some(0)` for a point it holds no tokens
+    /// for, which covers a deleted document and one whose tokens were all
+    /// filtered away alike: every backend encodes those the same way, and none
+    /// of them can tell the two apart.
+    ///
+    /// Every backend answers identically for the same data. That is not free on
+    /// disk, where the sidecar is written unmasked and keeps a deleted point's
+    /// original length, so the deletion mask is consulted first.
+    fn doc_len(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<u32>>;
+
+    /// Total tokens over the points this index still holds, the numerator of
+    /// `avgdl`. `None` when this index does not record lengths.
+    ///
+    /// This is the capability probe, not [`Self::doc_len`], which also answers
+    /// `None` for a point id outside the index.
+    ///
+    /// "Still holds" is not "live" under append-only deletion, where a dropped
+    /// point never reaches `remove` and the in-RAM backends keep counting it.
+    /// The on-disk backend re-reads the id tracker's mask at `open` and does
+    /// not.
+    ///
+    /// Deliberately not divided by [`Self::points_count`] here. The average
+    /// is a corpus statistic, and a per-segment average would drift from the
+    /// one a search actually needs, which is summed over every segment.
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+
     /// Resolve token -> token_id and call the closure for each token_id.
     fn for_each_token_id<'a, U: UserData>(
         &self,
@@ -414,6 +449,7 @@ mod tests {
 
     use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::RngExt;
     use rand::seq::SliceRandom;
@@ -763,6 +799,32 @@ mod tests {
             0,
             "a runtime deletion must be masked out on load",
         );
+
+        // Summing has to mask too. The agreement test cannot catch this: its
+        // deletions happen before `create`, so every inactive slot is already
+        // zero on disk and dropping the mask there changes nothing.
+        let live_total: u64 = lens_at_build
+            .iter()
+            .enumerate()
+            .filter(|(point_id, _)| *point_id != victim)
+            .map(|(_, doc_len)| u64::from(*doc_len))
+            .sum();
+        let hw_counter = HardwareCounterCell::new();
+        assert_eq!(
+            mmap.total_tokens(&hw_counter).unwrap(),
+            Some(live_total),
+            "the total must not count a point the id tracker deleted",
+        );
+        assert_eq!(
+            imm_mmap.total_tokens(&hw_counter).unwrap(),
+            Some(live_total)
+        );
+        assert_eq!(
+            mmap.doc_len(victim as PointOffsetType, &hw_counter)
+                .unwrap(),
+            Some(0),
+            "a runtime deletion must read as no tokens, not as the stale length",
+        );
     }
 
     /// Rebuilding the same directory without lengths must not leave the
@@ -879,6 +941,108 @@ mod tests {
             !opened.records_doc_len(),
             "a truncated sidecar must not be padded into looking complete",
         );
+    }
+
+    /// Every backend answers `doc_len` with the same number for every point,
+    /// including the ones it holds no tokens for, and every total is the sum of
+    /// those answers. This is the whole contract a scorer gets from a segment,
+    /// so it is pinned across all four shapes rather than on the one that
+    /// happens to be cheapest.
+    #[rstest]
+    fn doc_len_and_total_tokens_agree_across_backends(
+        #[values(false, true)] phrase_matching: bool,
+    ) {
+        let hw_counter = HardwareCounterCell::new();
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+
+        let mut live_total = 0;
+        for point_id in 0..immutable.point_to_tokens_count.len() as PointOffsetType {
+            let expected = mutable.doc_len(point_id, &hw_counter).unwrap();
+            assert_eq!(immutable.doc_len(point_id, &hw_counter).unwrap(), expected);
+            assert_eq!(imm_mmap.doc_len(point_id, &hw_counter).unwrap(), expected);
+            assert_eq!(
+                mmap.doc_len(point_id, &hw_counter).unwrap(),
+                expected,
+                "point {point_id}, deleted or empty included",
+            );
+            live_total += u64::from(expected.expect("every point of the index has a length"));
+        }
+
+        assert!(live_total > 0, "the fixture indexed nothing");
+        // Only the on-disk backend reads anything to answer, and it bills it.
+        assert!(
+            hw_counter.payload_index_io_read_counter().get() > 0,
+            "on-disk reads must be measured",
+        );
+
+        for (backend, total) in [
+            ("mutable", mutable.total_tokens(&hw_counter).unwrap()),
+            ("immutable", immutable.total_tokens(&hw_counter).unwrap()),
+            ("mmap", mmap.total_tokens(&hw_counter).unwrap()),
+            (
+                "immutable from mmap",
+                imm_mmap.total_tokens(&hw_counter).unwrap(),
+            ),
+        ] {
+            assert_eq!(
+                total,
+                Some(live_total),
+                "{backend} disagrees with the sum of its own lengths",
+            );
+        }
+    }
+
+    /// Without recording, every accessor reports absence rather than zero. Zero
+    /// is a real length, so the two must not collapse into each other.
+    #[rstest]
+    fn accessors_report_absence_without_recording(#[values(false, true)] phrase_matching: bool) {
+        let hw_counter = HardwareCounterCell::new();
+        let mut mutable = MutableInvertedIndex::new(phrase_matching, false);
+        for idx in 0..16 {
+            let tokens: Vec<String> = (0..=idx).map(|_| generate_word()).collect();
+            mutable
+                .index_str_tokens(idx, &tokens, None, &hw_counter)
+                .unwrap();
+        }
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(!mmap.records_doc_len(), "nothing to write, nothing to read");
+        for point_id in 0..16 {
+            assert_eq!(mutable.doc_len(point_id, &hw_counter).unwrap(), None);
+            assert_eq!(immutable.doc_len(point_id, &hw_counter).unwrap(), None);
+            assert_eq!(mmap.doc_len(point_id, &hw_counter).unwrap(), None);
+        }
+        assert_eq!(mutable.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(immutable.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(mmap.total_tokens(&hw_counter).unwrap(), None);
     }
 
     #[rstest]
