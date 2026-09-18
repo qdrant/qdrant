@@ -953,6 +953,30 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT);
 
+        if let ConsensusOperations::RemovePeer(peer_id) = operation {
+            // Register before sending: a small cluster can apply removal before
+            // this task resumes. The guard also cleans up cancelled requests.
+            let mut awaiters = OperationAwaiters::register(self, vec![operation]);
+            let deadline = tokio::time::Instant::now() + wait_timeout;
+            let proposed = self
+                .propose_sender
+                .remove_peer(peer_id, deadline.into_std())?;
+            return tokio::time::timeout_at(deadline, async {
+                proposed.await.map_err(|_| {
+                    StorageError::service_error("Consensus stopped before proposing peer removal")
+                })??;
+                // Submission may only have forwarded the proposal to the leader.
+                // Success requires this peer to apply the committed removal.
+                awaiters.receivers_mut().next().unwrap().recv().await.map_err(|err| {
+                    StorageError::service_error(format!("Failed to await peer removal: {err}"))
+                })?
+            })
+            .await
+            .map_err(|_| StorageError::Timeout {
+                description: "Waiting for peer removal timed out; a proposed removal may still commit".into(),
+            })?;
+        }
+
         let is_leader_established = self.is_leader_established.clone();
 
         let await_ready_for_timeout_future =
