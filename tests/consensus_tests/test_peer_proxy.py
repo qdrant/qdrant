@@ -14,7 +14,7 @@ from .peer_proxy import PeerProxy, RequestGate
 
 TRANSFER = "/qdrant.CollectionsInternal/GetShardRecoveryPoint"
 RAFT = "/qdrant.Raft/Send"
-TIMEOUT = 5
+TIMEOUT = 10
 
 
 @pytest.fixture

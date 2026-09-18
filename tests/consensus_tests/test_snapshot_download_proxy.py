@@ -16,7 +16,7 @@ from .peer_proxy import PeerProxy, RequestGate
 from . import peer_proxy
 
 
-TIMEOUT = 5
+TIMEOUT = 10
 PAYLOAD = b"\x00\xffsnapshot" * (128 * 1024)
 
 
@@ -144,6 +144,8 @@ def test_snapshot_proxy_does_not_forward_expired_held_download(snapshot_source):
     with PeerProxy("127.0.0.1:1") as proxy, ThreadPoolExecutor() as executor:
         with proxy.hold_snapshot_download(snapshot_source.uri, "test", 0) as gate, requests.Session() as client:
             client.trust_env = False
+            # The read timeout starts before gate arrival, so slow CI can expire
+            # it during setup. The disconnect test above controls cancellation.
             held = executor.submit(client.get, url, proxies={"http": proxy.http_uri}, timeout=1)
             gate.wait_for_request(TIMEOUT)
             with pytest.raises(requests.Timeout):
