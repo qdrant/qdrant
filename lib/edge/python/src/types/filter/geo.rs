@@ -12,6 +12,13 @@ use segment::types::*;
 use crate::repr::*;
 use crate::type_hint::Alias;
 
+/// A geographic point.
+///
+/// Create a GeoPoint.
+///
+/// Args:
+///     lon: Longitude (-180 to 180).
+///     lat: Latitude (-90 to 90).
 #[pyclass(name = "GeoPoint", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -28,11 +35,13 @@ impl PyGeoPoint {
         Ok(Self(point))
     }
 
+    /// Longitude.
     #[getter]
     pub fn lon(&self) -> f64 {
         self.0.lon.into_inner()
     }
 
+    /// Latitude.
     #[getter]
     pub fn lat(&self) -> f64 {
         self.0.lat.into_inner()
@@ -61,6 +70,13 @@ impl<'py> IntoPyObject<'py> for &PyGeoPoint {
     }
 }
 
+/// A geographic bounding box.
+///
+/// Create a GeoBoundingBox.
+///
+/// Args:
+///     top_left: Top-left corner.
+///     bottom_right: Bottom-right corner.
 #[pyclass(name = "GeoBoundingBox", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoBoundingBox(pub GeoBoundingBox);
@@ -76,11 +92,13 @@ impl PyGeoBoundingBox {
         })
     }
 
+    /// Top-left corner.
     #[getter]
     pub fn top_left(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.top_left)
     }
 
+    /// Bottom-right corner.
     #[getter]
     pub fn bottom_right(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.bottom_right)
@@ -101,6 +119,13 @@ impl PyGeoBoundingBox {
     }
 }
 
+/// A geographic circle.
+///
+/// Create a GeoRadius.
+///
+/// Args:
+///     center: Center point.
+///     radius: Radius in meters.
 #[pyclass(name = "GeoRadius", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoRadius(pub GeoRadius);
@@ -116,11 +141,13 @@ impl PyGeoRadius {
         })
     }
 
+    /// Center point.
     #[getter]
     pub fn center(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.center)
     }
 
+    /// Radius in meters.
     #[getter]
     pub fn radius(&self) -> f64 {
         self.0.radius.into_inner()
@@ -141,6 +168,13 @@ impl PyGeoRadius {
     }
 }
 
+/// A geographic polygon.
+///
+/// Create a GeoPolygon.
+///
+/// Args:
+///     exterior: Exterior ring points.
+///     interiors: Optional interior rings (holes).
 #[pyclass(name = "GeoPolygon", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyGeoPolygon(pub GeoPolygon);
@@ -165,11 +199,13 @@ impl PyGeoPolygon {
         Ok(Self(polygon))
     }
 
+    /// Exterior ring.
     #[getter]
     pub fn exterior(&self) -> &PyGeoLineString {
         PyGeoLineString::wrap_ref(&self.0.exterior)
     }
 
+    /// Interior rings (holes).
     #[getter]
     pub fn interiors(&self) -> Option<&[PyGeoLineString]> {
         self.0

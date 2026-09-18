@@ -7,6 +7,20 @@ use segment::types::*;
 use crate::repr::*;
 use crate::types::*;
 
+/// Condition on a payload field.
+///
+/// Create a FieldCondition.
+///
+/// Args:
+///     key: Payload field path.
+///     match: Match condition.
+///     range: Range condition.
+///     geo_bounding_box: Geo bounding box condition.
+///     geo_radius: Geo radius condition.
+///     geo_polygon: Geo polygon condition.
+///     values_count: Values count condition.
+///     is_empty: Check if empty.
+///     is_null: Check if null.
 #[pyclass(name = "FieldCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -52,46 +66,55 @@ impl PyFieldCondition {
         })
     }
 
+    /// Field key.
     #[getter]
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.key)
     }
 
+    /// Match condition.
     #[getter]
     pub fn r#match(&self) -> Option<PyMatch> {
         self.0.r#match.clone().map(PyMatch)
     }
 
+    /// Range condition.
     #[getter]
     pub fn range(&self) -> Option<PyRange> {
         self.0.range.map(PyRange::from)
     }
 
+    /// Geo bounding box.
     #[getter]
     pub fn geo_bounding_box(&self) -> Option<PyGeoBoundingBox> {
         self.0.geo_bounding_box.map(PyGeoBoundingBox)
     }
 
+    /// Geo radius.
     #[getter]
     pub fn geo_radius(&self) -> Option<PyGeoRadius> {
         self.0.geo_radius.map(PyGeoRadius)
     }
 
+    /// Geo polygon.
     #[getter]
     pub fn geo_polygon(&self) -> Option<PyGeoPolygon> {
         self.0.geo_polygon.clone().map(PyGeoPolygon)
     }
 
+    /// Values count.
     #[getter]
     pub fn values_count(&self) -> Option<PyValuesCount> {
         self.0.values_count.map(PyValuesCount)
     }
 
+    /// Is empty flag.
     #[getter]
     pub fn is_empty(&self) -> Option<bool> {
         self.0.is_empty
     }
 
+    /// Is null flag.
     #[getter]
     pub fn is_null(&self) -> Option<bool> {
         self.0.is_null

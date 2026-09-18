@@ -161,10 +161,13 @@ impl Repr for PyPayloadSelector {
     }
 }
 
+/// Select specific payload fields.
 #[pyclass(name = "PayloadSelector", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyPayloadSelectorInterface {
+    /// Include only specified fields.
     Include { keys: Vec<PyJsonPath> },
+    /// Exclude specified fields.
     Exclude { keys: Vec<PyJsonPath> },
 }
 

@@ -111,6 +111,12 @@ impl Repr for PyCondition {
     }
 }
 
+/// Check if a field is empty.
+///
+/// Create an IsEmptyCondition.
+///
+/// Args:
+///     key: Payload field path.
 #[pyclass(name = "IsEmptyCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -128,6 +134,7 @@ impl PyIsEmptyCondition {
         })
     }
 
+    /// Field key.
     #[getter]
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.is_empty.key)
@@ -147,6 +154,12 @@ impl PyIsEmptyCondition {
     }
 }
 
+/// Check if a field is null.
+///
+/// Create an IsNullCondition.
+///
+/// Args:
+///     key: Payload field path.
 #[pyclass(name = "IsNullCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -164,6 +177,7 @@ impl PyIsNullCondition {
         })
     }
 
+    /// Field key.
     #[getter]
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.is_null.key)
@@ -183,6 +197,12 @@ impl PyIsNullCondition {
     }
 }
 
+/// Check if point ID is in a set.
+///
+/// Create a HasIdCondition.
+///
+/// Args:
+///     point_ids: Set of point IDs.
 #[pyclass(name = "HasIdCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -198,6 +218,7 @@ impl PyHasIdCondition {
         })
     }
 
+    /// Point IDs.
     #[getter]
     pub fn point_ids(&self) -> &ahash::HashSet<PyPointId> {
         PyPointId::wrap_set_ref(&self.0.has_id)
@@ -215,6 +236,12 @@ impl PyHasIdCondition {
     }
 }
 
+/// Check if point has a specific vector.
+///
+/// Create a HasVectorCondition.
+///
+/// Args:
+///     vector: Vector name.
 #[pyclass(name = "HasVectorCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -228,6 +255,7 @@ impl PyHasVectorCondition {
         Self(HasVectorCondition { has_vector: vector })
     }
 
+    /// Vector name.
     #[getter]
     pub fn vector(&self) -> &str {
         &self.0.has_vector

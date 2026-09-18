@@ -18,6 +18,13 @@ pub use self::expression_interface::*;
 use crate::repr::*;
 use crate::types::PyValue;
 
+/// A scoring formula for custom ranking.
+///
+/// Create a Formula.
+///
+/// Args:
+///     formula: Expression tree.
+///     defaults: Default variable values.
 #[pyclass(name = "Formula", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -48,6 +55,7 @@ impl PyFormula {
     }
 }
 
+/// Decay function kinds for scoring formulas.
 #[pyclass(name = "DecayKind", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDecayKind {

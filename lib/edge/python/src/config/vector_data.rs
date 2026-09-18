@@ -70,6 +70,7 @@ impl From<PyMemory> for Memory {
     }
 }
 
+/// Distance metrics for vector comparison.
 #[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDistance {
@@ -174,6 +175,9 @@ impl Repr for PyIndexes {
     }
 }
 
+/// Configuration for plain (brute-force) index.
+///
+/// Create a PlainIndexConfig.
 #[pyclass(name = "PlainIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
@@ -191,6 +195,20 @@ impl PyPlainIndexConfig {
     }
 }
 
+/// Configuration for HNSW index.
+///
+/// Create an HnswIndexConfig.
+///
+/// Args:
+///     m: Number of edges per node.
+///     ef_construct: Number of candidates during index construction.
+///     full_scan_threshold: Threshold for full scan.
+///     max_indexing_threads: Max threads for HNSW indexing (0 = auto).
+///     on_disk: Deprecated, use memory instead. Whether to store on disk.
+///     payload_m: Payload index m value.
+///     inline_storage: Whether to use inline storage.
+///     memory: Memory placement of the HNSW graph. Overrides the deprecated on_disk
+///             flag if both are set.
 #[pyclass(name = "HnswIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -224,26 +242,31 @@ impl PyHnswIndexConfig {
         })
     }
 
+    /// Number of edges per node.
     #[getter]
     pub fn m(&self) -> usize {
         self.0.m
     }
 
+    /// ef_construct value.
     #[getter]
     pub fn ef_construct(&self) -> usize {
         self.0.ef_construct
     }
 
+    /// Full scan threshold.
     #[getter]
     pub fn full_scan_threshold(&self) -> usize {
         self.0.full_scan_threshold
     }
 
+    /// Max indexing threads (0 = auto).
     #[getter]
     pub fn max_indexing_threads(&self) -> usize {
         self.0.max_indexing_threads
     }
 
+    /// On-disk flag.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -252,16 +275,19 @@ impl PyHnswIndexConfig {
         }
     }
 
+    /// Memory placement of the HNSW graph, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Payload m value.
     #[getter]
     pub fn payload_m(&self) -> Option<usize> {
         self.0.payload_m
     }
 
+    /// Inline storage flag.
     #[getter]
     pub fn inline_storage(&self) -> Option<bool> {
         self.0.inline_storage
@@ -288,6 +314,12 @@ impl PyHnswIndexConfig {
     }
 }
 
+/// Configuration for multi-vector storage.
+///
+/// Create a MultiVectorConfig.
+///
+/// Args:
+///     comparator: Multi-vector comparator.
 #[pyclass(name = "MultiVectorConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -303,6 +335,7 @@ impl PyMultiVectorConfig {
         })
     }
 
+    /// Comparator.
     #[getter]
     pub fn comparator(&self) -> PyMultiVectorComparator {
         PyMultiVectorComparator::from(self.0.comparator)
@@ -320,6 +353,7 @@ impl PyMultiVectorConfig {
     }
 }
 
+/// Multi-vector comparison methods.
 #[pyclass(name = "MultiVectorComparator", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
@@ -352,6 +386,7 @@ impl From<PyMultiVectorComparator> for MultiVectorComparator {
     }
 }
 
+/// Vector storage data types.
 #[pyclass(name = "VectorStorageDatatype", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageDatatype {
@@ -408,6 +443,22 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
 
 use edge::EdgeVectorParams;
 
+/// Dense vector parameters for EdgeConfig.
+///
+/// Create EdgeVectorParams.
+///
+/// Args:
+///     size: Dimension of vectors.
+///     distance: Distance metric.
+///     on_disk: Deprecated, use memory instead. If True, store vectors on disk
+///              (mmap); otherwise in RAM.
+///     multivector_config: Optional multi-vector configuration.
+///     datatype: Optional storage datatype.
+///     quantization_config: Optional per-vector quantization override.
+///     hnsw_config: Optional per-vector HNSW config override.
+///     memory: Memory placement of the original vector storage. Overrides the
+///             deprecated on_disk flag if both are set.
+///             Pinned is not supported (treated as Cached). Defaults to Cached.
 #[pyclass(name = "EdgeVectorParams", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyEdgeVectorParams(pub EdgeVectorParams);
@@ -455,16 +506,19 @@ impl PyEdgeVectorParams {
         })
     }
 
+    /// Vector dimension.
     #[getter]
     pub fn size(&self) -> usize {
         self.0.size
     }
 
+    /// Distance metric.
     #[getter]
     pub fn distance(&self) -> PyDistance {
         PyDistance::from(self.0.distance)
     }
 
+    /// Whether vector storage is on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -473,26 +527,31 @@ impl PyEdgeVectorParams {
         }
     }
 
+    /// Memory placement of the original vector storage, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Multi-vector configuration.
     #[getter]
     pub fn multivector_config(&self) -> Option<PyMultiVectorConfig> {
         self.0.multivector_config.map(PyMultiVectorConfig)
     }
 
+    /// Storage datatype.
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
     }
 
+    /// Quantization configuration.
     #[getter]
     pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
         self.0.quantization_config.clone().map(PyQuantizationConfig)
     }
 
+    /// HNSW config override.
     #[getter]
     pub fn hnsw_config(&self) -> Option<PyHnswIndexConfig> {
         self.0.hnsw_config.map(PyHnswIndexConfig)

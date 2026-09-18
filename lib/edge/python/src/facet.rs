@@ -10,6 +10,15 @@ use segment::types::{Filter, ValueVariants};
 use crate::repr::*;
 use crate::types::{PyFilter, PyJsonPath, PyValueVariants};
 
+/// Request for facet operation.
+///
+/// Create a FacetRequest.
+///
+/// Args:
+///     key: Payload field key to facet on.
+///     limit: Maximum number of facet hits to return.
+///     exact: Whether to count exactly or estimate.
+///     filter: Filter conditions.
 #[pyclass(name = "FacetRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyFacetRequest(FacetRequest);
@@ -28,27 +37,32 @@ impl PyFacetRequest {
         })
     }
 
+    /// Facet key.
     #[getter]
     pub fn key(&self) -> PyJsonPath {
         PyJsonPath(self.0.key.clone())
     }
 
+    /// Result limit.
     #[getter]
     pub fn limit(&self) -> usize {
         self.0.limit
     }
 
+    /// Exact count flag.
     #[getter]
     pub fn exact(&self) -> bool {
         self.0.exact
     }
 
+    /// Filter.
     #[getter]
     pub fn filter(&self) -> Option<&PyFilter> {
         self.0.filter.as_ref().map(PyFilter::wrap_ref)
     }
 }
 
+/// A facet hit with value and count.
 #[pyclass(name = "FacetHit", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
@@ -56,6 +70,7 @@ pub struct PyFacetHit(FacetValueHit);
 
 #[pymethods]
 impl PyFacetHit {
+    /// Facet value.
     #[getter]
     pub fn value(&self) -> PyValueVariants {
         PyValueVariants::wrap(match &self.0.value {
@@ -68,6 +83,7 @@ impl PyFacetHit {
         })
     }
 
+    /// Count of points with this value.
     #[getter]
     pub fn count(&self) -> usize {
         self.0.count
@@ -88,6 +104,7 @@ impl Repr for PyFacetHit {
     }
 }
 
+/// Response for facet operation.
 #[pyclass(name = "FacetResponse", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
@@ -101,15 +118,18 @@ impl PyFacetResponse {
 
 #[pymethods]
 impl PyFacetResponse {
+    /// Facet hits.
     #[getter]
     pub fn hits(&self) -> Vec<PyFacetHit> {
         PyFacetHit::wrap_vec(self.0.hits.clone())
     }
 
+    /// Number of hits.
     fn __len__(&self) -> usize {
         self.0.hits.len()
     }
 
+    /// Iterate over hits.
     fn __iter__(&self) -> FacetHitIter {
         FacetHitIter(PyFacetHitIter {
             inner: self.0.hits.clone().into_iter(),
