@@ -235,7 +235,7 @@ def relay_handler(monkeypatch):
     handler.send_error = Mock()
     handler.server = SimpleNamespace(proxy=SimpleNamespace(
         _closed=Event(), _lock=Lock(), _http_connections=set(),
-        _take_gate=Mock(return_value=None), http_port=6334,
+        _take_gate_and_notify=Mock(return_value=None), http_port=6334,
     ))
     upstream = MagicMock()
     upstream.__enter__.return_value = upstream
