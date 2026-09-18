@@ -4,6 +4,7 @@ import pytest
 from .utils import *
 from .fixtures import upsert_points, create_collection
 from .raft_messages import decode_raft_message
+from .points_messages import is_upsert_batch_for
 
 COLLECTION_NAME = "test_collection"
 N_PEERS = 3
@@ -155,7 +156,9 @@ def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_met
                 f"{source_uri}/collections/{COLLECTION_NAME}/points?wait=true",
                 json={"points": points}, timeout=10,
             ))
-            batch = gates.enter_context(proxy.hold_rpc(UPDATE_BATCH))
+            batch = gates.enter_context(proxy.hold_rpc(
+                UPDATE_BATCH, matches=lambda request: is_upsert_batch_for(request, COLLECTION_NAME, 0),
+            ))
             pending.release()
             batch.wait_for_request()
             pending = batch
@@ -181,7 +184,9 @@ def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_met
             for uri in survivors:
                 wait_for_all_replicas_active(uri, COLLECTION_NAME, min_local_replicas=2)
             # Arm this after survivor recovery so its batches cannot take the gate.
-            completion = gates.enter_context(proxy.hold_rpc_response(UPDATE_BATCH))
+            completion = gates.enter_context(proxy.hold_rpc_response(
+                UPDATE_BATCH, matches=lambda request: is_upsert_batch_for(request, COLLECTION_NAME, 0),
+            ))
         pending.release()
         completion.wait_for_request()
         completion.release()
