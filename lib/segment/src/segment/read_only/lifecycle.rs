@@ -195,12 +195,14 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &index_path,
                 storage_populate,
             )?;
+            check_process_stopped(is_stopped)?;
 
             // Quantized vectors live in the vector storage directory; a no-op
             // when quantization isn't configured for this vector.
             let quantized_populate =
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
             ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
+            check_process_stopped(is_stopped)?;
 
             // Vector index. A cold override defers the HNSW graph load (see
             // `LoadProfile::vector_index_placement`), so only its config is
@@ -217,6 +219,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &path,
                 sparse_storage_populate(sparse_vector_config),
             )?;
+            check_process_stopped(is_stopped)?;
 
             // Sparse vector index; the sparse open reads lazily, so a profile
             // that never scores this vector just parks the index data cold.
