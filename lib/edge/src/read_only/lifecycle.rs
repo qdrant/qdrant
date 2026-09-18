@@ -1,9 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::RwLock;
-use segment::common::operation_error::OperationResult;
+use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 
@@ -56,6 +57,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// loading follows the segment configs alone. The profile also applies to segments a later
     /// [`live_reload`](Self::live_reload) discovers: the shard was opened for that one request, so new
     /// segments shouldn't load any warmer.
+    ///
+    /// Not cancellable; see [`open_with_cancellation`](Self::open_with_cancellation).
     pub fn open(
         fs: S::Fs,
         path: &Path,
@@ -65,8 +68,35 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
+        Self::open_with_cancellation(
+            fs,
+            path,
+            config,
+            load_profile,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    /// Cancellation-aware [`open`](Self::open). Set the shared flag to `true` to cancel.
+    ///
+    /// Cancellation is cooperative, as in
+    /// [`EdgeShardReadWithCancellation`](crate::EdgeShardReadWithCancellation): the flag is checked
+    /// between the stages of the initial load and between segments within a stage. Blocking IO and
+    /// a single segment's load are indivisible and can delay the observation. Once observed, the
+    /// call returns [`OperationError::Cancelled`](segment::common::operation_error::OperationError::Cancelled)
+    /// and never a partially loaded shard. The call never sets or resets the caller's flag.
+    pub fn open_with_cancellation(
+        fs: S::Fs,
+        path: &Path,
+        config: Option<EdgeConfig>,
+        load_profile: Option<LoadProfile>,
+        is_stopped: Arc<AtomicBool>,
+    ) -> OperationResult<Self>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, config, load_profile)
+        Self::open_with_enumerator(fs, path, enumerator, config, load_profile, &is_stopped)
     }
 
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
@@ -84,10 +114,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         enumerator: impl SegmentEnumerator + 'static,
         config: Option<EdgeConfig>,
         load_profile: Option<LoadProfile>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
+        check_process_stopped(is_stopped)?;
         let provided_config = config.unwrap_or_default();
 
         // Segments never carry `max_search_threads` / `search_pool_core`, so the pool is sized and
@@ -108,7 +140,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             load_profile,
             live_reload_lock: Default::default(),
         };
-        shard.live_reload()?;
+        shard.live_reload_cancellable(is_stopped)?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
         // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an
@@ -119,6 +151,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             EdgeConfig::clone(&derived),
         ));
 
+        check_process_stopped(is_stopped)?;
         Ok(shard)
     }
 }

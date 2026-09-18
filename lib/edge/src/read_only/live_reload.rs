@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
@@ -38,12 +39,31 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// essential files are missing while the manifest still lists it. Either way the shard stays
     /// consistent — every swap is atomic, a failed segment keeps serving its pre-live_reload state,
     /// and the next live_reload replays its unapplied delta (see `pending_reload`).
+    ///
+    /// Not cancellable; see [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
     pub fn live_reload(&self) -> OperationResult<()>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let hw_counter = HardwareCounterCell::disposable();
-        self.live_reload_with(&hw_counter)
+        self.live_reload_cancellable(&AtomicBool::new(false))
+    }
+
+    /// Cancellation-aware [`live_reload`](Self::live_reload). Set the shared flag to `true` to
+    /// cancel.
+    ///
+    /// Cancellation is cooperative, as in
+    /// [`EdgeShardReadWithCancellation`](crate::EdgeShardReadWithCancellation): the flag is checked
+    /// between the stages of a live_reload (discovery, load, swap, reload) and between segments
+    /// within a stage. Blocking IO and a single segment's load or reload are indivisible and can
+    /// delay the observation. Once observed, the call returns
+    /// [`OperationError::Cancelled`] and the shard keeps whatever state was reached: every swap is
+    /// atomic and every segment reload is applied under its write lock, so reads stay consistent and
+    /// the next live_reload continues from there. The call never sets or resets the caller's flag.
+    pub fn live_reload_with_cancellation(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        self.live_reload_cancellable(&is_stopped)
     }
 
     /// [`live_reload`](Self::live_reload) with a caller-supplied hardware counter.
@@ -51,7 +71,30 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
+        self.live_reload_impl(hw_counter, &AtomicBool::new(false))
+    }
+
+    /// Shared by the counter-less entry points and by [`open`](Self::open), which is a live_reload
+    /// over an empty shard.
+    pub(super) fn live_reload_cancellable(&self, is_stopped: &AtomicBool) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let hw_counter = HardwareCounterCell::disposable();
+        self.live_reload_impl(&hw_counter, is_stopped)
+    }
+
+    fn live_reload_impl(
+        &self,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        check_process_stopped(is_stopped)?;
         let _live_reload_guard = self.live_reload_lock.lock();
+        check_process_stopped(is_stopped)?;
 
         // A benign mid-attempt segment removal re-runs the attempt against the fresh manifest;
         // bound the re-runs so a leader churning segments faster than the follower converges
@@ -59,7 +102,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         const MAX_ATTEMPTS: usize = 3;
 
         for _ in 0..MAX_ATTEMPTS {
-            match self.live_reload_attempt(hw_counter)? {
+            match self.live_reload_attempt(hw_counter, is_stopped)? {
                 LiveReloadOutcome::Complete => return Ok(()),
                 LiveReloadOutcome::ManifestChanged => {}
             }
@@ -86,12 +129,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     fn live_reload_attempt(
         &self,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
+        check_process_stopped(is_stopped)?;
+
         // 1. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
         let on_disk = self.enumerator.list_segments()?;
+        check_process_stopped(is_stopped)?;
 
         // 2. Load newly-appeared segments in parallel (outside the holder lock), then under the lock
         //    add them and drop removed ones, and collect the survivors to live_reload *after*
@@ -111,7 +158,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             &self.fs,
             new_segments,
             self.load_profile.as_ref(),
-        );
+            is_stopped,
+        )?;
+
+        // The swap below and the config re-derivation that follows it are one indivisible step:
+        // a config lagging behind the segment set must never be observable.
+        check_process_stopped(is_stopped)?;
 
         let survivors: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> = {
             let mut holder = self.segments.write();
@@ -160,9 +212,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         if let Some(derived) = derived {
             *self.config.write() = Arc::new(derived);
         }
+        check_process_stopped(is_stopped)?;
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
-        let results = reload_segments_parallel(&self.search_pool, survivors, hw_counter);
+        let results =
+            reload_segments_parallel(&self.search_pool, survivors, hw_counter, is_stopped)?;
 
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;
@@ -185,6 +239,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let outcome = if not_found.is_empty() {
             LiveReloadOutcome::Complete
         } else {
+            check_process_stopped(is_stopped)?;
             let fresh = self.enumerator.list_segments()?;
             let mut gone: Vec<Uuid> = Vec::new();
             let mut still_listed_error: Option<OperationError> = None;
@@ -218,6 +273,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         if let Some(err) = first_hard_error {
             return Err(err);
         }
+        check_process_stopped(is_stopped)?;
         Ok(outcome)
     }
 }
