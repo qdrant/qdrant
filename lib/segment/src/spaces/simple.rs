@@ -250,6 +250,17 @@ mod tests {
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
     }
 
+    #[test]
+    fn test_cosine_preprocessing_small_nonzero_vector() {
+        let vector = vec![1.0e-6; MIN_DIM_SIZE_AVX];
+
+        let preprocessed = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+
+        let squared_length: f32 = preprocessed.iter().map(|x| x * x).sum();
+
+        assert!((squared_length - 1.0).abs() <= 1.0e-6);
+    }
+
     /// If we preprocess a vector multiple times, we expect the same result.
     /// Renormalization should not produce something different.
     #[test]
