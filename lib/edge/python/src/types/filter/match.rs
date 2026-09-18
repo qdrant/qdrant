@@ -436,7 +436,7 @@ impl PyMatchAny {
 /// Create a MatchExcept.
 ///
 /// Args:
-///     except_: List of values to exclude.
+///     value: List of values to exclude.
 #[pyclass(name = "MatchExcept", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]

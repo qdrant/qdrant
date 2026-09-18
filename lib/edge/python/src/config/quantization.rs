@@ -476,7 +476,6 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
 ///
 /// Args:
 ///     always_ram: Whether to keep in RAM.
-///     plus: Enable the TurboQuant+ variant.
 ///     bits: Bit size used for compressed codes.
 #[pyclass(name = "TurboQuantQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
