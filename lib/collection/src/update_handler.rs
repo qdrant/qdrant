@@ -274,6 +274,21 @@ impl UpdateHandler {
         }
     }
 
+    /// Stop the flush worker and wait for it to finish.
+    ///
+    /// [`Self::stop_flush_worker`] only signals. A pass already running keeps flushing segments,
+    /// persisting clocks and acknowledging the WAL after it returns, so callers that need the
+    /// shard to stop changing must wait here instead.
+    pub async fn stop_and_wait_flush_worker(&mut self) {
+        self.stop_flush_worker();
+
+        if let Some(flush_worker) = self.flush_worker.take()
+            && let Err(err) = flush_worker.await
+        {
+            log::warn!("Flush worker failed while stopping: {err}");
+        }
+    }
+
     /// Signal the update worker to stop *without* waiting
     pub fn stop_update_worker(&self) {
         self.update_worker_cancel.cancel();
