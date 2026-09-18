@@ -62,7 +62,12 @@ where
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
         let mut algorithm = SearchAlgorithm::Hnsw;
-        if acorn_enabled
+        let pathseer_enabled = params
+            .and_then(|p| p.pathseer)
+            .is_some_and(|pathseer| pathseer.enable);
+        if pathseer_enabled && self.config.m0 != 0 && filter.is_some() {
+            algorithm = SearchAlgorithm::PathSeer;
+        } else if acorn_enabled
             && self.config.m0 != 0
             && let Some(filter) = filter
         {
@@ -94,7 +99,7 @@ where
             match algorithm {
                 SearchAlgorithm::Hnsw => (),
                 // ACORN is not implemented for graph with vectors yet (but possible)
-                SearchAlgorithm::Acorn => return Ok(None),
+                SearchAlgorithm::Acorn | SearchAlgorithm::PathSeer => return Ok(None),
             }
             if !self.graph.has_inline_vectors()
                 || !is_quantized_search(self.quantized_vectors, params)

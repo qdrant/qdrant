@@ -26,8 +26,8 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    Range, SearchParams, SeqNumberType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    PathSeerSearchParams, PayloadSchemaType, Range, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
@@ -47,13 +47,19 @@ fn test_filterable_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    _test_filterable_hnsw(query_variant, ef, max_failures);
+    _test_filterable_hnsw(query_variant, ef, max_failures, false);
+}
+
+#[test]
+fn test_pathseer_filterable_hnsw() {
+    _test_filterable_hnsw(QueryVariant::Nearest, 80, 5, true);
 }
 
 fn _test_filterable_hnsw(
     query_variant: QueryVariant,
     ef: usize,
     max_failures: usize, // out of 100
+    pathseer: bool,
 ) {
     let stopped = AtomicBool::new(false);
 
@@ -214,6 +220,7 @@ fn _test_filterable_hnsw(
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
+                    pathseer: pathseer.then(|| PathSeerSearchParams { enable: true }),
                     ..Default::default()
                 }),
                 &Default::default(),

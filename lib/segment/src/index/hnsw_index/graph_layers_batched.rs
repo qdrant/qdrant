@@ -77,7 +77,14 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let mut arena = stumpalo::Arena::new();
 
-        let entry = self.search_entry(entry_point, 0, scorer, is_stopped, &mut arena)?;
+        let entry = match algorithm {
+            SearchAlgorithm::PathSeer => {
+                self.search_entry_no_filter(entry_point, 0, scorer, is_stopped, &mut arena)?
+            }
+            SearchAlgorithm::Hnsw | SearchAlgorithm::Acorn => {
+                self.search_entry(entry_point, 0, scorer, is_stopped, &mut arena)?
+            }
+        };
         let ef = max(ef, top);
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
@@ -86,6 +93,8 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             SearchAlgorithm::Acorn => {
                 self.search_on_level_acorn(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
             }
+            SearchAlgorithm::PathSeer => self
+                .search_on_level_pathseer(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena),
         }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
@@ -161,6 +170,143 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             }
         }
         Ok(current_point)
+    }
+
+    /// Batched counterpart of
+    /// [`super::graph_layers::GraphLayersBase::search_entry_no_filter`].
+    fn search_entry_no_filter(
+        &self,
+        entry_point: EntryPoint,
+        target_level: usize,
+        points_scorer: &mut FilteredScorer,
+        is_stopped: &AtomicBool,
+        arena: &mut stumpalo::Arena,
+    ) -> OperationResult<ScoredPointOffset> {
+        let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point.point_id,
+            score: points_scorer.score_point(entry_point.point_id),
+        };
+        for level in rev_range(entry_point.level, target_level) {
+            let limit = self.hnsw_m.level_m(level);
+            let member_limit = if limit == 0 { usize::MAX } else { limit };
+
+            let mut changed = true;
+            while changed {
+                changed = false;
+                check_process_stopped(is_stopped)?;
+
+                arena.reset();
+                links.clear();
+                self.links
+                    .links(arena, &[current_point.idx], level, |_, links_it| {
+                        links.extend(links_it)
+                    })?;
+
+                links.retain(|&id| points_scorer.filters().check_live(id));
+                links.truncate(member_limit.min(links.len()));
+
+                let scored: Vec<_> = points_scorer.score_points_unfiltered(&links).collect();
+                for score_point in scored {
+                    if score_point.score > current_point.score {
+                        changed = true;
+                        current_point = score_point;
+                    }
+                }
+            }
+        }
+        Ok(current_point)
+    }
+
+    /// Batched counterpart of
+    /// [`super::graph_layers::GraphLayersBase::search_on_level_pathseer`].
+    fn search_on_level_pathseer(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &mut FilteredScorer,
+        _links_batch_size: usize,
+        is_stopped: &AtomicBool,
+        arena: &mut stumpalo::Arena,
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+        let mut visited = self.visited_pool.get(self.num_points());
+        visited.check_and_update_visited(level_entry.idx);
+
+        let mut context = SearchContext::new(ef);
+        context.candidates.push(level_entry);
+        if points_scorer.filters().check_vector(level_entry.idx) {
+            context.nearest.push(level_entry);
+        }
+
+        let m0 = self.hnsw_m.level_m(level);
+        let mut direct = Vec::with_capacity(m0);
+        let mut second = Vec::with_capacity(m0);
+        let mut to_score = Vec::with_capacity(2 * m0);
+
+        while let Some(candidate) = context.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
+            if context.nearest.is_full() && candidate.score < context.lower_bound() {
+                break;
+            }
+
+            let phase_two = context.nearest.is_full();
+            let prefilter_direct =
+                phase_two && !points_scorer.filters().check_vector(candidate.idx);
+            arena.reset();
+            direct.clear();
+            to_score.clear();
+            self.links
+                .links(arena, &[candidate.idx], level, |_, links_it| {
+                    direct.extend(links_it)
+                })?;
+
+            for &id in &direct {
+                if visited.check(id) || !points_scorer.filters().check_live(id) {
+                    continue;
+                }
+                if prefilter_direct && !points_scorer.filters().check_vector(id) {
+                    continue;
+                }
+                visited.check_and_update_visited(id);
+                to_score.push(id);
+            }
+
+            if !phase_two {
+                let mut remaining = m0;
+                for &parent in &direct {
+                    if remaining == 0 {
+                        break;
+                    }
+                    check_process_stopped(is_stopped)?;
+                    arena.reset();
+                    second.clear();
+                    self.links.links(arena, &[parent], level, |_, links_it| {
+                        second.extend(links_it)
+                    })?;
+                    for &id in second.iter().take(remaining) {
+                        if !visited.check(id) && points_scorer.filters().check_vector(id) {
+                            visited.check_and_update_visited(id);
+                            to_score.push(id);
+                        }
+                    }
+                    remaining = remaining.saturating_sub(second.len());
+                }
+            }
+
+            let scored: Vec<_> = points_scorer.score_points_unfiltered(&to_score).collect();
+            for point in scored {
+                if !context.nearest.is_full() || point.score > context.lower_bound() {
+                    context.candidates.push(point);
+                    if points_scorer.filters().check_vector(point.idx) {
+                        context.nearest.push(point);
+                    }
+                }
+            }
+        }
+
+        Ok(context.nearest)
     }
 
     /// Batched version of
@@ -565,6 +711,73 @@ mod tests {
     const TOP: usize = 5;
     const EF: usize = 16;
     const DISTANCE: Distance = Distance::Cosine;
+
+    #[test]
+    fn test_pathseer_batched_matches_direct_with_payload_filter() {
+        use crate::index::condition_checker::{ConditionCheckerEnum, TestBitOfId};
+        use crate::index::query_optimization::optimized_filter::OptimizedFilter;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let dir = Builder::new().prefix("pathseer_graph").tempdir().unwrap();
+        let (holder, builder) =
+            create_graph_layer_builder_fixture(200, 8, DIM, false, false, DISTANCE, &mut rng);
+        let graph = builder
+            .into_graph_layers(dir.path(), GraphLinksFormatParam::Compressed, true)
+            .unwrap();
+        let batched =
+            GraphLayersBatched::open(&MmapFs, dir.path(), GraphLinksResidency::Cold).unwrap();
+        let entry = graph.unfiltered_entry_point();
+        let deleted: BitVec = (0..200)
+            .map(|id| id % 7 == 0 && id != entry.point_id as usize)
+            .collect();
+        for _ in 0..5 {
+            let query = random_vector(&mut rng, DIM);
+            for ef in [1, 10, 40, 320] {
+                let filter = OptimizedFilter::from_checker(ConditionCheckerEnum::TestBitOfId(
+                    TestBitOfId(0),
+                ));
+                let mut scorer = FilteredScorer::new(
+                    query.clone().into(),
+                    holder.storage(),
+                    holder.quantized_vectors(),
+                    Some(filter),
+                    &deleted,
+                    HardwareCounterCell::new(),
+                )
+                .unwrap();
+                let reference = graph
+                    .search(
+                        TOP,
+                        ef,
+                        SearchAlgorithm::PathSeer,
+                        &mut scorer,
+                        entry,
+                        &DEFAULT_STOPPED,
+                    )
+                    .unwrap();
+                assert_eq!(reference.len(), TOP);
+                assert!(
+                    reference
+                        .iter()
+                        .all(|p| scorer.filters().check_vector(p.idx))
+                );
+                for batch_size in [1, 4, 16] {
+                    let result = batched
+                        .search(
+                            TOP,
+                            ef,
+                            SearchAlgorithm::PathSeer,
+                            &mut scorer,
+                            entry,
+                            batch_size,
+                            &DEFAULT_STOPPED,
+                        )
+                        .unwrap();
+                    assert_eq!(result, reference);
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_batched_search_matches_in_ram() {

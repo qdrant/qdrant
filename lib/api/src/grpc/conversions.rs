@@ -59,9 +59,9 @@ use crate::grpc::qdrant::{
     FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition,
     HealthCheckReply, HnswConfigDiff, IdfParams, IntegerIndexParams, IsEmptyCondition,
     IsNullCondition, ListCollectionsResponse, ListShardKeysResponse, Match, MinShould,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct,
-    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    NamedVectors, NestedCondition, PathSeerSearchParams, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription,
     StopwordsSet, StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult,
@@ -1002,6 +1002,24 @@ impl From<segment::types::AcornSearchParams> for AcornSearchParams {
     }
 }
 
+impl From<PathSeerSearchParams> for segment::types::PathSeerSearchParams {
+    fn from(params: PathSeerSearchParams) -> Self {
+        let PathSeerSearchParams { enable } = params;
+        Self {
+            enable: enable.unwrap_or(false),
+        }
+    }
+}
+
+impl From<segment::types::PathSeerSearchParams> for PathSeerSearchParams {
+    fn from(params: segment::types::PathSeerSearchParams) -> Self {
+        let segment::types::PathSeerSearchParams { enable } = params;
+        Self {
+            enable: Some(enable),
+        }
+    }
+}
+
 impl TryFrom<SearchParams> for segment::types::SearchParams {
     type Error = Status;
 
@@ -1013,6 +1031,7 @@ impl TryFrom<SearchParams> for segment::types::SearchParams {
             indexed_only,
             acorn,
             idf,
+            pathseer,
         } = params;
         Ok(Self {
             hnsw_ef: hnsw_ef.map(|x| x as usize),
@@ -1021,7 +1040,35 @@ impl TryFrom<SearchParams> for segment::types::SearchParams {
             indexed_only: indexed_only.unwrap_or(false),
             acorn: acorn.map(segment::types::AcornSearchParams::from),
             idf: idf.map(segment::types::IdfParams::try_from).transpose()?,
+            pathseer: pathseer.map(segment::types::PathSeerSearchParams::from),
         })
+    }
+}
+
+#[cfg(test)]
+mod pathseer_tests {
+    use super::*;
+
+    #[test]
+    fn pathseer_search_params_round_trip() {
+        for enable in [false, true] {
+            let original = segment::types::SearchParams {
+                hnsw_ef: Some(40),
+                pathseer: Some(segment::types::PathSeerSearchParams { enable }),
+                ..Default::default()
+            };
+            let wire = SearchParams::from(original.clone());
+            assert_eq!(
+                wire.pathseer,
+                Some(PathSeerSearchParams {
+                    enable: Some(enable)
+                })
+            );
+            assert_eq!(
+                segment::types::SearchParams::try_from(wire).unwrap(),
+                original
+            );
+        }
     }
 }
 
@@ -1034,6 +1081,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             indexed_only,
             acorn,
             idf,
+            pathseer,
         } = params;
         Self {
             hnsw_ef: hnsw_ef.map(|x| x as u64),
@@ -1042,6 +1090,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             indexed_only: Some(indexed_only),
             acorn: acorn.map(AcornSearchParams::from),
             idf: idf.map(IdfParams::from),
+            pathseer: pathseer.map(PathSeerSearchParams::from),
         }
     }
 }
