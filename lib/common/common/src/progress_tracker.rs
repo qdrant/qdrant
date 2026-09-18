@@ -216,10 +216,7 @@ impl ProgressTracker {
                 total,
             });
         } else {
-            debug_assert!(
-                false,
-                "bug: invalid path when adding adding progress tracking",
-            );
+            debug_assert!(false, "bug: invalid path when adding progress tracking",);
         }
         progress
     }
