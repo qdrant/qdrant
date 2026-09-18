@@ -5,6 +5,7 @@ requires-python = ">=3.10,<4"
 dependencies = [
     "grpc-interceptor>=0.15,<0.16",
     "grpc-requests>=0.1,<0.2",
+    "grpcio>=1.80,<2",
     "more-itertools>=10.8,<11",
     "pyjwt>=2.13.0,<3",
     "jsons>=1.6.3,<2",
