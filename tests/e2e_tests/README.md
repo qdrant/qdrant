@@ -28,5 +28,6 @@ via a dedicated `qdrant-e2e-builder` (docker-container driver) with a persistent
 
 - First run is cold; subsequent runs reuse the `cargo chef cook` layer while `Cargo.lock` is unchanged.
 - Cache is shared across checkouts and worktrees.
-- Reset: `rm -rf ~/.cache/qdrant-e2e-buildx`. Remove builder: `docker buildx rm qdrant-e2e-builder`.
-- CI never builds here — it loads the image from the `build-e2e-image` artifact.
+- The builder container is kept between runs. Remove it with `docker buildx rm qdrant-e2e-builder`.
+- The cache directory is never pruned and grows with every `Cargo.lock` change. Reset it with `rm -rf ~/.cache/qdrant-e2e-buildx`.
+- CI pre-builds `qdrant/qdrant:e2e-tests` in the workflow, so this path is skipped there.

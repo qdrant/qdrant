@@ -7,6 +7,7 @@ from typing import Generator
 import pytest
 import docker
 from docker.errors import ImageNotFound
+from filelock import FileLock
 
 from .models import QdrantContainerConfig
 from .utils import (
@@ -112,38 +113,47 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
 
         cache_dir = Path.home() / ".cache" / "qdrant-e2e-buildx"
         builder_name = "qdrant-e2e-builder"
-        if subprocess.run(
-                ["docker", "buildx", "inspect", builder_name],
-                capture_output=True,
-        ).returncode != 0:
-            subprocess.run(
-                ["docker", "buildx", "create", "--name", builder_name, "--driver", "docker-container"],
-                check=True,
-            )
-        build_cmd = [
-            "docker", "buildx", "build",
-            f"--builder={builder_name}",
-            "--build-arg=PROFILE=ci",
-            "--build-arg=FEATURES=data-consistency-check,staging",
-            f"--cache-from=type=local,src={cache_dir}",
-            f"--cache-to=type=local,dest={cache_dir},mode=max",
-            "--load",
-            str(project_root),
-            f"--tag={image_tag}"
-        ]
+        cache_dir.parent.mkdir(parents=True, exist_ok=True)
 
-        result = subprocess.run(build_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to build Docker image: {result.stderr}")
+        # With pytest-xdist every worker runs this session fixture, so serialize builder
+        # creation and builds; workers that got the lock later reuse the freshly built image.
+        with FileLock(cache_dir.parent / "qdrant-e2e-buildx.lock"):
+            built_by_other_worker = False
+            if not rebuild_image:
+                try:
+                    docker_client.images.get(image_tag)
+                    built_by_other_worker = True
+                except ImageNotFound:
+                    pass
 
-        print(f"Successfully built image {image_tag}")
+            if built_by_other_worker:
+                print(f"Docker image {image_tag} was built by another worker")
+            else:
+                if subprocess.run(
+                        ["docker", "buildx", "inspect", builder_name],
+                        capture_output=True,
+                ).returncode != 0:
+                    subprocess.run(
+                        ["docker", "buildx", "create", "--name", builder_name, "--driver", "docker-container"],
+                        check=True,
+                    )
+                build_cmd = [
+                    "docker", "buildx", "build",
+                    f"--builder={builder_name}",
+                    "--build-arg=PROFILE=ci",
+                    "--build-arg=FEATURES=data-consistency-check,staging",
+                    f"--cache-from=type=local,src={cache_dir}",
+                    f"--cache-to=type=local,dest={cache_dir},mode=max",
+                    "--load",
+                    str(project_root),
+                    f"--tag={image_tag}"
+                ]
 
-        request.addfinalizer(
-            lambda: subprocess.run(
-                ["docker", "buildx", "rm", builder_name],
-                capture_output=True,
-            )
-        )
+                result = subprocess.run(build_cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise RuntimeError(f"Failed to build Docker image: {result.stderr}")
+
+                print(f"Successfully built image {image_tag}")
     else:
         print(f"Using existing Docker image {image_tag}")
 

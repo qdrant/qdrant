@@ -394,6 +394,15 @@ wheels = [
 ]
 
 [[package]]
+name = "filelock"
+version = "3.32.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/59/e19834834cb01a32febfbb0f8a23a9088088f5d45991824ff2bc3b5e8acb/filelock-3.32.7.tar.gz", hash = "sha256:37b8a3d9811b0f9aef7e5ec5c71bb320de52df51e6ca9bcd6f5ad81187660da7", size = 225154, upload-time = "2026-09-16T00:24:20.907Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/df/31098c5aeb4d966b553641472bd55fcf5fdfac953549894b8a765ba44e91/filelock-3.32.7-py3-none-any.whl", hash = "sha256:65ff0d0190ea42038b32bda4b77834fb05be2cad4c5b9b01aa4dfb3614536e52", size = 100157, upload-time = "2026-09-16T00:24:19.543Z" },
+]
+
+[[package]]
 name = "fqdn"
 version = "1.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1747,6 +1756,7 @@ version = "0.0.1"
 source = { virtual = "." }
 dependencies = [
     { name = "docker" },
+    { name = "filelock" },
     { name = "grpc-interceptor" },
     { name = "grpc-requests" },
     { name = "jsons" },
@@ -1767,6 +1777,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "docker", specifier = ">=7.1.0,<8" },
+    { name = "filelock", specifier = ">=3.20,<4" },
     { name = "grpc-interceptor", specifier = ">=0.15,<0.16" },
     { name = "grpc-requests", specifier = ">=0.1,<0.2" },
     { name = "jsons", specifier = ">=1.6.3,<2" },
