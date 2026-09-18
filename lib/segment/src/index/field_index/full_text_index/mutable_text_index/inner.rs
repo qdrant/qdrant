@@ -1,5 +1,7 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 
 use super::super::full_text_index_read::{FullTextIndexRead, default_check_match_batch};
@@ -8,6 +10,7 @@ use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -64,6 +67,18 @@ impl FullTextIndexRead for MutableFullTextIndexInner {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>> {
         self.inverted_index.get_posting_len(token_id, hw_counter)
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        self.inverted_index
+            .score_bm25(query, accept, limit, is_stopped, hw_counter)
     }
 
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {

@@ -1,9 +1,11 @@
+use std::sync::atomic::AtomicBool;
+
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Partitioner, Rest, Select,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use serde_json::Value;
 
@@ -13,6 +15,7 @@ use super::inverted_index::{ParsedQuery, TokenId};
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
@@ -76,6 +79,23 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => index.posting_len(token_id, hw_counter),
             Self::Immutable(index) => index.posting_len(token_id, hw_counter),
             Self::OnDisk(index) => index.posting_len(token_id, hw_counter),
+        }
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        match self {
+            Self::Mutable(index) => index.score_bm25(query, accept, limit, is_stopped, hw_counter),
+            Self::Immutable(index) => {
+                index.score_bm25(query, accept, limit, is_stopped, hw_counter)
+            }
+            Self::OnDisk(index) => index.score_bm25(query, accept, limit, is_stopped, hw_counter),
         }
     }
 
