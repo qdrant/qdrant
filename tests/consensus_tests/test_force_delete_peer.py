@@ -1,5 +1,6 @@
 import pathlib
 from contextlib import ExitStack
+import grpc
 import pytest
 from .utils import *
 from .fixtures import upsert_points, create_collection
@@ -179,16 +180,28 @@ def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_met
         assert not pending.cancelled.is_set()
 
         if transfer_method == "wal_delta":
-            # A Dead replica rejects updates. Deliver the old batch only after
-            # survivor recovery so acceptance does not race replica activation.
             for uri in survivors:
                 wait_for_all_replicas_active(uri, COLLECTION_NAME, min_local_replicas=2)
+            # Replaying the old batch must not overwrite newer survivor writes.
+            points = [
+                {**point, "payload": {**point["payload"], "updated_after_removal": True}}
+                for point in points
+            ]
+            assert_http_ok(requests.put(
+                f"{receiver_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+                json={"points": points}, timeout=10,
+            ))
+            assert_survivors_recovered(survivors, from_peer_id, points)
             # Arm this after survivor recovery so its batches cannot take the gate.
             completion = gates.enter_context(proxy.hold_rpc_response(
                 UPDATE_BATCH, matches=lambda request: is_upsert_batch_for(request, COLLECTION_NAME, 0),
             ))
         pending.release()
-        completion.wait_for_request()
+        try:
+            completion.wait_for_request()
+        except grpc.RpcError as error:
+            # Explicit rejection is safe. A transport failure does not prove it.
+            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND)
         completion.release()
 
         source.kill()
