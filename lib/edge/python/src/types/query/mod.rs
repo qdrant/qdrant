@@ -162,39 +162,46 @@ impl Repr for PyQuery {
     }
 }
 
+/// Query types for vector search.
 #[pyclass(name = "Query", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyQueryInterface {
+    /// Create a nearest neighbor query.
     #[pyo3(constructor = (query, using = None))]
     Nearest {
         query: PyNamedVectorInternal,
         using: Option<String>,
     },
 
+    /// Create a recommend query using best score.
     #[pyo3(constructor = (query, using = None))]
     RecommendBestScore {
         query: PyRecommendQuery,
         using: Option<String>,
     },
 
+    /// Create a recommend query using sum of scores.
     #[pyo3(constructor = (query, using = None))]
     RecommendSumScores {
         query: PyRecommendQuery,
         using: Option<String>,
     },
 
+    /// Create a discover query.
     #[pyo3(constructor = (query, using = None))]
     Discover {
         query: PyDiscoverQuery,
         using: Option<String>,
     },
 
+    /// Create a context query.
     #[pyo3(constructor = (query, using = None))]
     Context {
         query: PyContextQuery,
         using: Option<String>,
     },
 
+    /// Create a feedback naive query.
     #[pyo3(constructor = (query, using = None))]
     FeedbackNaive {
         query: PyFeedbackNaiveQuery,
@@ -228,6 +235,13 @@ impl Repr for PyQueryInterface {
     }
 }
 
+/// Query for recommendation based on positive and negative examples.
+///
+/// Create a RecommendQuery.
+///
+/// Args:
+///     positives: Positive example vectors.
+///     negatives: Negative example vectors.
 #[pyclass(name = "RecommendQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -247,11 +261,13 @@ impl PyRecommendQuery {
         })
     }
 
+    /// Positive examples.
     #[getter]
     pub fn positives(&self) -> &[PyNamedVectorInternal] {
         PyNamedVectorInternal::wrap_slice(&self.0.positives)
     }
 
+    /// Negative examples.
     #[getter]
     pub fn negatives(&self) -> &[PyNamedVectorInternal] {
         PyNamedVectorInternal::wrap_slice(&self.0.negatives)
@@ -272,6 +288,13 @@ impl PyRecommendQuery {
     }
 }
 
+/// Query for discovery using a target and context pairs.
+///
+/// Create a DiscoverQuery.
+///
+/// Args:
+///     target: Target vector.
+///     pairs: Context pairs.
 #[pyclass(name = "DiscoverQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -288,11 +311,13 @@ impl PyDiscoverQuery {
         })
     }
 
+    /// Target vector.
     #[getter]
     pub fn target(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.target)
     }
 
+    /// Context pairs.
     #[getter]
     pub fn pairs(&self) -> &[PyContextPair] {
         PyContextPair::wrap_slice(&self.0.pairs)
@@ -313,6 +338,12 @@ impl PyDiscoverQuery {
     }
 }
 
+/// Query based on context pairs only.
+///
+/// Create a ContextQuery.
+///
+/// Args:
+///     pairs: Context pairs.
 #[pyclass(name = "ContextQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -328,6 +359,7 @@ impl PyContextQuery {
         })
     }
 
+    /// Context pairs.
     #[getter]
     pub fn pairs(&self) -> &[PyContextPair] {
         PyContextPair::wrap_slice(&self.0.pairs)
@@ -345,6 +377,13 @@ impl PyContextQuery {
     }
 }
 
+/// A positive/negative pair for context-based queries.
+///
+/// Create a ContextPair.
+///
+/// Args:
+///     positive: Positive example.
+///     negative: Negative example.
 #[pyclass(name = "ContextPair", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -361,11 +400,13 @@ impl PyContextPair {
         })
     }
 
+    /// Positive example.
     #[getter]
     pub fn positive(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.positive)
     }
 
+    /// Negative example.
     #[getter]
     pub fn negative(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.negative)
@@ -397,6 +438,14 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     }
 }
 
+/// Query using naive feedback approach.
+///
+/// Create a FeedbackNaiveQuery.
+///
+/// Args:
+///     target: Target vector.
+///     feedback: Feedback items with scores.
+///     strategy: Feedback coefficients.
 #[pyclass(name = "FeedbackNaiveQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -418,16 +467,19 @@ impl PyFeedbackNaiveQuery {
         })
     }
 
+    /// Target vector.
     #[getter]
     pub fn target(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.target)
     }
 
+    /// Feedback items.
     #[getter]
     pub fn feedback(&self) -> &[PyFeedbackItem] {
         PyFeedbackItem::wrap_slice(&self.0.feedback)
     }
 
+    /// Coefficients.
     #[getter]
     pub fn coefficients(&self) -> PyNaiveFeedbackCoefficients {
         PyNaiveFeedbackCoefficients(self.0.coefficients)
@@ -449,6 +501,13 @@ impl PyFeedbackNaiveQuery {
     }
 }
 
+/// A feedback item with vector and score.
+///
+/// Create a FeedbackItem.
+///
+/// Args:
+///     vector: Feedback vector.
+///     score: Feedback score.
 #[pyclass(name = "FeedbackItem", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -465,11 +524,13 @@ impl PyFeedbackItem {
         })
     }
 
+    /// Feedback vector.
     #[getter]
     pub fn vector(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.vector)
     }
 
+    /// Feedback score.
     #[getter]
     pub fn score(&self) -> f32 {
         self.0.score.into_inner()
@@ -501,6 +562,14 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     }
 }
 
+/// Coefficients for naive feedback query.
+///
+/// Create NaiveFeedbackStrategy coefficients.
+///
+/// Args:
+///     a: Coefficient a.
+///     b: Coefficient b.
+///     c: Coefficient c.
 #[pyclass(name = "NaiveFeedbackStrategy", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyNaiveFeedbackCoefficients(NaiveFeedbackCoefficients);
@@ -517,16 +586,19 @@ impl PyNaiveFeedbackCoefficients {
         })
     }
 
+    /// Coefficient a.
     #[getter]
     pub fn a(&self) -> f32 {
         self.0.a.into_inner()
     }
 
+    /// Coefficient b.
     #[getter]
     pub fn b(&self) -> f32 {
         self.0.b.into_inner()
     }
 
+    /// Coefficient c.
     #[getter]
     pub fn c(&self) -> f32 {
         self.0.c.into_inner()

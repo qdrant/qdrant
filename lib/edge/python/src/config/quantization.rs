@@ -108,6 +108,16 @@ impl Repr for PyQuantizationConfig {
     }
 }
 
+/// Configuration for scalar quantization.
+///
+/// Create a ScalarQuantizationConfig.
+///
+/// Args:
+///     type: Scalar type (e.g., Int8).
+///     quantile: Quantile for normalization.
+///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+///     memory: Memory placement of the quantized vectors. Overrides the deprecated
+///             always_ram flag if both are set.
 #[pyclass(name = "ScalarQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -132,16 +142,19 @@ impl PyScalarQuantizationConfig {
         })
     }
 
+    /// Scalar type.
     #[getter]
     pub fn r#type(&self) -> PyScalarType {
         PyScalarType::from(self.0.r#type)
     }
 
+    /// Quantile.
     #[getter]
     pub fn quantile(&self) -> Option<f32> {
         self.0.quantile
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -150,6 +163,7 @@ impl PyScalarQuantizationConfig {
         }
     }
 
+    /// Memory placement of the quantized vectors, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
@@ -172,6 +186,7 @@ impl PyScalarQuantizationConfig {
     }
 }
 
+/// Scalar quantization types.
 #[pyclass(name = "ScalarType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyScalarType {
@@ -204,6 +219,15 @@ impl From<PyScalarType> for ScalarType {
     }
 }
 
+/// Configuration for product quantization.
+///
+/// Create a ProductQuantizationConfig.
+///
+/// Args:
+///     compression: Compression ratio.
+///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+///     memory: Memory placement of the quantized vectors. Overrides the deprecated
+///             always_ram flag if both are set.
 #[pyclass(name = "ProductQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -226,11 +250,13 @@ impl PyProductQuantizationConfig {
         })
     }
 
+    /// Compression ratio.
     #[getter]
     pub fn compression(&self) -> PyCompressionRatio {
         PyCompressionRatio::from(self.0.compression)
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -239,6 +265,7 @@ impl PyProductQuantizationConfig {
         }
     }
 
+    /// Memory placement of the quantized vectors, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
@@ -260,6 +287,7 @@ impl PyProductQuantizationConfig {
     }
 }
 
+/// Product quantization compression ratios.
 #[pyclass(name = "CompressionRatio", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyCompressionRatio {
@@ -308,6 +336,16 @@ impl From<PyCompressionRatio> for CompressionRatio {
     }
 }
 
+/// Configuration for binary quantization.
+///
+/// Create a BinaryQuantizationConfig.
+///
+/// Args:
+///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+///     encoding: Binary encoding type.
+///     query_encoding: Query encoding type.
+///     memory: Memory placement of the quantized vectors. Overrides the deprecated
+///             always_ram flag if both are set.
 #[pyclass(name = "BinaryQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -332,6 +370,7 @@ impl PyBinaryQuantizationConfig {
         })
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -340,16 +379,19 @@ impl PyBinaryQuantizationConfig {
         }
     }
 
+    /// Memory placement of the quantized vectors, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Encoding.
     #[getter]
     pub fn encoding(&self) -> Option<PyBinaryQuantizationEncoding> {
         self.0.encoding.map(PyBinaryQuantizationEncoding::from)
     }
 
+    /// Query encoding.
     #[getter]
     pub fn query_encoding(&self) -> Option<PyBinaryQuantizationQueryEncoding> {
         self.0
@@ -374,6 +416,7 @@ impl PyBinaryQuantizationConfig {
     }
 }
 
+/// Binary quantization encoding types.
 #[pyclass(name = "BinaryQuantizationEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationEncoding {
@@ -418,6 +461,7 @@ impl From<PyBinaryQuantizationEncoding> for BinaryQuantizationEncoding {
     }
 }
 
+/// Binary quantization query encoding types.
 #[pyclass(name = "BinaryQuantizationQueryEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationQueryEncoding {
@@ -470,6 +514,15 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
     }
 }
 
+/// Configuration for TurboQuant quantization.
+///
+/// Create a TurboQuantQuantizationConfig.
+///
+/// Args:
+///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+///     bits: Bit size used for compressed codes.
+///     memory: Memory placement of the quantized vectors. Overrides the deprecated
+///             always_ram flag if both are set.
 #[pyclass(name = "TurboQuantQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -492,6 +545,7 @@ impl PyTurboQuantQuantizationConfig {
         })
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -500,11 +554,13 @@ impl PyTurboQuantQuantizationConfig {
         }
     }
 
+    /// Memory placement of the quantized vectors, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Bit size.
     #[getter]
     pub fn bits(&self) -> Option<PyTurboQuantBitSize> {
         self.0.bits.map(PyTurboQuantBitSize::from)
@@ -526,6 +582,7 @@ impl PyTurboQuantQuantizationConfig {
     }
 }
 
+/// TurboQuant bit size for compressed codes.
 #[pyclass(name = "TurboQuantBitSize", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTurboQuantBitSize {

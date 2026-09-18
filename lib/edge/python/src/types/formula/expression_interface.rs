@@ -7,89 +7,75 @@ use pyo3::prelude::*;
 use crate::repr::*;
 use crate::*;
 
+/// Expression types for formulas.
 #[pyclass(name = "Expression", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyExpressionInterface {
-    Constant {
-        val: f32,
-    },
+    /// Create a constant expression.
+    Constant { val: f32 },
 
-    Variable {
-        var: String,
-    },
+    /// Create a variable expression.
+    Variable { var: String },
 
-    Condition {
-        cond: Boxed<PyCondition>,
-    },
+    /// Create a condition expression (returns 1 if true, 0 if false).
+    Condition { cond: Boxed<PyCondition> },
 
-    GeoDistance {
-        origin: PyGeoPoint,
-        to: PyJsonPath,
-    },
+    /// Create a geo distance expression.
+    GeoDistance { origin: PyGeoPoint, to: PyJsonPath },
 
-    Datetime {
-        date_time: String,
-    },
+    /// Create a datetime constant expression.
+    Datetime { date_time: String },
 
-    DatetimeKey {
-        path: PyJsonPath,
-    },
+    /// Create a datetime field expression.
+    DatetimeKey { path: PyJsonPath },
 
-    Mult {
-        exprs: Vec<PyExpression>,
-    },
+    /// Create a multiplication expression.
+    Mult { exprs: Vec<PyExpression> },
 
-    Sum {
-        exprs: Vec<PyExpression>,
-    },
+    /// Create a sum expression.
+    Sum { exprs: Vec<PyExpression> },
 
-    Max {
-        exprs: Vec<PyExpression>,
-    },
+    /// Create a maximum expression. Requires at least one operand.
+    Max { exprs: Vec<PyExpression> },
 
-    Min {
-        exprs: Vec<PyExpression>,
-    },
+    /// Create a minimum expression. Requires at least one operand.
+    Min { exprs: Vec<PyExpression> },
 
-    Neg {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create a negation expression.
+    Neg { expr: Boxed<PyExpression> },
 
+    /// Create a division expression.
     Div {
         left: Boxed<PyExpression>,
         right: Boxed<PyExpression>,
         by_zero_default: Option<f32>,
     },
 
-    Sqrt {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create a square root expression.
+    Sqrt { expr: Boxed<PyExpression> },
 
+    /// Create a power expression.
     Pow {
         base: Boxed<PyExpression>,
         exponent: Boxed<PyExpression>,
     },
 
-    Exp {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create an exponential expression.
+    Exp { expr: Boxed<PyExpression> },
 
-    Log10 {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create a log10 expression.
+    Log10 { expr: Boxed<PyExpression> },
 
-    Ln {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create a natural log expression.
+    Ln { expr: Boxed<PyExpression> },
 
-    Acosh {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create an inverse hyperbolic cosine expression.
+    Acosh { expr: Boxed<PyExpression> },
 
-    Abs {
-        expr: Boxed<PyExpression>,
-    },
+    /// Create an absolute value expression.
+    Abs { expr: Boxed<PyExpression> },
 
+    /// Create a decay expression.
     Decay {
         kind: PyDecayKind,
         x: Boxed<PyExpression>,

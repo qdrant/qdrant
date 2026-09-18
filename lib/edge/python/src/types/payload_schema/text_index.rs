@@ -17,6 +17,31 @@ use crate::repr::*;
 use crate::type_hint::Alias;
 use crate::types::json_path::PyJsonPath;
 
+/// Index parameters for text fields.
+///
+/// Create TextIndexParams.
+///
+/// Args:
+///     tokenizer: Tokenizer type.
+///     min_token_len: Minimum token length.
+///     max_token_len: Maximum token length.
+///     lowercase: Convert to lowercase.
+///     ascii_folding: Apply ASCII folding.
+///     phrase_matching: Enable phrase matching.
+///     stopwords: Stopwords configuration.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     stemmer: Stemming algorithm.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     scoring: Record document lengths and term frequencies, so a
+///              TextQuery can rank points over this field. `True` for
+///              BM25, or the TextScoringParams. Default: disabled.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].title". The field must be inside the array's
+///             elements. Every query on the field treats each element as its own
+///             document: a condition matches a point when a single element matches
+///             it, and BM25 scores elements separately.
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -61,41 +86,49 @@ impl PyTextIndexParams {
         })
     }
 
+    /// Tokenizer type.
     #[getter]
     pub fn tokenizer(&self) -> PyTokenizerType {
         PyTokenizerType::from(self.0.tokenizer)
     }
 
+    /// Minimum token length.
     #[getter]
     pub fn min_token_len(&self) -> Option<usize> {
         self.0.min_token_len
     }
 
+    /// Maximum token length.
     #[getter]
     pub fn max_token_len(&self) -> Option<usize> {
         self.0.max_token_len
     }
 
+    /// Convert to lowercase.
     #[getter]
     pub fn lowercase(&self) -> Option<bool> {
         self.0.lowercase
     }
 
+    /// Apply ASCII folding.
     #[getter]
     pub fn ascii_folding(&self) -> Option<bool> {
         self.0.ascii_folding
     }
 
+    /// Enable phrase matching.
     #[getter]
     pub fn phrase_matching(&self) -> Option<bool> {
         self.0.phrase_matching
     }
 
+    /// Stopwords configuration.
     #[getter]
     pub fn stopwords(&self) -> Option<&PyStopwords> {
         self.0.stopwords.as_ref().map(PyStopwords::wrap_ref)
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -104,26 +137,31 @@ impl PyTextIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Stemming algorithm.
     #[getter]
     pub fn stemmer(&self) -> Option<&PyStemmingAlgorithm> {
         self.0.stemmer.as_ref().map(PyStemmingAlgorithm::wrap_ref)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// How the index ranks documents, or None if it doesn't.
     #[getter]
     pub fn scoring(&self) -> Option<PyTextScoringParams> {
         self.0.scoring.clone().map(PyTextScoringParams)
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -168,6 +206,14 @@ impl PyTextScoringInterface {
     }
 }
 
+/// Ranking over a text index. The index records the length of each
+/// document, which ranking normalizes by. BM25's `k` and `b` are set per
+/// query, with `Bm25Params`.
+///
+/// Create TextScoringParams.
+///
+/// Args:
+///     type: How documents are ranked. Default: TextScoringType.Bm25.
 #[pyclass(name = "TextScoringParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -184,6 +230,7 @@ impl PyTextScoringParams {
         })
     }
 
+    /// How documents are ranked.
     #[getter]
     pub fn r#type(&self) -> PyTextScoringType {
         PyTextScoringType::from(self.0.r#type)
@@ -197,6 +244,7 @@ impl PyTextScoringParams {
     }
 }
 
+/// How a text index ranks documents.
 #[pyclass(name = "TextScoringType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTextScoringType {
@@ -229,6 +277,7 @@ impl From<PyTextScoringType> for TextScoringType {
     }
 }
 
+/// Text tokenizer types.
 #[pyclass(name = "TokenizerType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTokenizerType {
@@ -344,6 +393,7 @@ impl Repr for PyStopwords {
     }
 }
 
+/// Predefined stopword languages.
 #[pyclass(name = "Language", from_py_object)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PyLanguage {
@@ -492,6 +542,13 @@ impl From<PyLanguage> for Language {
     }
 }
 
+/// Custom stopwords set.
+///
+/// Create a StopwordsSet.
+///
+/// Args:
+///     languages: Predefined language stopwords to include.
+///     custom: Custom stopwords to add.
 #[pyclass(name = "StopwordsSet", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -509,6 +566,7 @@ impl PyStopwordsSet {
         })
     }
 
+    /// Predefined language stopwords.
     #[getter]
     pub fn languages(&self) -> Option<BTreeSet<PyLanguage>> {
         self.0
@@ -517,6 +575,7 @@ impl PyStopwordsSet {
             .map(|langs| langs.iter().copied().map(PyLanguage::from).collect())
     }
 
+    /// Custom stopwords.
     #[getter]
     pub fn custom(&self) -> Option<&BTreeSet<String>> {
         self.0.custom.as_ref()
@@ -623,6 +682,12 @@ impl Repr for PyStemmingAlgorithm {
     }
 }
 
+/// Snowball stemming algorithm parameters.
+///
+/// Create SnowballParams.
+///
+/// Args:
+///     language: Snowball language.
 #[pyclass(name = "SnowballParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -639,6 +704,7 @@ impl PySnowballParams {
         })
     }
 
+    /// Snowball language.
     #[getter]
     pub fn language(&self) -> PySnowballLanguage {
         PySnowballLanguage::from(self.0.language)
@@ -656,6 +722,8 @@ impl PySnowballParams {
 }
 
 /// Explicitly disable stemming, overriding the language default.
+///
+/// Create a DisabledStemmer.
 #[pyclass(name = "DisabledStemmer", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -687,6 +755,7 @@ impl PyDisabledStemmer {
     }
 }
 
+/// Snowball stemmer languages.
 #[pyclass(name = "SnowballLanguage", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySnowballLanguage {
