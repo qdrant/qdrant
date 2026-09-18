@@ -89,6 +89,7 @@ fn create_builder(
         IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_gridstore(
             temp_dir.path().to_path_buf(),
             config,
+            true,
         )),
         IndexType::OnDisk => IndexBuilder::OnDisk(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
@@ -329,6 +330,23 @@ fn test_congruence(
                 index_a.values_is_empty(point_id),
                 index_b.values_is_empty(point_id),
             );
+        }
+
+        // Every shape answers the same length for every point, deleted ones
+        // included, and the same total. Only before a reopen: the production
+        // constructors read the scoring const, so the gridstore reopen records
+        // nothing while the mmap reopen still finds its sidecar.
+        if !reopen {
+            let total_a = index_a.total_tokens(&hw_counter).unwrap();
+            assert!(total_a.is_some(), "{type_a:?} recorded no lengths");
+            assert_eq!(total_a, index_b.total_tokens(&hw_counter).unwrap());
+            for point_id in 0..POINT_COUNT as PointOffsetType {
+                assert_eq!(
+                    index_a.doc_len(point_id, &hw_counter).unwrap(),
+                    index_b.doc_len(point_id, &hw_counter).unwrap(),
+                    "doc_len of {point_id} differs between {type_a:?} and {type_b:?}",
+                );
+            }
         }
 
         let probe_tokens = ["doesnotexist", keywords[0].as_str()];
