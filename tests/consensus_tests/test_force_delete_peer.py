@@ -245,7 +245,7 @@ def test_late_snapshot_restore_after_active_must_not_drop_newer_writes(stream_re
     proxy = processes[0].proxy
 
     with ExitStack() as gates:
-        # Hold after clear_local (PartialSnapshot / empty), before snapshot bytes arrive.
+        # Hold after clear_local (Recovery / empty), before snapshot bytes arrive.
         completion = gates.enter_context(proxy.hold_rpc_response(RECOVER_SNAPSHOT))
         pending = gates.enter_context(proxy.hold_snapshot_download(source_uri, COLLECTION_NAME, 0))
 

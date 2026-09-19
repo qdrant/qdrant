@@ -412,7 +412,7 @@ impl ShardReplicaSet {
     /// the recovered shard.
     ///
     /// Only safe to call while the shard is in a state that prevents user requests
-    /// (`PartialSnapshot` during a shard transfer). Do NOT call this from a
+    /// (`Recovery` during a shard transfer). Do NOT call this from a
     /// user-triggered URL recovery path, where the shard may still be serving queries.
     ///
     /// Writes the shard initializing flag before clearing, so that a crash between
@@ -425,7 +425,7 @@ impl ShardReplicaSet {
         let mut local = self.local.write().await;
 
         // Callers must only invoke this while the shard is in a state that cannot
-        // be a source of truth (e.g. `PartialSnapshot` during a shard transfer).
+        // be a source of truth (e.g. `Recovery` during a shard transfer).
         // Clearing a source-of-truth replica would silently drop data that may
         // still be serving queries.
         if self

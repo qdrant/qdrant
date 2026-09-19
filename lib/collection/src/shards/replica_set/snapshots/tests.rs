@@ -134,7 +134,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
         Arc::new(new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await);
 
     // `clear_local_for_snapshot_recovery` refuses to run on a source-of-truth replica.
-    // The receiving replica of a snapshot transfer sits in `PartialSnapshot`.
+    // The receiving replica of a snapshot transfer sits in `Recovery`.
     target_replica_set
         .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
         .await
@@ -241,12 +241,12 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
 }
 
 /// After force-delete mid snapshot transfer, the receiver may already have cleared
-/// under `PartialSnapshot`. Survivors then heal it to `Active` and accept writes.
+/// under `Recovery`. Survivors then heal it to `Active` and accept writes.
 /// A late `restore_local_replica_from` from the deleted source must not replace that
 /// data.
 ///
 /// ```text
-/// clear (PartialSnapshot) -> heal to Active -> write P_new -> late restore(A)
+/// clear (Recovery) -> heal to Active -> write P_new -> late restore(A)
 ///                                                         \-> must keep P_new
 /// ```
 #[tokio::test(flavor = "multi_thread")]
