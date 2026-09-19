@@ -295,9 +295,7 @@ def test_late_snapshot_restore_after_active_must_not_drop_newer_writes(stream_re
         try:
             completion.wait_for_request()
         except grpc.RpcError as error:
-            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT)
-            if error.code() == grpc.StatusCode.INVALID_ARGUMENT:
-                assert "no shard transfer" in error.details()
+            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND)
         completion.release()
 
         source.kill()
