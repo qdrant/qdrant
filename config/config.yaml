@@ -487,3 +487,6 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
+#   # If true, write audit log entries to stdout in addition to the log file.
+#   # Default: false
+#   stdout: false
