@@ -32,11 +32,13 @@
 //! every distance, and the pass only ever compares scores.
 
 use std::cmp::Reverse;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
+use fs_err as fs;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
@@ -56,6 +58,11 @@ const POINT_CHUNK: usize = 256;
 
 /// How many points one rayon task rewrites in steps B–D.
 const REWRITE_CHUNK: usize = 512;
+
+/// Environment variable that turns the provenance dump of the pass on, by naming the directory to
+/// write it into. Unset (the normal case) means no dump and no cost — see
+/// [`write_projection_dump`] for the format.
+pub const PROJECTION_DUMP_DIR_ENV: &str = "QDRANT_HNSW_PROJECTION_DUMP_DIR";
 
 /// Parameters of the projection post-pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -420,6 +427,10 @@ struct RewriteStats {
     level0_links: usize,
 }
 
+/// What one rewrite task returns: its share of the stats, and — only when the provenance dump is
+/// on — one row of projected links per point of its chunk, in point order.
+type RewritePartial = (RewriteStats, Vec<Vec<PointOffsetType>>);
+
 /// Steps B–D: build the inverse index, select the projected edges and rewrite
 /// the level-0 link lists in place.
 ///
@@ -463,15 +474,27 @@ where
         .map(|from| (from, (from + REWRITE_CHUNK).min(num_points)))
         .collect();
 
+    // Provenance dump (off unless `QDRANT_HNSW_PROJECTION_DUMP_DIR` is set): which level-0 links
+    // this pass added, per point — added, not merely placed, so a selected target the builder had
+    // already linked is left out (see the push below and `write_projection_dump`). Only the lookup
+    // happens on the default path — no allocation, no per-point bookkeeping — so a normal build
+    // pays nothing for it.
+    let dump_dir = std::env::var_os(PROJECTION_DUMP_DIR_ENV).map(PathBuf::from);
+
     let partials = ranges
         .par_iter()
-        .map(|&(from, to)| -> OperationResult<RewriteStats> {
+        .map(|&(from, to)| -> OperationResult<RewritePartial> {
             let scorer = make_internal_scorer()?;
             let mut local = RewriteStats {
                 points_with_candidates: 0,
                 projected_edges: 0,
                 level0_links: 0,
             };
+            // One row per point of this chunk, in point order; stays empty when not dumping.
+            let mut dumped: Vec<Vec<PointOffsetType>> = Vec::new();
+            if dump_dir.is_some() {
+                dumped.reserve(to - from);
+            }
             let mut sampled: Vec<u32> = Vec::new();
             let mut occurrences: Vec<PointOffsetType> = Vec::new();
             let mut candidates: Vec<(u32, PointOffsetType)> = Vec::new();
@@ -489,6 +512,9 @@ where
                 if retrieving.is_empty() {
                     // No training query wants this point: keep its list as is.
                     local.level0_links += original.len();
+                    if dump_dir.is_some() {
+                        dumped.push(Vec::new());
+                    }
                     continue;
                 }
                 local.points_with_candidates += 1;
@@ -561,13 +587,36 @@ where
 
                 local.projected_edges += selected.len().min(m0);
                 local.level0_links += new_links.len();
+                if dump_dir.is_some() {
+                    // Exactly the links the pass ADDED: the ones it placed (`selected`, in
+                    // selection order, cut to the degree cap the way step D cuts it) minus the
+                    // ones the builder had already linked. `selected` is chosen from co-retrieval
+                    // candidates with no exclusion of the existing list -- which is precisely why
+                    // step D above has to de-duplicate against `original` -- so a target the
+                    // builder had already chosen would otherwise be recorded here as projected
+                    // provenance it is not. `original` is the list as it was read at the top of
+                    // this iteration, before `set_level0_links` below overwrites it.
+                    dumped.push(
+                        selected[..selected.len().min(m0)]
+                            .iter()
+                            .filter(|c| !original.contains(c))
+                            .copied()
+                            .collect(),
+                    );
+                }
                 builder.set_level0_links(u, new_links.iter().copied());
             }
-            Ok(local)
+            Ok((local, dumped))
         })
         .collect::<OperationResult<Vec<_>>>()?;
 
-    Ok(partials.into_iter().fold(
+    if let Some(dir) = &dump_dir {
+        // `ranges` covers `0..num_points` in order and `par_iter().collect()` keeps that order, so
+        // concatenating the chunks yields one row per point, point id ascending.
+        write_projection_dump(dir, partials.iter().flat_map(|(_, rows)| rows.iter()))?;
+    }
+
+    Ok(partials.into_iter().map(|(stats, _)| stats).fold(
         RewriteStats {
             points_with_candidates: 0,
             projected_edges: 0,
@@ -580,6 +629,43 @@ where
             acc
         },
     ))
+}
+
+/// Write the provenance dump of one projection pass: which level-0 links the pass added, per
+/// point, as a CSR pair of flat little-endian arrays (what `numpy.fromfile` reads).
+///
+/// | file | dtype | length | meaning |
+/// |---|---|---|---|
+/// | `projected_offsets.u64` | `uint64` | `points + 1` | CSR row index: point `v`'s projected links are `projected_links[offsets[v]..offsets[v + 1]]` |
+/// | `projected_links.u32` | `uint32` | the last offset | the projected link targets, as **internal** point ids, in selection order |
+///
+/// "Added" is meant literally: a row holds the projected links that were **not already builder
+/// links** of that point. A selected target the builder had already linked is not listed — the
+/// pass moved it to the front of the list but did not create it, so counting it as projected
+/// provenance would over-attribute. A point no training query retrieved has an empty row, and so
+/// does a point every one of whose selected targets it was already linked to. The ids are internal
+/// (segment point offsets), the same ids the graph's own link lists use, so a reader joins them to
+/// token positions through the segment's id map.
+///
+/// `rows` must yield exactly one row per point, point id ascending.
+fn write_projection_dump<'r, I>(dir: &Path, rows: I) -> OperationResult<()>
+where
+    I: Iterator<Item = &'r Vec<PointOffsetType>>,
+{
+    fs::create_dir_all(dir)?;
+    let mut offsets: Vec<u8> = vec![0u8; size_of::<u64>()];
+    let mut links: Vec<u8> = Vec::new();
+    let mut offset = 0u64;
+    for row in rows {
+        offset += row.len() as u64;
+        offsets.extend_from_slice(&offset.to_le_bytes());
+        for &link in row {
+            links.extend_from_slice(&link.to_le_bytes());
+        }
+    }
+    fs::write(dir.join("projected_offsets.u64"), &offsets)?;
+    fs::write(dir.join("projected_links.u32"), &links)?;
+    Ok(())
 }
 
 /// Derive a per-point RNG seed, so that sub-sampling is reproducible for a given

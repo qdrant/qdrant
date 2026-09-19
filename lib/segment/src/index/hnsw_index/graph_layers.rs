@@ -501,6 +501,11 @@ impl GraphLayers {
         self.links.point_level(point_id)
     }
 
+    /// Number of points stored in the graph (i.e. the level-0 population).
+    pub fn num_points(&self) -> usize {
+        self.links.num_points()
+    }
+
     #[cfg(any(test, feature = "testing"))]
     pub fn unfiltered_entry_point(&self) -> EntryPoint {
         self.entry_points.get_entry_point(|_| true).unwrap()

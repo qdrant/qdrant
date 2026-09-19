@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::index::hnsw_index::training_vectors::training_vectors_dir;
 use segment::types::HnswGlobalConfig;
 use shard::files::SEGMENTS_PATH;
 use shard::optimizers::config::{
@@ -98,9 +99,18 @@ impl EdgeShard {
             let config = Arc::clone(&self.config);
             LiveVectorNamesProvider::new(move || config.read().vector_names())
         };
+        // HNSW training vectors for the query-aware projection post-pass, by the same convention
+        // the server uses one level up: the server points segment builds at
+        // `<collection>/hnsw_training_vectors` (`lib/collection/src/optimizers_builder.rs:291`),
+        // and an edge shard has no collection directory above it, so the shard directory stands in
+        // for it. When the directory does not exist this is `None` — exactly what every shard that
+        // never uploaded training vectors gets, so the plain build is unchanged.
         let segment_optimizer_config = cfg
             .segment_optimizer_config()
-            .with_live_vector_names(live_vector_names);
+            .with_live_vector_names(live_vector_names)
+            .with_hnsw_training_vectors_dir(
+                Some(training_vectors_dir(&self.path)).filter(|dir| dir.exists()),
+            );
         let global_hnsw_config = cfg.hnsw_config();
         let optimizers_config = cfg.optimizers();
         let hnsw_global_config = HnswGlobalConfig::default();
