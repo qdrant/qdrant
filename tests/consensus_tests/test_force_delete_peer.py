@@ -41,9 +41,10 @@ def peer_is_removed_from_cluster_and_transfers(peer_api_uri: str, removed_peer_i
     return True
 
 
-@pytest.fixture
-def transfer_cluster(tmp_path: pathlib.Path):
-    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, use_peer_proxy=True)
+def _transfer_cluster(tmp_path: pathlib.Path, extra_env=None):
+    peer_api_uris, _, _ = start_cluster(
+        tmp_path, N_PEERS, use_peer_proxy=True, extra_env=extra_env,
+    )
 
     create_collection(peer_api_uris[0], shard_number=2, replication_factor=3, write_consistency_factor=3)
     wait_collection_exists_and_active_on_all_peers(
@@ -63,6 +64,20 @@ def transfer_cluster(tmp_path: pathlib.Path):
     ]
     assert_http_ok(upsert_points(peer_api_uris[0], points))
     return peer_api_uris, points
+
+
+@pytest.fixture
+def transfer_cluster(tmp_path: pathlib.Path):
+    return _transfer_cluster(tmp_path)
+
+
+@pytest.fixture
+def stream_records_heal_cluster(tmp_path: pathlib.Path):
+    # Auto-heal must not use snapshot: an abandoned Recover holds snapshot_recovery_lock,
+    # so a snapshot heal stays blocked on download and never reaches Active before release.
+    return _transfer_cluster(tmp_path, extra_env={
+        "QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "stream_records",
+    })
 
 
 @pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
@@ -206,6 +221,85 @@ def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_met
 
         source.kill()
         processes.remove(source)
+    assert_survivors_recovered(survivors, from_peer_id, points)
+
+
+def test_late_snapshot_restore_after_active_must_not_drop_newer_writes(stream_records_heal_cluster):
+    """Force-delete mid snapshot transfer, heal via stream_records, write P_new, then release.
+
+    Matches the unit test clear → Active → P_new → late restore, but end-to-end with PeerProxy.
+    Auto-heal uses stream_records so it is not blocked by the abandoned Recover's
+    snapshot_recovery_lock (snapshot heal would hang until release).
+    """
+    peer_api_uris, points = stream_records_heal_cluster
+    leader = get_leader(peer_api_uris[0])
+    source_index = next(
+        index for index in (2, 1) if get_peer_id(peer_api_uris[index]) != leader
+    )
+    source = processes[source_index]
+    source_uri = peer_api_uris[source_index]
+    receiver_uri = peer_api_uris[0]
+    survivors = [uri for uri in peer_api_uris if uri != source_uri]
+    from_peer_id = get_peer_id(source_uri)
+    to_peer_id = get_peer_id(receiver_uri)
+    proxy = processes[0].proxy
+
+    with ExitStack() as gates:
+        # Hold after clear_local (PartialSnapshot / empty), before snapshot bytes arrive.
+        completion = gates.enter_context(proxy.hold_rpc_response(RECOVER_SNAPSHOT))
+        pending = gates.enter_context(proxy.hold_snapshot_download(source_uri, COLLECTION_NAME, 0))
+
+        replicate_shard(source_uri, COLLECTION_NAME, 0, from_peer_id, to_peer_id, method="snapshot")
+        pending.wait_for_request()
+        transfer, = get_collection_cluster_info(receiver_uri, COLLECTION_NAME)["shard_transfers"]
+        assert (transfer["from"], transfer["to"], transfer["shard_id"], transfer["method"]) == (
+            from_peer_id, to_peer_id, 0, "snapshot",
+        )
+        shard = next(
+            s for s in get_collection_cluster_info(receiver_uri, COLLECTION_NAME)["local_shards"]
+            if s["shard_id"] == 0
+        )
+        assert shard["state"] == "Recovery"
+        assert shard["points_count"] == 0
+
+        assert get_cluster_info(source_uri)["raft_info"]["leader"] != from_peer_id
+        gates.enter_context(source.proxy.block_rpc(RAFT_SEND))
+        for peer in processes:
+            if peer is not source:
+                gates.enter_context(peer.proxy.block_rpc(
+                    RAFT_SEND, matches=lambda request: decode_raft_message(request).from_peer == from_peer_id,
+                ))
+        force_delete_peer(receiver_uri, from_peer_id)
+        for uri in survivors:
+            wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
+        assert str(from_peer_id) in get_cluster_info(source_uri)["peers"]
+        assert not pending.cancelled.is_set()
+
+        # Survivor stream_records heal must finish while the abandoned download is held.
+        for uri in survivors:
+            wait_for_all_replicas_active(uri, COLLECTION_NAME, min_local_replicas=2)
+
+        points = [
+            {**point, "payload": {**point["payload"], "updated_after_removal": True}}
+            for point in points
+        ]
+        assert_http_ok(requests.put(
+            f"{receiver_uri}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": points}, timeout=10,
+        ))
+        assert_survivors_recovered(survivors, from_peer_id, points)
+
+        pending.release()
+        try:
+            completion.wait_for_request()
+        except grpc.RpcError as error:
+            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND)
+        completion.release()
+
+        source.kill()
+        processes.remove(source)
+
+    # Late restore from deleted A must not roll survivors back to P0.
     assert_survivors_recovered(survivors, from_peer_id, points)
 
 
