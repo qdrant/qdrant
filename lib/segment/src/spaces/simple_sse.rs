@@ -189,14 +189,14 @@ pub(crate) unsafe fn dot_similarity_sse(
             i += 16;
         }
 
-        let mut result = hsum128_ps_sse(sum128_1)
+        let mut result = (hsum128_ps_sse(sum128_1)
             + hsum128_ps_sse(sum128_2)
             + hsum128_ps_sse(sum128_3)
-            + hsum128_ps_sse(sum128_4);
+            + hsum128_ps_sse(sum128_4)) as f64;
         for i in 0..n - m {
-            result += (*ptr1.add(i)) * (*ptr2.add(i));
+            result += ((*ptr1.add(i)) * (*ptr2.add(i))) as f64;
         }
-        result
+        result as f32
     }
 }
 
