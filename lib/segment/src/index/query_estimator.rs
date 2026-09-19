@@ -163,9 +163,18 @@ pub fn combine_min_should_estimations(
     min_count: usize,
     total: usize,
 ) -> CardinalityEstimation {
-    // Prevent pathological allocation paths in combinations(min_count)
+    // `min_count` larger than the number of conditions can never be satisfied.
     if min_count > estimations.len() {
         return CardinalityEstimation::exact(0);
+    }
+
+    // The exact estimate below enumerates every `C(N, min_count)` combination of
+    // conditions. That count grows combinatorially, so a single `min_should` with
+    // a few dozen conditions and a mid-range `min_count` would request a
+    // pathologically large allocation (issue #7974). When there are too many
+    // combinations, approximate instead of enumerating them.
+    if !combinations_at_most(estimations.len(), min_count, MIN_SHOULD_MAX_COMBINATIONS) {
+        return approximate_min_should_estimations(estimations, total);
     }
 
     /*
@@ -182,6 +191,52 @@ pub fn combine_min_should_estimations(
         .collect_vec();
 
     combine_should_estimations(&intersection_estimations, total)
+}
+
+/// Maximum number of `min_should` condition combinations to enumerate exactly
+/// before falling back to an approximation (see `combine_min_should_estimations`).
+const MIN_SHOULD_MAX_COMBINATIONS: u128 = 100_000;
+
+/// Returns `true` if `C(n, k) <= limit`, computed without overflowing.
+///
+/// The binomial coefficient is built up incrementally
+/// (`C(n, i + 1) = C(n, i) * (n - i) / (i + 1)`), which stays exact at every
+/// step, and short-circuits as soon as the running value exceeds `limit`.
+fn combinations_at_most(n: usize, k: usize, limit: u128) -> bool {
+    if k > n {
+        // C(n, k) == 0, which is within any limit.
+        return true;
+    }
+    // C(n, k) == C(n, n - k); iterate over the smaller exponent.
+    let k = k.min(n - k);
+    let mut combinations: u128 = 1;
+    for i in 0..k as u128 {
+        combinations = combinations.saturating_mul(n as u128 - i) / (i + 1);
+        if combinations > limit {
+            return false;
+        }
+    }
+    true
+}
+
+/// Conservative cardinality approximation for `min_should`, used when enumerating
+/// every combination would be too expensive (see `MIN_SHOULD_MAX_COMBINATIONS`).
+///
+/// "At least `min_count` of N conditions" is a subset of "at least one of N" (the
+/// union), so the union is a valid upper bound for `exp`/`max`. No non-zero lower
+/// bound is claimed: requiring several matches can yield fewer points than any
+/// single condition, so `min` is `0`.
+fn approximate_min_should_estimations(
+    estimations: &[CardinalityEstimation],
+    total: usize,
+) -> CardinalityEstimation {
+    let union = combine_should_estimations(estimations, total);
+    CardinalityEstimation {
+        primary_clauses: union.primary_clauses,
+        min: 0,
+        exp: union.exp,
+        max: union.max,
+    }
 }
 
 pub fn combine_must_estimations(
@@ -557,6 +612,206 @@ mod tests {
 
         let estimation = combine_min_should_estimations(&estimations, estimations.len() + 1, total);
         assert_eq!(estimation, CardinalityEstimation::exact(0));
+    }
+
+    #[test]
+    fn min_should_large_combination_count_is_approximated() {
+        // Regression for #7974: C(64, 32) is astronomically large. Enumerating it
+        // used to overflow `Vec`'s capacity and panic; it must now be approximated.
+        let total = 1_000usize;
+        let estimations: Vec<CardinalityEstimation> =
+            (0..64).map(|_| CardinalityEstimation::exact(1)).collect();
+
+        let estimation = combine_min_should_estimations(&estimations, 32, total);
+
+        // Conservative approximation: no non-zero lower bound, union as upper bound.
+        assert_eq!(estimation.min, 0);
+        assert_eq!(estimation.max, estimations.len()); // min(sum of maxes, total)
+        assert!(estimation.exp <= estimation.max);
+    }
+
+    #[test]
+    fn combinations_at_most_is_overflow_safe_and_exact() {
+        // Small, exact cases.
+        assert!(combinations_at_most(5, 2, 100)); // C(5, 2) = 10
+        assert!(combinations_at_most(10, 5, 252)); // C(10, 5) = 252
+        assert!(!combinations_at_most(10, 5, 251)); // just below
+        // Degenerate exponents.
+        assert!(combinations_at_most(64, 0, 1)); // C(n, 0) = 1
+        assert!(combinations_at_most(64, 64, 1)); // C(n, n) = 1
+        assert!(combinations_at_most(5, 6, 0)); // C(n, k) = 0 when k > n
+        assert!(combinations_at_most(0, 1, 0)); // also safe for n = 0
+        // Astronomically large counts must not overflow and must report "too big".
+        assert!(!combinations_at_most(60, 20, MIN_SHOULD_MAX_COMBINATIONS)); // ~4.2e15
+        assert!(!combinations_at_most(64, 32, MIN_SHOULD_MAX_COMBINATIONS)); // ~1.8e18
+    }
+
+    #[test]
+    fn min_should_large_combination_count_approximation_keeps_primary_clauses_consistent() {
+        // Same explosive count as the regression above, but with INDEXED conditions
+        // (non-empty primary_clauses). This locks the approximation onto the path
+        // the exact estimator would otherwise take: it must return the union's
+        // primary clauses (covering every condition, exactly as the exact path does
+        // in `another_min_should_estimation_query_test`) and a zero lower bound, so
+        // downstream post-filtering behaves the same as before this change.
+        let total = 1_000usize;
+        let estimations: Vec<CardinalityEstimation> = (0..64)
+            .map(|i| {
+                let Condition::Field(field) = test_condition(&format!("field_{i}")) else {
+                    unreachable!()
+                };
+                CardinalityEstimation::exact(1)
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(field)))
+            })
+            .collect();
+
+        let estimation = combine_min_should_estimations(&estimations, 32, total);
+
+        assert_eq!(estimation.min, 0);
+        assert!(estimation.max <= total);
+        assert!(estimation.exp <= estimation.max);
+        // Union clauses cover every condition, consistent with the exact path.
+        assert_eq!(estimation.primary_clauses.len(), estimations.len());
+    }
+
+    /// Exact `min_should` estimation by brute-force enumeration (mirrors the
+    /// path used below the threshold), to differentially check the approximation.
+    fn combine_min_should_estimations_exact(
+        estimations: &[CardinalityEstimation],
+        min_count: usize,
+        total: usize,
+    ) -> CardinalityEstimation {
+        if min_count > estimations.len() {
+            return CardinalityEstimation::exact(0);
+        }
+        let intersection_estimations = estimations
+            .iter()
+            .combinations(min_count)
+            .map(|intersection| {
+                combine_must_estimations(&intersection.into_iter().cloned().collect_vec(), total)
+            })
+            .collect_vec();
+        combine_should_estimations(&intersection_estimations, total)
+    }
+
+    fn assert_envelope(approx: &CardinalityEstimation, exact: &CardinalityEstimation) {
+        // Note: `approx.max >= exact.max` does NOT hold in general (the union is not
+        // an upper bound on the exact min_should `max`, e.g. n=4/k=2: 3800 > 3200),
+        // so it is intentionally not asserted. The properties that do hold:
+        assert!(
+            approx.exp >= exact.exp,
+            "exp {} < {}",
+            approx.exp,
+            exact.exp
+        );
+        assert!(
+            approx.min <= exact.min,
+            "min {} > {}",
+            approx.min,
+            exact.min
+        );
+        assert!(
+            exact.min <= exact.exp && exact.exp <= exact.max,
+            "exact inconsistent"
+        );
+        assert!(
+            approx.min <= approx.exp && approx.exp <= approx.max,
+            "approx inconsistent"
+        );
+    }
+
+    fn est(min: usize, exp: usize, max: usize) -> CardinalityEstimation {
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min,
+            exp,
+            max,
+        }
+    }
+
+    #[test]
+    fn min_should_approx_envelopes_exact_across_shapes() {
+        let total = 5_000;
+        let cases: Vec<(Vec<CardinalityEstimation>, usize)> = vec![
+            (
+                vec![est(0, 100, 100), est(0, 100, 100), est(0, 100, 100)],
+                2,
+            ), // disjoint
+            (
+                vec![est(0, 400, 500), est(0, 350, 500), est(0, 300, 500)],
+                2,
+            ), // overlapping
+            (
+                vec![est(50, 100, 150), est(50, 100, 150), est(50, 100, 150)],
+                2,
+            ), // identical
+            (
+                vec![
+                    CardinalityEstimation::exact(0),
+                    CardinalityEstimation::exact(100),
+                    CardinalityEstimation::exact(50),
+                ],
+                2,
+            ),
+            (vec![est(10, 100, 200), est(20, 150, 300)], 1), // min_count=1
+            (vec![est(10, 100, 200), est(20, 150, 300)], 2), // min_count=N
+            (vec![est(50, 200, 300)], 1),                    // single
+            (
+                vec![
+                    est(100, 500, 1000),
+                    est(50, 200, 5000),
+                    est(0, 100, 5000),
+                    est(200, 1000, 2000),
+                ],
+                3,
+            ),
+            (
+                vec![est(0, 900, 1000), est(0, 950, 1000), est(0, 800, 1000)],
+                2,
+            ), // near total
+            (
+                vec![
+                    CardinalityEstimation::exact(0),
+                    CardinalityEstimation::exact(0),
+                    est(100, 500, 700),
+                ],
+                2,
+            ),
+        ];
+        for (estimations, min_count) in cases {
+            let exact = combine_min_should_estimations_exact(&estimations, min_count, total);
+            let approx = approximate_min_should_estimations(&estimations, total);
+            assert_envelope(&approx, &exact);
+            assert!(approx.max <= total);
+            assert_eq!(approx.min, 0);
+        }
+    }
+
+    #[test]
+    fn min_should_approx_envelopes_exact_grid() {
+        let total = 5_000;
+        for (n, min_count) in [(4usize, 2usize), (6, 3), (8, 4), (10, 5), (12, 6), (15, 7)] {
+            let estimations: Vec<CardinalityEstimation> = (0..n)
+                .map(|i| {
+                    est(
+                        (i * 50).min(200),
+                        (i * 100 + 200).min(total),
+                        (i * 200 + 500).min(total),
+                    )
+                })
+                .collect();
+            let exact = combine_min_should_estimations_exact(&estimations, min_count, total);
+            let approx = approximate_min_should_estimations(&estimations, total);
+            assert_envelope(&approx, &exact);
+        }
+    }
+
+    #[test]
+    fn combinations_threshold_boundary_matches_design() {
+        assert!(!combinations_at_most(25, 12, MIN_SHOULD_MAX_COMBINATIONS)); // ~5.2M
+        assert!(!combinations_at_most(20, 10, MIN_SHOULD_MAX_COMBINATIONS)); // ~184k
+        assert!(combinations_at_most(15, 7, MIN_SHOULD_MAX_COMBINATIONS)); // ~6.4k
+        assert!(combinations_at_most(10, 5, MIN_SHOULD_MAX_COMBINATIONS)); // 252
     }
 
     #[test]
