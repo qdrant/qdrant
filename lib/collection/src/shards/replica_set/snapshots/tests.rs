@@ -72,6 +72,7 @@ async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_di
     let restore = target_replica_set.restore_local_replica_from(
         &source_shard_path,
         RecoveryType::Full,
+        false,
         target_collection_dir.path(),
         cancel.clone(),
     );
@@ -135,7 +136,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
     // `clear_local_for_snapshot_recovery` refuses to run on a source-of-truth replica.
     // The receiving replica of a snapshot transfer sits in `PartialSnapshot`.
     target_replica_set
-        .set_replica_state(TEST_PEER_ID, ReplicaState::PartialSnapshot)
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
         .await
         .unwrap();
 
@@ -171,6 +172,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                 .restore_local_replica_from(
                     &stalled_snapshot,
                     RecoveryType::Full,
+                    true,
                     &collection_path,
                     cancel::CancellationToken::new(),
                 )
@@ -198,6 +200,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                 .restore_local_replica_from(
                     &retry_snapshot,
                     RecoveryType::Full,
+                    true,
                     &collection_path,
                     cancel::CancellationToken::new(),
                 )
@@ -240,8 +243,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
 /// After force-delete mid snapshot transfer, the receiver may already have cleared
 /// under `PartialSnapshot`. Survivors then heal it to `Active` and accept writes.
 /// A late `restore_local_replica_from` from the deleted source must not replace that
-/// data. `clear_local_for_snapshot_recovery` refuses source-of-truth states, but
-/// restore itself does not re-check replica state.
+/// data.
 ///
 /// ```text
 /// clear (PartialSnapshot) -> heal to Active -> write P_new -> late restore(A)
@@ -256,7 +258,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
 
     let replica_set = new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await;
     replica_set
-        .set_replica_state(TEST_PEER_ID, ReplicaState::PartialSnapshot)
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
         .await
         .unwrap();
 
@@ -281,6 +283,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
             .restore_local_replica_from(
                 &heal_snapshot,
                 RecoveryType::Full,
+                true,
                 target_collection_dir.path(),
                 cancel::CancellationToken::new(),
             )
@@ -296,17 +299,19 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
     assert_eq!(count_points(&replica_set).await, 1);
 
     // Abandoned restore from the deleted transfer source finally lands.
+    let error = replica_set
+        .restore_local_replica_from(
+            &stale_snapshot,
+            RecoveryType::Full,
+            true,
+            target_collection_dir.path(),
+            cancel::CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.is_pre_condition_failed());
     assert!(
-        replica_set
-            .restore_local_replica_from(
-                &stale_snapshot,
-                RecoveryType::Full,
-                target_collection_dir.path(),
-                cancel::CancellationToken::new(),
-            )
-            .await
-            .unwrap(),
-        "stale restore currently still succeeds after Active"
+        !shard_initializing_flag_path(target_collection_dir.path(), TEST_TARGET_SHARD_ID).exists()
     );
 
     assert_eq!(
@@ -315,6 +320,57 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
         "late snapshot restore after Active must not drop newer local writes"
     );
 
+    // User-requested recovery may intentionally replace an active replica.
+    assert!(
+        replica_set
+            .restore_local_replica_from(
+                &stale_snapshot,
+                RecoveryType::Full,
+                false,
+                target_collection_dir.path(),
+                cancel::CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+    );
+    assert_eq!(count_points(&replica_set).await, 0);
+
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transfer_restore_checks_state_after_waiting_for_local_lock() {
+    let collection_dir = Builder::new()
+        .prefix("restore-state-check")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let (_snapshot_dir, snapshot) = new_shard_snapshot().await;
+
+    // Queue activation ahead of restore while both are blocked on the local shard.
+    let local = replica_set.local.write().await;
+    let activate = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Active);
+    tokio::pin!(activate);
+    assert!(futures::poll!(&mut activate).is_pending());
+    let restore = replica_set.restore_local_replica_from(
+        &snapshot,
+        RecoveryType::Full,
+        true,
+        collection_dir.path(),
+        cancel::CancellationToken::new(),
+    );
+    tokio::pin!(restore);
+    assert!(futures::poll!(&mut restore).is_pending());
+
+    drop(local);
+    let (activated, restored) = tokio::join!(activate, restore);
+    activated.unwrap();
+    assert!(restored.unwrap_err().is_pre_condition_failed());
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
     replica_set.stop_gracefully().await;
 }
 

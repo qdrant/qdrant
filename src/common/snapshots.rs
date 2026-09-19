@@ -343,6 +343,7 @@ pub async fn recover_shard_snapshot_impl(
             shard,
             snapshot_data,
             recovery_type,
+            matches!(priority, SnapshotPriority::ShardTransfer),
             toc.this_peer_id,
             toc.is_distributed(),
             // Default temporary path to storage dir, to allow faster recovery within the same volume

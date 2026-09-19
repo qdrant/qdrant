@@ -14,7 +14,7 @@ use crate::common::file_utils::{move_dir, move_file};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::replica_set_state::ReplicaSetState;
+use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
@@ -163,6 +163,7 @@ impl ShardReplicaSet {
         &self,
         replica_path: &Path,
         recovery_type: RecoveryType,
+        is_shard_transfer: bool,
         collection_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
@@ -187,6 +188,16 @@ impl ShardReplicaSet {
         };
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
+
+        // A transfer may finish downloading after another transfer has healed this
+        // replica. Check under the local lock so activation cannot race restoration.
+        if is_shard_transfer && self.peer_state(self.this_peer_id()) != Some(ReplicaState::Recovery)
+        {
+            return Err(CollectionError::pre_condition_failed(format!(
+                "Cannot restore shard transfer snapshot for {}:{} outside Recovery state",
+                self.collection_id, self.shard_id,
+            )));
+        }
 
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
 

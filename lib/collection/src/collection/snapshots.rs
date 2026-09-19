@@ -273,6 +273,7 @@ impl Collection {
             .recover_local_shard_from(
                 snapshot_shard_path,
                 recovery_type,
+                false,
                 &self.path,
                 shard_id,
                 cancel,
@@ -334,6 +335,7 @@ impl Collection {
         shard_id: ShardId,
         snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
+        is_shard_transfer: bool,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
@@ -356,6 +358,7 @@ impl Collection {
                 .restore_shard_snapshot(
                     snapshot_data,
                     recovery_type,
+                    is_shard_transfer,
                     &collection_path,
                     &collection_name,
                     shard_id,
