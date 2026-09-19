@@ -297,6 +297,7 @@ pub async fn recover_shard_snapshot(
             snapshot_data,
             snapshot_priority,
             RecoveryType::Full,
+            from_peer_id,
             Some(recovery_guard.progress_handle()),
             cancel,
         )
@@ -324,6 +325,7 @@ pub async fn recover_shard_snapshot_impl(
     snapshot_data: SnapshotData,
     priority: SnapshotPriority,
     recovery_type: RecoveryType,
+    from_peer_id: Option<PeerId>,
     recovery_progress: Option<RecoveryProgressHandle>,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
@@ -344,6 +346,7 @@ pub async fn recover_shard_snapshot_impl(
             snapshot_data,
             recovery_type,
             matches!(priority, SnapshotPriority::ShardTransfer),
+            from_peer_id,
             toc.this_peer_id,
             toc.is_distributed(),
             // Default temporary path to storage dir, to allow faster recovery within the same volume

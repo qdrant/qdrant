@@ -274,6 +274,7 @@ impl Collection {
                 snapshot_shard_path,
                 recovery_type,
                 false,
+                None,
                 &self.path,
                 shard_id,
                 cancel,
@@ -336,6 +337,7 @@ impl Collection {
         snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         is_shard_transfer: bool,
+        from_peer_id: Option<PeerId>,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
@@ -359,6 +361,7 @@ impl Collection {
                     snapshot_data,
                     recovery_type,
                     is_shard_transfer,
+                    from_peer_id,
                     &collection_path,
                     &collection_name,
                     shard_id,
@@ -433,29 +436,12 @@ impl Collection {
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
 
-        let is_registered = !shard_holder
-            .get_transfers(|transfer| {
-                transfer.is_target(self.this_peer_id, shard_id)
-                    && from_peer_id.is_none_or(|from_peer_id| transfer.from == from_peer_id)
-            })
-            .is_empty();
-
-        if !is_registered {
-            let from = match from_peer_id {
-                Some(from_peer_id) => format!("from peer {from_peer_id}"),
-                None => "from any peer".into(),
-            };
-
-            return Err(CollectionError::bad_request(format!(
-                "Refusing to clear shard {shard_id} for snapshot recovery: \
-                 no shard transfer {from} to this peer is registered",
-            )));
-        }
-
         shard_holder
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?
-            .clear_local_for_snapshot_recovery(&self.path)
+            .clear_local_for_snapshot_recovery(&self.path, || {
+                shard_holder.validate_incoming_transfer(shard_id, self.this_peer_id, from_peer_id)
+            })
             .await
     }
 

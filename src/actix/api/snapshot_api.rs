@@ -563,6 +563,7 @@ async fn upload_shard_snapshot(
             snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Full,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
@@ -746,6 +747,7 @@ async fn recover_partial_snapshot(
             snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Partial,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
@@ -926,6 +928,7 @@ async fn recover_partial_snapshot_from(
             snapshot_data,
             SnapshotPriority::NoSync,
             RecoveryType::Partial,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,

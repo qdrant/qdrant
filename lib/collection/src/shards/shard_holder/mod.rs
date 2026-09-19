@@ -1155,6 +1155,34 @@ impl ShardHolder {
         res
     }
 
+    pub(crate) fn validate_incoming_transfer(
+        &self,
+        shard_id: ShardId,
+        to_peer_id: PeerId,
+        from_peer_id: Option<PeerId>,
+    ) -> CollectionResult<()> {
+        let is_registered = !self
+            .get_transfers(|transfer| {
+                transfer.is_target(to_peer_id, shard_id)
+                    && from_peer_id.is_none_or(|from_peer_id| transfer.from == from_peer_id)
+            })
+            .is_empty();
+
+        if !is_registered {
+            let from = match from_peer_id {
+                Some(from_peer_id) => format!("from peer {from_peer_id}"),
+                None => "from any peer".into(),
+            };
+
+            return Err(CollectionError::bad_request(format!(
+                "Refusing snapshot recovery for shard {shard_id}: \
+                 no shard transfer {from} to this peer is registered",
+            )));
+        }
+
+        Ok(())
+    }
+
     pub fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         self.shard_transfers
             .read()
@@ -1373,6 +1401,7 @@ impl ShardHolder {
         snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         is_shard_transfer: bool,
+        from_peer_id: Option<PeerId>,
         collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
@@ -1448,6 +1477,7 @@ impl ShardHolder {
                 snapshot_temp_dir.path(),
                 recovery_type,
                 is_shard_transfer,
+                from_peer_id,
                 collection_path,
                 shard_id,
                 cancel,
@@ -1472,11 +1502,13 @@ impl ShardHolder {
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
+    #[allow(clippy::too_many_arguments)]
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
         recovery_type: RecoveryType,
         is_shard_transfer: bool,
+        from_peer_id: Option<PeerId>,
         collection_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
@@ -1497,6 +1529,13 @@ impl ShardHolder {
                 is_shard_transfer,
                 collection_path,
                 cancel,
+                || {
+                    self.validate_incoming_transfer(
+                        shard_id,
+                        replica_set.this_peer_id(),
+                        from_peer_id,
+                    )
+                },
             )
             .await?;
 

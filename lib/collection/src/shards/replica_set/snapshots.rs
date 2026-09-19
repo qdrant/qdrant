@@ -166,6 +166,7 @@ impl ShardReplicaSet {
         is_shard_transfer: bool,
         collection_path: &Path,
         cancel: cancel::CancellationToken,
+        validate_transfer: impl FnOnce() -> CollectionResult<()>,
     ) -> CollectionResult<bool> {
         // `local.take()` call and `restore` task have to be executed as a single transaction
 
@@ -197,6 +198,12 @@ impl ShardReplicaSet {
                 "Cannot restore shard transfer snapshot for {}:{} outside Recovery state",
                 self.collection_id, self.shard_id,
             )));
+        }
+
+        if is_shard_transfer {
+            // Abort changes the local state before unregistering the transfer. Holding
+            // the local lock keeps that transition from racing validation and restore.
+            validate_transfer()?;
         }
 
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
@@ -421,6 +428,7 @@ impl ShardReplicaSet {
     pub async fn clear_local_for_snapshot_recovery(
         &self,
         collection_path: &Path,
+        validate_transfer: impl FnOnce() -> CollectionResult<()>,
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
@@ -431,6 +439,8 @@ impl ShardReplicaSet {
                 self.collection_id, self.shard_id,
             )));
         }
+
+        validate_transfer()?;
 
         // Mark the shard as initializing before touching disk, so a crash during or
         // after clearing is detected on next startup and the shard is reloaded as a

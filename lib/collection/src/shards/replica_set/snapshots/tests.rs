@@ -75,6 +75,7 @@ async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_di
         false,
         target_collection_dir.path(),
         cancel.clone(),
+        || Ok(()),
     );
     tokio::pin!(restore);
 
@@ -158,7 +159,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
             let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
             replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
+                .clear_local_for_snapshot_recovery(&collection_path, || Ok(()))
                 .await
                 .unwrap();
 
@@ -175,6 +176,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                     true,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    || Ok(()),
                 )
                 .await
                 .unwrap()
@@ -192,7 +194,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
             let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
             replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
+                .clear_local_for_snapshot_recovery(&collection_path, || Ok(()))
                 .await
                 .unwrap();
 
@@ -203,6 +205,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                     true,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    || Ok(()),
                 )
                 .await
                 .unwrap();
@@ -268,7 +271,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
     let (_stale_dir, stale_snapshot) = new_shard_snapshot().await;
 
     replica_set
-        .clear_local_for_snapshot_recovery(target_collection_dir.path())
+        .clear_local_for_snapshot_recovery(target_collection_dir.path(), || Ok(()))
         .await
         .unwrap();
     assert!(
@@ -286,6 +289,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
                 true,
                 target_collection_dir.path(),
                 cancel::CancellationToken::new(),
+                || Ok(()),
             )
             .await
             .unwrap(),
@@ -306,6 +310,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
             true,
             target_collection_dir.path(),
             cancel::CancellationToken::new(),
+            || Ok(()),
         )
         .await
         .unwrap_err();
@@ -329,6 +334,7 @@ async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
                 false,
                 target_collection_dir.path(),
                 cancel::CancellationToken::new(),
+                || Ok(()),
             )
             .await
             .unwrap()
@@ -362,6 +368,7 @@ async fn test_transfer_restore_checks_state_after_waiting_for_local_lock() {
         true,
         collection_dir.path(),
         cancel::CancellationToken::new(),
+        || Ok(()),
     );
     tokio::pin!(restore);
     assert!(futures::poll!(&mut restore).is_pending());
@@ -389,7 +396,7 @@ async fn test_snapshot_retry_cannot_clear_partial_heal() {
     let heal = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Partial);
     tokio::pin!(heal);
     assert!(futures::poll!(&mut heal).is_pending());
-    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path());
+    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path(), || Ok(()));
     tokio::pin!(clear);
     assert!(futures::poll!(&mut clear).is_pending());
     drop(local);
@@ -399,6 +406,91 @@ async fn test_snapshot_retry_cannot_clear_partial_heal() {
     assert!(!replica_set.is_dummy().await);
     assert_eq!(count_points(&replica_set).await, 1);
     assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_rechecks_sender_before_clear_and_restore() {
+    use crate::shards::shard_holder::ShardHolder;
+    use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
+
+    let collection_dir = Builder::new().prefix("snapshot-sender").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let holder =
+        ShardHolder::new(collection_dir.path(), crate::config::ShardingMethod::Auto).unwrap();
+    let transfer = ShardTransfer {
+        shard_id: TEST_TARGET_SHARD_ID,
+        to_shard_id: None,
+        from: 2,
+        to: TEST_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::Snapshot),
+        filter: None,
+    };
+    holder
+        .register_start_shard_transfer(transfer.clone())
+        .unwrap();
+    let validate = || {
+        holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(transfer.from))
+    };
+    validate().unwrap();
+    let (_snapshot_dir, snapshot) = new_shard_snapshot().await;
+
+    // Both operations must check the sender after acquiring the local lock.
+    let local = replica_set.local.write().await;
+    let restore = replica_set.restore_local_replica_from(
+        &snapshot,
+        RecoveryType::Full,
+        true,
+        collection_dir.path(),
+        cancel::CancellationToken::new(),
+        validate,
+    );
+    tokio::pin!(restore);
+    assert!(futures::poll!(&mut restore).is_pending());
+    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path(), validate);
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+
+    holder.register_abort_transfer(&transfer.key()).unwrap();
+    holder
+        .register_start_shard_transfer(ShardTransfer {
+            from: 3,
+            ..transfer.clone()
+        })
+        .unwrap();
+    drop(local);
+    let (restored, cleared) = tokio::join!(restore, clear);
+    assert!(matches!(restored, Err(CollectionError::BadRequest { .. })));
+    assert!(matches!(cleared, Err(CollectionError::BadRequest { .. })));
+    assert_eq!(count_points(&replica_set).await, 1);
+    assert!(!replica_set.is_dummy().await);
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+
+    // The registered sender and legacy requests without sender identity still work.
+    let validate_replacement =
+        || holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(3));
+    replica_set
+        .clear_local_for_snapshot_recovery(collection_dir.path(), validate_replacement)
+        .await
+        .unwrap();
+    replica_set
+        .restore_local_replica_from(
+            &snapshot,
+            RecoveryType::Full,
+            true,
+            collection_dir.path(),
+            cancel::CancellationToken::new(),
+            || holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, None),
+        )
+        .await
+        .unwrap();
+    assert_eq!(count_points(&replica_set).await, 0);
     replica_set.stop_gracefully().await;
 }
 
