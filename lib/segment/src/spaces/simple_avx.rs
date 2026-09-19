@@ -2,7 +2,7 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 
-use super::tools::is_length_zero_or_normalized;
+use super::tools::{cosine_preprocess_underflowing_norm, is_length_zero_or_normalized};
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
@@ -155,6 +155,10 @@ pub(crate) unsafe fn cosine_preprocess_avx(mut vector: DenseVector) -> DenseVect
 
         for i in 0..n - m {
             length += (*ptr.add(i)).powi(2);
+        }
+        if length == 0.0 {
+            cosine_preprocess_underflowing_norm(&mut vector);
+            return vector;
         }
         if is_length_zero_or_normalized(length) {
             return vector;
