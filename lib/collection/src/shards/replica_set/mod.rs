@@ -679,7 +679,8 @@ impl ShardReplicaSet {
         local: LocalShard,
         state: Option<ReplicaState>,
     ) -> CollectionResult<Option<Shard>> {
-        let old_shard = self.local.write().await.replace(Shard::Local(local));
+        let mut local_guard = self.local.write().await;
+        let old_shard = local_guard.replace(Shard::Local(local));
 
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
@@ -688,6 +689,7 @@ impl ShardReplicaSet {
                     rs.set_peer_state(self.this_peer_id(), state);
                 }
             })?;
+            drop(local_guard);
 
             self.on_local_state_updated(state.unwrap_or(ReplicaState::Dead))
                 .await?;
@@ -784,6 +786,13 @@ impl ShardReplicaSet {
         peer_id: PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
+        // Finish submitting updates accepted in the old state before changing it.
+        let local = if peer_id == self.this_peer_id() {
+            Some(self.local.write().await)
+        } else {
+            None
+        };
+
         log::debug!(
             "Changing local shard {}:{} state from {:?} to {state:?}",
             self.collection_id,
@@ -797,6 +806,7 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(peer_id, state);
         })?;
+        drop(local);
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
@@ -871,11 +881,13 @@ impl ShardReplicaSet {
         replicas: HashMap<PeerId, ReplicaState>,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
+        let local = self.local.write().await;
         let old_peers = self.replica_state.read().peers().clone();
 
         self.replica_state.write(|state| {
             state.set_peers(replicas.clone());
         })?;
+        drop(local);
 
         if let Some(&state) = replicas.get(&self.this_peer_id()) {
             self.on_local_state_updated(state).await?;
