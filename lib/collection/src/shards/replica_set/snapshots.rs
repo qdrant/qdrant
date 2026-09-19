@@ -422,6 +422,8 @@ impl ShardReplicaSet {
         &self,
         collection_path: &Path,
     ) -> CollectionResult<()> {
+        let mut local = self.local.write().await;
+
         // Callers must only invoke this while the shard is in a state that cannot
         // be a source of truth (e.g. `PartialSnapshot` during a shard transfer).
         // Clearing a source-of-truth replica would silently drop data that may
@@ -435,8 +437,6 @@ impl ShardReplicaSet {
                 self.collection_id, self.shard_id,
             )));
         }
-
-        let mut local = self.local.write().await;
 
         // Mark the shard as initializing before touching disk, so a crash during or
         // after clearing is detected on next startup and the shard is reloaded as a
