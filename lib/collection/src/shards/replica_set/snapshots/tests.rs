@@ -374,6 +374,34 @@ async fn test_transfer_restore_checks_state_after_waiting_for_local_lock() {
     replica_set.stop_gracefully().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_retry_cannot_clear_partial_heal() {
+    let collection_dir = Builder::new().prefix("snapshot-retry").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+
+    // Let the replacement heal reach Partial while the retry waits for the local lock.
+    let local = replica_set.local.write().await;
+    let heal = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Partial);
+    tokio::pin!(heal);
+    assert!(futures::poll!(&mut heal).is_pending());
+    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path());
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+    drop(local);
+    let (healed, cleared) = tokio::join!(heal, clear);
+    healed.unwrap();
+    assert!(cleared.unwrap_err().is_pre_condition_failed());
+    assert!(!replica_set.is_dummy().await);
+    assert_eq!(count_points(&replica_set).await, 1);
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
 /// Build a valid unpacked shard snapshot to recover from.
 ///
 /// Returns the temp dir - which the caller must keep alive - and the replica path

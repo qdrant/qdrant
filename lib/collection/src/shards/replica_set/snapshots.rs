@@ -424,16 +424,10 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
-        // Callers must only invoke this while the shard is in a state that cannot
-        // be a source of truth (e.g. `Recovery` during a shard transfer).
-        // Clearing a source-of-truth replica would silently drop data that may
-        // still be serving queries.
-        if self
-            .peer_state(self.this_peer_id())
-            .is_some_and(|s| s.can_be_source_of_truth())
-        {
-            return Err(CollectionError::service_error(format!(
-                "clear_local_for_snapshot_recovery called on a peer that can be source-of-truth {}:{}",
+        // A retry must not clear a replacement transfer that has reached Partial.
+        if self.peer_state(self.this_peer_id()) != Some(ReplicaState::Recovery) {
+            return Err(CollectionError::pre_condition_failed(format!(
+                "Cannot clear shard transfer snapshot for {}:{} outside Recovery state",
                 self.collection_id, self.shard_id,
             )));
         }
