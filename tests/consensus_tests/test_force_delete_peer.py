@@ -216,7 +216,9 @@ def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_met
             completion.wait_for_request()
         except grpc.RpcError as error:
             # Explicit rejection is safe. A transport failure does not prove it.
-            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND)
+            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT)
+            if error.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                assert "no shard transfer" in error.details()
         completion.release()
 
         source.kill()
@@ -293,13 +295,96 @@ def test_late_snapshot_restore_after_active_must_not_drop_newer_writes(stream_re
         try:
             completion.wait_for_request()
         except grpc.RpcError as error:
-            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND)
+            assert error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT)
+            if error.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                assert "no shard transfer" in error.details()
         completion.release()
 
         source.kill()
         processes.remove(source)
 
     # Late restore from deleted A must not roll survivors back to P0.
+    assert_survivors_recovered(survivors, from_peer_id, points)
+
+
+@pytest.mark.parametrize("heal_method,heal_state", [("stream_records", "Partial"), ("wal_delta", "Recovery")])
+def test_stale_snapshot_during_replacement_heal(tmp_path, heal_method, heal_state):
+    peer_api_uris, points = _transfer_cluster(tmp_path, extra_env={
+        "QDRANT__STORAGE__SHARD_TRANSFER_METHOD": heal_method,
+    })
+    leader = get_leader(peer_api_uris[0])
+    source_index = next(index for index in (2, 1) if get_peer_id(peer_api_uris[index]) != leader)
+    source = processes[source_index]
+    source_uri = peer_api_uris[source_index]
+    receiver_uri = peer_api_uris[0]
+    survivors = [uri for uri in peer_api_uris if uri != source_uri]
+    from_peer_id = get_peer_id(source_uri)
+    to_peer_id = get_peer_id(receiver_uri)
+    proxy = processes[0].proxy
+
+    def receiver_shard():
+        return next(shard for shard in get_collection_cluster_info(receiver_uri, COLLECTION_NAME)["local_shards"]
+                    if shard["shard_id"] == 0)
+
+    with ExitStack() as gates:
+        request = gates.enter_context(proxy.hold_rpc(RECOVER_SNAPSHOT))
+        completion = gates.enter_context(proxy.hold_rpc_response(RECOVER_SNAPSHOT))
+        download = gates.enter_context(proxy.hold_snapshot_download(source_uri, COLLECTION_NAME, 0))
+        replicate_shard(source_uri, COLLECTION_NAME, 0, from_peer_id, to_peer_id, method="snapshot")
+        recovery_request = request.wait_for_request()
+        request.release()
+        download.wait_for_request()
+        assert receiver_shard()["state"] == "Recovery"
+        assert receiver_shard()["points_count"] == 0
+
+        # Only shard 0 needs healing. Hold stream_records after copying, or WAL delta
+        # before reading the recovery point, while the receiver remains in its initial state.
+        heal_rpc = ("/qdrant.CollectionsInternal/UpdateShardCutoffPoint"
+                    if heal_method == "stream_records" else RECOVERY_POINT)
+        heal = gates.enter_context(proxy.hold_rpc(heal_rpc))
+        gates.enter_context(source.proxy.block_rpc(RAFT_SEND))
+        for peer in processes:
+            if peer is not source:
+                gates.enter_context(peer.proxy.block_rpc(
+                    RAFT_SEND, matches=lambda request: decode_raft_message(request).from_peer == from_peer_id,
+                ))
+        force_delete_peer(receiver_uri, from_peer_id)
+        for uri in survivors:
+            wait_for(peer_is_removed_from_cluster_and_transfers, uri, from_peer_id)
+        heal.wait_for_request()
+        transfer, = get_collection_cluster_info(receiver_uri, COLLECTION_NAME)["shard_transfers"]
+        assert (transfer["to"], transfer["shard_id"], transfer["method"]) == (to_peer_id, 0, heal_method)
+        assert transfer["from"] != from_peer_id
+        assert str(from_peer_id) in get_cluster_info(source_uri)["peers"]
+        assert not download.cancelled.is_set()
+        before = receiver_shard()
+        assert before["state"] == heal_state
+        if heal_method == "stream_records":
+            assert before["points_count"] > 0
+        else:
+            assert before["points_count"] == 0
+
+        download.release()
+        with pytest.raises(grpc.RpcError) as rejected:
+            completion.wait_for_request()
+        expected_error = (grpc.StatusCode.FAILED_PRECONDITION if heal_state == "Partial"
+                          else grpc.StatusCode.INVALID_ARGUMENT)
+        assert rejected.value.code() == expected_error
+        completion.release()
+
+        # Retry the captured Recover directly so this boundary does not depend on
+        # the driver's backoff or its preceding Initiate request.
+        with grpc.insecure_channel(proxy.address) as channel:
+            with pytest.raises(grpc.RpcError) as retry:
+                channel.unary_unary(RECOVER_SNAPSHOT)(recovery_request, timeout=10)
+        assert retry.value.code() == expected_error
+        after = receiver_shard()
+        assert (after["state"], after["points_count"]) == (heal_state, before["points_count"])
+        assert not heal.cancelled.is_set()
+        source.kill()
+        processes.remove(source)
+        heal.release()
+
     assert_survivors_recovered(survivors, from_peer_id, points)
 
 
