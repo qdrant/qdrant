@@ -15,6 +15,29 @@ pub fn is_length_zero_or_normalized(length: f32) -> bool {
     length == 0.0 || (length - 1.0).abs() <= 1.0e-6
 }
 
+pub fn cosine_preprocess_underflowing_norm(vector: &mut [f32]) {
+    let max_abs = vector.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+
+    if max_abs == 0.0 {
+        return;
+    }
+
+    let scaled_length = vector
+        .iter()
+        .map(|x| {
+            let scaled = *x / max_abs;
+            scaled * scaled
+        })
+        .sum::<f32>()
+        .sqrt();
+
+    let inv_length = 1.0 / scaled_length;
+
+    for x in vector {
+        *x = (*x / max_abs) * inv_length;
+    }
+}
+
 pub fn peek_top_smallest_iterable<I, E: Ord>(elements: I, top: usize) -> Vec<E>
 where
     I: IntoIterator<Item = E>,

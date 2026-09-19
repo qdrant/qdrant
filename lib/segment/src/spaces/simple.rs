@@ -7,7 +7,7 @@ use super::simple_avx::*;
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
-use super::tools::is_length_zero_or_normalized;
+use super::tools::{cosine_preprocess_underflowing_norm, is_length_zero_or_normalized};
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 
@@ -225,11 +225,18 @@ pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) 
         .sum::<ScoreType>()
 }
 
-pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
+pub fn cosine_preprocess(mut vector: DenseVector) -> DenseVector {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
+
+    if length == 0.0 {
+        cosine_preprocess_underflowing_norm(&mut vector);
+        return vector;
+    }
+
     if is_length_zero_or_normalized(length) {
         return vector;
     }
+
     length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
 }
@@ -253,6 +260,17 @@ mod tests {
     #[test]
     fn test_cosine_preprocessing_small_nonzero_vector() {
         let vector = vec![1.0e-6; MIN_DIM_SIZE_AVX];
+
+        let preprocessed = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+
+        let squared_length: f32 = preprocessed.iter().map(|x| x * x).sum();
+
+        assert!((squared_length - 1.0).abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn test_cosine_preprocessing_underflowing_norm() {
+        let vector = vec![1.0e-30; MIN_DIM_SIZE_AVX];
 
         let preprocessed = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
 
