@@ -237,6 +237,87 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
     target_replica_set.stop_gracefully().await;
 }
 
+/// After force-delete mid snapshot transfer, the receiver may already have cleared
+/// under `PartialSnapshot`. Survivors then heal it to `Active` and accept writes.
+/// A late `restore_local_replica_from` from the deleted source must not replace that
+/// data. `clear_local_for_snapshot_recovery` refuses source-of-truth states, but
+/// restore itself does not re-check replica state.
+///
+/// ```text
+/// clear (PartialSnapshot) -> heal to Active -> write P_new -> late restore(A)
+///                                                         \-> must keep P_new
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
+    let target_collection_dir = Builder::new()
+        .prefix("late-restore-after-active")
+        .tempdir()
+        .unwrap();
+
+    let replica_set = new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::PartialSnapshot)
+        .await
+        .unwrap();
+
+    // Empty snapshots: heal installs a real local shard; the abandoned restore
+    // would wipe points written after Active if it is allowed to run.
+    let (_heal_dir, heal_snapshot) = new_shard_snapshot().await;
+    let (_stale_dir, stale_snapshot) = new_shard_snapshot().await;
+
+    replica_set
+        .clear_local_for_snapshot_recovery(target_collection_dir.path())
+        .await
+        .unwrap();
+    assert!(
+        replica_set.is_dummy().await,
+        "clear must leave a dummy while snapshot data is missing"
+    );
+
+    // Survivors heal without waiting on the abandoned snapshot recovery lock
+    // (e.g. wal_delta / stream_records in production).
+    assert!(
+        replica_set
+            .restore_local_replica_from(
+                &heal_snapshot,
+                RecoveryType::Full,
+                target_collection_dir.path(),
+                cancel::CancellationToken::new(),
+            )
+            .await
+            .unwrap(),
+        "survivor heal must install a local shard"
+    );
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Active)
+        .await
+        .unwrap();
+    upsert_point(&replica_set, 42).await;
+    assert_eq!(count_points(&replica_set).await, 1);
+
+    // Abandoned restore from the deleted transfer source finally lands.
+    assert!(
+        replica_set
+            .restore_local_replica_from(
+                &stale_snapshot,
+                RecoveryType::Full,
+                target_collection_dir.path(),
+                cancel::CancellationToken::new(),
+            )
+            .await
+            .unwrap(),
+        "stale restore currently still succeeds after Active"
+    );
+
+    assert_eq!(
+        count_points(&replica_set).await,
+        1,
+        "late snapshot restore after Active must not drop newer local writes"
+    );
+
+    replica_set.stop_gracefully().await;
+}
+
 /// Build a valid unpacked shard snapshot to recover from.
 ///
 /// Returns the temp dir - which the caller must keep alive - and the replica path
