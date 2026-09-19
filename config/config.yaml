@@ -487,3 +487,35 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
+#   # Write audit records to rotating files in `dir` (see above).
+#   # This is the only sink the `/audit/logs` API can read: with it disabled,
+#   # that endpoint returns an error on this peer and records are only
+#   # available wherever the other enabled sinks send them.
+#   # Default: true
+#   write_to_file: true
+#   # Write audit records to stdout, so a log collector consuming the process'
+#   # stdout receives them. Intended for stdout shipping (i.e. hybrid).
+#   # Audit records are always JSON, so with the default `logger.format: text`
+#   # the stdout stream mixes text log lines with JSON audit lines. Set
+#   # `logger.format: json` for a uniform stream.
+#   # Default: false
+#   write_to_stdout: false
+#   # What each sink does when its 128k-record queue fills up because the
+#   # destination cannot keep up. One of:
+#   #   drop  - never blocks, but audit records can be lost under sustained
+#   #           load. Drops are counted in `/telemetry` and exposed as the
+#   #           `audit_log_dropped_records_total` metric.
+#   #   block - never loses records to a full queue, but applies backpressure:
+#   #           an indefinitely stalled destination stalls writes to the DB.
+#   # Both default to `drop`, which is how Qdrant has always behaved. If every
+#   # enabled sink is set to `drop`, a warning is logged at startup because no
+#   # destination is then guaranteed to retain records under pressure.
+#   # Default: drop
+#   on_file_full: drop
+#   on_stdout_full: drop
+#
+# At least one sink must be enabled when `enabled: true` - a config with
+# audit logging on but every sink off is rejected at startup, since it would
+# leave data access unlogged while appearing to be configured. Note that
+# `write_to_file: false` alone is enough to reach that state, because
+# `write_to_stdout` defaults to false.
