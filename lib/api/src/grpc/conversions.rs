@@ -2539,6 +2539,9 @@ impl From<HnswProjectionConfig> for segment::types::HnswProjectionConfig {
             cands,
             seed,
             max_training_vectors,
+            excluded_points,
+            repair,
+            repair_max_per_point,
         } = value;
         let defaults = segment::types::HnswProjectionConfig::default();
         Self {
@@ -2549,6 +2552,16 @@ impl From<HnswProjectionConfig> for segment::types::HnswProjectionConfig {
             seed: seed.unwrap_or(defaults.seed),
             max_training_vectors: max_training_vectors
                 .map_or(defaults.max_training_vectors, |v| v as usize),
+            // An id that is neither a number nor a uuid cannot name a point; it is dropped here
+            // rather than failing the whole config, the same way an unknown id is simply absent
+            // from every segment.
+            excluded_points: excluded_points
+                .iter()
+                .filter_map(|id| id.parse::<segment::types::ExtendedPointId>().ok())
+                .collect(),
+            repair: repair.unwrap_or(defaults.repair),
+            repair_max_per_point: repair_max_per_point
+                .map_or(defaults.repair_max_per_point, |v| v as usize),
         }
     }
 }
@@ -2562,6 +2575,9 @@ impl From<segment::types::HnswProjectionConfig> for HnswProjectionConfig {
             cands,
             seed,
             max_training_vectors,
+            excluded_points,
+            repair,
+            repair_max_per_point,
         } = value;
         Self {
             m: Some(m as u64),
@@ -2570,6 +2586,9 @@ impl From<segment::types::HnswProjectionConfig> for HnswProjectionConfig {
             cands: Some(cands as u64),
             seed: Some(seed),
             max_training_vectors: Some(max_training_vectors as u64),
+            excluded_points: excluded_points.iter().map(|id| id.to_string()).collect(),
+            repair: Some(repair),
+            repair_max_per_point: Some(repair_max_per_point as u64),
         }
     }
 }

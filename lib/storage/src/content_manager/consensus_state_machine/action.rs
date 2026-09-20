@@ -214,7 +214,7 @@ pub fn apply_collection_config_diffs(
             .clone()
             .map(CollectionConfigDiff::Optimizers),
         params.clone().map(CollectionConfigDiff::Params),
-        (*hnsw_config).map(CollectionConfigDiff::Hnsw),
+        (hnsw_config.clone()).map(CollectionConfigDiff::Hnsw),
         vectors.clone().map(CollectionConfigDiff::Vectors),
         quantization_config
             .clone()

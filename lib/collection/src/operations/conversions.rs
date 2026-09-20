@@ -2066,21 +2066,30 @@ mod hnsw_projection_conversion_tests {
             cands: 128,
             seed: 7,
             max_training_vectors: 50_000,
+            excluded_points: vec![
+                segment::types::ExtendedPointId::NumId(0),
+                segment::types::ExtendedPointId::NumId(2),
+            ],
+            repair: false,
+            repair_max_per_point: 8,
         };
         let diff = HnswConfigDiff {
             m: Some(16),
-            projection: Some(projection),
+            projection: Some(projection.clone()),
             ..Default::default()
         };
 
         let proto = api::grpc::qdrant::HnswConfigDiff::from(diff);
-        let proto_projection = proto.projection.unwrap();
+        let proto_projection = proto.projection.clone().unwrap();
         assert_eq!(proto_projection.m, Some(12));
         assert_eq!(proto_projection.topn, Some(64));
         assert_eq!(proto_projection.maxq, Some(32));
         assert_eq!(proto_projection.cands, Some(128));
         assert_eq!(proto_projection.seed, Some(7));
         assert_eq!(proto_projection.max_training_vectors, Some(50_000));
+        assert_eq!(proto_projection.excluded_points, vec!["0".to_string(), "2".to_string()]);
+        assert_eq!(proto_projection.repair, Some(false));
+        assert_eq!(proto_projection.repair_max_per_point, Some(8));
 
         let back = HnswConfigDiff::from(proto);
         assert_eq!(back.projection, Some(projection));

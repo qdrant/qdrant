@@ -9,7 +9,7 @@ use crate::types::HnswProjectionConfig;
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct HnswGraphConfig {
     /// Requested M
     pub m: usize,

@@ -166,7 +166,8 @@ fn projection_rewrites_level0_links_only_when_configured_and_trained() {
 
     // Config block present, but no training vectors wired in: nothing happens.
     let projection = HnswProjectionConfig::default();
-    let (no_training_links, no_training_config) = build_level0_links(Some(projection), None);
+    let (no_training_links, no_training_config) =
+        build_level0_links(Some(projection.clone()), None);
     assert!(
         no_training_config.projection.is_none(),
         "the projection must not be recorded when it did not run",
@@ -179,13 +180,14 @@ fn projection_rewrites_level0_links_only_when_configured_and_trained() {
     // Config block present and training vectors uploaded, but for a *different* vector name:
     // still nothing happens.
     let empty_dir = Builder::new().prefix("empty_training").tempdir().unwrap();
-    let (empty_links, empty_config) = build_level0_links(Some(projection), Some(empty_dir.path()));
+    let (empty_links, empty_config) =
+        build_level0_links(Some(projection.clone()), Some(empty_dir.path()));
     assert!(empty_config.projection.is_none());
     assert_eq!(control_links, empty_links);
 
     // The real thing.
     let (projected_links, projected_config) =
-        build_level0_links(Some(projection), Some(training_dir.path()));
+        build_level0_links(Some(projection.clone()), Some(training_dir.path()));
     assert_eq!(
         projected_config.projection,
         Some(projection),

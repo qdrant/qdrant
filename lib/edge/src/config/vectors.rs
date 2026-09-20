@@ -62,7 +62,7 @@ impl EdgeVectorParams {
             distance: *distance,
             on_disk: *on_disk,
             memory: None,
-            hnsw_config: hnsw_config.unwrap_or(*global_hnsw_config),
+            hnsw_config: hnsw_config.clone().unwrap_or_else(|| global_hnsw_config.clone()),
             quantization_config: quantization_config
                 .clone()
                 .or_else(|| global_quantization_config.cloned()),
@@ -90,7 +90,7 @@ impl EdgeVectorParams {
             quantization_config: quantization_config.clone(),
             hnsw_config: match index {
                 Indexes::Plain {} => None,
-                Indexes::Hnsw(hnsw_config) => Some(*hnsw_config),
+                Indexes::Hnsw(hnsw_config) => Some(hnsw_config.clone()),
             },
         }
     }

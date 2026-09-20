@@ -150,7 +150,7 @@ mod tests {
                 &base_segment_config,
                 DEFAULT_VECTOR_NAME,
                 None,
-                hnsw_config,
+                hnsw_config.clone(),
                 None,
             ),
         );
@@ -170,7 +170,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config,
-            hnsw_config,
+            hnsw_config.clone(),
             HnswGlobalConfig::default(),
         );
 
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
-        let mut changed_hnsw_config = hnsw_config;
+        let mut changed_hnsw_config = hnsw_config.clone();
         changed_hnsw_config.m /= 2;
         changed_hnsw_config.ef_construct /= 5;
 
@@ -199,7 +199,7 @@ mod tests {
                 &base_segment_config,
                 DEFAULT_VECTOR_NAME,
                 None,
-                changed_hnsw_config,
+                changed_hnsw_config.clone(),
                 None,
             ),
         );
@@ -210,7 +210,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             changed_optimizer_config,
-            changed_hnsw_config,
+            changed_hnsw_config.clone(),
             HnswGlobalConfig::default(),
         );
 
@@ -232,7 +232,7 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[DEFAULT_VECTOR_NAME].index,
-                    Indexes::Hnsw(changed_hnsw_config),
+                    Indexes::Hnsw(changed_hnsw_config.clone()),
                     "segment must be optimized with changed HNSW config",
                 );
             });
@@ -295,12 +295,12 @@ mod tests {
             projection: None,
         };
 
-        let mut hnsw_config_vector1 = hnsw_config_collection;
+        let mut hnsw_config_vector1 = hnsw_config_collection.clone();
         hnsw_config_vector1.m = 10;
         hnsw_config_vector1.ef_construct = 40;
         hnsw_config_vector1.on_disk = Some(true);
 
-        let hnsw_config_vector2 = hnsw_config_collection;
+        let hnsw_config_vector2 = hnsw_config_collection.clone();
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
@@ -309,7 +309,7 @@ mod tests {
                 &base_segment_config,
                 VECTOR1_NAME,
                 Some(true),
-                hnsw_config_vector1,
+                hnsw_config_vector1.clone(),
                 None,
             ),
         );
@@ -339,7 +339,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config,
-            hnsw_config_collection,
+            hnsw_config_collection.clone(),
             HnswGlobalConfig::default(),
         );
 
@@ -357,7 +357,7 @@ mod tests {
             config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.len(), 0);
 
-        let mut hnsw_config_vector2_changed = hnsw_config_collection;
+        let mut hnsw_config_vector2_changed = hnsw_config_collection.clone();
         hnsw_config_vector2_changed.m = hnsw_config_vector1.m / 2;
         hnsw_config_vector2_changed.on_disk = Some(true);
 
@@ -367,7 +367,7 @@ mod tests {
                 &base_segment_config,
                 VECTOR2_NAME,
                 None,
-                hnsw_config_vector2_changed,
+                hnsw_config_vector2_changed.clone(),
                 None,
             ),
         );
@@ -378,7 +378,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             changed_optimizer_config,
-            hnsw_config_collection,
+            hnsw_config_collection.clone(),
             HnswGlobalConfig::default(),
         );
 
@@ -400,12 +400,12 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[VECTOR1_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector1),
+                    Indexes::Hnsw(hnsw_config_vector1.clone()),
                     "HNSW config of vector1 is not what we expect",
                 );
                 assert_eq!(
                     segment.config().vector_data[VECTOR2_NAME].index,
-                    Indexes::Hnsw(hnsw_config_vector2_changed),
+                    Indexes::Hnsw(hnsw_config_vector2_changed.clone()),
                     "HNSW config of vector2 is not what we expect",
                 );
             });

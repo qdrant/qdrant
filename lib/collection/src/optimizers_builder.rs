@@ -333,7 +333,7 @@ pub fn build_optimizers(
             segments_path,
             temp_segments_path,
             segment_config,
-            *hnsw_config,
+            hnsw_config.clone(),
             hnsw_global_config.clone(),
         )),
     ])

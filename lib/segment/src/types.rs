@@ -816,9 +816,7 @@ impl Indexes {
 ///
 /// The degree cap (`m0`) is respected, so search cost is unchanged. Upper layers, entry
 /// points and the search code are untouched.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize)]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HnswProjectionConfig {
@@ -848,6 +846,24 @@ pub struct HnswProjectionConfig {
     #[serde(default = "default_projection_max_training_vectors")]
     #[validate(range(min = 1))]
     pub max_training_vectors: usize,
+    /// Points that never receive a projected edge (they may still hold their own links and
+    /// keep whatever the plain build linked to them). Meant for attention sinks: a key that
+    /// a large share of queries retrieve but that is the best key for few of them would
+    /// otherwise become a hub of thousands of in-links and trap the beam next to it. The
+    /// caller is expected to score these points directly at query time. Default: none.
+    /// Decided 2026-09-20 (kv-search `docs/2026-09-19-L15H3-projection-findings.md` §3j).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_points: Vec<ExtendedPointId>,
+    /// Run the reachability repair after the projected edges are placed: for every training
+    /// vector, its top-`topn` points minus `excluded_points` must all reach each other through
+    /// level-0 links inside that set; missing pairs get a link, closest pair first (Hua et al.
+    /// 2025, NGFix with the neighbourhood set equal to the whole top list). Default: true.
+    #[serde(default = "default_projection_repair")]
+    pub repair: bool,
+    /// Upper bound on the repair links one point may hold. Default: 32.
+    #[serde(default = "default_projection_repair_max_per_point")]
+    #[validate(range(min = 1))]
+    pub repair_max_per_point: usize,
 }
 
 pub const fn default_projection_m() -> usize {
@@ -870,6 +886,14 @@ pub const fn default_projection_max_training_vectors() -> usize {
     100_000
 }
 
+pub const fn default_projection_repair() -> bool {
+    true
+}
+
+pub const fn default_projection_repair_max_per_point() -> usize {
+    32
+}
+
 impl Default for HnswProjectionConfig {
     fn default() -> Self {
         HnswProjectionConfig {
@@ -879,6 +903,9 @@ impl Default for HnswProjectionConfig {
             cands: default_projection_cands(),
             seed: 0,
             max_training_vectors: default_projection_max_training_vectors(),
+            excluded_points: Vec::new(),
+            repair: default_projection_repair(),
+            repair_max_per_point: default_projection_repair_max_per_point(),
         }
     }
 }
@@ -904,9 +931,7 @@ pub fn validate_hnsw_config(hnsw_config: &HnswConfig) -> Result<(), ValidationEr
 }
 
 /// Config of HNSW index
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize)]
 #[validate(schema(function = "validate_hnsw_config"))]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
@@ -977,18 +1002,18 @@ impl HnswConfig {
             memory: _,
             inline_storage,
             projection,
-        } = *self;
+        } = self;
 
-        m != other.m
-            || ef_construct != other.ef_construct
-            || full_scan_threshold != other.full_scan_threshold
-            || payload_m != other.payload_m
+        *m != other.m
+            || *ef_construct != other.ef_construct
+            || *full_scan_threshold != other.full_scan_threshold
+            || *payload_m != other.payload_m
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
             // to flip this flag
             || self.memory_placement() != other.memory_placement()
-            || inline_storage != other.inline_storage
-            || projection != other.projection
+            || *inline_storage != other.inline_storage
+            || *projection != other.projection
     }
 
     /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
@@ -4948,7 +4973,7 @@ mod tests {
         // Changing the effective placement does require a rebuild
         let cached = HnswConfig {
             memory: Some(Memory::Cached),
-            ..legacy
+            ..legacy.clone()
         };
         assert!(legacy.mismatch_requires_rebuild(&cached));
     }
@@ -4985,8 +5010,32 @@ mod tests {
                 cands: 200,
                 seed: 0,
                 max_training_vectors: 100_000,
+                excluded_points: Vec::new(),
+                repair: true,
+                repair_max_per_point: 32,
             },
         );
+
+        // The recipe fields round-trip through JSON; `excluded_points` takes numeric ids and
+        // uuids alike.
+        let recipe = with_projection(serde_json::json!({
+            "excluded_points": [0, 1, 2],
+            "repair": false,
+            "repair_max_per_point": 8
+        }));
+        let projection = recipe.projection.unwrap();
+        assert_eq!(
+            projection.excluded_points,
+            vec![
+                ExtendedPointId::NumId(0),
+                ExtendedPointId::NumId(1),
+                ExtendedPointId::NumId(2)
+            ]
+        );
+        assert!(!projection.repair);
+        assert_eq!(projection.repair_max_per_point, 8);
+        let text = serde_json::to_string(&HnswProjectionConfig::default()).unwrap();
+        assert!(!text.contains("excluded_points"), "{text}");
 
         // Individual overrides keep the other defaults.
         let partial = with_projection(serde_json::json!({ "m": 8, "seed": 3 }));

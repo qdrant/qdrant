@@ -850,7 +850,7 @@ mod tests {
                 dir.path().to_owned(),
                 temp_dir.path().to_owned(),
                 collection_params.clone(),
-                hnsw_config,
+                hnsw_config.clone(),
                 HnswGlobalConfig::default(),
                 Default::default(),
             );
@@ -859,7 +859,7 @@ mod tests {
                 dir.path().to_owned(),
                 temp_dir.path().to_owned(),
                 collection_params.clone(),
-                hnsw_config,
+                hnsw_config.clone(),
                 HnswGlobalConfig::default(),
                 Default::default(),
             );
@@ -912,7 +912,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
-            hnsw_config,
+            hnsw_config.clone(),
             HnswGlobalConfig::default(),
             Default::default(),
         );
@@ -921,7 +921,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params,
-            hnsw_config,
+            hnsw_config.clone(),
             HnswGlobalConfig::default(),
             Default::default(),
         );

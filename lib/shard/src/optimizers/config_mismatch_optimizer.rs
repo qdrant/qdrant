@@ -92,8 +92,8 @@ impl ConfigMismatchOptimizer {
                                 .segment_optimizer_config
                                 .dense_vectors
                                 .get(vector_name)
-                                .map(|cfg| cfg.hnsw_config)
-                                .unwrap_or(self.global_hnsw_config);
+                                .map(|cfg| cfg.hnsw_config.clone())
+                                .unwrap_or_else(|| self.global_hnsw_config.clone());
                             if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
                                 return true;
                             }

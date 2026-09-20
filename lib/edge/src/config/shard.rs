@@ -86,7 +86,7 @@ impl EdgeConfig {
 
     /// Effective global HNSW config: [`HnswConfig::default`] unless explicitly set.
     pub fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config.unwrap_or_default()
+        self.hnsw_config.clone().unwrap_or_default()
     }
 
     /// Effective optimizers config: [`EdgeOptimizersConfig::default`] unless explicitly set.
@@ -127,7 +127,7 @@ impl EdgeConfig {
             } else {
                 sparse_vectors
             },
-            hnsw_config: hnsw_config.or(base.hnsw_config),
+            hnsw_config: hnsw_config.or_else(|| base.hnsw_config.clone()),
             quantization_config: quantization_config.or_else(|| base.quantization_config.clone()),
             optimizers: optimizers.or_else(|| base.optimizers.clone()),
             wal_options: wal_options.or_else(|| base.wal_options.clone()),
@@ -181,12 +181,12 @@ impl EdgeConfig {
             .values()
             .filter_map(|v| match &v.index {
                 segment::types::Indexes::Plain {} => None,
-                segment::types::Indexes::Hnsw(h) => Some(*h),
+                segment::types::Indexes::Hnsw(h) => Some(h.clone()),
             })
             .collect();
         let hnsw_config = hnsw_configs.first().and_then(|first| {
             if hnsw_configs.iter().all(|h| h == first) {
-                Some(*first)
+                Some(first.clone())
             } else {
                 None
             }

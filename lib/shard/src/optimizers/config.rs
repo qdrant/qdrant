@@ -49,7 +49,7 @@ impl DenseVectorOptimizerConfig {
     /// Config for an indexed segment.
     pub fn indexed(&self) -> VectorDataConfig {
         self.vector_data_config(
-            Indexes::Hnsw(self.hnsw_config),
+            Indexes::Hnsw(self.hnsw_config.clone()),
             self.quantization_config.clone(),
         )
     }

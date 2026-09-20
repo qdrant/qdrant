@@ -208,7 +208,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                 vector_storage,
                 quantized_vectors,
                 payload_index,
-                *hnsw_config,
+                hnsw_config.clone(),
                 populate_override,
             )?)),
         })

@@ -21,12 +21,30 @@
 //!   most `proj_m` of them with the relative-neighbourhood ("not closer than
 //!   base") rule so the projected edges stay diverse.
 //! * **D** — new level-0 list of `u` = selected edges (in selection order), then
-//!   `u`'s original level-0 links in their original order, skipping duplicates,
-//!   truncated to `m0`.
+//!   `u`'s original level-0 links nearest first (so the cut drops the farthest
+//!   ones), skipping duplicates, truncated to `m0`.
+//! * **E** — reachability repair (Hua et al. 2025, NGFix with the neighbourhood
+//!   set equal to the whole top list): for every training query in turn, its
+//!   top-`proj_topn` points minus the excluded ones must all reach each other
+//!   through level-0 links inside that set; while some pair cannot, the closest
+//!   unreached pair gets a link, placed at the front of the source's list, which
+//!   is cut back to `m0`. A point holds at most `repair_max_per_point` such links.
 //!
-//! Points that no training query retrieved keep their list unchanged. Levels
-//! `>= 1`, the entry points and the search code are untouched; the degree cap is
-//! respected, so search cost is unchanged by construction.
+//! `excluded_targets` (step C) are points that never receive a projected edge:
+//! attention sinks. A key retrieved by a large share of queries but the best key
+//! for few of them otherwise becomes a hub of thousands of in-links, and a beam
+//! that lands next to it stalls there. The caller scores excluded points directly
+//! at query time. Points that no training query retrieved keep their list
+//! unchanged. Levels `>= 1`, the entry points and the search code are untouched;
+//! the degree cap is respected, so search cost is unchanged by construction.
+//!
+//! Recipe decided 2026-09-20 on measured data (kv-search
+//! `docs/2026-09-19-L15H3-projection-findings.md` §3g-§3j): sorted cut, sinks
+//! excluded, repair on with cap 32. Rejected there, and not kept in the code: an
+//! in-degree cap on targets, a rank gate on who may link to a sink, reserved slots
+//! for original links, a frequency-based sink detector (blind on the training
+//! queries of L15H3), repair of the rank-1 pairs only, and repair without the
+//! co-retrieval edges.
 //!
 //! Nothing here is metric-specific: Qdrant scores are "higher is better" for
 //! every distance, and the pass only ever compares scores.
@@ -65,7 +83,7 @@ const REWRITE_CHUNK: usize = 512;
 pub const PROJECTION_DUMP_DIR_ENV: &str = "QDRANT_HNSW_PROJECTION_DUMP_DIR";
 
 /// Parameters of the projection post-pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectionParams {
     /// Exact top-N points of each training query that define co-retrieval.
     pub proj_topn: usize,
@@ -77,6 +95,12 @@ pub struct ProjectionParams {
     pub proj_m: usize,
     /// Seed of the per-point training-query sub-sampling.
     pub proj_seed: u64,
+    /// Internal offsets of the points that never receive a projected edge (step C) and are
+    /// left out of the repair's neighbourhoods (step E). Sorted ascending; empty = none.
+    pub excluded_targets: Vec<PointOffsetType>,
+    /// Step E: run the reachability repair, with this many repair links per point at most.
+    /// `None` skips the repair.
+    pub repair_max_per_point: Option<usize>,
 }
 
 impl Default for ProjectionParams {
@@ -87,6 +111,8 @@ impl Default for ProjectionParams {
             proj_cands: 200,
             proj_m: 16,
             proj_seed: 0,
+            excluded_targets: Vec::new(),
+            repair_max_per_point: Some(32),
         }
     }
 }
@@ -160,7 +186,10 @@ where
     FI: Fn() -> OperationResult<FilteredScorer<'a>> + Sync,
 {
     let num_points = builder.num_points();
-    if num_points == 0 || num_train_queries == 0 || params.proj_m == 0 {
+    if num_points == 0
+        || num_train_queries == 0
+        || (params.proj_m == 0 && params.repair_max_per_point.is_none())
+    {
         return Ok(ProjectionStats {
             num_points,
             num_train_queries,
@@ -231,25 +260,69 @@ where
         num_train_queries,
         ..Default::default()
     };
-    if num_points == 0 || num_train_queries == 0 || params.proj_m == 0 {
+    let run_coretrieval = params.proj_m > 0;
+    if num_points == 0
+        || num_train_queries == 0
+        || (!run_coretrieval && params.repair_max_per_point.is_none())
+    {
         stats.level0_links = count_level0_links(builder);
         return Ok(stats);
     }
 
-    let timer = Instant::now();
-    let rewrite = rewrite_level0_links(
-        builder,
-        top_lists,
-        topn,
-        params,
-        &make_internal_scorer,
-        is_stopped,
-    )?;
-    stats.rewrite_duration = timer.elapsed();
+    let mut excluded_targets = params.excluded_targets.clone();
+    excluded_targets.sort_unstable();
+    excluded_targets.dedup();
+    if !excluded_targets.is_empty() {
+        log::info!(
+            "HNSW query-aware projection: {} points excluded as projected targets: {:?}",
+            excluded_targets.len(),
+            excluded_targets
+        );
+    }
+    let dump_dir = std::env::var_os(PROJECTION_DUMP_DIR_ENV).map(PathBuf::from);
+    if let Some(dir) = &dump_dir {
+        // Part of the provenance dump: the excluded points, one internal offset per line, so the
+        // query side can score the very same points directly.
+        fs::create_dir_all(dir)?;
+        let text: String = excluded_targets.iter().map(|p| format!("{p}\n")).collect();
+        fs::write(dir.join("excluded_targets.txt"), text)?;
+    }
 
-    stats.points_with_candidates = rewrite.points_with_candidates;
-    stats.projected_edges = rewrite.projected_edges;
-    stats.level0_links = rewrite.level0_links;
+    let timer = Instant::now();
+    if run_coretrieval {
+        let rewrite = rewrite_level0_links(
+            builder,
+            top_lists,
+            topn,
+            params,
+            &excluded_targets,
+            &make_internal_scorer,
+            is_stopped,
+        )?;
+        stats.points_with_candidates = rewrite.points_with_candidates;
+        stats.projected_edges = rewrite.projected_edges;
+        stats.level0_links = rewrite.level0_links;
+    } else if let Some(dir) = &dump_dir {
+        // Repair only: the co-retrieval pass added nothing, so its provenance dump is one empty
+        // row per point. Written so a caller that requires the dump still finds it.
+        let empty: Vec<Vec<PointOffsetType>> = vec![Vec::new(); num_points];
+        write_projection_dump(dir, empty.iter())?;
+    }
+    if let Some(max_per_point) = params.repair_max_per_point {
+        let added = reachability_repair(
+            builder,
+            top_lists,
+            topn,
+            max_per_point,
+            !run_coretrieval,
+            &excluded_targets,
+            &make_internal_scorer,
+            is_stopped,
+        )?;
+        stats.projected_edges += added;
+        stats.level0_links = count_level0_links(builder);
+    }
+    stats.rewrite_duration = timer.elapsed();
     Ok(stats)
 }
 
@@ -429,6 +502,8 @@ struct RewriteStats {
 
 /// What one rewrite task returns: its share of the stats, and — only when the provenance dump is
 /// on — one row of projected links per point of its chunk, in point order.
+/// The third element is only filled by the THROWAWAY two-phase (in-degree cap) path: the selected
+/// targets of every rewritten point of the chunk, to be composed and written after the cap.
 type RewritePartial = (RewriteStats, Vec<Vec<PointOffsetType>>);
 
 /// Steps B–D: build the inverse index, select the projected edges and rewrite
@@ -442,6 +517,7 @@ fn rewrite_level0_links<'a, FI>(
     top_lists: &[PointOffsetType],
     topn: usize,
     params: &ProjectionParams,
+    excluded_targets: &[PointOffsetType],
     make_internal_scorer: &FI,
     is_stopped: &AtomicBool,
 ) -> OperationResult<RewriteStats>
@@ -547,7 +623,8 @@ where
                     while j < occurrences.len() && occurrences[j] == value {
                         j += 1;
                     }
-                    if value != u {
+                    // `excluded_targets`: attention sinks never become targets (module docs).
+                    if value != u && excluded_targets.binary_search(&value).is_err() {
                         candidates.push(((j - i) as u32, value));
                     }
                     i = j;
@@ -573,17 +650,7 @@ where
                 }
 
                 // Step D: projected edges first, then the original ones.
-                new_links.clear();
-                new_links.extend_from_slice(&selected);
-                new_links.truncate(m0);
-                for &link in &original {
-                    if new_links.len() >= m0 {
-                        break;
-                    }
-                    if !new_links.contains(&link) {
-                        new_links.push(link);
-                    }
-                }
+                compose_links(u, &selected, &mut original, m0, &scorer, &mut new_links);
 
                 local.projected_edges += selected.len().min(m0);
                 local.level0_links += new_links.len();
@@ -668,6 +735,284 @@ where
     Ok(())
 }
 
+/// Step E: reachability repair, Hua et al. 2025's NGFix with `K_h = N_q = topn`, run
+/// sequentially over the training queries so that every query sees the edges the earlier ones
+/// added.
+///
+/// For one training query: its top-`topn` points minus the excluded targets (the sinks) are the
+/// nodes; the level-0 links between them are the edges (the paper's `NG_{S,q}` induced subgraph);
+/// [`plan_reach_edges`] decides which directed edges to add so that every node reaches every
+/// other node inside that subgraph, closest pair first with the closure updated after each
+/// addition. Each added edge `s -> t` is placed at the front of `s`'s level-0 list, which is
+/// truncated to `m0` (so the last link is evicted: the farthest original when the list is
+/// nearest-first). A point holds at most `max_per_point` repair edges; a pair whose source is
+/// full is skipped and the next closest pair is tried instead, which is the paper's degree cap
+/// without its EH-based pruning.
+///
+/// `sort_on_first_touch`: when step D did not run (repair without co-retrieval edges) nothing has
+/// ordered the lists yet, so a point's list is sorted nearest first the first time the repair
+/// touches it, and the eviction still drops the farthest link.
+///
+/// Returns the number of edges added. Sequential and deterministic.
+fn reachability_repair<'a, FI>(
+    builder: &GraphLayersBuilder,
+    top_lists: &[PointOffsetType],
+    topn: usize,
+    max_per_point: usize,
+    sort_on_first_touch: bool,
+    excluded: &[PointOffsetType],
+    make_internal_scorer: &FI,
+    is_stopped: &AtomicBool,
+) -> OperationResult<usize>
+where
+    FI: Fn() -> OperationResult<FilteredScorer<'a>> + Sync,
+{
+    if topn > 128 {
+        return Err(OperationError::service_error(format!(
+            "reachability repair: topn={topn} exceeds the 128-node bitset"
+        )));
+    }
+    let num_points = builder.num_points();
+    let m0 = builder.hnsw_m().m0;
+    let scorer = make_internal_scorer()?;
+    let started = Instant::now();
+
+    let mut reach_count = vec![0u8; num_points];
+    let mut touched = vec![false; num_points];
+
+    let mut nodes: Vec<PointOffsetType> = Vec::with_capacity(topn);
+    let mut links: Vec<PointOffsetType> = Vec::new();
+    let mut adj: Vec<u128> = Vec::with_capacity(topn);
+    let mut scores: Vec<f32> = Vec::new();
+    let (mut queries_with_defects, mut edges_added, mut skipped_full, mut evicted) = (0usize, 0usize, 0usize, 0usize);
+    let mut per_query_added: Vec<u32> = Vec::with_capacity(top_lists.len() / topn);
+
+    for (qi, row) in top_lists.chunks(topn).enumerate() {
+        if qi % 1024 == 0 {
+            check_process_stopped(is_stopped)?;
+        }
+        // nodes in rank order, sinks dropped
+        nodes.clear();
+        nodes.extend(row.iter().copied().filter(|p| excluded.binary_search(p).is_err()));
+        let n = nodes.len();
+        if n < 2 {
+            per_query_added.push(0);
+            continue;
+        }
+        // rank lookup: node id -> index; nodes are few, a sorted pair list beats a hash map
+        let mut index: Vec<(PointOffsetType, u8)> = nodes.iter().enumerate().map(|(i, &p)| (p, i as u8)).collect();
+        index.sort_unstable();
+        let rank_of = |p: PointOffsetType| -> Option<usize> {
+            index.binary_search_by_key(&p, |&(id, _)| id).ok().map(|k| index[k].1 as usize)
+        };
+        // induced adjacency
+        adj.clear();
+        for &u in &nodes {
+            builder.level0_links(u, &mut links);
+            let mut bits: u128 = 0;
+            for &l in &links {
+                if let Some(j) = rank_of(l) {
+                    bits |= 1u128 << j;
+                }
+            }
+            adj.push(bits);
+        }
+        // pairwise scores, lazily: only computed when the closure is incomplete
+        let plan = plan_reach_edges(
+            &adj,
+            |i, j| {
+                if scores.is_empty() {
+                    scores.resize(n * n, f32::NAN);
+                }
+                let k = i * n + j;
+                if scores[k].is_nan() {
+                    let sc = scorer.score_internal(nodes[i], nodes[j]);
+                    scores[k] = sc;
+                    scores[j * n + i] = sc;
+                }
+                scores[k]
+            },
+            |i| (reach_count[nodes[i] as usize] as usize) < max_per_point,
+        );
+        scores.clear();
+        if plan.added.is_empty() && plan.skipped == 0 {
+            per_query_added.push(0);
+            continue;
+        }
+        queries_with_defects += 1;
+        skipped_full += plan.skipped;
+        per_query_added.push(plan.added.len() as u32);
+        for &(si, ti) in &plan.added {
+            let (s, t) = (nodes[si], nodes[ti]);
+            builder.level0_links(s, &mut links);
+            if sort_on_first_touch && !touched[s as usize] {
+                let mut scored: Vec<(f32, PointOffsetType)> =
+                    links.iter().map(|&l| (scorer.score_internal(s, l), l)).collect();
+                scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+                links.clear();
+                links.extend(scored.into_iter().map(|(_, l)| l));
+            }
+            touched[s as usize] = true;
+            if links.contains(&t) {
+                // already linked outside the induced view (cannot happen: adj came from the same
+                // list), keep the count honest anyway
+                continue;
+            }
+            links.insert(0, t);
+            if links.len() > m0 {
+                links.truncate(m0);
+                evicted += 1;
+            }
+            builder.set_level0_links(s, links.iter().copied());
+            reach_count[s as usize] = reach_count[s as usize].saturating_add(1);
+            edges_added += 1;
+        }
+    }
+    let points_at_cap = reach_count.iter().filter(|&&c| c as usize >= max_per_point).count();
+    let points_with_repair = reach_count.iter().filter(|&&c| c > 0).count();
+    per_query_added.sort_unstable();
+    let pct = |p: f64| per_query_added[((per_query_added.len() - 1) as f64 * p) as usize];
+    log::info!(
+        "HNSW query-aware projection: reachability repair (max {} per point): \
+         {} queries, {} with defects, {} edges added, {} evictions, {} pairs skipped for a full source, \
+         {} points hold repair edges, {} at the cap; edges per query p50 {} p90 {} p99 {} max {}; {:.1}s",
+        max_per_point,
+        per_query_added.len(),
+        queries_with_defects,
+        edges_added,
+        evicted,
+        skipped_full,
+        points_with_repair,
+        points_at_cap,
+        pct(0.5),
+        pct(0.9),
+        pct(0.99),
+        per_query_added.last().copied().unwrap_or(0),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(edges_added)
+}
+
+/// What [`plan_reach_edges`] decided for one query.
+struct ReachPlan {
+    /// Directed edges `(source index, target index)` to add, in the order they were chosen.
+    added: Vec<(usize, usize)>,
+    /// Pairs that were needed but whose source was full; the closure stays incomplete for them.
+    skipped: usize,
+}
+
+/// The pure core of the reachability repair for one query: given the induced adjacency (`adj[i]`
+/// bit `j` set when node `i` links to node `j`), decide which edges to add.
+///
+/// Computes the transitive closure, then repeats: among the ordered pairs `(i, j)` that are not
+/// connected, take the closest by `score` (higher = closer) whose source `can_add`; add it and
+/// update the closure (every node that reaches `i` now reaches everything `j` reaches). A needed
+/// pair whose every candidate source is full is counted in `skipped`. At most `2 (n - 1)` edges
+/// are added (the paper's Theorem 4).
+fn plan_reach_edges(
+    adj: &[u128],
+    mut score: impl FnMut(usize, usize) -> f32,
+    mut can_add: impl FnMut(usize) -> bool,
+) -> ReachPlan {
+    let n = adj.len();
+    let full: u128 = if n == 128 { u128::MAX } else { (1u128 << n) - 1 };
+    // closure: reach[i] bit j = i reaches j (including itself)
+    let mut reach: Vec<u128> = adj.iter().enumerate().map(|(i, &b)| b | (1u128 << i)).collect();
+    for k in 0..n {
+        let rk = reach[k];
+        for i in 0..n {
+            if reach[i] & (1u128 << k) != 0 {
+                reach[i] |= rk;
+            }
+        }
+    }
+    let mut plan = ReachPlan {
+        added: Vec::new(),
+        skipped: 0,
+    };
+    loop {
+        // the set of unsatisfied pairs
+        let mut best: Option<(f32, usize, usize)> = None;
+        let mut any_unsatisfied = false;
+        for i in 0..n {
+            let missing = full & !reach[i];
+            if missing == 0 {
+                continue;
+            }
+            any_unsatisfied = true;
+            if !can_add(i) {
+                continue;
+            }
+            let mut tg = missing;
+            while tg != 0 {
+                let j = tg.trailing_zeros() as usize;
+                tg &= tg - 1;
+                let sc = score(i, j);
+                if best.is_none_or(|b| sc > b.0 || (sc == b.0 && (i, j) < (b.1, b.2))) {
+                    best = Some((sc, i, j));
+                }
+            }
+        }
+        if !any_unsatisfied {
+            break;
+        }
+        let Some((_, s, t)) = best else {
+            // something is unsatisfied but no source can take an edge
+            plan.skipped += (0..n).map(|i| (full & !reach[i]).count_ones() as usize).sum::<usize>();
+            break;
+        };
+        // The chosen source is the closest to *some* missing target: add s -> t and update the
+        // closure.
+        plan.added.push((s, t));
+        let rt = reach[t];
+        for i in 0..n {
+            if reach[i] & (1u128 << s) != 0 {
+                reach[i] |= rt | (1u128 << t);
+            }
+        }
+        if plan.added.len() > 2 * n {
+            // cannot happen (Theorem 4); guard against a logic error looping forever
+            break;
+        }
+    }
+    plan
+}
+
+/// Step D: `new_links` = the selected targets (selection order), then `u`'s original links
+/// nearest first (score to `u` descending, ties by id; `original` is reordered in place), skipping
+/// duplicates, truncated to `m0`. The order matters only at the cut: a builder's list is roughly
+/// nearest-first already, but a list read back from a stored graph is in id order, and cutting
+/// that dropped arbitrary links (measured: 0.011-0.015 mass-weighted recall on L15H3).
+fn compose_links(
+    u: PointOffsetType,
+    selected: &[PointOffsetType],
+    original: &mut Vec<PointOffsetType>,
+    m0: usize,
+    scorer: &FilteredScorer<'_>,
+    new_links: &mut Vec<PointOffsetType>,
+) {
+    if original.len() > 1 {
+        let mut scored: Vec<(f32, PointOffsetType)> = original
+            .iter()
+            .map(|&l| (scorer.score_internal(u, l), l))
+            .collect();
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        original.clear();
+        original.extend(scored.into_iter().map(|(_, l)| l));
+    }
+    new_links.clear();
+    new_links.extend_from_slice(selected);
+    new_links.truncate(m0);
+    for &link in original.iter() {
+        if new_links.len() >= m0 {
+            break;
+        }
+        if !new_links.contains(&link) {
+            new_links.push(link);
+        }
+    }
+}
+
 /// Derive a per-point RNG seed, so that sub-sampling is reproducible for a given
 /// `proj_seed` no matter how the points are distributed over threads.
 fn mix_seed(seed: u64, point_id: PointOffsetType) -> u64 {
@@ -676,6 +1021,79 @@ fn mix_seed(seed: u64, point_id: PointOffsetType) -> u64 {
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)
+}
+
+#[cfg(test)]
+mod reach_tests {
+    use super::*;
+
+    /// Nodes 0..4 in rank order; 0 -> 1 -> 2 linked, 3 isolated. Score = -|i - j| (closer ranks
+    /// closer). The first edge chosen is the closest unreached pair with a source that can add:
+    /// 1 -> 0, 2 -> 1, 2 -> 3 and 3 -> 2 tie on score, and the tie goes to the smallest
+    /// (source, target).
+    #[test]
+    fn first_edge_is_the_closest_unreached_pair() {
+        let adj = vec![0b0010u128, 0b0100, 0b0000, 0b0000];
+        let plan = plan_reach_edges(&adj, |i, j| -((i as f32 - j as f32).abs()), |_| true);
+        assert_eq!(plan.added[0], (1, 0));
+        assert_eq!(plan.skipped, 0);
+    }
+
+    /// Same graph: the planner must terminate with every pair connected and at most
+    /// 2(n-1) = 6 edges.
+    #[test]
+    fn all_pairs_terminates_fully_connected() {
+        let adj = vec![0b0010u128, 0b0100, 0b0000, 0b0000];
+        let plan = plan_reach_edges(&adj, |i, j| -((i as f32 - j as f32).abs()), |_| true);
+        assert!(plan.added.len() <= 6, "{:?}", plan.added);
+        assert_eq!(plan.skipped, 0);
+        // replay the plan on the adjacency and check the closure is complete
+        let mut a = adj.clone();
+        for &(s, t) in &plan.added {
+            a[s] |= 1u128 << t;
+        }
+        let n = a.len();
+        let mut reach: Vec<u128> = a.iter().enumerate().map(|(i, &b)| b | (1u128 << i)).collect();
+        for k in 0..n {
+            let rk = reach[k];
+            for i in 0..n {
+                if reach[i] & (1u128 << k) != 0 {
+                    reach[i] |= rk;
+                }
+            }
+        }
+        assert!(reach.iter().all(|&r| r == 0b1111), "{reach:?}");
+    }
+
+    /// A full source is skipped: only node 0 may add edges, so every added edge starts at 0.
+    #[test]
+    fn a_full_source_is_skipped_for_the_next_closest() {
+        let adj = vec![0b0010u128, 0b0100, 0b0000, 0b0000];
+        let plan = plan_reach_edges(&adj, |i, j| -((i as f32 - j as f32).abs()), |i| i == 0);
+        assert_eq!(plan.added[0], (0, 3));
+        assert!(plan.added.iter().all(|&(s, _)| s == 0), "{:?}", plan.added);
+        // 0 now reaches everything; the pairs with another source stay unsatisfied
+        assert!(plan.skipped > 0);
+    }
+
+    /// Nothing can add: the missing pairs are reported as skipped and the planner stops.
+    #[test]
+    fn no_source_available_reports_skipped() {
+        let adj = vec![0b0010u128, 0b0100, 0b0000, 0b0000];
+        let plan = plan_reach_edges(&adj, |_, _| 0.0, |_| false);
+        assert!(plan.added.is_empty());
+        // 0 misses 3; 1 misses 0, 3; 2 misses 0, 1, 3; 3 misses 0, 1, 2
+        assert_eq!(plan.skipped, 1 + 2 + 3 + 3);
+    }
+
+    /// Already connected: nothing to do.
+    #[test]
+    fn connected_graph_needs_nothing() {
+        let adj = vec![0b0010u128, 0b0100, 0b1000, 0b0001];
+        let plan = plan_reach_edges(&adj, |_, _| 0.0, |_| true);
+        assert!(plan.added.is_empty());
+        assert_eq!(plan.skipped, 0);
+    }
 }
 
 #[cfg(test)]
@@ -699,6 +1117,7 @@ mod tests {
 
     /// Six points on the unit circle plus one that no query ever retrieves.
     ///
+    /// Point 0's original links `[4, 1, 5]` sort nearest first to `[1 (10°), 4 (90°), 5 (260°)]`.
     /// For `u = 0` (0°) the candidate order is `[1 (10°), 2 (20°), 3 (190°), 4 (90°)]`:
     /// * 1 is selected first,
     /// * 2 is pruned  (dot(1,2) = cos 10° > dot(0,2) = cos 20°),
@@ -711,7 +1130,7 @@ mod tests {
             unit(20.0),
             unit(190.0),
             unit(90.0),
-            unit(270.0),
+            unit(260.0),
             unit(45.0),
         ]
     }
@@ -745,7 +1164,9 @@ mod tests {
         builder
     }
 
-    fn run(builder: &GraphLayersBuilder, params: &ProjectionParams) -> RewriteStats {
+    /// Steps B-E through the public entry point, with the repair off unless the caller asked
+    /// for it explicitly (the tests below pin step D's output, which the repair would rewrite).
+    fn run(builder: &GraphLayersBuilder, params: &ProjectionParams) -> ProjectionStats {
         let vectors = fixture_vectors();
         let mut storage = new_volatile_dense_vector_storage(2, Distance::Dot);
         let hw = HardwareCounterCell::new();
@@ -760,12 +1181,12 @@ mod tests {
         }
         let deleted = BitVec::repeat(false, vectors.len());
         let (top_lists, topn) = fixture_top_lists();
-        rewrite_level0_links(
+        add_query_aware_projection_edges_from_lists(
             builder,
+            params,
             &top_lists,
             topn,
-            params,
-            &|| {
+            || {
                 Ok(FilteredScorer::new_for_test(
                     QueryVector::from(vectors[0].clone()),
                     &storage,
@@ -775,6 +1196,31 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap()
+    }
+
+    fn no_repair(params: ProjectionParams) -> ProjectionParams {
+        ProjectionParams {
+            repair_max_per_point: None,
+            ..params
+        }
+    }
+
+    /// Induced reachability inside one top list after the pass: does every node reach every
+    /// other node walking only level-0 links between the list's nodes?
+    fn fully_reachable(builder: &GraphLayersBuilder, row: &[PointOffsetType]) -> bool {
+        let n = row.len();
+        let mut adj = vec![0u128; n];
+        let mut links = Vec::new();
+        for (i, &u) in row.iter().enumerate() {
+            builder.level0_links(u, &mut links);
+            for &l in &links {
+                if let Some(j) = row.iter().position(|&p| p == l) {
+                    adj[i] |= 1 << j;
+                }
+            }
+        }
+        let plan = plan_reach_edges(&adj, |_, _| 0.0, |_| false);
+        plan.skipped == 0
     }
 
     fn links_of(builder: &GraphLayersBuilder, point_id: PointOffsetType) -> Vec<PointOffsetType> {
@@ -788,10 +1234,10 @@ mod tests {
         let builder = build_fixture(4);
         let stats = run(
             &builder,
-            &ProjectionParams {
+            &no_repair(ProjectionParams {
                 proj_m: 4,
                 ..Default::default()
-            },
+            }),
         );
 
         // Projected [1, 3] first, then the original [4, 1, 5] with 1 deduplicated.
@@ -801,15 +1247,89 @@ mod tests {
         assert_eq!(stats.points_with_candidates, 6);
     }
 
+    /// Point 1 is excluded: it is never selected as a target (point 0's first projected edge
+    /// becomes 2, the next most co-retrieved candidate, instead of 1), but it keeps its place
+    /// among point 0's original links, and it still takes part as a source (its own list is
+    /// rewritten; for this fixture the rewrite happens to reproduce `[0, 2]`).
+    #[test]
+    fn excluded_targets_are_never_selected_but_keep_their_links() {
+        let builder = build_fixture(4);
+        let stats = run(
+            &builder,
+            &no_repair(ProjectionParams {
+                proj_m: 4,
+                excluded_targets: vec![1],
+                ..Default::default()
+            }),
+        );
+        let links = links_of(&builder, 0);
+        assert_eq!(links[0], 2, "{links:?}");
+        assert!(links[1..].contains(&1), "{links:?}");
+        assert_eq!(stats.points_with_candidates, 6);
+    }
+
+    /// Step E: with the repair on and room in the lists (m0 = 8), every training query's top
+    /// list is fully reachable through its own induced links afterwards; without it, the
+    /// fixture's third list (`[5, 4, 3, 1]`, whose points only link to 0) is not.
+    #[test]
+    fn repair_makes_every_top_list_reachable() {
+        let (top_lists, topn) = fixture_top_lists();
+        let without = build_fixture(8);
+        run(
+            &without,
+            &no_repair(ProjectionParams {
+                proj_m: 4,
+                ..Default::default()
+            }),
+        );
+        assert!(!fully_reachable(&without, &top_lists[2 * topn..3 * topn]));
+
+        let with = build_fixture(8);
+        let stats = run(
+            &with,
+            &ProjectionParams {
+                proj_m: 4,
+                repair_max_per_point: Some(32),
+                ..Default::default()
+            },
+        );
+        for row in top_lists.chunks(topn) {
+            assert!(fully_reachable(&with, row), "{row:?}");
+        }
+        assert!(stats.projected_edges > 0);
+    }
+
+    /// An excluded point is left out of the repair's neighbourhoods: with point 1 excluded the
+    /// repair never adds a link into it, and its own list is not touched by the repair.
+    #[test]
+    fn repair_leaves_excluded_points_alone() {
+        let builder = build_fixture(8);
+        run(
+            &builder,
+            &ProjectionParams {
+                proj_m: 0,
+                excluded_targets: vec![1],
+                repair_max_per_point: Some(32),
+                ..Default::default()
+            },
+        );
+        assert_eq!(links_of(&builder, 1), vec![0, 2]);
+        let (top_lists, topn) = fixture_top_lists();
+        for row in top_lists.chunks(topn) {
+            let rest: Vec<PointOffsetType> = row.iter().copied().filter(|&p| p != 1).collect();
+            assert!(fully_reachable(&builder, &rest), "{rest:?}");
+        }
+    }
+
     #[test]
     fn projection_truncates_to_m0() {
         let builder = build_fixture(3);
         run(
             &builder,
-            &ProjectionParams {
+            &no_repair(ProjectionParams {
                 proj_m: 4,
                 ..Default::default()
-            },
+            }),
         );
         assert_eq!(links_of(&builder, 0), vec![1, 3, 4]);
     }
@@ -819,10 +1339,10 @@ mod tests {
         let builder = build_fixture(4);
         run(
             &builder,
-            &ProjectionParams {
+            &no_repair(ProjectionParams {
                 proj_m: 1,
                 ..Default::default()
-            },
+            }),
         );
         // Only the first projected edge survives; the rest is the original list.
         assert_eq!(links_of(&builder, 0), vec![1, 4, 5]);
@@ -842,11 +1362,11 @@ mod tests {
 
     #[test]
     fn sub_sampling_is_deterministic_for_a_seed() {
-        let params = ProjectionParams {
+        let params = no_repair(ProjectionParams {
             proj_m: 4,
             proj_maxq: 1,
             ..Default::default()
-        };
+        });
         let first = build_fixture(4);
         run(&first, &params);
         let second = build_fixture(4);
@@ -861,10 +1381,10 @@ mod tests {
         let builder = build_fixture(4);
         run(
             &builder,
-            &ProjectionParams {
+            &no_repair(ProjectionParams {
                 proj_m: 0,
                 ..Default::default()
-            },
+            }),
         );
         for (point_id, original) in fixture_links().iter().enumerate() {
             assert_eq!(&links_of(&builder, point_id as PointOffsetType), original);

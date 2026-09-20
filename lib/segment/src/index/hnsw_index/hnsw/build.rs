@@ -391,7 +391,7 @@ impl HNSWIndex {
         //
         // Both `hnsw_config.projection` and an uploaded training set must be present. With
         // either missing this is a no-op and the graph is what it would have been before.
-        if let Some(projection) = hnsw_config.projection {
+        if let Some(projection) = hnsw_config.projection.clone() {
             let stats = Self::add_projection_edges(
                 &graph_layers_builder,
                 &projection,
@@ -735,12 +735,33 @@ impl HNSWIndex {
 
         let training = training.sampled(projection.max_training_vectors, projection.seed);
         let num_train = training.len();
+        // Excluded points (attention sinks) are given as external ids; the pass works on this
+        // segment's internal offsets. A point that lives in another segment, or was deleted, is
+        // simply not here -- expected with several segments, so no warning.
+        let mut excluded_targets: Vec<PointOffsetType> = projection
+            .excluded_points
+            .iter()
+            .filter_map(|&id| id_tracker.internal_id_with_behavior(id, DeferredBehavior::WithDeferred))
+            .collect();
+        excluded_targets.sort_unstable();
+        excluded_targets.dedup();
+        if !projection.excluded_points.is_empty() {
+            log::info!(
+                "HNSW query-aware projection: {} of {} excluded points are in this segment for \
+                 vector `{}`",
+                excluded_targets.len(),
+                projection.excluded_points.len(),
+                source.vector_name,
+            );
+        }
         let params = ProjectionParams {
             proj_topn: projection.topn,
             proj_maxq: projection.maxq,
             proj_cands: projection.cands,
             proj_m: projection.m,
             proj_seed: projection.seed,
+            excluded_targets,
+            repair_max_per_point: projection.repair.then_some(projection.repair_max_per_point),
         };
 
         let point_deleted = id_tracker.deleted_point_bitslice();

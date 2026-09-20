@@ -421,7 +421,7 @@ pub struct ValuesCount {
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParams {
     /// Size of the vectors
     #[prost(uint64, tag = "1")]
@@ -460,7 +460,7 @@ pub struct VectorParams {
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsDiff {
     /// Update params for HNSW index.
     /// If empty object - it will be unset
@@ -700,7 +700,7 @@ pub struct CollectionWarning {
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph.
     /// Larger the value - more accurate the search, more space required.
@@ -754,7 +754,7 @@ pub struct HnswConfigDiff {
 /// Only has an effect when training vectors were uploaded for the vector name
 /// (see UpdateHnswTrainingVectors). All fields are optional and fall back to their defaults.
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HnswProjectionConfig {
     /// Maximum number of projected edges placed in front of a point's level-0 links.
     /// Must not exceed 2 * m. Default: 16.
@@ -776,6 +776,16 @@ pub struct HnswProjectionConfig {
     /// down deterministically. Default: 100000.
     #[prost(uint64, optional, tag = "6")]
     pub max_training_vectors: ::core::option::Option<u64>,
+    /// Points that never receive a projected edge (attention sinks), as point ids written out:
+    /// a number or a UUID string. Score these points directly at query time. Default: none.
+    #[prost(string, repeated, tag = "7")]
+    pub excluded_points: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Run the reachability repair after the projected edges are placed. Default: true.
+    #[prost(bool, optional, tag = "8")]
+    pub repair: ::core::option::Option<bool>,
+    /// Upper bound on the repair links one point may hold. Default: 32.
+    #[prost(uint64, optional, tag = "9")]
+    pub repair_max_per_point: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -31,9 +31,7 @@ pub trait DiffConfig<Diff>: Clone {
     }
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Eq, Hash,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -245,7 +243,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
-            projection: projection.or(self.projection),
+            projection: projection.clone().or_else(|| self.projection.clone()),
         }
     }
 }
@@ -273,7 +271,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
-            projection: projection.or(self.projection),
+            projection: projection.clone().or_else(|| self.projection.clone()),
         }
     }
 }
@@ -590,7 +588,7 @@ mod tests {
         );
 
         // Round trip through the full config.
-        let round_trip = HnswConfigDiff::from(updated);
+        let round_trip = HnswConfigDiff::from(updated.clone());
         assert_eq!(round_trip.projection, updated.projection);
     }
 

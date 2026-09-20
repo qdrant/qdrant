@@ -280,6 +280,13 @@ message HnswProjectionConfig {
   // Upper bound on the number of training vectors actually used; larger sets are sampled
   // down deterministically. Default: 100000.
   optional uint64 max_training_vectors = 6;
+  // Points that never receive a projected edge (attention sinks), as point ids written out:
+  // a number or a UUID string. Score these points directly at query time. Default: none.
+  repeated string excluded_points = 7;
+  // Run the reachability repair after the projected edges are placed. Default: true.
+  optional bool repair = 8;
+  // Upper bound on the repair links one point may hold. Default: 32.
+  optional uint64 repair_max_per_point = 9;
 }
 
 message SparseIndexConfig {
