@@ -1,9 +1,7 @@
 use std::ops::Deref as _;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::thread;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::progress_tracker::ProgressTracker;
@@ -11,14 +9,12 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use log::debug;
 use rand::Rng;
-use rayon::prelude::*;
 
+#[cfg(feature = "gpu")]
+use super::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
-use super::{
-    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, HNSWIndex,
-    HnswIndexOpenArgs, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
-};
+use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs};
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
@@ -28,16 +24,16 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph::HnswGraph;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::json_path::JsonPath;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::vector_storage::VectorStorageRead;
 
 mod additional_links;
+mod main_graph;
 
 use self::additional_links::build_additional_links;
+use self::main_graph::build_main_graph_on_cpu;
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -271,96 +267,18 @@ impl HNSWIndex {
         check_process_stopped(stopped)?;
 
         if build_main_graph {
-            let progress_main_graph = progress_main_graph.unwrap();
-            let progress_migrate = progress_migrate.unwrap();
-
-            let mut ids = Vec::with_capacity(total_vector_count);
-            let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
-
-            let mut ids_iter = id_tracker_ref
-                .point_mappings()
-                .iter_internal_excluding(deleted_bitslice);
-            if let Some(old_index) = old_index {
-                progress_migrate.start();
-
-                let timer = std::time::Instant::now();
-
-                let mut healer = GraphLayersHealer::new(
-                    old_index.graph(),
-                    &old_index.old_to_new,
-                    config.ef_construct,
-                );
-                let old_vector_storage = old_index.index.vector_storage.borrow();
-                let old_quantized_vectors = old_index.index.quantized_vectors.borrow();
-
-                healer.heal(
-                    &pool,
-                    &old_vector_storage,
-                    old_quantized_vectors.as_ref(),
-                    stopped,
-                )?;
-                check_process_stopped(stopped)?;
-                healer.save_into_builder(&graph_layers_builder);
-
-                for vector_id in ids_iter {
-                    if old_index.new_to_old[vector_id as usize].is_none() {
-                        if first_few_ids.len() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
-                            first_few_ids.push(vector_id);
-                        } else {
-                            ids.push(vector_id);
-                        }
-                    }
-                }
-
-                debug!("Migrated in {:?}", timer.elapsed());
-            } else {
-                first_few_ids.extend(ids_iter.by_ref().take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
-                ids.extend(ids_iter);
-            }
-            drop(progress_migrate);
-
-            let timer = std::time::Instant::now();
-
-            progress_main_graph.start();
-            let counter = progress_main_graph
-                .track_progress(Some(first_few_ids.len() as u64 + ids.len() as u64));
-            let counter = counter.deref();
-
-            let insert_point = |vector_id| {
-                check_process_stopped(stopped)?;
-                // No need to accumulate hardware, since this is an internal operation
-                let internal_hardware_counter = HardwareCounterCell::disposable();
-
-                let points_scorer = FilteredScorer::new_internal(
-                    vector_id,
-                    vector_storage_ref.deref(),
-                    quantized_vectors_ref.as_ref(),
-                    None,
-                    id_tracker_ref.deleted_point_bitslice(),
-                    internal_hardware_counter,
-                )?;
-
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
-
-                counter.fetch_add(1, Ordering::Relaxed);
-
-                Ok::<_, OperationError>(())
-            };
-
-            for vector_id in first_few_ids {
-                insert_point(vector_id)?;
-            }
-
-            if !ids.is_empty() {
-                pool.install(|| {
-                    ids.into_par_iter()
-                        .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                        .try_for_each(insert_point)
-                })?;
-            }
-
-            drop(progress_main_graph);
-            debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            build_main_graph_on_cpu(
+                id_tracker_ref.deref(),
+                &vector_storage_ref,
+                &quantized_vectors_ref,
+                old_index,
+                &graph_layers_builder,
+                config.ef_construct,
+                progress_migrate.unwrap(),
+                progress_main_graph.unwrap(),
+                &pool,
+                stopped,
+            )?;
         } else {
             drop(old_index);
         }
