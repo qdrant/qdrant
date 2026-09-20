@@ -560,6 +560,55 @@ async fn test_delayed_dummy_init_preserves_replacement_data() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_preserves_new_recovery_marker() {
+    let dir = Builder::new()
+        .prefix("dummy-init-marker")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let (reached, resume) = pause_dummy_initialization(
+        &replica_set,
+        crate::shards::replica_set::DummyInitPhase::BeforeMarkerRemoval,
+    );
+    let init = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(init);
+    tokio::select! {
+        result = reached => result.unwrap(),
+        result = &mut init => panic!("init missed the marker pause: {result:?}"),
+    }
+
+    let (clear_started_tx, mut clear_started_rx) = oneshot::channel();
+    let clear = replica_set.clear_local_for_snapshot_recovery(dir.path(), || {
+        clear_started_tx.send(()).unwrap();
+        Ok(())
+    });
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+    // The newer clear must wait for initialization to remove the old marker.
+    assert!(matches!(
+        clear_started_rx.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+    resume.send(()).unwrap();
+    init.await.unwrap();
+    clear.await.unwrap();
+    assert!(replica_set.is_dummy().await);
+    assert!(
+        shard_initializing_flag_path(dir.path(), TEST_TARGET_SHARD_ID).exists(),
+        "old Initiate removed the newer recovery marker"
+    );
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_dummy_init_rechecks_sender_after_waiting() {
     use crate::shards::shard_holder::ShardHolder;
     use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
@@ -637,6 +686,37 @@ async fn test_dummy_init_rechecks_state_after_waiting() {
 
     // Transfer restart deliberately resets real local data, even when it is not a dummy.
     replica_set.init_empty_local_shard().await.unwrap();
+    assert_eq!(count_points(&replica_set).await, 0);
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_without_recovery_marker() {
+    let dir = Builder::new()
+        .prefix("dummy-init-no-marker")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    // A dummy loaded after a shard load failure need not have a recovery marker.
+    fs_err::tokio::remove_file(shard_initializing_flag_path(
+        dir.path(),
+        TEST_TARGET_SHARD_ID,
+    ))
+    .await
+    .unwrap();
+    replica_set
+        .init_dummy_local_shard(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    assert!(!replica_set.is_dummy().await);
     assert_eq!(count_points(&replica_set).await, 0);
     replica_set.stop_gracefully().await;
 }

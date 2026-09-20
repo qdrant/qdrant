@@ -57,6 +57,7 @@ use crate::shards::shard_trait::WaitUntil;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum DummyInitPhase {
     BeforeInit,
+    BeforeMarkerRemoval,
 }
 
 #[cfg(test)]
@@ -667,13 +668,18 @@ impl ShardReplicaSet {
         }
         self.init_empty_local_shard_locked(&mut local).await?;
 
-        drop(local);
+        #[cfg(test)]
+        pause_dummy_init(&self.shard_path, DummyInitPhase::BeforeMarkerRemoval).await;
 
         let shard_flag =
             crate::shards::shard_initializing_flag_path(collection_path, self.shard_id);
-        if fs_err::tokio::try_exists(&shard_flag).await.is_ok() {
-            fs_err::tokio::remove_file(&shard_flag).await?;
+        // A newer recovery must not replace this marker before we remove it.
+        match fs_err::tokio::remove_file(&shard_flag).await {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
         }
+        drop(local);
         Ok(())
     }
 
