@@ -32,6 +32,36 @@ use crate::types::{FieldCondition, Filter};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
+/// Fields that get additional HNSW links, each paired with its progress subtask under the
+/// returned `additional_links` tracker. `None` when there is nothing to build.
+pub(super) fn additional_links_fields(
+    payload_index: &StructPayloadIndex,
+    payload_m: HnswM,
+    progress: &ProgressTracker,
+) -> Option<(ProgressTracker, Vec<(ProgressTracker, JsonPath)>)> {
+    if payload_m.m == 0 {
+        return None;
+    }
+    let fields = payload_index.with_view(|v| v.indexed_fields());
+    if fields.is_empty() {
+        return None;
+    }
+    let progress_additional_links = progress.subtask("additional_links");
+    let fields = fields
+        .into_iter()
+        .filter_map(|(field, payload_schema)| {
+            let subtask_name = format!("{}:{field}", payload_schema.name());
+            if payload_schema.enable_hnsw() {
+                Some((progress_additional_links.subtask(subtask_name), field))
+            } else {
+                debug!("enable_hnsw=false. Skip building additional index for field {field}");
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    Some((progress_additional_links, fields))
+}
+
 /// Build per-payload-block subgraphs for every field in `indexed_fields` and merge them
 /// into `graph_layers_builder`.
 ///

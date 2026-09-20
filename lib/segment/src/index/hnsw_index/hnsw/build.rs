@@ -4,35 +4,32 @@ use std::thread;
 
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
-use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use log::debug;
 use rand::Rng;
+use rayon::ThreadPool;
 
 #[cfg(feature = "gpu")]
 use super::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
-use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs};
-use crate::common::BYTES_IN_KB;
+use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::PayloadIndexRead;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph::HnswGraph;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
-use crate::json_path::JsonPath;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::vector_storage::VectorStorageRead;
 
 mod additional_links;
 mod main_graph;
 
-use self::additional_links::build_additional_links;
+use self::additional_links::{additional_links_fields, build_additional_links};
 use self::main_graph::build_main_graph_on_cpu;
 
 impl HNSWIndex {
@@ -79,26 +76,7 @@ impl HNSWIndex {
         let payload_index_ref = payload_index.borrow();
 
         let total_vector_count = vector_storage_ref.total_vector_count();
-
-        let full_scan_threshold = vector_storage_ref
-            .size_of_available_vectors_in_bytes()
-            .checked_div(total_vector_count)
-            .and_then(|avg_vector_size| {
-                hnsw_config
-                    .full_scan_threshold
-                    .saturating_mul(BYTES_IN_KB)
-                    .checked_div(avg_vector_size)
-            })
-            .unwrap_or(1);
-
-        let mut config = HnswGraphConfig::new(
-            hnsw_config.m,
-            hnsw_config.ef_construct,
-            full_scan_threshold,
-            hnsw_config.max_indexing_threads,
-            hnsw_config.payload_m,
-            total_vector_count,
-        );
+        let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
         #[allow(unused_mut)]
         let mut build_main_graph = config.m > 0;
@@ -114,26 +92,8 @@ impl HNSWIndex {
         // Progress subtasks
         let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
         let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
-        let additional_links_params: Option<(ProgressTracker, Vec<(ProgressTracker, JsonPath)>)> =
-            (payload_m.m > 0)
-                .then(|| payload_index_ref.with_view(|v| v.indexed_fields()))
-                .filter(|fields| !fields.is_empty())
-                .map(|fields| {
-                    let progress_additional_links = progress.subtask("additional_links");
-                    let fields = fields
-                        .into_iter()
-                        .filter_map(|(field, payload_schema)| {
-                            let subtask_name = format!("{}:{field}", payload_schema.name());
-                            if payload_schema.enable_hnsw() {
-                                Some((progress_additional_links.subtask(subtask_name), field))
-                            } else {
-                                debug!("enable_hnsw=false. Skip building additional index for field {field}");
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    (progress_additional_links, fields)
-                });
+        let additional_links_params =
+            additional_links_fields(&payload_index_ref, payload_m, &progress);
 
         let old_index = old_indices
             .iter()
@@ -171,7 +131,7 @@ impl HNSWIndex {
         let num_entries = std::cmp::max(
             1,
             total_vector_count
-                .checked_div(full_scan_threshold)
+                .checked_div(config.full_scan_threshold)
                 .unwrap_or(0)
                 * 10,
         );
@@ -183,31 +143,7 @@ impl HNSWIndex {
             HNSW_USE_HEURISTIC,
         );
 
-        let pool = rayon::ThreadPoolBuilder::new()
-            .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(permit.num_cpus as usize)
-            .spawn_handler(|thread| {
-                let mut b = thread::Builder::new();
-                if let Some(name) = thread.name() {
-                    b = b.name(name.to_owned());
-                }
-                if let Some(stack_size) = thread.stack_size() {
-                    b = b.stack_size(stack_size);
-                }
-                b.spawn(|| {
-                    // On Linux, use lower thread priority so we interfere less with serving traffic
-                    #[cfg(target_os = "linux")]
-                    if let Err(err) = linux_low_thread_priority() {
-                        log::debug!(
-                            "Failed to set low thread priority for HNSW building, ignoring: {err}"
-                        );
-                    }
-
-                    thread.run()
-                })?;
-                Ok(())
-            })
-            .build()?;
+        let pool = build_thread_pool(permit.num_cpus as usize)?;
 
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
@@ -375,4 +311,34 @@ impl HNSWIndex {
             is_on_disk,
         })
     }
+}
+
+/// Rayon pool for graph construction. On Linux its threads run at low priority so they
+/// interfere less with serving traffic.
+fn build_thread_pool(num_threads: usize) -> OperationResult<ThreadPool> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .thread_name(|idx| format!("hnsw-build-{idx}"))
+        .num_threads(num_threads)
+        .spawn_handler(|thread| {
+            let mut b = thread::Builder::new();
+            if let Some(name) = thread.name() {
+                b = b.name(name.to_owned());
+            }
+            if let Some(stack_size) = thread.stack_size() {
+                b = b.stack_size(stack_size);
+            }
+            b.spawn(|| {
+                #[cfg(target_os = "linux")]
+                if let Err(err) = linux_low_thread_priority() {
+                    log::debug!(
+                        "Failed to set low thread priority for HNSW building, ignoring: {err}"
+                    );
+                }
+
+                thread.run()
+            })?;
+            Ok(())
+        })
+        .build()?;
+    Ok(pool)
 }
