@@ -257,25 +257,32 @@ fn vector_from_json_map(
 ) -> Result<Vector, String> {
     // Variants are tried in untagged declaration order; the first success wins.
     // `Dense`/`MultiDense` cannot match a JSON object, so they are skipped here.
-    let sparse = sparse_vector_from_json_map(map).map(Vector::Sparse);
-    let document = Document::deserialize(value)
-        .map(Vector::Document)
-        .map_err(compact_serde_error);
-    let image = Image::deserialize(value)
-        .map(Vector::Image)
-        .map_err(compact_serde_error);
-    let object = InferenceObject::deserialize(value)
-        .map(Vector::Object)
-        .map_err(compact_serde_error);
-    match (sparse, document, image, object) {
-        (Ok(vector), _, _, _) => Ok(vector),
-        (_, Ok(vector), _, _) => Ok(vector),
-        (_, _, Ok(vector), _) => Ok(vector),
-        (_, _, _, Ok(vector)) => Ok(vector),
-        (Err(sparse_err), Err(document_err), Err(image_err), Err(object_err)) => Err(
-            pick_vector_map_error(map, sparse_err, &document_err, &image_err, &object_err),
-        ),
-    }
+    // Candidates are attempted sequentially: a successful variant returns
+    // immediately instead of also paying for the failed deserializations of
+    // the remaining ones.
+    let sparse_err = match sparse_vector_from_json_map(map) {
+        Ok(vector) => return Ok(Vector::Sparse(vector)),
+        Err(err) => err,
+    };
+    let document_err = match Document::deserialize(value) {
+        Ok(document) => return Ok(Vector::Document(document)),
+        Err(err) => compact_serde_error(err),
+    };
+    let image_err = match Image::deserialize(value) {
+        Ok(image) => return Ok(Vector::Image(image)),
+        Err(err) => compact_serde_error(err),
+    };
+    let object_err = match InferenceObject::deserialize(value) {
+        Ok(object) => return Ok(Vector::Object(object)),
+        Err(err) => compact_serde_error(err),
+    };
+    Err(pick_vector_map_error(
+        map,
+        sparse_err,
+        &document_err,
+        &image_err,
+        &object_err,
+    ))
 }
 
 /// Deserialize a [`SparseVector`] from a JSON object, naming the offending
@@ -370,25 +377,32 @@ fn vector_struct_from_json_map(
 ) -> Result<VectorStruct, String> {
     // `Named` is tried before `Document`/`Image`/`Object`, matching untagged
     // declaration order: `{"text": [...]}` is a named vector called "text".
-    let named = named_vectors_from_json_map(map).map(VectorStruct::Named);
-    let document = Document::deserialize(value)
-        .map(VectorStruct::Document)
-        .map_err(compact_serde_error);
-    let image = Image::deserialize(value)
-        .map(VectorStruct::Image)
-        .map_err(compact_serde_error);
-    let object = InferenceObject::deserialize(value)
-        .map(VectorStruct::Object)
-        .map_err(compact_serde_error);
-    match (named, document, image, object) {
-        (Ok(vector), _, _, _) => Ok(vector),
-        (_, Ok(vector), _, _) => Ok(vector),
-        (_, _, Ok(vector), _) => Ok(vector),
-        (_, _, _, Ok(vector)) => Ok(vector),
-        (Err(named_err), Err(document_err), Err(image_err), Err(object_err)) => Err(
-            pick_vector_struct_map_error(map, &named_err, &document_err, &image_err, &object_err),
-        ),
-    }
+    // Candidates are attempted sequentially: a successful variant returns
+    // immediately instead of also paying for the failed deserializations of
+    // the remaining ones.
+    let named_err = match named_vectors_from_json_map(map) {
+        Ok(named) => return Ok(VectorStruct::Named(named)),
+        Err(err) => err,
+    };
+    let document_err = match Document::deserialize(value) {
+        Ok(document) => return Ok(VectorStruct::Document(document)),
+        Err(err) => compact_serde_error(err),
+    };
+    let image_err = match Image::deserialize(value) {
+        Ok(image) => return Ok(VectorStruct::Image(image)),
+        Err(err) => compact_serde_error(err),
+    };
+    let object_err = match InferenceObject::deserialize(value) {
+        Ok(object) => return Ok(VectorStruct::Object(object)),
+        Err(err) => compact_serde_error(err),
+    };
+    Err(pick_vector_struct_map_error(
+        map,
+        &named_err,
+        &document_err,
+        &image_err,
+        &object_err,
+    ))
 }
 
 /// Deserialize the `Named` variant: every value of the map must be a [`Vector`].
