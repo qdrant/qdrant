@@ -8,6 +8,7 @@ use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -177,4 +178,23 @@ pub(super) fn create_gpu_vectors(
     } else {
         Ok(None)
     }
+}
+
+pub(super) fn create_gpu_insert_context(
+    gpu_vectors: Option<&GpuVectorStorage>,
+    payload_m: HnswM,
+    ef_construct: usize,
+) -> OperationResult<Option<GpuInsertContext<'_>>> {
+    gpu_vectors
+        .map(|gpu_vectors| {
+            GpuInsertContext::new(
+                gpu_vectors,
+                get_gpu_groups_count(),
+                payload_m,
+                ef_construct,
+                false,
+                1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+            )
+        })
+        .transpose()
 }
