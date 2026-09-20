@@ -494,6 +494,153 @@ async fn test_snapshot_rechecks_sender_before_clear_and_restore() {
     replica_set.stop_gracefully().await;
 }
 
+fn pause_dummy_initialization(
+    replica_set: &ShardReplicaSet,
+    phase: crate::shards::replica_set::DummyInitPhase,
+) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+    let (reached_tx, reached_rx) = oneshot::channel();
+    let (resume_tx, resume_rx) = oneshot::channel();
+    assert!(
+        crate::shards::replica_set::DUMMY_INIT_HOOKS
+            .lock()
+            .unwrap()
+            .insert(
+                (replica_set.shard_path.clone(), phase),
+                (reached_tx, resume_rx)
+            )
+            .is_none()
+    );
+    (reached_rx, resume_tx)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_delayed_dummy_init_preserves_replacement_data() {
+    let dir = Builder::new()
+        .prefix("delayed-dummy-init")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let (reached, resume) = pause_dummy_initialization(
+        &replica_set,
+        crate::shards::replica_set::DummyInitPhase::BeforeInit,
+    );
+    let delayed = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(delayed);
+    tokio::select! {
+        result = reached => result.unwrap(),
+        result = &mut delayed => panic!("init missed the pause: {result:?}"),
+    }
+
+    replica_set
+        .init_dummy_local_shard(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Partial)
+        .await
+        .unwrap();
+    upsert_point(&replica_set, 1).await;
+    resume.send(()).unwrap();
+    let result = delayed.await;
+    assert_eq!(
+        count_points(&replica_set).await,
+        1,
+        "delayed Initiate wiped the replacement"
+    );
+    result.unwrap();
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_rechecks_sender_after_waiting() {
+    use crate::shards::shard_holder::ShardHolder;
+    use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
+
+    let dir = Builder::new()
+        .prefix("dummy-init-sender")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let holder = ShardHolder::new(dir.path(), crate::config::ShardingMethod::Auto).unwrap();
+    let transfer = ShardTransfer {
+        shard_id: TEST_TARGET_SHARD_ID,
+        to_shard_id: None,
+        from: 2,
+        to: TEST_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::Snapshot),
+        filter: None,
+    };
+    holder
+        .register_start_shard_transfer(transfer.clone())
+        .unwrap();
+    let local = replica_set.local.read().await;
+    let init = replica_set.init_dummy_local_shard(dir.path(), || {
+        holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(2))
+    });
+    tokio::pin!(init);
+    assert!(futures::poll!(&mut init).is_pending());
+    holder.register_abort_transfer(&transfer.key()).unwrap();
+    holder
+        .register_start_shard_transfer(ShardTransfer {
+            from: 3,
+            ..transfer
+        })
+        .unwrap();
+    drop(local);
+    assert!(matches!(
+        init.await,
+        Err(CollectionError::BadRequest { .. })
+    ));
+    assert!(replica_set.is_dummy().await);
+    assert!(shard_initializing_flag_path(dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_rechecks_state_after_waiting() {
+    let dir = Builder::new().prefix("dummy-init-state").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let local = replica_set.local.write().await;
+    let activate = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Active);
+    tokio::pin!(activate);
+    assert!(futures::poll!(&mut activate).is_pending());
+    let init = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(init);
+    assert!(futures::poll!(&mut init).is_pending());
+    drop(local);
+    let (activated, initialized) = tokio::join!(activate, init);
+    activated.unwrap();
+    assert!(initialized.unwrap_err().is_pre_condition_failed());
+    assert_eq!(count_points(&replica_set).await, 1);
+
+    // Transfer restart deliberately resets real local data, even when it is not a dummy.
+    replica_set.init_empty_local_shard().await.unwrap();
+    assert_eq!(count_points(&replica_set).await, 0);
+    replica_set.stop_gracefully().await;
+}
+
 /// Build a valid unpacked shard snapshot to recover from.
 ///
 /// Returns the temp dir - which the caller must keep alive - and the replica path
