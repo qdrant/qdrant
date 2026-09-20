@@ -1,7 +1,9 @@
 use std::ops::Deref as _;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
+use common::bitvec::BitSlice;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::types::PointOffsetType;
@@ -10,8 +12,6 @@ use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
 
-#[cfg(feature = "gpu")]
-use super::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
@@ -24,7 +24,8 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
 use crate::segment_constructor::VectorIndexBuildArgs;
-use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod additional_links;
 mod main_graph;
@@ -78,7 +79,6 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
-        #[allow(unused_mut)]
         let mut build_main_graph = config.m > 0;
         if !build_main_graph {
             debug!("skip building main HNSW graph");
@@ -163,42 +163,28 @@ impl HNSWIndex {
         }
 
         // Try to build graphs on GPU if possible.
-        // Store created gpu vectors to reuse them for payload links.
         #[cfg(feature = "gpu")]
-        let needs_gpu_vectors = build_main_graph
-            || additional_links_params
+        let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
+            gpu_device,
+            build_main_graph,
+            additional_links_params
                 .as_ref()
-                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty());
+                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty()),
+            id_tracker_ref.deref(),
+            &vector_storage_ref,
+            &quantized_vectors_ref,
+            &graph_layers_builder,
+            deleted_bitslice,
+            num_entries,
+            stopped,
+        )?;
+        #[cfg(not(feature = "gpu"))]
+        let gpu_graph: Option<GraphLayersBuilder> = None;
 
-        #[cfg(feature = "gpu")]
-        let gpu_vectors = if needs_gpu_vectors {
-            let timer = std::time::Instant::now();
-            let gpu_vectors = super::gpu_build::create_gpu_vectors(
-                gpu_device,
-                &vector_storage_ref,
-                &quantized_vectors_ref,
-                stopped,
-            )?;
-            if build_main_graph
-                && let Some(gpu_constructed_graph) = super::gpu_build::build_main_graph_on_gpu(
-                    id_tracker_ref.deref(),
-                    &vector_storage_ref,
-                    &quantized_vectors_ref,
-                    gpu_vectors.as_ref(),
-                    &graph_layers_builder,
-                    deleted_bitslice,
-                    num_entries,
-                    stopped,
-                )?
-            {
-                graph_layers_builder = gpu_constructed_graph;
-                build_main_graph = false;
-                debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
-            }
-            gpu_vectors
-        } else {
-            None
-        };
+        if let Some(gpu_graph) = gpu_graph {
+            graph_layers_builder = gpu_graph;
+            build_main_graph = false;
+        }
 
         check_process_stopped(stopped)?;
 
@@ -258,37 +244,18 @@ impl HNSWIndex {
         // as it will be discarded anyway
         let is_on_disk = true;
 
-        let graph_links_vectors = inline_vectors
-            .then(|| {
-                StorageGraphLinksVectors::try_new(
-                    &vector_storage_ref,
-                    quantized_vectors_ref.as_ref(),
-                )
-                .ok_or_else(|| {
-                    OperationError::service_error(
-                        "Inline vectors requested, but the storages cannot provide them",
-                    )
-                })
-            })
-            .transpose()?;
-        let format_param = match graph_links_vectors.as_ref() {
-            Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
-            None => GraphLinksFormatParam::Compressed,
-        };
-
-        let graph: GraphLayers =
-            graph_layers_builder.into_graph_layers(path, format_param, is_on_disk)?;
-
-        #[cfg(debug_assertions)]
-        {
-            for (idx, deleted) in deleted_bitslice.iter().enumerate() {
-                if *deleted {
-                    graph.links.for_each_link(idx as PointOffsetType, 0, |_| {
-                        panic!("Deleted point in the graph");
-                    });
-                }
-            }
-        }
+        let graph = save_graph(
+            graph_layers_builder,
+            path,
+            inline_vectors,
+            &vector_storage_ref,
+            quantized_vectors_ref.as_ref(),
+            is_on_disk,
+        )?;
+        debug_assert!(
+            deleted_points_unlinked(&graph, deleted_bitslice),
+            "Deleted point in the graph"
+        );
 
         debug!("finish additional payload field indexing");
 
@@ -341,4 +308,37 @@ fn build_thread_pool(num_threads: usize) -> OperationResult<ThreadPool> {
         })
         .build()?;
     Ok(pool)
+}
+
+/// Write the graph links to `path`. With `inline_vectors`, the quantized vectors are stored
+/// next to the links, which the storages must be able to provide.
+fn save_graph(
+    graph_layers_builder: GraphLayersBuilder,
+    path: &Path,
+    inline_vectors: bool,
+    vector_storage: &VectorStorageEnum,
+    quantized_vectors: Option<&QuantizedVectors>,
+    on_disk: bool,
+) -> OperationResult<GraphLayers> {
+    let graph_links_vectors = inline_vectors
+        .then(|| {
+            StorageGraphLinksVectors::try_new(vector_storage, quantized_vectors).ok_or_else(|| {
+                OperationError::service_error(
+                    "Inline vectors requested, but the storages cannot provide them",
+                )
+            })
+        })
+        .transpose()?;
+    let format_param = match graph_links_vectors.as_ref() {
+        Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
+        None => GraphLinksFormatParam::Compressed,
+    };
+    graph_layers_builder.into_graph_layers(path, format_param, on_disk)
+}
+
+/// Whether no deleted point has links on level 0.
+fn deleted_points_unlinked(graph: &GraphLayers, deleted_bitslice: &BitSlice) -> bool {
+    deleted_bitslice
+        .iter_ones()
+        .all(|idx| graph.links.links_empty(idx as PointOffsetType, 0))
 }
