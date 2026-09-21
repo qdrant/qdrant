@@ -413,6 +413,24 @@ impl Settings {
             }
         }
 
+        //
+        // Internal (p2p) auth in distributed mode
+        //
+        // The API key is always forwarded on internal gRPC requests, but the
+        // receiving side only verifies it when `enforce_internal_auth` is set.
+        // Warn when a cluster has an API key yet leaves the internal API open.
+        if self.cluster.enabled
+            && !all_keys_are_empty
+            && !self.service.enforce_internal_auth.unwrap_or_default()
+        {
+            log::warn!(
+                "Running in distributed mode with an API key configured, but \
+                 `service.enforce_internal_auth` is not enabled. The internal \
+                 (p2p) gRPC API is not authenticated. Enable \
+                 `enforce_internal_auth`.",
+            );
+        }
+
         // Print any load error messages we had
         self.load_errors.iter().for_each(LogMsg::log);
 
