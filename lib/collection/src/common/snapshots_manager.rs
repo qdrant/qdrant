@@ -672,8 +672,11 @@ impl SnapshotStorageCloud {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use futures::TryStreamExt;
     use object_store::ObjectStore;
+    use object_store::memory::InMemory;
 
     use super::*;
 
@@ -801,10 +804,6 @@ mod tests {
     /// prefix is invisible in the names the manager reports back.
     #[tokio::test]
     async fn object_storage_prefix_is_applied_to_every_key() {
-        use std::sync::Arc;
-
-        use object_store::memory::InMemory;
-
         let bucket = Arc::new(InMemory::new());
         let manager = SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(
             bucket.clone(),
@@ -848,10 +847,6 @@ mod tests {
     /// An empty or slash-only prefix leaves keys where they were.
     #[tokio::test]
     async fn object_storage_empty_prefix_is_a_no_op() {
-        use std::sync::Arc;
-
-        use object_store::memory::InMemory;
-
         for prefix in [None, Some(""), Some("/"), Some("//")] {
             let bucket = Arc::new(InMemory::new());
             let manager =
@@ -900,6 +895,124 @@ mod tests {
         }))
         .unwrap();
         assert!(legacy.s3_config.unwrap().prefix.is_none());
+    }
+
+    /// Paths that try to leave the prefix, handed to the manager directly so that
+    /// `validate_snapshot_name` is out of the picture.
+    const ESCAPING_PATHS: &[&str] = &[
+        "../../escape.snapshot",
+        "/absolute/escape.snapshot",
+        "snapshots/../escape.snapshot",
+        "./snapshots/../../escape.snapshot",
+        "snapshots/..%2F..%2Fescape.snapshot",
+        "snapshots\\..\\escape.snapshot",
+        "..",
+        ".",
+        "/",
+        "",
+    ];
+
+    const PREFIX: &str = "team-a/qdrant";
+
+    fn is_under_prefix(key: &str) -> bool {
+        key.strip_prefix(PREFIX)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    }
+
+    async fn raw_keys(bucket: &InMemory) -> Vec<String> {
+        let mut keys: Vec<String> = bucket
+            .list(None)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect()
+            .await
+            .unwrap();
+        keys.sort();
+        keys
+    }
+
+    /// Whatever target a caller passes, the written key stays under the prefix.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_writes() {
+        let bucket = Arc::new(InMemory::new());
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        for target in ESCAPING_PATHS {
+            let source = temp_dir.path().join("upload.snapshot");
+            fs::write(&source, b"snapshot bytes").unwrap();
+            // Some of these are not valid file names, an error is as good as a
+            // contained write. Only a key outside the prefix is a failure.
+            let _ = manager.store_file(&source, Path::new(target)).await;
+        }
+
+        let keys = raw_keys(&bucket).await;
+        assert!(!keys.is_empty(), "expected at least one contained write");
+        for key in &keys {
+            assert!(is_under_prefix(key), "key {key:?} escaped the prefix");
+        }
+    }
+
+    /// Objects outside the prefix are invisible: not listed, not readable, not deletable.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_reads_lists_and_deletes() {
+        use object_store::PutPayload;
+
+        let bucket = Arc::new(InMemory::new());
+        // Two objects outside the prefix, one of them at the exact key a
+        // caller would reach without the prefix.
+        for key in ["escape.snapshot", "snapshots/c/x.snapshot"] {
+            bucket
+                .put(
+                    &object_store::path::Path::from(key),
+                    PutPayload::from_static(b"outside"),
+                )
+                .await
+                .unwrap();
+        }
+        let outside_before = raw_keys(&bucket).await;
+
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        let mut probes: Vec<&str> = ESCAPING_PATHS.to_vec();
+        probes.extend(["escape.snapshot", "snapshots/c/x.snapshot", "snapshots/c"]);
+
+        for probe in probes {
+            let path = Path::new(probe);
+
+            let listed = manager.list_snapshots(path).await.unwrap();
+            assert!(
+                listed.is_empty(),
+                "listing {probe:?} leaked {listed:?} from outside the prefix"
+            );
+
+            let download = temp_dir.path().join("download.snapshot");
+            assert!(
+                matches!(
+                    manager.get_stored_file(path, &download).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "download of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.get_snapshot_stream(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "stream of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.delete_snapshot(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "delete of {probe:?} reached outside the prefix"
+            );
+        }
+
+        assert_eq!(raw_keys(&bucket).await, outside_before);
     }
 
     /// Cloud backends without their config block still build, reading the environment.
