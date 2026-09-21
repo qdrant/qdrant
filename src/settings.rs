@@ -427,8 +427,7 @@ impl Settings {
                 "Running in distributed mode with an API key configured, but \
                  `service.enforce_internal_auth` is not enabled. The internal \
                  (p2p) gRPC API is not authenticated. Enable \
-                 `enforce_internal_auth` once all peers are upgraded to a \
-                 version that forwards the API key.",
+                 `enforce_internal_auth`.",
             );
         }
 
