@@ -90,7 +90,7 @@ fn graph_deferred<S: UniversalRead>(
     Ok(cold_override && !HnswGraph::<S>::is_batched(fs, path, residency)?)
 }
 
-impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyHNSWIndex<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// A cold `populate_override` defers the graph load (see [`Self::open`]),
