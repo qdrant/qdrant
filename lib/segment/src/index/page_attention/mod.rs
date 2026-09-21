@@ -1,7 +1,8 @@
 //! Experimental immutable attention index. Results encode coordinates in the score channel.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;

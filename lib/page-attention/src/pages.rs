@@ -17,9 +17,8 @@
 //!   silently falling back to token order would produce a generation that looks right and
 //!   scores the wrong tokens).
 
-use std::fs;
-use std::io;
 use std::path::Path;
+use std::{fs, io};
 
 use half::f16;
 

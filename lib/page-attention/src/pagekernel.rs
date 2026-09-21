@@ -162,7 +162,17 @@ pub fn score_page(
     qs: &[&PageQuery],
     out: &mut [[f32; 32]],
 ) {
-    score_page_with_path(page, dim, t, valid, scale_k, shift_k, qs, kernel::path(), out)
+    score_page_with_path(
+        page,
+        dim,
+        t,
+        valid,
+        scale_k,
+        shift_k,
+        qs,
+        kernel::path(),
+        out,
+    )
 }
 
 /// [`score_page`] on a named path (the bench and the cross-path tests).
@@ -185,9 +195,7 @@ pub fn score_page_with_path(
     #[cfg(target_arch = "x86_64")]
     match path {
         Path::Avx512 => {
-            return unsafe {
-                score_body_avx512(page, dim, t, valid, scale_k, shift_k, qs, out)
-            }
+            return unsafe { score_body_avx512(page, dim, t, valid, scale_k, shift_k, qs, out) }
         }
         Path::Avx2 => {
             return unsafe { score_body_avx2(page, dim, t, valid, scale_k, shift_k, qs, out) }
@@ -355,10 +363,14 @@ pub fn score_page_acc(
     }
     assert!(nq <= MAXQ && out.len() >= nq);
     assert!(dim * t == PAGE, "a page holds exactly PAGE/dim tokens");
-    assert!(t <= 32 && dim <= MAXDIM, "d >= 128 (so T <= 32) in this generation");
+    assert!(
+        t <= 32 && dim <= MAXDIM,
+        "d >= 128 (so T <= 32) in this generation"
+    );
     assert!(page.len() >= PAGE, "a page is {PAGE} bytes");
     debug_assert!(
-        qs.iter().all(|q| q.dim == dim && q.levels_biased == qs[0].levels_biased),
+        qs.iter()
+            .all(|q| q.dim == dim && q.levels_biased == qs[0].levels_biased),
         "the queries of one call must share the head's dimension and codebook grid"
     );
     #[cfg(target_arch = "x86_64")]
@@ -470,8 +482,9 @@ unsafe fn score_avx512_n<const NQ: usize, const NACC: usize, const NSUB: usize>(
         return false;
     }
     let blkb = 4 * t; // bytes per block: 64 at T=16, 128 at T=32
-    let levels =
-        _mm512_broadcast_i32x4(_mm_loadu_si128(qs[0].levels_biased.as_ptr() as *const __m128i));
+    let levels = _mm512_broadcast_i32x4(_mm_loadu_si128(
+        qs[0].levels_biased.as_ptr() as *const __m128i
+    ));
     let m0f = _mm512_set1_epi8(0x0f);
     let base = page.as_ptr();
     // hoisted out of the block loop: `qs[qi].wq` is two dependent loads the compiler cannot
@@ -541,8 +554,9 @@ unsafe fn score_avx2_n<const NQ: usize>(
     let nq = NQ;
     let half = dim / 8;
     let blkb = 4 * t;
-    let levels =
-        _mm256_broadcastsi128_si256(_mm_loadu_si128(qs[0].levels_biased.as_ptr() as *const __m128i));
+    let levels = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+        qs[0].levels_biased.as_ptr() as *const __m128i
+    ));
     let ones = _mm256_set1_epi16(1);
     let m0f = _mm256_set1_epi8(0x0f);
     let base = page.as_ptr();
@@ -556,10 +570,8 @@ unsafe fn score_avx2_n<const NQ: usize>(
         for blk in 0..half {
             let code = _mm256_loadu_si256(base.add(blk * blkb + j * 32) as *const __m256i);
             let lo = _mm256_shuffle_epi8(levels, _mm256_and_si256(code, m0f));
-            let hi = _mm256_shuffle_epi8(
-                levels,
-                _mm256_and_si256(_mm256_srli_epi16::<4>(code), m0f),
-            );
+            let hi =
+                _mm256_shuffle_epi8(levels, _mm256_and_si256(_mm256_srli_epi16::<4>(code), m0f));
             for qi in 0..nq {
                 let wp = wptr[qi];
                 let wlo = _mm256_loadu_si256(wp.add(blk * 64) as *const __m256i);
@@ -623,7 +635,12 @@ pub struct VAcc {
 
 impl VAcc {
     pub fn new(dim: usize) -> VAcc {
-        VAcc { dim, num_rot: vec![0.0; dim], shift_sum: 0.0, z: 0.0 }
+        VAcc {
+            dim,
+            num_rot: vec![0.0; dim],
+            shift_sum: 0.0,
+            z: 0.0,
+        }
     }
 }
 
@@ -670,7 +687,19 @@ pub fn attend_page(
     bits: WeightBits,
     acc: &mut VAcc,
 ) {
-    attend_page_with_path(page, dim, t, valid, scale_v, shift_v, w, lv, bits, kernel::path(), acc)
+    attend_page_with_path(
+        page,
+        dim,
+        t,
+        valid,
+        scale_v,
+        shift_v,
+        w,
+        lv,
+        bits,
+        kernel::path(),
+        acc,
+    )
 }
 
 /// [`attend_page`] on a named path (the bench and the cross-path tests).
@@ -709,7 +738,9 @@ pub fn attend_page_with_path(
         }
         Path::Scalar => {}
     }
-    attend_body(page, dim, t, valid, scale_v, shift_v, w, lv, bits, path, acc)
+    attend_body(
+        page, dim, t, valid, scale_v, shift_v, w, lv, bits, path, acc,
+    )
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -734,7 +765,19 @@ unsafe fn attend_body_avx512(
     bits: WeightBits,
     acc: &mut VAcc,
 ) {
-    attend_body(page, dim, t, valid, scale_v, shift_v, w, lv, bits, Path::Avx512, acc)
+    attend_body(
+        page,
+        dim,
+        t,
+        valid,
+        scale_v,
+        shift_v,
+        w,
+        lv,
+        bits,
+        Path::Avx512,
+        acc,
+    )
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -752,7 +795,19 @@ unsafe fn attend_body_avx2(
     bits: WeightBits,
     acc: &mut VAcc,
 ) {
-    attend_body(page, dim, t, valid, scale_v, shift_v, w, lv, bits, Path::Avx2, acc)
+    attend_body(
+        page,
+        dim,
+        t,
+        valid,
+        scale_v,
+        shift_v,
+        w,
+        lv,
+        bits,
+        Path::Avx2,
+        acc,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -770,7 +825,10 @@ fn attend_body(
     path: Path,
     acc: &mut VAcc,
 ) {
-    assert_eq!(acc.dim, dim, "accumulator and page must share the head's dimension");
+    assert_eq!(
+        acc.dim, dim,
+        "accumulator and page must share the head's dimension"
+    );
     assert!(valid <= t && scale_v.len() >= valid && shift_v.len() >= valid);
 
     // The two exact scalars first: they are f32/f64 sums of unquantised terms and do not care
@@ -810,8 +868,10 @@ fn attend_body(
     if !quantised {
         let mask = if shift == 0 { 0 } else { (1u32 << shift) - 1 };
         let top = gmax as f32;
-        for ((h, l), &p) in
-            w_hi[..n].iter_mut().zip(w_lo[..n].iter_mut()).zip(wp[..n].iter())
+        for ((h, l), &p) in w_hi[..n]
+            .iter_mut()
+            .zip(w_lo[..n].iter_mut())
+            .zip(wp[..n].iter())
         {
             // ties to even, to match `vrndscaleps`'s default rounding control on the AVX-512
             // path; PAGES.md's `round` does not say which way ties go, and the weights come
@@ -840,8 +900,10 @@ fn attend_body(
         // terms are scaled separately rather than combined as one integer, which would leave
         // f32's exact range.
         let mhi = mul * (1u32 << shift) as f32;
-        for ((d, &a), &b) in
-            acc.num_rot[..dim].iter_mut().zip(ai[..dim].iter()).zip(bi[..dim].iter())
+        for ((d, &a), &b) in acc.num_rot[..dim]
+            .iter_mut()
+            .zip(ai[..dim].iter())
+            .zip(bi[..dim].iter())
         {
             *d += mhi * a as f32 + mul * b as f32;
         }
@@ -954,17 +1016,18 @@ unsafe fn attend_quant_avx512(
     let vinv = _mm512_set1_ps(inv);
     let top = _mm512_set1_ps(gmax as f32);
     let zerof = _mm512_setzero_ps();
-    let maskv =
-        _mm512_set1_epi32(if shift == 0 { 0 } else { ((1u32 << shift) - 1) as i32 });
+    let maskv = _mm512_set1_epi32(if shift == 0 {
+        0
+    } else {
+        ((1u32 << shift) - 1) as i32
+    });
     let cnt = _mm_cvtsi32_si128(shift as i32);
     let mut lo = 0;
     while lo < n {
         let left = n - lo;
         let m: __mmask16 = if left >= 16 { !0 } else { (1u16 << left) - 1 };
-        let v = _mm512_roundscale_ps::<0>(_mm512_mul_ps(
-            _mm512_loadu_ps(wp.as_ptr().add(lo)),
-            vinv,
-        ));
+        let v =
+            _mm512_roundscale_ps::<0>(_mm512_mul_ps(_mm512_loadu_ps(wp.as_ptr().add(lo)), vinv));
         let i = _mm512_cvttps_epi32(_mm512_min_ps(_mm512_max_ps(v, zerof), top));
         _mm_mask_storeu_epi8(
             w_hi.as_mut_ptr().add(lo) as *mut i8,
@@ -1093,10 +1156,8 @@ unsafe fn attend_avx512(
                 let code =
                     _mm512_loadu_si512(vbase.add(((r + k) * pairs + pair) * 64) as *const __m512i);
                 let lo = _mm512_shuffle_epi8(table, _mm512_and_si512(code, m0f));
-                let hi = _mm512_shuffle_epi8(
-                    table,
-                    _mm512_and_si512(_mm512_srli_epi16::<4>(code), m0f),
-                );
+                let hi =
+                    _mm512_shuffle_epi8(table, _mm512_and_si512(_mm512_srli_epi16::<4>(code), m0f));
                 a[k] = _mm512_dpbusd_epi32(a[k], wlo, lo);
                 b[k] = _mm512_dpbusd_epi32(b[k], whi, hi);
             }
@@ -1127,7 +1188,8 @@ unsafe fn attend_avx2(
     use std::arch::x86_64::*;
     let pairs = t / 8;
     let runs = dim / 16;
-    let table = _mm256_broadcastsi128_si256(_mm_loadu_si128(lv.levels_i8.as_ptr() as *const __m128i));
+    let table =
+        _mm256_broadcastsi128_si256(_mm_loadu_si128(lv.levels_i8.as_ptr() as *const __m128i));
     let ones = _mm256_set1_epi16(1);
     let m0f = _mm256_set1_epi8(0x0f);
     let vbase = page.as_ptr().add(PAGE / 2);
@@ -1143,10 +1205,8 @@ unsafe fn attend_avx2(
             for h in 0..2 {
                 let code = _mm256_loadu_si256(blk.add(h * 32) as *const __m256i);
                 let lo = _mm256_shuffle_epi8(table, _mm256_and_si256(code, m0f));
-                let hi = _mm256_shuffle_epi8(
-                    table,
-                    _mm256_and_si256(_mm256_srli_epi16::<4>(code), m0f),
-                );
+                let hi =
+                    _mm256_shuffle_epi8(table, _mm256_and_si256(_mm256_srli_epi16::<4>(code), m0f));
                 let s = _mm256_add_epi32(
                     _mm256_madd_epi16(_mm256_maddubs_epi16(wlo, lo), ones),
                     _mm256_madd_epi16(_mm256_maddubs_epi16(whi, hi), ones),
@@ -1208,7 +1268,9 @@ mod tests {
     }
 
     fn rand_vec(rng: &mut SplitMix64, n: usize) -> Vec<f32> {
-        (0..n).map(|_| (rng.next_f64() as f32 - 0.5) * 4.0).collect()
+        (0..n)
+            .map(|_| (rng.next_f64() as f32 - 0.5) * 4.0)
+            .collect()
     }
 
     /// Random pages and random queries: every available path returns the SAME int32
@@ -1307,12 +1369,22 @@ mod tests {
             for nq in [1usize, 4] {
                 let qv: Vec<Vec<f32>> = (0..nq).map(|_| rand_vec(&mut rng, dim)).collect();
                 for p in available_paths() {
-                    let queries: Vec<PageQuery> =
-                        qv.iter().map(|q| PageQuery::with_path(q, &cent, &rot, p)).collect();
+                    let queries: Vec<PageQuery> = qv
+                        .iter()
+                        .map(|q| PageQuery::with_path(q, &cent, &rot, p))
+                        .collect();
                     let refs: Vec<&PageQuery> = queries.iter().collect();
                     let mut out = [[0.0f32; 32]; MAXQ];
                     score_page_with_path(
-                        &page, dim, t, valid, &scale_k, &shift_k, &refs, p, &mut out[..nq],
+                        &page,
+                        dim,
+                        t,
+                        valid,
+                        &scale_k,
+                        &shift_k,
+                        &refs,
+                        p,
+                        &mut out[..nq],
                     );
                     for (qi, q) in qv.iter().enumerate() {
                         let mut qr = vec![0.0f32; dim];
@@ -1348,7 +1420,11 @@ mod tests {
                         // the int8 query grid is the whole error budget: 1/127 on AVX-512 and
                         // AVX-512's grid, 1/63 on AVX2 (`Path::q_max`), on top of the 1/127
                         // codebook grid both share
-                        assert!(rel < 3e-2, "d {dim} path {} q {qi}: rel rms {rel:.3e}", p.name());
+                        assert!(
+                            rel < 3e-2,
+                            "d {dim} path {} q {qi}: rel rms {rel:.3e}",
+                            p.name()
+                        );
                         assert!(
                             worst / mag < 8e-2,
                             "d {dim} path {} q {qi}: worst {worst:.4} vs rms magnitude {mag:.4}",
@@ -1418,7 +1494,12 @@ mod tests {
                         de / ne,
                         dl / nl
                     );
-                    assert!(de / ne < 3e-2, "{} {bits:?}: rel err vs CB {:.3e}", p.name(), de / ne);
+                    assert!(
+                        de / ne < 3e-2,
+                        "{} {bits:?}: rel err vs CB {:.3e}",
+                        p.name(),
+                        de / ne
+                    );
                     let want_l = match bits {
                         WeightBits::Eight => 1e-2,
                         WeightBits::Sixteen => 1e-4,
@@ -1456,16 +1537,25 @@ mod tests {
                 let (page, _, _) = random_page(&mut rng, dim, t, valid);
                 let cent = rand_vec(&mut rng, dim);
                 let scale_k: Vec<f32> = (0..valid).map(|_| 0.5 + rng.next_f64() as f32).collect();
-                let shift_k: Vec<f32> =
-                    (0..valid).map(|_| rng.next_f64() as f32 - 0.5).collect();
+                let shift_k: Vec<f32> = (0..valid).map(|_| rng.next_f64() as f32 - 0.5).collect();
                 let qv: Vec<Vec<f32>> = (0..MAXQ).map(|_| rand_vec(&mut rng, dim)).collect();
                 // one grid (the narrowest) so every path may run it
-                let queries: Vec<PageQuery> =
-                    qv.iter().map(|q| PageQuery::with_path(q, &cent, &rot, Path::Avx2)).collect();
+                let queries: Vec<PageQuery> = qv
+                    .iter()
+                    .map(|q| PageQuery::with_path(q, &cent, &rot, Path::Avx2))
+                    .collect();
                 let refs: Vec<&PageQuery> = queries.iter().collect();
                 let mut want = [[0.0f32; 32]; MAXQ];
                 score_page_with_path(
-                    &page, dim, t, valid, &scale_k, &shift_k, &refs, Path::Scalar, &mut want,
+                    &page,
+                    dim,
+                    t,
+                    valid,
+                    &scale_k,
+                    &shift_k,
+                    &refs,
+                    Path::Scalar,
+                    &mut want,
                 );
                 for p in available_paths() {
                     let mut got = [[0.0f32; 32]; MAXQ];
@@ -1501,8 +1591,7 @@ mod tests {
         for t in [16usize, 32] {
             for valid in [t, t - 3, 5] {
                 let scale_v: Vec<f32> = (0..valid).map(|_| 0.5 + rng.next_f64() as f32).collect();
-                let shift_v: Vec<f32> =
-                    (0..valid).map(|_| rng.next_f64() as f32 - 0.5).collect();
+                let shift_v: Vec<f32> = (0..valid).map(|_| rng.next_f64() as f32 - 0.5).collect();
                 let mut w = [0.0f32; 32];
                 for x in w.iter_mut().take(valid) {
                     // include exact ties on the weight grid, which is where the two rounding
@@ -1518,8 +1607,14 @@ mod tests {
                 let (zb, sb, mb) =
                     unsafe { attend_prep_avx512(valid, &scale_v, &shift_v, &w, &mut wb) };
                 assert_eq!(ma.to_bits(), mb.to_bits(), "T {t} valid {valid}: page max");
-                assert!((za - zb).abs() <= 1e-14 * za.abs().max(1e-14), "z {za} vs {zb}");
-                assert!((sa - sb).abs() <= 1e-14 * sa.abs().max(1e-14), "s {sa} vs {sb}");
+                assert!(
+                    (za - zb).abs() <= 1e-14 * za.abs().max(1e-14),
+                    "z {za} vs {zb}"
+                );
+                assert!(
+                    (sa - sb).abs() <= 1e-14 * sa.abs().max(1e-14),
+                    "s {sa} vs {sb}"
+                );
                 assert_eq!(wa[..valid], wb[..valid], "T {t} valid {valid}: w'");
                 for bits in [WeightBits::Eight, WeightBits::Sixteen] {
                     let (gmax, shift, _) = weight_grid(bits, Path::Avx512);
@@ -1532,9 +1627,7 @@ mod tests {
                         la[tok] = (v & mask) as u8;
                     }
                     let (mut hb, mut lb) = ([0u8; 32], [0u8; 32]);
-                    unsafe {
-                        attend_quant_avx512(valid, &wb, inv, gmax, shift, &mut hb, &mut lb)
-                    };
+                    unsafe { attend_quant_avx512(valid, &wb, inv, gmax, shift, &mut hb, &mut lb) };
                     assert_eq!(ha, hb, "T {t} valid {valid} {bits:?}: hi bytes");
                     assert_eq!(la, lb, "T {t} valid {valid} {bits:?}: lo bytes");
                 }
@@ -1557,7 +1650,17 @@ mod tests {
             let mut acc = VAcc::new(dim);
             let w = [0.0f32; 32];
             attend_page_with_path(
-                &page, dim, t, valid, &scale_v, &shift_v, &w, &lv, WeightBits::Eight, p, &mut acc,
+                &page,
+                dim,
+                t,
+                valid,
+                &scale_v,
+                &shift_v,
+                &w,
+                &lv,
+                WeightBits::Eight,
+                p,
+                &mut acc,
             );
             assert_eq!(acc.z, 0.0);
             assert_eq!(acc.shift_sum, 0.0);
@@ -1568,7 +1671,17 @@ mod tests {
             w[1] = 1.0;
             let mut acc = VAcc::new(dim);
             attend_page_with_path(
-                &page, dim, t, valid, &scale_v, &shift_v, &w, &lv, WeightBits::Eight, p, &mut acc,
+                &page,
+                dim,
+                t,
+                valid,
+                &scale_v,
+                &shift_v,
+                &w,
+                &lv,
+                WeightBits::Eight,
+                p,
+                &mut acc,
             );
             assert!((acc.z - 1.0).abs() < 1e-12);
             assert!((acc.shift_sum - shift_v[1]).abs() < 1e-6);

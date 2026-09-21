@@ -58,8 +58,7 @@ use memmap2::Mmap;
 // a request, and every place that maps a file already knows which of the four roles below the
 // file plays. Keeping them as two atomics (instead of threading a config through `Store` ->
 // `Session` -> `load_payload` -> four readers) is what makes an A/B run a flag flip.
-static MADVISE: std::sync::atomic::AtomicU8 =
-    std::sync::atomic::AtomicU8::new(Madvise::Bulk as u8);
+static MADVISE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Madvise::Bulk as u8);
 static PREFETCH: AtomicBool = AtomicBool::new(true);
 
 /// `--madvise`: which policy the store applies to a mapped session file.
@@ -244,7 +243,10 @@ struct Align64([u8; 64]);
 impl Aligned {
     /// A zeroed buffer of `len` bytes, 64-byte aligned.
     fn zeroed(len: usize) -> Aligned {
-        Aligned { chunks: vec![Align64([0u8; 64]); len.div_ceil(64)], len }
+        Aligned {
+            chunks: vec![Align64([0u8; 64]); len.div_ceil(64)],
+            len,
+        }
     }
 
     fn as_mut(&mut self) -> &mut [u8] {
@@ -339,11 +341,15 @@ unsafe impl<T: Pod + Sync> Sync for Arr<T> {}
 
 impl<T: Pod> Arr<T> {
     pub fn from_vec(v: Vec<T>) -> Arr<T> {
-        Arr { inner: Inner::Owned(v) }
+        Arr {
+            inner: Inner::Owned(v),
+        }
     }
 
     pub fn empty() -> Arr<T> {
-        Arr { inner: Inner::Owned(Vec::new()) }
+        Arr {
+            inner: Inner::Owned(Vec::new()),
+        }
     }
 
     /// A window of `len` values starting at byte offset `off` of `blob`.
@@ -362,7 +368,11 @@ impl<T: Pod> Arr<T> {
             return None;
         }
         Some(Arr {
-            inner: Inner::Mapped { blob: map.clone(), ptr: ptr as *const T, len },
+            inner: Inner::Mapped {
+                blob: map.clone(),
+                ptr: ptr as *const T,
+                len,
+            },
         })
     }
 
@@ -475,7 +485,11 @@ impl<T: Pod> Clone for Arr<T> {
         match &self.inner {
             Inner::Owned(v) => Arr::from_vec(v.clone()),
             Inner::Mapped { blob, ptr, len } => Arr {
-                inner: Inner::Mapped { blob: blob.clone(), ptr: *ptr, len: *len },
+                inner: Inner::Mapped {
+                    blob: blob.clone(),
+                    ptr: *ptr,
+                    len: *len,
+                },
             },
         }
     }
@@ -602,7 +616,11 @@ mod tests {
         bytes.extend_from_slice(pod_bytes(&want));
         std::fs::write(&path, &bytes).unwrap();
         let (blob, fnv) = pin_file(&path).unwrap();
-        assert_eq!(fnv, crate::tq4::fnv1a64(&bytes), "a pin hashes what it read");
+        assert_eq!(
+            fnv,
+            crate::tq4::fnv1a64(&bytes),
+            "a pin hashes what it read"
+        );
         assert_eq!(blob_heap_bytes(&blob), bytes.len() as u64);
         // the buffer starts where a mapping would: 64-byte aligned, so every array the writer
         // padded to 8 or to 64 is aligned inside it too (`NodeRecords::from_parts` insists)
