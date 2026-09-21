@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
@@ -13,6 +13,7 @@ use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
@@ -710,4 +711,65 @@ fn deferred_index_opens_on_first_search() {
     .expect("open with a deferred index");
 
     assert_query_equivalence(&eager, &deferred);
+}
+
+/// The stop flag is observed both while staging an open and while assembling
+/// it, and an unset flag changes nothing.
+#[test]
+fn schedule_open_and_finish_observe_the_stop_flag() {
+    let segments_dir = Builder::new().prefix("ro_segments_stop").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder_stop").tempdir().unwrap();
+
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path());
+    let segment_path = mutable.data_path();
+    let segment_uuid = mutable.uuid;
+
+    let is_cancelled = |result: OperationResult<ReadOnlySegment<MmapFile>>| {
+        matches!(result, Err(OperationError::Cancelled { .. }))
+    };
+
+    // Already cancelled: staging refuses before scheduling anything.
+    let stopped = AtomicBool::new(true);
+    let staged = ReadOnlySegment::<MmapFile>::schedule_open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &stopped,
+    );
+    assert!(matches!(staged, Err(OperationError::Cancelled { .. })));
+    assert!(stopped.load(Ordering::Relaxed));
+
+    // Cancelled between staging and assembly: `finish` refuses.
+    let stopped = AtomicBool::new(false);
+    let staged = ReadOnlySegment::<MmapFile>::schedule_open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &stopped,
+    )
+    .unwrap();
+    stopped.store(true, Ordering::Relaxed);
+    assert!(is_cancelled(staged.finish(&MmapFs)));
+    assert!(stopped.load(Ordering::Relaxed));
+
+    // Never cancelled: identical to the plain open, and the flag is left alone.
+    let stopped = AtomicBool::new(false);
+    let read_only = ReadOnlySegment::<MmapFile>::schedule_open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &stopped,
+    )
+    .unwrap()
+    .finish(&MmapFs)
+    .unwrap();
+    assert!(!stopped.load(Ordering::Relaxed));
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_query_equivalence(&mutable, &read_only);
 }

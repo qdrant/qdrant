@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
@@ -7,7 +8,7 @@ use futures::future::join_all;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
 use rayon::prelude::*;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
@@ -27,43 +28,57 @@ use uuid::Uuid;
 /// load — a not-yet-finalized segment, one already deleted, or an appendable write-buffer segment
 /// that has no disk-resident id tracker. Per the manifest's reader contract these are skipped (with
 /// a warning) instead of failing the whole open.
+///
+/// Cooperative cancellation: `is_stopped` is checked between stages here and between components
+/// inside each segment's staging and assembly (see [`ReadOnlySegment::schedule_open`]); a set flag
+/// yields [`OperationError::Cancelled`] rather than a partial list. The IO wait and a single
+/// component's open are indivisible and may delay the observation.
 pub(crate) fn load_segments_parallel<S>(
     pool: &ThreadPool,
     fs: &S::Fs,
     segments: impl IntoIterator<Item = (Uuid, PathBuf)>,
     load_profile: Option<&LoadProfile>,
-) -> Vec<(Uuid, ReadOnlySegment<S>)>
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<(Uuid, ReadOnlySegment<S>)>>
 where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
     // Stage every open: per-segment LIST + config reads, with the bulk
     // fetches going in flight as scheduled.
-    let staged: Vec<_> = segments
-        .into_iter()
-        .filter_map(|(uuid, segment_path)| {
-            match ReadOnlySegment::<S>::schedule_open(fs, &segment_path, uuid, None, load_profile) {
-                Ok(staged) => Some((uuid, staged)),
-                Err(err) => {
-                    log::log!(
-                        skip_level(&err),
-                        "read-only open: skipping unloadable segment {uuid}: {err}"
-                    );
-                    None
-                }
+    let mut staged = Vec::new();
+    for (uuid, segment_path) in segments {
+        match ReadOnlySegment::<S>::schedule_open(
+            fs,
+            &segment_path,
+            uuid,
+            None,
+            load_profile,
+            is_stopped,
+        ) {
+            Ok(segment) => staged.push((uuid, segment)),
+            Err(err @ OperationError::Cancelled { .. }) => return Err(err),
+            Err(err) => {
+                log::log!(
+                    skip_level(&err),
+                    "read-only open: skipping unloadable segment {uuid}: {err}"
+                );
             }
-        })
-        .collect();
+        }
+    }
 
     // Drive all segments' fetches to completion here, overlapped, off the pool.
+    check_process_stopped(is_stopped)?;
     futures::executor::block_on(join_all(staged.iter().map(|(_, staged)| staged.wait())));
+    check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    pool.install(|| {
+    let loaded = pool.install(|| {
         staged
             .into_par_iter()
             .filter_map(|(uuid, staged)| match staged.finish(fs) {
-                Ok(segment) => Some((uuid, segment)),
+                Ok(segment) => Some(Ok((uuid, segment))),
+                Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
                 Err(err) => {
                     log::log!(
                         skip_level(&err),
@@ -72,8 +87,10 @@ where
                     None
                 }
             })
-            .collect()
-    })
+            .collect::<OperationResult<Vec<_>>>()
+    })?;
+    check_process_stopped(is_stopped)?;
+    Ok(loaded)
 }
 
 /// The level at which a segment that failed to open is reported.
@@ -103,11 +120,18 @@ fn skip_level(err: &OperationError) -> log::Level {
 /// calling thread; `pool` only runs the staging and the CPU-bound apply.
 /// A failed preload is benign (warn): its reload still runs and surfaces
 /// anything real. Returns each segment's reload result, in input order.
+///
+/// Cooperative cancellation: `is_stopped` is checked between segments and
+/// between stages; a set flag yields [`OperationError::Cancelled`] as the
+/// outer error. A segment's reload is applied atomically under its write
+/// lock, so segments reloaded before the cancellation was observed stay
+/// consistent, and the rest replay their delta on the next reload.
 pub(crate) fn reload_segments_parallel<S>(
     pool: &ThreadPool,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
     hw_counter: &HardwareCounterCell,
-) -> Vec<(Uuid, OperationResult<()>)>
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<(Uuid, OperationResult<()>)>>
 where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
@@ -115,17 +139,24 @@ where
     let io_futures = pool.install(|| {
         segments
             .par_iter()
-            .filter_map(|(uuid, segment)| match segment.read().live_preload() {
-                Ok(future) => Some(future),
-                Err(err) => {
-                    log::warn!("live_preload of segment {uuid} failed: {err}");
-                    None
+            .filter_map(|(uuid, segment)| {
+                if let Err(cancelled) = check_process_stopped(is_stopped) {
+                    return Some(Err(OperationError::from(cancelled)));
+                }
+                match segment.read().live_preload() {
+                    Ok(future) => Some(Ok(future)),
+                    Err(err) => {
+                        log::warn!("live_preload of segment {uuid} failed: {err}");
+                        None
+                    }
                 }
             })
-            .collect::<Vec<_>>()
-    });
+            .collect::<OperationResult<Vec<_>>>()
+    })?;
 
+    check_process_stopped(is_stopped)?;
     futures::executor::block_on(join_all(io_futures));
+    check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments
         .into_iter()
@@ -133,10 +164,15 @@ where
         // pool; forks drain into the shared accumulator on drop.
         .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
         .collect();
-    pool.install(|| {
+    let results = pool.install(|| {
         reloads
             .into_par_iter()
-            .map(|(uuid, segment, hw)| (uuid, segment.write().live_reload(&hw)))
-            .collect()
-    })
+            .map(|(uuid, segment, hw)| {
+                check_process_stopped(is_stopped)?;
+                Ok((uuid, segment.write().live_reload(&hw)))
+            })
+            .collect::<OperationResult<Vec<_>>>()
+    })?;
+    check_process_stopped(is_stopped)?;
+    Ok(results)
 }
