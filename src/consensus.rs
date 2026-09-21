@@ -13,7 +13,9 @@ use anyhow::{Context as _, anyhow};
 use api::HTTP_HEADER_API_KEY;
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
-use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
+use api::grpc::qdrant::{
+    AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage, ResignLeaderRequest,
+};
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
@@ -22,12 +24,14 @@ use common::cpu::linux_high_thread_priority;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{INVALID_ID, SoftState, StateRole};
+use storage::content_manager::consensus::operation_sender::{ConsensusRequest, PeerRemoval};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
@@ -54,7 +58,35 @@ const CONSENSUS_RESTART_BACKOFF_RESET_UPTIME: Duration = Duration::from_secs(300
 
 pub enum Message {
     FromClient(ConsensusOperations),
+    RemovePeer(PeerRemoval),
+    ResignLeader {
+        term: u64,
+        deadline: Instant,
+        reply: oneshot::Sender<Result<(), StorageError>>,
+    },
     FromPeer(Box<RaftMessage>),
+}
+
+impl From<ConsensusRequest> for Message {
+    fn from(request: ConsensusRequest) -> Self {
+        match request {
+            ConsensusRequest::Operation(operation) => Self::FromClient(operation),
+            ConsensusRequest::RemovePeer(request) => Self::RemovePeer(request),
+        }
+    }
+}
+
+struct PendingPeerRemoval {
+    request: PeerRemoval,
+    resign_term: Option<u64>,
+    resignation: Option<oneshot::Receiver<Result<(), StorageError>>>,
+}
+
+struct PendingResignation {
+    term: u64,
+    deadline: Instant,
+    // Local resignation completes directly through pending_removal.
+    reply: Option<oneshot::Sender<Result<(), StorageError>>>,
 }
 
 /// Aka Consensus Thread
@@ -69,6 +101,10 @@ pub struct Consensus {
     config: ConsensusConfig,
     broker: RaftMessageBroker,
     raft_config: Config,
+    pending_removal: Option<PendingPeerRemoval>,
+    pending_resignation: Option<PendingResignation>,
+    resign_until: Option<Instant>,
+    self_removal: Option<(u64, u64)>,
 }
 
 impl Consensus {
@@ -81,7 +117,7 @@ impl Consensus {
         uri: Option<String>,
         settings: Settings,
         channel_service: ChannelService,
-        propose_receiver: mpsc::Receiver<ConsensusOperations>,
+        propose_receiver: mpsc::Receiver<ConsensusRequest>,
         telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
         tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
@@ -229,10 +265,7 @@ impl Consensus {
                 }
 
                 while let Ok(entry) = propose_receiver.recv() {
-                    if message_sender_moved
-                        .blocking_send(Message::FromClient(entry))
-                        .is_err()
-                    {
+                    if message_sender_moved.blocking_send(entry.into()).is_err() {
                         log::error!("Can not forward new entry to consensus as it was stopped.");
                         break;
                     }
@@ -394,12 +427,24 @@ impl Consensus {
             channel_service.api_key,
         );
 
+        let unapplied = node.raft.raft_log.slice(
+            node.raft.raft_log.applied + 1,
+            node.raft.raft_log.last_index() + 1,
+            None,
+            raft::GetEntriesContext::empty(false),
+        )?;
+        let self_removal = self_removal_entry(&unapplied, node.raft.id)?;
+
         let consensus = Self {
             node,
             runtime,
             config,
             broker,
             raft_config,
+            pending_removal: None,
+            pending_resignation: None,
+            resign_until: None,
+            self_removal,
         };
 
         if !state_ref.is_new_deployment() {
@@ -652,6 +697,10 @@ impl Consensus {
 
             // Report elapsed ticks to Raft node
             for _ in 0..report_ticks {
+                if self.is_resigning() {
+                    // Remain available to vote and replicate without campaigning again.
+                    self.node.raft.election_elapsed = 0;
+                }
                 self.node.tick();
             }
 
@@ -688,6 +737,8 @@ impl Consensus {
         receiver: &mut Receiver<Message>,
         tick_period: Duration,
     ) -> anyhow::Result<usize> {
+        self.advance_resignation();
+        self.advance_peer_removal();
         if self
             .try_promote_learner()
             .context("failed to promote learner")?
@@ -730,7 +781,7 @@ impl Consensus {
                 message,
                 Message::FromClient(
                     ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_)
-                ),
+                ) | Message::RemovePeer(_),
             );
 
             let is_raft_message = matches!(message, Message::FromPeer(_));
@@ -771,7 +822,46 @@ impl Consensus {
     }
 
     fn advance_node_impl(&mut self, message: Message) -> anyhow::Result<()> {
+        if self.is_leader()
+            && (self.has_self_removal() || self.pending_resignation.is_some())
+            && matches!(&message, Message::FromClient(operation)
+                if !matches!(operation, ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. }))
+        {
+            return Err(anyhow!("Leader is resigning before its pending removal"));
+        }
         match message {
+            Message::ResignLeader {
+                term,
+                deadline,
+                reply,
+            } => {
+                if self.pending_resignation.is_some() {
+                    let _ = reply.send(Err(StorageError::service_error(
+                        "Leader resignation is already pending",
+                    )));
+                } else {
+                    self.pending_resignation = Some(PendingResignation {
+                        term,
+                        deadline,
+                        reply: Some(reply),
+                    });
+                    self.advance_resignation();
+                }
+            }
+            Message::RemovePeer(request) => {
+                if self.pending_removal.is_some() {
+                    let _ = request.proposed.send(Err(StorageError::service_error(
+                        "Another peer removal is waiting for a surviving leader; retry after it completes",
+                    )));
+                } else {
+                    self.pending_removal = Some(PendingPeerRemoval {
+                        request,
+                        resign_term: None,
+                        resignation: None,
+                    });
+                    self.advance_peer_removal();
+                }
+            }
             Message::FromClient(ConsensusOperations::AddPeer { peer_id, uri }) => {
                 let existing_uris = self
                     .broker
@@ -811,6 +901,7 @@ impl Consensus {
             }
 
             Message::FromClient(ConsensusOperations::RemovePeer(peer_id)) => {
+                self.validate_removal_proposal(peer_id)?;
                 let mut change = ConfChangeV2::default();
 
                 change.set_changes(vec![raft_proto::new_conf_change_single(
@@ -845,6 +936,48 @@ impl Consensus {
             }
 
             Message::FromPeer(message) => {
+                if self.is_resigning() && message.get_msg_type() == MessageType::MsgTimeoutNow {
+                    return Ok(());
+                }
+                if self.is_leader()
+                    && (self.has_self_removal() || self.pending_resignation.is_some())
+                {
+                    if message.get_msg_type() == MessageType::MsgPropose {
+                        return Err(anyhow!("Leader is resigning before its pending removal"));
+                    }
+                    if self.has_self_removal()
+                        && message.get_msg_type() == MessageType::MsgAppendResponse
+                        && message.term == self.node.raft.term
+                        && !message.reject
+                        && message.index >= self.node.raft.raft_log.last_index()
+                        && message.from != self.node.raft.id
+                        && self.node.raft.prs().conf().voters().contains(message.from)
+                    {
+                        // Another voter now has our log and can win an election.
+                        // Resign before this ACK can commit our own removal.
+                        let term = self.node.raft.term;
+                        self.node.raft.become_follower(term, INVALID_ID);
+                        self.resign_until = Some(
+                            Instant::now()
+                                + Duration::from_millis(
+                                    self.config.tick_period_ms
+                                        * self.raft_config.election_tick as u64
+                                        * 2,
+                                ),
+                        );
+                    }
+                }
+                // A follower can forward a proposal after leadership changes.
+                // Check at the accepting leader before the entry reaches its log.
+                if self.is_leader() && message.get_msg_type() == MessageType::MsgPropose {
+                    for entry in &message.entries {
+                        for change in configuration_changes(entry)? {
+                            if change.get_change_type() == ConfChangeType::RemoveNode {
+                                self.validate_removal_proposal(change.node_id)?;
+                            }
+                        }
+                    }
+                }
                 let is_heartbeat = matches!(
                     message.get_msg_type(),
                     MessageType::MsgHeartbeat | MessageType::MsgHeartbeatResponse,
@@ -863,6 +996,177 @@ impl Consensus {
         }
 
         Ok(())
+    }
+
+    fn validate_removal_proposal(&self, peer_id: u64) -> Result<(), StorageError> {
+        validate_voter_removal(&self.node.raft.prs().conf().to_conf_state(), peer_id)?;
+        if self.node.raft.leader_id == peer_id {
+            return Err(StorageError::service_error(
+                "A surviving leader must be established before removing the current leader",
+            ));
+        }
+        if self.is_leader() && !self.node.raft.commit_to_current_term() {
+            return Err(StorageError::service_error(
+                "The leader has not committed an entry in its term",
+            ));
+        }
+        Ok(())
+    }
+
+    fn advance_resignation(&mut self) {
+        let Some(request) = self.pending_resignation.take() else {
+            return;
+        };
+        let cancelled = match &request.reply {
+            Some(reply) => reply.is_closed(),
+            None => self
+                .pending_removal
+                .as_ref()
+                .is_none_or(|pending| pending.request.proposed.is_closed()),
+        };
+        if cancelled {
+            return;
+        }
+        let result = if !self.is_leader() || self.node.raft.term != request.term {
+            Err(StorageError::service_error(
+                "Leadership changed before resignation",
+            ))
+        } else if Instant::now() >= request.deadline {
+            Err(StorageError::service_error("Leader resignation expired"))
+        } else if self.node.raft.has_pending_conf()
+            || self.node.raft.raft_log.committed < self.node.raft.raft_log.last_index()
+        {
+            // Stop accepting proposals and finish replication before stepping down.
+            // Otherwise our newer log can prevent the other voters from winning.
+            self.pending_resignation = Some(request);
+            return;
+        } else {
+            validate_voter_removal(
+                &self.node.raft.prs().conf().to_conf_state(),
+                self.node.raft.id,
+            )
+            .map(|()| {
+                self.resign_until = Some(request.deadline);
+                self.node.raft.become_follower(request.term, INVALID_ID);
+            })
+        };
+        if let Some(reply) = request.reply {
+            let _ = reply.send(result);
+        } else if let Err(error) = result
+            && let Some(pending) = self.pending_removal.take()
+        {
+            let _ = pending.request.proposed.send(Err(error));
+        }
+    }
+
+    fn is_resigning(&self) -> bool {
+        self.resign_until
+            .is_some_and(|deadline| Instant::now() < deadline)
+    }
+
+    fn has_self_removal(&self) -> bool {
+        self.self_removal
+            .is_some_and(|(index, term)| self.node.raft.raft_log.term(index).ok() == Some(term))
+    }
+
+    fn advance_peer_removal(&mut self) {
+        let Some(mut pending) = self.pending_removal.take() else {
+            return;
+        };
+        if pending.request.proposed.is_closed() {
+            return;
+        }
+        if Instant::now() >= pending.request.deadline {
+            let _ = pending.request.proposed.send(Err(StorageError::Timeout {
+                description:
+                    "Waiting for a surviving leader timed out before peer removal was proposed"
+                        .into(),
+            }));
+            return;
+        }
+
+        if let Some(receiver) = &mut pending.resignation {
+            match receiver.try_recv() {
+                Ok(Ok(())) => pending.resignation = None,
+                Err(oneshot::error::TryRecvError::Empty) => {
+                    self.pending_removal = Some(pending);
+                    return;
+                }
+                Ok(Err(error)) => {
+                    let _ = pending.request.proposed.send(Err(error));
+                    return;
+                }
+                Err(error) => {
+                    let _ = pending
+                        .request
+                        .proposed
+                        .send(Err(StorageError::service_error(error.to_string())));
+                    return;
+                }
+            }
+        }
+
+        // An earlier membership change must be applied before checking whether
+        // this removal would leave a voter. Raft permits one change at a time.
+        if self.node.raft.has_pending_conf() {
+            self.pending_removal = Some(pending);
+            return;
+        }
+        let conf = self.node.raft.prs().conf().to_conf_state();
+        let peer_id = pending.request.peer_id;
+        if let Err(error) = validate_voter_removal(&conf, peer_id) {
+            let _ = pending.request.proposed.send(Err(error));
+            return;
+        }
+        let leader_id = self.node.raft.leader_id;
+        if leader_id == INVALID_ID
+            || !conf.voters.contains(&leader_id)
+            || !conf.voters_outgoing.is_empty()
+        {
+            self.pending_removal = Some(pending);
+            return;
+        }
+        if leader_id == peer_id {
+            if pending.resign_term != Some(self.node.raft.term) {
+                let term = self.node.raft.term;
+                if self.is_leader() {
+                    if self.pending_resignation.is_some() {
+                        self.pending_removal = Some(pending);
+                        return;
+                    }
+                    self.pending_resignation = Some(PendingResignation {
+                        term,
+                        deadline: pending.request.deadline,
+                        reply: None,
+                    });
+                } else {
+                    pending.resignation = Some(self.broker.resign_leader(
+                        peer_id,
+                        term,
+                        pending.request.deadline,
+                    ));
+                }
+                pending.resign_term = Some(term);
+            }
+            self.pending_removal = Some(pending);
+            self.advance_resignation();
+            return;
+        }
+
+        // Seeing a leader is not proof that it has committed in its new term.
+        if !self.node.raft.commit_to_current_term() {
+            self.pending_removal = Some(pending);
+            return;
+        }
+
+        let result = self
+            .advance_node_impl(Message::FromClient(ConsensusOperations::RemovePeer(
+                peer_id,
+            )))
+            .map_err(|err| {
+                StorageError::service_error(format!("Failed to propose peer removal: {err}"))
+            });
+        let _ = pending.request.proposed.send(result);
     }
 
     fn is_single_peer(&self) -> bool {
@@ -953,7 +1257,7 @@ impl Consensus {
     /// that guarantees that learner will start voting only after it applies all the changes in the log
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
         // Promote only if leader
-        if !self.is_leader() {
+        if !self.is_leader() || self.has_self_removal() || self.pending_resignation.is_some() {
             return Ok(false);
         }
 
@@ -1083,6 +1387,10 @@ impl Consensus {
         }
 
         if !ready.entries().is_empty() {
+            if let Some(removal) = self_removal_entry(ready.entries(), self.node.raft.id)? {
+                // A client timeout cannot retract a logged removal.
+                self.self_removal = Some(removal);
+            }
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
             is_idle = false;
@@ -1127,12 +1435,15 @@ impl Consensus {
         let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
             .context("Failed to handle committed entries")?;
 
+        // Advance the Raft regardless of `stop_consensus`: raft-rs requires every `Ready` to be
+        // advanced, and this node's own removal does not exempt it from that contract, even
+        // though nothing reads the returned `LightReady` once consensus is stopping.
+        let light_rd = self.node.advance(ready);
+
         if stop_consensus {
             return Ok((None, None, false));
         }
 
-        // Advance the Raft.
-        let light_rd = self.node.advance(ready);
         Ok((Some(light_rd), role_change, is_idle))
     }
 
@@ -1242,6 +1553,48 @@ struct RaftMessageBroker {
 }
 
 impl RaftMessageBroker {
+    fn resign_leader(
+        &self,
+        peer_id: PeerId,
+        term: u64,
+        deadline: Instant,
+    ) -> oneshot::Receiver<Result<(), StorageError>> {
+        let (reply, receiver) = oneshot::channel();
+        let uri = self.consensus_state.peer_address(peer_id);
+        let pool = self.transport_channel_pool.clone();
+        self.runtime.spawn(async move {
+            let result = async {
+                let uri = uri
+                    .ok_or_else(|| StorageError::service_error("Leader address is unavailable"))?;
+                let timeout = deadline.saturating_duration_since(Instant::now());
+                pool.with_channel_timeout(
+                    &uri,
+                    |channel| async move {
+                        let timeout = deadline.saturating_duration_since(Instant::now());
+                        let mut request = tonic::Request::new(ResignLeaderRequest {
+                            term,
+                            timeout_ms: timeout.as_millis().try_into().unwrap_or(u64::MAX),
+                        });
+                        request.set_timeout(timeout);
+                        RaftClient::new(channel).resign_leader(request).await
+                    },
+                    Some(timeout),
+                    0,
+                )
+                .await
+                .map_err(|err| {
+                    StorageError::service_error(format!(
+                        "Failed to request leader resignation: {err}"
+                    ))
+                })?;
+                Ok(())
+            }
+            .await;
+            let _ = reply.send(result);
+        });
+        receiver
+    }
+
     pub fn new(
         runtime: Handle,
         bootstrap_uri: Option<Uri>,
@@ -1269,6 +1622,9 @@ impl RaftMessageBroker {
 
         while let Some(message) = retry.take().or_else(|| messages.next()) {
             let peer_id = message.to;
+            // Applying removal can erase this address while the final commit
+            // notification is still waiting behind an earlier RPC response.
+            let uri = self.consensus_state.peer_address(peer_id);
 
             let sender = match self.senders.get_mut(&peer_id) {
                 Some(sender) => sender,
@@ -1302,17 +1658,17 @@ impl RaftMessageBroker {
                 }
             };
 
-            match sender.send(message).map_err(|err| *err) {
+            match sender.send(message, uri).map_err(|err| *err) {
                 Ok(()) => (),
 
-                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message, _))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is full. Message will be dropped.",
                     );
                 }
 
-                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message, _))) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is closed. \
@@ -1353,19 +1709,19 @@ impl RaftMessageBroker {
 
 #[derive(Debug)]
 struct RaftMessageSenderHandle {
-    messages: Sender<(usize, RaftMessage)>,
-    heartbeat: watch::Sender<(usize, RaftMessage)>,
+    messages: Sender<QueuedRaftMessage>,
+    heartbeat: watch::Sender<QueuedRaftMessage>,
     index: usize,
 }
 
 impl RaftMessageSenderHandle {
-    fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
+    fn send(&mut self, message: RaftMessage, uri: Option<Uri>) -> RaftMessageSenderResult<()> {
         if !is_heartbeat(&message) {
             self.messages
-                .try_send((self.index, message))
+                .try_send((self.index, message, uri))
                 .map_err(Box::new)?;
         } else {
-            self.heartbeat.send((self.index, message)).map_err(
+            self.heartbeat.send((self.index, message, uri)).map_err(
                 |watch::error::SendError(message)| {
                     Box::new(tokio::sync::mpsc::error::TrySendError::Closed(message))
                 },
@@ -1379,11 +1735,12 @@ impl RaftMessageSenderHandle {
 }
 
 type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
-type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>>;
+type QueuedRaftMessage = (usize, RaftMessage, Option<Uri>);
+type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<QueuedRaftMessage>>;
 
 struct RaftMessageSender {
-    messages: Receiver<(usize, RaftMessage)>,
-    heartbeat: watch::Receiver<(usize, RaftMessage)>,
+    messages: Receiver<QueuedRaftMessage>,
+    heartbeat: watch::Receiver<QueuedRaftMessage>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -1452,7 +1809,7 @@ impl RaftMessageSender {
         let mut prev_index = 0;
 
         loop {
-            let (index, message) = tokio::select! {
+            let (index, message, uri) = tokio::select! {
                 biased;
                 Some(message) = self.messages.recv() => message,
                 Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
@@ -1460,14 +1817,14 @@ impl RaftMessageSender {
             };
 
             if prev_index <= index {
-                self.send(&message).await;
+                self.send(&message, uri.as_ref()).await;
                 prev_index = index;
             }
         }
     }
 
-    async fn send(&self, message: &RaftMessage) {
-        if let Err(err) = self.try_send(message).await {
+    async fn send(&self, message: &RaftMessage, uri: Option<&Uri>) {
+        if let Err(err) = self.try_send(message, uri).await {
             let peer_id = message.to;
 
             if log::max_level() >= log::Level::Debug {
@@ -1478,10 +1835,10 @@ impl RaftMessageSender {
         }
     }
 
-    async fn try_send(&self, message: &RaftMessage) -> anyhow::Result<()> {
+    async fn try_send(&self, message: &RaftMessage, uri: Option<&Uri>) -> anyhow::Result<()> {
         let peer_id = message.to;
 
-        let uri = self.uri(peer_id).await?;
+        let uri = self.uri(peer_id, uri).await?;
         let bytes = <RaftMessage as prost_for_raft::Message>::encode_to_vec(message);
         let grpc_message = GrpcRaftMessage { message: bytes };
 
@@ -1537,8 +1894,11 @@ impl RaftMessageSender {
         Ok(())
     }
 
-    async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        let uri = self.consensus_state.peer_address(peer_id);
+    async fn uri(&self, peer_id: PeerId, queued_uri: Option<&Uri>) -> anyhow::Result<Uri> {
+        let uri = self
+            .consensus_state
+            .peer_address(peer_id)
+            .or_else(|| queued_uri.cloned());
 
         match uri {
             Some(uri) => Ok(uri),
@@ -1582,6 +1942,43 @@ impl RaftMessageSender {
     }
 }
 
+fn configuration_changes(entry: &Entry) -> anyhow::Result<Vec<ConfChangeSingle>> {
+    Ok(match entry.get_entry_type() {
+        EntryType::EntryConfChangeV2 => {
+            let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.data.as_ref())?;
+            change.changes
+        }
+        EntryType::EntryConfChange => {
+            let change: ConfChange = prost_for_raft::Message::decode(entry.data.as_ref())?;
+            vec![raft_proto::new_conf_change_single(
+                change.node_id,
+                change.get_change_type(),
+            )]
+        }
+        EntryType::EntryNormal => vec![],
+    })
+}
+
+fn self_removal_entry(entries: &[Entry], peer_id: u64) -> anyhow::Result<Option<(u64, u64)>> {
+    for entry in entries.iter().rev() {
+        if configuration_changes(entry)?.iter().any(|change| {
+            change.node_id == peer_id && change.get_change_type() == ConfChangeType::RemoveNode
+        }) {
+            return Ok(Some((entry.index, entry.term)));
+        }
+    }
+    Ok(None)
+}
+
+fn validate_voter_removal(conf: &ConfState, peer_id: u64) -> Result<(), StorageError> {
+    if conf.voters.contains(&peer_id) && conf.voters.iter().all(|id| *id == peer_id) {
+        return Err(StorageError::bad_request(
+            "Cannot remove the last voting peer",
+        ));
+    }
+    Ok(())
+}
+
 fn is_heartbeat(message: &RaftMessage) -> bool {
     message.msg_type == raft::eraftpb::MessageType::MsgHeartbeat as i32
         || message.msg_type == raft::eraftpb::MessageType::MsgHeartbeatResponse as i32
@@ -1610,6 +2007,25 @@ mod tests {
 
     use super::Consensus;
     use crate::settings::ConsensusConfig;
+
+    #[test]
+    fn last_voter_removal_is_rejected_even_with_learners() {
+        let conf = raft::prelude::ConfState {
+            voters: vec![1],
+            learners: vec![2, 3],
+            ..Default::default()
+        };
+        assert!(matches!(
+            super::validate_voter_removal(&conf, 1),
+            Err(storage::content_manager::errors::StorageError::BadRequest { .. })
+        ));
+        assert!(super::validate_voter_removal(&conf, 2).is_ok());
+        let conf = raft::prelude::ConfState {
+            voters: vec![1, 2],
+            ..Default::default()
+        };
+        assert!(super::validate_voter_removal(&conf, 1).is_ok());
+    }
 
     #[test]
     fn collection_creation_passes_consensus() {
@@ -1675,10 +2091,7 @@ mod tests {
         thread::spawn(move || consensus.start(&mut message_receiver).unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
-                if message_sender
-                    .blocking_send(super::Message::FromClient(entry))
-                    .is_err()
-                {
+                if message_sender.blocking_send(entry.into()).is_err() {
                     log::error!("Can not forward new entry to consensus as it was stopped.");
                     break;
                 }
