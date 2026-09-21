@@ -35,6 +35,7 @@ pub struct GraphLinksFile<S: UniversalRead> {
     neighbors_offset: u64,
     /// Decoder for [`Self::offsets_data`].
     offsets_reader: bitpacking_ordered::Reader,
+    offsets_offset: u64,
     offsets_data: Vec<u8>,
     hnsw_m: HnswM,
     bits_per_unsorted: u8,
@@ -55,17 +56,7 @@ enum CompressionInfo {
 impl<S: UniversalRead> GraphLinksFile<S> {
     /// Preloads header + level_offsets.
     pub fn preopen_options(residency: GraphLinksResidency) -> OpenOptions {
-        // Upper bound of the number of levels in a HNSW graph.
-        //
-        // Most graphs have no more than 8 levels, but to be safe, let's assume
-        // the worst case:
-        // ```
-        // N_POINTS = 2**32; HNSW_M = 2; CONFIDENCE = 0.999
-        // math.log(N_POINTS / -math.log(CONFIDENCE), HNSW_M) - 0.5
-        // ```
-        let max_levels_guess = 42;
-
-        let eager_read_size = (HEADER_MAX_SIZE + max_levels_guess * size_of::<u64>()) as u64;
+        let eager_read_size = Self::eager_read_size();
 
         OpenOptions {
             writeable: false,
@@ -77,6 +68,21 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             },
             advice: AdviceSetting::Advice(Advice::Random),
         }
+    }
+
+    /// Header + level_offsets, rounded up.
+    fn eager_read_size() -> u64 {
+        // Upper bound of the number of levels in a HNSW graph.
+        //
+        // Most graphs have no more than 8 levels, but to be safe, let's assume
+        // the worst case:
+        // ```
+        // N_POINTS = 2**32; HNSW_M = 2; CONFIDENCE = 0.999
+        // math.log(N_POINTS / -math.log(CONFIDENCE), HNSW_M) - 0.5
+        // ```
+        let max_levels_guess = 42;
+
+        (HEADER_MAX_SIZE + max_levels_guess * size_of::<u64>()) as u64
     }
 
     pub fn open(file: S, format: GraphLinksFormat) -> OperationResult<Self> {
@@ -126,6 +132,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         };
 
         let offsets = header.offsets_range()?;
+        let offsets_offset = offsets.start;
         let reindex_offset = header_size + levels_count * size_of::<u64>() as u64;
         let neighbors_offset = offsets.start - total_neighbors_bytes;
 
@@ -147,6 +154,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             reindex_offset,
             neighbors_offset,
             offsets_reader: offsets_parameters.validate()?,
+            offsets_offset,
             offsets_data,
             hnsw_m,
             bits_per_unsorted: bits_per_unsorted(point_count)?,
@@ -154,8 +162,8 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         })
     }
 
-    pub fn uio_trace_sections(&self, format: GraphLinksFormat) -> Vec<(&'static str, u64)> {
-        let header_end = Self::eager_read_size(format);
+    pub fn uio_trace_sections(&self) -> Vec<(&'static str, u64)> {
+        let header_end = Self::eager_read_size();
         vec![
             ("header", 0),
             ("reindex", self.reindex_offset.max(header_end)),

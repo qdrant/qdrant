@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::IoUringFs;
 use common::universal_io::{
     CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile,
-    MmapFs, UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
+    MmapFs, UniversalReadFs, UniversalReadFsAsync,
 };
 use rand::RngExt;
 use rstest::rstest;
