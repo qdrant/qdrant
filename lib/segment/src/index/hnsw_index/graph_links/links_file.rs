@@ -4,7 +4,7 @@ use std::num::NonZero;
 use common::bitpacking_links::{PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
 use common::ext::aligned_vec::ACow;
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{OpenOptions, Populate, ReadBytesItem, ReadRange, UniversalRead};
@@ -34,9 +34,9 @@ pub struct GraphLinksFile<S: UniversalRead> {
     reindex_offset: u64,
     /// Byte offset of the neighbors data.
     neighbors_offset: u64,
-    offsets: bitpacking_ordered::Reader,
-    /// Byte offset of the compressed offsets data.
-    offsets_offset: u64,
+    /// Decoder for [`Self::offsets_data`].
+    offsets_reader: bitpacking_ordered::Reader,
+    offsets_data: Vec<u8>,
     hnsw_m: HnswM,
     bits_per_unsorted: u8,
     compression: CompressionInfo,
@@ -177,9 +177,9 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         let offsets_offset = neighbors_offset
             .checked_add(common.total_neighbors_bytes)
             .ok_or_else(error_size)?;
-        let offsets = common.offsets_parameters.validate()?;
-        let _end = offsets_offset
-            .checked_add(offsets.compressed_size_bytes() as u64)
+        let offsets_reader = common.offsets_parameters.validate()?;
+        let offsets_end = offsets_offset
+            .checked_add(offsets_reader.compressed_size_bytes() as u64)
             .ok_or_else(error_size)?;
 
         let range = ReadRange {
@@ -190,14 +190,19 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         level_offsets.extend_from_slice(&file.read::<_, u64>(range, Random)?);
         level_offsets.push(last_offset_idx(common.offsets_parameters.length.get())?);
 
+        // Preload offsets once.
+        let offsets_data = file
+            .read_bytes(offsets_offset..offsets_end, Sequential, 1)?
+            .to_vec();
+
         Ok(Self {
             file,
             point_count: common.point_count,
             level_offsets,
             reindex_offset,
             neighbors_offset,
-            offsets,
-            offsets_offset,
+            offsets_reader,
+            offsets_data,
             hnsw_m: common.hnsw_m,
             bits_per_unsorted: bits_per_unsorted(common.point_count)?,
             compression: common.compression,
@@ -334,11 +339,10 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         point_id: PointOffsetType,
         align: usize,
     ) -> OperationResult<ACow<'_>> {
-        let (_position, (start, _end)) = self
-            .offsets
-            .read_pairs_iter(&self.file, self.offsets_offset, &[point_id as usize])?
-            .exactly_one()
-            .map_err(|_| OperationError::service_error("Expect the point"))??;
+        let (start, _end) = self
+            .offsets()
+            .read_pair(point_id as usize)
+            .ok_or_else(|| OperationError::service_error("Expect the point"))?;
         let start = self.neighbors_offset + start;
         let size = self.base_vector_layout().unwrap().size() as u64;
         Ok(self.file.read_bytes(start..start + size, Random, align)?)
@@ -388,9 +392,12 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             indices
         };
 
-        let pairs =
-            self.offsets
-                .read_pairs_iter(&self.file, self.offsets_offset, offset_indices)?;
+        let offsets = self.offsets();
+        let pairs = offset_indices.iter().enumerate().map(|(position, &index)| {
+            (offsets.read_pair(index))
+                .map(|pair| (position, pair))
+                .ok_or_else(|| OperationError::service_error("Offset out of bounds"))
+        });
         pairs.process_results(|pairs| {
             let items = pairs.map(|(position, (start, end))| ReadBytesItem {
                 user_data: (position, start),
@@ -404,6 +411,12 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             }
             Ok(())
         })?
+    }
+
+    fn offsets(&self) -> bitpacking_ordered::SliceReader<'_> {
+        self.offsets_reader
+            .slice_reader(&self.offsets_data)
+            .unwrap()
     }
 
     /// Byte range of the reindex table entry for the given point.
