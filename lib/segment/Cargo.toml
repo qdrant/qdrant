@@ -44,6 +44,7 @@ tap = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
+page-attention = { path = "../page-attention" }
 io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
 futures = { workspace = true }

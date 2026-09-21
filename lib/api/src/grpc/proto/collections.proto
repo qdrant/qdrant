@@ -32,6 +32,7 @@ enum Memory {
 // ---------------------------------------------
 
 message VectorParams {
+  optional PageAttentionConfig page_attention = 9;
   // Size of the vectors
   uint64 size = 1;
   // Distance function used for comparing vectors
@@ -54,6 +55,16 @@ message VectorParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   // `Pinned` is not supported for dense vector storage.
   optional Memory memory = 8;
+}
+
+// Experimental local page-major attention generation, imported during indexing.
+message PageAttentionConfig {
+  string generation = 1;
+  string session_id = 2;
+  uint32 layer = 3;
+  uint32 head = 4;
+  uint64 head_dim = 5;
+  uint64 rescore = 6;
 }
 
 message VectorParamsDiff {

@@ -767,6 +767,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
         let api::grpc::qdrant::VectorParams {
             size,
             distance,
+            page_attention,
             hnsw_config,
             quantization_config,
             on_disk,
@@ -775,6 +776,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
             multivector_config,
         } = vector_params;
         Ok(Self {
+            page_attention: page_attention.map(page_attention_from_proto),
             size: NonZeroU64::new(size).ok_or_else(|| {
                 Status::invalid_argument("VectorParams size must be greater than zero")
             })?,
@@ -1446,6 +1448,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
         let VectorParams {
             size,
             distance,
+            page_attention,
             hnsw_config,
             quantization_config,
             on_disk,
@@ -1462,6 +1465,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 Distance::Manhattan => api::grpc::qdrant::Distance::Manhattan,
             }
             .into(),
+            page_attention: page_attention.map(page_attention_to_proto),
             hnsw_config: hnsw_config.map(HnswConfigDiff::into),
             quantization_config: quantization_config.map(QuantizationConfig::into),
             on_disk,
@@ -2101,5 +2105,30 @@ mod hnsw_projection_conversion_tests {
     fn absent_grpc_projection_stays_absent() {
         let proto = api::grpc::qdrant::HnswConfigDiff::default();
         assert_eq!(HnswConfigDiff::from(proto).projection, None);
+    }
+}
+
+fn page_attention_from_proto(
+    c: api::grpc::qdrant::PageAttentionConfig,
+) -> segment::types::PageAttentionConfig {
+    segment::types::PageAttentionConfig {
+        generation: c.generation,
+        session_id: c.session_id,
+        layer: c.layer,
+        head: c.head,
+        head_dim: c.head_dim as usize,
+        rescore: c.rescore as usize,
+    }
+}
+fn page_attention_to_proto(
+    c: segment::types::PageAttentionConfig,
+) -> api::grpc::qdrant::PageAttentionConfig {
+    api::grpc::qdrant::PageAttentionConfig {
+        generation: c.generation,
+        session_id: c.session_id,
+        layer: c.layer,
+        head: c.head,
+        head_dim: c.head_dim as u64,
+        rescore: c.rescore as u64,
     }
 }

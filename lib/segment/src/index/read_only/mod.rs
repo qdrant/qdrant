@@ -98,6 +98,11 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         populate_override: Option<Populate>,
     ) -> OperationResult<()> {
         match &vector_config.index {
+            Indexes::PageAttention(_) => Err(
+                crate::common::operation_error::OperationError::validation_error(
+                    "page_attention requires the local segment backend",
+                ),
+            ),
             Indexes::Plain {} => Ok(()),
             Indexes::Hnsw(hnsw_config) => {
                 ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
@@ -194,6 +199,13 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             quantized_vectors,
         } = args;
         Ok(match &vector_config.index {
+            Indexes::PageAttention(_) => {
+                return Err(
+                    crate::common::operation_error::OperationError::validation_error(
+                        "page_attention requires the local segment backend",
+                    ),
+                );
+            }
             Indexes::Plain {} => Self::Plain(Box::new(ReadOnlyPlainVectorIndex::open(
                 id_tracker,
                 vector_storage,

@@ -55,6 +55,7 @@ impl EdgeVectorParams {
             multivector_config,
             datatype,
             quantization_config,
+            page_attention,
             hnsw_config,
         } = self;
         DenseVectorOptimizerConfig {
@@ -62,6 +63,7 @@ impl EdgeVectorParams {
             distance: *distance,
             on_disk: *on_disk,
             memory: None,
+            page_attention: None,
             hnsw_config: hnsw_config.unwrap_or(*global_hnsw_config),
             quantization_config: quantization_config
                 .clone()
@@ -89,7 +91,7 @@ impl EdgeVectorParams {
             datatype: *datatype,
             quantization_config: quantization_config.clone(),
             hnsw_config: match index {
-                Indexes::Plain {} => None,
+                Indexes::Plain {} | segment::types::Indexes::PageAttention(_) => None,
                 Indexes::Hnsw(hnsw_config) => Some(*hnsw_config),
             },
         }

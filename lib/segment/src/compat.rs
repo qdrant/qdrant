@@ -221,14 +221,14 @@ mod tests {
         eprintln!("new = {new_segment:#?}");
 
         match &new_segment.vector_data.get("vec1").unwrap().index {
-            Indexes::Plain { .. } => panic!("expected HNSW index"),
+            Indexes::Plain { .. } | Indexes::PageAttention(_) => panic!("expected HNSW index"),
             Indexes::Hnsw(hnsw) => {
                 assert_eq!(hnsw.m, 20);
             }
         }
 
         match &new_segment.vector_data.get("vec2").unwrap().index {
-            Indexes::Plain { .. } => panic!("expected HNSW index"),
+            Indexes::Plain { .. } | Indexes::PageAttention(_) => panic!("expected HNSW index"),
             Indexes::Hnsw(hnsw) => {
                 assert_eq!(hnsw.m, 25);
             }

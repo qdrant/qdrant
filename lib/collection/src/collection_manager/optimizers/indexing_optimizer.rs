@@ -242,6 +242,7 @@ mod tests {
                     memory: None,
                     size: NonZeroU64::new(DIM as u64).unwrap(),
                     distance: Distance::Dot,
+                    page_attention: None,
                     hnsw_config: None,
                     quantization_config: None,
                     on_disk: None,

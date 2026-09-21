@@ -6841,6 +6841,17 @@
                 "nullable": true
               }
             ]
+          },
+          "page_attention": {
+            "description": "Experimental immutable page-major attention index (single shard and segment).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageAttentionConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12759,6 +12770,25 @@
                 "$ref": "#/components/schemas/HnswConfig"
               }
             }
+          },
+          {
+            "description": "Immutable page-major attention over concatenated keys and values.",
+            "type": "object",
+            "required": [
+              "options",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "page_attention"
+                ]
+              },
+              "options": {
+                "$ref": "#/components/schemas/PageAttentionConfig"
+              }
+            }
           }
         ]
       },
@@ -17056,6 +17086,48 @@
             "format": "uint8",
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "PageAttentionConfig": {
+        "description": "Experimental, node-local page attention generation. One segment and one shard only.",
+        "type": "object",
+        "required": [
+          "generation",
+          "head",
+          "head_dim",
+          "layer",
+          "session_id"
+        ],
+        "properties": {
+          "generation": {
+            "description": "Prepared generation directory, copied into the index directory at build time.",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Original prototype session id, which determines the codec rotation.",
+            "type": "string"
+          },
+          "layer": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "head": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "head_dim": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "rescore": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       }

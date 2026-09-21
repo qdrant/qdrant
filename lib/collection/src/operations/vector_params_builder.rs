@@ -19,6 +19,7 @@ impl VectorParamsBuilder {
             vector_params: VectorParams {
                 size: NonZeroU64::new(size).unwrap(),
                 distance,
+                page_attention: None,
                 hnsw_config: None,
                 quantization_config: None,
                 on_disk: None,

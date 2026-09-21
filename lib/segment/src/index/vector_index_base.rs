@@ -111,6 +111,7 @@ pub trait VectorIndex: VectorIndexRead {
 pub enum VectorIndexEnum {
     Plain(PlainVectorIndex),
     Hnsw(HNSWIndex),
+    PageAttention(super::page_attention::PageAttentionIndex),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
     SparseCompressedImmutableRamF32(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>>),
     SparseCompressedImmutableRamF16(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f16>>),
@@ -129,6 +130,7 @@ impl VectorIndexEnum {
         match self {
             Self::Plain(_) => false,
             Self::Hnsw(index) => index.is_on_disk(),
+            Self::PageAttention(_) => true,
             Self::SparseRam(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
             Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
@@ -142,6 +144,7 @@ impl VectorIndexEnum {
     pub fn populate(&self) -> OperationResult<()> {
         match self {
             Self::Plain(_) => {}
+            Self::PageAttention(_) => {}
             Self::Hnsw(index) => index.populate()?,
             Self::SparseRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
@@ -157,6 +160,7 @@ impl VectorIndexEnum {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Plain(_) => {}
+            Self::PageAttention(_) => {}
             Self::Hnsw(index) => index.clear_cache()?,
             Self::SparseRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
@@ -172,6 +176,7 @@ impl VectorIndexEnum {
     pub fn as_hnsw(&self) -> Option<&HNSWIndex> {
         match self {
             VectorIndexEnum::Plain(_) => None,
+            VectorIndexEnum::PageAttention(_) => None,
             VectorIndexEnum::Hnsw(index) => Some(index),
             VectorIndexEnum::SparseRam(_) => None,
             VectorIndexEnum::SparseCompressedImmutableRamF32(_) => None,
@@ -198,6 +203,9 @@ impl VectorIndexRead for VectorIndexEnum {
                 index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::Hnsw(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::PageAttention(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::SparseRam(index) => {
@@ -228,6 +236,7 @@ impl VectorIndexRead for VectorIndexEnum {
         match self {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::Hnsw(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::PageAttention(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
                 index.get_telemetry_data(detail)
@@ -248,6 +257,7 @@ impl VectorIndexRead for VectorIndexEnum {
         match self {
             Self::Plain(index) => index.indexed_vector_count(),
             Self::Hnsw(index) => index.indexed_vector_count(),
+            Self::PageAttention(index) => index.indexed_vector_count(),
             Self::SparseRam(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
@@ -262,6 +272,7 @@ impl VectorIndexRead for VectorIndexEnum {
         match self {
             Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::PageAttention(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.size_of_searchable_vectors_in_bytes()
@@ -282,6 +293,7 @@ impl VectorIndexRead for VectorIndexEnum {
         match self {
             Self::Plain(_) => false,
             Self::Hnsw(_) => true,
+            Self::PageAttention(_) => true,
             Self::SparseRam(_) => true,
             Self::SparseCompressedImmutableRamF32(_) => true,
             Self::SparseCompressedImmutableRamF16(_) => true,
@@ -306,6 +318,9 @@ impl VectorIndexRead for VectorIndexEnum {
                 None => index.indexed_vector_count(),
                 Some(_) => 0,
             }),
+            Self::PageAttention(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+            }
             Self::Hnsw(index) => Ok(match corpus {
                 None => index.indexed_vector_count(),
                 Some(_) => 0,
@@ -340,6 +355,7 @@ impl VectorIndex for VectorIndexEnum {
         match self {
             VectorIndexEnum::Plain(index) => index.files(),
             VectorIndexEnum::Hnsw(index) => index.files(),
+            VectorIndexEnum::PageAttention(index) => index.files(),
             VectorIndexEnum::SparseRam(index) => index.files(),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
             VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
@@ -354,6 +370,7 @@ impl VectorIndex for VectorIndexEnum {
         match self {
             VectorIndexEnum::Plain(index) => index.immutable_files(),
             VectorIndexEnum::Hnsw(index) => index.immutable_files(),
+            VectorIndexEnum::PageAttention(index) => index.immutable_files(),
             VectorIndexEnum::SparseRam(index) => index.immutable_files(),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
             VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
@@ -373,6 +390,7 @@ impl VectorIndex for VectorIndexEnum {
         match self {
             Self::Plain(index) => index.update_vector(id, vector, hw_counter),
             Self::Hnsw(index) => index.update_vector(id, vector, hw_counter),
+            Self::PageAttention(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseRam(index) => index.update_vector(id, vector, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.update_vector(id, vector, hw_counter)
@@ -398,6 +416,7 @@ impl VectorIndex for VectorIndexEnum {
         match self {
             Self::Plain(index) => index.update_vector_raw(id, vector, hw_counter),
             Self::Hnsw(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::PageAttention(index) => index.update_vector_raw(id, vector, hw_counter),
             Self::SparseRam(index) => index.update_vector_raw(id, vector, hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
                 index.update_vector_raw(id, vector, hw_counter)

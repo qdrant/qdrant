@@ -5129,6 +5129,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "page-attention"
+version = "0.1.0"
+dependencies = [
+ "half 2.7.1",
+ "libc",
+ "memmap2",
+ "rayon",
+ "tempfile",
+]
+
+[[package]]
 name = "page_size"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7171,6 +7182,7 @@ dependencies = [
  "object_store",
  "once_cell",
  "ordered-float 5.5.0",
+ "page-attention",
  "parking_lot",
  "posting_list",
  "pprof",

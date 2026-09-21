@@ -4,6 +4,11 @@ use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum, VectorI
 impl MemoryReporter for VectorIndexEnum {
     fn memory_usage(&self) -> ComponentMemoryUsage {
         match self {
+            VectorIndexEnum::PageAttention(index) => ComponentMemoryUsage::from_files_and_ram(
+                index.files(),
+                FileStorageIntent::OnDisk,
+                index.heap_bytes(),
+            ),
             // Plain index: no files, no extra memory (searches storage directly)
             VectorIndexEnum::Plain(_) => ComponentMemoryUsage::empty(),
 

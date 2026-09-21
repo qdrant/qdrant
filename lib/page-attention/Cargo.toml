@@ -1,0 +1,14 @@
+[package]
+name = "page-attention"
+version = "0.1.0"
+edition = "2021"
+description = "Page-major attention index: 4 KiB pages holding the TQ4 codes of 16 tokens' keys AND values, a graph over pages, and the whole softmax computed while the pages are scanned."
+
+[dependencies]
+half = { workspace = true }
+memmap2 = { workspace = true }
+rayon = { workspace = true }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = { workspace = true }

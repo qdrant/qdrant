@@ -21,6 +21,7 @@ pub const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DenseVectorOptimizerConfig {
+    pub page_attention: Option<segment::types::PageAttentionConfig>,
     pub size: usize,
     pub distance: Distance,
     pub on_disk: Option<bool>,
@@ -49,7 +50,10 @@ impl DenseVectorOptimizerConfig {
     /// Config for an indexed segment.
     pub fn indexed(&self) -> VectorDataConfig {
         self.vector_data_config(
-            Indexes::Hnsw(self.hnsw_config),
+            self.page_attention
+                .clone()
+                .map(Indexes::PageAttention)
+                .unwrap_or(Indexes::Hnsw(self.hnsw_config)),
             self.quantization_config.clone(),
         )
     }

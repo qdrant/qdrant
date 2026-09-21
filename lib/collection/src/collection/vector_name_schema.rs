@@ -106,6 +106,7 @@ fn dense_config_to_params(config: &DenseVectorConfig) -> VectorParams {
     VectorParams {
         size: NonZeroU64::new(*size as u64).unwrap_or(NonZeroU64::MIN),
         distance: *distance,
+        page_attention: None,
         hnsw_config: None,
         quantization_config: None,
         on_disk: None,

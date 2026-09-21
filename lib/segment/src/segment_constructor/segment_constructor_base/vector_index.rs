@@ -58,6 +58,16 @@ pub(crate) fn open_vector_index(
         quantized_vectors,
     } = open_args;
     Ok(match &vector_config.index {
+        Indexes::PageAttention(config) => {
+            VectorIndexEnum::PageAttention(crate::index::page_attention::PageAttentionIndex::open(
+                path,
+                config,
+                vector_config,
+                id_tracker,
+                vector_storage,
+                false,
+            )?)
+        }
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
@@ -88,6 +98,16 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
         quantized_vectors,
     } = open_args;
     Ok(match &vector_config.index {
+        Indexes::PageAttention(config) => {
+            VectorIndexEnum::PageAttention(crate::index::page_attention::PageAttentionIndex::open(
+                path,
+                config,
+                vector_config,
+                id_tracker,
+                vector_storage,
+                true,
+            )?)
+        }
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,

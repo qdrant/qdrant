@@ -421,8 +421,10 @@ pub struct ValuesCount {
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParams {
+    #[prost(message, optional, tag = "9")]
+    pub page_attention: ::core::option::Option<PageAttentionConfig>,
     /// Size of the vectors
     #[prost(uint64, tag = "1")]
     #[validate(range(min = 1, max = 65536))]
@@ -457,6 +459,23 @@ pub struct VectorParams {
     /// `Pinned` is not supported for dense vector storage.
     #[prost(enumeration = "Memory", optional, tag = "8")]
     pub memory: ::core::option::Option<i32>,
+}
+/// Experimental local page-major attention generation, imported during indexing.
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PageAttentionConfig {
+    #[prost(string, tag = "1")]
+    pub generation: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub layer: u32,
+    #[prost(uint32, tag = "4")]
+    pub head: u32,
+    #[prost(uint64, tag = "5")]
+    pub head_dim: u64,
+    #[prost(uint64, tag = "6")]
+    pub rescore: u64,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -1414,6 +1414,9 @@ impl From<Datatype> for VectorStorageDatatype {
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct VectorParams {
+    /// Experimental immutable page-major attention index (single shard and segment).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_attention: Option<segment::types::PageAttentionConfig>,
     /// Size of a vectors used
     #[schemars(range(min = 1, max = 65536))]
     #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
@@ -1778,6 +1781,7 @@ impl From<&VectorParams> for VectorParamsBase {
         let &VectorParams {
             size,
             distance,
+            page_attention: _,
             hnsw_config: _,
             quantization_config: _,
             on_disk: _,

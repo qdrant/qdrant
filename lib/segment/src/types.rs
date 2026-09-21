@@ -789,6 +789,23 @@ pub enum Indexes {
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
     Hnsw(HnswConfig),
+    /// Immutable page-major attention over concatenated keys and values.
+    PageAttention(PageAttentionConfig),
+}
+
+/// Experimental, node-local page attention generation. One segment and one shard only.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash)]
+#[anonymize(false)]
+pub struct PageAttentionConfig {
+    /// Prepared generation directory, copied into the index directory at build time.
+    pub generation: String,
+    /// Original prototype session id, which determines the codec rotation.
+    pub session_id: String,
+    pub layer: u32,
+    pub head: u32,
+    pub head_dim: usize,
+    #[serde(default)]
+    pub rescore: usize,
 }
 
 impl Indexes {
@@ -796,6 +813,7 @@ impl Indexes {
         match self {
             Indexes::Plain {} => false,
             Indexes::Hnsw(_) => true,
+            Indexes::PageAttention(_) => true,
         }
     }
 
@@ -803,6 +821,7 @@ impl Indexes {
         match self {
             Indexes::Plain {} => false,
             Indexes::Hnsw(config) => config.memory_placement().is_on_disk(),
+            Indexes::PageAttention(_) => true,
         }
     }
 }
@@ -2267,6 +2286,7 @@ impl VectorDataConfig {
         let is_index_appendable = match self.index {
             Indexes::Plain {} => true,
             Indexes::Hnsw(_) => false,
+            Indexes::PageAttention(_) => false,
         };
         let is_storage_appendable = match self.storage_type {
             VectorStorageType::Memory => true,
@@ -2345,6 +2365,7 @@ impl VectorDataConfig {
         let hnsw_config = match &self.index {
             Indexes::Hnsw(hnsw_config) => hnsw_config,
             Indexes::Plain {} => return Ok(false),
+            Indexes::PageAttention(_) => return Ok(false),
         };
         if !hnsw_config.inline_storage.unwrap_or_default() {
             return Ok(false);

@@ -654,6 +654,7 @@ impl CollectionParams {
                 let VectorParams {
                     size,
                     distance,
+                    page_attention: _,
                     hnsw_config: _,
                     quantization_config,
                     on_disk,

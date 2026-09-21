@@ -63,6 +63,7 @@ mod tests {
                     distance: vector_data.distance,
                     memory: None,
                     on_disk: None,
+                    page_attention: None,
                     hnsw_config: HnswConfig::default(),
                     quantization_config: None,
                     multivector_config: vector_data.multivector_config,

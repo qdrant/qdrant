@@ -167,6 +167,20 @@ impl Collection {
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
+        {
+            let config = self.collection_config.read().await;
+            if config.optimizer_config.indexing_threshold != Some(0)
+                && config
+                    .params
+                    .vectors
+                    .params_iter()
+                    .any(|(_, v)| v.page_attention.is_some())
+            {
+                return Err(CollectionError::bad_input(
+                    "page_attention collections accept writes only during ingest with indexing_threshold=0; enabling indexing seals the demo collection",
+                ));
+            }
+        }
         // Deliberately no quota check here: this node may hold no replica of the
         // shards being written, and even where it does, its own limit must not
         // decide the fate of replicas on other machines. Each replica set gates

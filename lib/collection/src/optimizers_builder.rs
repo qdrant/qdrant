@@ -200,6 +200,7 @@ pub fn build_segment_optimizer_config(
             let VectorParams {
                 size,
                 distance,
+                page_attention,
                 hnsw_config,
                 quantization_config,
                 on_disk,
@@ -215,6 +216,7 @@ pub fn build_segment_optimizer_config(
                     distance: *distance,
                     on_disk: *on_disk,
                     memory: *memory,
+                    page_attention: page_attention.clone(),
                     hnsw_config: global_hnsw_config.update_opt(hnsw_config.as_ref()),
                     quantization_config: quantization_config
                         .as_ref()
