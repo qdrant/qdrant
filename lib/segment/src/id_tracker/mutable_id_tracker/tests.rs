@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Seek};
 use std::path::Path;
 
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 use itertools::Itertools;
 use rand::prelude::*;
@@ -821,4 +821,44 @@ fn shadow_visible_head_survives_mapping_flush_reload() {
     // (a VisibleOnly scroll would still surface this stale copy)
     assert_eq!(id_tracker.external_id(2), Some(p7));
     assert!(!id_tracker.is_deleted_point(2));
+}
+
+/// A torn flush can persist the mapping of a deferred in-place update without its version.
+/// Repair must drop only that deferred head and keep the point's visible copy.
+#[test]
+fn test_repair_of_torn_deferred_update_keeps_visible_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let deferred_from = 5;
+    let point = PointIdType::NumId(7);
+
+    let mut id_tracker = MutableIdTracker::open(dir.path(), Some(deferred_from)).unwrap();
+    // Visible copy below the cutoff, then an in-place update landing above it.
+    id_tracker.set_link(point, 2).unwrap();
+    id_tracker.set_internal_version(2, 5).unwrap();
+    id_tracker.set_link(point, 9).unwrap();
+    id_tracker.set_internal_version(9, 8).unwrap();
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(point, DeferredBehavior::VisibleOnly),
+        Some(2),
+    );
+    id_tracker.mapping_flusher()().unwrap();
+    id_tracker.versions_flusher()().unwrap();
+    drop(id_tracker);
+
+    // Cut the versions file before the update's slot, as a torn flush leaves it.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(versions_path(dir.path()))
+        .unwrap()
+        .set_len(9 * VERSION_ELEMENT_SIZE)
+        .unwrap();
+
+    let mut id_tracker = MutableIdTracker::open(dir.path(), Some(deferred_from)).unwrap();
+    id_tracker.fix_inconsistencies().unwrap();
+
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(point, DeferredBehavior::VisibleOnly),
+        Some(2),
+        "repair of a torn deferred update removed the point's visible copy",
+    );
 }
