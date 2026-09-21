@@ -472,6 +472,7 @@ mod unit_tests {
         }
     }
 
+    /// Ensures tied hits are selected by point ID before truncation.
     #[test]
     fn test_small_better_ties_are_selected_by_point_id() {
         let mut aggregator =
