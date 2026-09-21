@@ -14,7 +14,9 @@ enum PlaceholderState {
         waiters: Vec<Thread>,
     },
     Completed,
-    Abandoned,
+    Abandoned {
+        waiters: Vec<Thread>,
+    },
 }
 
 #[derive(Debug)]
@@ -79,17 +81,14 @@ impl Placeholder {
                 let mut state = self.state.lock();
                 match &mut *state {
                     PlaceholderState::Completed => return WaitResult::Completed,
-                    PlaceholderState::Abandoned => {
+                    PlaceholderState::Abandoned { waiters } => {
                         *state = PlaceholderState::Loading {
                             leader: current.id(),
-                            waiters: Vec::new(),
+                            waiters: std::mem::take(waiters),
                         };
                         return WaitResult::Promoted(self.new_guard());
                     }
-                    PlaceholderState::Loading { leader, waiters } => {
-                        if *leader == current.id() {
-                            return WaitResult::Promoted(self.new_guard());
-                        }
+                    PlaceholderState::Loading { waiters, leader: _ } => {
                         if !waiters.iter().any(|w| w.id() == current.id()) {
                             waiters.push(current.clone());
                         }
@@ -101,6 +100,7 @@ impl Placeholder {
     }
 }
 
+#[must_use]
 #[derive(Debug)]
 pub(super) struct PlaceholderGuard {
     placeholder: Arc<Placeholder>,
@@ -118,8 +118,9 @@ impl PlaceholderGuard {
             let mut state = self.placeholder.state.lock();
             self.placeholder.completed.store(true, Ordering::Release);
             match std::mem::replace(&mut *state, PlaceholderState::Completed) {
-                PlaceholderState::Loading { waiters, .. } => waiters,
-                PlaceholderState::Completed | PlaceholderState::Abandoned => Vec::new(),
+                PlaceholderState::Loading { waiters, leader: _ }
+                | PlaceholderState::Abandoned { waiters } => waiters,
+                PlaceholderState::Completed => Vec::new(),
             }
         };
         for thread in waiters {
@@ -137,16 +138,12 @@ impl Drop for PlaceholderGuard {
             let next_to_unpark = {
                 let mut state = self.placeholder.state.lock();
                 match &mut *state {
-                    PlaceholderState::Loading { leader, waiters } => {
-                        if let Some(next_leader) = waiters.pop() {
-                            *leader = next_leader.id();
-                            Some(next_leader)
-                        } else {
-                            *state = PlaceholderState::Abandoned;
-                            None
-                        }
+                    PlaceholderState::Loading { waiters, leader: _ } => {
+                        let next_leader = waiters.pop();
+                        *state = PlaceholderState::Abandoned { waiters: std::mem::take(waiters) };
+                        next_leader
                     }
-                    PlaceholderState::Completed | PlaceholderState::Abandoned => None,
+                    PlaceholderState::Abandoned { waiters: _ } | PlaceholderState::Completed => None,
                 }
             };
 
@@ -197,15 +194,17 @@ impl PlaceholderRegistry {
             {
                 let mut state = p.state.lock();
                 match &mut *state {
-                    PlaceholderState::Loading { leader, .. } => {
+                    PlaceholderState::Loading { leader, waiters: _ } => {
                         if *leader != current_thread_id {
                             return PlaceholderResult::Piggyback(p.clone());
                         }
                     }
-                    PlaceholderState::Abandoned => {
+                    PlaceholderState::Abandoned { waiters } => {
+                        let mut waiters = std::mem::take(waiters);
+                        waiters.retain(|w| w.id() != current_thread_id);
                         *state = PlaceholderState::Loading {
                             leader: current_thread_id,
-                            waiters: Vec::new(),
+                            waiters,
                         };
                         return PlaceholderResult::Leader(p.new_guard());
                     }
