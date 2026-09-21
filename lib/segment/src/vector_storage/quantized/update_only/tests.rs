@@ -75,6 +75,8 @@ fn dense_vector_config() -> VectorDataConfig {
         quantization_config: None,
         multivector_config: None,
         datatype: None,
+        data_integrity_check: false,
+        magnitude_bound: None,
     }
 }
 

@@ -139,6 +139,8 @@ mod tests {
             quantization_config: None,
             multivector_config,
             datatype: Some(VectorStorageDatatype::Float32),
+            data_integrity_check: false,
+            magnitude_bound: None,
         }
     }
 
@@ -596,6 +598,8 @@ mod tests {
             quantization_config: None,
             multivector_config,
             datatype: Some(VectorStorageDatatype::Turbo4),
+            data_integrity_check: false,
+            magnitude_bound: None,
         }
     }
 

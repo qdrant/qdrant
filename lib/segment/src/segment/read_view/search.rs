@@ -526,6 +526,8 @@ mod tests {
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    data_integrity_check: false,
+                    magnitude_bound: None,
                 },
             )]),
             sparse_vector_data: HashMap::from([(
@@ -534,6 +536,8 @@ mod tests {
                     index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
                     storage_type: SparseVectorStorageType::Mmap,
                     modifier: None,
+                    data_integrity_check: false,
+                    magnitude_bound: None,
                 },
             )]),
             payload_storage_type: Default::default(),
