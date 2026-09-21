@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use common::generic_consts::{AccessPattern, Random};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
@@ -12,6 +12,7 @@ use common::universal_io::{
 use crate::Result;
 use crate::blobstore::Flusher;
 use crate::error::BlobstoreError;
+use crate::tracker::compact_offsets::CompactOffsets;
 use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
 
 /// File name of the append-only tracker file
@@ -38,6 +39,11 @@ const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
 ///
 /// A write may be torn. If the file length is not a multiple of the entry size, the trailing
 /// partial entry is ignored when reading, and truncated away when opening writable.
+///
+/// An optional sidecar file, see [`CompactOffsets`], holds the mappings of a prefix of the file
+/// in a compact form that is loaded into RAM on open. Lookups below the covered count are served
+/// from RAM without touching the tracker file, which stays the source of truth: it is still
+/// appended to, and mappings past the covered prefix are read from it as usual.
 #[derive(Debug)]
 pub(crate) struct AppendOnlyTracker<S> {
     /// Path to the tracker file
@@ -46,6 +52,9 @@ pub(crate) struct AppendOnlyTracker<S> {
     file: S,
     /// Number of mappings persisted in the file
     persisted_count: PointOffset,
+    /// RAM-resident mappings of the first `compact.count()` point offsets, if the sidecar
+    /// file exists and is valid
+    compact: Option<CompactOffsets>,
     /// Mappings that haven't been written to the file yet
     ///
     /// Entry `i` holds the mapping for point offset `persisted_count + i`, with gaps kept as
@@ -76,6 +85,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
             Some(Self::open_options(populate, false)),
             None,
         );
+        CompactOffsets::preopen(fs, dir);
     }
 
     /// Open the tracker file handle, mapping a missing file to a service error.
@@ -117,22 +127,55 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         let path = Self::tracker_file_name(dir);
         let file = Self::open_file(fs, &path, populate, false)?;
         let len = file.len::<u8>()?;
+        let persisted_count = count_from_len(len)?;
+        let compact = CompactOffsets::load(fs, dir, persisted_count)?;
 
         Ok(Self {
             path,
             file,
-            persisted_count: count_from_len(len)?,
+            persisted_count,
+            compact,
             pending: Vec::new(),
         })
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
+        let mut files = vec![self.path.clone()];
+        if self.compact.is_some() {
+            files.push(self.compact_offsets_file_name());
+        }
+        files
+    }
+
+    fn compact_offsets_file_name(&self) -> PathBuf {
+        let dir = self
+            .path
+            .parent()
+            .expect("tracker file is inside the storage directory");
+        CompactOffsets::file_name(dir)
     }
 
     /// Populate the tracker file into the RAM cache.
+    ///
+    /// Skipped when the compact offsets cover every persisted mapping: the file is never read
+    /// then, so caching it would only cost memory and IO.
     pub fn populate(&self) -> Result<()> {
+        if self.compact_covers_persisted() {
+            return Ok(());
+        }
         self.file.populate().map_err(Into::into)
+    }
+
+    /// Whether every persisted mapping is served from the compact offsets.
+    fn compact_covers_persisted(&self) -> bool {
+        self.compact
+            .as_ref()
+            .is_some_and(|compact| compact.count() >= self.persisted_count)
+    }
+
+    /// Number of point offsets served from the compact offsets in RAM.
+    pub fn compact_offsets_count(&self) -> PointOffset {
+        self.compact.as_ref().map_or(0, CompactOffsets::count)
     }
 
     /// Ask to evict the tracker file from the RAM cache.
@@ -161,15 +204,25 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
             return Ok(self.pending[pending_index].to_option());
         }
 
+        if let Some(pointer) = self.get_compact(point_offset) {
+            return Ok(pointer);
+        }
+
         let range = ReadRange::one(u64::from(point_offset) * ENTRY_SIZE);
         let pointer = self.file.read::<_, OptionalPointer>(range, P::default())?[0];
         Ok(pointer.to_option())
     }
 
+    /// Mapping at the given point offset from the compact offsets, `None` if not covered.
+    fn get_compact(&self, point_offset: PointOffset) -> Option<Option<ValuePointer>> {
+        self.compact.as_ref()?.get(point_offset)
+    }
+
     /// Get the mappings for a contiguous range of point offsets.
     ///
-    /// The persisted part of the range is read with a single read. Point offsets that were
-    /// skipped or that are past the highest set mapping yield `None`.
+    /// The part of the range covered by the compact offsets is served from RAM, the rest of
+    /// the persisted part is read with a single read. Point offsets that were skipped or that
+    /// are past the highest set mapping yield `None`.
     ///
     /// The result holds one entry per requested point offset, so callers should bound the range
     /// they ask for.
@@ -181,8 +234,18 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         let start = point_offsets.start;
         let end = point_offsets.end.min(self.pointer_count());
 
+        // Part of the range served from the compact offsets
+        let compact_end = end.min(self.compact_offsets_count());
+        for point_offset in start..compact_end {
+            let pointer = self
+                .get_compact(point_offset)
+                .expect("point offset below the compact offsets count is covered");
+            pointers.push(pointer);
+        }
+
         // Persisted part of the range, read in a single read
         let persisted_end = end.min(self.persisted_count);
+        let start = start.max(compact_end);
         if start < persisted_end {
             let range = ReadRange {
                 byte_offset: u64::from(start) * ENTRY_SIZE,
@@ -315,6 +378,8 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     {
         let path = Self::tracker_file_name(dir);
         fs.create(&path, 0)?;
+        // A leftover sidecar would describe mappings this fresh tracker does not hold
+        CompactOffsets::remove(fs, dir)?;
         let file = fs.open(
             &path,
             Self::open_options(Populate::No, true),
@@ -324,6 +389,7 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
             path,
             file,
             persisted_count: 0,
+            compact: None,
             pending: Vec::new(),
         })
     }
@@ -351,12 +417,54 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
             file = Self::open_file(fs, &path, populate, true)?;
         }
 
+        let persisted_count = count_from_len(aligned_len)?;
+        let compact = CompactOffsets::load(fs, dir, persisted_count)?;
+
         Ok(Self {
             path,
             file,
-            persisted_count: count_from_len(aligned_len)?,
+            persisted_count,
+            compact,
             pending: Vec::new(),
         })
+    }
+
+    /// Write the compact offsets sidecar covering every persisted mapping, and serve lookups
+    /// from it from now on.
+    ///
+    /// Meant for a storage that is not expected to grow anymore, such as one just built by an
+    /// optimizer: the sidecar is a single small sequential read on open, in place of one random
+    /// read per lookup. Mappings appended later are still read from the tracker file, until the
+    /// sidecar is written again.
+    ///
+    /// Only persisted mappings are covered, invoke a flush first. Returns whether a sidecar was
+    /// written: nothing is written when there are no persisted mappings, when the sidecar is
+    /// already up to date, or when the mappings cannot be represented in the compact form.
+    pub fn write_compact_offsets<Fs>(&mut self, fs: &Fs) -> Result<bool>
+    where
+        Fs: UniversalWriteFileOps,
+    {
+        if self.persisted_count == 0 || self.compact_covers_persisted() {
+            return Ok(false);
+        }
+
+        let pointers = self.get_range::<Sequential>(0..self.persisted_count)?;
+        let Some(compact) = CompactOffsets::build(&pointers) else {
+            log::debug!(
+                "Mappings of append-only tracker {} cannot be represented as compact offsets",
+                self.path.display(),
+            );
+            return Ok(false);
+        };
+
+        let dir = self
+            .path
+            .parent()
+            .expect("tracker file is inside the storage directory");
+        compact.write(fs, dir)?;
+        self.compact = Some(compact);
+
+        Ok(true)
     }
 
     /// Set the mapping for the given point offset, buffering it in memory until flushed.
@@ -480,6 +588,11 @@ where
                     .pending
                     .get(pending_index)
                     .and_then(|entry| entry.to_option());
+                return Some(Ok((user_data, pointer)));
+            }
+
+            // So are mappings covered by the compact offsets in RAM
+            if let Some(pointer) = self.tracker.get_compact(point_offset) {
                 return Some(Ok((user_data, pointer)));
             }
 
@@ -621,6 +734,190 @@ mod tests {
         tracker.write_pending(tracker.pointer_count()).unwrap();
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         assert_eq!(tracker.get::<Random>(2).unwrap(), None);
+    }
+
+    /// Pointers packed back to back in page 0, like the append-only pages produce them.
+    fn packed_pointer(n: u32) -> ValuePointer {
+        ValuePointer::new(0, n * 10, 10)
+    }
+
+    fn compact_file_exists(dir: &TempDir) -> bool {
+        CompactOffsets::file_name(dir.path()).exists()
+    }
+
+    #[test]
+    fn test_compact_offsets_cover_persisted_prefix() {
+        let dir = TempDir::new().unwrap();
+
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        // Nothing persisted yet, nothing to cover
+        assert!(!tracker.write_compact_offsets(&MmapFs).unwrap());
+        assert!(!compact_file_exists(&dir));
+
+        for n in 0..10 {
+            tracker.set(n, packed_pointer(n)).unwrap();
+        }
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        // Pending mappings are not covered
+        tracker.set(10, packed_pointer(10)).unwrap();
+
+        assert!(tracker.write_compact_offsets(&MmapFs).unwrap());
+        assert!(compact_file_exists(&dir));
+        assert_eq!(tracker.compact_offsets_count(), 10);
+        assert_eq!(tracker.files().len(), 2);
+        // Writing again without new persisted mappings is a no-op
+        assert!(!tracker.write_compact_offsets(&MmapFs).unwrap());
+
+        // Covered, persisted and pending mappings all read back
+        for n in 0..11 {
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(packed_pointer(n)));
+        }
+        assert_eq!(
+            tracker.get_range::<Random>(5..20).unwrap(),
+            (5..11)
+                .map(|n| Some(packed_pointer(n)))
+                .chain([None; 9])
+                .collect::<Vec<_>>(),
+        );
+        let mut batch = tracker
+            .iter((0..12).map(|n| (n, n)))
+            .unwrap()
+            .map(|item| item.unwrap())
+            .collect::<Vec<_>>();
+        batch.sort_by_key(|(n, _)| *n);
+        for (n, pointer) in batch {
+            assert_eq!(pointer, (n < 11).then(|| packed_pointer(n)));
+        }
+
+        // The tracker keeps growing past the covered prefix
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        for n in 11..15 {
+            tracker.set(n, packed_pointer(n)).unwrap();
+        }
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        tracker.flusher()().unwrap();
+        drop(tracker);
+
+        // Both open modes load the sidecar and serve the rest from the file
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+        assert_eq!(tracker.compact_offsets_count(), 10);
+        assert_eq!(tracker.pointer_count(), 15);
+        for n in 0..15 {
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(packed_pointer(n)));
+        }
+        drop(tracker);
+
+        let mut tracker =
+            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+        assert_eq!(tracker.compact_offsets_count(), 10);
+        for n in 0..15 {
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(packed_pointer(n)));
+        }
+
+        // Rewriting extends the coverage to everything persisted
+        assert!(tracker.write_compact_offsets(&MmapFs).unwrap());
+        assert_eq!(tracker.compact_offsets_count(), 15);
+        for n in 0..15 {
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(packed_pointer(n)));
+        }
+    }
+
+    #[test]
+    fn test_compact_offsets_with_gaps() {
+        let dir = TempDir::new().unwrap();
+
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        tracker.set(1, ValuePointer::new(0, 0, 10)).unwrap();
+        tracker.set(4, ValuePointer::new(0, 10, 3)).unwrap();
+        tracker.set(5, ValuePointer::new(1, 0, 7)).unwrap();
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        assert!(tracker.write_compact_offsets(&MmapFs).unwrap());
+        drop(tracker);
+
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+        assert_eq!(tracker.compact_offsets_count(), 6);
+        let expected = [
+            None,
+            Some(ValuePointer::new(0, 0, 10)),
+            None,
+            None,
+            Some(ValuePointer::new(0, 10, 3)),
+            Some(ValuePointer::new(1, 0, 7)),
+        ];
+        for (n, pointer) in expected.iter().enumerate() {
+            assert_eq!(tracker.get::<Random>(n as PointOffset).unwrap(), *pointer);
+        }
+        assert_eq!(tracker.get_range::<Random>(0..6).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_compact_offsets_skipped_for_unpacked_mappings() {
+        let dir = TempDir::new().unwrap();
+
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        // A hole between the values cannot be represented
+        tracker.set(0, ValuePointer::new(0, 0, 10)).unwrap();
+        tracker.set(1, ValuePointer::new(0, 20, 10)).unwrap();
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+
+        assert!(!tracker.write_compact_offsets(&MmapFs).unwrap());
+        assert!(!compact_file_exists(&dir));
+        assert_eq!(tracker.compact_offsets_count(), 0);
+        assert_eq!(
+            tracker.get::<Random>(1).unwrap(),
+            Some(ValuePointer::new(0, 20, 10))
+        );
+    }
+
+    #[test]
+    fn test_new_tracker_removes_stale_compact_offsets() {
+        let dir = TempDir::new().unwrap();
+
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        for n in 0..3 {
+            tracker.set(n, packed_pointer(n)).unwrap();
+        }
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        assert!(tracker.write_compact_offsets(&MmapFs).unwrap());
+        drop(tracker);
+
+        let tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        assert!(!compact_file_exists(&dir));
+        assert_eq!(tracker.compact_offsets_count(), 0);
+        assert_eq!(tracker.files().len(), 1);
+    }
+
+    #[test]
+    fn test_invalid_compact_offsets_are_ignored() {
+        let dir = TempDir::new().unwrap();
+
+        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        for n in 0..3 {
+            tracker.set(n, packed_pointer(n)).unwrap();
+        }
+        tracker.write_pending(tracker.pointer_count()).unwrap();
+        drop(tracker);
+
+        fs::write(
+            CompactOffsets::file_name(dir.path()),
+            b"not a compact offsets file",
+        )
+        .unwrap();
+
+        let tracker =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
+                .unwrap();
+        assert_eq!(tracker.compact_offsets_count(), 0);
+        for n in 0..3 {
+            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(packed_pointer(n)));
+        }
+        // An ignored sidecar is not one of the tracker's files
+        assert_eq!(tracker.files().len(), 1);
     }
 
     #[test]

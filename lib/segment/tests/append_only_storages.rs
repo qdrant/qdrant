@@ -20,8 +20,9 @@ use segment::entry::entry_point::{
 };
 use segment::payload_json;
 use segment::segment_constructor::load_segment;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{Distance, HnswGlobalConfig, PayloadFieldSchema, PayloadSchemaType};
 use segment::vector_storage::VectorStorage as _;
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use sparse::common::sparse_vector::SparseVector;
@@ -184,4 +185,81 @@ fn sparse_storage_is_append_only() {
 
     // Key 0 holds a vector; an append-only storage cannot remove it.
     assert!(storage.delete_vector(0).is_err());
+}
+
+/// A segment produced by the segment builder carries the compact offsets of its append-only
+/// payload storage, and serves its payloads through them, before and after a reload.
+#[test]
+fn built_segment_has_compact_payload_offsets() {
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+    assert!(common::flags::feature_flags().compact_logstore_offsets);
+
+    let dir = Builder::new().prefix("compact_offsets").tempdir().unwrap();
+    let temp_dir = Builder::new()
+        .prefix("compact_offsets_tmp")
+        .tempdir()
+        .unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+    for id in 1..=50u64 {
+        source
+            .upsert_point(
+                id,
+                id.into(),
+                only_default_vector(&[id as f32; DIM]),
+                &hw_counter,
+            )
+            .unwrap();
+        source
+            .set_full_payload(id, id.into(), &payload_json! { "id": id }, &hw_counter)
+            .unwrap();
+    }
+    // An appendable segment is written to directly, not built: no compact offsets.
+    assert!(
+        !source
+            .data_path()
+            .join("payload_storage")
+            .join("log_offsets.dat")
+            .exists()
+    );
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &source.segment_config,
+        &HnswGlobalConfig::default(),
+        common::flags::feature_flags(),
+    )
+    .unwrap();
+    builder
+        .update(&[&source], &AtomicBool::new(false), &hw_counter)
+        .unwrap();
+    let built = builder.build_for_test(dir.path());
+    let built_path = built.data_path();
+
+    let compact_offsets = built_path.join("payload_storage").join("log_offsets.dat");
+    assert!(compact_offsets.exists());
+    assert_eq!(
+        storage_mode(&built_path.join("payload_storage")),
+        "append_only"
+    );
+    for id in 1..=50u64 {
+        let payload = built.payload(id.into(), &hw_counter).unwrap();
+        assert_eq!(payload, payload_json! { "id": id });
+    }
+    drop(built);
+
+    let built = load_segment(
+        &built_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    for id in 1..=50u64 {
+        let payload = built.payload(id.into(), &hw_counter).unwrap();
+        assert_eq!(payload, payload_json! { "id": id });
+    }
 }

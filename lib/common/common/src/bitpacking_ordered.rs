@@ -225,6 +225,12 @@ impl Parameters {
 }
 
 impl Reader {
+    /// The parameters this reader was validated from.
+    #[inline]
+    pub fn parameters(self) -> Parameters {
+        self.params
+    }
+
     /// Create a [`SliceReader`] from the compressed data slice.
     pub fn slice_reader(self, bytes: &[u8]) -> Result<SliceReader<'_>, DecompressionError> {
         let size = self.compressed_size_bytes();

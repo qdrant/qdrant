@@ -63,6 +63,183 @@ fn test_empty_storage() {
     );
 }
 
+fn compact_offsets_file_exists(dir: &TempDir) -> bool {
+    dir.path().join("log_offsets.dat").exists()
+}
+
+#[rstest::rstest]
+#[case(Compression::None)]
+#[case(Compression::LZ4)]
+fn test_compact_offsets_roundtrip(#[case] compression: Compression) {
+    let dir = TempDir::new().unwrap();
+    // A small page capacity, so the values span many pages
+    let config = StorageConfig::AppendOnly(LogstoreConfig {
+        page_capacity_bytes: 512,
+        compression,
+    });
+    let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let payloads = (0..500)
+        .filter(|point_offset| point_offset % 7 != 3)
+        .map(|point_offset| (point_offset, random_payload(rng, 3)))
+        .collect::<Vec<_>>();
+
+    for (point_offset, payload) in &payloads {
+        storage
+            .put_value(
+                *point_offset,
+                payload,
+                hw_counter.ref_payload_io_write_counter(),
+            )
+            .unwrap();
+    }
+
+    // Only flushed values are covered
+    assert!(!storage.write_compact_offsets().unwrap());
+    assert!(!compact_offsets_file_exists(&dir));
+
+    storage.flusher()().unwrap();
+    let pointers = (0..storage.max_point_offset())
+        .map(|point_offset| storage.get_pointer(point_offset))
+        .collect::<Vec<_>>();
+    assert!(
+        pointers
+            .iter()
+            .any(|pointer| pointer.is_some_and(|p| p.page_id > 3))
+    );
+
+    assert!(storage.write_compact_offsets().unwrap());
+    assert!(compact_offsets_file_exists(&dir));
+    assert!(
+        storage
+            .files()
+            .contains(&dir.path().join("log_offsets.dat"))
+    );
+
+    // The compact offsets decode to exactly the pointers the tracker file holds
+    for (point_offset, pointer) in pointers.iter().enumerate() {
+        assert_eq!(storage.get_pointer(point_offset as u32), *pointer);
+    }
+    for (point_offset, payload) in &payloads {
+        let value = storage
+            .get_value::<Random>(*point_offset, &hw_counter)
+            .unwrap();
+        assert_eq!(value.as_ref(), Some(payload));
+    }
+    assert_eq!(storage.get_value::<Random>(3, &hw_counter).unwrap(), None);
+
+    // The storage can keep growing after the sidecar is written
+    let extra = random_payload(rng, 3);
+    storage
+        .put_value(1000, &extra, hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Both the read-write storage and the read-only reader load the sidecar
+    let storage =
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    for (point_offset, pointer) in pointers.iter().enumerate() {
+        assert_eq!(storage.get_pointer(point_offset as u32), *pointer);
+    }
+    assert_eq!(
+        storage.get_value::<Random>(1000, &hw_counter).unwrap(),
+        Some(extra.clone()),
+    );
+    drop(storage);
+
+    let reader =
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert!(reader.files().contains(&dir.path().join("log_offsets.dat")));
+    for (point_offset, payload) in &payloads {
+        let value = reader
+            .get_value::<Random>(*point_offset, &hw_counter)
+            .unwrap();
+        assert_eq!(value.as_ref(), Some(payload));
+    }
+    assert_eq!(reader.get_value::<Random>(3, &hw_counter).unwrap(), None);
+    assert_eq!(
+        reader.get_value::<Random>(1000, &hw_counter).unwrap(),
+        Some(extra)
+    );
+
+    // Batched reads mix covered and uncovered point offsets
+    let mut read = Vec::new();
+    reader
+        .read_values::<Random, _, BlobstoreError>(
+            [0u32, 3, 499, 1000, 2000].into_iter().map(|p| (p, p)),
+            |_, point_offset, value| {
+                read.push((point_offset, value.is_some()));
+                Ok(())
+            },
+            hw_counter.payload_io_read_counter(),
+        )
+        .unwrap();
+    read.sort();
+    assert_eq!(
+        read,
+        [
+            (0, true),
+            (3, false),
+            (499, true),
+            (1000, true),
+            (2000, false)
+        ]
+    );
+}
+
+#[test]
+fn test_compact_offsets_are_smaller_than_the_tracker() {
+    let (dir, mut storage) = empty_storage_append_only();
+    let hw_counter = HardwareCounterCell::new();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    for point_offset in 0..10_000 {
+        storage
+            .put_value(
+                point_offset,
+                &random_payload(rng, 3),
+                hw_counter.ref_payload_io_write_counter(),
+            )
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+    assert!(storage.write_compact_offsets().unwrap());
+
+    let compact_len = fs::metadata(dir.path().join("log_offsets.dat"))
+        .unwrap()
+        .len();
+    assert_eq!(tracker_file_len(&dir), 10_000 * TRACKER_ENTRY_SIZE);
+    assert!(
+        compact_len * 4 < tracker_file_len(&dir),
+        "compact offsets take {compact_len} bytes",
+    );
+}
+
+#[test]
+fn test_clear_removes_compact_offsets() {
+    let (dir, mut storage) = empty_storage_append_only();
+    let hw_counter = HardwareCounterCell::new();
+
+    storage
+        .put_value(
+            0,
+            &Payload::default(),
+            hw_counter.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    storage.flusher()().unwrap();
+    assert!(storage.write_compact_offsets().unwrap());
+    assert!(compact_offsets_file_exists(&dir));
+
+    storage.clear().unwrap();
+    assert!(!compact_offsets_file_exists(&dir));
+    assert_eq!(storage.get_value::<Random>(0, &hw_counter).unwrap(), None);
+}
+
 #[rstest::rstest]
 #[case(Compression::None)]
 #[case(Compression::LZ4)]

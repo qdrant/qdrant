@@ -354,6 +354,19 @@ impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
         }
     }
 
+    /// Write the compact offsets sidecar of the append-only mode, covering every persisted
+    /// mapping, so that lookups are served from RAM instead of one random read each.
+    ///
+    /// Meant for a storage that is done being written to, invoke the [`flusher`](Self::flusher)
+    /// first. Returns whether a sidecar was written; the mutable mode has no compact offsets and
+    /// always returns `false`. See [`Logstore::write_compact_offsets`].
+    pub fn write_compact_offsets(&self) -> Result<bool> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => Ok(false),
+            BlobstoreInner::Logstore(storage) => storage.write_compact_offsets(&self.fs),
+        }
+    }
+
     /// Drop disk cache.
     pub fn clear_cache(&self) -> crate::Result<()> {
         match &self.inner {

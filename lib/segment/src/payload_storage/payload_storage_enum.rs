@@ -296,6 +296,21 @@ impl PayloadStorage for PayloadStorageEnum {
 }
 
 impl PayloadStorageEnum {
+    /// Write the compact offsets of an append-only on-disk storage, so that a reader loads all
+    /// value mappings with one sequential read on open instead of one random read per lookup.
+    ///
+    /// Flush first, only persisted values are covered. Returns whether anything was written: an
+    /// in-memory or mutable storage has no compact offsets.
+    pub fn write_compact_offsets(&self) -> OperationResult<bool> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(_) => Ok(false),
+            PayloadStorageEnum::Mmap(s) => s.write_compact_offsets(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.write_compact_offsets(),
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

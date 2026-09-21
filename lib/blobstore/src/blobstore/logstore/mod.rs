@@ -514,6 +514,17 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
         })
     }
 
+    /// Write the compact offsets sidecar covering every persisted mapping, so that lookups are
+    /// served from RAM instead of one random read of the tracker file each.
+    ///
+    /// Meant for a storage that is done being written to, invoke the [`flusher`](Self::flusher)
+    /// first: only persisted mappings are covered. Values appended later are still looked up in
+    /// the tracker file. Returns whether a sidecar was written, see
+    /// [`AppendOnlyTracker::write_compact_offsets`].
+    pub fn write_compact_offsets(&self, fs: &impl UniversalWriteFileOps) -> Result<bool> {
+        self.tracker.write().write_compact_offsets(fs)
+    }
+
     /// Populate the tracker and all pages into the RAM cache.
     pub(super) fn populate(&self) -> Result<()> {
         self.pages.read().populate()?;

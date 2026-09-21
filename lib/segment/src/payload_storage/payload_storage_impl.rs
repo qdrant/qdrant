@@ -75,6 +75,16 @@ where
         Ok(Self { storage, populate })
     }
 
+    /// Write the compact offsets of an append-only storage, see
+    /// [`Blobstore::write_compact_offsets`]. Flush first, only persisted values are covered.
+    pub fn write_compact_offsets(&self) -> OperationResult<bool> {
+        self.storage.write_compact_offsets().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to write compact offsets of payload storage: {err}"
+            ))
+        })
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

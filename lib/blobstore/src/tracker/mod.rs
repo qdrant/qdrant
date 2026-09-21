@@ -1,4 +1,5 @@
 pub(crate) mod append_only;
+pub(crate) mod compact_offsets;
 pub mod iter;
 pub mod read_only;
 

@@ -598,6 +598,11 @@ impl SegmentBuilder {
             let appendable_flag = segment_config.is_appendable();
 
             payload_storage.flusher()()?;
+            // The built segment is not appended to by this builder anymore, so a reader can
+            // load all payload mappings at once instead of one random read per lookup
+            if feature_flags.compact_logstore_offsets {
+                payload_storage.write_compact_offsets()?;
+            }
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
 
             let id_tracker = match id_tracker {

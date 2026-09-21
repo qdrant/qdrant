@@ -11926,6 +11926,11 @@
             "default": false,
             "type": "boolean"
           },
+          "compact_logstore_offsets": {
+            "description": "Write the compact offsets sidecar of append-only Logstore payload storages when a segment is built, so that readers load all value mappings with one sequential read on open instead of one random read per lookup. Only gates writing: a storage without the sidecar, and one with it, are always readable.\n\nOnly has an effect on storages created in append-only mode, see [`Self::append_only_storages`].",
+            "default": false,
+            "type": "boolean"
+          },
           "transfer_raw_points": {
             "description": "Transfer points as storage-native bytes (raw points), for every collection rather than only those whose vector storage would lose precision in a decode-encode round-trip (TurboQuant).\n\nRead on the sending side only, where the transfer batch is prepared: nodes accept raw points regardless.",
             "default": false,
@@ -11947,7 +11952,7 @@
             "type": "boolean"
           },
           "serverless_compatible": {
-            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_offsets`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
