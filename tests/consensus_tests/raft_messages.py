@@ -8,6 +8,7 @@ Unlisted fields are handled as unknown fields by protobuf. No bytes are rewritte
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 
+MSG_PROPOSE = 2
 MSG_APPEND = 3
 MSG_APPEND_RESPONSE = 4
 ENTRY_CONF_CHANGE_V2 = 2
