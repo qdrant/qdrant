@@ -57,7 +57,7 @@ fn storage_type_layout(storage_type: VectorStorageType) -> ReadOnlyLayout {
     }
 }
 
-impl<S: UniversalRead> VectorStorageReadEnum<S> {
+impl<S: UniversalRead + 'static> VectorStorageReadEnum<S> {
     /// Schedule background prefetch of every file [`Self::open`] will read,
     /// dispatching on `vector_config` the same way.
     ///
