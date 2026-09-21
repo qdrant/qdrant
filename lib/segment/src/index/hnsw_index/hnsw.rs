@@ -179,9 +179,24 @@ fn load_or_derive_config(
 
     let vector_storage = vector_storage.borrow();
     let available_vectors = vector_storage.available_vector_count();
+    Ok(derive_config(
+        hnsw_config,
+        &*vector_storage,
+        available_vectors,
+    ))
+}
+
+/// Graph config from the collection-level `hnsw_config`, with the full scan threshold
+/// converted from kilobytes into a number of vectors using the average vector size
+/// over `vector_count`.
+fn derive_config(
+    hnsw_config: &HnswConfig,
+    vector_storage: &impl VectorStorageRead,
+    vector_count: usize,
+) -> HnswGraphConfig {
     let full_scan_threshold = vector_storage
         .size_of_available_vectors_in_bytes()
-        .checked_div(available_vectors)
+        .checked_div(vector_count)
         .and_then(|avg_vector_size| {
             hnsw_config
                 .full_scan_threshold
@@ -190,14 +205,14 @@ fn load_or_derive_config(
         })
         .unwrap_or(1);
 
-    Ok(HnswGraphConfig::new(
+    HnswGraphConfig::new(
         hnsw_config.m,
         hnsw_config.ef_construct,
         full_scan_threshold,
         hnsw_config.max_indexing_threads,
         hnsw_config.payload_m,
-        available_vectors,
-    ))
+        vector_count,
+    )
 }
 
 /// Effective placement of the graph links and their residency: the `memory`

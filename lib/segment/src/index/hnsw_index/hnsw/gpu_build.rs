@@ -4,10 +4,11 @@ use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
+use super::{FINISH_MAIN_GRAPH_LOG_MESSAGE, SINGLE_THREADED_HNSW_BUILD_THRESHOLD};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -23,8 +24,48 @@ use crate::index::visited_pool::VisitedListHandle;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
+/// Uploads the vectors to `gpu_device` when any graph is going to be built there, and
+/// builds the main graph on it when `build_main_graph`. Returns the uploaded vectors, kept
+/// for the additional links, and the main graph if the GPU built it.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn build_main_graph_on_gpu(
+pub(super) fn upload_and_build_main_graph(
+    gpu_device: Option<&LockedGpuDevice>,
+    build_main_graph: bool,
+    has_additional_links: bool,
+    id_tracker: &IdTrackerEnum,
+    vector_storage: &VectorStorageEnum,
+    quantized_vectors: &Option<QuantizedVectors>,
+    graph_layers_builder: &GraphLayersBuilder,
+    deleted_bitslice: &BitSlice,
+    entry_points_num: usize,
+    stopped: &AtomicBool,
+) -> OperationResult<(Option<GpuVectorStorage>, Option<GraphLayersBuilder>)> {
+    if !(build_main_graph || has_additional_links) {
+        return Ok((None, None));
+    }
+    let timer = std::time::Instant::now();
+    let gpu_vectors = create_gpu_vectors(gpu_device, vector_storage, quantized_vectors, stopped)?;
+    if !build_main_graph {
+        return Ok((gpu_vectors, None));
+    }
+    let gpu_graph = build_main_graph_on_gpu(
+        id_tracker,
+        vector_storage,
+        quantized_vectors,
+        gpu_vectors.as_ref(),
+        graph_layers_builder,
+        deleted_bitslice,
+        entry_points_num,
+        stopped,
+    )?;
+    if gpu_graph.is_some() {
+        log::debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+    }
+    Ok((gpu_vectors, gpu_graph))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_main_graph_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
@@ -143,7 +184,7 @@ fn build_graph_on_gpu<'a, 'b>(
     }
 }
 
-pub(super) fn create_gpu_vectors(
+fn create_gpu_vectors(
     gpu_device: Option<&LockedGpuDevice>,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
@@ -177,4 +218,23 @@ pub(super) fn create_gpu_vectors(
     } else {
         Ok(None)
     }
+}
+
+pub(super) fn create_gpu_insert_context(
+    gpu_vectors: Option<&GpuVectorStorage>,
+    payload_m: HnswM,
+    ef_construct: usize,
+) -> OperationResult<Option<GpuInsertContext<'_>>> {
+    gpu_vectors
+        .map(|gpu_vectors| {
+            GpuInsertContext::new(
+                gpu_vectors,
+                get_gpu_groups_count(),
+                payload_m,
+                ef_construct,
+                false,
+                1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+            )
+        })
+        .transpose()
 }
