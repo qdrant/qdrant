@@ -254,12 +254,15 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         self.files_prefetched.lock().clear();
     }
 
-    fn schedule_open(
+    fn schedule_open_with<Fut>(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) {
+        then: impl FnOnce(Fs::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Fs::File>> + Send + 'static,
+    {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
