@@ -152,10 +152,6 @@ impl Drop for PlaceholderGuard {
 
             if let Some(next_leader) = next_to_unpark {
                 next_leader.unpark();
-            } else if Arc::strong_count(&self.placeholder) <= 2
-                && let Some(registry) = self.placeholder.registry.upgrade()
-            {
-                registry.remove(&self.placeholder);
             }
         }
     }
@@ -163,7 +159,7 @@ impl Drop for PlaceholderGuard {
 
 #[derive(Debug, Default)]
 pub(crate) struct PlaceholderRegistry {
-    placeholders: Mutex<Vec<Arc<Placeholder>>>,
+    placeholders: Mutex<Vec<Weak<Placeholder>>>,
 }
 
 pub(super) enum PlaceholderResult {
@@ -181,7 +177,7 @@ impl PlaceholderRegistry {
 
     fn remove(&self, placeholder: &Arc<Placeholder>) {
         let mut list = self.placeholders.lock();
-        list.retain(|p| !Arc::ptr_eq(p, placeholder));
+        list.retain(|weak| weak.as_ptr() != Arc::as_ptr(placeholder));
     }
 
     pub(super) fn get_or_register(
@@ -192,11 +188,13 @@ impl PlaceholderRegistry {
     ) -> PlaceholderResult {
         let mut list = self.placeholders.lock();
 
-        list.retain(|p| !p.is_completed() && Arc::strong_count(p) > 1);
+        list.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_completed()));
 
         let current_thread_id = std::thread::current().id();
-        for p in list.iter() {
-            if p.covers(&blocks_range) {
+        for weak in list.iter() {
+            if let Some(p) = weak.upgrade()
+                && p.covers(&blocks_range)
+            {
                 let mut state = p.state.lock();
                 match &mut *state {
                     PlaceholderState::Loading { leader, .. } => {
@@ -226,7 +224,7 @@ impl PlaceholderRegistry {
             current_thread_id,
             Arc::downgrade(self),
         ));
-        list.push(placeholder.clone());
+        list.push(Arc::downgrade(&placeholder));
 
         PlaceholderResult::Leader(placeholder.new_guard())
     }
