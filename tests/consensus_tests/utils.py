@@ -8,10 +8,11 @@ import time
 from typing import Tuple, Callable, Dict, List, Optional
 import requests
 import socket
-from contextlib import closing
+from contextlib import ExitStack, closing
 from pathlib import Path
 import pytest
 from .assertions import assert_http_ok
+from .peer_proxy import PeerProxy
 
 
 WAIT_TIME_SEC = 30
@@ -21,6 +22,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # Tracks processes that need to be killed at the end of the test
 processes: List['PeerProcess'] = []
 busy_ports = {}
+peer_proxies: Dict[int, PeerProxy] = {}
 
 
 class PeerProcess:
@@ -30,6 +32,7 @@ class PeerProcess:
         self.grpc_port = grpc_port
         self.p2p_port = p2p_port
         self.pid = proc.pid
+        self.proxy = peer_proxies.get(p2p_port)
 
     def kill(self):
         self.proc.kill()
@@ -67,6 +70,14 @@ def kill_all_processes():
         except Exception as e:
             print(f"Cleanup error for {p.pid}: {e}")
 
+    # Keep advertised addresses alive through peer restarts within the test.
+    with ExitStack() as cleanup:
+        while peer_proxies:
+            _, proxy = peer_proxies.popitem()
+            cleanup.callback(busy_ports.pop, proxy.port, None)
+            cleanup.callback(busy_ports.pop, proxy.http_port, None)
+            cleanup.callback(proxy.close)
+
 
 # Each pytest-xdist worker owns a disjoint slice of the port space, so concurrent
 # workers never compete for the same port range. Ports stay below the Linux
@@ -96,7 +107,7 @@ def _reset_port_slice():
 
 @pytest.fixture(autouse=True)
 def every_test():
-    if processes:
+    if processes or peer_proxies:
         print(f"WARN: {len(processes)} leaked peer processes from previous test, cleaning")
         kill_all_processes()
     _reset_port_slice()
@@ -198,6 +209,21 @@ def get_uri(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def get_peer_consensus_uri(p2p_port: int, use_peer_proxy: bool = False) -> str:
+    proxy = peer_proxies.get(p2p_port)
+    if proxy is None and use_peer_proxy:
+        while True:
+            proxy = PeerProxy(f"127.0.0.1:{p2p_port}")
+            # The peer's port triple is reserved but may not be listening yet.
+            if proxy.port not in busy_ports and proxy.http_port not in busy_ports:
+                break
+            proxy.close()
+        _occupy_port(proxy.port)
+        _occupy_port(proxy.http_port)
+        peer_proxies[p2p_port] = proxy
+    return proxy.uri if proxy is not None else get_uri(p2p_port)
+
+
 def assert_project_root():
     """Deprecated: No longer needed as paths are resolved relative to __file__."""
     pass
@@ -230,7 +256,7 @@ def init_pytest_log_folder() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> str:
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False, use_peer_proxy=False) -> str:
     if extra_env is None:
         extra_env = {}
     base_port = get_port_triple() if port is None else port
@@ -243,7 +269,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
 
     test_log_folder = init_pytest_log_folder()
     log_file = open(f"{test_log_folder}/{log_file}", "w")
-    this_peer_consensus_uri = get_uri(p2p_port)
+    this_peer_consensus_uri = get_peer_consensus_uri(p2p_port, use_peer_proxy)
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
@@ -252,6 +278,8 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
+    if p2p_port in peer_proxies:
+        env.update(peer_proxies[p2p_port].env)
 
     if uris_in_env:
         env["QDRANT_BOOTSTRAP"] = bootstrap_uri
@@ -267,11 +295,13 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
+    if processes[-1].proxy is not None:
+        processes[-1].proxy.wait_for_peer_connection()
     return get_uri(http_port)
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> Tuple[str, str]:
+def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False, uris_in_env=False, use_peer_proxy=False) -> Tuple[str, str]:
     if extra_env is None:
         extra_env = {}
 
@@ -285,7 +315,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
 
     test_log_folder = init_pytest_log_folder()
     log_file = open(f"{test_log_folder}/{log_file}", "w")
-    bootstrap_uri = get_uri(p2p_port)
+    bootstrap_uri = get_peer_consensus_uri(p2p_port, use_peer_proxy)
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
@@ -294,6 +324,8 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
+    if p2p_port in peer_proxies:
+        env.update(peer_proxies[p2p_port].env)
 
     if uris_in_env:
         env["QDRANT_URI"] = bootstrap_uri
@@ -308,10 +340,17 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
+    if processes[-1].proxy is not None:
+        processes[-1].proxy.wait_for_peer_connection()
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix=""):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix="", use_peer_proxy=False):
+    """Optionally route internal RPCs and snapshot downloads through each peer's proxy.
+
+    Proxies survive restarts on the same P2P port and close during test cleanup.
+    Client-facing REST and public gRPC keep their direct addresses.
+    """
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -320,7 +359,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
 
     # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], f"{log_file_prefix}peer_0_0.log", port=port_seed,
-                                                          extra_env=extra_env, uris_in_env=uris_in_env)
+                                                          extra_env=extra_env, uris_in_env=uris_in_env, use_peer_proxy=use_peer_proxy)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -331,7 +370,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     for i in range(1, len(peer_dirs)):
         if port_seed is not None:
             port = port_seed + i * 100
-        peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env, use_peer_proxy=use_peer_proxy))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)
@@ -355,7 +394,7 @@ def make_peer_folders(base_path: Path, n_peers: int) -> List[Path]:
 
 
 def get_cluster_info(peer_api_uri: str, headers={}) -> dict:
-    r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     res = r.json()["result"]
     return res
@@ -366,8 +405,8 @@ def print_clusters_info(peer_api_uris: [str], headers={}):
         try:
             # do not crash if the peer is not online
             print(json.dumps(get_cluster_info(uri, headers=headers), indent=4))
-        except requests.exceptions.ConnectionError:
-            print(f"Can't retrieve cluster info for offline peer {uri}")
+        except requests.exceptions.RequestException as error:
+            print(f"Can't retrieve cluster info for peer {uri}: {error}")
 
 
 def fetch_highest_peer_id(peer_api_uris: [str]) -> str:
@@ -386,7 +425,7 @@ def fetch_highest_peer_id(peer_api_uris: [str]) -> str:
 
 
 def get_collection_cluster_info(peer_api_uri: str, collection_name: str, headers={}) -> dict:
-    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     res = r.json()["result"]
     return res
@@ -417,21 +456,21 @@ def print_collection_cluster_info(peer_api_uri: str, collection_name: str, heade
 
 
 def get_leader(peer_api_uri: str, headers={}) -> str:
-    r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+    r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     return r.json()["result"]["raft_info"]["leader"]
 
 
 def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
         correct_leader = leader == expected_leader
         if not correct_leader:
             print(f"Cluster leader invalid for peer {peer_api_uri} {leader}/{expected_leader}")
         return correct_leader
-    except requests.exceptions.ConnectionError:
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch cluster leader")
         return False
@@ -442,7 +481,7 @@ def leader_is_defined(peer_api_uri: str, headers={}) -> bool:
         r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
-        return leader is not None
+        return leader not in (None, 0)
     except requests.exceptions.ConnectionError:
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch leader info")
@@ -451,20 +490,32 @@ def leader_is_defined(peer_api_uri: str, headers={}) -> bool:
 
 def check_cluster_size(peer_api_uri: str, expected_size: int, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
         assert_http_ok(r)
         peers = r.json()["result"]["peers"]
         correct_size = len(peers) == expected_size
         if not correct_size:
             print(f"Cluster size invalid for peer {peer_api_uri} {len(peers)}/{expected_size}")
         return correct_size
-    except requests.exceptions.ConnectionError:
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch cluster size")
         return False
 
 
-def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str, headers={}) -> bool:
+def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: Optional[str] = None, headers={}) -> bool:
+    if expected_leader is None:
+        # Elections can change the leader between polls, especially after a restart.
+        if not peer_api_uris:
+            return False
+        try:
+            expected_leader = get_leader(peer_api_uris[0], headers=headers)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            print(f"Could not contact peer {peer_api_uris[0]} to fetch cluster leader")
+            return False
+        if expected_leader in (None, 0):
+            return False
+
     expected_size = len(peer_api_uris)
     for uri in peer_api_uris:
         if check_leader(uri, expected_leader, headers=headers) and check_cluster_size(uri, expected_size, headers=headers):
@@ -765,7 +816,8 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, header
         raise e
 
 
-def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str, headers={}):
+def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: Optional[str] = None, headers={}):
+    """Wait for membership size and leader agreement, optionally requiring a specific leader."""
     try:
         wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader, headers=headers)
     except Exception as e:
@@ -883,9 +935,9 @@ def wait_for_strict_mode_disabled(peer_api_uri: str, collection_name: str):
 
 
 def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
-    start = time.time()
+    start = time.monotonic()
     while not condition(*args, **kwargs):
-        elapsed = time.time() - start
+        elapsed = time.monotonic() - start
         if elapsed > wait_for_timeout:
             raise Exception(
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {wait_for_timeout} seconds")
@@ -894,7 +946,7 @@ def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_S
 
 def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}{path}")
+        r = requests.get(f"{peer_api_uri}{path}", timeout=10)
         return r.status_code == 200
     except:
         return False
@@ -999,7 +1051,7 @@ def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, targe
     r = requests.post(
         f"{source_uri}/collections/{collection_name}/cluster", json={
             "replicate_shard": payload
-        })
+        }, timeout=WAIT_TIME_SEC)
     assert_http_ok(r)
 
 
