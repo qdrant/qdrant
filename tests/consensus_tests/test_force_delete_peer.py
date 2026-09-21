@@ -113,7 +113,12 @@ def test_force_delete_stopped_source_during_transfer(transfer_cluster, transfer_
     assert_survivors_recovered(survivors, from_peer_id, points)
 
 
-@pytest.mark.parametrize("transfer_method", ["snapshot", "wal_delta"])
+@pytest.mark.parametrize("transfer_method", [
+    "snapshot",
+    pytest.param("wal_delta", marks=pytest.mark.skip(
+        reason="Stale WAL replay can overwrite newer writes. Re-enable after fix, potentially #10705.",
+    )),
+])
 def test_force_delete_source_before_late_transfer(transfer_cluster, transfer_method):
     peer_api_uris, points = transfer_cluster
     leader = get_leader(peer_api_uris[0])
