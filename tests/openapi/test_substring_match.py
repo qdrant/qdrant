@@ -155,13 +155,23 @@ def test_substring_match_count():
 
 
 # ---------------------------------------------------------------------------
-# 3. Strict mode: substring filtering requires a keyword index. A text
-#    index is not enough, since it stores tokens rather than raw values.
+# 3. A text index on the field cannot serve substring (it stores tokens, not
+#    raw values), so the condition falls back to the payload scan and still
+#    works. Only strict mode may reject it.
+# ---------------------------------------------------------------------------
+
+def test_substring_match_with_text_index_falls_back():
+    _create_index("description", "text")
+    for substring in SUBSTRING_PROBES:
+        assert _scroll_ids(_substring_filter("description", substring)) == expected_ids(substring), substring
+
+
+# ---------------------------------------------------------------------------
+# 4. Strict mode: substring filtering requires a keyword index. A text
+#    index does not count, since it cannot serve the condition.
 # ---------------------------------------------------------------------------
 
 def test_strict_mode_requires_keyword_index():
-    _create_index("description", "text")
-
     _set_strict_mode({
         "enabled": True,
         "unindexed_filtering_retrieve": False,

@@ -743,7 +743,9 @@ mod tests {
             infer_index_from_field_condition(&condition),
             vec![FieldIndexType::KeywordMatch],
         );
-        // A text index is not enough: it holds tokens, not raw values.
+        // A text index holds tokens, not raw values, so it cannot serve the
+        // condition and does not satisfy strict mode. Without strict mode the
+        // condition still runs through the payload fallback.
         let text = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
         assert!(!schema_capabilities(&text).contains(&FieldIndexType::KeywordMatch));
     }
