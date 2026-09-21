@@ -606,14 +606,26 @@ def check_collection_resharding_operations_count(peer_api_uri: str, collection_n
     return local_resharding_count == expected_resharding_operations_count
 
 
+def get_collection_resharding_stages(peer_api_uri: str, collection_name: str, headers={}) -> [str]:
+    """
+    Resharding stages applied on this peer, as `migrating_points`,
+    `read_hash_ring_committed` or `write_hash_ring_committed`.
+
+    The collection cluster info hides the stage on purpose, only telemetry
+    exposes it. Reading it goes through the same shard holder lock that the
+    consensus handlers take while applying a stage change, so a stage seen here
+    is fully applied, including any side effects like invalidating shard clean tasks.
+    """
+    r = requests.get(f"{peer_api_uri}/telemetry", params={"details_level": 3}, headers=headers)
+    assert_http_ok(r)
+    for collection in r.json()["result"]["collections"]["collections"]:
+        if collection["id"] == collection_name:
+            return [operation["stage"] for operation in collection.get("resharding") or []]
+    return []
+
+
 def check_collection_resharding_operation_stage(peer_api_uri: str, collection_name: str, expected_stage: str, headers={}) -> bool:
-    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-    if "resharding_operations" not in collection_cluster_info:
-        return False
-    for resharding in collection_cluster_info["resharding_operations"]:
-        if "comment" in resharding and resharding["comment"].startswith(expected_stage):
-            return True
-    return False
+    return expected_stage in get_collection_resharding_stages(peer_api_uri, collection_name, headers=headers)
 
 
 def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
