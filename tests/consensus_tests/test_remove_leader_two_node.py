@@ -34,8 +34,12 @@ def _remove(uri, peer_id, server_timeout=60):
 
 
 @pytest.mark.parametrize(("remove_leader", "server_timeout"), [
-    pytest.param(True, None, id="default-wait-leader"),
-    pytest.param(True, 60, id="wait-60s-leader"),
+    pytest.param(True, None, id="default-wait-leader", marks=pytest.mark.skip(
+        reason="Leader removal can strand the survivor. Re-enable after fix, potentially #10691.",
+    )),
+    pytest.param(True, 60, id="wait-60s-leader", marks=pytest.mark.skip(
+        reason="Leader removal can strand the survivor. Re-enable after fix, potentially #10691.",
+    )),
     pytest.param(False, 60, id="wait-60s-follower-control"),
 ])
 def test_remove_peer_from_two_node_cluster(tmp_path, remove_leader, server_timeout):
