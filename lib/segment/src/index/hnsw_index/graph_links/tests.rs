@@ -1,11 +1,15 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
-use common::universal_io::{MmapFs, UniversalReadFs};
+use common::universal_io::{
+    CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile,
+    MmapFs, UniversalReadFileOps, UniversalReadFs,
+};
 use rand::RngExt;
 use rstest::rstest;
 use tempfile::Builder;
@@ -319,4 +323,69 @@ fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
 
     // fully random links
     check(random_links(100, 10, &hnsw_m));
+}
+
+#[rstest]
+#[case::cold_preloaded(GraphLinksResidency::Cold, true, true)]
+#[case::cold_header_only(GraphLinksResidency::Cold, false, false)]
+#[case::cached_preloaded(GraphLinksResidency::Cached, true, true)]
+#[case::cached_plain_open(GraphLinksResidency::Cached, false, true)]
+fn test_preload_offsets(
+    #[case] residency: GraphLinksResidency,
+    #[case] preload: bool,
+    #[case] expect_warm: bool,
+) {
+    let format = GraphLinksFormat::Compressed;
+    let hnsw_m = HnswM::new2(8);
+    // Enough points to push the offsets block past both the eagerly read
+    // prefix and the first cache block.
+    let links = random_links(5000, 10, &hnsw_m);
+
+    let tmp = Builder::new().prefix("graph_dir").tempdir().unwrap();
+    let remote_dir = tmp.path().join("remote");
+    let local_dir = tmp.path().join("local");
+    fs_err::create_dir_all(&remote_dir).unwrap();
+    fs_err::create_dir_all(&local_dir).unwrap();
+    let links_path = remote_dir.join("links.bin");
+    atomic_save(&links_path, |writer| {
+        serialize_graph_links(
+            links,
+            format.with_param_for_tests(None::<&TestGraphLinksVectors>),
+            hnsw_m,
+            writer,
+        )
+    })
+    .unwrap();
+
+    let disk_cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    let stats = disk_cache_fs.stats();
+
+    let mut fs = CachedFs::new(disk_cache_fs, &remote_dir).unwrap();
+    fs.cache_file_info().unwrap();
+
+    let options = GraphLinksFile::<DiskCache<MmapFile>>::preopen_options(residency);
+    if preload {
+        fs.schedule_open_with(&links_path, Some(options), None, move |file| {
+            GraphLinksFile::preload_offsets(file, format)
+        });
+    } else {
+        fs.schedule_open(&links_path, Some(options), None);
+    }
+    futures::executor::block_on(fs.wait_all());
+
+    let file = fs.open(&links_path, options, Default::default()).unwrap();
+
+    let before = stats.snapshot().remote_fetches_started;
+    GraphLinksFile::open(file, format).unwrap();
+    let fetches = stats.snapshot().remote_fetches_started - before;
+
+    if expect_warm {
+        assert_eq!(fetches, 0, "the open still went to the remote");
+    } else {
+        assert!(fetches > 0, "the open was warm without a prefetch");
+    }
 }
