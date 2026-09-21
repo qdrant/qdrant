@@ -139,7 +139,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             return Ok(());
         };
         let options = if Self::format_is_batched(format, residency) {
-            GraphLinksFile::<S>::preopen_options(format, residency)
+            GraphLinksFile::<S>::preopen_options(residency)
         } else {
             GraphLinks::preopen_options(residency)
         };
