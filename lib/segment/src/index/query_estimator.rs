@@ -164,6 +164,19 @@ pub fn combine_min_should_estimations(
     min_count: usize,
     total: usize,
 ) -> CardinalityEstimation {
+    let estimations_with_keys = estimations
+        .iter()
+        .cloned()
+        .map(|estimation| (estimation, HashSet::new()))
+        .collect_vec();
+    combine_min_should_estimations_with_keys(&estimations_with_keys, min_count, total)
+}
+
+fn combine_min_should_estimations_with_keys(
+    estimations: &[EstimationWithKeys],
+    min_count: usize,
+    total: usize,
+) -> CardinalityEstimation {
     // Prevent pathological allocation paths in combinations(min_count)
     if min_count > estimations.len() {
         return CardinalityEstimation::exact(0);
@@ -178,7 +191,10 @@ pub fn combine_min_should_estimations(
         .iter()
         .combinations(min_count)
         .map(|intersection| {
-            combine_must_estimations(&intersection.into_iter().cloned().collect_vec(), total)
+            combine_must_estimations_with_keys(
+                &intersection.into_iter().cloned().collect_vec(),
+                total,
+            )
         })
         .collect_vec();
 
@@ -414,8 +430,16 @@ where
     F: Fn(&Condition) -> OperationResult<CardinalityEstimation>,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-    let min_should_estimations: OperationResult<Vec<_>> = conditions.iter().map(estimate).collect();
-    Ok(combine_min_should_estimations(
+    let min_should_estimations: OperationResult<Vec<_>> = conditions
+        .iter()
+        .map(|condition| {
+            Ok((
+                estimate(condition)?,
+                condition_keys(std::iter::once(condition)),
+            ))
+        })
+        .collect();
+    Ok(combine_min_should_estimations_with_keys(
         &min_should_estimations?,
         min_count,
         total,
@@ -831,6 +855,21 @@ mod tests {
             ]),
             must_not: None,
         };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
+
+        assert_eq!(estimation.exp, 200);
+    }
+
+    #[test]
+    fn same_field_min_should_intersections_do_not_multiply_independently() {
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![
+                test_match_condition("color", "red"),
+                test_match_condition("color", "blue"),
+            ],
+            min_count: 2,
+        });
 
         let estimation = estimate_filter(&test_estimator, &query, TOTAL).unwrap();
 
