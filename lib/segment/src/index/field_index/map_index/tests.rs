@@ -665,6 +665,94 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
     }
 }
 
+// --- Substring matching ---
+
+/// Ground truth for a substring match: points with at least one value
+/// containing the substring.
+fn naive_substring_points(data: &[Vec<EcoString>], substring: &str) -> Vec<PointOffsetType> {
+    data.iter()
+        .enumerate()
+        .filter(|(_, values)| values.iter().any(|value| value.contains(substring)))
+        .map(|(idx, _)| idx as PointOffsetType)
+        .collect()
+}
+
+const SUBSTRING_PROBES: &[&str] = &[
+    "",
+    "qdrant",
+    "example.com",
+    "://",
+    "tech/docs",
+    "ag",
+    "tags",
+    "TAG",
+    "β",
+    "βδ",
+    "nonexistent",
+];
+
+/// Substring matching is served by every keyword index variant, with or
+/// without the prefix option, through a scan of the value dictionary.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_substring_match(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new()
+        .prefix("substring_index_dir")
+        .tempdir()
+        .unwrap();
+    let data = prefix_test_data();
+    let hw_counter = HardwareCounterCell::new();
+
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
+
+    for substring in SUBSTRING_PROBES {
+        let expected = naive_substring_points(&data, substring);
+        let condition =
+            FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
+
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition, &hw_counter)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "substring {substring:?}");
+
+        let estimation = index
+            .estimate_cardinality(&condition, &hw_counter)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert!(
+            estimation.min <= expected.len() && expected.len() <= estimation.max,
+            "substring {substring:?}: {} not in [{}, {}]",
+            expected.len(),
+            estimation.min,
+            estimation.max,
+        );
+
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "substring {substring:?}, point {idx}",
+            );
+        }
+    }
+}
+
 /// An index built *without* the prefix option must decline prefix
 /// filtering/estimation (fallback path) while still serving the per-point
 /// condition checker through the forward index.
@@ -789,6 +877,7 @@ fn test_str_prefix_payload_blocks() {
                 | Match::Text(_)
                 | Match::TextAny(_)
                 | Match::Phrase(_)
+                | Match::Substring(_)
                 | Match::Any(_)
                 | Match::Except(_) => value_blocks.push(block.cardinality),
             }

@@ -25,8 +25,8 @@ use crate::index::field_index::{
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::types::{
-    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchValue,
-    PayloadKeyType, ValueVariants,
+    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchSubstring,
+    MatchValue, PayloadKeyType, ValueVariants,
 };
 
 impl PayloadFieldIndex for MapIndex<str> {
@@ -172,6 +172,10 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
                 None => None,
             }
         }
+        Some(Match::Substring(MatchSubstring { substring })) => {
+            let keys = substring_keys_with_counts(index, substring, hw_counter)?;
+            Some(index.iter_for_values(keys.into_iter().map(|(key, _count)| key), hw_counter)?)
+        }
         _ => None,
     };
 
@@ -230,28 +234,65 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
         },
         Some(Match::Prefix(MatchPrefix { prefix })) => {
             index.prefix_stats(prefix, hw_counter)?.map(|stats| {
-                prefix_cardinality(index, stats)
+                let PrefixIndexStats { keys, postings } = stats;
+                keys_union_cardinality(index, keys, postings)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
             })
+        }
+        Some(Match::Substring(MatchSubstring { substring })) => {
+            let keys = substring_keys_with_counts(index, substring, hw_counter)?;
+            let postings = keys.iter().map(|(_key, count)| count).sum();
+            Some(
+                keys_union_cardinality(index, keys.len(), postings)
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
+            )
         }
         _ => None,
     };
     Ok(estimation)
 }
 
-/// Cardinality of a prefix match from aggregate `(keys, postings)` stats.
+/// Dictionary keys containing `substring`, each with its live posting count.
 ///
-/// A prefix selects the union of its keys' postings. The sum of counts is an
-/// upper bound (a point with several values sharing the prefix is counted
-/// once per value); the union cannot be smaller than the largest single
-/// posting, which is at least the average. The on-disk stats are build-time
-/// counts, so with deletions this is an estimate, like other on-disk
-/// count-based estimations.
-fn prefix_cardinality<'a, T: MapIndexRead<'a, str>>(
+/// There is no acceleration structure for substring matching: every key of
+/// the dictionary is scanned, on every variant of the index.
+// ponytail: full dictionary scan per query; an n-gram index if this gets hot
+fn substring_keys_with_counts<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
-    stats: PrefixIndexStats,
+    substring: &str,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Vec<(EcoString, usize)>> {
+    let mut keys = Vec::new();
+    index.for_each_value(|key| {
+        if key.contains(substring) {
+            let count = index.get_count_for_value(key, hw_counter).unwrap_or(0);
+            keys.push((EcoString::from(key), count));
+        }
+        Ok(())
+    })?;
+    Ok(keys)
+}
+
+/// Cardinality of a condition that selects every point holding at least one
+/// of a set of dictionary keys (prefix and substring matches).
+///
+/// `keys` is how many dictionary keys the condition matched, `postings` is
+/// the sum of their per-key point counts, i.e. the number of `(point, value)`
+/// pairs selected, counting a point once per matching value it holds. For
+/// example, with `"a" -> {0, 1}` and `"ab" -> {0}` a match on both keys has
+/// `keys = 2`, `postings = 3` and selects 2 points.
+///
+/// The postings sum is the upper bound, capped at the indexed point count.
+/// The union cannot be smaller than the largest single posting, which is at
+/// least the average `postings / keys`, so that average is the lower bound.
+/// The expectation assumes values are spread randomly over points. The
+/// on-disk index reports build-time counts, so with deletions this is an
+/// estimate, like other on-disk count-based estimations.
+fn keys_union_cardinality<'a, T: MapIndexRead<'a, str>>(
+    index: &'a T,
+    keys: usize,
+    postings: usize,
 ) -> CardinalityEstimation {
-    let PrefixIndexStats { keys, postings } = stats;
     let indexed_points = index.get_indexed_points();
 
     let sum = postings.min(index.get_values_count());
@@ -514,6 +555,9 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
         // structures, which only accelerate `filter`/`estimate_cardinality`.
         Match::Prefix(MatchPrefix { prefix }) => {
             Some(index.match_prefix_checker(hw_counter, prefix.as_str()))
+        }
+        Match::Substring(MatchSubstring { substring }) => {
+            Some(index.match_substring_checker(hw_counter, substring.as_str()))
         }
         // Conditions this index can't serve: Match::Text/TextAny/Phrase
         // (handled by FullTextIndex) and value-type mismatches (e.g.

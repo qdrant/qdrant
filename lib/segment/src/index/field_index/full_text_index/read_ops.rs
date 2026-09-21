@@ -18,8 +18,8 @@ use crate::index::field_index::{
 };
 use crate::index::payload_config::StorageType;
 use crate::types::{
-    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchText,
-    MatchTextAny, MatchValue, PayloadKeyType,
+    FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchSubstring,
+    MatchText, MatchTextAny, MatchValue, PayloadKeyType,
 };
 
 impl FullTextIndexRead for FullTextIndex {
@@ -246,7 +246,11 @@ pub fn filter<'a, T: FullTextIndexRead>(
         Match::TextAny(MatchTextAny { text_any }) => {
             index.parse_text_any_query(text_any, hw_counter)
         }
-        Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_) => {
+        Match::Value(_)
+        | Match::Any(_)
+        | Match::Except(_)
+        | Match::Prefix(_)
+        | Match::Substring(_) => {
             return Ok(None);
         }
     }?;
@@ -274,7 +278,11 @@ pub fn estimate_cardinality<T: FullTextIndexRead>(
         Match::TextAny(MatchTextAny { text_any }) => {
             index.parse_text_any_query(text_any, hw_counter)
         }
-        Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_) => {
+        Match::Value(_)
+        | Match::Any(_)
+        | Match::Except(_)
+        | Match::Prefix(_)
+        | Match::Substring(_) => {
             return Ok(None);
         }
     }?;
@@ -336,7 +344,8 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
         Match::Value(MatchValue { value: _ })
         | Match::Any(MatchAny { any: _ })
         | Match::Except(MatchExcept { except: _ })
-        | Match::Prefix(MatchPrefix { prefix: _ }) => return Ok(None),
+        | Match::Prefix(MatchPrefix { prefix: _ })
+        | Match::Substring(MatchSubstring { substring: _ }) => return Ok(None),
     };
 
     let query_opt = match query_type {
@@ -411,6 +420,13 @@ pub fn special_check_condition<T: FullTextIndexRead>(
             PayloadMatchQueryType::TextAny,
             hw_counter,
         )?),
-        Some(Match::Value(_) | Match::Any(_) | Match::Except(_) | Match::Prefix(_)) | None => None,
+        Some(
+            Match::Value(_)
+            | Match::Any(_)
+            | Match::Except(_)
+            | Match::Prefix(_)
+            | Match::Substring(_),
+        )
+        | None => None,
     })
 }

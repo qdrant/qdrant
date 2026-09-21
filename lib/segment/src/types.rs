@@ -3138,6 +3138,26 @@ impl<S: Into<String>> From<S> for MatchPrefix {
     }
 }
 
+/// Match keyword values that contain the given string.
+///
+/// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
+/// consistent with exact keyword and prefix matching. Served by a keyword
+/// index through a scan of its value dictionary; without one, falls back to
+/// reading the payload.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchSubstring {
+    pub substring: String,
+}
+
+impl<S: Into<String>> From<S> for MatchSubstring {
+    fn from(substring: S) -> Self {
+        MatchSubstring {
+            substring: substring.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -3161,6 +3181,7 @@ pub enum MatchInterface {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3174,6 +3195,7 @@ pub enum Match {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3190,6 +3212,12 @@ impl Match {
     pub fn new_prefix(prefix: &str) -> Self {
         Self::Prefix(MatchPrefix {
             prefix: prefix.into(),
+        })
+    }
+
+    pub fn new_substring(substring: &str) -> Self {
+        Self::Substring(MatchSubstring {
+            substring: substring.into(),
         })
     }
 
@@ -3222,6 +3250,9 @@ impl From<MatchInterface> for Match {
             }),
             MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
             MatchInterface::Prefix(MatchPrefix { prefix }) => Self::Prefix(MatchPrefix { prefix }),
+            MatchInterface::Substring(MatchSubstring { substring }) => {
+                Self::Substring(MatchSubstring { substring })
+            }
         }
     }
 }
@@ -3830,6 +3861,7 @@ impl FieldCondition {
             Match::Phrase(_) => 0,
             Match::TextAny(_) => 0,
             Match::Prefix(_) => 0,
+            Match::Substring(_) => 0,
         }
     }
 }

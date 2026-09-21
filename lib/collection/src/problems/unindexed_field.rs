@@ -243,6 +243,7 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Text(_match_text) => vec![FieldIndexType::Text],
             Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
             Match::Prefix(_match_prefix) => vec![FieldIndexType::KeywordPrefix],
+            Match::Substring(_match_substring) => vec![FieldIndexType::KeywordMatch],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
@@ -730,6 +731,21 @@ mod tests {
 
         let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
         assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
+    }
+
+    #[test]
+    fn substring_requires_plain_keyword_index() {
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_substring("qdrant"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordMatch],
+        );
+        // A text index is not enough: it holds tokens, not raw values.
+        let text = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
+        assert!(!schema_capabilities(&text).contains(&FieldIndexType::KeywordMatch));
     }
 
     #[test]

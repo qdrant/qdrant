@@ -9066,6 +9066,9 @@
             "$ref": "#/components/schemas/MatchPrefix"
           },
           {
+            "$ref": "#/components/schemas/MatchSubstring"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -9143,6 +9146,18 @@
         ],
         "properties": {
           "prefix": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchSubstring": {
+        "description": "Match keyword values that contain the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword and prefix matching. Served by a keyword index through a scan of its value dictionary; without one, falls back to reading the payload.",
+        "type": "object",
+        "required": [
+          "substring"
+        ],
+        "properties": {
+          "substring": {
             "type": "string"
           }
         }
