@@ -2042,9 +2042,9 @@ dependencies = [
 
 [[package]]
 name = "dial9"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49b11bce55173f77d9003cce8f129b4af889a4639005c53c3498cef933bc895c"
+checksum = "bab33c9f10e909fb3f1f6af2a9d976398ea793b90d1d286b4e23647a7d131d53"
 dependencies = [
  "bon",
  "dial9-core",
@@ -2059,9 +2059,9 @@ dependencies = [
 
 [[package]]
 name = "dial9-core"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e8cbbc8955394be626249a3b52ddd6bf664373661eaeae70d87eb12bf6f20b6"
+checksum = "ffd7231006b074b02765ae929bded4757a414224b06c7db324d3e6e902f182ee"
 dependencies = [
  "arc-swap",
  "bon",
@@ -2092,9 +2092,9 @@ dependencies = [
 
 [[package]]
 name = "dial9-metrique"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d42fe0e3e14e8780c4ecf9ee14c183dbcb9b1ae3612cc9a689e7dc83b13adef1"
+checksum = "f987e56dbafcab5998acc8e77eb91aaf66fa5441a691b38e99c8058c70725f58"
 dependencies = [
  "dial9-core",
  "dial9-trace-format",
@@ -2106,9 +2106,9 @@ dependencies = [
 
 [[package]]
 name = "dial9-perf-self-profile"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8f65948455c504bf08576c7b5cfe93bfcaa486d661dc4ee85c2a6309ab89629"
+checksum = "d81f74ada03919614ca5b1ba767271d00980376a5a0e0fc43f8c265bf90413d4"
 dependencies = [
  "blazesym",
  "bytes",
@@ -2124,9 +2124,9 @@ dependencies = [
 
 [[package]]
 name = "dial9-tokio-telemetry"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1244091367c805b5d98a6a590f8ab992efda06e6d2560a6967ef898ffd30a2"
+checksum = "934c027f628c59ae4c9664ca4dce758843c3da027dee5052d358f86a5d292ae6"
 dependencies = [
  "bon",
  "bytes",
