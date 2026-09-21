@@ -7,7 +7,9 @@ use common::ext::aligned_vec::ACow;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadBytesItem, ReadRange, UniversalRead};
+use common::universal_io::{
+    OpenOptions, Populate, ReadBytesItem, ReadRange, UioResult, UniversalRead, UniversalReadAsync,
+};
 use itertools::Itertools;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -367,5 +369,22 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         let offset =
             self.reindex_offset + u64::from(point_id) * size_of::<PointOffsetType>() as u64;
         ReadRange::one(offset)
+    }
+}
+
+impl<S: UniversalReadAsync> GraphLinksFile<S> {
+    pub async fn preload_offsets(file: S, format: GraphLinksFormat) -> UioResult<S> {
+        let header_len = (HEADER_MAX_SIZE as u64).min(file.len::<u8>()?);
+        let bytes = file
+            .read_bytes_async(0..header_len, Random, align_of::<Header>())
+            .await?;
+        let offsets = Header::parse(&bytes, format)
+            .and_then(|header| header.offsets_range())
+            .ok();
+
+        if let Some(offsets) = offsets {
+            file.populate_range_async(offsets).await?;
+        }
+        Ok(file)
     }
 }
