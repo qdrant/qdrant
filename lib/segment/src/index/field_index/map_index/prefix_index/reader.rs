@@ -5,7 +5,7 @@ use std::path::Path;
 
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
@@ -20,6 +20,9 @@ use super::format::{
 use crate::common::operation_error::{OperationError, OperationResult};
 
 const HEADER_AND_BASIC_BLOCK_INDEX_SIZE: u64 = size_of::<Header>() as u64 + 16 * 1024; // Header + 16 KB
+
+/// Read granularity of a full dictionary scan, see [`PrefixIndex::for_each_key`].
+pub(super) const SCAN_CHUNK_BYTES: u64 = 1024 * 1024;
 
 /// Per-block metadata, parsed from the block index section and kept resident.
 pub(super) struct BlockMeta {
@@ -321,12 +324,49 @@ impl<S: UniversalRead> PrefixIndex<S> {
 
     /// Invoke `f(key, postings_count)` for every key in the dictionary, in
     /// ascending byte order.
+    ///
+    /// Unlike a prefix range, a full scan cannot be bounded by the block
+    /// index, so blocks are fetched in chunks of about [`SCAN_CHUNK_BYTES`]
+    /// instead of in one read: the resident buffer stays bounded no matter
+    /// how large the dictionary is.
     pub fn for_each_key(
         &self,
         hw_counter: &HardwareCounterCell,
         f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.for_each_key_with_prefix(b"", hw_counter, f)
+        let hw_counter = ConditionedCounter::always(hw_counter);
+
+        let mut chunk_start = 0;
+        while chunk_start < self.blocks.len() {
+            let bytes_start = self.blocks[chunk_start].bytes.start;
+            let mut chunk_end = chunk_start + 1;
+            while chunk_end < self.blocks.len()
+                && self.blocks[chunk_end].bytes.end - bytes_start <= SCAN_CHUNK_BYTES
+            {
+                chunk_end += 1;
+            }
+            let bytes_end = self.blocks[chunk_end - 1].bytes.end;
+
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta((bytes_end - bytes_start) as usize);
+
+            let bytes = self.storage.read::<_, u8>(
+                ReadRange::new(bytes_start, bytes_end - bytes_start),
+                Sequential,
+            )?;
+
+            for block in &self.blocks[chunk_start..chunk_end] {
+                let block_bytes = bytes
+                    .as_ref()
+                    .get((block.bytes.start - bytes_start) as usize..)
+                    .ok_or_else(block_corrupt)?;
+                decode_block(block_bytes, block.key_count, f)?;
+            }
+
+            chunk_start = chunk_end;
+        }
+        Ok(())
     }
 
     /// Fetch a single block from storage and decode it.

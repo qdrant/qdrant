@@ -691,8 +691,8 @@ const SUBSTRING_PROBES: &[&str] = &[
     "nonexistent",
 ];
 
-/// Substring matching is served by every keyword index variant, with or
-/// without the prefix option, through a scan of the value dictionary.
+/// Substring matching is served by every keyword index variant carrying a
+/// key dictionary, through a full scan of it.
 #[rstest]
 #[case(IndexType::MutableGridstore)]
 #[case(IndexType::Mmap)]
@@ -753,9 +753,10 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
     }
 }
 
-/// An index built *without* the prefix option must decline prefix
-/// filtering/estimation (fallback path) while still serving the per-point
-/// condition checker through the forward index.
+/// An index built *without* the prefix option has no key dictionary, so it
+/// must decline prefix and substring filtering/estimation (fallback path)
+/// while still serving the per-point condition checker through the forward
+/// index.
 #[test]
 fn test_str_prefix_match_disabled() {
     use common::condition_checker::ConditionChecker as _;
@@ -798,6 +799,25 @@ fn test_str_prefix_match_disabled() {
         .unwrap()
         .unwrap();
     let expected = naive_prefix_points(&data, "https://");
+    for idx in 0..data.len() as PointOffsetType {
+        assert_eq!(checker.check(idx).unwrap(), expected.contains(&idx));
+    }
+
+    let condition =
+        FieldCondition::new_match(JsonPath::new("test"), Match::new_substring("qdrant"));
+    assert!(index.filter(&condition, &hw_counter).unwrap().is_none());
+    assert!(
+        index
+            .estimate_cardinality(&condition, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
+
+    let checker = index
+        .condition_checker(&condition, HwMeasurementAcc::new())
+        .unwrap()
+        .unwrap();
+    let expected = naive_substring_points(&data, "qdrant");
     for idx in 0..data.len() as PointOffsetType {
         assert_eq!(checker.check(idx).unwrap(), expected.contains(&idx));
     }

@@ -3142,8 +3142,8 @@ impl<S: Into<String>> From<S> for MatchPrefix {
 ///
 /// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
 /// consistent with exact keyword and prefix matching. Served by a keyword
-/// index through a scan of its value dictionary; without one, falls back to
-/// reading the payload.
+/// index with the `prefix` option, through a scan of its key dictionary;
+/// without one, falls back to reading the payload.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchSubstring {

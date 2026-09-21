@@ -173,8 +173,12 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
             }
         }
         Some(Match::Substring(MatchSubstring { substring })) => {
-            let keys = substring_keys_with_counts(index, substring, hw_counter)?;
-            Some(index.iter_for_values(keys.into_iter().map(|(key, _count)| key), hw_counter)?)
+            // `None` when this index instance has no key dictionary — the
+            // caller then falls back to the generic (slow) condition check.
+            match index.substring_keys(substring, hw_counter)? {
+                Some(keys) => Some(index.iter_for_values(keys.into_iter(), hw_counter)?),
+                None => None,
+            }
         }
         _ => None,
     };
@@ -239,38 +243,16 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
             })
         }
-        Some(Match::Substring(MatchSubstring { substring })) => {
-            let keys = substring_keys_with_counts(index, substring, hw_counter)?;
-            let postings = keys.iter().map(|(_key, count)| count).sum();
-            Some(
-                keys_union_cardinality(index, keys.len(), postings)
-                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
-            )
-        }
+        Some(Match::Substring(MatchSubstring { substring })) => index
+            .substring_scan(substring, hw_counter, |_key, _count| Ok(()))?
+            .map(|stats| {
+                let PrefixIndexStats { keys, postings } = stats;
+                keys_union_cardinality(index, keys, postings)
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
+            }),
         _ => None,
     };
     Ok(estimation)
-}
-
-/// Dictionary keys containing `substring`, each with its live posting count.
-///
-/// There is no acceleration structure for substring matching: every key of
-/// the dictionary is scanned, on every variant of the index.
-// ponytail: full dictionary scan per query; an n-gram index if this gets hot
-fn substring_keys_with_counts<'a, T: MapIndexRead<'a, str>>(
-    index: &'a T,
-    substring: &str,
-    hw_counter: &HardwareCounterCell,
-) -> OperationResult<Vec<(EcoString, usize)>> {
-    let mut keys = Vec::new();
-    index.for_each_value(|key| {
-        if key.contains(substring) {
-            let count = index.get_count_for_value(key, hw_counter).unwrap_or(0);
-            keys.push((EcoString::from(key), count));
-        }
-        Ok(())
-    })?;
-    Ok(keys)
 }
 
 /// Cardinality of a condition that selects every point holding at least one

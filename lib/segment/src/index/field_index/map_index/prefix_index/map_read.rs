@@ -1,15 +1,20 @@
-//! Prefix enumeration surface of the string-keyed map index.
+//! Key enumeration surface of the string-keyed map index.
 //!
-//! Counterpart of [`MapIndexRead`][1] for the [`Match::Prefix`][2] condition:
-//! every variant that carries a prefix structure (the mutable `BTreeSet`, the
-//! immutable sorted key vector, or the on-disk [`PrefixIndex`][3]) enumerates
-//! keys by byte-prefix through this trait. Variants without the structure
-//! (built without the `prefix` option, or loaded from legacy files) return
-//! `None`, which makes the caller fall back to the generic slow paths.
+//! Counterpart of [`MapIndexRead`][1] for the [`Match::Prefix`][2] and
+//! [`Match::Substring`][4] conditions: every variant that carries a key
+//! dictionary (the mutable `BTreeSet`, the immutable sorted key vector, or
+//! the on-disk [`PrefixIndex`][3]) enumerates keys through this trait.
+//! Variants without the structure (built without the `prefix` option, or
+//! loaded from legacy files) return `None`, which makes the caller fall back
+//! to the generic slow paths.
+//!
+//! Both conditions read keys and postings counts only; the postings
+//! themselves are fetched afterwards, for the matched keys alone.
 //!
 //! [1]: super::super::read_ops::MapIndexRead
 //! [2]: crate::types::Match::Prefix
 //! [3]: super::reader::PrefixIndex
+//! [4]: crate::types::Match::Substring
 
 use std::ops::Bound;
 
@@ -58,6 +63,33 @@ pub trait StrMapIndexPrefixRead {
         prefix: &str,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PrefixIndexStats>>;
+
+    /// Invoke `f(key, postings count)` for every key containing `substring`,
+    /// and return the aggregate over those keys.
+    ///
+    /// A substring does not delimit a key range the way a prefix does, so the
+    /// whole dictionary is scanned. Same count semantics as
+    /// [`Self::prefix_keys_with_counts`].
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>>;
+
+    /// Keys containing `substring`, in ascending byte order.
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        let mut keys = Vec::new();
+        let stats = self.substring_scan(substring, hw_counter, |key, _count| {
+            keys.push(EcoString::from(key));
+            Ok(())
+        })?;
+        Ok(stats.map(|_| keys))
+    }
 }
 
 impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
@@ -104,6 +136,28 @@ impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
         }
         Ok(Some(stats))
     }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        _hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        let Some(sorted_keys) = &self.sorted_keys else {
+            return Ok(None);
+        };
+        let mut stats = PrefixIndexStats::default();
+        for key in sorted_keys.iter().filter(|key| key.contains(substring)) {
+            let count = self
+                .map
+                .get(key.as_str())
+                .map_or(0, |ids| ids.len() as usize);
+            stats.keys += 1;
+            stats.postings += count;
+            f(key.as_str(), count)?;
+        }
+        Ok(Some(stats))
+    }
 }
 
 impl StrMapIndexPrefixRead for MutableMapIndex<str> {
@@ -122,6 +176,16 @@ impl StrMapIndexPrefixRead for MutableMapIndex<str> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PrefixIndexStats>> {
         self.in_memory_index.prefix_stats(prefix, hw_counter)
+    }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        self.in_memory_index
+            .substring_scan(substring, hw_counter, f)
     }
 }
 
@@ -171,6 +235,27 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for ImmutableMapIndex<str, S> {
         }
         Ok(Some(stats))
     }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        let Some(sorted_keys) = &self.sorted_keys else {
+            return Ok(None);
+        };
+        let mut stats = PrefixIndexStats::default();
+        for key in sorted_keys.iter().filter(|key| key.contains(substring)) {
+            let count = self
+                .get_count_for_value(key.as_str(), hw_counter)
+                .unwrap_or(0);
+            stats.keys += 1;
+            stats.postings += count;
+            f(key.as_str(), count)?;
+        }
+        Ok(Some(stats))
+    }
 }
 
 impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
@@ -209,6 +294,30 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
             prefix_index.prefix_stats(prefix.as_bytes(), hw_counter)?,
         ))
     }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        let Some(prefix_index) = &self.storage.prefix_index else {
+            return Ok(None);
+        };
+        let mut stats = PrefixIndexStats::default();
+        prefix_index.for_each_key(hw_counter, &mut |key, count| {
+            let key = std::str::from_utf8(key).map_err(|_| {
+                OperationError::service_error("Prefix index contains non-UTF-8 key")
+            })?;
+            if key.contains(substring) {
+                stats.keys += 1;
+                stats.postings += count;
+                f(key, count)?;
+            }
+            Ok(())
+        })?;
+        Ok(Some(stats))
+    }
 }
 
 impl StrMapIndexPrefixRead for MapIndex<str> {
@@ -233,6 +342,19 @@ impl StrMapIndexPrefixRead for MapIndex<str> {
             MapIndex::Mutable(index) => index.prefix_stats(prefix, hw_counter),
             MapIndex::Immutable(index) => index.prefix_stats(prefix, hw_counter),
             MapIndex::OnDisk(index) => index.prefix_stats(prefix, hw_counter),
+        }
+    }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        match self {
+            MapIndex::Mutable(index) => index.substring_scan(substring, hw_counter, f),
+            MapIndex::Immutable(index) => index.substring_scan(substring, hw_counter, f),
+            MapIndex::OnDisk(index) => index.substring_scan(substring, hw_counter, f),
         }
     }
 }
@@ -264,6 +386,19 @@ where
             ReadOnlyMapIndex::Appendable(_) => Ok(None),
             ReadOnlyMapIndex::Immutable(index) => index.prefix_stats(prefix, hw_counter),
             ReadOnlyMapIndex::OnDisk(index) => index.prefix_stats(prefix, hw_counter),
+        }
+    }
+
+    fn substring_scan(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(&str, usize) -> OperationResult<()>,
+    ) -> OperationResult<Option<PrefixIndexStats>> {
+        match self {
+            ReadOnlyMapIndex::Appendable(_) => Ok(None),
+            ReadOnlyMapIndex::Immutable(index) => index.substring_scan(substring, hw_counter, f),
+            ReadOnlyMapIndex::OnDisk(index) => index.substring_scan(substring, hw_counter, f),
         }
     }
 }

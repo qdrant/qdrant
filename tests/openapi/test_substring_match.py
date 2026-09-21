@@ -67,6 +67,7 @@ def create_collection(collection_name):
         payload = {"tag": "even" if point_id % 2 == 0 else "odd"}
         if urls is not None:
             payload["url"] = urls
+            payload["url_prefix"] = urls
             payload["description"] = urls
         points.append({
             "id": point_id,
@@ -134,13 +135,25 @@ def test_substring_match_without_index():
 
 
 # ---------------------------------------------------------------------------
-# 2. With a plain keyword index, results are unchanged.
+# 2. A keyword index without the `prefix` option has no key dictionary to
+#    scan, so the condition keeps running through the payload fallback.
 # ---------------------------------------------------------------------------
 
-def test_substring_match_with_keyword_index():
+def test_substring_match_with_keyword_index_falls_back():
     _create_index("url", "keyword")
     for substring in SUBSTRING_PROBES:
         assert _scroll_ids(_substring_filter("url", substring)) == expected_ids(substring), substring
+
+
+# ---------------------------------------------------------------------------
+# 3. A keyword index with the `prefix` option serves the condition from its
+#    key dictionary, with the same results.
+# ---------------------------------------------------------------------------
+
+def test_substring_match_with_keyword_prefix_index():
+    _create_index("url_prefix", {"type": "keyword", "prefix": True})
+    for substring in SUBSTRING_PROBES:
+        assert _scroll_ids(_substring_filter("url_prefix", substring)) == expected_ids(substring), substring
 
 
 def test_substring_match_count():
@@ -148,14 +161,14 @@ def test_substring_match_count():
         api='/collections/{collection_name}/points/count',
         method="POST",
         path_params={'collection_name': COLLECTION_NAME},
-        body={"filter": _substring_filter("url", "qdrant"), "exact": True},
+        body={"filter": _substring_filter("url_prefix", "qdrant"), "exact": True},
     )
     assert response.ok
     assert response.json()['result']['count'] == len(expected_ids("qdrant"))
 
 
 # ---------------------------------------------------------------------------
-# 3. A text index on the field cannot serve substring (it stores tokens, not
+# 4. A text index on the field cannot serve substring (it stores tokens, not
 #    raw values), so the condition falls back to the payload scan and still
 #    works. Only strict mode may reject it.
 # ---------------------------------------------------------------------------
@@ -167,11 +180,12 @@ def test_substring_match_with_text_index_falls_back():
 
 
 # ---------------------------------------------------------------------------
-# 4. Strict mode: substring filtering requires a keyword index. A text
-#    index does not count, since it cannot serve the condition.
+# 5. Strict mode: substring filtering requires a keyword index with the
+#    `prefix` option. Neither a plain keyword index nor a text index counts,
+#    since neither can serve the condition.
 # ---------------------------------------------------------------------------
 
-def test_strict_mode_requires_keyword_index():
+def test_strict_mode_requires_keyword_prefix_index():
     _set_strict_mode({
         "enabled": True,
         "unindexed_filtering_retrieve": False,
@@ -187,8 +201,13 @@ def test_strict_mode_requires_keyword_index():
         assert response.status_code == 400, response.json()
         assert "Index required but not found" in response.json()['status']['error']
 
-        # Keyword-indexed field: allowed.
+        # Keyword index without the `prefix` option: rejected.
         response = _scroll(_substring_filter("url", "qdrant"))
+        assert response.status_code == 400, response.json()
+        assert "Index required but not found" in response.json()['status']['error']
+
+        # Keyword index with the `prefix` option: allowed.
+        response = _scroll(_substring_filter("url_prefix", "qdrant"))
         assert response.ok, response.json()
     finally:
         _set_strict_mode({"enabled": False})
