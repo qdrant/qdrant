@@ -145,6 +145,13 @@ impl ProxyChanges {
     /// Applying a change the segment has already seen is a no-op, so propagating the same set
     /// twice is safe, though see [`Self::exclude_applied`] to avoid the cost of doing so.
     ///
+    /// The `supersedes_wrapped` flag of [`IntendedVector::Present`](super::IntendedVector::Present)
+    /// is computed when the change is recorded, against the proxy's wrapped segment, not against
+    /// `segment` as it is now. Propagating twice therefore relies on a name never being created
+    /// twice with a different config without a delete in between: the second create would be an
+    /// idempotent no-op, keeping the first config. Such creates are rejected before they reach a
+    /// shard, see `add_vector_to_config` in the collection's vector name schema.
+    ///
     /// Fails with a cancellation error if `stopped` is set while propagating.
     pub fn propagate<S>(&self, segment: &mut S, stopped: &AtomicBool) -> OperationResult<()>
     where
