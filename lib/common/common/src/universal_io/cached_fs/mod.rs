@@ -243,12 +243,15 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         self.files_prefetched.lock().clear();
     }
 
-    fn schedule_open(
+    fn schedule_open_with<Fut>(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) {
+        then: impl FnOnce(Fs::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Fs::File>> + Send + 'static,
+    {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
@@ -282,7 +285,8 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
         let fut = self.fs.spawn(Box::pin(async move {
-            fs.open_async(path_owned, open_options, open_extra).await
+            let file = fs.open_async(path_owned, open_options, open_extra).await?;
+            then(file).await
         }));
         files_prefetched.insert(path.to_path_buf(), ScheduledFile::Future(fut));
     }
@@ -309,12 +313,6 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 
         // Otherwise schedule normally
         self.schedule_open(path, open_arguments, open_extra)
-    }
-
-    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        self.files_prefetched
-            .lock()
-            .insert(path, ScheduledFile::Future(fut));
     }
 
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {

@@ -1,7 +1,5 @@
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
-
-use futures::future::BoxFuture;
+use std::path::Path;
 
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
@@ -175,7 +173,22 @@ pub trait CachedReadFs: UniversalReadFsAsync {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
-    );
+    ) {
+        self.schedule_open_with(path, open_arguments, open_extra, |file| {
+            std::future::ready(Ok(file))
+        });
+    }
+
+    /// Like [`Self::schedule_open`], but also call `then` once the file is
+    /// opened.
+    fn schedule_open_with<Fut>(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Self::OpenExtra>,
+        then: impl FnOnce(Self::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Self::File>> + Send + 'static;
 
     /// Schedule a prefetch for a file that has been opened already.
     ///
@@ -187,9 +200,6 @@ pub trait CachedReadFs: UniversalReadFsAsync {
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
     );
-
-    /// Granular version of `schedule_open` for custom `populate` cases
-    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Self::File>>);
 
     /// Wait for all scheduled files to resolve.
     ///
