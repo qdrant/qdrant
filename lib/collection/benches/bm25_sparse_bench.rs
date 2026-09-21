@@ -1,9 +1,32 @@
 //! Baseline for BM25 over sparse vectors, end to end through a local shard.
 //!
 //! This is the number a text-index scorer has to match: same corpus, same
-//! queries, no HTTP. Two states, because the two sparse backends have different
-//! asymptotics: freshly ingested, where the index is appendable, and optimized,
-//! where it is immutable.
+//! queries, no HTTP. The corpus and the queries come from
+//! `segment::fixtures::bm25_corpus`, shared with the text-index bench
+//! (`lib/segment/benches/text_bm25_search.rs`) and the harness that puts both
+//! routes side by side with recall (`lib/segment/tests/integration/bm25_compare.rs`).
+//!
+//! Three shard states, one per sparse index shape: freshly ingested, where the
+//! index is the appendable RAM one; optimized into the immutable RAM index; and
+//! optimized with the index placed on disk. The sparse shapes measure within a
+//! few percent of each other; the states exist because the text index they are
+//! compared against differs a lot more between its own shapes.
+//!
+//! Latency is not the whole baseline. `lib/bm25` embeds documents with a fixed
+//! average length, 256 by default, while this corpus averages about 110 tokens,
+//! and that constant is baked into every stored vector. Against BM25 by
+//! definition the default embedding recalls about three quarters of the true
+//! top 10; set to the corpus average it recalls all of it. So the recall of
+//! every timed state is printed before the timings, and the optimized state is
+//! also timed with the constant set to the corpus average, which is the
+//! like-for-like baseline for a scorer that reads `avgdl` from the data.
+//!
+//! `BM25_SPARSE_DOCS` overrides the document count. The default is 200k: at
+//! 20k every shape of both routes measures the same and half of a shard-level
+//! query is the shard rather than the scoring. Before #10682 this size was
+//! unreachable through the shard, since every sparse upsert rewrote
+//! `max_next_weight` to the head of its posting lists and a term present in
+//! most documents made ingestion quadratic.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -18,19 +41,21 @@ use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorPersisted,
     VectorStructPersisted,
 };
-use collection::operations::types::SparseVectorParams;
+use collection::operations::types::{SparseIndexParams, SparseVectorParams};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
+use rand::SeedableRng;
 use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
-use segment::types::SegmentType;
+use segment::fixtures::bm25_corpus::{LIMIT, QUERY_COUNT, Reference, Vocabulary, recall};
+use segment::types::{ExtendedPointId, Memory, ScoredPoint, SegmentType};
 use shard::search::CoreSearchRequestBatch;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -38,82 +63,44 @@ use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
 const SPARSE_VECTOR_NAME: &str = "text";
+const DEFAULT_POINT_COUNT: usize = 200_000;
 
-const POINT_COUNT: usize = 20_000;
-const VOCAB_SIZE: usize = 20_000;
-const DOC_LEN: std::ops::RangeInclusive<usize> = 20..=200;
-const QUERY_TERMS: std::ops::RangeInclusive<usize> = 2..=5;
-const QUERY_COUNT: usize = 50;
-const LIMIT: usize = 10;
-
-/// A vocabulary with a Zipf-like frequency distribution: term `i` is drawn with
-/// weight `1/(i+1)^0.9`, so a handful of terms appear in most documents and the
-/// tail appears in almost none.
-///
-/// The shape matters more than the words. On a uniform vocabulary every term is
-/// equally selective, IDF is flat and pruning has nothing to prune, so a
-/// baseline measured there would flatter any scorer.
-struct Vocabulary {
-    cumulative: Vec<f64>,
-}
-
-impl Vocabulary {
-    fn new() -> Self {
-        let mut cumulative = Vec::with_capacity(VOCAB_SIZE);
-        let mut total = 0.0;
-        for rank in 0..VOCAB_SIZE {
-            total += 1.0 / ((rank + 1) as f64).powf(0.9);
-            cumulative.push(total);
-        }
-        Self { cumulative }
-    }
-
-    fn term(&self, rng: &mut SmallRng) -> String {
-        let target = rng.random_range(0.0..*self.cumulative.last().unwrap());
-        let rank = self.cumulative.partition_point(|sum| *sum < target);
-        format!("w{rank}")
-    }
-
-    fn document(&self, rng: &mut SmallRng) -> Vec<String> {
-        let len = rng.random_range(DOC_LEN);
-        (0..len).map(|_| self.term(rng)).collect()
-    }
+fn point_count() -> usize {
+    std::env::var("BM25_SPARSE_DOCS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_POINT_COUNT)
 }
 
 fn to_sparse(embedding: bm25::SparseEmbedding) -> SparseVector {
     SparseVector::new(embedding.indices, embedding.values).expect("valid sparse vector")
 }
 
-/// Embed the corpus the way the production route does: the same crate, the same
-/// defaults, so the baseline measures the route a user is actually on.
-fn corpus_points(
-    bm25: &Bm25,
-    vocabulary: &Vocabulary,
-    rng: &mut SmallRng,
-) -> Vec<PointStructPersisted> {
-    (0..POINT_COUNT)
-        .map(|id| {
-            let tokens = vocabulary.document(rng);
-            let tokens: Vec<_> = tokens.iter().map(|t| t.as_str().into()).collect();
-            PointStructPersisted {
-                id: (id as u64).into(),
-                vector: VectorStructPersisted::Named(HashMap::from([(
-                    SPARSE_VECTOR_NAME.to_owned(),
-                    VectorPersisted::Sparse(to_sparse(bm25.embed_document(&tokens))),
-                )])),
-                payload: None,
-            }
-        })
-        .collect()
+fn embed_document(bm25: &Bm25, tokens: &[String]) -> SparseVector {
+    let tokens: Vec<_> = tokens.iter().map(|t| t.as_str().into()).collect();
+    to_sparse(bm25.embed_document(&tokens))
 }
 
-fn queries(bm25: &Bm25, vocabulary: &Vocabulary, rng: &mut SmallRng) -> Vec<SparseVector> {
-    (0..QUERY_COUNT)
-        .map(|_| {
-            let len = rng.random_range(QUERY_TERMS);
-            let terms: Vec<String> = (0..len).map(|_| vocabulary.term(rng)).collect();
-            let terms: Vec<_> = terms.iter().map(|t| t.as_str().into()).collect();
-            to_sparse(bm25.embed_query(&terms))
+fn embed_query(bm25: &Bm25, tokens: &[String]) -> SparseVector {
+    let tokens: Vec<_> = tokens.iter().map(|t| t.as_str().into()).collect();
+    to_sparse(bm25.embed_query(&tokens))
+}
+
+/// Embed the corpus the way the production route does: the same crate, so the
+/// baseline measures the route a user is actually on. Point `i` holds
+/// `documents[i]`, which is what lets a shard result be checked against the
+/// reference by id.
+fn corpus_points(bm25: &Bm25, documents: &[Vec<String>]) -> Vec<PointStructPersisted> {
+    documents
+        .iter()
+        .enumerate()
+        .map(|(id, tokens)| PointStructPersisted {
+            id: (id as u64).into(),
+            vector: VectorStructPersisted::Named(HashMap::from([(
+                SPARSE_VECTOR_NAME.to_owned(),
+                VectorPersisted::Sparse(embed_document(bm25, tokens)),
+            )])),
+            payload: None,
         })
         .collect()
 }
@@ -159,16 +146,16 @@ fn segment_census(shard: &LocalShard) -> (usize, usize, bool) {
 /// Measuring the optimized state against a shard that never optimized would
 /// report the appendable numbers twice, so this fails loudly rather than
 /// timing out quietly.
-fn wait_until_optimized(shard: &LocalShard) {
-    let deadline = Instant::now() + Duration::from_secs(300);
+fn wait_until_optimized(shard: &LocalShard, point_count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(600);
     loop {
         let (_, immutable, has_proxy) = segment_census(shard);
-        if !has_proxy && immutable >= POINT_COUNT {
+        if !has_proxy && immutable >= point_count {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "optimization did not finish: {immutable} of {POINT_COUNT} points are immutable",
+            "optimization did not finish: {immutable} of {point_count} points are immutable",
         );
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -176,23 +163,26 @@ fn wait_until_optimized(shard: &LocalShard) {
 
 /// The counterpart: nothing may have been optimized away behind our back.
 ///
-/// The two states are measured on two shards rather than one before and one
-/// after, because a shard that will optimize starts doing it the moment the
+/// Each state is measured on its own shard rather than before and after on
+/// one, because a shard that will optimize starts doing it the moment the
 /// upsert lands, and criterion would then time a half-converted index and
 /// call it fresh.
-fn assert_still_appendable(shard: &LocalShard) {
+fn assert_still_appendable(shard: &LocalShard, point_count: usize) {
     let (appendable, immutable, has_proxy) = segment_census(shard);
     assert!(
-        !has_proxy && immutable == 0 && appendable >= POINT_COUNT,
+        !has_proxy && immutable == 0 && appendable >= point_count,
         "the fresh shard optimized itself: {appendable} appendable, {immutable} immutable",
     );
 }
 
-/// Build a shard holding the whole corpus under the given optimizer config.
+/// Build a shard holding the whole corpus under the given optimizer config,
+/// with the sparse index placed as `memory` asks (`None` keeps the default,
+/// the RAM index).
 fn shard_with(
     handle: &tokio::runtime::Handle,
     search_handle: &AdaptiveSearchHandle,
     optimizer_config: OptimizersConfig,
+    memory: Option<Memory>,
     points: Vec<PointStructPersisted>,
 ) -> (LocalShard, tempfile::TempDir) {
     let storage_dir = Builder::new().prefix("bm25-sparse").tempdir().unwrap();
@@ -202,7 +192,10 @@ fn shard_with(
         sparse_vectors: Some(BTreeMap::from([(
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorParams {
-                index: None,
+                index: memory.map(|memory| SparseIndexParams {
+                    memory: Some(memory),
+                    ..SparseIndexParams::default()
+                }),
                 // What makes this the BM25 route rather than a dot product: the
                 // term frequencies are baked into the stored vectors and IDF is
                 // applied to the query at search time.
@@ -263,11 +256,63 @@ fn shard_with(
     (shard, storage_dir)
 }
 
+/// One state to time: the shard, its query vectors, and its embedding.
+struct State {
+    name: &'static str,
+    shard: LocalShard,
+    queries: Vec<SparseVector>,
+    _dir: tempfile::TempDir,
+}
+
+fn run_batch(
+    runtime: &Runtime,
+    search_handle: &AdaptiveSearchHandle,
+    shard: &LocalShard,
+    queries: &[SparseVector],
+) -> Vec<Vec<ScoredPoint>> {
+    runtime.block_on(async {
+        let mut results = Vec::with_capacity(queries.len());
+        for query in queries {
+            let request = search_request(query.clone());
+            let mut batch = shard
+                .core_search(
+                    Arc::new(CoreSearchRequestBatch {
+                        searches: vec![request.into()],
+                    }),
+                    search_handle,
+                    None,
+                    HwMeasurementAcc::new(),
+                )
+                .await
+                .unwrap();
+            results.push(batch.remove(0));
+        }
+        results
+    })
+}
+
+/// Mean recall at `LIMIT` of one pass over the queries against the reference.
+fn recall_at_limit(results: &[Vec<ScoredPoint>], truth: &[Vec<ScoredPointOffset>]) -> f64 {
+    let total: f64 = results
+        .iter()
+        .zip(truth)
+        .map(|(hits, truth)| {
+            let ids = hits.iter().map(|hit| match hit.id {
+                ExtendedPointId::NumId(id) => id as PointOffsetType,
+                ExtendedPointId::Uuid(_) => unreachable!("the corpus uses numeric ids"),
+            });
+            recall(ids, truth)
+        })
+        .sum();
+    total / truth.len() as f64
+}
+
 fn bm25_sparse_bench(c: &mut Criterion) {
     let runtime = Runtime::new().unwrap();
     let search_runtime = Runtime::new().unwrap();
     let search_handle = AdaptiveSearchHandle::new_fixed(search_runtime.handle().clone());
     let handle = runtime.handle().clone();
+    let point_count = point_count();
 
     // Nothing for the optimizer to convert: one segment that already holds
     // everything, no indexing threshold to cross, no vacuum.
@@ -293,38 +338,114 @@ fn bm25_sparse_bench(c: &mut Criterion) {
 
     let mut rng = SmallRng::seed_from_u64(42);
     let vocabulary = Vocabulary::new();
-    let bm25 = Bm25::new(Bm25Params::default()).unwrap();
-    let points = corpus_points(&bm25, &vocabulary, &mut rng);
-    let queries = queries(&bm25, &vocabulary, &mut rng);
+    let documents: Vec<Vec<String>> = (0..point_count)
+        .map(|_| vocabulary.document(&mut rng))
+        .collect();
+    let queries: Vec<Vec<String>> = (0..QUERY_COUNT)
+        .map(|_| vocabulary.query(&mut rng))
+        .collect();
+    let reference = Reference::new(&documents);
+    let truth: Vec<Vec<ScoredPointOffset>> =
+        queries.iter().map(|q| reference.top(q, LIMIT)).collect();
 
-    let (fresh, _fresh_dir) = shard_with(&handle, &search_handle, never_optimize, points.clone());
-    assert_still_appendable(&fresh);
+    // The route as shipped: `lib/bm25` defaults, average length 256.
+    let default = Bm25::new(Bm25Params::default()).unwrap();
+    // The same route told the truth about the corpus.
+    let tuned = Bm25::new(Bm25Params {
+        avg_doc_len: reference.avg_doc_len(),
+        ..Bm25Params::default()
+    })
+    .unwrap();
+    eprintln!(
+        "{point_count} documents, corpus avgdl {:.1}, embedded avgdl {:.0} (default) and {:.1} (tuned)",
+        reference.avg_doc_len(),
+        Bm25Params::DEFAULT_AVG_DOC_LEN,
+        reference.avg_doc_len(),
+    );
 
-    let (optimized, _optimized_dir) = shard_with(&handle, &search_handle, always_optimize, points);
-    wait_until_optimized(&optimized);
+    let default_points = corpus_points(&default, &documents);
+    let default_queries: Vec<SparseVector> =
+        queries.iter().map(|q| embed_query(&default, q)).collect();
+    let tuned_queries: Vec<SparseVector> = queries.iter().map(|q| embed_query(&tuned, q)).collect();
 
-    let run_batch = |shard: &LocalShard, queries: &[SparseVector]| {
-        runtime.block_on(async {
-            for query in queries {
-                let request = search_request(query.clone());
-                shard
-                    .core_search(
-                        Arc::new(CoreSearchRequestBatch {
-                            searches: vec![request.into()],
-                        }),
-                        &search_handle,
-                        None,
-                        HwMeasurementAcc::new(),
-                    )
-                    .await
-                    .unwrap();
-            }
-        })
-    };
+    let mut states = Vec::new();
+
+    let (shard, dir) = shard_with(
+        &handle,
+        &search_handle,
+        never_optimize.clone(),
+        None,
+        default_points.clone(),
+    );
+    assert_still_appendable(&shard, point_count);
+    states.push(State {
+        name: "fresh",
+        shard,
+        queries: default_queries.clone(),
+        _dir: dir,
+    });
+
+    let (shard, dir) = shard_with(
+        &handle,
+        &search_handle,
+        always_optimize.clone(),
+        None,
+        default_points.clone(),
+    );
+    wait_until_optimized(&shard, point_count);
+    states.push(State {
+        name: "optimized",
+        shard,
+        queries: default_queries.clone(),
+        _dir: dir,
+    });
+
+    let (shard, dir) = shard_with(
+        &handle,
+        &search_handle,
+        always_optimize.clone(),
+        Some(Memory::Cold),
+        default_points,
+    );
+    wait_until_optimized(&shard, point_count);
+    states.push(State {
+        name: "on-disk",
+        shard,
+        queries: default_queries,
+        _dir: dir,
+    });
+
+    let (shard, dir) = shard_with(
+        &handle,
+        &search_handle,
+        always_optimize,
+        None,
+        corpus_points(&tuned, &documents),
+    );
+    wait_until_optimized(&shard, point_count);
+    states.push(State {
+        name: "optimized-corpus-avgdl",
+        shard,
+        queries: tuned_queries,
+        _dir: dir,
+    });
+
+    // What each timed state actually returns, against BM25 by definition.
+    for state in &states {
+        let results = run_batch(&runtime, &search_handle, &state.shard, &state.queries);
+        eprintln!(
+            "recall@{LIMIT} {:<24} {:.3}",
+            state.name,
+            recall_at_limit(&results, &truth)
+        );
+    }
 
     let mut group = c.benchmark_group("bm25-sparse");
-    group.bench_function("fresh", |b| b.iter(|| run_batch(&fresh, &queries)));
-    group.bench_function("optimized", |b| b.iter(|| run_batch(&optimized, &queries)));
+    for state in &states {
+        group.bench_function(state.name, |b| {
+            b.iter(|| run_batch(&runtime, &search_handle, &state.shard, &state.queries))
+        });
+    }
     group.finish();
 }
 
