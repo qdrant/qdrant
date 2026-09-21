@@ -8,6 +8,7 @@ they never rewrite bytes.
 
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
+MSG_PROPOSE = 2
 MSG_APPEND = 3
 MSG_APPEND_RESPONSE = 4
 MSG_HEARTBEAT = 8
