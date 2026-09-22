@@ -909,6 +909,7 @@ dependencies = [
  "ecow",
  "env_logger",
  "fs-err",
+ "integer-encoding",
  "itertools 0.15.0",
  "log",
  "lz4_flex",
