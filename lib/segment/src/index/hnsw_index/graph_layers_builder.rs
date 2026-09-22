@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cmp::{max, min};
+use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -45,6 +46,8 @@ pub struct GraphLayersBuilder {
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
+    // Point ids already offered as extra entry points by merged payload blocks
+    merged_extra_ids: HashSet<PointOffsetType>,
 
     // List of bool flags, which defines if the point is already indexed or not
     ready_list: BitVec<AtomicUsize>,
@@ -324,6 +327,7 @@ impl GraphLayersBuilder {
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
+            merged_extra_ids: HashSet::new(),
             ready_list,
         }
     }
@@ -377,9 +381,11 @@ impl GraphLayersBuilder {
                 }
             }
         }
-        self.entry_points
-            .lock()
-            .merge_from_other(other.entry_points.into_inner());
+        let mut entry_points = self.entry_points.lock();
+        if self.merged_extra_ids.is_empty() {
+            self.merged_extra_ids.extend(entry_points.point_ids());
+        }
+        entry_points.merge_from_other(other.entry_points.into_inner(), &mut self.merged_extra_ids);
     }
 
     fn num_points(&self) -> usize {

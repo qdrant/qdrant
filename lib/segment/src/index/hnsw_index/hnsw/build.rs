@@ -136,9 +136,9 @@ impl HNSWIndex {
                 * 10,
         );
         // Payload blocks contribute their own sampled entry points (see
-        // `build_additional_links`), up to `num_entries` per indexed field plus rounding
-        // for small blocks. Reserve that room up front so they are never rejected by a
-        // queue the main graph already filled.
+        // `build_additional_links`), about `num_entries` per indexed field. Reserve that
+        // room up front as an initial capacity; the queue also grows on merge, so blocks
+        // of multi-valued fields never lose samples.
         let hnsw_fields = additional_links_params
             .as_ref()
             .map_or(0, |(_, indexed_fields)| indexed_fields.len());

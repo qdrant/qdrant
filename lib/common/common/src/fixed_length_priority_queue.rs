@@ -106,6 +106,11 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         self.heap.len() >= self.length.into()
     }
 
+    /// Maximum number of elements the queue keeps.
+    pub fn capacity(&self) -> usize {
+        self.length.get()
+    }
+
     pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&T) -> bool,

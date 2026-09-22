@@ -13,7 +13,9 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
-use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
+use crate::index::hnsw_index::point_scorer::{
+    BatchFilteredSearcher, FilteredScorer, ScorerFilters,
+};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
@@ -203,25 +205,17 @@ where
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let has_entry_point = match vectors.first() {
-            None => true,
-            Some(vector) => {
-                let hw_counter = vector_query_context.hardware_counter();
-                let deleted_points = vector_query_context
-                    .deleted_points()
-                    .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
-                let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
-                let points_scorer = construct_search_scorer(
-                    vector,
-                    self.vector_storage,
-                    self.quantized_vectors,
-                    deleted_points,
-                    params,
-                    vector_query_context.hardware_counter(),
-                    Some(filter_context),
-                )?;
-                self.graph.has_entry_point(points_scorer.filters(), None)?
-            }
+        let has_entry_point = {
+            let hw_counter = vector_query_context.hardware_counter();
+            let deleted_points = vector_query_context
+                .deleted_points()
+                .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+            let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+            let filters = ScorerFilters::new(
+                Some(filter_context),
+                self.vector_storage.not_deleted_checker(deleted_points),
+            );
+            self.graph.has_entry_point(&filters, None)?
         };
         if has_entry_point {
             self.search_vectors_with_graph(vectors, Some(filter), top, params, vector_query_context)

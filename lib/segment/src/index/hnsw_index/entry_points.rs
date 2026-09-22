@@ -30,11 +30,6 @@ impl Ord for EntryPoint {
 pub struct EntryPoints {
     entry_points: Vec<EntryPoint>,
     extra_entry_points: FixedLengthPriorityQueue<EntryPoint>,
-    /// Point ids offered to `extra_entry_points` through `merge_from_other`, kept across
-    /// merges so deduplication is O(1) per entry. Build-time only; not persisted, the
-    /// on-disk format is unchanged.
-    #[serde(skip)]
-    merged_extra_ids: HashSet<PointOffsetType>,
 }
 
 impl EntryPoints {
@@ -42,28 +37,48 @@ impl EntryPoints {
         EntryPoints {
             entry_points: vec![],
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
-            merged_extra_ids: HashSet::new(),
         }
     }
-    pub fn merge_from_other(&mut self, mut other: EntryPoints) {
+    /// Merge another graph's entry points into this one.
+    ///
+    /// The other graph's extra entry points are kept as well, deduplicated against
+    /// `known` (point ids already offered, owned by the caller for the whole build):
+    /// they are the only way to reach a payload block whose primary entry point does
+    /// not satisfy the rest of a filter (`get_entry_point` falls back to them). The
+    /// queue grows geometrically when full, so no sample is ever dropped, whatever
+    /// the number of blocks or how many blocks a point belongs to.
+    pub fn merge_from_other(
+        &mut self,
+        mut other: EntryPoints,
+        known: &mut HashSet<PointOffsetType>,
+    ) {
         self.entry_points.append(&mut other.entry_points);
-        // Also keep the other graph's extra entry points, deduplicated by point id.
-        // They are the only way to reach a payload block whose primary entry point
-        // does not satisfy the rest of a filter (`get_entry_point` falls back to them).
-        // Seed the dedup set once with whatever the main graph pushed before the first
-        // merge; later merges only add to it.
-        if self.merged_extra_ids.is_empty() {
-            self.merged_extra_ids.extend(
-                self.entry_points
-                    .iter()
-                    .chain(self.extra_entry_points.iter_unsorted())
-                    .map(|entry| entry.point_id),
-            );
-        }
         for entry in other.extra_entry_points.into_iter_sorted() {
-            if self.merged_extra_ids.insert(entry.point_id) {
+            if known.insert(entry.point_id) {
+                if self.extra_entry_points.is_full() {
+                    self.grow_extra_entry_points();
+                }
                 self.extra_entry_points.push(entry);
             }
+        }
+    }
+
+    /// Ids of every entry point currently held, to seed `known` for `merge_from_other`.
+    pub fn point_ids(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        self.entry_points
+            .iter()
+            .chain(self.extra_entry_points.iter_unsorted())
+            .map(|entry| entry.point_id)
+    }
+
+    fn grow_extra_entry_points(&mut self) {
+        let capacity = self.extra_entry_points.capacity().saturating_mul(2).max(1);
+        let old = std::mem::replace(
+            &mut self.extra_entry_points,
+            FixedLengthPriorityQueue::new(capacity),
+        );
+        for entry in old.into_iter_sorted() {
+            self.extra_entry_points.push(entry);
         }
     }
 
@@ -212,23 +227,42 @@ mod tests {
 
     #[test]
     fn test_merge_keeps_block_samples_next_to_main_entries() {
-        // Main graph queue sized for its own 4 entries plus 4 block samples.
-        let mut main = EntryPoints::new(8);
+        // Main graph queue already full of higher-level entries.
+        let mut main = EntryPoints::new(3);
         for i in 0..4 {
             main.new_point(i, 3, |_| true);
         }
+        assert!(main.extra_entry_points.is_full());
+        let mut known: HashSet<PointOffsetType> = main.point_ids().collect();
         let mut block = EntryPoints::new(4);
         block.set_extra_entry_points(
             4,
             (100..104).map(|point_id| EntryPoint { point_id, level: 0 }),
         );
-        main.merge_from_other(block.clone());
+        main.merge_from_other(block.clone(), &mut known);
+        // The queue grew instead of rejecting the level-0 samples.
         assert_eq!(main.extra_entry_points.len(), 7);
         // A filter only satisfied by block points still finds an entry point.
         assert!(main.get_entry_point(|p| p >= 100).is_some());
         // Merging the same block again adds nothing.
-        main.merge_from_other(block);
+        main.merge_from_other(block, &mut known);
         assert_eq!(main.extra_entry_points.len(), 7);
+    }
+
+    #[test]
+    fn test_merge_grows_for_many_blocks() {
+        let mut main = EntryPoints::new(1);
+        let mut known = HashSet::new();
+        for b in 0..5u32 {
+            let mut block = EntryPoints::new(3);
+            block.set_extra_entry_points(
+                3,
+                (b * 10..b * 10 + 3).map(|point_id| EntryPoint { point_id, level: 0 }),
+            );
+            main.merge_from_other(block, &mut known);
+        }
+        assert_eq!(main.extra_entry_points.len(), 15);
+        assert!(main.get_entry_point(|p| p == 42).is_some());
     }
 
     #[test]
@@ -242,7 +276,7 @@ mod tests {
         assert_eq!(block.entry_points.len(), 1);
         assert_eq!(block.extra_entry_points.len(), 4);
 
-        main.merge_from_other(block);
+        main.merge_from_other(block, &mut HashSet::new());
 
         assert_eq!(main.entry_points.len(), 1);
         assert_eq!(main.extra_entry_points.len(), 4);
