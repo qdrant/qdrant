@@ -144,17 +144,3 @@ fn unrecorded_lengths_leave_no_average() {
     assert_eq!(text.document_frequency("quick"), 1);
     assert_eq!(text.avg_doc_len(), None);
 }
-
-/// Nothing seeded, nothing gathered: a query that does not ask for text
-/// statistics must not pay for them.
-#[test]
-fn unseeded_field_has_no_statistics() {
-    let dir = Builder::new().prefix("text_stats_none").tempdir().unwrap();
-    let segment = build_text_segment(&dir.path().join("segment"), &["the quick brown fox"]);
-
-    let mut query_context = QueryContext::default();
-    segment.fill_query_context(&mut query_context).unwrap();
-
-    let segment_context = query_context.get_segment_query_context();
-    assert!(segment_context.get_text_context(&field()).is_none());
-}

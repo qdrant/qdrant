@@ -441,14 +441,14 @@ where
         for scope in scopes.iter_mut() {
             let IdfScopeStats {
                 corpus,
-                df,
+                idf,
                 indexed_vectors,
             } = scope;
 
-            for (vector_name, df) in df.iter_mut() {
+            for (vector_name, idf) in idf.iter_mut() {
                 if let Some(vector_data) = self.vector_data.get(vector_name) {
                     let document_count = vector_data.vector_index().fill_idf_statistics(
-                        df,
+                        idf,
                         corpus.as_ref(),
                         &is_stopped,
                         &hw_counter,

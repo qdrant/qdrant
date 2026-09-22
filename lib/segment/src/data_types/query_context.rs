@@ -41,22 +41,16 @@ pub struct IdfScopeStats {
     /// `None` — the whole collection (global statistics).
     pub corpus: Option<Filter>,
 
-    /// Document frequency per dimension, per vector name. Named for what it
-    /// holds: IDF is derived from this and `indexed_vectors` by [`fancy_idf`].
-    pub df: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
+    /// Document frequency per dimension, per vector name.
+    pub idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
 
     /// Number of documents (indexed vectors within the corpus) per vector name.
     pub indexed_vectors: tiny_map::TinyMap<VectorNameBuf, usize>,
 }
 
 /// Corpus statistics for one text field, summed over every segment of one
-/// local shard.
-///
-/// Sibling of [`QueryIdfStats`] rather than part of it. The two share the
-/// carrier and the gather lifecycle, and nothing else: this one is keyed by
-/// payload field and by term string, because a `TokenId` is local to the
-/// segment that assigned it, and it is applied inside the BM25 term sum
-/// instead of by scaling a query vector's weights.
+/// local shard. Keyed by term string rather than `TokenId`, which is local to
+/// the segment that assigned it.
 #[derive(Debug)]
 pub struct TextFieldStats {
     /// Document frequency per query term, seeded with the terms the query
@@ -205,7 +199,7 @@ impl QueryContext {
             .unwrap_or_else(|| {
                 self.idf_stats.scopes.push(IdfScopeStats {
                     corpus: corpus.cloned(),
-                    df: tiny_map::TinyMap::new(),
+                    idf: tiny_map::TinyMap::new(),
                     indexed_vectors: tiny_map::TinyMap::new(),
                 });
                 self.idf_stats.scopes.len() - 1
@@ -217,29 +211,22 @@ impl QueryContext {
         }
 
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
-        let df = if let Some(df) = scope.df.get_mut(vector_name) {
-            df
+        let idf = if let Some(idf) = scope.idf.get_mut(vector_name) {
+            idf
         } else {
-            scope.df.insert(vector_name.to_owned(), HashMap::default());
-            scope.df.get_mut(vector_name).unwrap()
+            scope.idf.insert(vector_name.to_owned(), HashMap::default());
+            scope.idf.get_mut(vector_name).unwrap()
         };
 
         for index in indices {
-            df.insert(*index, 0);
+            idf.insert(*index, 0);
         }
     }
 
     /// Seed the terms a scored text query needs on `field`, so that every
-    /// segment of this shard reports their document frequencies.
-    ///
-    /// **Terms must already be tokenized the way the index tokenizes**, since
-    /// resolution is a bare vocabulary lookup. An untokenized term misses
-    /// everywhere and keeps the `df` of zero seeded here, which is the largest
-    /// IDF the formula produces.
-    ///
-    /// No corpus filter. A corpus-scoped text statistic has to intersect the
-    /// posting lists with the corpus, which sparse does through its own index,
-    /// and nothing can ask for one yet.
+    /// segment of this shard reports their document frequencies. Terms must
+    /// already be tokenized the way the index tokenizes, see
+    /// `fill_text_statistics`. No corpus filter: nothing can ask for one yet.
     pub fn init_text_stats(
         &mut self,
         field: &PayloadKeyType,
@@ -307,7 +294,7 @@ impl<'a> SegmentQueryContext<'a> {
         VectorQueryContext {
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
             is_stopped: Some(&self.query_context.is_stopped),
-            idf: idf_scope.and_then(|scope| scope.df.get(vector_name)),
+            idf: idf_scope.and_then(|scope| scope.idf.get(vector_name)),
             indexed_vectors: idf_scope
                 .and_then(|scope| scope.indexed_vectors.get(vector_name))
                 .copied(),
@@ -420,11 +407,6 @@ impl Default for VectorQueryContext<'_> {
 
 /// Corpus statistics as a scored text query consumes them: an IDF per term and
 /// an average document length, both over the segments of one local shard.
-/// Shard-local, like the sparse statistics beside them: the gather runs per
-/// shard and nothing merges across shards.
-///
-/// The sparse side applies the same statistic by scaling query weights in
-/// place, which only means anything when the query is itself a weight vector.
 #[derive(Debug)]
 pub struct TextQueryContext<'a> {
     stats: &'a TextFieldStats,
@@ -442,16 +424,13 @@ impl TextQueryContext<'_> {
         self.stats.df.get(term).copied().unwrap_or(0)
     }
 
-    /// `IDF(t)`. A term nothing reported keeps the `df` of zero it was seeded
-    /// with, which is the *largest* value this formula produces, not the
-    /// smallest. Such a term matches no document, so it contributes to no
-    /// score, but a caller reading the number for its own purposes should know
-    /// which end of the range it sits at.
+    /// `IDF(t)`. A term nothing holds keeps its seeded `df` of zero, the
+    /// largest value the formula produces; it matches no document, so it
+    /// contributes to no score.
     ///
-    /// Clamped at zero at the other end. Posting lists keep deleted documents
-    /// while the document count excludes them, so `df` can exceed `N` in a
-    /// segment with many deletions, and the unclamped formula would then flip
-    /// that term's sign.
+    /// Clamped at zero: posting lists keep deleted documents while the
+    /// document count excludes them, so `df` can exceed `N` and the unclamped
+    /// formula would flip the term's sign.
     pub fn idf(&self, term: &str) -> DimWeight {
         let df = self.stats.df.get(term).copied().unwrap_or(0);
         fancy_idf(self.stats.documents as DimWeight, df as DimWeight).max(0.0)

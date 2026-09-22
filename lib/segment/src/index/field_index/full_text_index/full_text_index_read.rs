@@ -20,15 +20,11 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// document frequency of every seeded term, the document count, and the total
 /// tokens behind `avgdl`.
 ///
-/// Terms are resolved per segment on purpose. A `TokenId` is whatever this
-/// segment's vocabulary happened to assign, so the query's strings are the only
-/// key the segments share.
+/// Terms are resolved per segment: a `TokenId` is local to the vocabulary that
+/// assigned it, so the query's strings are the only key the segments share.
 /// **Seeded terms must already be tokenized.** Resolution is a bare vocabulary
-/// lookup, and the vocabulary holds post-tokenizer forms, so a term that is not
-/// lowercased, folded and stemmed the way this index tokenizes misses in every
-/// segment and keeps its seeded `df` of zero, which is the *largest* IDF the
-/// formula produces. The caller tokenizes once, as the query path already does
-/// to build a `ParsedQuery`; a debug build checks it here.
+/// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
+/// of zero, the largest IDF the formula produces. A debug build checks it.
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
     stats: &mut TextFieldStats,
@@ -161,18 +157,10 @@ pub trait FullTextIndexRead {
     /// Documents in this segment containing `token_id`: `df(t)` before it is
     /// summed across segments. `None` when the token is not in the vocabulary.
     ///
-    /// **Counts what the posting list holds, which is not the same population
-    /// on every backend.** The mutable index removes a deleted point from its
-    /// postings, so its answer is exact; the immutable and on-disk ones leave
-    /// deleted points in place until the segment is rebuilt, and mask them only
-    /// when iterating. Neither counts the id tracker's deferred or shadowed
-    /// points, which [`Self::points_count`] does not exclude either.
-    ///
-    /// So `df` can exceed `N`, and the same data can report a different `df`
-    /// before and after an optimization. Whoever turns the two into a score has
-    /// to cope with both. Resolving it properly means counting `df` over the
-    /// same visible population as `N`, which is a posting-list intersection
-    /// rather than a length.
+    /// Counts what the posting list holds. The mutable index removes deleted
+    /// points from its postings; the immutable and on-disk ones keep them until
+    /// the segment is rebuilt. So `df` can exceed `N`, and the same data can
+    /// report a different `df` before and after an optimization.
     fn posting_len(
         &self,
         token_id: TokenId,
