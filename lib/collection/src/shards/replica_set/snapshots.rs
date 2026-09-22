@@ -17,7 +17,7 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_initializing_flag_path;
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
 
 #[cfg(test)]
 type RestoreLocalReplicaBeforeFlagHook = (
@@ -347,8 +347,9 @@ impl ShardReplicaSet {
         match restore.await {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
-                // remove shard_id initialization flag because shard is fully recovered
-                tokio_fs::remove_file(&shard_flag).await?;
+                // Remove shard_id initialization flag because shard is fully recovered.
+                // Ignore NotFound: transfer setup may clear the same flag concurrently.
+                remove_shard_initializing_flag(&shard_flag).await?;
 
                 if recovery_type.is_partial() {
                     self.partial_snapshot_meta.snapshot_recovered();

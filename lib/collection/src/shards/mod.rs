@@ -45,6 +45,22 @@ pub fn shard_initializing_flag_path(collection_path: &Path, shard_id: ShardId) -
     collection_path.join(format!("shard_{shard_id}.initializing"))
 }
 
+/// Remove the shard initializing flag if it exists.
+///
+/// Missing the flag is success: snapshot restore and transfer setup can both try
+/// to clear it, and a concurrent remover must not turn that race into a service
+/// error (`NotFound` / `ENOENT`).
+pub async fn remove_shard_initializing_flag(shard_flag: &Path) -> CollectionResult<()> {
+    match tokio_fs::remove_file(shard_flag).await {
+        Ok(()) => {
+            log::debug!("Removed shard initializing flag {shard_flag:?}");
+            Ok(())
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(CollectionError::from(err)),
+    }
+}
+
 /// Verify that a shard exists by loading its configuration.
 /// Returns the path to the shard if it exists.
 pub async fn check_shard_path(
@@ -118,5 +134,41 @@ async fn await_consensus_sync(
                 "All peers failed to synchronize consensus, continuing after timeout: {err}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod remove_initializing_flag_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn remove_missing_initializing_flag_is_ok() {
+        let dir = tempfile::Builder::new()
+            .prefix("remove-initializing-flag-")
+            .tempdir()
+            .unwrap();
+        let flag = shard_initializing_flag_path(dir.path(), 0);
+
+        assert!(!flag.exists());
+        remove_shard_initializing_flag(&flag).await.unwrap();
+        assert!(!flag.exists());
+    }
+
+    #[tokio::test]
+    async fn remove_existing_initializing_flag() {
+        let dir = tempfile::Builder::new()
+            .prefix("remove-initializing-flag-")
+            .tempdir()
+            .unwrap();
+        let flag = shard_initializing_flag_path(dir.path(), 7);
+
+        tokio_fs::File::create(&flag).await.unwrap();
+        assert!(flag.exists());
+
+        remove_shard_initializing_flag(&flag).await.unwrap();
+        assert!(!flag.exists());
+
+        // Second remove (concurrent-cleaner race) must also succeed.
+        remove_shard_initializing_flag(&flag).await.unwrap();
     }
 }

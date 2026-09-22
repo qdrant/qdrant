@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
-use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
@@ -21,7 +20,7 @@ use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTas
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-use crate::shards::{shard_initializing_flag_path, transfer};
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path, transfer};
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -764,14 +763,11 @@ impl Collection {
                 );
                 replica_set.init_empty_local_shard().await?;
 
+                // We can delete initializing flag without waiting for transfer to finish
+                // because if transfer fails in between, Qdrant will retry it.
+                // Ignore NotFound: restore / abort paths may clear the same flag concurrently.
                 let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
-
-                if tokio_fs::try_exists(&shard_flag).await.is_ok() {
-                    // We can delete initializing flag without waiting for transfer to finish
-                    // because if transfer fails in between, Qdrant will retry it.
-                    tokio_fs::remove_file(&shard_flag).await?;
-                    log::debug!("Removed shard initializing flag {shard_flag:?}");
-                }
+                remove_shard_initializing_flag(&shard_flag).await?;
             }
 
             Ok(())
