@@ -27,6 +27,7 @@ rand = { workspace = true }
 strum = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
+integer-encoding = { workspace = true }
 zerocopy = { workspace = true }
 common = { path = "../common/common" }
 
