@@ -28,6 +28,10 @@ pub struct MutableInvertedIndex {
     /// Total token count across live points.
     /// Divide by `points_count` to get the average document length for BM25.
     pub total_tokens: u64,
+    /// Points this index counts as documents: those with at least one indexed
+    /// token. A value that tokenizes to nothing is indexed, and matches
+    /// nothing, but is not a document, which is also how the on-disk build
+    /// treats it (it lands in the "no tokens" mask).
     pub(super) points_count: usize,
 }
 
@@ -180,7 +184,19 @@ impl InvertedIndex for MutableInvertedIndex {
         tokens: TokenSet,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.points_count += 1;
+        // Counted as a transition rather than incremented, so that re-indexing
+        // a point cannot count it twice, and so that a document rewritten to
+        // nothing stops being one.
+        let was_document = self
+            .point_to_tokens
+            .get(point_id as usize)
+            .and_then(Option::as_ref)
+            .is_some_and(|tokens| !tokens.is_empty());
+        match (was_document, tokens.is_empty()) {
+            (false, false) => self.points_count += 1,
+            (true, true) => self.points_count -= 1,
+            _ => {}
+        }
 
         if self.point_to_tokens.len() <= point_id as usize {
             let new_len = point_id as usize + 1;
@@ -250,7 +266,11 @@ impl InvertedIndex for MutableInvertedIndex {
             *doc_len = 0;
         }
 
-        self.points_count -= 1;
+        // Symmetric with `index_tokens`: a point that held no tokens was never
+        // counted, so removing it must not decrement.
+        if !removed_token_set.is_empty() {
+            self.points_count -= 1;
+        }
 
         for removed_token in removed_token_set.tokens() {
             // unwrap safety: posting list exists and contains the point idx
