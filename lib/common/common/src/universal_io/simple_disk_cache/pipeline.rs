@@ -245,13 +245,15 @@ where
         Ok(placeholder)
     }
 
+    /// Assume there are in-flight fetches in this pipeline's remote, await them.
     fn drive_in_flight(&mut self) -> UioResult<()>
     where
         R: DiskCacheRemote,
     {
-        let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
-            return Ok(());
-        };
+        let remote_pipeline = self
+            .remote_pipeline
+            .get_mut()
+            .expect("in_flight is not empty, remote pipeline must exist");
         let (fetch_id, bytes) = match remote_pipeline.wait() {
             Ok(completion) => completion.expect("in_flight is not empty, completion must exist"),
             Err(err) => {
