@@ -66,7 +66,6 @@ uuid = { workspace = true }
 url = { workspace = true }
 validator = { workspace = true }
 http = { workspace = true }
-actix-web-validator = { workspace = true }
 actix-web = { workspace = true }
 actix-files = { workspace = true }
 
