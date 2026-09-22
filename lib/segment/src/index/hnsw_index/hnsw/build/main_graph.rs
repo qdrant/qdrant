@@ -55,11 +55,13 @@ pub(super) fn build_main_graph_on_cpu(
         let old_vector_storage = old_index.index.vector_storage.borrow();
         let old_quantized_vectors = old_index.index.quantized_vectors.borrow();
 
+        let counter = progress_migrate.track_progress(Some(healer.to_heal_count() as u64));
         healer.heal(
             pool,
             &old_vector_storage,
             old_quantized_vectors.as_ref(),
             stopped,
+            counter.deref(),
         )?;
         check_process_stopped(stopped)?;
         healer.save_into_builder(graph_layers_builder);

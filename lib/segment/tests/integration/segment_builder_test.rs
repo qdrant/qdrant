@@ -1,20 +1,23 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::progress_tracker::{ProgressTracker, ProgressTree, ProgressView, new_progress_tracker};
 use common::storage_version::VERSION_FILE;
 use fs_err as fs;
 use itertools::Itertools;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::fixtures::payload_fixtures::random_vector;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
@@ -359,85 +362,6 @@ fn test_build_not_ready_defers_version_file() {
     assert!(!segment_path.exists());
 }
 
-fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u64, bool) {
-    let mut rng = rand::rng();
-    let stopped = Arc::new(AtomicBool::new(false));
-
-    let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
-
-    let segment_config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
-                distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                storage_type: VectorStorageType::default(),
-                index: Indexes::Hnsw(Default::default()),
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-        id_tracker_memory: None,
-    };
-
-    let mut builder = SegmentBuilder::new(
-        temp_dir.path(),
-        &segment_config,
-        &HnswGlobalConfig::default(),
-        FeatureFlags::default(),
-    )
-    .unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
-    builder.update(&[segment], &stopped, &hw_counter).unwrap();
-
-    let now = Instant::now();
-
-    if let Some(stop_delay_millis) = stop_delay_millis {
-        let stopped_t = stopped.clone();
-
-        std::thread::Builder::new()
-            .name("build_estimator_timeout".to_string())
-            .spawn(move || {
-                std::thread::sleep(Duration::from_millis(stop_delay_millis));
-                stopped_t.store(true, Ordering::Release);
-            })
-            .unwrap();
-    }
-
-    let permit_cpu_count = get_num_indexing_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
-
-    let res = builder.build(
-        dir.path(),
-        Uuid::new_v4(),
-        None,
-        true,
-        permit,
-        &stopped,
-        &mut rng,
-        &hw_counter,
-        progress,
-    );
-
-    let is_cancelled = match res {
-        Ok(_) => false,
-        Err(OperationError::Cancelled { .. }) => true,
-        Err(err) => {
-            eprintln!("Was expecting cancellation signal but got unexpected error: {err:?}");
-            false
-        }
-    };
-
-    (now.elapsed().as_millis() as u64, is_cancelled)
-}
-
 /// Unit test for a specific bug we caught before.
 ///
 /// See: <https://github.com/qdrant/qdrant/pull/5614>
@@ -508,85 +432,267 @@ fn test_building_new_segment_bug_5614() {
     );
 }
 
-#[test]
-fn test_building_cancellation() {
-    let baseline_dir = Builder::new()
-        .prefix("segment_dir_baseline")
-        .tempdir()
-        .unwrap();
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let dir_2 = Builder::new().prefix("segment_dir_2").tempdir().unwrap();
+const CANCELLATION_TEST_POINTS: u64 = 10_000;
 
-    let mut baseline_segment = empty_segment(baseline_dir.path());
-    let mut segment = empty_segment(dir.path());
-    let mut segment_2 = empty_segment(dir_2.path());
-
+/// Segment with random (non-degenerate) vectors, big enough for a meaningful HNSW build.
+fn cancellation_test_segment(path: &Path) -> Segment {
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut segment = empty_segment(path);
     let hw_counter = HardwareCounterCell::new();
-
-    for idx in 0..15000 {
-        baseline_segment
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            )
-            .unwrap();
+    for idx in 0..CANCELLATION_TEST_POINTS {
+        let vector = random_vector(&mut rng, 4);
         segment
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            )
+            .upsert_point(1, idx.into(), only_default_vector(&vector), &hw_counter)
             .unwrap();
-        segment_2
-            .upsert_point(
-                1,
-                idx.into(),
-                only_default_vector(&[0., 0., 0., 0.]),
-                &hw_counter,
-            )
+    }
+    segment
+}
+
+/// Builder that turns `source` into a segment with an HNSW index.
+fn hnsw_segment_builder(source: &Segment, temp_dir: &Path) -> SegmentBuilder {
+    let vector_config = &source.segment_config.vector_data[DEFAULT_VECTOR_NAME];
+    let segment_config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: vector_config.size,
+                distance: vector_config.distance,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Hnsw(Default::default()),
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir,
+        &segment_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder
+        .update(
+            &[source],
+            &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+    builder
+}
+
+fn build_segment(
+    builder: SegmentBuilder,
+    segments_path: &Path,
+    stopped: &AtomicBool,
+    progress: ProgressTracker,
+) -> Result<Segment, OperationError> {
+    let permit = ResourcePermit::dummy(build_threads() as u32);
+    builder.build(
+        segments_path,
+        Uuid::new_v4(),
+        None,
+        true,
+        permit,
+        stopped,
+        &mut rand::rng(),
+        &HardwareCounterCell::new(),
+        progress,
+    )
+}
+
+fn build_threads() -> u64 {
+    get_num_indexing_threads(0) as u64
+}
+
+fn assert_cancelled(result: Result<Segment, OperationError>) {
+    match result {
+        Err(OperationError::Cancelled { .. }) => {}
+        Ok(_) => panic!("build completed although it was cancelled"),
+        Err(err) => panic!("expected cancellation, got: {err}"),
+    }
+}
+
+/// A cancelled build must not leave a segment or temporary files behind.
+fn assert_nothing_left_behind(segments_path: &Path, temp_dir: &Path) {
+    for dir in [segments_path, temp_dir] {
+        let entries = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert!(
+            entries.is_empty(),
+            "cancelled build left files behind in {}: {entries:?}",
+            dir.display(),
+        );
+    }
+}
+
+fn find_progress<'a>(tree: &'a ProgressTree, name: &str) -> Option<&'a ProgressTree> {
+    if tree.name == name {
+        return Some(tree);
+    }
+    tree.children
+        .iter()
+        .find_map(|child| find_progress(child, name))
+}
+
+/// Progress `(done, total)` of a build phase, once it has started tracking progress.
+fn phase_progress(progress: &ProgressView, phase: &str) -> Option<(u64, u64)> {
+    let tree = progress.snapshot("segment");
+    let node = find_progress(&tree, phase)?;
+    Some((node.done?, node.total?))
+}
+
+/// A build that is already cancelled when it starts must bail out during setup,
+/// before any vector index work.
+#[test]
+fn test_building_cancelled_before_start() {
+    let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let source = cancellation_test_segment(source_dir.path());
+    let builder = hnsw_segment_builder(&source, temp_dir.path());
+
+    let stopped = AtomicBool::new(true);
+    let (progress_view, progress) = new_progress_tracker();
+
+    assert_cancelled(build_segment(
+        builder,
+        segments_dir.path(),
+        &stopped,
+        progress,
+    ));
+
+    let progress = progress_view.snapshot("segment");
+    let vector_index = find_progress(&progress, "vector_index").unwrap();
+    assert!(
+        vector_index.children.is_empty(),
+        "vector index build started despite cancellation: {vector_index:?}",
+    );
+
+    assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
+}
+
+/// Builds `builder`, cancelling it once `phase` has processed a tenth of its work.
+///
+/// Checks that the build stops right away rather than at the end of the phase. This is
+/// measured in processed items rather than wall time, so it does not depend on how fast
+/// the machine is. Returns the progress of the cancelled build for further checks.
+fn build_cancelled_during_phase(
+    builder: SegmentBuilder,
+    segments_path: &Path,
+    phase: &'static str,
+) -> ProgressView {
+    let stopped = Arc::new(AtomicBool::new(false));
+    let build_finished = Arc::new(AtomicBool::new(false));
+    let (progress_view, progress) = new_progress_tracker();
+
+    // Set the stop flag once the phase reaches a tenth of its work, and report how many
+    // items were processed at that moment.
+    let canceller = std::thread::spawn({
+        let stopped = stopped.clone();
+        let build_finished = build_finished.clone();
+        let progress_view = progress_view.clone();
+        move || {
+            while !build_finished.load(Ordering::Acquire) {
+                if phase_progress(&progress_view, phase)
+                    .is_some_and(|(done, total)| done >= total / 10)
+                {
+                    stopped.store(true, Ordering::Release);
+                    return phase_progress(&progress_view, phase);
+                }
+                std::thread::yield_now();
+            }
+            None
+        }
+    });
+
+    let result = build_segment(builder, segments_path, &stopped, progress);
+    build_finished.store(true, Ordering::Release);
+
+    let (done_at_cancel, _) = canceller.join().unwrap().unwrap_or_else(|| {
+        panic!("build finished without reaching a tenth of {phase}, or {phase} never ran")
+    });
+    assert_cancelled(result);
+
+    let (done_final, total) = phase_progress(&progress_view, phase).unwrap();
+    assert!(
+        done_final < total,
+        "{phase} was completed despite cancellation",
+    );
+    // Every item checks the stop flag first, so only the items already in flight may
+    // complete: one per build thread. Allow twice that to tolerate the flag becoming
+    // visible to other threads slightly later.
+    let max_items_after_cancel = 2 * build_threads();
+    assert!(
+        done_final - done_at_cancel <= max_items_after_cancel,
+        "{phase}: {} items were processed after cancellation (at {done_at_cancel} of {total}), \
+         expected at most {max_items_after_cancel}",
+        done_final - done_at_cancel,
+    );
+
+    progress_view
+}
+
+/// Cancelling in the middle of the main HNSW graph must stop the build right away.
+#[test]
+fn test_building_cancelled_during_main_graph() {
+    let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let source = cancellation_test_segment(source_dir.path());
+    let builder = hnsw_segment_builder(&source, temp_dir.path());
+
+    // At 10% of the points, past `SINGLE_THREADED_HNSW_BUILD_THRESHOLD`, so this cancels
+    // the parallel part of the phase.
+    build_cancelled_during_phase(builder, segments_dir.path(), "main_graph");
+
+    assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
+}
+
+/// Cancelling while an old HNSW graph is being healed for reuse must stop the build
+/// right away, instead of healing the whole graph first (#10426).
+#[test]
+fn test_building_cancelled_during_heal() {
+    let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let old_segments_dir = Builder::new().prefix("old_segments_dir").tempdir().unwrap();
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    // Segment with an HNSW index for the next build to reuse
+    let source = cancellation_test_segment(source_dir.path());
+    let mut old_segment = build_segment(
+        hnsw_segment_builder(&source, temp_dir.path()),
+        old_segments_dir.path(),
+        &AtomicBool::new(false),
+        ProgressTracker::new_for_test(),
+    )
+    .unwrap();
+
+    // Delete a quarter of the points: below the default `healing_threshold` of 0.3, so the
+    // build reuses the old graph and has to heal the links to the deleted points
+    let hw_counter = HardwareCounterCell::new();
+    for idx in (0..CANCELLATION_TEST_POINTS).step_by(4) {
+        old_segment
+            .delete_point(2, idx.into(), &hw_counter)
             .unwrap();
     }
 
-    // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, None);
-    assert!(!was_cancelled_baseline);
-    eprintln!("baseline time: {time_baseline}");
+    let builder = hnsw_segment_builder(&old_segment, temp_dir.path());
+    let progress = build_cancelled_during_phase(builder, segments_dir.path(), "migrate");
 
-    // Checks that optimization with longer cancellation delay will also finish fast
-    let early_stop_delay = time_baseline / 20;
-    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, Some(early_stop_delay));
-    let late_stop_delay = time_baseline / 5;
-    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, Some(late_stop_delay));
+    // Stopped within healing, before inserting into the main graph
+    assert_eq!(phase_progress(&progress, "main_graph"), None);
 
-    // Timing on CI (especially Windows) can be noisy due to scheduler delays and
-    // coarse timer granularity. Keep a fixed lower bound but scale tolerance for
-    // slower baseline runs. Windows debug builds can take ~1s to observe a stop
-    // signal during the pre-HNSW setup phase.
-    let acceptable_stopping_delay = std::cmp::max(1500, time_baseline / 3); // millis
-
-    assert!(was_cancelled_early);
-    assert!(
-        time_fast < early_stop_delay + acceptable_stopping_delay,
-        "time_early: {time_fast}, early_stop_delay: {early_stop_delay}"
-    );
-
-    assert!(was_cancelled_later);
-    assert!(
-        time_long < late_stop_delay + acceptable_stopping_delay,
-        "time_later: {time_long}, late_stop_delay: {late_stop_delay}"
-    );
-    assert!(
-        time_long < time_baseline,
-        "cancelled build should be faster than baseline: time_later={time_long}, baseline={time_baseline}",
-    );
-
-    assert!(
-        time_fast < time_long,
-        "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}",
-    );
+    assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
 
 /// `SegmentBuilder::update` must reject schema mismatches in both directions
