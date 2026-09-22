@@ -180,34 +180,26 @@ def test_substring_match_with_text_index_falls_back():
 
 
 # ---------------------------------------------------------------------------
-# 5. Strict mode: substring filtering requires a keyword index with the
-#    `prefix` option. Neither a plain keyword index nor a text index counts,
-#    since neither can serve the condition.
+# 5. Strict mode: substring filtering is rejected whatever index the field
+#    carries. No index bounds the condition to less than every distinct value
+#    of the field, so there is none a user could create to make it allowed.
 # ---------------------------------------------------------------------------
 
-def test_strict_mode_requires_keyword_prefix_index():
+def test_strict_mode_rejects_substring():
     _set_strict_mode({
         "enabled": True,
         "unindexed_filtering_retrieve": False,
     })
     try:
-        # Unindexed field: rejected.
-        response = _scroll(_substring_filter("tag", "od"))
-        assert response.status_code == 400, response.json()
-        assert "Index required but not found" in response.json()['status']['error']
+        # Unindexed, text-indexed, keyword-indexed, and keyword index with the
+        # `prefix` option: all rejected the same way.
+        for key in ["tag", "description", "url", "url_prefix"]:
+            response = _scroll(_substring_filter(key, "qdrant"))
+            assert response.status_code == 400, response.json()
+            assert "Substring matching is not allowed" in response.json()['status']['error'], key
 
-        # Text-indexed field: rejected.
-        response = _scroll(_substring_filter("description", "qdrant"))
-        assert response.status_code == 400, response.json()
-        assert "Index required but not found" in response.json()['status']['error']
-
-        # Keyword index without the `prefix` option: rejected.
-        response = _scroll(_substring_filter("url", "qdrant"))
-        assert response.status_code == 400, response.json()
-        assert "Index required but not found" in response.json()['status']['error']
-
-        # Keyword index with the `prefix` option: allowed.
-        response = _scroll(_substring_filter("url_prefix", "qdrant"))
+        # Prefix matching on an index that supports it stays allowed.
+        response = _scroll({"must": [{"key": "url_prefix", "match": {"prefix": "https://"}}]})
         assert response.ok, response.json()
     finally:
         _set_strict_mode({"enabled": False})
