@@ -1191,6 +1191,8 @@ mod tests_async {
     use std::ops::Range;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use futures::future::BoxFuture;
+
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;

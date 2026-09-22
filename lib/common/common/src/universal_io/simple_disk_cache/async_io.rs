@@ -8,6 +8,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use futures::future::BoxFuture;
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;

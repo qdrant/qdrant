@@ -25,7 +25,8 @@ use crate::universal_io::{
 /// Trait bundle for remote backends that can be cached by [`DiskCache`].
 ///
 /// Requires [`UniversalReadAsync`]: cache misses and async open-time prefills
-/// fetch from the remote via `read_bytes_async`.
+/// fetch from the remote via `read_bytes_async`, and scheduled opens ride the
+/// remote filesystem's runtime.
 pub trait DiskCacheRemote:
     UniversalReadAsync<
         Fs: Clone + Send + Sync + UniversalReadFsAsync<OpenExtra: Clone + Send + Sync>,

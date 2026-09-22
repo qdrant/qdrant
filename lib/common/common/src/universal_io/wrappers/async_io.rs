@@ -4,6 +4,8 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use futures::future::BoxFuture;
+
 use super::read_only::{ReadOnly, ReadOnlyFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
