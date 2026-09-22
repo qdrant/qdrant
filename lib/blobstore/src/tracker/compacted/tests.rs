@@ -37,7 +37,7 @@ fn tracker_with(pointers: &[Option<ValuePointer>]) -> (TempDir, CompactedTracker
     let mut tracker = CompactedTracker::new(&MmapFs, dir.path()).unwrap();
     for (point_offset, pointer) in pointers.iter().enumerate() {
         if let Some(pointer) = pointer {
-            tracker.set(point_offset as PointOffset, *pointer).unwrap();
+            tracker.set(point_offset as PointOffset, *pointer);
         }
     }
     (dir, tracker)
@@ -131,19 +131,22 @@ fn test_roundtrip_arbitrary_pointers() {
 }
 
 #[test]
-fn test_set_rejects_non_monotonic_point_offsets() {
-    let (_dir, mut tracker) = tracker_with(&packed_pointers(&[1, 1, 1], &[], 1024));
-    for point_offset in [0, 2] {
-        let err = tracker
-            .set(point_offset, ValuePointer::new(0, 0, 1))
-            .unwrap_err();
-        assert!(err.to_string().contains("monotonically"), "{err}");
-    }
-    assert_eq!(tracker.pointer_count(), 3);
-    // The next offset and any later one are fine
-    tracker.set(3, ValuePointer::new(0, 3, 1)).unwrap();
-    tracker.set(10, ValuePointer::new(0, 4, 1)).unwrap();
-    assert_eq!(tracker.pointer_count(), 11);
+fn test_set_any_order_and_overwrite() {
+    let (dir, mut tracker) = tracker_with(&[]);
+    tracker.set(5, ValuePointer::new(0, 50, 5));
+    tracker.set(2, ValuePointer::new(0, 20, 2));
+    tracker.set(5, ValuePointer::new(1, 0, 7));
+
+    let expected = [
+        None,
+        None,
+        Some(ValuePointer::new(0, 20, 2)),
+        None,
+        None,
+        Some(ValuePointer::new(1, 0, 7)),
+    ];
+    assert_reads(&tracker, &expected);
+    assert_roundtrip(&tracker, &dir, &expected);
 }
 
 #[test]
@@ -152,7 +155,7 @@ fn test_unflushed_mappings_are_not_persisted() {
     let (dir, mut tracker) = tracker_with(&expected);
     tracker.flusher(MmapFs)().unwrap();
 
-    tracker.set(3, ValuePointer::new(0, 6, 4)).unwrap();
+    tracker.set(3, ValuePointer::new(0, 6, 4));
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     assert_reads(&reopened, &expected);
 }
@@ -164,7 +167,7 @@ fn test_flusher_snapshots_and_rewrites_whole_file() {
     let flusher = tracker.flusher(MmapFs);
 
     // Set after the flusher was created, not part of its snapshot
-    tracker.set(3, ValuePointer::new(0, 6, 4)).unwrap();
+    tracker.set(3, ValuePointer::new(0, 6, 4));
     flusher().unwrap();
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     assert_reads(&reopened, &first);
@@ -178,20 +181,58 @@ fn test_flusher_snapshots_and_rewrites_whole_file() {
 }
 
 #[test]
-fn test_stale_flusher_is_noop() {
-    let first = packed_pointers(&[1, 2, 3], &[], 1024);
-    let (dir, mut tracker) = tracker_with(&first);
-    let stale = tracker.flusher(MmapFs);
+fn test_clean_tracker_flush_is_noop() {
+    let (dir, mut tracker) = tracker_with(&[]);
+    let path = dir.path().join(FILE_NAME);
+    assert!(!tracker.is_dirty());
 
-    tracker.set(3, ValuePointer::new(0, 6, 4)).unwrap();
+    // A clean flush does not touch the disk: a removed file stays removed
+    MmapFs.remove(&path).unwrap();
     tracker.flusher(MmapFs)().unwrap();
+    assert!(!path.exists());
 
-    // Running the older flusher afterwards must not roll the file back
-    stale().unwrap();
+    tracker.set(0, ValuePointer::new(0, 0, 1));
+    assert!(tracker.is_dirty());
+    tracker.flusher(MmapFs)().unwrap();
+    assert!(path.exists());
+    assert!(!tracker.is_dirty());
+
+    // Clean again after the flush
+    MmapFs.remove(&path).unwrap();
+    tracker.flusher(MmapFs)().unwrap();
+    assert!(!path.exists());
+
+    // Opening a file makes a clean tracker as well
+    tracker.set(1, ValuePointer::new(0, 1, 1));
+    tracker.flusher(MmapFs)().unwrap();
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
-    let mut second = first;
-    second.push(Some(ValuePointer::new(0, 6, 4)));
-    assert_reads(&reopened, &second);
+    assert!(!reopened.is_dirty());
+}
+
+#[test]
+fn test_failed_flush_leaves_tracker_dirty() {
+    let (dir, mut tracker) = tracker_with(&[]);
+    tracker.set(0, ValuePointer::new(0, 0, 1));
+    let flusher = tracker.flusher(MmapFs);
+    assert!(
+        !tracker.is_dirty(),
+        "taking the copy marks the tracker clean"
+    );
+
+    // Without the directory the file cannot be written
+    MmapFs.remove(&dir.path().join(FILE_NAME)).unwrap();
+    MmapFs.remove_dir(dir.path()).unwrap();
+    assert!(flusher().is_err());
+    assert!(
+        tracker.is_dirty(),
+        "a failed flush must be retried by the next one"
+    );
+
+    MmapFs.create_dir(dir.path()).unwrap();
+    tracker.flusher(MmapFs)().unwrap();
+    assert!(!tracker.is_dirty());
+    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    assert_reads(&reopened, &[Some(ValuePointer::new(0, 0, 1))]);
 }
 
 #[test]
