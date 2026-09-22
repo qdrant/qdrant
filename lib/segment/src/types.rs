@@ -3228,6 +3228,23 @@ impl Match {
     pub fn new_except(except: AnyVariants) -> Self {
         Self::Except(MatchExcept { except })
     }
+
+    /// Whether values are matched by an unanchored substring.
+    ///
+    /// No key ordering bounds such a match, so answering it means looking at
+    /// every distinct value of the field, whichever index serves it.
+    pub fn is_substring(&self) -> bool {
+        match self {
+            Match::Substring(_) => true,
+            Match::Value(_)
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_)
+            | Match::Prefix(_)
+            | Match::Any(_)
+            | Match::Except(_) => false,
+        }
+    }
 }
 
 impl From<AnyVariants> for Match {
@@ -4250,6 +4267,28 @@ impl Condition {
             | Condition::CustomIdChecker(_) => None,
         }
     }
+
+    /// Key of the first [`Match::is_substring`] condition this condition
+    /// carries, nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        match self {
+            Condition::Field(field_condition) => field_condition
+                .r#match
+                .as_ref()
+                .is_some_and(Match::is_substring)
+                .then(|| field_condition.key.clone()),
+            Condition::Nested(nested_condition) => {
+                nested_condition.filter().one_substring_match_key()
+            }
+            Condition::Filter(filter) => filter.one_substring_match_key(),
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_) => None,
+        }
+    }
 }
 
 // The validator crate does not support deriving for enums.
@@ -4697,6 +4736,13 @@ impl Filter {
             .map(|i| i.size_estimation())
             .max()
             .unwrap_or(0)
+    }
+
+    /// Key of the first [`Match::is_substring`] condition in this filter,
+    /// nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        self.iter_conditions()
+            .find_map(Condition::one_substring_match_key)
     }
 }
 
