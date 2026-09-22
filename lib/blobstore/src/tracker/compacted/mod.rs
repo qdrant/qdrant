@@ -16,12 +16,12 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWriteFileOps,
 };
-use parking_lot::Mutex;
 
 use crate::Result;
 use crate::blobstore::Flusher;
@@ -36,11 +36,9 @@ const FILE_NAME: &str = "compacted_tracker.dat";
 
 /// Tracker of value pointers for the append-only storage mode, held entirely in RAM.
 ///
-/// Mappings must be set in monotonically increasing point offset order, like in
-/// [`AppendOnlyTracker`](super::append_only::AppendOnlyTracker). Skipped point offsets read as
-/// `None`.
+/// Mappings can be set in any order and replaced. Skipped point offsets read as `None`.
 ///
-/// Flushing rewrites the whole file from a snapshot of the mappings, see [`Self::flusher`].
+/// Flushing rewrites the whole file from a copy of the mappings, see [`Self::flusher`].
 /// Opening decodes the whole file once; reads never touch the disk afterwards.
 #[derive(Debug)]
 pub struct CompactedTracker {
@@ -48,10 +46,10 @@ pub struct CompactedTracker {
     path: PathBuf,
     /// Entry `i` is the mapping for point offset `i`
     pointers: Vec<Option<ValuePointer>>,
-    /// Number of mappings the file holds, held while the file is being written.
+    /// Whether mappings were set since the last flusher took its copy.
     ///
-    /// Shared with the flushers, so that a stale flush never replaces a newer file.
-    persisted_count: Arc<Mutex<PointOffset>>,
+    /// Shared with the flushers, so that a failed flush can mark the tracker dirty again.
+    dirty: Arc<AtomicBool>,
 }
 
 impl CompactedTracker {
@@ -67,7 +65,7 @@ impl CompactedTracker {
         let tracker = Self {
             path: Self::tracker_file_name(dir),
             pointers: Vec::new(),
-            persisted_count: Arc::new(Mutex::new(0)),
+            dirty: Arc::new(AtomicBool::new(false)),
         };
         fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers))?;
         Ok(tracker)
@@ -104,11 +102,10 @@ impl CompactedTracker {
             ))
         })?;
 
-        let count = pointers.len() as PointOffset;
         Ok(Self {
             path,
             pointers,
-            persisted_count: Arc::new(Mutex::new(count)),
+            dirty: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -116,41 +113,34 @@ impl CompactedTracker {
         vec![self.path.clone()]
     }
 
-    /// Number of mappings.
-    ///
-    /// This is one past the highest point offset that was ever set, which makes it the next point
-    /// offset that is allowed to be set.
+    /// Number of mappings: one past the highest point offset that was ever set.
     pub fn pointer_count(&self) -> PointOffset {
         self.pointers.len() as PointOffset
     }
 
-    /// Set the mapping for the given point offset.
+    /// Set the mapping for the given point offset, replacing any previous one.
     ///
-    /// Point offsets must be set in monotonically increasing order: each offset must be larger
-    /// than every offset set before it. Skipped offsets are backfilled as `None` entries.
-    pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
-        // Defensive re-check: the storage validates this before appending any value data, see
-        // Logstore::put_value
-        let next = self.pointer_count();
-        if point_offset < next {
-            return Err(BlobstoreError::unsupported_operation(format!(
-                "cannot set mapping for point offset {point_offset}, the tracker requires \
-                 monotonically increasing point offsets, the next allowed point offset is {next}",
-            )));
+    /// Point offsets can be set in any order. Skipped offsets read as `None`.
+    pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) {
+        let index = point_offset as usize;
+        if index >= self.pointers.len() {
+            self.pointers.resize(index + 1, None);
         }
-
-        self.pointers.resize(point_offset as usize, None);
-        self.pointers.push(Some(pointer));
-
-        Ok(())
+        self.pointers[index] = Some(pointer);
+        self.dirty.store(true, Ordering::Relaxed);
     }
 
-    /// Create a flusher that rewrites the whole file from the mappings set up to this point.
+    /// Whether mappings were set since the last flusher took its copy.
+    fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Relaxed)
+    }
+
+    /// Create a flusher that rewrites the whole file from a copy of the current mappings.
     ///
-    /// The mappings are encoded right away, so that mappings set while a flush is in progress
-    /// are left for the next flush. The file is replaced atomically, and a stale flush, whose
-    /// snapshot holds no more mappings than the file already does, is a no-op: a flush must
-    /// never make the file lose mappings a more recent flush persisted.
+    /// A clean tracker gets a flusher that does nothing. Taking the copy marks the tracker
+    /// clean, so mappings set while a flush is in progress are left for the next flush, and a
+    /// failed flush marks it dirty again, so the next flush retries. The file is replaced
+    /// atomically.
     ///
     /// Rewriting is linear in the number of mappings, which suits a storage that is flushed
     /// once after being built, not one that is flushed after every batch.
@@ -158,18 +148,20 @@ impl CompactedTracker {
     where
         Fs: UniversalWriteFileOps + Send + 'static,
     {
+        if !self.dirty.swap(false, Ordering::Relaxed) {
+            return Box::new(|| Ok(()));
+        }
+
         let path = self.path.clone();
-        let count = self.pointer_count();
-        let bytes = format::encode(&self.pointers);
-        let persisted_count = Arc::clone(&self.persisted_count);
+        let pointers = self.pointers.clone();
+        let dirty = Arc::clone(&self.dirty);
 
         Box::new(move || {
-            let mut persisted_count = persisted_count.lock();
-            if count <= *persisted_count {
-                return Ok(());
+            let result = fs.atomic_save(&path, &format::encode(&pointers));
+            if result.is_err() {
+                dirty.store(true, Ordering::Relaxed);
             }
-            fs.atomic_save(&path, &bytes)?;
-            *persisted_count = count;
+            result?;
             Ok(())
         })
     }
