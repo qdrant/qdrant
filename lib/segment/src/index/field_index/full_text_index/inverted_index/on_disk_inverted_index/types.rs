@@ -9,7 +9,7 @@ use crate::index::field_index::full_text_index::inverted_index::positions::Posit
 pub const ALIGNMENT: usize = 4;
 
 /// A [`PostingValue`] whose sized payload can be zerocopy-read from an mmap.
-pub(in crate::index::field_index::full_text_index) trait ZerocopyPostingValue:
+pub trait ZerocopyPostingValue:
     PostingValue<
     Handler: ValueHandler<Sized: FromBytes + IntoBytes + Immutable + KnownLayout + Unaligned>,
 >
@@ -22,7 +22,7 @@ impl ZerocopyPostingValue for Positions {}
 
 #[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
-pub(in crate::index::field_index::full_text_index) struct PostingsHeader {
+pub struct PostingsHeader {
     /// Number of posting lists. One posting list per term
     pub posting_count: usize,
     pub _reserved: [u8; 32],
@@ -32,7 +32,7 @@ pub(in crate::index::field_index::full_text_index) struct PostingsHeader {
 /// construct `PostingListView<V>` from the mmap file.
 #[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
-pub(in crate::index::field_index::full_text_index) struct PostingListHeader {
+pub struct PostingListHeader {
     /// Offset in bytes from the start of the mmap file
     /// where the posting list data starts
     pub offset: u64,

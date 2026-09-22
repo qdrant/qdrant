@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
 use super::inverted_index::ARRAY_BOUNDARY_SENTINEL;
+use super::inverted_index::on_disk_inverted_index::has_doc_len_sidecar;
 use super::mutable_text_index::MutableFullTextIndex;
 use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::tokenizers::Tokenizer;
@@ -35,11 +36,36 @@ impl FullTextIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
+        let scoring = config.scoring();
+
+        // Checked before the open, not after: opening populates the whole file
+        // set, and on the first start after scoring is enabled every existing
+        // segment would fault in its postings only to be discarded here.
+        if scoring && !has_doc_len_sidecar(&path) {
+            log::info!(
+                "Text index at {path} records no document lengths, rebuilding it from payload",
+                path = path.display(),
+            );
+            return Ok(None);
+        }
+
         let Some(on_disk_index) =
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
         else {
             return Ok(None);
         };
+
+        // Lengths cannot be recovered from anything else on disk, so report the
+        // index absent and let the caller rebuild it from payload. The decision
+        // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
+        // stack never builds, and would drop the field instead.
+        //
+        // Reachable past the probe above when the sidecar exists but `open`
+        // rejected it, so the log says which of the two happened.
+        if scoring && !on_disk_index.records_doc_len() {
+            log::info!("Text index rejected its document length sidecar, rebuilding from payload");
+            return Ok(None);
+        }
 
         let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
@@ -80,8 +106,9 @@ impl FullTextIndex {
         config: TextIndexParams,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        scoring: bool,
     ) -> FullTextMmapIndexBuilder {
-        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points)
+        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points, scoring)
     }
 
     pub fn builder_gridstore(

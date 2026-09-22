@@ -95,12 +95,14 @@ fn create_builder(
             config,
             true,
             &empty_deleted,
+            true,
         )),
         IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
             false,
             &empty_deleted,
+            true,
         )),
     };
     match &mut builder {

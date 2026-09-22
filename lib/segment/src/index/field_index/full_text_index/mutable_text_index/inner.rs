@@ -21,10 +21,10 @@ use crate::types::{FieldCondition, PayloadKeyType};
 ///
 /// [`MutableFullTextIndex`]: super::MutableFullTextIndex
 /// [`ReadOnlyAppendableFullTextIndex`]: super::read_only::ReadOnlyAppendableFullTextIndex
-pub(in crate::index::field_index::full_text_index) struct MutableFullTextIndexInner {
-    pub(in crate::index::field_index::full_text_index) inverted_index: MutableInvertedIndex,
-    pub(in crate::index::field_index::full_text_index) config: TextIndexParams,
-    pub(in crate::index::field_index::full_text_index) tokenizer: Tokenizer,
+pub struct MutableFullTextIndexInner {
+    pub inverted_index: MutableInvertedIndex,
+    pub config: TextIndexParams,
+    pub tokenizer: Tokenizer,
 }
 
 impl FullTextIndexRead for MutableFullTextIndexInner {
