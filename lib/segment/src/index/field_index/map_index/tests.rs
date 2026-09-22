@@ -761,16 +761,21 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
         result.sort_unstable();
         assert_eq!(result, expected, "substring {substring:?}");
 
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
         let estimation = index
             .estimate_cardinality(&condition, &hw_counter)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
         assert!(
-            estimation.min <= expected.len() && expected.len() <= estimation.max,
-            "substring {substring:?}: {} not in [{}, {}]",
-            expected.len(),
-            estimation.min,
-            estimation.max,
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
         );
 
         let checker = index
@@ -861,16 +866,21 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
         result.sort_unstable();
         assert_eq!(result, expected, "substring {substring:?}");
 
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
         let estimation = index
             .estimate_cardinality(&condition, &hw_counter)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
         assert!(
-            estimation.min <= expected.len() && expected.len() <= estimation.max,
-            "substring {substring:?}: {} not in [{}, {}]",
-            expected.len(),
-            estimation.min,
-            estimation.max,
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
         );
 
         let checker = index

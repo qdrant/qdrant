@@ -158,27 +158,6 @@ fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
     Ok(keys)
 }
 
-/// Aggregate over the keys containing `substring`, enumerated from the map
-/// index itself.
-///
-/// Counterpart of [`scan_keys_for_substring`] for cardinality estimation.
-/// Counts exclude deleted points on every variant, so unlike the on-disk
-/// dictionary's build-time counts they never go stale.
-fn scan_key_stats_for_substring<'a, T: MapIndexRead<'a, str>>(
-    index: &'a T,
-    substring: &str,
-) -> OperationResult<PrefixIndexStats> {
-    let mut stats = PrefixIndexStats::default();
-    index.for_each_count_per_value(None, |key, count| {
-        if key.contains(substring) {
-            stats.keys += 1;
-            stats.postings += count;
-        }
-        Ok(())
-    })?;
-    Ok(stats)
-}
-
 fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
     condition: &'a FieldCondition,
@@ -291,24 +270,23 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
             })
         }
-        Some(Match::Substring(MatchSubstring { substring })) => {
-            let stats = match index.substring_scan(substring, hw_counter, |_key, _count| Ok(()))? {
-                Some(stats) => stats,
-                None => scan_key_stats_for_substring(index, substring)?,
-            };
-            let PrefixIndexStats { keys, postings } = stats;
-            Some(
-                keys_union_cardinality(index, keys, postings)
-                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
-            )
-        }
+        // Counting the matching keys means scanning every distinct value of the
+        // field — the same work as answering the condition. Report the
+        // uninformed estimate instead, and leave the scan to `filter`, which
+        // needs the keys themselves anyway. The primary clause stays: the
+        // condition can still produce the point ids, it just cannot say how
+        // many without doing the work.
+        Some(Match::Substring(MatchSubstring { substring: _ })) => Some(
+            CardinalityEstimation::unknown(index.get_indexed_points())
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
+        ),
         _ => None,
     };
     Ok(estimation)
 }
 
 /// Cardinality of a condition that selects every point holding at least one
-/// of a set of dictionary keys (prefix and substring matches).
+/// of a set of dictionary keys (a prefix match).
 ///
 /// `keys` is how many dictionary keys the condition matched, `postings` is
 /// the sum of their per-key point counts, i.e. the number of `(point, value)`
