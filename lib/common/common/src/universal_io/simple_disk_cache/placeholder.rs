@@ -7,6 +7,11 @@ use parking_lot::Mutex;
 
 use super::local_state::LocalState;
 
+const PLACEHOLDER_WAIT_TIMEOUT: std::time::Duration = cfg_select! {
+    not(test) => std::time::Duration::from_secs(10),
+    test => std::time::Duration::from_millis(100)
+};
+
 #[derive(Debug)]
 enum PlaceholderState {
     Loading {
@@ -31,6 +36,7 @@ pub(super) struct Placeholder {
 pub(super) enum WaitResult {
     Completed,
     Promoted(PlaceholderGuard),
+    TimedOut,
 }
 
 impl Placeholder {
@@ -50,6 +56,20 @@ impl Placeholder {
             }),
             completed: AtomicBool::new(false),
         }
+    }
+
+    #[inline]
+    pub(super) fn new_unshared(
+        blocks_range: Range<u32>,
+        blocks_byte_range: Range<u64>,
+    ) -> PlaceholderGuard {
+        let placeholder = Arc::new(Placeholder::new(
+            blocks_range,
+            blocks_byte_range,
+            std::thread::current().id(),
+            Weak::new(),
+        ));
+        placeholder.new_guard()
     }
 
     #[inline]
@@ -76,26 +96,36 @@ impl Placeholder {
         }
 
         let current = std::thread::current();
+        let start = std::time::Instant::now();
         loop {
+            let remaining = PLACEHOLDER_WAIT_TIMEOUT.saturating_sub(start.elapsed());
+
             {
                 let mut state = self.state.lock();
                 match &mut *state {
                     PlaceholderState::Completed => return WaitResult::Completed,
                     PlaceholderState::Abandoned { waiters } => {
+                        let mut waiters = std::mem::take(waiters);
+                        waiters.retain(|w| w.id() != current.id());
                         *state = PlaceholderState::Loading {
                             leader: current.id(),
-                            waiters: std::mem::take(waiters),
+                            waiters,
                         };
                         return WaitResult::Promoted(self.new_guard());
                     }
-                    PlaceholderState::Loading { waiters, leader: _ } => {
+                    PlaceholderState::Loading { waiters, .. } => {
+                        if remaining.is_zero() {
+                            waiters.retain(|w| w.id() != current.id());
+                            return WaitResult::TimedOut;
+                        }
                         if !waiters.iter().any(|w| w.id() == current.id()) {
                             waiters.push(current.clone());
                         }
                     }
                 }
             }
-            std::thread::park();
+
+            std::thread::park_timeout(remaining);
         }
     }
 }
@@ -140,10 +170,14 @@ impl Drop for PlaceholderGuard {
                 match &mut *state {
                     PlaceholderState::Loading { waiters, leader: _ } => {
                         let next_leader = waiters.pop();
-                        *state = PlaceholderState::Abandoned { waiters: std::mem::take(waiters) };
+                        *state = PlaceholderState::Abandoned {
+                            waiters: std::mem::take(waiters),
+                        };
                         next_leader
                     }
-                    PlaceholderState::Abandoned { waiters: _ } | PlaceholderState::Completed => None,
+                    PlaceholderState::Abandoned { waiters: _ } | PlaceholderState::Completed => {
+                        None
+                    }
                 }
             };
 
@@ -172,7 +206,7 @@ impl PlaceholderRegistry {
         }
     }
 
-    fn remove(&self, placeholder: &Arc<Placeholder>) {
+    pub(super) fn remove(&self, placeholder: &Arc<Placeholder>) {
         let mut list = self.placeholders.lock();
         list.retain(|weak| weak.as_ptr() != Arc::as_ptr(placeholder));
     }

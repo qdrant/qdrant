@@ -1037,6 +1037,50 @@ mod tests_mod {
         handle2.join().unwrap();
     }
 
+    /// When a leader hangs or is too slow, piggybacking followers time out
+    /// and fetch the requested blocks independently without waiting indefinitely.
+    #[test]
+    fn follower_times_out_and_fetches_independently_when_leader_hangs() {
+        let scn = Scenario::new(BLOCK_SIZE * 2);
+        let file = Arc::new(scn.open::<R>(false));
+        let file_clone = file.clone();
+        let expected_2 = scn.data[20..40].to_vec();
+
+        let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t2_done_tx, t2_done_rx) = std::sync::mpsc::channel();
+
+        let handle1 = std::thread::spawn(move || {
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            t1_sched_tx.send(()).unwrap();
+
+            // Keep pipeline alive without driving it
+            t2_done_rx.recv().unwrap();
+            drop(pipeline);
+        });
+
+        let handle2 = std::thread::spawn(move || {
+            t1_sched_rx.recv().unwrap();
+            let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .unwrap();
+
+            // Follower enters wait(), times out waiting for handle1 (100ms in test),
+            // and completes independently!
+            let start = std::time::Instant::now();
+            let results = drain_pipeline(&mut pipeline);
+            let elapsed = start.elapsed();
+
+            assert_eq!(results[&2], expected_2);
+            assert!(elapsed >= std::time::Duration::from_millis(90));
+            t2_done_tx.send(()).unwrap();
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+    }
+
     /// When two distinct pipelines run on the same thread (e.g. nested calls),
     /// the second pipeline does not piggyback to prevent same-thread deadlock.
     #[test]

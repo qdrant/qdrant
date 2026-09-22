@@ -244,6 +244,63 @@ where
 
         Ok(placeholder)
     }
+
+    fn drive_in_flight(&mut self) -> UioResult<()>
+    where
+        R: DiskCacheRemote,
+    {
+        let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
+            return Ok(());
+        };
+        let (fetch_id, bytes) = match remote_pipeline.wait() {
+            Ok(completion) => completion.expect("in_flight is not empty, completion must exist"),
+            Err(err) => {
+                self.in_flight.clear();
+                self.pending.clear();
+                self.remote_pipeline.take();
+                return Err(err);
+            }
+        };
+
+        let fetch = self
+            .in_flight
+            .try_remove(fetch_id as usize)
+            .expect("completed fetch has an in-flight entry");
+
+        // SAFETY: `bytes` is the content of `fetch.guard.placeholder().blocks_range` as scheduled.
+        unsafe { commit_and_complete(fetch, &bytes) }
+    }
+
+    fn handle_timed_out_wait(
+        &mut self,
+        read: ScheduledRead<'file, R, U>,
+    ) -> UioResult<Option<(U, &'file [u8])>>
+    where
+        R: DiskCacheRemote,
+    {
+        // avoid more piggybacking on a stalled leader.
+        let state = read.file.state()?;
+        state.local.placeholders.remove(&read.placeholder);
+
+        // confirm it isn't available locally
+        let blocks_range = to_block_range(read.range.clone());
+        if state.local.contains(blocks_range) {
+            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+            return Ok(Some((read.user_data, slice)));
+        }
+
+        // fetch independently on this pipeline
+        let (blocks_range, blocks_byte_range) =
+            block_aligned_fetch(read.range.clone(), state.local.mmap().len::<u8>()?)
+                .expect("non-empty range has non-empty block range");
+        let guard = Placeholder::new_unshared(blocks_range, blocks_byte_range);
+        let placeholder = self.schedule_remote_fetch(read.file, guard, read.is_sequential)?;
+        self.pending.push_front(ScheduledRead {
+            placeholder,
+            ..read
+        });
+        Ok(None)
+    }
 }
 
 impl<'file, R, U> ReadPipeline<'file, U> for DiskCachePipeline<'file, R, U>
@@ -366,29 +423,7 @@ where
 
             // Drive remote fetches this pipeline is leading
             if !self.in_flight.is_empty() {
-                let Some(remote_pipeline) = self.remote_pipeline.get_mut() else {
-                    return Ok(None);
-                };
-                let completion = match remote_pipeline.wait() {
-                    Ok(completion) => completion,
-                    Err(err) => {
-                        self.in_flight.clear();
-                        self.pending.clear();
-                        self.remote_pipeline.take();
-                        return Err(err);
-                    }
-                };
-                let Some((fetch_id, bytes)) = completion else {
-                    return Ok(None);
-                };
-
-                let fetch = self
-                    .in_flight
-                    .try_remove(fetch_id as usize)
-                    .expect("completed fetch has an in-flight entry");
-
-                // SAFETY: `bytes` is the content of `fetch.guard.placeholder().blocks_range` as scheduled.
-                unsafe { commit_and_complete(fetch, &bytes)? };
+                self.drive_in_flight()?;
                 continue;
             }
 
@@ -403,9 +438,14 @@ where
                     WaitResult::Promoted(guard) => {
                         self.schedule_remote_fetch(read.file, guard, read.is_sequential)?;
                         self.pending.push_front(read);
-                        continue;
+                    }
+                    WaitResult::TimedOut => {
+                        if let Some((user_data, slice)) = self.handle_timed_out_wait(read)? {
+                            return Ok(Some((user_data, ACow::Borrowed(slice))));
+                        }
                     }
                 }
+                continue;
             }
 
             return Ok(None);
