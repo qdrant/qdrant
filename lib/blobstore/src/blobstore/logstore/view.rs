@@ -12,25 +12,25 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
-use crate::tracker::append_only::AppendOnlyTracker;
-use crate::tracker::{PointOffset, ValuePointer};
+use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
 /// A non-owning view into logstore data.
 ///
 /// Holds borrowed references to the tracker and pages, and contains all reading logic.
 ///
-/// All data is read through the universal IO backend `S`.
-pub(crate) struct LogstoreView<'a, V, S: UniversalRead> {
+/// Value data is read through the universal IO backend `S`, mappings through any tracker `T`
+/// implementing [`TrackerRead`].
+pub(crate) struct LogstoreView<'a, V, S: UniversalRead, T: TrackerRead> {
     config: &'a LogstoreConfig,
-    tracker: &'a AppendOnlyTracker<S>,
+    tracker: &'a T,
     pages: &'a AppendOnlyPages<S>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
     pub(super) fn new(
         config: &'a LogstoreConfig,
-        tracker: &'a AppendOnlyTracker<S>,
+        tracker: &'a T,
         pages: &'a AppendOnlyPages<S>,
     ) -> Self {
         Self {
@@ -41,8 +41,8 @@ impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
         }
     }
 
-    pub(crate) fn max_point_offset(&self) -> PointOffset {
-        self.tracker.pointer_count()
+    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
     }
 
     /// Return the storage size in bytes (precise, the exact amount of appended value data).
@@ -59,7 +59,7 @@ impl<'a, V, S: UniversalRead> LogstoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
     /// Get the value for a given point offset.
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
@@ -136,7 +136,7 @@ impl<'a, V: Blob, S: UniversalRead> LogstoreView<'a, V, S> {
         for result in self.tracker.iter(point_offsets).map_err(E::from)? {
             let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
 
-            let Some(pointer) = pointer else {
+            let PointerItem::Valid(pointer) = pointer else {
                 if !callback(user_data, point_offset, None)? {
                     return Ok(false);
                 }

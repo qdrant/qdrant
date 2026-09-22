@@ -12,7 +12,7 @@ use common::universal_io::{
 use crate::Result;
 use crate::blobstore::Flusher;
 use crate::error::BlobstoreError;
-use crate::tracker::{OptionalPointer, PointOffset, ValuePointer};
+use crate::tracker::{OptionalPointer, PointOffset, PointerItem, TrackerRead, ValuePointer};
 
 /// File name of the append-only tracker file
 ///
@@ -39,7 +39,7 @@ const ENTRY_SIZE: u64 = size_of::<OptionalPointer>() as u64;
 /// A write may be torn. If the file length is not a multiple of the entry size, the trailing
 /// partial entry is ignored when reading, and truncated away when opening writable.
 #[derive(Debug)]
-pub(crate) struct AppendOnlyTracker<S> {
+pub struct AppendOnlyTracker<S> {
     /// Path to the tracker file
     path: PathBuf,
     /// Open handle to the tracker file
@@ -147,11 +147,15 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     pub fn pointer_count(&self) -> PointOffset {
         self.persisted_count + self.pending.len() as PointOffset
     }
+}
 
-    /// Get the mapping at the given point offset.
-    ///
-    /// Point offsets that were skipped or that are past the highest set mapping yield `None`.
-    pub fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
+    /// Exact, including pending mappings, see [`Self::pointer_count`].
+    fn max_point_offset(&self) -> Result<PointOffset> {
+        Ok(self.pointer_count())
+    }
+
+    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
         if point_offset >= self.pointer_count() {
             return Ok(None);
         }
@@ -166,14 +170,9 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         Ok(pointer.to_option())
     }
 
-    /// Get the mappings for a contiguous range of point offsets.
-    ///
     /// The persisted part of the range is read with a single read. Point offsets that were
     /// skipped or that are past the highest set mapping yield `None`.
-    ///
-    /// The result holds one entry per requested point offset, so callers should bound the range
-    /// they ask for.
-    pub fn get_range<P: AccessPattern>(
+    fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
     ) -> Result<Vec<Option<ValuePointer>>> {
@@ -204,14 +203,10 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         Ok(pointers)
     }
 
-    /// Iterate the mappings for the given point offsets.
-    ///
     /// Issues batched reads against the tracker file through the backend's read pipeline, so
     /// async backends can fetch entries in parallel. Pending mappings and point offsets past the
     /// highest set mapping are yielded directly, without touching the file.
-    ///
-    /// Yields one item per requested point offset, possibly in a different order.
-    pub fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
@@ -222,7 +217,10 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
             pipeline: S::ReadPipeline::new()?,
         })
     }
+}
 
+// Live reload, for read-only instances of the tracker
+impl<S: UniversalRead> AppendOnlyTracker<S> {
     /// Reopen the tracker file and read the number of mappings it holds, *without* making the
     /// new mappings visible to reads.
     ///
@@ -291,7 +289,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 /// reloaded in between the two.
 #[must_use = "an observed reload only becomes visible once committed"]
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct PendingReload {
+pub struct PendingReload {
     /// Number of mappings the file held at the time of the observation
     count: PointOffset,
 }
@@ -447,8 +445,8 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     }
 }
 
-/// Batched mapping lookup, see [`AppendOnlyTracker::iter`].
-pub(crate) struct Iter<'a, U, I, S>
+/// Batched mapping lookup, see [`TrackerRead::iter`].
+struct Iter<'a, U, I, S>
 where
     U: UserData,
     I: Iterator<Item = (U, PointOffset)>,
@@ -465,7 +463,7 @@ where
     I: Iterator<Item = (U, PointOffset)>,
     S: UniversalRead,
 {
-    type Item = Result<(U, Option<ValuePointer>)>;
+    type Item = Result<(U, PointerItem)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.pipeline.can_schedule()
@@ -475,12 +473,11 @@ where
             // directly, only persisted mappings are read from the file
             if point_offset >= self.tracker.persisted_count {
                 let pending_index = (point_offset - self.tracker.persisted_count) as usize;
-                let pointer = self
-                    .tracker
-                    .pending
-                    .get(pending_index)
-                    .and_then(|entry| entry.to_option());
-                return Some(Ok((user_data, pointer)));
+                let item = match self.tracker.pending.get(pending_index) {
+                    Some(entry) => PointerItem::from(entry.to_option()),
+                    None => PointerItem::OutOfRange,
+                };
+                return Some(Ok((user_data, item)));
             }
 
             let start = u64::from(point_offset) * ENTRY_SIZE;
@@ -507,7 +504,7 @@ where
             unreachable!();
         };
 
-        Some(Ok((user_data, entry.to_option())))
+        Some(Ok((user_data, PointerItem::from(entry.to_option()))))
     }
 }
 
@@ -843,12 +840,12 @@ mod tests {
         assert_eq!(
             collected,
             vec![
-                (0, Some(pointer(0))),
-                (2, Some(pointer(2))),
-                (3, Some(pointer(3))),
-                (4, None),
-                (6, Some(pointer(6))),
-                (9, None),
+                (0, PointerItem::Valid(pointer(0))),
+                (2, PointerItem::Valid(pointer(2))),
+                (3, PointerItem::Valid(pointer(3))),
+                (4, PointerItem::Empty),
+                (6, PointerItem::Valid(pointer(6))),
+                (9, PointerItem::OutOfRange),
             ],
         );
     }
