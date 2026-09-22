@@ -175,9 +175,11 @@ impl ClusterState {
                     return;
                 };
 
-                if let Some(shard_ids) = state.shards_key_mapping.get_mut(shard_key) {
-                    shard_ids.remove(shard_id);
-                }
+                let Some(shard_ids) = state.shards_key_mapping.get_mut(shard_key) else {
+                    return;
+                };
+
+                shard_ids.remove(shard_id);
             }
 
             Action::SetReplicaState {
@@ -227,7 +229,9 @@ impl ClusterState {
             }
 
             Action::UnregisterTransfer {
-                collection, key, ..
+                collection,
+                key,
+                outcome: _,
             } => {
                 let Some(state) = self.collection_mut(collection) else {
                     return;

@@ -10,6 +10,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferKey;
+use segment::types::ShardKey;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -20,7 +21,7 @@ use crate::content_manager::toc::apply_alias_actions;
 
 type Actions = Vec<Action>;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 struct AbortReshardingScope {
     skip_replica: Option<(ShardId, PeerId)>,
     skip_transfer: Option<ShardTransferKey>,
@@ -483,6 +484,9 @@ impl ClusterState {
         let sharding_method = state.config.params.sharding_method.unwrap_or_default();
 
         match (sharding_method, &key.shard_key) {
+            (ShardingMethod::Auto, None) => (),
+            (ShardingMethod::Custom, Some(_)) => (),
+
             (ShardingMethod::Auto, Some(shard_key)) => {
                 return Err(StorageError::bad_request(format!(
                     "cannot specify shard key {shard_key} on collection with auto sharding",
@@ -494,8 +498,6 @@ impl ClusterState {
                     "must specify shard key on collection with custom sharding",
                 ));
             }
-
-            (ShardingMethod::Auto, None) | (ShardingMethod::Custom, Some(_)) => {}
         }
 
         if let Some(current) = &state.resharding
@@ -655,10 +657,8 @@ impl ClusterState {
 
         if key.direction == ReshardingDirection::Down {
             if let Some(shard_key) = &key.shard_key
-                && state
-                    .shards_key_mapping
-                    .get(shard_key)
-                    .is_some_and(|shard_ids| shard_ids.contains(&key.shard_id))
+                && let Some(shard_ids) = state.shards_key_mapping.get(shard_key)
+                && shard_ids.contains(&key.shard_id)
             {
                 actions.push(Action::RemoveShardFromKeyMapping {
                     collection: collection.clone(),
@@ -671,6 +671,8 @@ impl ClusterState {
                 state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
             if is_auto_sharding {
+                // TODO: When starting resharding, validate that auto-sharding scale-down targets
+                // the last nonzero shard, so a malformed entry cannot panic here
                 let shard_number = NonZeroU32::new(key.shard_id)
                     .expect("cannot have zero shards after finishing resharding down");
 
@@ -737,23 +739,29 @@ impl ClusterState {
 
         if key.direction == ReshardingDirection::Down {
             for (&shard_id, shard) in &state.shards {
-                if shard_id == key.shard_id
-                    || !shard_belongs_to_key(state, shard_id, key.shard_key.as_ref())
-                {
+                if !shard_belongs_to_key(state, shard_id, key.shard_key.as_ref()) {
+                    continue;
+                }
+
+                if shard_id == key.shard_id {
                     continue;
                 }
 
                 for (&peer_id, &replica_state) in &shard.replicas {
-                    if replica_state.is_resharding()
-                        && scope.skip_replica != Some((shard_id, peer_id))
-                    {
-                        actions.push(Action::SetReplicaState {
-                            collection: collection.clone(),
-                            shard_id,
-                            peer_id,
-                            state: ReplicaState::Active,
-                        });
+                    if !replica_state.is_resharding() {
+                        continue;
                     }
+
+                    if scope.skip_replica == Some((shard_id, peer_id)) {
+                        continue;
+                    }
+
+                    actions.push(Action::SetReplicaState {
+                        collection: collection.clone(),
+                        shard_id,
+                        peer_id,
+                        state: ReplicaState::Active,
+                    });
                 }
             }
 
@@ -773,6 +781,8 @@ impl ClusterState {
                 state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
             if is_auto_sharding {
+                // TODO: When starting resharding, validate that auto-sharding scale-up targets
+                // the next shard ID, so a malformed entry targeting shard 0 cannot panic here
                 let shard_number = NonZeroU32::new(key.shard_id)
                     .expect("cannot have zero shards after aborting resharding up");
 
@@ -796,8 +806,9 @@ impl ClusterState {
             .transfers
             .iter()
             .filter(|transfer| {
-                transfer.is_related_to_resharding(key)
-                    && scope.skip_transfer != Some(transfer.key())
+                let is_related = transfer.is_related_to_resharding(key);
+                let should_skip = scope.skip_transfer == Some(transfer.key());
+                is_related && !should_skip
             })
             .collect();
 
@@ -897,7 +908,7 @@ fn check_resharding_state(
 
 fn shard_ids_for_key(
     state: &collection::collection_state::State,
-    shard_key: Option<&segment::types::ShardKey>,
+    shard_key: Option<&ShardKey>,
 ) -> Vec<ShardId> {
     let mut shard_ids: Vec<_> = match shard_key {
         Some(shard_key) => state
@@ -907,8 +918,15 @@ fn shard_ids_for_key(
             .flatten()
             .copied()
             .collect(),
-        None => state.shards.keys().copied().collect(),
+
+        None => state
+            .shards
+            .keys()
+            .copied()
+            .filter(|&shard_id| shard_belongs_to_key(state, shard_id, None))
+            .collect(),
     };
+
     shard_ids.sort_unstable();
     shard_ids
 }
@@ -916,13 +934,17 @@ fn shard_ids_for_key(
 fn shard_belongs_to_key(
     state: &collection::collection_state::State,
     shard_id: ShardId,
-    shard_key: Option<&segment::types::ShardKey>,
+    shard_key: Option<&ShardKey>,
 ) -> bool {
     match shard_key {
         Some(shard_key) => state
             .shards_key_mapping
             .get(shard_key)
             .is_some_and(|shard_ids| shard_ids.contains(&shard_id)),
-        None => true,
+
+        None => state
+            .shards_key_mapping
+            .values()
+            .all(|shard_ids| !shard_ids.contains(&shard_id)),
     }
 }

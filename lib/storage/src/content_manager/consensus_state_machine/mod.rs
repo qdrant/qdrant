@@ -162,10 +162,13 @@ impl ConsensusStateMachine {
                 }
             }
 
-            CollectionMetaOperations::Resharding(collection, operation) => ApplyOutcome::new(
-                self.state
-                    .plan_resharding(&self.context, collection, operation),
-            ),
+            CollectionMetaOperations::Resharding(collection, operation) => {
+                let result = self
+                    .state
+                    .plan_resharding(&self.context, collection, operation);
+
+                ApplyOutcome::new(result)
+            }
 
             CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::TransferShard(_, _) => ApplyOutcome::NotCovered,
