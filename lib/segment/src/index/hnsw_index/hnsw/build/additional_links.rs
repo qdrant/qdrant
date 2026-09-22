@@ -17,6 +17,7 @@ use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::entry_points::EntryPoint;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::{
@@ -200,12 +201,35 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 trace!("graph connectivity: {graph_connectivity} for {field}");
             }
 
+            // Keep several entry points per block, proportionally to its size, the same
+            // way the main graph does. With `m = 0` the block graph is the only graph
+            // these points belong to, and a search filtered by the block condition plus
+            // another condition must find an entry point satisfying both. A single entry
+            // point per block made that depend on the block's first point.
+            let block_entry_points = std::cmp::max(
+                1,
+                points_to_index
+                    .len()
+                    .checked_div(config.full_scan_threshold)
+                    .unwrap_or(0)
+                    * 10,
+            );
+            // Block graphs are single-level, so the extra entry points gathered while
+            // linking would be the first points of the block only. Sample the block
+            // evenly instead.
+            let stride = std::cmp::max(1, points_to_index.len() / block_entry_points);
+            let sampled_entry_points: Vec<EntryPoint> = points_to_index
+                .iter()
+                .step_by(stride)
+                .map(|&point_id| EntryPoint { point_id, level: 0 })
+                .collect();
+
             // ToDo: reuse graph layer for same payload
             let mut additional_graph = GraphLayersBuilder::new_with_params(
                 total_vector_count,
                 payload_m,
                 config.ef_construct,
-                1,
+                block_entry_points,
                 HNSW_USE_HEURISTIC,
                 false,
             );
@@ -224,6 +248,9 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 &mut indexed_vectors_set,
                 &counter,
             )?;
+            additional_graph
+                .get_entry_points()
+                .set_extra_entry_points(block_entry_points, sampled_entry_points);
             graph_layers_builder.merge_from_other(additional_graph);
             Ok(())
         };

@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::PointOffsetType;
@@ -40,7 +41,39 @@ impl EntryPoints {
     }
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
-        // Do not merge `extra_entry_points` to prevent duplications
+        // Also keep the other graph's extra entry points, deduplicated by point id.
+        // They are the only way to reach a payload block whose primary entry point
+        // does not satisfy the rest of a filter (`get_entry_point` falls back to them).
+        let mut known: HashSet<PointOffsetType> = self
+            .entry_points
+            .iter()
+            .chain(self.extra_entry_points.iter_unsorted())
+            .map(|entry| entry.point_id)
+            .collect();
+        for entry in other.extra_entry_points.into_iter_sorted() {
+            if known.insert(entry.point_id) {
+                self.extra_entry_points.push(entry);
+            }
+        }
+    }
+
+    /// Replace the extra entry points with the given ones, with the given capacity.
+    ///
+    /// Payload-block graphs are single-level, so the extra entry points collected while
+    /// linking are merely the first points of the block. Callers use this to install an
+    /// evenly spaced sample instead, so a filter that combines the block condition with
+    /// another condition finds an entry point whatever the insertion order.
+    pub fn set_extra_entry_points(
+        &mut self,
+        capacity: usize,
+        points: impl IntoIterator<Item = EntryPoint>,
+    ) {
+        let capacity = capacity.max(1);
+        let mut queue = FixedLengthPriorityQueue::new(capacity);
+        for point in points.into_iter().take(capacity) {
+            queue.push(point);
+        }
+        self.extra_entry_points = queue;
     }
 
     pub fn new_point<F>(
@@ -150,6 +183,44 @@ impl EntryPoints {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_set_extra_entry_points_keeps_capacity() {
+        let mut points = EntryPoints::new(3);
+        for i in 0..10 {
+            points.new_point(i, 0, |_| true);
+        }
+        assert_eq!(points.extra_entry_points.len(), 3);
+        points.set_extra_entry_points(
+            3,
+            (100..110).map(|point_id| EntryPoint { point_id, level: 0 }),
+        );
+        assert_eq!(points.extra_entry_points.len(), 3);
+        assert!(points.get_entry_point(|p| p >= 100).is_some());
+        assert!(points.get_entry_point(|p| (1..100).contains(&p)).is_none());
+    }
+
+    #[test]
+    fn test_merge_keeps_extra_entry_points() {
+        // Main graph with room for 8 extra entry points, block graph with 4.
+        let mut main = EntryPoints::new(8);
+        let mut block = EntryPoints::new(4);
+        for i in 0..100 {
+            block.new_point(i, (i % 7) as usize, |_| true);
+        }
+        assert_eq!(block.entry_points.len(), 1);
+        assert_eq!(block.extra_entry_points.len(), 4);
+
+        main.merge_from_other(block);
+
+        assert_eq!(main.entry_points.len(), 1);
+        assert_eq!(main.extra_entry_points.len(), 4);
+
+        // A filter rejecting the block's primary entry point still finds an entry point.
+        let primary = main.entry_points[0].point_id;
+        assert!(main.get_entry_point(|p| p != primary).is_some());
+        assert!(main.get_entry_point(|p| p == primary).is_some());
+    }
 
     #[test]
     fn test_entry_points() {

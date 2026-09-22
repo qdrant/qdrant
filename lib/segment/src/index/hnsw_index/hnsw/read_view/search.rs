@@ -186,6 +186,57 @@ where
         }
     }
 
+    /// Filtered graph search, unless the graph has no entry point satisfying `filter`.
+    ///
+    /// With `m = 0` (per-payload-block graphs only) a filter that adds a condition on top
+    /// of the block condition can reject every entry point of that block, and the graph
+    /// search would return an empty result while matching points exist. In that case the
+    /// query is served by a plain search over the filtered points, as the planner already
+    /// does for small cardinalities. Entry points depend on the filter only, so the check
+    /// is done once per batch.
+    pub(super) fn search_vectors_with_graph_or_plain(
+        &self,
+        vectors: &[&QueryVector],
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let has_entry_point = match vectors.first() {
+            None => true,
+            Some(vector) => {
+                let hw_counter = vector_query_context.hardware_counter();
+                let deleted_points = vector_query_context
+                    .deleted_points()
+                    .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+                let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+                let points_scorer = construct_search_scorer(
+                    vector,
+                    self.vector_storage,
+                    self.quantized_vectors,
+                    deleted_points,
+                    params,
+                    vector_query_context.hardware_counter(),
+                    Some(filter_context),
+                )?;
+                self.graph.has_entry_point(points_scorer.filters(), None)?
+            }
+        };
+        if has_entry_point {
+            self.search_vectors_with_graph(vectors, Some(filter), top, params, vector_query_context)
+        } else {
+            self.search_vectors_plain(
+                vectors,
+                filter,
+                query_cardinality,
+                top,
+                params,
+                vector_query_context,
+            )
+        }
+    }
+
     pub(super) fn search_vectors_with_graph(
         &self,
         vectors: &[&QueryVector],

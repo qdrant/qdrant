@@ -199,6 +199,23 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
+    /// Whether at least one entry point satisfies `filters`.
+    ///
+    /// With `m = 0` the graph is a set of disjoint per-payload-block subgraphs, each of
+    /// which registers its own entry points. A filter that combines the block condition
+    /// with another condition can reject all of them, in which case `search` returns an
+    /// empty result although matching points exist. Callers use this to fall back to a
+    /// plain filtered search instead.
+    pub fn has_entry_point(
+        &self,
+        filters: &ScorerFilters<'_>,
+        custom_entry_points: Option<&[PointOffsetType]>,
+    ) -> OperationResult<bool> {
+        Ok(self
+            .get_entry_point(filters, custom_entry_points)?
+            .is_some())
+    }
+
     fn get_entry_point(
         &self,
         filters: &ScorerFilters<'_>,

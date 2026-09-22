@@ -141,9 +141,10 @@ where
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    return self.search_vectors_with_graph(
+                    return self.search_vectors_with_graph_or_plain(
                         vectors,
-                        filter,
+                        query_filter,
+                        &query_cardinality,
                         top,
                         params,
                         query_context,
@@ -170,7 +171,14 @@ where
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    self.search_vectors_with_graph(vectors, filter, top, params, query_context)
+                    self.search_vectors_with_graph_or_plain(
+                        vectors,
+                        query_filter,
+                        &query_cardinality,
+                        top,
+                        params,
+                        query_context,
+                    )
                 } else {
                     // if cardinality is small - use plain index
                     let _timer =
