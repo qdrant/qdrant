@@ -135,11 +135,19 @@ impl HNSWIndex {
                 .unwrap_or(0)
                 * 10,
         );
+        // Payload blocks contribute their own sampled entry points (see
+        // `build_additional_links`), up to `num_entries` per indexed field plus rounding
+        // for small blocks. Reserve that room up front so they are never rejected by a
+        // queue the main graph already filled.
+        let hnsw_fields = additional_links_params
+            .as_ref()
+            .map_or(0, |(_, indexed_fields)| indexed_fields.len());
+        let entry_points_capacity = num_entries * (1 + 2 * hnsw_fields);
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             HnswM::new(config.m, config.m0),
             config.ef_construct,
-            num_entries,
+            entry_points_capacity,
             HNSW_USE_HEURISTIC,
         );
 
@@ -175,7 +183,7 @@ impl HNSWIndex {
             &quantized_vectors_ref,
             &graph_layers_builder,
             deleted_bitslice,
-            num_entries,
+            entry_points_capacity,
             stopped,
         )?;
         #[cfg(not(feature = "gpu"))]

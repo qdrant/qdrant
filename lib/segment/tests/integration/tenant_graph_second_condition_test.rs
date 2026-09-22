@@ -32,7 +32,7 @@ use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Match,
-    PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
+    PayloadFieldSchema, PayloadSchemaParams, PointIdType, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
@@ -86,13 +86,18 @@ fn test_tenant_graph_with_second_condition(
         segment
             .upsert_point(
                 n as SeqNumberType,
-                n.into(),
+                PointIdType::from(n),
                 only_default_vector(&vector),
                 &hw_counter,
             )
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, n.into(), &payload, &hw_counter)
+            .set_full_payload(
+                n as SeqNumberType,
+                PointIdType::from(n),
+                &payload,
+                &hw_counter,
+            )
             .unwrap();
     }
 
@@ -170,7 +175,7 @@ fn test_tenant_graph_with_second_condition(
 
     let mut empty = 0;
     for _ in 0..attempts {
-        let query: QueryVector = random_vector(&mut rng, dim).into();
+        let query = QueryVector::from(random_vector(&mut rng, dim));
         let index_result = hnsw_index
             .search(
                 &[&query],

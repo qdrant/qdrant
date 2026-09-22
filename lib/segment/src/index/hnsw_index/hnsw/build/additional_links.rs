@@ -216,12 +216,12 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
             );
             // Block graphs are single-level, so the extra entry points gathered while
             // linking would be the first points of the block only. Sample the block
-            // evenly instead.
-            let stride = std::cmp::max(1, points_to_index.len() / block_entry_points);
-            let sampled_entry_points: Vec<EntryPoint> = points_to_index
-                .iter()
-                .step_by(stride)
-                .map(|&point_id| EntryPoint { point_id, level: 0 })
+            // evenly instead: exactly `block_entry_points` positions spread over the
+            // whole block, first and last region included.
+            let block_entry_points = block_entry_points.min(points_to_index.len());
+            let sampled_entry_points: Vec<EntryPoint> = (0..block_entry_points)
+                .map(|i| points_to_index[i * points_to_index.len() / block_entry_points])
+                .map(|point_id| EntryPoint { point_id, level: 0 })
                 .collect();
 
             // ToDo: reuse graph layer for same payload
@@ -229,7 +229,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 total_vector_count,
                 payload_m,
                 config.ef_construct,
-                block_entry_points,
+                1,
                 HNSW_USE_HEURISTIC,
                 false,
             );
