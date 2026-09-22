@@ -9151,7 +9151,7 @@
         }
       },
       "MatchSubstring": {
-        "description": "Match keyword values that contain the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword and prefix matching. Served by a keyword index through a scan of its value dictionary; without one, falls back to reading the payload.",
+        "description": "Match keyword values that contain the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword and prefix matching. Served by a keyword index with the `prefix` option, through a scan of its key dictionary; without one, falls back to reading the payload.",
         "type": "object",
         "required": [
           "substring"
