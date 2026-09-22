@@ -73,9 +73,9 @@ mod qdrant_edge {
     use super::types::filter::{
         PyFieldCondition, PyFilter, PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius,
         PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition, PyMatchAny,
-        PyMatchExcept, PyMatchPhrase, PyMatchPrefix, PyMatchText, PyMatchTextAny, PyMatchValue,
-        PyMinShould, PyNestedCondition, PyRangeDateTime, PyRangeFloat, PySliceCondition,
-        PyValuesCount,
+        PyMatchExcept, PyMatchPhrase, PyMatchPrefix, PyMatchSubstring, PyMatchText, PyMatchTextAny,
+        PyMatchValue, PyMinShould, PyNestedCondition, PyRangeDateTime, PyRangeFloat,
+        PySliceCondition, PyValuesCount,
     };
     #[pymodule_export]
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};

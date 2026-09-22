@@ -7181,6 +7181,7 @@ dependencies = [
  "log",
  "macro_rules_attribute",
  "macros",
+ "memchr",
  "memmap2",
  "ndarray",
  "ndarray-npy",

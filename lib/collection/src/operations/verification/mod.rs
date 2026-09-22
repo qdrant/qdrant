@@ -123,6 +123,11 @@ pub trait StrictModeVerification {
                 return Ok(());
             };
 
+            // Before the index check: a filter rejected on its own terms should
+            // not be answered with "create an index for this key", since the
+            // index would not make it acceptable.
+            check_filter_limits(filter, strict_mode_config)?;
+
             // Check for filter indices
             if allow_unindexed_filter == Some(false)
                 && let Some((key, schemas)) = collection.one_unindexed_key(filter)
@@ -142,8 +147,6 @@ pub trait StrictModeVerification {
                     "Create an index for this key or use a different filter.",
                 ));
             }
-
-            check_filter_limits(filter, strict_mode_config)?;
 
             Ok(())
         };
@@ -182,6 +185,18 @@ fn check_filter_limits(
     filter: &Filter,
     strict_mode_config: &StrictModeConfig,
 ) -> CollectionResult<()> {
+    // Substring matching has no bounded access path: whichever index serves the
+    // field, the condition is answered by looking at every distinct value of
+    // it. Too expensive to allow under strict mode, indexed or not.
+    if let Some(key) = filter.one_substring_match_key() {
+        return Err(CollectionError::strict_mode(
+            format!(
+                "Substring matching is not allowed, used for \"{key}\": it scans every value of the field, with or without an index",
+            ),
+            "Use a prefix match or a full-text match instead.",
+        ));
+    }
+
     // Filter condition count limit
     if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
         let filter_conditions = filter.total_conditions_count();
@@ -426,6 +441,7 @@ mod test {
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
+        test_substring_filter(&collection).await;
         test_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
@@ -509,6 +525,57 @@ mod test {
             shard_key: None,
         });
         assert_strict_mode_success(allowed_request, collection).await;
+    }
+
+    /// Substring matching is rejected whatever indexes the field has, on read
+    /// and on write, and however deeply it is nested in the filter.
+    async fn test_substring_filter(collection: &Collection) {
+        let substring_filter = |key: &str| {
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                key.try_into().unwrap(),
+                Match::new_substring("abc"),
+            )))
+        };
+
+        // The indexed key rules out a rejection by the unindexed-field check.
+        assert_strict_mode_error_contains(
+            discover_fixture(None, Some(substring_filter(INDEXED_KEY)), None),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // Nested in a sub-filter.
+        assert_strict_mode_error_contains(
+            discover_fixture(
+                None,
+                Some(Filter::new_must(Condition::Filter(substring_filter(
+                    INDEXED_KEY,
+                )))),
+                None,
+            ),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // On the write path.
+        assert_strict_mode_error_contains(
+            PointsSelector::FilterSelector(FilterSelector {
+                filter: substring_filter(INDEXED_KEY),
+                shard_key: None,
+            }),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // An exact match on the same key is unaffected.
+        assert_strict_mode_success(
+            discover_fixture(None, Some(filter_fixture(INDEXED_KEY)), None),
+            collection,
+        )
+        .await;
     }
 
     async fn test_request_exact(collection: &Collection) {
@@ -661,6 +728,25 @@ mod test {
         if !matches!(error, CollectionError::StrictMode { .. }) {
             panic!("Expected strict mode error but got {error:#}");
         }
+    }
+
+    async fn assert_strict_mode_error_contains<R: StrictModeVerification>(
+        request: R,
+        collection: &Collection,
+        expected: &str,
+    ) {
+        let strict_mode_config = collection.strict_mode_config().await.unwrap();
+        let error = request
+            .check_strict_mode(collection, &strict_mode_config)
+            .await
+            .expect_err("Expected strict mode error but got Ok() value");
+        let CollectionError::StrictMode { description } = &error else {
+            panic!("Expected strict mode error but got {error:#}");
+        };
+        assert!(
+            description.contains(expected),
+            "Expected {expected:?} in strict mode error, got {description:?}",
+        );
     }
 
     async fn assert_strict_mode_success<R: StrictModeVerification>(

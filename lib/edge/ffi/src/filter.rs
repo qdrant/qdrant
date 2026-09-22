@@ -7,9 +7,9 @@ use segment::types::{
     GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
     GeoPoint as SegmentGeoPoint, GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
     HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition, Match as SegmentMatch,
-    MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchText, MatchTextAny, MatchValue,
-    MinShould as SegmentMinShould, Nested as SegmentNested, NestedCondition, PayloadField,
-    PointIdType, Range, RangeInterface, Slice as SegmentSlice, SliceCondition,
+    MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchSubstring, MatchText, MatchTextAny,
+    MatchValue, MinShould as SegmentMinShould, Nested as SegmentNested, NestedCondition,
+    PayloadField, PointIdType, Range, RangeInterface, Slice as SegmentSlice, SliceCondition,
     ValueVariants as SegmentValueVariants, ValuesCount as SegmentValuesCount,
 };
 use segment::utils::maybe_arc::MaybeArc;
@@ -341,6 +341,9 @@ pub enum Match {
     /// Prefix match: some word of the field must start with `prefix`
     /// (requires a full-text index on the payload key).
     Prefix { prefix: String },
+    /// Substring match: some value of the field must contain `substring`
+    /// (case-sensitive; served by a keyword index, otherwise a payload scan).
+    Substring { substring: String },
     /// The field value must equal any of the given values (IN).
     Any { any: AnyVariants },
     /// The field value must equal none of the given values (NOT IN).
@@ -359,6 +362,9 @@ impl TryFrom<Match> for SegmentMatch {
             Match::TextAny { text_any } => Ok(SegmentMatch::TextAny(MatchTextAny { text_any })),
             Match::Phrase { phrase } => Ok(SegmentMatch::Phrase(MatchPhrase { phrase })),
             Match::Prefix { prefix } => Ok(SegmentMatch::Prefix(MatchPrefix { prefix })),
+            Match::Substring { substring } => {
+                Ok(SegmentMatch::Substring(MatchSubstring { substring }))
+            }
             Match::Any { any } => Ok(SegmentMatch::Any(MatchAny { any: any.into() })),
             Match::Except { except } => Ok(SegmentMatch::Except(MatchExcept {
                 except: except.into(),
@@ -788,6 +794,8 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
                     SegmentMatch::Phrase(_) => {}
                     // [`Match::Prefix`]
                     SegmentMatch::Prefix(_) => {}
+                    // [`Match::Substring`]
+                    SegmentMatch::Substring(_) => {}
                     // [`Match::Any`]
                     SegmentMatch::Any(MatchAny { any }) => match any {
                         // [`Match::Any`] `strings`

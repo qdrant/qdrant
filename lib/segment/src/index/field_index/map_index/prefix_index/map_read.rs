@@ -1,15 +1,24 @@
-//! Prefix enumeration surface of the string-keyed map index.
+//! Key enumeration surface of the string-keyed map index.
 //!
-//! Counterpart of [`MapIndexRead`][1] for the [`Match::Prefix`][2] condition:
-//! every variant that carries a prefix structure (the mutable `BTreeSet`, the
-//! immutable sorted key vector, or the on-disk [`PrefixIndex`][3]) enumerates
-//! keys by byte-prefix through this trait. Variants without the structure
-//! (built without the `prefix` option, or loaded from legacy files) return
-//! `None`, which makes the caller fall back to the generic slow paths.
+//! Counterpart of [`MapIndexRead`][1] for the [`Match::Prefix`][2] and
+//! [`Match::Substring`][4] conditions: every variant that carries a key
+//! dictionary (the mutable `BTreeSet`, the immutable sorted key vector, or
+//! the on-disk [`PrefixIndex`][3]) enumerates keys through this trait.
+//! Variants without the structure (built without the `prefix` option, or
+//! loaded from legacy files) return `None`. A prefix condition then falls
+//! back to the generic per-point check; a substring condition, which scans
+//! the whole dictionary anyway, instead enumerates the keys of
+//! `values_to_points` itself.
+//!
+//! Neither condition reads postings here: a prefix range also reports the
+//! postings counts recorded next to the keys, a substring scan reports the
+//! keys alone. The postings themselves are fetched afterwards, for the
+//! matched keys only.
 //!
 //! [1]: super::super::read_ops::MapIndexRead
 //! [2]: crate::types::Match::Prefix
 //! [3]: super::reader::PrefixIndex
+//! [4]: crate::types::Match::Substring
 
 use std::ops::Bound;
 
@@ -58,6 +67,18 @@ pub trait StrMapIndexPrefixRead {
         prefix: &str,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PrefixIndexStats>>;
+
+    /// Keys containing `substring`, in ascending byte order.
+    ///
+    /// A substring does not delimit a key range the way a prefix does, so the
+    /// whole dictionary is scanned. Postings counts are not collected along
+    /// the way: a substring condition is estimated without them, and the
+    /// caller fetches postings for the returned keys alone.
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>>;
 }
 
 impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
@@ -104,6 +125,22 @@ impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
         }
         Ok(Some(stats))
     }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        let Some(sorted_keys) = &self.sorted_keys else {
+            return Ok(None);
+        };
+        let keys = sorted_keys
+            .iter()
+            .filter(|key| key.contains(substring))
+            .cloned()
+            .collect();
+        Ok(Some(keys))
+    }
 }
 
 impl StrMapIndexPrefixRead for MutableMapIndex<str> {
@@ -122,6 +159,14 @@ impl StrMapIndexPrefixRead for MutableMapIndex<str> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PrefixIndexStats>> {
         self.in_memory_index.prefix_stats(prefix, hw_counter)
+    }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        self.in_memory_index.substring_keys(substring, hw_counter)
     }
 }
 
@@ -171,6 +216,22 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for ImmutableMapIndex<str, S> {
         }
         Ok(Some(stats))
     }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        let Some(sorted_keys) = &self.sorted_keys else {
+            return Ok(None);
+        };
+        let keys = sorted_keys
+            .iter()
+            .filter(|key| key.contains(substring))
+            .cloned()
+            .collect();
+        Ok(Some(keys))
+    }
 }
 
 impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
@@ -209,6 +270,35 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
             prefix_index.prefix_stats(prefix.as_bytes(), hw_counter)?,
         ))
     }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        let Some(prefix_index) = &self.storage.prefix_index else {
+            return Ok(None);
+        };
+        // Match on the raw key bytes, so the UTF-8 validation below runs for
+        // matched keys only instead of every key in the index. Sound because
+        // UTF-8 is self-synchronizing: a byte-level occurrence of a valid
+        // UTF-8 needle inside valid UTF-8 always starts on a character
+        // boundary, so byte and `str` matching agree. The finder is built
+        // once, rather than per key as `str::contains` would.
+        let finder = memchr::memmem::Finder::new(substring);
+        let mut keys = Vec::new();
+        prefix_index.for_each_key(hw_counter, &mut |key, _count| {
+            if finder.find(key).is_none() {
+                return Ok(());
+            }
+            let key = std::str::from_utf8(key).map_err(|_| {
+                OperationError::service_error("Prefix index contains non-UTF-8 key")
+            })?;
+            keys.push(EcoString::from(key));
+            Ok(())
+        })?;
+        Ok(Some(keys))
+    }
 }
 
 impl StrMapIndexPrefixRead for MapIndex<str> {
@@ -233,6 +323,18 @@ impl StrMapIndexPrefixRead for MapIndex<str> {
             MapIndex::Mutable(index) => index.prefix_stats(prefix, hw_counter),
             MapIndex::Immutable(index) => index.prefix_stats(prefix, hw_counter),
             MapIndex::OnDisk(index) => index.prefix_stats(prefix, hw_counter),
+        }
+    }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        match self {
+            MapIndex::Mutable(index) => index.substring_keys(substring, hw_counter),
+            MapIndex::Immutable(index) => index.substring_keys(substring, hw_counter),
+            MapIndex::OnDisk(index) => index.substring_keys(substring, hw_counter),
         }
     }
 }
@@ -264,6 +366,18 @@ where
             ReadOnlyMapIndex::Appendable(_) => Ok(None),
             ReadOnlyMapIndex::Immutable(index) => index.prefix_stats(prefix, hw_counter),
             ReadOnlyMapIndex::OnDisk(index) => index.prefix_stats(prefix, hw_counter),
+        }
+    }
+
+    fn substring_keys(
+        &self,
+        substring: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        match self {
+            ReadOnlyMapIndex::Appendable(_) => Ok(None),
+            ReadOnlyMapIndex::Immutable(index) => index.substring_keys(substring, hw_counter),
+            ReadOnlyMapIndex::OnDisk(index) => index.substring_keys(substring, hw_counter),
         }
     }
 }

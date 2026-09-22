@@ -60,11 +60,27 @@ fn save_map_index<N>(
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
 {
+    save_map_index_with::<N>(data, path, index_type, into_value, true)
+}
+
+/// [`save_map_index`] with the `prefix` index option under test.
+fn save_map_index_with<N>(
+    data: &[Vec<<N as MapIndexKey>::Owned>],
+    path: &Path,
+    index_type: IndexType,
+    into_value: impl Fn(&<N as MapIndexKey>::Owned) -> Value,
+    prefix_index: bool,
+) where
+    N: MapIndexKey + ?Sized,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
+{
     let hw_counter = HardwareCounterCell::new();
 
     match index_type {
         IndexType::MutableGridstore => {
-            let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf(), true);
+            let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf(), prefix_index);
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -76,7 +92,8 @@ fn save_map_index<N>(
             builder.finalize().unwrap();
         }
         IndexType::Mmap | IndexType::RamMmap => {
-            let mut builder = MapIndex::<N>::builder_immutable(path, false, &empty_deleted(), true);
+            let mut builder =
+                MapIndex::<N>::builder_immutable(path, false, &empty_deleted(), prefix_index);
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -98,10 +115,27 @@ fn load_map_index<N: MapIndexKey + ?Sized>(
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    load_map_index_with(data, path, index_type, true)
+}
+
+/// [`load_map_index`] with the `prefix` index option under test. Only the
+/// mutable variant takes it at load time; the others read the prefix index
+/// file written at build time.
+fn load_map_index_with<N: MapIndexKey + ?Sized>(
+    data: &[Vec<<N as MapIndexKey>::Owned>],
+    path: &Path,
+    index_type: IndexType,
+    prefix_index: bool,
+) -> MapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
     let index = match index_type {
-        IndexType::MutableGridstore => MapIndex::<N>::new_mutable(path.to_path_buf(), true, true)
-            .unwrap()
-            .unwrap(),
+        IndexType::MutableGridstore => {
+            MapIndex::<N>::new_mutable(path.to_path_buf(), true, prefix_index)
+                .unwrap()
+                .unwrap()
+        }
         IndexType::Mmap => MapIndex::<N>::new_immutable(path, Memory::Cold, &empty_deleted())
             .unwrap()
             .unwrap(),
@@ -665,53 +699,201 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
     }
 }
 
-/// An index built *without* the prefix option must decline prefix
-/// filtering/estimation (fallback path) while still serving the per-point
-/// condition checker through the forward index.
-#[test]
-fn test_str_prefix_match_disabled() {
+// --- Substring matching ---
+
+/// Ground truth for a substring match: points with at least one value
+/// containing the substring.
+fn naive_substring_points(data: &[Vec<EcoString>], substring: &str) -> Vec<PointOffsetType> {
+    data.iter()
+        .enumerate()
+        .filter(|(_, values)| values.iter().any(|value| value.contains(substring)))
+        .map(|(idx, _)| idx as PointOffsetType)
+        .collect()
+}
+
+const SUBSTRING_PROBES: &[&str] = &[
+    "",
+    "qdrant",
+    "example.com",
+    "://",
+    "tech/docs",
+    "ag",
+    "tags",
+    "TAG",
+    "β",
+    "βδ",
+    "nonexistent",
+];
+
+/// Substring matching is served by every keyword index variant carrying a
+/// key dictionary, through a full scan of it.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_substring_match(#[case] index_type: IndexType) {
     use common::condition_checker::ConditionChecker as _;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
 
     use crate::json_path::JsonPath;
     use crate::types::Match;
 
-    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let temp_dir = Builder::new()
+        .prefix("substring_index_dir")
+        .tempdir()
+        .unwrap();
     let data = prefix_test_data();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut builder = MapIndex::<str>::builder_immutable(
-        temp_dir.path(),
-        false,
-        &empty_deleted(),
-        false, // no prefix index
-    );
-    builder.init().unwrap();
-    for (idx, values) in data.iter().enumerate() {
-        let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();
-        let values: Vec<_> = values.iter().collect();
-        builder
-            .add_point(idx as PointOffsetType, &values, &hw_counter)
-            .unwrap();
-    }
-    let index = builder.finalize().unwrap();
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
 
-    let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix("https://"));
-    assert!(index.filter(&condition, &hw_counter).unwrap().is_none());
-    assert!(
-        index
+    for substring in SUBSTRING_PROBES {
+        let expected = naive_substring_points(&data, substring);
+        let condition =
+            FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
+
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition, &hw_counter)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "substring {substring:?}");
+
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
+        let estimation = index
             .estimate_cardinality(&condition, &hw_counter)
             .unwrap()
-            .is_none()
-    );
+            .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
+        assert!(
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
+        );
 
-    let checker = index
-        .condition_checker(&condition, HwMeasurementAcc::new())
-        .unwrap()
-        .unwrap();
-    let expected = naive_prefix_points(&data, "https://");
-    for idx in 0..data.len() as PointOffsetType {
-        assert_eq!(checker.check(idx).unwrap(), expected.contains(&idx));
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "substring {substring:?}, point {idx}",
+            );
+        }
+    }
+}
+
+/// An index built *without* the prefix option has no key dictionary. A prefix
+/// condition is then declined by the index outright, while a substring
+/// condition — which scans the whole dictionary anyway — is served by
+/// enumerating the keys of the map index itself. Both keep the per-point
+/// condition checker.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new().prefix("no_prefix_index").tempdir().unwrap();
+    let data = prefix_test_data();
+    let hw_counter = HardwareCounterCell::new();
+
+    save_map_index_with::<str>(
+        &data,
+        temp_dir.path(),
+        index_type,
+        |v| v.to_string().into(),
+        false, // no key dictionary
+    );
+    let index: MapIndex<str> = load_map_index_with(&data, temp_dir.path(), index_type, false);
+
+    // Prefix matching is declined without a dictionary: no filter iterator, no
+    // estimate, only the per-point checker.
+    for prefix in PREFIX_PROBES {
+        let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
+        assert!(
+            index.filter(&condition, &hw_counter).unwrap().is_none(),
+            "prefix {prefix:?}",
+        );
+        assert!(
+            index
+                .estimate_cardinality(&condition, &hw_counter)
+                .unwrap()
+                .is_none(),
+            "prefix {prefix:?}",
+        );
+
+        let expected = naive_prefix_points(&data, prefix);
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "prefix {prefix:?}, point {idx}",
+            );
+        }
+    }
+
+    // Substring matching falls back to a scan of the map index keys, which must
+    // agree with the dictionary-backed path.
+    for substring in SUBSTRING_PROBES {
+        let expected = naive_substring_points(&data, substring);
+        let condition =
+            FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
+
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition, &hw_counter)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "substring {substring:?}");
+
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
+        let estimation = index
+            .estimate_cardinality(&condition, &hw_counter)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
+        assert!(
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
+        );
+
+        let checker = index
+            .condition_checker(&condition, HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "substring {substring:?}, point {idx}",
+            );
+        }
     }
 }
 
@@ -789,6 +971,7 @@ fn test_str_prefix_payload_blocks() {
                 | Match::Text(_)
                 | Match::TextAny(_)
                 | Match::Phrase(_)
+                | Match::Substring(_)
                 | Match::Any(_)
                 | Match::Except(_) => value_blocks.push(block.cardinality),
             }

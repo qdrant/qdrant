@@ -34,6 +34,7 @@ MatchType = Union[
     "MatchTextAny",
     "MatchPhrase",
     "MatchPrefix",
+    "MatchSubstring",
     "MatchAny",
     "MatchExcept",
 ]
@@ -2884,6 +2885,23 @@ class MatchPrefix:
     @property
     def prefix(self) -> str:
         """Prefix."""
+        ...
+
+class MatchSubstring:
+    """Match keyword values containing the given substring."""
+
+    def __init__(self, substring: str) -> None:
+        """
+        Create a MatchSubstring.
+
+        Args:
+            substring: Substring to match.
+        """
+        ...
+
+    @property
+    def substring(self) -> str:
+        """Substring."""
         ...
 
 class MatchAny:

@@ -247,6 +247,7 @@ indicatif = { version = "0.18.4", features = ["rayon"] }
 integer-encoding = "4.1.0"
 itertools = "0.15.0"
 log = "0.4.31"
+memchr = "2.8.0"
 memmap2 = "0.9.10"
 mockito = "1.7"
 murmur3_32 = "0.1"

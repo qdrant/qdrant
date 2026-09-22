@@ -37,6 +37,12 @@ pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug + 'static {
         false
     }
 
+    /// Whether a key of this type contains the given key as a substring.
+    /// `false` for key types without substring matching semantics.
+    fn contains(&self, _needle: &Self) -> bool {
+        false
+    }
+
     /// Convert a [`FacetValue`] into this key's owned type, or `None` if the
     /// variant doesn't match (e.g. a keyword value against an integer index).
     fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned>;
@@ -67,6 +73,10 @@ impl MapIndexKey for str {
 
     fn starts_with(&self, prefix: &Self) -> bool {
         str::starts_with(self, prefix)
+    }
+
+    fn contains(&self, needle: &Self) -> bool {
+        str::contains(self, needle)
     }
 
     fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
