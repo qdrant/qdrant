@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
+use common::uio_trace;
 use common::universal_io::{
     OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
 };
@@ -48,7 +49,9 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         let buf = self
             .runtime
             .handle()
-            .spawn(read_into_byte_buffer::<A>(self, range, align))
+            .spawn(
+                uio_trace::Context::current().wrap(read_into_byte_buffer::<A>(self, range, align)),
+            )
             .await??;
 
         log::trace!(

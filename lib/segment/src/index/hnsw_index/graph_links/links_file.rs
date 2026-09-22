@@ -200,6 +200,18 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         })
     }
 
+    pub fn uio_trace_sections(&self) -> Vec<(&'static str, u64)> {
+        let header_len =
+            self.reindex_offset - (self.level_offsets.len() as u64 - 1) * size_of::<u64>() as u64;
+        vec![
+            ("header", 0),
+            ("level_offsets", header_len),
+            ("reindex", self.reindex_offset),
+            ("neighbors", self.neighbors_offset),
+            ("offsets", self.offsets_offset),
+        ]
+    }
+
     pub fn num_points(&self) -> usize {
         self.point_count as usize
     }

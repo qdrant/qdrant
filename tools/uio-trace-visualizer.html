@@ -1,0 +1,875 @@
+<!doctype html>
+<!--
+
+Visualizer for traces written by the `uio_trace` module.
+See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
+Mouse wheel to zoom, mouse drag to pan.
+
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>uio trace</title>
+<style>
+:root {
+  color-scheme: dark;
+  --surface: #1a1a19;
+  --plane: #0d0d0d;
+  --ink: #ffffff;
+  --ink2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --bad: #d03b3b;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--plane); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex; flex-direction: column;
+}
+header {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 5px 10px; border-bottom: 1px solid var(--axis);
+}
+header #note {
+  flex: 1; min-width: 0; color: var(--bad);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+button {
+  background: var(--surface); color: var(--ink2);
+  border: 1px solid var(--axis); border-radius: 4px; padding: 2px 8px; cursor: pointer;
+}
+#file { display: none; }
+#wrap { position: relative; flex: 1; min-height: 0; background: var(--surface); }
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+canvas.pan { cursor: grabbing; }
+#tip {
+  position: absolute; display: none; pointer-events: none; max-width: 460px;
+  background: #000000e8; border: 1px solid var(--axis); border-radius: 5px;
+  padding: 6px 8px; font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+  word-break: break-all; z-index: 2;
+}
+#tip b { color: var(--ink); }
+#tip .k { color: var(--muted); }
+#tip .err { color: #e66767; }
+#drop {
+  position: absolute; inset: 0; z-index: 3; background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: var(--ink2); text-align: center;
+}
+#drop.gone { display: none; }
+#drop b { color: var(--ink); font-size: 15px; }
+#drop code { color: var(--muted); font-size: 12px; }
+#hint { margin-top: 44px; }
+#help {
+  max-width: 80ch; color: var(--muted); text-align: left;
+  white-space: pre-wrap; line-height: 1.6;
+}
+body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
+</style>
+</head>
+<body>
+<header>
+  <span id="note"></span>
+  <button id="reset">reset zoom</button>
+  <button id="url">open URL</button>
+  <button id="upload">upload file</button>
+  <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
+</header>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="tip"></div>
+  <div id="drop">
+    <b>What is it?</b>
+    <div id="help"></div>
+    <b id="hint">drop a trace here</b>
+  </div>
+</div>
+<script>
+"use strict";
+
+// Canvas cannot read CSS variables; resolve the palette once.
+const CSS = getComputedStyle(document.documentElement);
+const [AXIS, BAD, GRID, INK, INK2, MUTED, SURFACE] =
+  ["axis", "bad", "grid", "ink", "ink2", "muted", "surface"]
+    .map(name => CSS.getPropertyValue("--" + name).trim());
+
+// Lane order, left to right; also the categorical slot order; `null` draws muted.
+const KIND_COLOR = {
+  "vectors": "#3987e5",
+  "graph.neighbors": "#d95926",
+  "graph.offsets": "#199e70",
+  "graph.reindex": "#c98500",
+  "graph.header": "#d55181",
+  "graph.level_offsets": "#1fa0b8",
+  "graph": null,
+  "payload_index": "#008300",
+  "payload_storage": "#9085e9",
+  "id_tracker": null,
+  "vector_meta": null,
+  "index_meta": null,
+  "meta": null,
+};
+
+const SHADES = 8;  // tints per kind, so a dense lane reads as texture, not a flat wall
+const CONC_BIN = 250;  // µs
+const BW_BIN = 1000;  // µs
+const CPU_BIN = 2000;  // µs, the sampling interval of the tracer
+const LANE_FONT = "11px system-ui, sans-serif";
+const REQ_W = 4.5;  // px per request bar
+const BAD_DARK = darken(BAD);
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const tip = document.getElementById("tip");
+const wrap = document.getElementById("wrap");
+const note = document.getElementById("note");
+
+const HEAD = 26;
+const W_RULER = 68, W_PHASE = 168, W_MARK = 26, W_SIDE = 96, GAP = 10;
+const view = {t0: 0, tpp: 1};
+let D = null;
+let L = null;
+let mouseY = -1;
+let hover = null;
+let dragging = null;
+let dirty = false;
+let refit = true;
+
+// ---------- trace ----------
+
+// Coarse read type, from the file name alone; a `sections` record refines it.
+function classify(path) {
+  if (/(matrix\.dat|quantized\.data)$/.test(path)) return "vectors";
+  if (path.includes("/vector_storage/")) return "vector_meta";
+  if (/(links_compressed|links_comp_vec|links|graph)\.bin$/.test(path)) return "graph";
+  if (path.includes("/vector_index/")) return "index_meta";
+  if (path.includes("/payload_index/")) return "payload_index";
+  if (path.includes("/payload_storage/")) return "payload_storage";
+  if (path.includes("id_tracker")) return "id_tracker";
+  return "meta";
+}
+
+function build(text, name) {
+  const layouts = new Map();
+  const phases = [];
+  const marks = [];
+  const reqs = [];
+  const cpu = [];
+  let dropped = 0, bad = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch (err) { bad++; continue; }
+    if (ev.kind === "sections") {
+      layouts.set(ev.path, ev.sections);
+    } else if (ev.kind === "cpu") {
+      cpu.push({at: ev.at_ns / 1000, cpu: ev.cpu_ns / 1000});
+    } else if (ev.kind === "dropped") {
+      dropped += ev.count;
+    } else if (ev.kind === "phase") {
+      phases.push({id: ev.id, name: ev.name, s: ev.start_ns / 1000, e: ev.end_ns / 1000, depth: 0});
+    } else if (ev.kind === "mark") {
+      marks.push({at: ev.at_ns / 1000, text: ev.text});
+    } else if (ev.kind === "request") {
+      reqs.push({
+        // Requests are not numbered in the trace; the file order names them.
+        id: reqs.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
+        op: ev.op, path: ev.path, off: Number(ev.offset), len: Number(ev.length), outcome: ev.outcome,
+      });
+    }
+  }
+  if (!reqs.length && !phases.length) throw new Error("no spans in " + name);
+
+  phases.sort((a, b) => a.s - b.s || b.e - a.e);
+  marks.sort((a, b) => a.at - b.at);
+  reqs.sort((a, b) => a.s - b.s);
+  nest(phases);
+  const byId = new Map(phases.map(phase => [phase.id, phase]));
+  for (const req of reqs) {
+    req.spans = sections(layouts, req);
+    req.kind = req.spans?.length ? classify(req.path) + "." + req.spans[0][0] : classify(req.path);
+    req.phase = byId.get(req.parent);
+  }
+
+  const counts = new Map();
+  for (const req of reqs) counts.set(req.kind, (counts.get(req.kind) || 0) + 1);
+  const kinds = Object.keys(KIND_COLOR).filter(k => counts.has(k));
+  kinds.push(...[...counts.keys()].filter(k => !kinds.includes(k)).sort());
+  const index = new Map(kinds.map((k, i) => [k, i]));
+  const colors = kinds.map(k => KIND_COLOR[k] || MUTED);
+
+  let tMax = 1, maxdur = 1;
+  for (const req of reqs) {
+    req.k = index.get(req.kind);
+    // Disjoint bits of one avalanching hash, so the shade does not correlate
+    // with the jitter that spreads the bars across the lane.
+    const h = hash32(req.id);
+    req.jit = (h >>> 8) / (1 << 24);
+    req.shade = h % SHADES;
+    tMax = Math.max(tMax, req.e);
+    maxdur = Math.max(maxdur, req.e - req.s);
+  }
+  for (const phase of phases) tMax = Math.max(tMax, phase.e);
+  for (const mark of marks) tMax = Math.max(tMax, mark.at);
+
+  const conc = concurrency(reqs, tMax);
+  const bw = throughput(reqs, tMax);
+  const busy = cores(cpu, tMax);
+  return {
+    name, kinds, colors, reqs, phases, marks, dropped, bad, maxdur,
+    t_max: tMax,
+    total_bytes: reqs.reduce((sum, r) => sum + r.len, 0),
+    shades: colors.map(shades),
+    darks: colors.map(darken),
+    counts: kinds.map(k => counts.get(k)),
+    S: Float64Array.from(reqs, r => r.s),
+    conc: {bin: CONC_BIN, v: conc, max: peak(conc)},
+    bw: {bin: BW_BIN, v: bw, max: peak(bw)},
+    cpu: {bin: CPU_BIN, v: busy, max: peak(busy), total: cpu.length ? cpu[cpu.length - 1].cpu : 0},
+  };
+}
+
+// Phases carry no parent, so nesting is by containment.
+function nest(phases) {
+  const stack = [];
+  for (const phase of phases) {
+    while (stack.length && stack[stack.length - 1] < phase.e) stack.pop();
+    phase.depth = stack.length;
+    stack.push(phase.e);
+  }
+}
+
+// Bytes of `req` landing in each section of the file's reported byte layout, largest
+// first. The disk cache rounds reads out to whole blocks, so a read of one section
+// routinely starts inside the previous one; the largest overlap names the read.
+function sections(layouts, req) {
+  const layout = layouts.get(req.path);
+  if (!layout) return null;
+  const end = req.off + Math.max(req.len, 1);
+  const out = [];
+  for (let i = 0; i < layout.length; i++) {
+    const next = i + 1 < layout.length ? layout[i + 1][1] : Infinity;
+    const bytes = Math.min(end, next) - Math.max(req.off, layout[i][1]);
+    if (bytes > 0) out.push([layout[i][0], bytes]);
+  }
+  return out.sort((a, b) => b[1] - a[1]);
+}
+
+/** Peak in-flight request count per `CONC_BIN` bucket. */
+function concurrency(reqs, tMax) {
+  const out = new Array(Math.floor(tMax / CONC_BIN) + 1).fill(0);
+  const events = [];
+  for (const req of reqs) events.push([req.s, 1], [req.e, -1]);
+  events.sort((a, b) => a[0] - b[0]);
+  let held = 0, previous = 0;
+  for (const [time, delta] of events) {
+    if (held > 0) {
+      for (let b = Math.floor(previous / CONC_BIN); b <= Math.floor(time / CONC_BIN); b++) {
+        out[b] = Math.max(out[b], held);
+      }
+    }
+    held += delta;
+    previous = time;
+  }
+  return out;
+}
+
+/** Bytes per `BW_BIN` bucket, each request spread over its lifetime. */
+function throughput(reqs, tMax) {
+  const out = new Array(Math.floor(tMax / BW_BIN) + 1).fill(0);
+  for (const req of reqs) {
+    if (!req.len) continue;
+    const rate = req.len / Math.max(req.e - req.s, 1);
+    const last = Math.min(Math.floor(req.e / BW_BIN), out.length - 1);
+    for (let b = Math.floor(req.s / BW_BIN); b <= last; b++) {
+      const overlap = Math.min(req.e, (b + 1) * BW_BIN) - Math.max(req.s, b * BW_BIN);
+      out[b] += rate * Math.max(overlap, 0);
+    }
+  }
+  return out.map(Math.round);
+}
+
+/** Cores busy per `CPU_BIN` bucket, from the cumulative CPU samples. */
+function cores(samples, tMax) {
+  const out = new Array(Math.floor(tMax / CPU_BIN) + 1).fill(0);
+  for (let i = 1; i < samples.length; i++) {
+    const [previous, sample] = [samples[i - 1], samples[i]];
+    const busy = (sample.cpu - previous.cpu) / Math.max(sample.at - previous.at, 1);
+    const last = Math.min(Math.floor(sample.at / CPU_BIN), out.length - 1);
+    for (let b = Math.floor(previous.at / CPU_BIN); b <= last; b++) {
+      out[b] = Math.max(out[b], busy);
+    }
+  }
+  return out;
+}
+
+const peak = values => values.reduce((a, b) => Math.max(a, b), 0);
+
+function hash32(x) {
+  x = Math.imul(x ^ (x >>> 16), 2246822507);
+  x = Math.imul(x ^ (x >>> 13), 3266489909);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+/**
+ * Tints of one colour, mixed towards white.
+ *
+ * Only ever lighter than the base, so contrast against the dark surface can
+ * only improve and every tint keeps the base's validated 3:1.
+ */
+function shades(color) {
+  return Array.from({length: SHADES}, (_, i) => mix(color, "#ffffff", 0.22 * i / (SHADES - 1)));
+}
+
+/** One colour, darkened: the bar under the cursor. */
+function darken(color) {
+  return mix(color, "#000000", 0.55);
+}
+
+function mix(from, to, weight) {
+  const target = rgb(to);
+  return "#" + rgb(from)
+    .map((c, i) => Math.round(c + (target[i] - c) * weight).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function rgb(hex) {
+  return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+}
+
+function rgba(hex, alpha) {
+  return "rgba(" + rgb(hex).join(",") + "," + alpha + ")";
+}
+
+// ---------- layout ----------
+
+function layout() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const o = {w: w, h: h, top: HEAD, ph: Math.max(1, h - HEAD)};
+  o.phaseX = W_RULER;
+  o.markX = o.phaseX + W_PHASE;
+  o.reqX = o.markX + W_MARK;
+  o.reqW = Math.max(80, w - o.reqX - 4 * GAP - 3 * W_SIDE);
+  o.concX = o.reqX + o.reqW + GAP;
+  o.bwX = o.concX + W_SIDE + GAP;
+  o.cpuX = o.bwX + W_SIDE + GAP;
+
+  // Every lane first takes the width of its own label, then shares out what is
+  // left by log of its count, so the huge `graph.neighbors` lane cannot swamp
+  // the rest and a one-request lane still names itself.
+  const avail = o.reqW - 8;
+  ctx.font = LANE_FONT;
+  const floor = D.kinds.map(k => ctx.measureText(laneName(k)).width + 6);
+  const spare = Math.max(0, avail - floor.reduce((a, b) => a + b, 0));
+  const weight = D.counts.map(c => Math.log2(c + 1));
+  const sum = weight.reduce((a, b) => a + b, 0) || 1;
+  let lw = floor.map((f, i) => f + spare * weight[i] / sum);
+  const total = lw.reduce((a, b) => a + b, 0) || 1;
+  if (total > avail) lw = lw.map(v => v * avail / total);  // too many kinds to label
+  o.laneW = lw;
+  o.laneX = [];
+  let lx = o.reqX + 4;
+  for (const width of lw) { o.laneX.push(lx); lx += width; }
+  return o;
+}
+
+const yOf = t => L.top + (t - view.t0) / view.tpp;
+const tOf = y => view.t0 + (y - L.top) * view.tpp;
+const viewEnd = () => view.t0 + L.ph * view.tpp;
+const laneJit = k => Math.max(1, L.laneW[k] - REQ_W - 2);
+
+function fit() {
+  refit = true;
+  redraw();
+}
+
+// The trace fills the pane at most once: no zooming past the whole span, and no
+// panning past either end of it.
+function clampView() {
+  view.tpp = Math.min(Math.max(view.tpp, 0.02), D.t_max / L.ph);
+  view.t0 = Math.min(Math.max(view.t0, 0), Math.max(0, D.t_max - L.ph * view.tpp));
+}
+
+// ---------- drawing ----------
+
+function redraw() {
+  if (dirty || !D) return;
+  dirty = true;
+  requestAnimationFrame(() => { dirty = false; draw(); });
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  L = layout();
+  if (refit) {  // stays on until the user zooms or pans, so resizes re-fit
+    view.tpp = D.t_max / L.ph;
+    view.t0 = 0;
+  }
+  clampView();
+  ctx.clearRect(0, 0, w, h);
+  ctx.textBaseline = "middle";
+
+  drawRuler();
+  drawPhases();
+  drawRequests();
+  drawMarks();
+  drawSeries(D.conc, L.concX);
+  drawSeries(D.bw, L.bwX);
+  drawSeries(D.cpu, L.cpuX);
+  drawHeader();
+  drawCrosshair();
+}
+
+function drawHeader() {
+  ctx.fillStyle = SURFACE;
+  ctx.fillRect(0, 0, L.w, HEAD);
+  ctx.strokeStyle = AXIS;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HEAD - 0.5); ctx.lineTo(L.w, HEAD - 0.5); ctx.stroke();
+  ctx.fillStyle = MUTED;
+  ctx.font = LANE_FONT;
+  ctx.textAlign = "right";
+  ctx.fillText("ms", W_RULER - 6, HEAD / 2);
+  ctx.textAlign = "left";
+  ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
+  for (let i = 0; i < D.kinds.length; i++) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.laneX[i], 0, L.laneW[i] - 4, HEAD);
+    ctx.clip();
+    ctx.fillStyle = D.colors[i];
+    ctx.fillText(laneName(D.kinds[i]), L.laneX[i] + 2, HEAD / 2);
+    ctx.restore();
+  }
+  ctx.fillStyle = MUTED;
+  ctx.fillText("conc ≤" + D.conc.max, L.concX, HEAD / 2);
+  ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.bwX, HEAD / 2);
+  ctx.fillText("cores ≤" + D.cpu.max.toFixed(1), L.cpuX, HEAD / 2);
+}
+
+const laneName = kind => kind.replace("graph.", "g.");
+
+function niceStep(target) {
+  const magnitude = 10 ** Math.floor(Math.log10(target));
+  return magnitude * [1, 2, 5, 10].find(m => m * magnitude >= target);
+}
+
+function drawRuler() {
+  const step = niceStep(56 * view.tpp);
+  const begin = Math.floor(view.t0 / step) * step;
+  ctx.font = LANE_FONT;
+  ctx.lineWidth = 1;
+  for (let t = begin; t <= viewEnd(); t += step) {
+    const y = Math.round(yOf(t)) + 0.5;
+    if (y < L.top) continue;
+    ctx.strokeStyle = GRID;
+    ctx.beginPath(); ctx.moveTo(W_RULER, y); ctx.lineTo(L.w, y); ctx.stroke();
+    ctx.strokeStyle = AXIS;
+    ctx.beginPath(); ctx.moveTo(W_RULER - 6, y); ctx.lineTo(W_RULER, y); ctx.stroke();
+    ctx.fillStyle = MUTED;
+    ctx.textAlign = "right";
+    ctx.fillText(fmtMs(t), W_RULER - 8, y);
+  }
+  ctx.textAlign = "left";
+}
+
+function drawPhases() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.phaseX, L.top, W_PHASE, L.ph);
+  ctx.clip();
+  ctx.font = LANE_FONT;
+  const taken = [];
+  for (const phase of D.phases) {
+    const y0 = yOf(phase.s), y1 = yOf(phase.e);
+    if (y1 < L.top || y0 > L.h) continue;
+    const x = L.phaseX + 5 + phase.depth * 11;
+    const alpha = Math.max(0.35, 0.95 - 0.13 * phase.depth);
+    ctx.fillStyle = rgba(INK2, alpha);
+    ctx.fillRect(x, Math.max(y0, L.top), 2, Math.max(1, y1 - Math.max(y0, L.top)));
+    if (y0 >= L.top) ctx.fillRect(x - 3, y0, 8, 2);
+    ctx.fillRect(x - 3, y1 - 2, 8, 2);
+    // Nested phases start at nearly the same time; push labels apart.
+    let ly = Math.min(Math.max(y0 + 9, L.top + 9), Math.max(y1 - 3, L.top + 9));
+    while (taken.some(v => Math.abs(v - ly) < 12)) ly += 12;
+    if (ly < L.h) {
+      taken.push(ly);
+      ctx.fillText(phase.name, x + 7, ly);
+    }
+  }
+  ctx.restore();
+}
+
+function drawRequests() {
+  const t0 = view.t0, tpp = view.tpp, vend = viewEnd();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.reqX, L.top, L.reqW, L.ph);
+  ctx.clip();
+  const bad = [];
+  let last = "";
+  for (let i = lowerBound(D.S, t0 - D.maxdur); i < D.reqs.length; i++) {
+    const req = D.reqs[i];
+    if (req.s > vend) break;
+    if (req.e < t0) continue;
+    if (req.outcome !== "ok") { bad.push(req); continue; }
+    const color = req === hover ? D.darks[req.k] : D.shades[req.k][req.shade];
+    if (color !== last) { ctx.fillStyle = color; last = color; }
+    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
+    ctx.fillRect(x, L.top + (req.s - t0) / tpp, REQ_W, Math.max(1.5, (req.e - req.s) / tpp));
+  }
+  for (const req of bad) {
+    ctx.fillStyle = req === hover ? BAD_DARK : BAD;
+    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
+    ctx.fillRect(x - 1, L.top + (req.s - t0) / tpp, REQ_W + 2, Math.max(2, (req.e - req.s) / tpp));
+  }
+  ctx.restore();
+}
+
+function drawMarks() {
+  const vend = viewEnd();
+  ctx.font = LANE_FONT;
+  ctx.lineWidth = 1;
+  const visible = [];
+  for (const mark of D.marks) {
+    if (mark.at < view.t0 || mark.at > vend) continue;
+    const y = Math.round(yOf(mark.at)) + 0.5;
+    if (y < L.top) continue;
+    ctx.strokeStyle = rgba(MUTED, 0.28);
+    ctx.beginPath(); ctx.moveTo(L.markX, y); ctx.lineTo(L.w, y); ctx.stroke();
+    ctx.strokeStyle = INK2;
+    ctx.beginPath(); ctx.moveTo(L.markX + 2, y); ctx.lineTo(L.markX + W_MARK - 4, y); ctx.stroke();
+    visible.push({mark: mark, y: y});
+  }
+  // Marks crowd together zoomed out; the earlier one keeps the slot.
+  const taken = [];
+  for (const v of visible) {
+    if (taken.some(y => Math.abs(y - v.y) < 12)) continue;
+    taken.push(v.y);
+    const label = v.mark.text.length > 64 ? v.mark.text.slice(0, 63) + "…" : v.mark.text;
+    ctx.fillStyle = INK2;
+    ctx.fillText(label, L.reqX + 4, v.y);
+  }
+}
+
+function drawSeries(s, x0) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, L.top, W_SIDE, L.ph);
+  ctx.clip();
+  ctx.strokeStyle = GRID;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0 + 0.5, L.top); ctx.lineTo(x0 + 0.5, L.h); ctx.stroke();
+
+  const max = s.max || 1;
+  const i0 = Math.max(0, Math.floor(view.t0 / s.bin));
+  const i1 = Math.min(s.v.length - 1, Math.ceil(viewEnd() / s.bin));
+  if (i1 >= i0) {
+    ctx.beginPath();
+    ctx.moveTo(x0, yOf(i0 * s.bin));
+    for (let i = i0; i <= i1; i++) {
+      const x = x0 + (s.v[i] / max) * (W_SIDE - 2);
+      ctx.lineTo(x, yOf(i * s.bin));
+      ctx.lineTo(x, yOf((i + 1) * s.bin));
+    }
+    ctx.lineTo(x0, yOf((i1 + 1) * s.bin));
+    ctx.closePath();
+    ctx.fillStyle = rgba(INK2, 0.22);
+    ctx.fill();
+    ctx.strokeStyle = INK2;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCrosshair() {
+  if (mouseY < L.top) return;
+  const y = Math.round(mouseY) + 0.5;
+  ctx.strokeStyle = rgba(INK, 0.22);
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(W_RULER, y); ctx.lineTo(L.w, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = LANE_FONT;
+  ctx.fillStyle = SURFACE;
+  ctx.fillRect(0, y - 7, W_RULER - 6, 14);
+  ctx.fillStyle = INK;
+  ctx.textAlign = "right";
+  ctx.fillText(fmtMs(tOf(mouseY)), W_RULER - 8, y);
+  ctx.textAlign = "left";
+}
+
+// ---------- hit testing ----------
+
+function lowerBound(arr, t) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < t) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+function hitReq(mx, my) {
+  if (my < L.top || mx < L.reqX || mx >= L.reqX + L.reqW) return null;
+  const t = tOf(my), tol = 3 * view.tpp;
+  let best = null, bestDx = 4;
+  for (let i = lowerBound(D.S, t - D.maxdur - tol); i < D.reqs.length; i++) {
+    const req = D.reqs[i];
+    if (req.s > t + tol) break;
+    if (req.e + tol < t) continue;
+    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
+    const dx = mx < x ? x - mx : Math.max(0, mx - (x + REQ_W));
+    if (dx < bestDx) { bestDx = dx; best = req; }
+  }
+  return best;
+}
+
+function hit(mx, my) {
+  if (my < L.top) return null;
+  const t = tOf(my);
+  if (mx >= L.markX && mx < L.markX + W_MARK) {
+    let best = null, bestDy = 5;
+    for (const mark of D.marks) {
+      const dy = Math.abs(yOf(mark.at) - my);
+      if (dy < bestDy) { bestDy = dy; best = mark; }
+    }
+    if (best) {
+      return "<b>" + esc(best.text) + "</b>\n<span class=k>t</span> " +
+        fmtMs(best.at) + " ms";
+    }
+  }
+  if (mx >= L.phaseX && mx < L.phaseX + W_PHASE) {
+    let best = null;
+    for (const phase of D.phases) {
+      if (t < phase.s || t > phase.e) continue;
+      if (!best || phase.depth > best.depth) best = phase;
+    }
+    if (best) {
+      return "<b>phase " + esc(best.name) + "</b>\n" + times(best);
+    }
+  }
+  if (mx >= L.concX && mx < L.concX + W_SIDE) {
+    return "<b>concurrency " + binAt(D.conc, t) + "</b>\n<span class=k>t</span> " + fmtMs(t) + " ms";
+  }
+  if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
+    const v = binAt(D.bw, t);
+    return "<b>" + (v / D.bw.bin).toFixed(1) + " MB/s</b>\n<span class=k>t</span> " +
+      fmtMs(t) + " ms\n<span class=k>bin</span> " + (v / 1e3).toFixed(1) + " kB / " +
+      (D.bw.bin / 1e3) + " ms";
+  }
+  if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
+    return "<b>" + binAt(D.cpu, t).toFixed(2) + " cores busy</b>\n<span class=k>t</span> " +
+      fmtMs(t) + " ms\n<span class=k>process cpu</span> " + fmtMs(D.cpu.total) + " ms total";
+  }
+  return null;
+}
+
+const binAt = (s, t) => s.v[Math.floor(t / s.bin)] ?? 0;
+
+function reqTip(req) {
+  return "<b>#" + req.id + " " + esc(req.kind) + "</b>\n" + times(req) +
+    "<span class=k>op</span> " + esc(req.op) +
+    "  <span class=k>range</span> " + req.off + ".." + (req.off + req.len) +
+    " (" + fmtBytes(req.len) + ")\n" + spanTip(req) +
+    "<span class=k>outcome</span> " +
+    (req.outcome === "ok" ? "ok" : "<b class=err>" + esc(req.outcome) + "</b>") +
+    (req.phase ? "  <span class=k>phase</span> " + esc(req.phase.name) : "") + "\n" +
+    "<span class=k>" + esc(req.path) + "</span>";
+}
+
+/** One `<section> <share>` per section the request touched, widest first. */
+function spanTip(req) {
+  if (!req.spans?.length) return "";
+  const total = Math.max(req.len, 1);
+  const parts = req.spans.map(([name, bytes]) => esc(name) + " " + fmtPct(bytes / total));
+  return "<span class=k>sections</span> " + parts.join("  ") + "\n";
+}
+
+function times(span) {
+  return "<span class=k>start</span> " + fmtMs(span.s) + " ms  " +
+    "<span class=k>end</span> " + fmtMs(span.e) + " ms  " +
+    "<span class=k>dur</span> " + fmtMs(span.e - span.s) + " ms\n";
+}
+
+// ---------- formatting ----------
+
+function fmtMs(us) {
+  const step = view.tpp / 1000;
+  const digits = step < 0.005 ? 4 : step < 0.05 ? 3 : step < 0.5 ? 2 : 1;
+  return (us / 1000).toFixed(digits);
+}
+
+function fmtPct(share) {
+  const pct = 100 * share;
+  return (pct >= 10 ? pct.toFixed(1) : pct.toFixed(2)) + "%";
+}
+
+function fmtBytes(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + " MB";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + " kB";
+  return n + " B";
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ---------- events ----------
+
+cv.addEventListener("wheel", e => {
+  if (!D || !L) return;
+  e.preventDefault();
+  refit = false;
+  const anchor = tOf(e.offsetY);
+  view.tpp *= Math.exp(e.deltaY * 0.0016 * (e.deltaMode === 1 ? 16 : 1));
+  clampView();
+  view.t0 = anchor - (e.offsetY - L.top) * view.tpp;
+  clampView();
+  redraw();
+}, {passive: false});
+
+cv.addEventListener("pointerdown", e => {
+  if (!D || !L) return;
+  refit = false;
+  dragging = {y: e.offsetY, t0: view.t0};
+  cv.setPointerCapture(e.pointerId);
+  cv.classList.add("pan");
+});
+
+cv.addEventListener("pointerup", () => {
+  dragging = null;
+  cv.classList.remove("pan");
+});
+
+cv.addEventListener("pointermove", e => {
+  if (!D || !L) return;
+  mouseY = e.offsetY;
+  if (dragging) {
+    view.t0 = dragging.t0 - (e.offsetY - dragging.y) * view.tpp;
+    hover = null;
+    tip.style.display = "none";
+    redraw();
+    return;
+  }
+  hover = hitReq(e.offsetX, e.offsetY);
+  const html = hover ? reqTip(hover) : hit(e.offsetX, e.offsetY);
+  if (html === null) {
+    tip.style.display = "none";
+  } else {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const r = wrap.getBoundingClientRect();
+    const x = Math.min(e.offsetX + 16, r.width - tip.offsetWidth - 6);
+    const y = Math.min(e.offsetY + 16, r.height - tip.offsetHeight - 6);
+    tip.style.left = Math.max(4, x) + "px";
+    tip.style.top = Math.max(4, y) + "px";
+  }
+  redraw();
+});
+
+cv.addEventListener("pointerleave", () => {
+  mouseY = -1;
+  hover = null;
+  tip.style.display = "none";
+  redraw();
+});
+
+// The help text is the comment at the top of the file.
+document.getElementById("help").innerHTML = esc([...document.childNodes]
+  .find(node => node.nodeType === Node.COMMENT_NODE).data.trim())
+  .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+document.getElementById("reset").addEventListener("click", fit);
+document.getElementById("upload").addEventListener("click", () => document.getElementById("file").click());
+window.addEventListener("resize", redraw);
+
+document.getElementById("file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (file) loadTrace(file.name, () => file.text(), "");
+});
+
+document.addEventListener("dragover", e => {
+  e.preventDefault();
+  document.body.classList.add("over");
+});
+
+document.addEventListener("dragleave", e => {
+  if (e.relatedTarget === null) document.body.classList.remove("over");
+});
+
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  document.body.classList.remove("over");
+  const file = e.dataTransfer.files[0];
+  if (file) loadTrace(file.name, () => file.text(), "");
+});
+
+document.getElementById("url").addEventListener("click", () => {
+  const url = prompt("trace URL");
+  if (url) loadUrl(url);
+});
+
+window.addEventListener("hashchange", loadHash);
+
+// ---------- init ----------
+
+// Not decoded, so the URL may keep its own `&` and `%XX`.
+function loadHash() {
+  const url = location.hash.match(/^#load=(.+)/)?.[1];
+  if (url) loadUrl(url);
+}
+
+function loadUrl(url) {
+  loadTrace(url.split("/").pop(), () => fetchText(url), "#load=" + url);
+}
+
+const setHash = hash => history.replaceState(null, "", location.pathname + location.search + hash);
+
+async function fetchText(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  return resp.text();
+}
+
+let loads = 0;
+
+async function loadTrace(name, text, hash) {
+  const load = ++loads;
+  let trace;
+  try {
+    trace = build(await text(), name.replace(/\.jsonl$/, ""));
+  } catch (err) {
+    if (load !== loads) return;
+    note.textContent = name + ": " + err.message;
+    if (D) setHash(D.hash);
+    return;
+  }
+  if (load !== loads) return;
+  D = trace;
+  D.hash = hash;
+  setHash(hash);
+  document.title = D.name + " — uio trace";
+  document.getElementById("drop").classList.add("gone");
+  note.textContent = [
+    D.dropped && D.dropped + " events dropped",
+    D.bad && D.bad + " unparsed lines",
+  ].filter(Boolean).join(" · ");
+  fit();
+}
+
+loadHash();
+</script>
+</body>
+</html>

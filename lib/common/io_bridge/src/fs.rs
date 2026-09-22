@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::uio_trace;
 use common::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
 };
@@ -61,7 +62,7 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         F: Future<Output = UioResult<()>> + Send + 'static,
     {
         let handle = self.runtime.handle().clone();
-        async move { handle.spawn(op).await? }
+        async move { handle.spawn(uio_trace::Context::current().wrap(op)).await? }
     }
 }
 

@@ -179,6 +179,13 @@ def main() -> None:
         # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
     )
+    substitute(
+        AMALGAMATION / "src/common/uio_trace.rs",
+        (
+            r"^pub use __uio_trace_mark as mark;$",
+            "pub(crate) use __uio_trace_mark as mark;",
+        ),
+    )
 
     # Fix doctests
     substitute(
