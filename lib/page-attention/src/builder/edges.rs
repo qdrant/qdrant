@@ -1,8 +1,7 @@
-use super::{
-    index::{with_scratch, HeadIndex, MissScratch, EDGE_TOPK},
-    search::{bf16_to_f32, dot_bf16_bytes},
-};
 use rayon::prelude::*;
+
+use super::index::{with_scratch, HeadIndex, MissScratch, EDGE_TOPK};
+use super::search::{bf16_to_f32, dot_bf16_bytes};
 const MISS_CHUNK_MIN: usize = 16;
 const MISS_EF: usize = 256;
 pub(super) fn centred_f32(keys_bf16: &[u8], dim: usize) -> Vec<f32> {

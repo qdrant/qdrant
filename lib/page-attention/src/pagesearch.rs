@@ -1,7 +1,7 @@
 //! Page beam, coarse tail and optional original-row rescoring.
 use crate::index::{self, Adj, Scorer, Visited};
-use crate::pagekernel::{PageQuery, VAcc, VLevels, WeightBits, attend_page, score_page};
-use crate::pages::{MAX_ROW, PageCsr, PagesHead};
+use crate::pagekernel::{attend_page, score_page, PageQuery, VAcc, VLevels, WeightBits};
+use crate::pages::{PageCsr, PagesHead, MAX_ROW};
 use crate::tq4::Rotation;
 #[cfg(test)]
 use crate::{pages::TAIL_BLOCK, tq4};
@@ -461,7 +461,7 @@ mod tests {
     use super::*;
     use crate::arr::Arr;
     use crate::index::SplitMix64;
-    use crate::pages::{Groups, PAGE, PageGraph, PageLinks, k_index, v_index};
+    use crate::pages::{k_index, v_index, Groups, PageGraph, PageLinks, PAGE};
 
     // ---- the spec's scalar codec, written out here so the tests do not lean on `pages.rs` -----
 

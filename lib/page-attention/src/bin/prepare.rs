@@ -1,4 +1,5 @@
-use std::{error::Error, path::Path};
+use std::error::Error;
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();

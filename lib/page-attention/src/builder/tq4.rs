@@ -1,9 +1,10 @@
+use half::f16;
+use rayon::prelude::*;
+
 use super::kernel::Codec;
 use super::search::{bf16_to_f32, f32_to_bf16};
 use crate::arr::Arr;
 pub use crate::tq4::*;
-use half::f16;
-use rayon::prelude::*;
 pub struct Lut {
     pub dim: usize,
     pub levels: usize,

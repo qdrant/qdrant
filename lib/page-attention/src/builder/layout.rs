@@ -1,10 +1,9 @@
-use super::err;
-use super::{
-    index::{self, HeadIndex, Scorer},
-    kernel::{self, Codec, KeyQuery},
-    tq4::{Rotation, TqHead},
-};
 use std::io;
+
+use super::err;
+use super::index::{self, HeadIndex, Scorer};
+use super::kernel::{self, Codec, KeyQuery};
+use super::tq4::{Rotation, TqHead};
 pub(crate) fn fit(
     head: &TqHead,
     graph: &HeadIndex,

@@ -10,11 +10,11 @@ mod nodes;
 mod search;
 mod tq4;
 
-use crate::{
-    pages::{PageLevels, PagesHead},
-    tq4::Rotation,
-};
-use std::{fs, io, path::Path};
+use std::path::Path;
+use std::{fs, io};
+
+use crate::pages::{PageLevels, PagesHead};
+use crate::tq4::Rotation;
 
 fn err(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
