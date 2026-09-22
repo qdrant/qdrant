@@ -955,6 +955,7 @@ mod tests_mod {
         let expected_3 = scn.data[30..45].to_vec();
 
         let (t1_sched_tx, t1_sched_rx) = std::sync::mpsc::channel();
+        let (t1_to_t3_tx, t1_to_t3_rx) = std::sync::mpsc::channel();
         let (t2_wait_tx, t2_wait_rx) = std::sync::mpsc::channel();
         let (t3_wait_tx, t3_wait_rx) = std::sync::mpsc::channel();
 
@@ -962,6 +963,7 @@ mod tests_mod {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
             t1_sched_tx.send(()).unwrap();
+            t1_to_t3_tx.send(()).unwrap();
             t2_wait_rx.recv().unwrap();
             t3_wait_rx.recv().unwrap();
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -981,6 +983,7 @@ mod tests_mod {
         });
 
         let handle3 = std::thread::spawn(move || {
+            t1_to_t3_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline.schedule::<Random>(3, &file_3, 30..45, 1).unwrap();
             t3_wait_tx.send(()).unwrap();
