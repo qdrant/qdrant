@@ -22,13 +22,44 @@ storage:
   snapshots_path: ./snapshots
 
   snapshots_config:
-    # "local" or "s3" - where to store snapshots
+    # Where to store snapshots: "local", "s3", "gcs" or "azure"
     snapshots_storage: local
+
+    # Amazon S3 or any S3-compatible storage. Fields left unset are resolved
+    # from the AWS_* environment and the default credential chain.
     # s3_config:
     #   bucket: ""
     #   region: ""
     #   access_key: ""
     #   secret_key: ""
+    #   # Custom endpoint, for MinIO and similar
+    #   endpoint_url: ""
+
+    # Google Cloud Storage. Without credential fields, Application Default
+    # Credentials are used: GOOGLE_* environment, gcloud config or the
+    # metadata server on GCE and GKE.
+    # gcs_config:
+    #   bucket: ""
+    #   # Use at most one of the following
+    #   service_account_path: ""
+    #   service_account_key: ""
+    #   application_credentials_path: ""
+    #   # Custom endpoint, for fake-gcs-server and similar
+    #   endpoint_url: ""
+
+    # Azure Blob Storage. Without credential fields, the default chain is
+    # used: AZURE_* environment, managed identity or the Azure CLI.
+    # azure_config:
+    #   account: ""
+    #   container: ""
+    #   # Use one authentication method
+    #   access_key: ""
+    #   sas_token: ""
+    #   client_id: ""
+    #   client_secret: ""
+    #   tenant_id: ""
+    #   # Custom endpoint, for Azurite and similar
+    #   endpoint_url: ""
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/

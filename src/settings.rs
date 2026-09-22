@@ -4,6 +4,7 @@ use std::{env, io};
 use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
+use collection::common::snapshots_manager::SnapshotsStorageConfig;
 use collection::operations::validation;
 use collection::shards::shard::PeerId;
 use common::flags::FeatureFlags;
@@ -429,6 +430,38 @@ impl Settings {
                  (p2p) gRPC API is not authenticated. Enable \
                  `enforce_internal_auth`.",
             );
+        }
+
+        //
+        // Snapshot storage
+        //
+        // A config block for a backend other than the selected one is ignored,
+        // which usually means a typo in `snapshots_storage`.
+        let snapshots_config = &self.storage.snapshots_config;
+        let selected = snapshots_config.snapshots_storage;
+        for (name, present, backend) in [
+            (
+                "s3_config",
+                snapshots_config.s3_config.is_some(),
+                SnapshotsStorageConfig::S3,
+            ),
+            (
+                "gcs_config",
+                snapshots_config.gcs_config.is_some(),
+                SnapshotsStorageConfig::Gcs,
+            ),
+            (
+                "azure_config",
+                snapshots_config.azure_config.is_some(),
+                SnapshotsStorageConfig::Azure,
+            ),
+        ] {
+            if present && selected != backend {
+                log::warn!(
+                    "Snapshots {name} is set but snapshots_storage is {selected:?}, \
+                     the block is ignored",
+                );
+            }
         }
 
         // Print any load error messages we had

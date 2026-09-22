@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import requests
 import yaml
@@ -24,6 +26,43 @@ def _s3_config() -> dict:
     }
 
 
+def _gcs_config() -> dict:
+    return {
+        'bucket': 'test-bucket',
+        'endpoint_url': 'http://host.docker.internal:4443',
+        # fake-gcs-server accepts any well-formed key, this one disables OAuth
+        'service_account_key': json.dumps({
+            'gcs_base_url': 'http://host.docker.internal:4443',
+            'disable_oauth': True,
+            'client_email': '',
+            'private_key_id': '',
+            'private_key': '',
+        }),
+    }
+
+
+# Azurite's well-known development account
+AZURITE_ACCOUNT = 'devstoreaccount1'
+AZURITE_KEY = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
+
+
+def _azure_config() -> dict:
+    return {
+        'account': AZURITE_ACCOUNT,
+        'container': 'test-container',
+        'access_key': AZURITE_KEY,
+        'endpoint_url': f'http://host.docker.internal:10000/{AZURITE_ACCOUNT}',
+    }
+
+
+# Per backend: config block key, config factory, and the emulator health URL on the host
+CLOUD_BACKENDS = {
+    's3': ('s3_config', _s3_config, 'http://127.0.0.1:9000/minio/health/live'),
+    'gcs': ('gcs_config', _gcs_config, 'http://127.0.0.1:4443/storage/v1/b'),
+    'azure': ('azure_config', _azure_config, f'http://127.0.0.1:10000/{AZURITE_ACCOUNT}?comp=list'),
+}
+
+
 def _create_snapshot_config(storage_method: str, tmp_path: Path) -> Path:
     """Create a Qdrant config file with the specified snapshot storage method."""
     config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
@@ -32,8 +71,9 @@ def _create_snapshot_config(storage_method: str, tmp_path: Path) -> Path:
 
     snapshots_config = config.setdefault('storage', {}).setdefault('snapshots_config', {})
     snapshots_config['snapshots_storage'] = storage_method
-    if storage_method == "s3":
-        snapshots_config['s3_config'] = _s3_config()
+    if storage_method in CLOUD_BACKENDS:
+        config_key, config_factory, _ = CLOUD_BACKENDS[storage_method]
+        snapshots_config[config_key] = config_factory()
 
     temp_config = tmp_path / "config.yaml"
     with open(temp_config, 'w') as f:
@@ -41,13 +81,13 @@ def _create_snapshot_config(storage_method: str, tmp_path: Path) -> Path:
     return temp_config
 
 
-def _skip_if_minio_unavailable():
-    """Skip the test if MinIO is not reachable on the host."""
+def _skip_if_emulator_unavailable(storage_method: str):
+    """Skip the test if the storage emulator for this backend is not reachable on the host."""
+    _, _, health_url = CLOUD_BACKENDS[storage_method]
     try:
-        response = requests.get("http://127.0.0.1:9000/minio/health/live", timeout=1)
-        response.raise_for_status()
+        requests.get(health_url, timeout=1)
     except requests.exceptions.RequestException:
-        pytest.skip("MinIO is not available for S3 testing")
+        pytest.skip(f"Storage emulator for {storage_method} is not available")
 
 
 def _verify_recovered(client: ClientUtils, collection_name: str, expected_config):
@@ -64,12 +104,26 @@ def _verify_recovered(client: ClientUtils, collection_name: str, expected_config
 
 
 class TestSnapshotsRecovery:
-    """Snapshot creation, download, and recovery with local and S3 storage."""
+    """Snapshot creation, download, and recovery with local and object storage backends."""
 
-    @pytest.mark.parametrize("storage_method", ["local", "s3"])
+    @pytest.mark.parametrize(
+        "storage_method",
+        [
+            "local",
+            "s3",
+            pytest.param(
+                "gcs",
+                marks=pytest.mark.skip(
+                    reason="fake-gcs-server does not implement the XML multipart upload API "
+                    "that object_store uses for GCS uploads"
+                ),
+            ),
+            "azure",
+        ],
+    )
     def test_snapshots_recovery(self, qdrant_container_factory, storage_method, tmp_path):
-        if storage_method == "s3":
-            _skip_if_minio_unavailable()
+        if storage_method in CLOUD_BACKENDS:
+            _skip_if_emulator_unavailable(storage_method)
 
         config_file = _create_snapshot_config(storage_method, tmp_path)
 
