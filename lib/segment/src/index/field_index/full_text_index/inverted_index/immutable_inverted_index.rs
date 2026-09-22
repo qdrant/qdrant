@@ -41,9 +41,9 @@ fn get_all_or_none<'a, V: PostingValue>(
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
 pub struct ImmutableInvertedIndex {
-    pub postings: ImmutablePostings,
-    pub vocab: HashMap<String, TokenId>,
-    pub point_to_tokens_count: Vec<usize>,
+    pub(super) postings: ImmutablePostings,
+    pub(super) vocab: HashMap<String, TokenId>,
+    pub(super) point_to_tokens_count: Vec<usize>,
 
     /// Total tokens per point, for BM25 length normalization. `None` when this
     /// index does not record lengths.
@@ -54,11 +54,18 @@ pub struct ImmutableInvertedIndex {
     /// is written out: `create` puts every point with no tokens into the "no
     /// tokens" mask, so after a round trip through disk that document is
     /// indistinguishable from a deleted one.
-    pub point_to_doc_len: Option<Vec<u32>>,
-    pub points_count: usize,
+    pub(super) point_to_doc_len: Option<Vec<u32>>,
+    pub(super) points_count: usize,
 }
 
 impl ImmutableInvertedIndex {
+    /// Document lengths by point offset, `None` when this index does not
+    /// record them.
+    #[cfg(test)]
+    pub(crate) fn point_to_doc_len(&self) -> Option<&[u32]> {
+        self.point_to_doc_len.as_deref()
+    }
+
     /// Iterate over point ids whose documents contain all given tokens
     fn filter_has_all<'a>(
         &'a self,
@@ -423,6 +430,11 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
         if let Some(lens) = point_to_doc_len.as_mut() {
             debug_assert_eq!(lens.len(), point_to_tokens_count.len());
             lens.resize(point_to_tokens_count.len(), 0);
+            // The vector comes from the mutable index, where it grew by
+            // doubling, so it can hold up to twice the bytes it needs for the
+            // lifetime of this index. `resize` above never gives any of that
+            // back either, since it only changes the length.
+            lens.shrink_to_fit();
         }
 
         ImmutableInvertedIndex {

@@ -64,11 +64,8 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         // list carries the `doc_len` sidecar only when the index loaded it, so
         // a truncated one is omitted, and deleting file by file would leave it
         // behind and keep the directory alive.
-        match fs::remove_dir_all(&path) {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(err.into()),
-        }
+        fs::remove_dir_all(&path)?;
+        Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) {

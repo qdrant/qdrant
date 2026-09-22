@@ -606,8 +606,8 @@ fn mmap_builder_records_doc_len() {
 
     let immutable = ImmutableInvertedIndex::try_from(&on_disk.inverted_index).unwrap();
     assert_eq!(
-        immutable.point_to_doc_len,
-        Some(vec![3, 7]),
+        immutable.point_to_doc_len(),
+        Some([3, 7].as_slice()),
         "lengths must survive the mmap build path, counting repeats",
     );
 }
