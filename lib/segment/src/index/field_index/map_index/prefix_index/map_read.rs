@@ -279,14 +279,22 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
         let Some(prefix_index) = &self.storage.prefix_index else {
             return Ok(None);
         };
+        // Match on the raw key bytes, so the UTF-8 validation below runs for
+        // matched keys only instead of every key in the index. Sound because
+        // UTF-8 is self-synchronizing: a byte-level occurrence of a valid
+        // UTF-8 needle inside valid UTF-8 always starts on a character
+        // boundary, so byte and `str` matching agree. The finder is built
+        // once, rather than per key as `str::contains` would.
+        let finder = memchr::memmem::Finder::new(substring);
         let mut keys = Vec::new();
         prefix_index.for_each_key(hw_counter, &mut |key, _count| {
+            if finder.find(key).is_none() {
+                return Ok(());
+            }
             let key = std::str::from_utf8(key).map_err(|_| {
                 OperationError::service_error("Prefix index contains non-UTF-8 key")
             })?;
-            if key.contains(substring) {
-                keys.push(EcoString::from(key));
-            }
+            keys.push(EcoString::from(key));
             Ok(())
         })?;
         Ok(Some(keys))
