@@ -2,6 +2,7 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
+use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
@@ -13,7 +14,9 @@ use fs_err::File;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _,
+};
 use segment::entry::snapshot_entry::SnapshotEntry as _;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
@@ -22,8 +25,10 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType,
-    SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
+    QuantizationConfig, ScalarQuantizationConfig, ScalarType, SegmentConfig, SnapshotFormat,
+    VectorDataConfig, VectorStorageType,
 };
+use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -31,7 +36,10 @@ use uuid::Uuid;
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
-fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
+fn test_on_disk_segment_snapshot(
+    #[case] format: SnapshotFormat,
+    #[values(false, true)] inline_storage: bool,
+) {
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::types::HnswGlobalConfig;
 
@@ -128,9 +136,16 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     max_indexing_threads: 2,
                     on_disk: Some(true), // mmap index
                     payload_m: None,
-                    inline_storage: None,
+                    inline_storage: inline_storage.then_some(true),
                 }),
-                quantization_config: None,
+                quantization_config: inline_storage.then(|| {
+                    QuantizationConfig::from(ScalarQuantizationConfig {
+                        r#type: ScalarType::Int8,
+                        quantile: None,
+                        always_ram: None,
+                        memory: None,
+                    })
+                }),
                 multivector_config: None,
                 datatype: None,
             },
@@ -153,7 +168,21 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     segment_builder
         .update(&[&segment], &false.into(), &hw_counter)
         .unwrap();
-    let segment = segment_builder.build_for_test(segment_base_dir.path());
+    let mut segment = segment_builder.build_for_test(segment_base_dir.path());
+    let expected_storage_type = if inline_storage {
+        VectorStorageType::GraphInline
+    } else {
+        VectorStorageType::Mmap
+    };
+    assert_eq!(
+        segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].storage_type,
+        expected_storage_type,
+    );
+    assert_matches!(
+        segment.delete_vector(6, 1.into(), DEFAULT_VECTOR_NAME),
+        Ok(true)
+    );
+    segment.flush(true).unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -230,6 +259,17 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert_eq!(
         segment.deleted_point_count(),
         restored_segment.deleted_point_count(),
+    );
+    assert_eq!(
+        restored_segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].storage_type,
+        expected_storage_type,
+    );
+    assert_eq!(
+        restored_segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow()
+            .deleted_vector_count(),
+        1,
     );
 
     let hw_counter = HardwareCounterCell::new();
