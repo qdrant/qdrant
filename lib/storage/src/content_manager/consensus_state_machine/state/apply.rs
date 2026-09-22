@@ -155,6 +155,91 @@ impl ClusterState {
                 state.shards.remove(shard_id);
             }
 
+            Action::SetShardNumber {
+                collection,
+                shard_number,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.config.params.shard_number = *shard_number;
+            }
+
+            Action::RemoveShardFromKeyMapping {
+                collection,
+                shard_id,
+                shard_key,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard_ids) = state.shards_key_mapping.get_mut(shard_key) else {
+                    return;
+                };
+
+                shard_ids.remove(shard_id);
+            }
+
+            Action::SetReplicaState {
+                collection,
+                shard_id,
+                peer_id,
+                state: replica_state,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard) = state.shards.get_mut(shard_id) else {
+                    return;
+                };
+
+                shard.replicas.insert(*peer_id, *replica_state);
+            }
+
+            // These actions only affect data or node-local runtime state
+            Action::DeleteMigratedPoints { .. }
+            | Action::RevertHashRing { .. }
+            | Action::StopTransferDriver { .. }
+            | Action::RevertProxyShard { .. } => {}
+
+            Action::SetReshardingState {
+                collection,
+                state: resharding,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.resharding = resharding.clone();
+            }
+
+            Action::SetReshardingStage { collection, stage } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(resharding) = &mut state.resharding else {
+                    return;
+                };
+
+                resharding.stage = *stage;
+            }
+
+            Action::UnregisterTransfer {
+                collection,
+                key,
+                outcome: _,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.transfers.retain(|transfer| transfer.key() != *key);
+            }
+
             Action::UpdateAliases { set, remove } => {
                 for alias in remove {
                     self.aliases.remove(alias);

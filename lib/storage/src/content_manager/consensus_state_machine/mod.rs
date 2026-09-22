@@ -40,7 +40,9 @@ use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::{HnswConfig, ShardKey};
 
-pub use self::action::{Action, CollectionConfigDiff, apply_collection_config_diffs};
+pub use self::action::{
+    Action, CollectionConfigDiff, TransferOutcome, apply_collection_config_diffs,
+};
 pub use self::state::ClusterState;
 use super::errors::StorageResult;
 use crate::content_manager::collection_meta_ops::*;
@@ -160,9 +162,16 @@ impl ConsensusStateMachine {
                 }
             }
 
+            CollectionMetaOperations::Resharding(collection, operation) => {
+                let result = self
+                    .state
+                    .plan_resharding(&self.context, collection, operation);
+
+                ApplyOutcome::new(result)
+            }
+
             CollectionMetaOperations::SetShardReplicaState(_)
-            | CollectionMetaOperations::TransferShard(_, _)
-            | CollectionMetaOperations::Resharding(_, _) => ApplyOutcome::NotCovered,
+            | CollectionMetaOperations::TransferShard(_, _) => ApplyOutcome::NotCovered,
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
