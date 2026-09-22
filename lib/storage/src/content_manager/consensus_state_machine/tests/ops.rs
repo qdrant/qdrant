@@ -1095,6 +1095,76 @@ fn resharding_abort_down_reverts_replicas() {
 }
 
 #[test]
+fn resharding_abort_down_without_key_matches_unmapped_shards() {
+    let key = resharding_key(ReshardingDirection::Down, 1);
+    let mut state = auto_resharding_state(3);
+
+    let resharding = ReshardState::new(
+        key.uuid,
+        key.direction,
+        key.peer_id,
+        key.shard_id,
+        key.shard_key.clone(),
+    );
+
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.config.params.sharding_method = Some(ShardingMethod::Custom);
+    collection
+        .shards_key_mapping
+        .entry(ShardKey::from("north"))
+        .or_default()
+        .insert(0);
+    collection.resharding = Some(resharding);
+
+    for shard_id in [0, 2] {
+        collection
+            .shards
+            .get_mut(&shard_id)
+            .expect("shard")
+            .replicas
+            .insert(OTHER_PEER_ID, ReplicaState::ReshardingScaleDown);
+    }
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("aborting scale-down resharding should be accepted, got {outcome:?}");
+    };
+
+    let Action::InvalidateCleanLocalShards { shard_ids, .. } = &actions[0] else {
+        panic!("abort should invalidate shard cleanup, got {actions:?}");
+    };
+    assert_eq!(shard_ids, &[1, 2]);
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::InvalidateCleanLocalShards { .. },
+            Action::SetReplicaState {
+                shard_id: 2,
+                peer_id: OTHER_PEER_ID,
+                state: ReplicaState::Active,
+                ..
+            },
+            Action::DeleteMigratedPoints { .. },
+            Action::RevertHashRing { .. },
+            Action::SetReshardingState { state: None, .. },
+        ]
+    ));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.shards[&0].replicas[&OTHER_PEER_ID],
+        ReplicaState::ReshardingScaleDown,
+    );
+    assert_eq!(
+        collection.shards[&2].replicas[&OTHER_PEER_ID],
+        ReplicaState::Active,
+    );
+}
+
+#[test]
 fn resharding_abort_reject_after_read_commit() {
     let key = resharding_key(ReshardingDirection::Up, 1);
     let mut machine = state_machine(auto_resharding_state(1));
