@@ -267,7 +267,10 @@ pub struct FieldCondition {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(
+        oneof = "r#match::MatchValue",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+    )]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -308,6 +311,9 @@ pub mod r#match {
         /// Match keywords starting with the given prefix
         #[prost(string, tag = "11")]
         Prefix(::prost::alloc::string::String),
+        /// Match keywords containing the given substring
+        #[prost(string, tag = "12")]
+        Substring(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]

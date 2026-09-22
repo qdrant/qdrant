@@ -7,7 +7,8 @@ use rand::rngs::StdRng;
 use rand::{RngExt as _, SeedableRng as _};
 use tempfile::TempDir;
 
-use super::format::prefix_successor;
+use super::format::{BLOCK_SIZE_TARGET, prefix_successor};
+use super::reader::SCAN_CHUNK_BYTES;
 use super::{PrefixIndex, build_prefix_index};
 
 fn build_and_open(entries: &BTreeMap<Vec<u8>, usize>) -> (TempDir, PrefixIndex) {
@@ -33,6 +34,25 @@ fn collect_prefix(index: &PrefixIndex, prefix: &[u8]) -> Vec<(Vec<u8>, usize)> {
         })
         .unwrap();
     result
+}
+
+fn collect_all(index: &PrefixIndex) -> Vec<(Vec<u8>, usize)> {
+    let hw_counter = HardwareCounterCell::new();
+    let mut result = Vec::new();
+    index
+        .for_each_key(&hw_counter, &mut |key, count| {
+            result.push((key.to_vec(), count));
+            Ok(())
+        })
+        .unwrap();
+    result
+}
+
+fn all_entries(entries: &BTreeMap<Vec<u8>, usize>) -> Vec<(Vec<u8>, usize)> {
+    entries
+        .iter()
+        .map(|(key, &count)| (key.clone(), count))
+        .collect()
 }
 
 fn naive_prefix(entries: &BTreeMap<Vec<u8>, usize>, prefix: &[u8]) -> Vec<(Vec<u8>, usize)> {
@@ -71,6 +91,7 @@ fn empty_dictionary() {
     assert_eq!(index.key_count(), 0);
     check_prefix(&index, &entries, b"");
     check_prefix(&index, &entries, b"anything");
+    assert!(collect_all(&index).is_empty());
 }
 
 #[test]
@@ -156,13 +177,8 @@ fn multi_block_random() {
     assert_eq!(index.key_count(), entries.len());
 
     // All keys, in order.
-    assert_eq!(
-        collect_prefix(&index, b""),
-        entries
-            .iter()
-            .map(|(key, &count)| (key.clone(), count))
-            .collect_vec(),
-    );
+    assert_eq!(collect_prefix(&index, b""), all_entries(&entries));
+    assert_eq!(collect_all(&index), all_entries(&entries));
 
     for prefix in [
         &b""[..],
@@ -187,6 +203,29 @@ fn multi_block_random() {
         let len = rng.random_range(0..=key.len());
         check_prefix(&index, &entries, &key[..len]);
     }
+}
+
+/// A dictionary larger than one scan chunk: `for_each_key` must stitch the
+/// chunks back into a single ascending key stream.
+#[test]
+fn full_scan_spans_chunks() {
+    let mut rng = StdRng::seed_from_u64(7);
+    let mut entries = BTreeMap::new();
+    while entries.len() < 60_000 {
+        let tail: String = (0..rng.random_range(20..40))
+            .map(|_| char::from(rng.random_range(b'a'..=b'z')))
+            .collect();
+        entries.insert(format!("key-{tail}").into_bytes(), rng.random_range(1..100));
+    }
+    let (_dir, index) = build_and_open(&entries);
+    // Every block but the last is at least `BLOCK_SIZE_TARGET` bytes.
+    assert!(
+        (index.blocks.len() - 1) as u64 * BLOCK_SIZE_TARGET as u64 > SCAN_CHUNK_BYTES,
+        "test should span more than one scan chunk",
+    );
+
+    let scanned = collect_all(&index);
+    assert_eq!(scanned, all_entries(&entries));
 }
 
 #[test]

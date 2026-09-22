@@ -2282,6 +2282,9 @@ impl TryFrom<Match> for segment::types::Match {
                     segment::types::Match::TextAny(segment::types::MatchTextAny { text_any })
                 }
                 MatchValue::Prefix(prefix) => segment::types::Match::Prefix(prefix.into()),
+                MatchValue::Substring(substring) => segment::types::Match::Substring(
+                    segment::types::MatchSubstring::from(substring),
+                ),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -2327,6 +2330,9 @@ impl From<segment::types::Match> for Match {
             }
             segment::types::Match::Prefix(segment::types::MatchPrefix { prefix }) => {
                 MatchValue::Prefix(prefix)
+            }
+            segment::types::Match::Substring(segment::types::MatchSubstring { substring }) => {
+                MatchValue::Substring(substring)
             }
         };
         Self {

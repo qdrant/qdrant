@@ -67,6 +67,7 @@ ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = { workspace = true }
+memchr = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
