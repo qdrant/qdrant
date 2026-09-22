@@ -5,6 +5,7 @@ use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
+use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -220,6 +221,9 @@ where
         if has_entry_point {
             self.search_vectors_with_graph(vectors, Some(filter), top, params, vector_query_context)
         } else {
+            // Counted as a plain filtered search, so telemetry tells the fallback apart
+            // from a graph search routed by the same cardinality decision.
+            let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain);
             self.search_vectors_plain(
                 vectors,
                 filter,

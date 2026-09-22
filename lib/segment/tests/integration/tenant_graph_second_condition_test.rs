@@ -52,11 +52,12 @@ fn keyword_index(is_tenant: bool, enable_hnsw: bool) -> PayloadFieldSchema {
 /// the second condition. `full_scan_threshold_kb = 0` routes everything to the graph
 /// with a single entry point per block, so the plain-search fallback must kick in.
 #[rstest]
-#[case::extra_entry_points(1, 80)]
-#[case::plain_fallback(0, 2)]
+#[case::extra_entry_points(1, 80, false)]
+#[case::plain_fallback(0, 2, true)]
 fn test_tenant_graph_with_second_condition(
     #[case] full_scan_threshold_kb: usize,
     #[case] num_rare: usize,
+    #[case] expect_fallback: bool,
 ) {
     let stopped = AtomicBool::new(false);
 
@@ -208,6 +209,13 @@ fn test_tenant_graph_with_second_condition(
     assert_eq!(
         telemetry.filtered_large_cardinality.count, attempts,
         "searches were expected to route through the HNSW graph"
+    );
+    // The fallback is counted as a plain filtered search: case 1 must be served by the
+    // graph through the sampled entry points, case 2 by the fallback.
+    let expected_fallbacks = if expect_fallback { attempts } else { 0 };
+    assert_eq!(
+        telemetry.filtered_plain.count, expected_fallbacks,
+        "unexpected number of plain-search fallbacks"
     );
     assert_eq!(
         empty, 0,
