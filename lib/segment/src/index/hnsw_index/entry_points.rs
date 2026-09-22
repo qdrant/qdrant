@@ -52,6 +52,9 @@ impl EntryPoints {
         mut other: EntryPoints,
         known: &mut HashSet<PointOffsetType>,
     ) {
+        // The incoming primary entry points count as known too, so a point that is the
+        // primary entry of one block is not stored again as a sample of a later block.
+        known.extend(other.entry_points.iter().map(|entry| entry.point_id));
         self.entry_points.append(&mut other.entry_points);
         for entry in other.extra_entry_points.into_iter_sorted() {
             if known.insert(entry.point_id) {
@@ -247,6 +250,33 @@ mod tests {
         // Merging the same block again adds nothing.
         main.merge_from_other(block, &mut known);
         assert_eq!(main.extra_entry_points.len(), 7);
+    }
+
+    #[test]
+    fn test_merge_does_not_duplicate_a_primary_as_a_sample() {
+        let mut main = EntryPoints::new(4);
+        let mut known = HashSet::new();
+        // Block A: primary entry point is point 7.
+        let mut block_a = EntryPoints::new(1);
+        block_a.new_point(7, 0, |_| true);
+        main.merge_from_other(block_a, &mut known);
+        // Block B (another payload value the same point belongs to) samples point 7.
+        let mut block_b = EntryPoints::new(1);
+        block_b.new_point(8, 0, |_| true);
+        block_b.set_extra_entry_points(2, [7, 9].map(|point_id| EntryPoint { point_id, level: 0 }));
+        main.merge_from_other(block_b, &mut known);
+        assert_eq!(main.entry_points.len(), 2);
+        assert!(
+            !main
+                .extra_entry_points
+                .iter_unsorted()
+                .any(|e| e.point_id == 7)
+        );
+        assert!(
+            main.extra_entry_points
+                .iter_unsorted()
+                .any(|e| e.point_id == 9)
+        );
     }
 
     #[test]
