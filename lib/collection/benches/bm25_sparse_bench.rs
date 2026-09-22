@@ -66,10 +66,15 @@ const SPARSE_VECTOR_NAME: &str = "text";
 const DEFAULT_POINT_COUNT: usize = 200_000;
 
 fn point_count() -> usize {
-    std::env::var("BM25_SPARSE_DOCS")
+    let count = std::env::var("BM25_SPARSE_DOCS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_POINT_COUNT)
+        .unwrap_or(DEFAULT_POINT_COUNT);
+    // An empty corpus has no average length and every query has an empty
+    // truth, which `recall` scores as 1.0: a run that looks fine and means
+    // nothing.
+    assert!(count > 0, "BM25_SPARSE_DOCS must be positive");
+    count
 }
 
 fn to_sparse(embedding: bm25::SparseEmbedding) -> SparseVector {
