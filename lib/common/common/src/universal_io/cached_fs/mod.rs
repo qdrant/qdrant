@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::task::Poll;
 
 use futures::StreamExt;
 use futures::future::BoxFuture;
@@ -282,17 +281,10 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         // Clone the fs handle so that the future can own it.
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
-        let mut fut =
-            Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
-
-        // Poll once, so that real async work begins right away
-        let scheduled = futures::executor::block_on(async move {
-            match futures::poll!(fut.as_mut()) {
-                Poll::Ready(file) => ScheduledFile::Ready(file),
-                Poll::Pending => ScheduledFile::Future(fut),
-            }
-        });
-        files_prefetched.insert(path.to_path_buf(), scheduled);
+        let fut = self.fs.spawn(Box::pin(async move {
+            fs.open_async(path_owned, open_options, open_extra).await
+        }));
+        files_prefetched.insert(path.to_path_buf(), ScheduledFile::Future(fut));
     }
 
     // TODO(uio): merge into `schedule_open`? might make it simpler to use

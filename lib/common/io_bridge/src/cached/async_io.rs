@@ -10,6 +10,7 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{
     OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync,
 };
+use futures::future::BoxFuture;
 
 use super::CachedBlobFile;
 use super::fs::CachedBlobFs;
@@ -36,6 +37,13 @@ where
         let remote = self.blob_fs.open_async(path, options, ()).await?;
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
+    }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.blob_fs.spawn(fut)
     }
 }
 

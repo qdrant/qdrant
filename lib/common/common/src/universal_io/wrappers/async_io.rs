@@ -4,6 +4,8 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use futures::future::BoxFuture;
+
 use super::read_only::{ReadOnly, ReadOnlyFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -18,6 +20,13 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
     ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
+    }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.0.spawn(fut)
     }
 }
 

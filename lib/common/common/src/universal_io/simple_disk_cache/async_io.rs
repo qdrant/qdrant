@@ -8,6 +8,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use futures::future::BoxFuture;
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
@@ -101,6 +103,13 @@ where
             state,
             extra.known_etag,
         ))
+    }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.remote_fs.spawn(fut)
     }
 }
 

@@ -1171,6 +1171,8 @@ mod tests_async {
     use std::ops::Range;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use futures::future::BoxFuture;
+
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
@@ -1278,6 +1280,13 @@ mod tests_async {
                 async_reads: AtomicUsize::new(0),
                 fail_on_completion: std::sync::atomic::AtomicBool::new(false),
             })
+        }
+
+        fn spawn<T: Send + 'static>(
+            &self,
+            fut: BoxFuture<'static, UioResult<T>>,
+        ) -> BoxFuture<'static, UioResult<T>> {
+            self.0.spawn(fut)
         }
     }
 

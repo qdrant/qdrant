@@ -3902,6 +3902,7 @@ dependencies = [
  "slab",
  "tempfile",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

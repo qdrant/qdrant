@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use futures::future::BoxFuture;
+
 use super::{CachedFs, ScheduledFile};
 use crate::universal_io::{
     OpenExtra, OpenOptions, UioResult, UniversalIoError, UniversalReadFsAsync,
@@ -53,5 +55,12 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
             None => extra,
         };
         self.fs.open_async(path, options, extra).await
+    }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.fs.spawn(fut)
     }
 }
