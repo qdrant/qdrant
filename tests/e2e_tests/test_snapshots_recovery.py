@@ -19,6 +19,7 @@ INTERNAL_QDRANT_URL = "http://localhost:6333"
 def _s3_config() -> dict:
     return {
         'bucket': 'test-bucket',
+        'prefix': 'e2e/qdrant',
         'region': 'us-east-1',
         'access_key': 'minioadmin',
         'secret_key': 'minioadmin',
@@ -50,6 +51,7 @@ def _azure_config() -> dict:
     return {
         'account': AZURITE_ACCOUNT,
         'container': 'test-container',
+        'prefix': 'e2e/qdrant',
         'access_key': AZURITE_KEY,
         'endpoint_url': f'http://host.docker.internal:10000/{AZURITE_ACCOUNT}',
     }

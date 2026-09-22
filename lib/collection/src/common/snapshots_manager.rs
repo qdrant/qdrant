@@ -8,6 +8,7 @@ use http::HeaderValue;
 use object_store::aws::AmazonS3Builder;
 use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
 use object_store::gcp::GoogleCloudStorageBuilder;
+use object_store::prefix::PrefixStore;
 use object_store::{ClientOptions, ObjectStoreExt};
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -48,6 +49,8 @@ pub enum SnapshotsStorageConfig {
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct S3Config {
     pub bucket: String,
+    /// Key prefix inside the bucket, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
     pub region: Option<String>,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
@@ -62,6 +65,8 @@ pub struct S3Config {
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct GcsConfig {
     pub bucket: String,
+    /// Object name prefix inside the bucket, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
     /// Path to a service account JSON key file.
     pub service_account_path: Option<String>,
     /// Inline contents of a service account JSON key.
@@ -82,6 +87,8 @@ pub struct AzureConfig {
     /// Storage account name, without the `.blob.core.windows.net` suffix.
     pub account: String,
     pub container: String,
+    /// Blob name prefix inside the container, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
     /// Shared access key of the storage account.
     pub access_key: Option<String>,
     /// Shared access signature, as the query string issued by Azure.
@@ -96,6 +103,30 @@ pub struct AzureConfig {
 
 pub struct SnapshotStorageCloud {
     client: Box<dyn object_store::ObjectStore>,
+}
+
+impl SnapshotStorageCloud {
+    /// Wrap `store` so every object key lives under `prefix`.
+    ///
+    /// Leading, trailing and repeated slashes in the prefix are dropped, an empty
+    /// prefix leaves the store untouched.
+    fn new(store: impl object_store::ObjectStore, prefix: Option<&str>) -> Self {
+        let prefix = prefix.map(|prefix| {
+            let prefix = prefix
+                .split('/')
+                .filter(|component| !component.is_empty())
+                .collect::<Vec<_>>()
+                .join("/");
+            object_store::path::Path::from(prefix)
+        });
+        let client: Box<dyn object_store::ObjectStore> = match prefix {
+            Some(prefix) if !prefix.as_ref().is_empty() => {
+                Box::new(PrefixStore::new(store, prefix))
+            }
+            _ => Box::new(store),
+        };
+        Self { client }
+    }
 }
 
 pub struct SnapshotStorageLocalFS;
@@ -225,23 +256,27 @@ fn validate_snapshot_name(snapshot_name: &str) -> CollectionResult<()> {
 impl SnapshotStorageManager {
     /// Create a snapshot storage manager from the configured backend.
     pub fn new(snapshots_config: &SnapshotsConfig) -> CollectionResult<Self> {
-        let client: Box<dyn object_store::ObjectStore> = match snapshots_config.snapshots_storage {
+        let cloud = match snapshots_config.snapshots_storage {
             SnapshotsStorageConfig::Local => {
                 return Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS));
             }
             SnapshotsStorageConfig::S3 => {
-                Box::new(build_s3_client(snapshots_config.s3_config.as_ref())?)
+                let config = snapshots_config.s3_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_s3_client(config)?, prefix)
             }
             SnapshotsStorageConfig::Gcs => {
-                Box::new(build_gcs_client(snapshots_config.gcs_config.as_ref())?)
+                let config = snapshots_config.gcs_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_gcs_client(config)?, prefix)
             }
             SnapshotsStorageConfig::Azure => {
-                Box::new(build_azure_client(snapshots_config.azure_config.as_ref())?)
+                let config = snapshots_config.azure_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_azure_client(config)?, prefix)
             }
         };
-        Ok(SnapshotStorageManager::Cloud(SnapshotStorageCloud {
-            client,
-        }))
+        Ok(SnapshotStorageManager::Cloud(cloud))
     }
 
     pub async fn delete_snapshot(&self, snapshot_name: &Path) -> CollectionResult<bool> {
@@ -644,6 +679,12 @@ impl SnapshotStorageCloud {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use futures::TryStreamExt;
+    use object_store::ObjectStore;
+    use object_store::memory::InMemory;
+
     use super::*;
 
     /// Snapshot names that escape the snapshots directory.
@@ -663,6 +704,7 @@ mod tests {
             snapshots_storage: SnapshotsStorageConfig::S3,
             s3_config: Some(S3Config {
                 bucket: "test-bucket".into(),
+                prefix: None,
                 region: Some("us-east-1".into()),
                 access_key: Some("test-access-key".into()),
                 secret_key: Some("test-secret-key".into()),
@@ -763,6 +805,221 @@ mod tests {
         assert_eq!(azure_config.account, "a");
         assert_eq!(azure_config.container, "c");
         assert_eq!(azure_config.sas_token.as_deref(), Some("sv=1&sig=x"));
+    }
+
+    /// Every object the manager touches lives under the configured prefix, and the
+    /// prefix is invisible in the names the manager reports back.
+    #[tokio::test]
+    async fn object_storage_prefix_is_applied_to_every_key() {
+        let bucket = Arc::new(InMemory::new());
+        let manager = SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(
+            bucket.clone(),
+            Some("/team-a/qdrant/"),
+        ));
+
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+        let source = temp_dir.path().join("upload.snapshot");
+        fs::write(&source, b"snapshot bytes").unwrap();
+        let target = Path::new("./snapshots/my-collection/my.snapshot");
+
+        let stored = manager.store_file(&source, target).await.unwrap();
+        assert_eq!(stored.name, "my.snapshot");
+
+        let keys: Vec<String> = bucket
+            .list(None)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(keys, ["team-a/qdrant/snapshots/my-collection/my.snapshot"]);
+
+        let listed = manager
+            .list_snapshots(Path::new("./snapshots/my-collection"))
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "my.snapshot");
+
+        let restored = temp_dir.path().join("restored.snapshot");
+        manager.get_stored_file(target, &restored).await.unwrap();
+        assert_eq!(fs::read(&restored).unwrap(), b"snapshot bytes");
+
+        assert!(manager.delete_snapshot(target).await.unwrap());
+        assert!(matches!(
+            manager.delete_snapshot(target).await,
+            Err(CollectionError::NotFound { .. }),
+        ));
+    }
+
+    /// An empty or slash-only prefix leaves keys where they were.
+    #[tokio::test]
+    async fn object_storage_empty_prefix_is_a_no_op() {
+        for prefix in [None, Some(""), Some("/"), Some("//")] {
+            let bucket = Arc::new(InMemory::new());
+            let manager =
+                SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), prefix));
+
+            let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+            let source = temp_dir.path().join("upload.snapshot");
+            fs::write(&source, b"snapshot bytes").unwrap();
+            manager
+                .store_file(&source, Path::new("./snapshots/full.snapshot"))
+                .await
+                .unwrap();
+
+            let keys: Vec<String> = bucket
+                .list(None)
+                .map_ok(|meta| meta.location.to_string())
+                .try_collect()
+                .await
+                .unwrap();
+            assert_eq!(keys, ["snapshots/full.snapshot"], "prefix {prefix:?}");
+        }
+    }
+
+    #[test]
+    fn snapshots_config_deserializes_prefix() {
+        let config: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "s3",
+            "s3_config": { "bucket": "b", "prefix": "team-a/qdrant" },
+            "gcs_config": { "bucket": "b", "prefix": "team-a" },
+            "azure_config": { "account": "a", "container": "c", "prefix": "team-a" },
+        }))
+        .unwrap();
+        assert_eq!(
+            config.s3_config.unwrap().prefix.as_deref(),
+            Some("team-a/qdrant")
+        );
+        assert_eq!(config.gcs_config.unwrap().prefix.as_deref(), Some("team-a"));
+        assert_eq!(
+            config.azure_config.unwrap().prefix.as_deref(),
+            Some("team-a")
+        );
+
+        let legacy: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "s3",
+            "s3_config": { "bucket": "b" },
+        }))
+        .unwrap();
+        assert!(legacy.s3_config.unwrap().prefix.is_none());
+    }
+
+    /// Paths that try to leave the prefix, handed to the manager directly so that
+    /// `validate_snapshot_name` is out of the picture.
+    const ESCAPING_PATHS: &[&str] = &[
+        "../../escape.snapshot",
+        "/absolute/escape.snapshot",
+        "snapshots/../escape.snapshot",
+        "./snapshots/../../escape.snapshot",
+        "snapshots/..%2F..%2Fescape.snapshot",
+        "snapshots\\..\\escape.snapshot",
+        "..",
+        ".",
+        "/",
+        "",
+    ];
+
+    const PREFIX: &str = "team-a/qdrant";
+
+    fn is_under_prefix(key: &str) -> bool {
+        key.strip_prefix(PREFIX)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    }
+
+    async fn raw_keys(bucket: &InMemory) -> Vec<String> {
+        let mut keys: Vec<String> = bucket
+            .list(None)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect()
+            .await
+            .unwrap();
+        keys.sort();
+        keys
+    }
+
+    /// Whatever target a caller passes, the written key stays under the prefix.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_writes() {
+        let bucket = Arc::new(InMemory::new());
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        for target in ESCAPING_PATHS {
+            let source = temp_dir.path().join("upload.snapshot");
+            fs::write(&source, b"snapshot bytes").unwrap();
+            // Some of these are not valid file names, an error is as good as a
+            // contained write. Only a key outside the prefix is a failure.
+            let _ = manager.store_file(&source, Path::new(target)).await;
+        }
+
+        let keys = raw_keys(&bucket).await;
+        assert!(!keys.is_empty(), "expected at least one contained write");
+        for key in &keys {
+            assert!(is_under_prefix(key), "key {key:?} escaped the prefix");
+        }
+    }
+
+    /// Objects outside the prefix are invisible: not listed, not readable, not deletable.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_reads_lists_and_deletes() {
+        use object_store::PutPayload;
+
+        let bucket = Arc::new(InMemory::new());
+        // Two objects outside the prefix, one of them at the exact key a
+        // caller would reach without the prefix.
+        for key in ["escape.snapshot", "snapshots/c/x.snapshot"] {
+            bucket
+                .put(
+                    &object_store::path::Path::from(key),
+                    PutPayload::from_static(b"outside"),
+                )
+                .await
+                .unwrap();
+        }
+        let outside_before = raw_keys(&bucket).await;
+
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        let mut probes: Vec<&str> = ESCAPING_PATHS.to_vec();
+        probes.extend(["escape.snapshot", "snapshots/c/x.snapshot", "snapshots/c"]);
+
+        for probe in probes {
+            let path = Path::new(probe);
+
+            let listed = manager.list_snapshots(path).await.unwrap();
+            assert!(
+                listed.is_empty(),
+                "listing {probe:?} leaked {listed:?} from outside the prefix"
+            );
+
+            let download = temp_dir.path().join("download.snapshot");
+            assert!(
+                matches!(
+                    manager.get_stored_file(path, &download).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "download of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.get_snapshot_stream(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "stream of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.delete_snapshot(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "delete of {probe:?} reached outside the prefix"
+            );
+        }
+
+        assert_eq!(raw_keys(&bucket).await, outside_before);
     }
 
     /// Cloud backends without their config block still build, reading the environment.

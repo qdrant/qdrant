@@ -29,6 +29,8 @@ storage:
     # from the AWS_* environment and the default credential chain.
     # s3_config:
     #   bucket: ""
+    #   # Optional key prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
     #   region: ""
     #   access_key: ""
     #   secret_key: ""
@@ -40,6 +42,8 @@ storage:
     # metadata server on GCE and GKE.
     # gcs_config:
     #   bucket: ""
+    #   # Optional object name prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
     #   # Use at most one of the following
     #   service_account_path: ""
     #   service_account_key: ""
@@ -52,6 +56,8 @@ storage:
     # azure_config:
     #   account: ""
     #   container: ""
+    #   # Optional blob name prefix, blobs become <prefix>/snapshots/...
+    #   prefix: ""
     #   # Use one authentication method
     #   access_key: ""
     #   sas_token: ""
