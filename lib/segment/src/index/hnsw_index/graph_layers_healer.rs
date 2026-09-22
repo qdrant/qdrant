@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
@@ -55,6 +57,11 @@ impl<'a> GraphLayersHealer<'a> {
             ef_construct,
             visited_pool: VisitedPool::new(),
         }
+    }
+
+    /// Number of `(point, level)` pairs [`Self::heal`] is going to process.
+    pub fn to_heal_count(&self) -> usize {
+        self.to_heal.len()
     }
 
     fn point_deleted(&self, point: PointOffsetType) -> bool {
@@ -212,7 +219,8 @@ impl<'a> GraphLayersHealer<'a> {
         pool: &ThreadPool,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: Option<&QuantizedVectors>,
-        stopped: &std::sync::atomic::AtomicBool,
+        stopped: &AtomicBool,
+        counter: &AtomicU64,
     ) -> OperationResult<()> {
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
@@ -233,6 +241,7 @@ impl<'a> GraphLayersHealer<'a> {
                         new_raw_scorer(query, vector_storage, internal_hardware_counter)?
                     };
                     self.heal_point_on_level(offset, level, scorer.as_ref());
+                    counter.fetch_add(1, Ordering::Relaxed);
                     Ok(())
                 })
         })
