@@ -111,7 +111,14 @@ impl SnapshotStorageCloud {
     /// Leading, trailing and repeated slashes in the prefix are dropped, an empty
     /// prefix leaves the store untouched.
     fn new(store: impl object_store::ObjectStore, prefix: Option<&str>) -> Self {
-        let prefix = prefix.map(object_store::path::Path::from);
+        let prefix = prefix.map(|prefix| {
+            let prefix = prefix
+                .split('/')
+                .filter(|component| !component.is_empty())
+                .collect::<Vec<_>>()
+                .join("/");
+            object_store::path::Path::from(prefix)
+        });
         let client: Box<dyn object_store::ObjectStore> = match prefix {
             Some(prefix) if !prefix.as_ref().is_empty() => {
                 Box::new(PrefixStore::new(store, prefix))
