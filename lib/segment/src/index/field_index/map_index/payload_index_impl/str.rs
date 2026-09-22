@@ -133,6 +133,52 @@ where
 // over `T: MapIndexRead<str>` so a single body serves both `PayloadFieldIndexRead`
 // impls above.
 
+/// Keys containing `substring`, enumerated from the map index itself.
+///
+/// Fallback for a substring condition on an index instance without a key
+/// dictionary: still one pass over the distinct values rather than one check
+/// per point, but it walks `values_to_points`, where every key sits next to
+/// its postings, instead of the compact keys-only dictionary. A prefix
+/// condition has no such fallback — an ordered dictionary is the whole point
+/// of serving it, so without one it is left to the per-point checker.
+///
+/// Reads on this path are not billed: the enumeration methods of
+/// [`MapIndexRead`] carry no hardware counter.
+fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
+    index: &'a T,
+    substring: &str,
+) -> OperationResult<Vec<EcoString>> {
+    let mut keys = Vec::new();
+    index.for_each_value(|key| {
+        if key.contains(substring) {
+            keys.push(EcoString::from(key));
+        }
+        Ok(())
+    })?;
+    Ok(keys)
+}
+
+/// Aggregate over the keys containing `substring`, enumerated from the map
+/// index itself.
+///
+/// Counterpart of [`scan_keys_for_substring`] for cardinality estimation.
+/// Counts exclude deleted points on every variant, so unlike the on-disk
+/// dictionary's build-time counts they never go stale.
+fn scan_key_stats_for_substring<'a, T: MapIndexRead<'a, str>>(
+    index: &'a T,
+    substring: &str,
+) -> OperationResult<PrefixIndexStats> {
+    let mut stats = PrefixIndexStats::default();
+    index.for_each_count_per_value(None, |key, count| {
+        if key.contains(substring) {
+            stats.keys += 1;
+            stats.postings += count;
+        }
+        Ok(())
+    })?;
+    Ok(stats)
+}
+
 fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
     condition: &'a FieldCondition,
@@ -173,12 +219,14 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
             }
         }
         Some(Match::Substring(MatchSubstring { substring })) => {
-            // `None` when this index instance has no key dictionary — the
-            // caller then falls back to the generic (slow) condition check.
-            match index.substring_keys(substring, hw_counter)? {
-                Some(keys) => Some(index.iter_for_values(keys.into_iter(), hw_counter)?),
-                None => None,
-            }
+            let keys = match index.substring_keys(substring, hw_counter)? {
+                Some(keys) => keys,
+                // No key dictionary on this index instance: enumerate the map
+                // index keys rather than leave the condition to the per-point
+                // checker.
+                None => scan_keys_for_substring(index, substring)?,
+            };
+            Some(index.iter_for_values(keys.into_iter(), hw_counter)?)
         }
         _ => None,
     };
@@ -243,13 +291,17 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
             })
         }
-        Some(Match::Substring(MatchSubstring { substring })) => index
-            .substring_scan(substring, hw_counter, |_key, _count| Ok(()))?
-            .map(|stats| {
-                let PrefixIndexStats { keys, postings } = stats;
+        Some(Match::Substring(MatchSubstring { substring })) => {
+            let stats = match index.substring_scan(substring, hw_counter, |_key, _count| Ok(()))? {
+                Some(stats) => stats,
+                None => scan_key_stats_for_substring(index, substring)?,
+            };
+            let PrefixIndexStats { keys, postings } = stats;
+            Some(
                 keys_union_cardinality(index, keys, postings)
-                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
-            }),
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
+            )
+        }
         _ => None,
     };
     Ok(estimation)

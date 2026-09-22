@@ -5,8 +5,10 @@
 //! dictionary (the mutable `BTreeSet`, the immutable sorted key vector, or
 //! the on-disk [`PrefixIndex`][3]) enumerates keys through this trait.
 //! Variants without the structure (built without the `prefix` option, or
-//! loaded from legacy files) return `None`, which makes the caller fall back
-//! to the generic slow paths.
+//! loaded from legacy files) return `None`. A prefix condition then falls
+//! back to the generic per-point check; a substring condition, which scans
+//! the whole dictionary anyway, instead enumerates the keys of
+//! `values_to_points` itself.
 //!
 //! Both conditions read keys and postings counts only; the postings
 //! themselves are fetched afterwards, for the matched keys alone.
