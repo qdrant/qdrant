@@ -182,6 +182,13 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     # collection through its own local shards plus the remote shards. Asserting
     # a fixed remote count assumes a perfectly balanced placement, which is not
     # guaranteed and makes this test flaky.
+    #
+    # Wait until peer 0's cluster view has settled: the new peer's local shards
+    # can already be Active while remotes on peer 0 are still Partial (esp. with
+    # RF>1 after kill + recover), and a one-shot Active assert races that window.
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(peer_api_uris[0], COLLECTION_NAME)
+
     # Fetch the cluster info once so local and remote shards come from the same
     # cluster revision (two separate requests could observe placement changing
     # between them and reintroduce flakiness).
