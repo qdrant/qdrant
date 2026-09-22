@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use page_attention::pages::PagesHead;
 use page_attention::pagesearch::{self, ExactRowsSource, Parameters};
 use page_attention::tq4::Rotation;
@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use sparse::common::types::DimId;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::data_types::attention::{AttentionQuery, AttentionRequest, AttentionResponse};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -75,6 +76,88 @@ impl std::fmt::Debug for PageAttentionIndex {
 }
 
 impl PageAttentionIndex {
+    /// Typed API: no synthetic point IDs and no score-channel encoding.
+    pub fn attention(
+        &self,
+        request: &AttentionRequest,
+        stopped: &AtomicBool,
+    ) -> OperationResult<AttentionResponse> {
+        self.validate_count()?;
+        check_process_stopped(stopped)?;
+        let dim = self.head.dim;
+        let storage = self.vector_storage.borrow();
+        let query = match &request.query {
+            AttentionQuery::Vector(q) => q.clone(),
+            AttentionQuery::Id(id) => {
+                let pos = self
+                    .id_tracker
+                    .borrow()
+                    .internal_id_with_behavior(*id, DeferredBehavior::WithDeferred)
+                    .ok_or(OperationError::PointIdError {
+                        missed_point_id: *id,
+                    })?;
+                let row = storage.get_vector::<Random>(pos);
+                let VectorRef::Dense(row) = row.as_vec_ref() else {
+                    unreachable!("validated dense storage")
+                };
+                row[..dim].to_vec()
+            }
+        };
+        if query.len() != dim || query.iter().any(|x| !x.is_finite()) {
+            return Err(OperationError::validation_error(
+                "attention query must be a finite head_dim vector",
+            ));
+        }
+        if request.ef == 0 || request.ef > 8192 || request.return_top_k > 8192 {
+            return Err(OperationError::validation_error(
+                "attention requires ef in 1..=8192 and return_top_k <= 8192",
+            ));
+        }
+        if request.rescore && self.config.rescore == 0 {
+            return Err(OperationError::validation_error(
+                "attention rescore requested but collection rescore budget is zero",
+            ));
+        }
+        let mut originals = Originals {
+            storage: &storage,
+            query: &query,
+        };
+        let answer = pagesearch::attend(
+            &self.head,
+            &self.rotation,
+            &query,
+            1.0 / (dim as f32).sqrt(),
+            0,
+            request.ef,
+            request.return_top_k,
+            true,
+            if request.rescore {
+                self.config.rescore
+            } else {
+                0
+            },
+            Some(&mut originals),
+            Parameters::default(),
+        );
+        check_process_stopped(stopped)?;
+        if !answer.lse.is_finite() || answer.out.iter().any(|x| !x.is_finite()) {
+            return Err(OperationError::validation_error(
+                "page_attention produced a non-finite output",
+            ));
+        }
+        Ok(AttentionResponse {
+            attention: answer.out,
+            lse: answer.lse,
+            token_ids: (request.return_top_k > 0).then(|| {
+                answer
+                    .positions
+                    .into_iter()
+                    .map(|id| PointIdType::NumId(id as u64))
+                    .collect()
+            }),
+        })
+    }
+
     pub fn open(
         path: &Path,
         config: &PageAttentionConfig,

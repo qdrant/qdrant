@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Page-major attention index: 4 KiB pages holding the TQ4 codes of 16 tokens' keys AND values, a graph over pages, and the whole softmax computed while the pages are scanned."
 
+[features]
+builder = []
+
+[[bin]]
+name = "page-attention-prepare"
+path = "src/bin/prepare.rs"
+required-features = ["builder"]
+
 [dependencies]
 half = { workspace = true }
 memmap2 = { workspace = true }

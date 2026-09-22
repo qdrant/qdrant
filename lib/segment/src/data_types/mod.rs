@@ -1,3 +1,4 @@
+pub mod attention;
 pub mod build_index_result;
 pub mod collection_defaults;
 pub mod facets;

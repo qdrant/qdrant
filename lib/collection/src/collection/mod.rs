@@ -1,3 +1,4 @@
+mod attention;
 mod clean;
 mod collection_ops;
 pub mod distance_matrix;

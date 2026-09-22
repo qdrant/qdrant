@@ -46,6 +46,10 @@ fn err(s: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, s.into())
 }
 
+#[cfg(feature = "builder")]
+#[path = "builder/pages.rs"]
+mod build;
+
 /// The `lLLLLhHHHH` file stem of a `(layer, kv-head)`, as `paired` spells it.
 fn stem(layer: u32, kv_head: u32) -> String {
     format!("l{layer:04}h{kv_head:04}")

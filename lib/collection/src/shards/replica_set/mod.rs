@@ -1,3 +1,4 @@
+mod attention;
 pub mod clock_set;
 mod execute_read_operation;
 mod locally_disabled_peers;

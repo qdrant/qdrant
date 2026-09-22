@@ -25,6 +25,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 
+use crate::actix::api::attention_api::config_attention_api;
 use crate::actix::api::audit_api::config_audit_api;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
@@ -158,6 +159,7 @@ pub fn init(
                 .configure(config_recommend_api)
                 .configure(config_discover_api)
                 .configure(config_query_api)
+                .configure(config_attention_api)
                 .configure(config_facet_api)
                 .configure(config_shards_api)
                 .configure(config_issues_api)

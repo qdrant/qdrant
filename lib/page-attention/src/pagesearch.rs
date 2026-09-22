@@ -1,7 +1,7 @@
 //! Page beam, coarse tail and optional original-row rescoring.
 use crate::index::{self, Adj, Scorer, Visited};
-use crate::pagekernel::{attend_page, score_page, PageQuery, VAcc, VLevels, WeightBits};
-use crate::pages::{PageCsr, PagesHead, MAX_ROW};
+use crate::pagekernel::{PageQuery, VAcc, VLevels, WeightBits, attend_page, score_page};
+use crate::pages::{MAX_ROW, PageCsr, PagesHead};
 use crate::tq4::Rotation;
 #[cfg(test)]
 use crate::{pages::TAIL_BLOCK, tq4};
@@ -435,7 +435,8 @@ pub fn attend(
     }
 
     // ---- 8: the reply ------------------------------------------------------------------------
-    let mut order = u.clone();
+    // The normal attention response needs no diagnostic candidates.
+    let mut order = if k == 0 { Vec::new() } else { u.clone() };
     let kk = k.min(order.len());
     if kk < order.len() {
         order.select_nth_unstable_by(kk, |&a, &b| sc.s[b as usize].total_cmp(&sc.s[a as usize]));
@@ -460,7 +461,7 @@ mod tests {
     use super::*;
     use crate::arr::Arr;
     use crate::index::SplitMix64;
-    use crate::pages::{k_index, v_index, Groups, PageGraph, PageLinks, PAGE};
+    use crate::pages::{Groups, PAGE, PageGraph, PageLinks, k_index, v_index};
 
     // ---- the spec's scalar codec, written out here so the tests do not lean on `pages.rs` -----
 
@@ -734,6 +735,42 @@ mod tests {
     /// (a) The dense limit. With `ef >= P` the beam reaches every page, `U` is every token, every
     /// group is fully removed, and what comes back must be the plain softmax over the decoded
     /// vectors -- the int8 query grid is then the only thing between the two numbers.
+    #[test]
+    fn diagnostic_top_k_never_changes_attention() {
+        let s = synth(3000, 128, 71);
+        let q = query(128, 33);
+        let run = |k| {
+            attend(
+                &s.head,
+                &s.rot,
+                &q,
+                1.0 / (128f32).sqrt(),
+                0,
+                4,
+                k,
+                true,
+                0,
+                None,
+                Parameters::default(),
+            )
+        };
+        let baseline = run(0);
+        assert!(baseline.positions.is_empty());
+        assert!(baseline.scores.is_empty());
+        for k in [1, 16, 128, 10000] {
+            let answer = run(k);
+            assert_eq!(baseline.out, answer.out);
+            assert_eq!(baseline.lse, answer.lse);
+            assert_eq!(baseline.scored, answer.scored);
+            assert_eq!(answer.positions.len(), k.min(answer.scored));
+            assert!(answer.scores.windows(2).all(|w| w[0] >= w[1]));
+            let mut ids = answer.positions.clone();
+            ids.sort_unstable();
+            ids.dedup();
+            assert_eq!(ids.len(), answer.positions.len());
+        }
+    }
+
     #[test]
     fn dense_limit_equals_a_scalar_reference() {
         for (n, d) in [(3000usize, 256usize), (3000, 128)] {

@@ -3,6 +3,7 @@ use common::validation::{validate_collection_name, validate_collection_name_lega
 use serde::Deserialize;
 use validator::Validate;
 
+pub mod attention_api;
 pub mod audit_api;
 pub mod cluster_api;
 pub mod collections_api;
