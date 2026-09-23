@@ -60,7 +60,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
         config: LogstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
-        let tracker = TrackerEnum::open(fs, &base_path, populate)?;
+        let tracker = TrackerEnum::open_read_only(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
         validate_consistency(&tracker, &pages)?;
 
