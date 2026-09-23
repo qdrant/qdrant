@@ -784,7 +784,8 @@ where
     let mut links: Vec<PointOffsetType> = Vec::new();
     let mut adj: Vec<u128> = Vec::with_capacity(topn);
     let mut scores: Vec<f32> = Vec::new();
-    let (mut queries_with_defects, mut edges_added, mut skipped_full, mut evicted) = (0usize, 0usize, 0usize, 0usize);
+    let (mut queries_with_defects, mut edges_added, mut skipped_full, mut evicted) =
+        (0usize, 0usize, 0usize, 0usize);
     let mut per_query_added: Vec<u32> = Vec::with_capacity(top_lists.len() / topn);
 
     for (qi, row) in top_lists.chunks(topn).enumerate() {
@@ -793,17 +794,28 @@ where
         }
         // nodes in rank order, sinks dropped
         nodes.clear();
-        nodes.extend(row.iter().copied().filter(|p| excluded.binary_search(p).is_err()));
+        nodes.extend(
+            row.iter()
+                .copied()
+                .filter(|p| excluded.binary_search(p).is_err()),
+        );
         let n = nodes.len();
         if n < 2 {
             per_query_added.push(0);
             continue;
         }
         // rank lookup: node id -> index; nodes are few, a sorted pair list beats a hash map
-        let mut index: Vec<(PointOffsetType, u8)> = nodes.iter().enumerate().map(|(i, &p)| (p, i as u8)).collect();
+        let mut index: Vec<(PointOffsetType, u8)> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| (p, i as u8))
+            .collect();
         index.sort_unstable();
         let rank_of = |p: PointOffsetType| -> Option<usize> {
-            index.binary_search_by_key(&p, |&(id, _)| id).ok().map(|k| index[k].1 as usize)
+            index
+                .binary_search_by_key(&p, |&(id, _)| id)
+                .ok()
+                .map(|k| index[k].1 as usize)
         };
         // induced adjacency
         adj.clear();
@@ -846,8 +858,10 @@ where
             let (s, t) = (nodes[si], nodes[ti]);
             builder.level0_links(s, &mut links);
             if sort_on_first_touch && !touched[s as usize] {
-                let mut scored: Vec<(f32, PointOffsetType)> =
-                    links.iter().map(|&l| (scorer.score_internal(s, l), l)).collect();
+                let mut scored: Vec<(f32, PointOffsetType)> = links
+                    .iter()
+                    .map(|&l| (scorer.score_internal(s, l), l))
+                    .collect();
                 scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
                 links.clear();
                 links.extend(scored.into_iter().map(|(_, l)| l));
@@ -868,7 +882,10 @@ where
             edges_added += 1;
         }
     }
-    let points_at_cap = reach_count.iter().filter(|&&c| c as usize >= max_per_point).count();
+    let points_at_cap = reach_count
+        .iter()
+        .filter(|&&c| c as usize >= max_per_point)
+        .count();
     let points_with_repair = reach_count.iter().filter(|&&c| c > 0).count();
     per_query_added.sort_unstable();
     let pct = |p: f64| per_query_added[((per_query_added.len() - 1) as f64 * p) as usize];
@@ -915,9 +932,17 @@ fn plan_reach_edges(
     mut can_add: impl FnMut(usize) -> bool,
 ) -> ReachPlan {
     let n = adj.len();
-    let full: u128 = if n == 128 { u128::MAX } else { (1u128 << n) - 1 };
+    let full: u128 = if n == 128 {
+        u128::MAX
+    } else {
+        (1u128 << n) - 1
+    };
     // closure: reach[i] bit j = i reaches j (including itself)
-    let mut reach: Vec<u128> = adj.iter().enumerate().map(|(i, &b)| b | (1u128 << i)).collect();
+    let mut reach: Vec<u128> = adj
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| b | (1u128 << i))
+        .collect();
     for k in 0..n {
         let rk = reach[k];
         for i in 0..n {
@@ -958,7 +983,9 @@ fn plan_reach_edges(
         }
         let Some((_, s, t)) = best else {
             // something is unsatisfied but no source can take an edge
-            plan.skipped += (0..n).map(|i| (full & !reach[i]).count_ones() as usize).sum::<usize>();
+            plan.skipped += (0..n)
+                .map(|i| (full & !reach[i]).count_ones() as usize)
+                .sum::<usize>();
             break;
         };
         // The chosen source is the closest to *some* missing target: add s -> t and update the
@@ -1053,7 +1080,11 @@ mod reach_tests {
             a[s] |= 1u128 << t;
         }
         let n = a.len();
-        let mut reach: Vec<u128> = a.iter().enumerate().map(|(i, &b)| b | (1u128 << i)).collect();
+        let mut reach: Vec<u128> = a
+            .iter()
+            .enumerate()
+            .map(|(i, &b)| b | (1u128 << i))
+            .collect();
         for k in 0..n {
             let rk = reach[k];
             for i in 0..n {

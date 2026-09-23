@@ -62,7 +62,9 @@ impl EdgeVectorParams {
             distance: *distance,
             on_disk: *on_disk,
             memory: None,
-            hnsw_config: hnsw_config.clone().unwrap_or_else(|| global_hnsw_config.clone()),
+            hnsw_config: hnsw_config
+                .clone()
+                .unwrap_or_else(|| global_hnsw_config.clone()),
             quantization_config: quantization_config
                 .clone()
                 .or_else(|| global_quantization_config.cloned()),

@@ -31,7 +31,9 @@ pub trait DiffConfig<Diff>: Clone {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.

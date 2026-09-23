@@ -741,7 +741,9 @@ impl HNSWIndex {
         let mut excluded_targets: Vec<PointOffsetType> = projection
             .excluded_points
             .iter()
-            .filter_map(|&id| id_tracker.internal_id_with_behavior(id, DeferredBehavior::WithDeferred))
+            .filter_map(|&id| {
+                id_tracker.internal_id_with_behavior(id, DeferredBehavior::WithDeferred)
+            })
             .collect();
         excluded_targets.sort_unstable();
         excluded_targets.dedup();

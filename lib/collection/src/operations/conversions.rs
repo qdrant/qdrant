@@ -2087,7 +2087,10 @@ mod hnsw_projection_conversion_tests {
         assert_eq!(proto_projection.cands, Some(128));
         assert_eq!(proto_projection.seed, Some(7));
         assert_eq!(proto_projection.max_training_vectors, Some(50_000));
-        assert_eq!(proto_projection.excluded_points, vec!["0".to_string(), "2".to_string()]);
+        assert_eq!(
+            proto_projection.excluded_points,
+            vec!["0".to_string(), "2".to_string()]
+        );
         assert_eq!(proto_projection.repair, Some(false));
         assert_eq!(proto_projection.repair_max_per_point, Some(8));
 

@@ -816,7 +816,9 @@ impl Indexes {
 ///
 /// The degree cap (`m0`) is respected, so search cost is unchanged. Upper layers, entry
 /// points and the search code are untouched.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
+)]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HnswProjectionConfig {
