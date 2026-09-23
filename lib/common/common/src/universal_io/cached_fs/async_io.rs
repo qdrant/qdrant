@@ -3,8 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use futures::future::BoxFuture;
-
 use super::{CachedFs, ScheduledFile};
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, UioResult, UniversalIoError, UniversalReadFsAsync,

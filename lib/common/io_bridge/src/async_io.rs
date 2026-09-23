@@ -13,8 +13,6 @@ use common::uio_trace;
 use common::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
 };
-use futures::future::BoxFuture;
-use tokio_util::task::AbortOnDropHandle;
 
 use crate::file::BlobFile;
 use crate::fs::BlobFs;

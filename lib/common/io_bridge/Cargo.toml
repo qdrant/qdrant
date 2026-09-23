@@ -14,7 +14,6 @@ bytes = { workspace = true }
 futures = { workspace = true }
 slab = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 aligned-vec = "0.6.4"
 log = { workspace = true }
 

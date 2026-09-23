@@ -13,7 +13,7 @@ use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 #[derive(Clone)]
 pub struct BlobFs<A: AsyncRead> {
     inner: A,
-    pub(crate) runtime: BridgeRuntime,
+    runtime: BridgeRuntime,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {

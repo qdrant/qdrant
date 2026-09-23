@@ -11,7 +11,6 @@ use common::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
     UniversalWriteFsAsync,
 };
-use futures::future::BoxFuture;
 
 use super::CachedBlobFile;
 use super::fs::CachedBlobFs;

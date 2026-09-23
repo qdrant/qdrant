@@ -30,7 +30,7 @@ struct Counters {
 }
 
 #[derive(Clone)]
-pub(super) struct CountingConfig {
+struct CountingConfig {
     data: Bytes,
     counters: Counters,
 }
@@ -39,13 +39,13 @@ pub(super) struct CountingConfig {
 /// requests it receives: `len` (HEAD), `read_whole` (single GET) and
 /// `read_range` (ranged GET).
 #[derive(Clone)]
-pub(super) struct CountingSource {
+struct CountingSource {
     data: Bytes,
     counters: Counters,
 }
 
 impl CountingSource {
-    pub(super) fn new(data: &'static [u8]) -> Self {
+    fn new(data: &'static [u8]) -> Self {
         Self {
             data: Bytes::from_static(data),
             counters: Counters::default(),

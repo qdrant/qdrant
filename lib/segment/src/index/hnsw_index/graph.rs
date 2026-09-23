@@ -149,9 +149,17 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
 
         let options = GraphLinksFile::<S>::preopen_options(residency);
-        fs.schedule_open_with(&path, Some(options), None, move |file| {
-            GraphLinksFile::preload_offsets(file, format)
-        });
+        let fs_clone = fs.clone();
+        let path_clone = path.clone();
+        fs.schedule(
+            path,
+            Box::pin(async move {
+                let file = fs_clone
+                    .open_async(path_clone, options, Default::default())
+                    .await?;
+                GraphLinksFile::preload_offsets(file, format).await
+            }),
+        );
         Ok(())
     }
 
