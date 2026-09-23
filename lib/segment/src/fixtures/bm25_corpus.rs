@@ -3,9 +3,7 @@
 //! and the same queries by construction rather than by copied constants.
 //!
 //! Users: `lib/collection/benches/bm25_sparse_bench.rs` (the sparse route at
-//! shard level), `lib/segment/benches/text_bm25_search.rs` (the text index per
-//! shape) and `lib/segment/tests/integration/bm25_compare.rs` (both routes in
-//! one harness, with recall).
+//! shard level).
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,11 +18,11 @@ pub const LIMIT: usize = 10;
 pub const K1: f64 = 1.2;
 pub const B: f64 = 0.75;
 
-/// The IDF both routes apply at query time, `QueryContext::fancy_idf` in
-/// `f64`, clamped at zero so a term in more than half the corpus contributes
-/// nothing rather than a negative score.
+/// The IDF both routes apply at query time, `VectorQueryContext::fancy_idf` in
+/// `f64`. The `+ 1.0` keeps it positive for every `df`, so a common term
+/// contributes little but never a negative score.
 pub fn idf(n: f64, df: f64) -> f64 {
-    ((n - df + 0.5) / (df + 0.5) + 1.0).ln().max(0.0)
+    ((n - df + 0.5) / (df + 0.5) + 1.0).ln()
 }
 
 /// A vocabulary with a Zipf-like frequency distribution: term `i` is drawn with

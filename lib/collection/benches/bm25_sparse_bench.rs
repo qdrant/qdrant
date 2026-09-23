@@ -2,9 +2,8 @@
 //!
 //! This is the number a text-index scorer has to match: same corpus, same
 //! queries, no HTTP. The corpus and the queries come from
-//! `segment::fixtures::bm25_corpus`, shared with the text-index bench
-//! (`lib/segment/benches/text_bm25_search.rs`) and the harness that puts both
-//! routes side by side with recall (`lib/segment/tests/integration/bm25_compare.rs`).
+//! `segment::fixtures::bm25_corpus`, so a text-index measurement can use the
+//! same documents.
 //!
 //! Three shard states, one per sparse index shape: freshly ingested, where the
 //! index is the appendable RAM one; optimized into the immutable RAM index; and
@@ -70,9 +69,8 @@ fn point_count() -> usize {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_POINT_COUNT);
-    // An empty corpus has no average length and every query has an empty
-    // truth, which `recall` scores as 1.0: a run that looks fine and means
-    // nothing.
+    // An empty corpus has no average length, and `Bm25::new` would reject the
+    // NaN with an unwrap panic that does not name the variable to fix.
     assert!(count > 0, "BM25_SPARSE_DOCS must be positive");
     count
 }
@@ -190,7 +188,12 @@ fn shard_with(
     memory: Option<Memory>,
     points: Vec<PointStructPersisted>,
 ) -> (LocalShard, tempfile::TempDir) {
-    let storage_dir = Builder::new().prefix("bm25-sparse").tempdir().unwrap();
+    // Under `CARGO_TARGET_TMPDIR`, not the system tempdir: on a tmpfs `/tmp`
+    // the on-disk index would be read from RAM and measure like the RAM one.
+    let storage_dir = Builder::new()
+        .prefix("bm25-sparse")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .unwrap();
     let schema_dir = Builder::new().prefix("bm25-schema").tempdir().unwrap();
 
     let collection_params = CollectionParams {
@@ -261,7 +264,7 @@ fn shard_with(
     (shard, storage_dir)
 }
 
-/// One state to time: the shard, its query vectors, and its embedding.
+/// One state to time: the shard and its query vectors.
 struct State {
     name: &'static str,
     shard: LocalShard,
@@ -320,7 +323,8 @@ fn bm25_sparse_bench(c: &mut Criterion) {
     let point_count = point_count();
 
     // Nothing for the optimizer to convert: one segment that already holds
-    // everything, no indexing threshold to cross, no vacuum.
+    // everything, indexing disabled (`None` would be the 10 MB default, which
+    // the corpus crosses), no vacuum.
     let never_optimize = OptimizersConfig {
         deleted_threshold: 1.0,
         vacuum_min_vector_number: usize::MAX,
@@ -328,7 +332,7 @@ fn bm25_sparse_bench(c: &mut Criterion) {
         max_segment_size: None,
         #[expect(deprecated)]
         memmap_threshold: None,
-        indexing_threshold: None,
+        indexing_threshold: Some(0),
         flush_interval_sec: 30,
         max_optimization_threads: Some(2),
         prevent_unoptimized: None,
@@ -452,6 +456,14 @@ fn bm25_sparse_bench(c: &mut Criterion) {
         });
     }
     group.finish();
+
+    // The fresh numbers only mean something if the shard stayed fresh while
+    // it was timed.
+    for state in &states {
+        if state.name == "fresh" {
+            assert_still_appendable(&state.shard, point_count);
+        }
+    }
 }
 
 criterion_group!(benches, bm25_sparse_bench);
