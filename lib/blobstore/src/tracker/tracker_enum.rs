@@ -72,6 +72,16 @@ impl<S: UniversalRead> TrackerEnum<S> {
         }
     }
 
+    /// Heap RAM held beyond the tracker file: all mappings of the compacted tracker. The
+    /// append-only tracker reads its mappings from the file, and only buffers them between puts
+    /// and the next flush.
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            Self::AppendOnly(_) => 0,
+            Self::Compacted(tracker) => tracker.ram_usage_bytes(),
+        }
+    }
+
     /// Populate the tracker file into the RAM cache. The compacted tracker lives in RAM already.
     pub fn populate(&self) -> Result<()> {
         match self {
