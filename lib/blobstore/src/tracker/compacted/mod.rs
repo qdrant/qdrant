@@ -18,15 +18,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWriteFs,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+    UniversalWriteFs,
 };
 
 use crate::Result;
 use crate::blobstore::Flusher;
 use crate::error::BlobstoreError;
-use crate::tracker::{PointOffset, ValuePointer};
+use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 
 /// File name of the compacted tracker file
 ///
@@ -71,29 +73,69 @@ impl CompactedTracker {
         Ok(tracker)
     }
 
+    /// Create a tracker in the given directory holding every mapping of `source`, replacing the
+    /// file if it already exists.
+    ///
+    /// The directory must exist already.
+    pub fn from_tracker<Fs: UniversalWriteFileOps>(
+        fs: &Fs,
+        dir: &Path,
+        source: &impl TrackerRead,
+    ) -> Result<Self> {
+        let tracker = Self {
+            path: Self::tracker_file_name(dir),
+            pointers: source.get_range::<Sequential>(0..source.max_point_offset()?)?,
+            dirty: Arc::new(AtomicBool::new(false)),
+        };
+        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers))?;
+        Ok(tracker)
+    }
+
+    /// The file is always read whole right after opening, so it is populated regardless of how
+    /// the storage populates its other files. This makes a [`preopen`](Self::preopen) fetch the
+    /// whole file.
+    fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate: Populate::Blocking,
+            advice: AdviceSetting::Advice(Advice::Sequential),
+        }
+    }
+
+    /// Whether the given directory holds a compacted tracker file.
+    pub fn exists<Fs: UniversalReadFs>(fs: &Fs, dir: &Path) -> Result<bool> {
+        Ok(fs.exists(&Self::tracker_file_name(dir))?)
+    }
+
+    /// Schedule a prefetch for the file a subsequent [`open`](Self::open) reads.
+    pub fn preopen<Fs: CachedReadFs>(fs: &Fs, dir: &Path) {
+        fs.schedule_open(
+            &Self::tracker_file_name(dir),
+            Some(Self::open_options()),
+            None,
+        );
+    }
+
     /// Open an existing tracker in the given directory, decoding the whole file into RAM.
     ///
     /// If the file does not exist or does not decode, return an error.
     pub fn open<Fs: UniversalReadFs>(fs: &Fs, dir: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: true,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Sequential),
-        };
-        let file = fs.open(&path, options, Default::default()).map_err(|err| {
-            if err.is_not_found() {
-                // If config exists and this file doesn't, it should be treated as
-                // inconsistent storage rather than a missing one
-                BlobstoreError::service_error(format!(
-                    "Compacted tracker file does not exist: {}",
-                    path.display(),
-                ))
-            } else {
-                BlobstoreError::from(err)
-            }
-        })?;
+        let file = fs
+            .open(&path, Self::open_options(), Default::default())
+            .map_err(|err| {
+                if err.is_not_found() {
+                    // If config exists and this file doesn't, it should be treated as
+                    // inconsistent storage rather than a missing one
+                    BlobstoreError::service_error(format!(
+                        "Compacted tracker file does not exist: {}",
+                        path.display(),
+                    ))
+                } else {
+                    BlobstoreError::from(err)
+                }
+            })?;
 
         let pointers = format::decode(&file.read_whole::<u8>()?).map_err(|err| {
             BlobstoreError::service_error(format!(

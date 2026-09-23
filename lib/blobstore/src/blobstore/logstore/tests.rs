@@ -8,7 +8,9 @@ use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig, Mode, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::fixtures::{Payload, default_config, empty_storage_append_only, random_payload};
-use crate::tracker::ValuePointer;
+use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::compacted::CompactedTracker;
+use crate::tracker::{PointOffset, ValuePointer};
 use crate::{Blobstore, BlobstoreReader};
 
 /// Size in bytes of a single mapping entry in the tracker file
@@ -641,6 +643,198 @@ fn test_reader_on_append_only_storage() {
     assert_eq!(
         view.get_value::<Random>(4, &hw_counter).unwrap(),
         Some(vec![4; 10]),
+    );
+}
+
+/// Replace the append-only tracker file in `dir` with a compacted one holding the same mappings.
+fn compact_tracker(dir: &TempDir) {
+    let tracker =
+        AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No).unwrap();
+    CompactedTracker::from_tracker(&MmapFs, dir.path(), &tracker).unwrap();
+    drop(tracker);
+    fs::remove_file(dir.path().join("log_tracker.dat")).unwrap();
+}
+
+#[test]
+fn test_reader_on_compacted_tracker() {
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let point_offsets = [0, 1, 4, 5, 9];
+    for point_offset in point_offsets {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+    drop(storage);
+    compact_tracker(&dir);
+
+    // The reader picks the compacted tracker automatically
+    let mut reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 10);
+    assert_eq!(reader.get_storage_size_bytes(), 5 * 10);
+    for point_offset in 0..11 {
+        let expected = point_offsets
+            .contains(&point_offset)
+            .then(|| vec![point_offset as u8; 10]);
+        assert_eq!(
+            reader
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            expected,
+        );
+    }
+
+    let mut collected = Vec::new();
+    reader
+        .iter(
+            PointOffset::MAX,
+            |point_offset, value: Vec<u8>| {
+                collected.push((point_offset, value));
+                Ok::<_, BlobstoreError>(true)
+            },
+            hw_counter.ref_payload_io_read_counter(),
+        )
+        .unwrap();
+    collected.sort_by_key(|(point_offset, _)| *point_offset);
+    let expected = point_offsets
+        .iter()
+        .map(|&point_offset| (point_offset, vec![point_offset as u8; 10]))
+        .collect::<Vec<_>>();
+    assert_eq!(collected, expected);
+
+    let mut files = reader.files();
+    files.sort();
+    assert_eq!(
+        files,
+        [
+            dir.path().join("compacted_tracker.dat"),
+            dir.path().join(CONFIG_FILENAME),
+            dir.path().join("log_page_0.dat"),
+        ],
+    );
+
+    reader.clear_cache().unwrap();
+    reader.live_reload(&MmapFs).unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 10);
+    assert_eq!(
+        reader.get_value::<Random>(9, &hw_counter).unwrap(),
+        Some(vec![9; 10]),
+    );
+}
+
+/// Preopen schedules the compacted tracker file: once the prefetch is done, the open succeeds
+/// with every file it reads through the backend deleted, see
+/// `test_preopen_schedules_files_for_open`.
+#[tokio::test]
+async fn test_preopen_schedules_compacted_tracker() {
+    use common::universal_io::{
+        CachedFs, CachedReadFs, ReadOnly, UniversalRead, UniversalReadFileOps,
+    };
+
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    storage
+        .put_value(0, &vec![7; 10], hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+    compact_tracker(&dir);
+
+    type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs, dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    BlobstoreReader::<Vec<u8>, ReadOnly<MmapFile>>::preopen(
+        &cached_fs,
+        dir.path().to_path_buf(),
+        Populate::No,
+    )
+    .unwrap();
+    cached_fs.wait_all().await;
+
+    for file in ["config.json", "compacted_tracker.dat", "log_page_0.dat"] {
+        fs::remove_file(dir.path().join(file)).unwrap();
+    }
+
+    let reader = BlobstoreReader::<Vec<u8>, ReadOnly<MmapFile>>::open(
+        &cached_fs,
+        dir.path().to_path_buf(),
+        Populate::No,
+    )
+    .unwrap();
+    assert_eq!(
+        reader.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(vec![7; 10]),
+    );
+}
+
+/// Preopen fetches the whole compacted tracker file, not just a handle to it: once the prefetch
+/// is done, opening through a disk cache downloads nothing more.
+#[tokio::test]
+async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
+    use std::sync::Arc;
+
+    use common::universal_io::{
+        CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+        UniversalReadFileOps,
+    };
+
+    let dir = TempDir::new().unwrap();
+    let remote_root = dir.path().join("remote");
+    let local_root = dir.path().join("local");
+    let path = remote_root.join("storage");
+    fs::create_dir_all(&path).unwrap();
+    fs::create_dir_all(&local_root).unwrap();
+
+    let config = StorageConfig::AppendOnly(LogstoreConfig {
+        page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
+        compression: Compression::None,
+    });
+    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, path.clone(), config).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    storage
+        .put_value(0, &vec![7; 10], hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+    let tracker =
+        AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &path, Populate::No).unwrap();
+    CompactedTracker::from_tracker(&MmapFs, &path, &tracker).unwrap();
+    drop(tracker);
+    fs::remove_file(path.join("log_tracker.dat")).unwrap();
+
+    let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    let stats = cache_fs.stats();
+    let mut cached_fs = CachedFs::new(cache_fs, &path).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::preopen(
+        &cached_fs,
+        path.clone(),
+        Populate::No,
+    )
+    .unwrap();
+    cached_fs.wait_all().await;
+    let prefetched = stats.snapshot();
+
+    let reader =
+        BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::open(&cached_fs, path, Populate::No)
+            .unwrap();
+    // The config and the tracker are prefetched, the pages are only read on lookup
+    assert_eq!(
+        stats.snapshot().delta_since(&prefetched).downloaded_bytes,
+        0
+    );
+    assert_eq!(
+        reader.get_value::<Random>(0, &hw_counter).unwrap(),
+        Some(vec![7; 10]),
     );
 }
 
