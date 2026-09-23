@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::uio_trace;
 use common::universal_io::{
     ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
 };
@@ -61,7 +62,7 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         F: Future<Output = UioResult<()>> + Send + 'static,
     {
         let handle = self.runtime.handle().clone();
-        async move { handle.spawn(op).await? }
+        async move { handle.spawn(uio_trace::Context::current().wrap(op)).await? }
     }
 }
 
@@ -77,7 +78,10 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
-        let result = self.runtime.block_on(self.inner.list_files(prefix_path));
+        let result = self.runtime.block_on(
+            uio_trace::Request::new(uio_trace::Op::List, prefix_path, 0..0)
+                .wrap(self.inner.list_files(prefix_path)),
+        );
         if let Some(start_time) = start_time {
             log::trace!(
                 target: crate::LATENCY_LOG_TARGET,
@@ -93,7 +97,10 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     fn exists(&self, path: &Path) -> UioResult<bool> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
-        let result = self.runtime.block_on(self.inner.exists(path));
+        let result = self.runtime.block_on(
+            uio_trace::Request::new(uio_trace::Op::Exists, path, 0..0)
+                .wrap(self.inner.exists(path)),
+        );
         if let Some(start_time) = start_time {
             log::trace!(
                 target: crate::LATENCY_LOG_TARGET,

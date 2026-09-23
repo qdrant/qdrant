@@ -102,6 +102,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
+use common::uio_trace;
 use common::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
 };
@@ -282,6 +283,10 @@ struct ConnectionArgs {
     /// instead of parking the components this request won't touch cold.
     #[arg(long, default_value_t = false)]
     no_load_profile: bool,
+
+    /// Record every network storage request and save into this file.
+    #[arg(long)]
+    uio_trace: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1006,20 +1011,27 @@ where
     log::info!("Load profile: {load_profile:?}");
 
     let before_open = stats.snapshot();
-    let shard =
-        ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, config, load_profile)
-            .context("failed to open read-only edge shard over object storage");
+    let shard = uio_trace::Phase::start("open")
+        .in_scope(|| {
+            ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(
+                cached_fs,
+                prefix,
+                config,
+                load_profile,
+            )
+        })
+        .context("failed to open read-only edge shard over object storage");
     print_cache_stats("open", &stats.snapshot().delta_since(&before_open));
     let shard = shard?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let before_prepare = stats.snapshot();
-    let result = request.fill_random_vector(&shard);
+    let result = uio_trace::Phase::start("prepare").in_scope(|| request.fill_random_vector(&shard));
     print_cache_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
     result?;
 
     let before_query = stats.snapshot();
-    let result = request.run(&shard);
+    let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
     print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
     let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
@@ -1040,7 +1052,7 @@ where
         }
 
         let before_reload = stats.snapshot();
-        let result = shard.live_reload();
+        let result = uio_trace::Phase::start("reload").in_scope(|| shard.live_reload());
         print_cache_stats("reload", &stats.snapshot().delta_since(&before_reload));
         if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
@@ -1053,7 +1065,7 @@ where
         );
 
         let before_query = stats.snapshot();
-        let result = request.run(&shard);
+        let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
         print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
         let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");
@@ -1067,9 +1079,9 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
-
     let cli = Cli::parse();
     let conn = &cli.connection;
+    let _flush_trace = conn.uio_trace.as_ref().map(uio_trace::start).transpose()?;
     let prefix = PathBuf::from(&conn.prefix);
     let cache_dir = conn
         .cache_dir

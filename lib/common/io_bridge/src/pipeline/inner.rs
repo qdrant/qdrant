@@ -2,6 +2,7 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
 use aligned_vec::{AVec, RuntimeAlign};
+use common::uio_trace;
 use common::universal_io::{UioResult, UniversalIoError, UserData};
 use futures::FutureExt as _;
 use slab::Slab;
@@ -127,6 +128,7 @@ where
         // scroll), where queueing delay is part of the real per-request cost.
         let started = std::time::Instant::now();
         let reply_tx = self.tx.clone();
+        let future = uio_trace::Context::current().wrap(future);
         runtime.handle().spawn(async move {
             // Catch a panic in the read future and turn it into an error reply,
             // so every scheduled slot is always answered. Without this, a

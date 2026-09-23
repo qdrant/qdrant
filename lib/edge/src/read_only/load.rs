@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::uio_trace;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::future::join_all;
 use parking_lot::RwLock;
@@ -73,10 +74,11 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
+    let ctx = uio_trace::Context::current();
     let loaded = pool.install(|| {
         staged
             .into_par_iter()
-            .filter_map(|(uuid, staged)| match staged.finish(fs) {
+            .filter_map(|(uuid, staged)| match ctx.in_scope(|| staged.finish(fs)) {
                 Ok(segment) => Some(Ok((uuid, segment))),
                 Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
                 Err(err) => {
@@ -136,6 +138,7 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
+    let ctx = uio_trace::Context::current();
     let io_futures = pool.install(|| {
         segments
             .par_iter()
@@ -143,7 +146,7 @@ where
                 if let Err(cancelled) = check_process_stopped(is_stopped) {
                     return Some(Err(OperationError::from(cancelled)));
                 }
-                match segment.read().live_preload() {
+                match ctx.in_scope(|| segment.read().live_preload()) {
                     Ok(future) => Some(Ok(future)),
                     Err(err) => {
                         log::warn!("live_preload of segment {uuid} failed: {err}");
@@ -164,12 +167,13 @@ where
         // pool; forks drain into the shared accumulator on drop.
         .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
         .collect();
+    let ctx = uio_trace::Context::current();
     let results = pool.install(|| {
         reloads
             .into_par_iter()
             .map(|(uuid, segment, hw)| {
                 check_process_stopped(is_stopped)?;
-                Ok((uuid, segment.write().live_reload(&hw)))
+                Ok((uuid, ctx.in_scope(|| segment.write().live_reload(&hw))))
             })
             .collect::<OperationResult<Vec<_>>>()
     })?;

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
+use common::uio_trace;
 use common::universal_io::{
     ByteOffset, Flusher, Item, UioResult, UniversalFlush, UniversalIoError, UniversalKind,
     UniversalRead, UserData,
@@ -140,7 +141,10 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let item_size = size_of::<T>() as u64;
-        let len = self.runtime.block_on(self.inner.len(&self.path))?;
+        let len = self.runtime.block_on(
+            uio_trace::Request::new(uio_trace::Op::Len, &self.path, 0..0)
+                .wrap(self.inner.len(&self.path)),
+        )?;
         debug_assert_eq!(len % item_size, 0);
 
         if let Some(start_time) = start_time {
