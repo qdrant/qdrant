@@ -22,6 +22,37 @@
 //! Values are packed back to back in the append-only pages, so exceptions only occur on page
 //! rollover, and the lengths, which carry nearly all of the information, take a few bits each.
 //! Arbitrary pointers still encode correctly, only less compactly.
+//!
+//! # Example
+//!
+//! Six point offsets on pages of 4300 bytes, as `(page_id, block_offset, length)`. Point offset 2
+//! has no value, and the value of point offset 4 does not fit on page 0, so it starts page 1:
+//!
+//! ```text
+//! point offset  0            1             2     3              4             5
+//! pointer       (0, 0, 120)  (0, 120, 95)  None  (0, 215, 130)  (1, 0, 4000)  (1, 4000, 101)
+//! ```
+//!
+//! Only what cannot be predicted from the previous value is kept:
+//!
+//! ```text
+//! gaps        [2]
+//! lengths     [120, 95, 130, 4000, 101]   entries #0..#4
+//! exceptions  [#3 -> (page 1, offset 0)]
+//! ```
+//!
+//! Serialized, 32 bytes instead of 6 × 16 in the flat tracker file:
+//!
+//! ```text
+//! 51 44 52 41 4e 54 43 54 01 00 00 00 06 00 00 00   header: magic, version 1, count 6
+//! 01 02                                             gaps: count 1, distance 2 -> point offset 2
+//! 5f 0c                                             block: min 95, width 12 bits
+//! 19 00 00 23 10 f4 06 00                           25, 0, 35, 3905, 6 at 12 bits, low bit first
+//! 01 03 01 00                                       exceptions: count 1, #3, page 1, offset 0
+//! ```
+//!
+//! Decoding point offset 5: one gap precedes it, so it is entry #4, of length 95 + 6 = 101. Entry
+//! #4 is not an exception, so it starts where entry #3 ends: page 1, offset 0 + 4000.
 
 use common::bitpacking::{BitReader, BitWriter, packed_bits};
 use integer_encoding::VarInt;
