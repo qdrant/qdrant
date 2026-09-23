@@ -190,10 +190,10 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
 
 
 @pytest.mark.parametrize(
-    ("api", "body"),
+    ("path", "body"),
     [
         (
-            '/collections/{collection_name}/points/search',
+            "/points/search",
             {
                 "vector": [0.1, 0.2, 0.3, 0.4],
                 "limit": 1,
@@ -201,7 +201,7 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
             },
         ),
         (
-            '/collections/{collection_name}/points/search/groups',
+            "/points/search/groups",
             {
                 "vector": [0.1, 0.2, 0.3, 0.4],
                 "group_by": "group",
@@ -211,7 +211,7 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
             },
         ),
         (
-            '/collections/{collection_name}/points/query',
+            "/points/query",
             {
                 "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
                 "limit": 1,
@@ -219,11 +219,11 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
             },
         ),
         (
-            '/collections/{collection_name}/points/scroll',
+            "/points/scroll",
             {"limit": 1},
         ),
         (
-            '/collections/{collection_name}/points/recommend',
+            "/points/recommend",
             {
                 "positive": [1],
                 "strategy": "average_vector",
@@ -234,12 +234,14 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
         ),
     ],
 )
-def test_valid_serde_fields_still_work(collection_name, api, body):
-    response = request_with_validation(
-        api=api,
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body=body,
+def test_valid_serde_fields_still_work(collection_name, path, body):
+    # Some legacy endpoints remain served but are intentionally absent from the
+    # current OpenAPI schema. Call the server directly so this regression covers
+    # the request structs changed by this PR rather than schema availability.
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}{path}",
+        json=body,
+        headers=qdrant_host_headers(),
     )
 
     assert response.ok
