@@ -3,7 +3,6 @@
 
 Visualizer for traces written by the `uio_trace` module.
 See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
-Mouse wheel to zoom, mouse drag to pan.
 
 -->
 <html lang="en">
@@ -37,6 +36,7 @@ header #note {
   flex: 1; min-width: 0; color: var(--bad);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+header label { color: var(--ink2); }
 button {
   background: var(--surface); color: var(--ink2);
   border: 1px solid var(--axis); border-radius: 4px; padding: 2px 8px; cursor: pointer;
@@ -44,7 +44,6 @@ button {
 #file { display: none; }
 #wrap { position: relative; flex: 1; min-height: 0; background: var(--surface); }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
-canvas.pan { cursor: grabbing; }
 #tip {
   position: absolute; display: none; pointer-events: none; max-width: 460px;
   background: #000000e8; border: 1px solid var(--axis); border-radius: 5px;
@@ -54,6 +53,14 @@ canvas.pan { cursor: grabbing; }
 #tip b { color: var(--ink); }
 #tip .k { color: var(--muted); }
 #tip .err { color: #e66767; }
+#tip .map { position: relative; height: 8px; margin: 3px 0; }
+#tip .map i { position: absolute; top: 0; bottom: 0; }
+#toast {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2;
+  background: #000000e8; border: 1px solid var(--axis); border-radius: 5px; padding: 8px 14px;
+  pointer-events: none; opacity: 0; transition: opacity 0.2s;
+}
+#toast.on { opacity: 1; }
 #drop {
   position: absolute; inset: 0; z-index: 3; background: var(--surface);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -73,14 +80,15 @@ body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
 <body>
 <header>
   <span id="note"></span>
-  <button id="reset">reset zoom</button>
-  <button id="url">open URL</button>
-  <button id="upload">upload file</button>
+  <label><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+  <button id="url"><u>o</u>pen URL</button>
+  <button id="upload"><u>u</u>pload file</button>
   <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
 </header>
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="tip"></div>
+  <div id="toast">ctrl+wheel or pinch to zoom</div>
   <div id="drop">
     <b>What is it?</b>
     <div id="help"></div>
@@ -103,7 +111,6 @@ const KIND_COLOR = {
   "graph.offsets": "#199e70",
   "graph.reindex": "#c98500",
   "graph.header": "#d55181",
-  "graph.level_offsets": "#1fa0b8",
   "graph": null,
   "payload_index": "#008300",
   "payload_storage": "#9085e9",
@@ -119,6 +126,7 @@ const BW_BIN = 1000;  // µs
 const CPU_BIN = 2000;  // µs, the sampling interval of the tracer
 const LANE_FONT = "11px system-ui, sans-serif";
 const REQ_W = 4.5;  // px per request bar
+const MAP_W = 300;  // px, the file map in the request tooltip
 const BAD_DARK = darken(BAD);
 
 const cv = document.getElementById("c");
@@ -126,17 +134,20 @@ const ctx = cv.getContext("2d");
 const tip = document.getElementById("tip");
 const wrap = document.getElementById("wrap");
 const note = document.getElementById("note");
+const marksBox = document.getElementById("marks");
+const toastBox = document.getElementById("toast");
 
 const HEAD = 26;
-const W_RULER = 68, W_PHASE = 168, W_MARK = 26, W_SIDE = 96, GAP = 10;
+const W_RULER = 68, W_MARK = 26, W_SIDE = 96, GAP = 10;
 const view = {t0: 0, tpp: 1};
 let D = null;
 let L = null;
-let mouseY = -1;
+let mouse = null;
 let hover = null;
-let dragging = null;
+let select = null;  // time the drag started at
 let dirty = false;
 let refit = true;
+let toastTimer = 0;
 
 // ---------- trace ----------
 
@@ -194,8 +205,11 @@ function build(text, name) {
     req.phase = byId.get(req.parent);
   }
 
-  const counts = new Map();
-  for (const req of reqs) counts.set(req.kind, (counts.get(req.kind) || 0) + 1);
+  const counts = new Map(), bytes = new Map();
+  for (const req of reqs) {
+    counts.set(req.kind, (counts.get(req.kind) || 0) + 1);
+    bytes.set(req.kind, (bytes.get(req.kind) || 0) + req.len);
+  }
   const kinds = Object.keys(KIND_COLOR).filter(k => counts.has(k));
   kinds.push(...[...counts.keys()].filter(k => !kinds.includes(k)).sort());
   const index = new Map(kinds.map((k, i) => [k, i]));
@@ -215,20 +229,35 @@ function build(text, name) {
   for (const phase of phases) tMax = Math.max(tMax, phase.e);
   for (const mark of marks) tMax = Math.max(tMax, mark.at);
 
+  ctx.font = LANE_FONT;
+  const phaseW = phases.reduce(
+    (w, phase) => Math.max(w, 18 + phase.depth * 11 + ctx.measureText(phase.name).width),
+    ctx.measureText("phases").width + 8);
+
   const conc = concurrency(reqs, tMax);
   const bw = throughput(reqs, tMax);
   const busy = cores(cpu, tMax);
+  // The samples count process CPU time from its start, not from the trace start.
+  const cpu0 = cpu.length ? cpu[0].cpu : 0;
   return {
-    name, kinds, colors, reqs, phases, marks, dropped, bad, maxdur,
+    name, kinds, colors, reqs, phases, marks, dropped, bad, maxdur, phaseW,
     t_max: tMax,
+    files: files(layouts, reqs),
+    in_flight: reqs.reduce((sum, r) => sum + r.e - r.s, 0),
     total_bytes: reqs.reduce((sum, r) => sum + r.len, 0),
     shades: colors.map(shades),
     darks: colors.map(darken),
     counts: kinds.map(k => counts.get(k)),
+    bytes: kinds.map(k => bytes.get(k)),
     S: Float64Array.from(reqs, r => r.s),
     conc: {bin: CONC_BIN, v: conc, max: peak(conc)},
-    bw: {bin: BW_BIN, v: bw, max: peak(bw)},
-    cpu: {bin: CPU_BIN, v: busy, max: peak(busy), total: cpu.length ? cpu[cpu.length - 1].cpu : 0},
+    bw: {bin: BW_BIN, v: bw, max: peak(bw), sum: prefixSum(bw)},
+    cpu: {
+      bin: CPU_BIN, v: busy, max: peak(busy),
+      total: cpu.length ? cpu[cpu.length - 1].cpu - cpu0 : 0,
+      at: Float64Array.from(cpu, c => c.at),
+      used: Float64Array.from(cpu, c => c.cpu - cpu0),
+    },
   };
 }
 
@@ -256,6 +285,26 @@ function sections(layouts, req) {
     if (bytes > 0) out.push([layout[i][0], bytes]);
   }
   return out.sort((a, b) => b[1] - a[1]);
+}
+
+/**
+ * Per path, the strips of the file map: `[color, start, end]`.
+ * The file size is not traced, so the map ends where the furthest read does.
+ */
+function files(layouts, reqs) {
+  const sizes = new Map();
+  for (const req of reqs) sizes.set(req.path, Math.max(sizes.get(req.path) || 0, req.off + req.len));
+  const out = new Map();
+  for (const [path, size] of sizes) {
+    const layout = layouts.get(path) || [[null, 0]];
+    const strips = layout.map(([name, start], i) => {
+      const kind = name === null ? classify(path) : classify(path) + "." + name;
+      const end = i + 1 < layout.length ? layout[i + 1][1] : size;
+      return [KIND_COLOR[kind] || MUTED, Math.min(start, size), Math.min(end, size)];
+    });
+    out.set(path, {size, strips});
+  }
+  return out;
 }
 
 /** Peak in-flight request count per `CONC_BIN` bucket. */
@@ -308,6 +357,11 @@ function cores(samples, tMax) {
 
 const peak = values => values.reduce((a, b) => Math.max(a, b), 0);
 
+function prefixSum(values) {
+  let sum = 0;
+  return values.map(v => sum += v);
+}
+
 function hash32(x) {
   x = Math.imul(x ^ (x >>> 16), 2246822507);
   x = Math.imul(x ^ (x >>> 13), 3266489909);
@@ -350,7 +404,7 @@ function layout() {
   const w = cv.clientWidth, h = cv.clientHeight;
   const o = {w: w, h: h, top: HEAD, ph: Math.max(1, h - HEAD)};
   o.phaseX = W_RULER;
-  o.markX = o.phaseX + W_PHASE;
+  o.markX = o.phaseX + D.phaseW;
   o.reqX = o.markX + W_MARK;
   o.reqW = Math.max(80, w - o.reqX - 4 * GAP - 3 * W_SIDE);
   o.concX = o.reqX + o.reqW + GAP;
@@ -381,6 +435,9 @@ const tOf = y => view.t0 + (y - L.top) * view.tpp;
 const viewEnd = () => view.t0 + L.ph * view.tpp;
 const laneJit = k => Math.max(1, L.laneW[k] - REQ_W - 2);
 
+const fitTpp = () => D.t_max / L.ph;
+const clampY = y => Math.min(Math.max(y, L.top), L.h);
+
 function fit() {
   refit = true;
   redraw();
@@ -389,7 +446,7 @@ function fit() {
 // The trace fills the pane at most once: no zooming past the whole span, and no
 // panning past either end of it.
 function clampView() {
-  view.tpp = Math.min(Math.max(view.tpp, 0.02), D.t_max / L.ph);
+  view.tpp = Math.min(Math.max(view.tpp, 0.02), fitTpp());
   view.t0 = Math.min(Math.max(view.t0, 0), Math.max(0, D.t_max - L.ph * view.tpp));
 }
 
@@ -410,8 +467,8 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   L = layout();
-  if (refit) {  // stays on until the user zooms or pans, so resizes re-fit
-    view.tpp = D.t_max / L.ph;
+  if (refit) {  // stays on until the user zooms in, so resizes re-fit
+    view.tpp = fitTpp();
     view.t0 = 0;
   }
   clampView();
@@ -425,6 +482,7 @@ function draw() {
   drawSeries(D.conc, L.concX);
   drawSeries(D.bw, L.bwX);
   drawSeries(D.cpu, L.cpuX);
+  drawSelection();
   drawHeader();
   drawCrosshair();
 }
@@ -453,7 +511,7 @@ function drawHeader() {
   ctx.fillStyle = MUTED;
   ctx.fillText("conc ≤" + D.conc.max, L.concX, HEAD / 2);
   ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.bwX, HEAD / 2);
-  ctx.fillText("cores ≤" + D.cpu.max.toFixed(1), L.cpuX, HEAD / 2);
+  ctx.fillText("CPU ≤" + D.cpu.max.toFixed(1), L.cpuX, HEAD / 2);
 }
 
 const laneName = kind => kind.replace("graph.", "g.");
@@ -485,7 +543,7 @@ function drawRuler() {
 function drawPhases() {
   ctx.save();
   ctx.beginPath();
-  ctx.rect(L.phaseX, L.top, W_PHASE, L.ph);
+  ctx.rect(L.phaseX, L.top, D.phaseW, L.ph);
   ctx.clip();
   ctx.font = LANE_FONT;
   const taken = [];
@@ -521,7 +579,7 @@ function drawRequests() {
     const req = D.reqs[i];
     if (req.s > vend) break;
     if (req.e < t0) continue;
-    if (req.outcome !== "ok") { bad.push(req); continue; }
+    if (req.outcome === "err") { bad.push(req); continue; }
     const color = req === hover ? D.darks[req.k] : D.shades[req.k][req.shade];
     if (color !== last) { ctx.fillStyle = color; last = color; }
     const x = L.laneX[req.k] + req.jit * laneJit(req.k);
@@ -544,12 +602,15 @@ function drawMarks() {
     if (mark.at < view.t0 || mark.at > vend) continue;
     const y = Math.round(yOf(mark.at)) + 0.5;
     if (y < L.top) continue;
-    ctx.strokeStyle = rgba(MUTED, 0.28);
-    ctx.beginPath(); ctx.moveTo(L.markX, y); ctx.lineTo(L.w, y); ctx.stroke();
+    if (marksBox.checked) {
+      ctx.strokeStyle = rgba(MUTED, 0.28);
+      ctx.beginPath(); ctx.moveTo(L.markX, y); ctx.lineTo(L.w, y); ctx.stroke();
+    }
     ctx.strokeStyle = INK2;
     ctx.beginPath(); ctx.moveTo(L.markX + 2, y); ctx.lineTo(L.markX + W_MARK - 4, y); ctx.stroke();
     visible.push({mark: mark, y: y});
   }
+  if (!marksBox.checked) return;
   // Marks crowd together zoomed out; the earlier one keeps the slot.
   const taken = [];
   for (const v of visible) {
@@ -593,9 +654,22 @@ function drawSeries(s, x0) {
   ctx.restore();
 }
 
+function drawSelection() {
+  if (!selecting()) return;
+  const [a, b] = selection();
+  const y0 = Math.max(yOf(a), L.top), y1 = yOf(b);
+  ctx.fillStyle = rgba(INK, 0.08);
+  ctx.fillRect(W_RULER, y0, L.w - W_RULER, y1 - y0);
+  ctx.strokeStyle = rgba(INK, 0.5);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const y of [y0, y1]) { ctx.moveTo(W_RULER, Math.round(y) + 0.5); ctx.lineTo(L.w, Math.round(y) + 0.5); }
+  ctx.stroke();
+}
+
 function drawCrosshair() {
-  if (mouseY < L.top) return;
-  const y = Math.round(mouseY) + 0.5;
+  if (!mouse || mouse.y < L.top) return;
+  const y = Math.round(mouse.y) + 0.5;
   ctx.strokeStyle = rgba(INK, 0.22);
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
@@ -606,7 +680,7 @@ function drawCrosshair() {
   ctx.fillRect(0, y - 7, W_RULER - 6, 14);
   ctx.fillStyle = INK;
   ctx.textAlign = "right";
-  ctx.fillText(fmtMs(tOf(mouseY)), W_RULER - 8, y);
+  ctx.fillText(fmtMs(tOf(mouse.y)), W_RULER - 8, y);
   ctx.textAlign = "left";
 }
 
@@ -637,7 +711,7 @@ function hitReq(mx, my) {
 }
 
 function hit(mx, my) {
-  if (my < L.top) return null;
+  if (my < L.top) return headTip(mx);
   const t = tOf(my);
   if (mx >= L.markX && mx < L.markX + W_MARK) {
     let best = null, bestDy = 5;
@@ -650,7 +724,7 @@ function hit(mx, my) {
         fmtMs(best.at) + " ms";
     }
   }
-  if (mx >= L.phaseX && mx < L.phaseX + W_PHASE) {
+  if (mx >= L.phaseX && mx < L.markX) {
     let best = null;
     for (const phase of D.phases) {
       if (t < phase.s || t > phase.e) continue;
@@ -660,33 +734,90 @@ function hit(mx, my) {
       return "<b>phase " + esc(best.name) + "</b>\n" + times(best);
     }
   }
+  const at = "<span class=k>t</span> " + fmtMs(t) + " ms\n<span class=k>so far</span> ";
   if (mx >= L.concX && mx < L.concX + W_SIDE) {
-    return "<b>concurrency " + binAt(D.conc, t) + "</b>\n<span class=k>t</span> " + fmtMs(t) + " ms";
+    return "<b>concurrency " + binAt(D.conc, t) + "</b>\n" + at +
+      fmtInt(lowerBound(D.S, t)) + " requests";
   }
   if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
     const v = binAt(D.bw, t);
-    return "<b>" + (v / D.bw.bin).toFixed(1) + " MB/s</b>\n<span class=k>t</span> " +
-      fmtMs(t) + " ms\n<span class=k>bin</span> " + (v / 1e3).toFixed(1) + " kB / " +
-      (D.bw.bin / 1e3) + " ms";
+    return "<b>" + (v / D.bw.bin).toFixed(1) + " MB/s</b>\n" + at +
+      fmtBytes(D.bw.sum[Math.min(Math.floor(t / D.bw.bin), D.bw.sum.length - 1)]) +
+      "\n<span class=k>bin</span> " + (v / 1e3).toFixed(1) + " kB / " + (D.bw.bin / 1e3) + " ms";
   }
   if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
-    return "<b>" + binAt(D.cpu, t).toFixed(2) + " cores busy</b>\n<span class=k>t</span> " +
-      fmtMs(t) + " ms\n<span class=k>process cpu</span> " + fmtMs(D.cpu.total) + " ms total";
+    return "<b>" + binAt(D.cpu, t).toFixed(2) + " cores busy</b>\n" + at +
+      fmtTotalMs(D.cpu.used[lowerBound(D.cpu.at, t) - 1] ?? 0);
+  }
+  return null;
+}
+
+function headTip(mx) {
+  const lane = L.laneX.findIndex((x, i) => mx >= x && mx < x + L.laneW[i]);
+  if (lane >= 0) {
+    return "<b>" + esc(D.kinds[lane]) + "</b>\n" + fmtInt(D.counts[lane]) + " requests, " +
+      fmtBytes(D.bytes[lane]);
+  }
+  const summary = (title, average, total) =>
+    title + "\n<span class=k>average</span> " + average + "\n<span class=k>total</span> " + total;
+  if (mx >= L.concX && mx < L.concX + W_SIDE) {
+    return summary("<b>Concurrency</b>: number of simultaneous requests",
+      (D.in_flight / D.t_max).toFixed(2),
+      fmtInt(D.reqs.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
+  }
+  if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
+    return summary("<b>Bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
+      fmtBytes(D.total_bytes));
+  }
+  if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
+    return summary("<b>CPU utilization</b>", (D.cpu.total / D.t_max).toFixed(2) + " cores",
+      fmtTotalMs(D.cpu.total));
   }
   return null;
 }
 
 const binAt = (s, t) => s.v[Math.floor(t / s.bin)] ?? 0;
 
+const selecting = () => select !== null && mouse && Math.abs(yOf(select) - clampY(mouse.y)) >= 3;
+
+function selection() {
+  const t = tOf(clampY(mouse.y));
+  return select < t ? [select, t] : [t, select];
+}
+
+function selectionTip() {
+  const [a, b] = selection();
+  return "<b>" + fmtMs(b - a) + " ms</b>\n<span class=k>from</span> " + fmtMs(a) +
+    " ms  <span class=k>to</span> " + fmtMs(b) + " ms";
+}
+
 function reqTip(req) {
   return "<b>#" + req.id + " " + esc(req.kind) + "</b>\n" + times(req) +
     "<span class=k>op</span> " + esc(req.op) +
-    "  <span class=k>range</span> " + req.off + ".." + (req.off + req.len) +
-    " (" + fmtBytes(req.len) + ")\n" + spanTip(req) +
-    "<span class=k>outcome</span> " +
-    (req.outcome === "ok" ? "ok" : "<b class=err>" + esc(req.outcome) + "</b>") +
-    (req.phase ? "  <span class=k>phase</span> " + esc(req.phase.name) : "") + "\n" +
-    "<span class=k>" + esc(req.path) + "</span>";
+    "  <span class=k>range</span> " + fmtInt(req.off) + "<span class=k>…</span>" +
+    fmtInt(req.off + req.len) + "  <span class=k>size</span> " + fmtBytes(req.len) + "\n" + fileMap(req) + spanTip(req) +
+    (req.outcome === "ok" ? "" : "<span class=k>outcome</span> <b class=err>" + esc(req.outcome) + "</b>\n") +
+    // The segment prefix is long and alike across files; the rest tells them apart.
+    "<span class=k>" + esc(req.path.replace(/^(.*?\bsegments\/[0-9a-f-]{36}\/)(?=.)/, "$1\n")) + "</span>";
+}
+
+/** The file as a bar: sections dimmed, the requested range in full colour. */
+function fileMap(req) {
+  if (!req.len) return "";
+  const file = D.files.get(req.path);
+  // Bytes `from..to` of the file stretched over `width` px.
+  const gradient = (from, to, width, tint) => "linear-gradient(to right," + file.strips
+    .map(strip => {
+      const px = offset => width * (Math.min(Math.max(offset, from), to) - from) / (to - from);
+      return tint(strip[0]) + " " + px(strip[1]) + "px " + px(strip[2]) + "px";
+    })
+    .join(",") + ")";
+  const width = Math.max(3, MAP_W * req.len / file.size);
+  const left = Math.min(MAP_W * req.off / file.size, MAP_W - width);
+  return "<div class=map style='width:" + MAP_W + "px;background:" +
+    gradient(0, file.size, MAP_W, color => mix(color, "#000000", 0.5)) + "'><i style='left:" +
+    left + "px;width:" + width + "px;background:" + gradient(req.off, req.off + req.len, width, color => color) +
+    "'></i></div>";
 }
 
 /** One `<section> <share>` per section the request touched, widest first. */
@@ -716,6 +847,15 @@ function fmtPct(share) {
   return (pct >= 10 ? pct.toFixed(1) : pct.toFixed(2)) + "%";
 }
 
+function fmtTotalMs(us) {
+  return (us / 1000).toFixed(1) + " ms";
+}
+
+// Not `toLocaleString`: the output should not depend on the locale.
+function fmtInt(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 function fmtBytes(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + " MB";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + " kB";
@@ -731,68 +871,88 @@ function esc(s) {
 cv.addEventListener("wheel", e => {
   if (!D || !L) return;
   e.preventDefault();
-  refit = false;
-  const anchor = tOf(e.offsetY);
-  view.tpp *= Math.exp(e.deltaY * 0.0016 * (e.deltaMode === 1 ? 16 : 1));
-  clampView();
-  view.t0 = anchor - (e.offsetY - L.top) * view.tpp;
-  clampView();
-  redraw();
+  const px = e.deltaY * [1, 16, L.ph][e.deltaMode];
+  if (e.ctrlKey || e.metaKey) {
+    // A touchpad pinch arrives as ctrl+wheel with small deltas; clamp a mouse
+    // notch's large one so that both zoom at a usable pace.
+    const anchor = tOf(e.offsetY);
+    view.tpp *= Math.exp(0.01 * Math.min(Math.max(px, -40), 40));
+    clampView();
+    view.t0 = anchor - (e.offsetY - L.top) * view.tpp;
+    clampView();
+    refit = view.tpp >= fitTpp();
+  } else if (refit) {
+    // Nothing to scroll.
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      toastBox.classList.add("on");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastBox.classList.remove("on"), 1500);
+    }
+    return;
+  } else {
+    view.t0 += px * view.tpp;
+    clampView();
+  }
+  pointAt(e.offsetX, e.offsetY);
 }, {passive: false});
 
 cv.addEventListener("pointerdown", e => {
-  if (!D || !L) return;
-  refit = false;
-  dragging = {y: e.offsetY, t0: view.t0};
+  if (!D || !L || e.button !== 0 || e.offsetY < L.top) return;
+  select = tOf(e.offsetY);
   cv.setPointerCapture(e.pointerId);
-  cv.classList.add("pan");
+  pointAt(e.offsetX, e.offsetY);
 });
 
-cv.addEventListener("pointerup", () => {
-  dragging = null;
-  cv.classList.remove("pan");
+for (const type of ["pointerup", "pointercancel"]) {
+  cv.addEventListener(type, e => {
+    if (select === null) return;
+    select = null;
+    pointAt(e.offsetX, e.offsetY);
+  });
+}
+
+cv.addEventListener("pointermove", e => pointAt(e.offsetX, e.offsetY));
+
+cv.addEventListener("pointerleave", () => {
+  mouse = null;
+  hover = null;
+  tip.style.display = "none";
+  redraw();
 });
 
-cv.addEventListener("pointermove", e => {
+function pointAt(x, y) {
   if (!D || !L) return;
-  mouseY = e.offsetY;
-  if (dragging) {
-    view.t0 = dragging.t0 - (e.offsetY - dragging.y) * view.tpp;
-    hover = null;
-    tip.style.display = "none";
-    redraw();
-    return;
-  }
-  hover = hitReq(e.offsetX, e.offsetY);
-  const html = hover ? reqTip(hover) : hit(e.offsetX, e.offsetY);
+  mouse = {x, y};
+  hover = select === null ? hitReq(x, y) : null;
+  const html = select !== null ? (selecting() ? selectionTip() : null) : hover ? reqTip(hover) : hit(x, y);
   if (html === null) {
     tip.style.display = "none";
   } else {
     tip.innerHTML = html;
     tip.style.display = "block";
     const r = wrap.getBoundingClientRect();
-    const x = Math.min(e.offsetX + 16, r.width - tip.offsetWidth - 6);
-    const y = Math.min(e.offsetY + 16, r.height - tip.offsetHeight - 6);
-    tip.style.left = Math.max(4, x) + "px";
-    tip.style.top = Math.max(4, y) + "px";
+    tip.style.left = Math.max(4, Math.min(x + 16, r.width - tip.offsetWidth - 6)) + "px";
+    tip.style.top = Math.max(4, Math.min(y + 16, r.height - tip.offsetHeight - 6)) + "px";
   }
   redraw();
-});
-
-cv.addEventListener("pointerleave", () => {
-  mouseY = -1;
-  hover = null;
-  tip.style.display = "none";
-  redraw();
-});
+}
 
 // The help text is the comment at the top of the file.
 document.getElementById("help").innerHTML = esc([...document.childNodes]
   .find(node => node.nodeType === Node.COMMENT_NODE).data.trim())
   .replace(/`([^`]+)`/g, "<code>$1</code>");
 
-document.getElementById("reset").addEventListener("click", fit);
+marksBox.addEventListener("change", redraw);
 document.getElementById("upload").addEventListener("click", () => document.getElementById("file").click());
+
+// By key position, so that other keyboard layouts work too.
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+  const id = {KeyM: "marks", KeyO: "url", KeyU: "upload"}[e.code];
+  if (!id) return;
+  e.preventDefault();
+  document.getElementById(id).click();
+});
 window.addEventListener("resize", redraw);
 
 document.getElementById("file").addEventListener("change", e => {

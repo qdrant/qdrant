@@ -70,6 +70,22 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         format: GraphLinksFormat,
         residency: GraphLinksResidency,
     ) -> OpenOptions {
+        let eager_read_size = Self::eager_read_size(format);
+
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: match residency {
+                GraphLinksResidency::Cold => Populate::Partial(ReadRange::new(0, eager_read_size)),
+                GraphLinksResidency::Cached => Populate::PreferBackground,
+                GraphLinksResidency::Pinned => Populate::PreferBackground,
+            },
+            advice: AdviceSetting::Advice(Advice::Random),
+        }
+    }
+
+    /// Header + level_offsets, rounded up.
+    fn eager_read_size(format: GraphLinksFormat) -> u64 {
         // Upper bound of the number of levels in a HNSW graph.
         //
         // Most graphs have no more than 8 levels, but to be safe, let's assume
@@ -89,19 +105,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             GraphLinksFormat::Compressed => size_of::<HeaderCompressed>(),
             GraphLinksFormat::CompressedWithVectors => size_of::<HeaderCompressedWithVectors>(),
         };
-
-        let eager_read_size = (header_size + max_levels_guess * size_of::<u64>()) as u64;
-
-        OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: match residency {
-                GraphLinksResidency::Cold => Populate::Partial(ReadRange::new(0, eager_read_size)),
-                GraphLinksResidency::Cached => Populate::PreferBackground,
-                GraphLinksResidency::Pinned => Populate::PreferBackground,
-            },
-            advice: AdviceSetting::Advice(Advice::Random),
-        }
+        (header_size + max_levels_guess * size_of::<u64>()) as u64
     }
 
     pub fn open(file: S, format: GraphLinksFormat) -> OperationResult<Self> {
@@ -200,15 +204,13 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         })
     }
 
-    pub fn uio_trace_sections(&self) -> Vec<(&'static str, u64)> {
-        let header_len =
-            self.reindex_offset - (self.level_offsets.len() as u64 - 1) * size_of::<u64>() as u64;
+    pub fn uio_trace_sections(&self, format: GraphLinksFormat) -> Vec<(&'static str, u64)> {
+        let header_end = Self::eager_read_size(format);
         vec![
             ("header", 0),
-            ("level_offsets", header_len),
-            ("reindex", self.reindex_offset),
-            ("neighbors", self.neighbors_offset),
-            ("offsets", self.offsets_offset),
+            ("reindex", self.reindex_offset.max(header_end)),
+            ("neighbors", self.neighbors_offset.max(header_end)),
+            ("offsets", self.offsets_offset.max(header_end)),
         ]
     }
 
