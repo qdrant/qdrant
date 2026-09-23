@@ -18,6 +18,7 @@ data-consistency-check = []
 staging = ["shard/staging"]
 
 [dev-dependencies]
+bm25 = { path = "../bm25" }
 criterion = { workspace = true }
 exhaustive = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
@@ -113,4 +114,8 @@ harness = false
 
 [[bench]]
 name = "memory_report"
+harness = false
+
+[[bench]]
+name = "bm25_sparse_bench"
 harness = false

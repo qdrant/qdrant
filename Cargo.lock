@@ -1325,6 +1325,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
+ "bm25",
  "bytemuck",
  "bytes",
  "cancel",
