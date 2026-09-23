@@ -710,6 +710,9 @@ pub struct CollectionWarning {
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph.
     /// Larger the value - more accurate the search, more space required.
+    /// Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    /// may still be built when the effective payload M is positive (see payload_m).
+    /// This setting alone does not guarantee exact search.
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building.
@@ -736,8 +739,9 @@ pub struct HnswConfigDiff {
     #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
-    /// Number of additional payload-aware links per node in the index graph.
-    /// If not set - regular M parameter will be used.
+    /// Number of additional payload-aware links per node. If unset, the value of m is used.
+    /// An effective value of 0 disables these additional links. A positive value allows
+    /// them for indexed payload fields with HNSW enabled, even when m is 0.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
