@@ -30,7 +30,7 @@ use crate::blob::Blob;
 use crate::config::{LogstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::append_only::AppendOnlyTracker;
-use crate::tracker::{PointOffset, ValuePointer};
+use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 
 /// Number of most recent mappings validated against the page file lengths when opening
 const OPEN_CHECK_MAPPINGS: PointOffset = 256;
@@ -40,11 +40,11 @@ const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 /// Guards against page files that are missing or shorter than what the tracker references, for
 /// example after a partial copy or restore of the storage directory. Only the most recent
 /// mappings are checked to keep opening cheap.
-fn validate_consistency<S: UniversalRead>(
-    tracker: &AppendOnlyTracker<S>,
+fn validate_consistency<S: UniversalRead, T: TrackerRead>(
+    tracker: &T,
     pages: &AppendOnlyPages<S>,
 ) -> Result<()> {
-    let count = tracker.pointer_count();
+    let count = tracker.max_point_offset()?;
     let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
     for pointer in tracker
         .get_range::<Sequential>(start..count)?
@@ -194,7 +194,10 @@ where
 
     /// Create an [`LogstoreView`] by locking tracker and pages, then call `f` with the
     /// view.
-    pub(super) fn with_view<R>(&self, f: impl FnOnce(LogstoreView<'_, V, S>) -> R) -> R {
+    pub(super) fn with_view<R>(
+        &self,
+        f: impl FnOnce(LogstoreView<'_, V, S, AppendOnlyTracker<S>>) -> R,
+    ) -> R {
         let tracker = self.tracker.read();
         let pages = self.pages.read();
         f(LogstoreView::new(&self.config, &tracker, &pages))
@@ -443,7 +446,7 @@ where
             const BATCH_SIZE: PointOffset = 256;
 
             self.with_view(|view| -> Result<_, E> {
-                max_offset = view.max_point_offset();
+                max_offset = view.max_point_offset()?;
 
                 if current_offset >= max_offset {
                     return Ok(());

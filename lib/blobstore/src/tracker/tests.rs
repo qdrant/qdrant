@@ -16,7 +16,7 @@ impl TestTracker {
     pub fn mapping_len(&self) -> Result<usize> {
         let mut count = 0;
         for i in 0..self.next_pointer_offset {
-            if self.get(i).ok().flatten().is_some() {
+            if self.get::<Random>(i).ok().flatten().is_some() {
                 count += 1;
             }
         }
@@ -137,7 +137,7 @@ fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
 
     // the value has been cleared but the entry is still there
     assert_eq!(tracker.get_raw(1).unwrap(), None);
-    assert_eq!(tracker.get(1).unwrap(), None);
+    assert_eq!(tracker.get::<Random>(1).unwrap(), None);
 
     assert_eq!(tracker.mapping_len().unwrap(), 3);
     assert_eq!(tracker.pointer_count(), 11);
@@ -148,8 +148,14 @@ fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
 
     tracker.write_pending_and_flush_internal().unwrap();
 
-    assert_eq!(tracker.get(0).unwrap(), Some(ValuePointer::new(10, 10, 10)));
-    assert_eq!(tracker.get(2).unwrap(), Some(ValuePointer::new(30, 30, 30)));
+    assert_eq!(
+        tracker.get::<Random>(0).unwrap(),
+        Some(ValuePointer::new(10, 10, 10))
+    );
+    assert_eq!(
+        tracker.get::<Random>(2).unwrap(),
+        Some(ValuePointer::new(30, 30, 30))
+    );
 }
 
 #[rstest]
@@ -187,11 +193,11 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
     for i in 0..value_count {
         if i % 2 == 0 {
             assert_eq!(
-                tracker.get(i as u32).unwrap(),
+                tracker.get::<Random>(i as u32).unwrap(),
                 Some(ValuePointer::new(i as u32, i as u32, i as u32))
             );
         } else {
-            assert_eq!(tracker.get(i as u32).unwrap(), None);
+            assert_eq!(tracker.get::<Random>(i as u32).unwrap(), None);
         }
     }
 }
@@ -234,7 +240,7 @@ fn test_track_non_sequential_large_offset() {
     let key = 1_000_000;
 
     tracker.set(key, page_pointer);
-    assert_eq!(tracker.get(key).unwrap(), Some(page_pointer));
+    assert_eq!(tracker.get::<Random>(key).unwrap(), Some(page_pointer));
 }
 
 #[test]
@@ -421,4 +427,76 @@ fn test_layout_compatibility() {
 
         assert_eq!(a_data, b_data);
     }
+}
+
+/// `get_range` agrees with `get` across persisted slots, pending updates, zeroed slots and
+/// slots beyond the end of the file.
+#[test]
+fn test_get_range() {
+    let dir = Builder::new().prefix("test-tracker").tempdir().unwrap();
+    // Header plus exactly five slots
+    let mut tracker = TestTracker::new(&MmapFs, dir.path(), Some(64)).unwrap();
+    assert_eq!(tracker.mmap_file_size().unwrap(), 64);
+
+    for offset in 0..3 {
+        tracker.set(offset, ValuePointer::new(offset, offset, offset));
+    }
+    tracker.write_pending_and_flush_internal().unwrap();
+
+    let read_only = ReadOnlyTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+
+    // Pending unset and set, invisible to the read-only tracker
+    tracker.unset(1).unwrap();
+    tracker.set(3, ValuePointer::new(3, 3, 3));
+    assert_eq!(
+        tracker.mmap_file_size().unwrap(),
+        64,
+        "pending updates must not grow the file"
+    );
+
+    let expected_writable: Vec<_> = (0..8).map(|i| tracker.get::<Random>(i).unwrap()).collect();
+    assert_eq!(
+        expected_writable,
+        [
+            Some(ValuePointer::new(0, 0, 0)),
+            None,
+            Some(ValuePointer::new(2, 2, 2)),
+            Some(ValuePointer::new(3, 3, 3)),
+            None,
+            None,
+            None,
+            None,
+        ],
+    );
+    assert_eq!(
+        tracker.get_range::<Random>(0..8).unwrap(),
+        expected_writable
+    );
+    assert_eq!(
+        tracker.get_range::<Random>(2..4).unwrap(),
+        expected_writable[2..4]
+    );
+    assert_eq!(tracker.get_range::<Random>(6..8).unwrap(), [None, None]);
+    assert!(tracker.get_range::<Random>(3..3).unwrap().is_empty());
+
+    let expected_read_only: Vec<_> = (0..8)
+        .map(|i| read_only.get::<Random>(i).unwrap())
+        .collect();
+    assert_eq!(
+        expected_read_only,
+        [
+            Some(ValuePointer::new(0, 0, 0)),
+            Some(ValuePointer::new(1, 1, 1)),
+            Some(ValuePointer::new(2, 2, 2)),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+    );
+    assert_eq!(
+        read_only.get_range::<Random>(0..8).unwrap(),
+        expected_read_only
+    );
 }

@@ -513,7 +513,12 @@ where
 
     #[cfg(test)]
     pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
-        self.tracker.read().get(point_offset).ok().flatten()
+        use crate::tracker::TrackerRead as _;
+        self.tracker
+            .read()
+            .get::<common::generic_consts::Random>(point_offset)
+            .ok()
+            .flatten()
     }
 
     pub(super) fn max_point_offset(&self) -> PointOffset {

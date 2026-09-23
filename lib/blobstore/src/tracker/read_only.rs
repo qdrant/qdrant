@@ -1,14 +1,19 @@
 //! [`ReadOnlyTracker`]: header-less, read-only counterpart of
 //! [`Tracker`](super::Tracker) for follower reloads.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ahash::AHashMap;
+use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::iter::Iter;
-use super::{PointOffset, PointerUpdates, Tracker, TrackerRead, ValuePointer, read_slot};
+use super::{
+    PointOffset, PointerItem, PointerUpdates, Tracker, TrackerRead, ValuePointer, read_slot,
+    read_slots,
+};
 use crate::Result;
 
 /// Read-only counterpart of [`Tracker`].
@@ -74,7 +79,7 @@ impl<S: UniversalRead> ReadOnlyTracker<S> {
     }
 }
 
-impl<S: UniversalRead> TrackerRead<S> for ReadOnlyTracker<S> {
+impl<S: UniversalRead> TrackerRead for ReadOnlyTracker<S> {
     /// The writer-maintained count from the stored header, read as plain data
     /// through the current handle — i.e. as of the last
     /// [`Self::live_reload`]. Not kept as in-memory state.
@@ -82,11 +87,18 @@ impl<S: UniversalRead> TrackerRead<S> for ReadOnlyTracker<S> {
         Ok(Tracker::read_header(&self.storage)?.next_pointer_offset)
     }
 
-    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        read_slot(&self.storage, point_offset)
+    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        read_slot::<P, _>(&self.storage, point_offset)
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    fn get_range<P: AccessPattern>(
+        &self,
+        point_offsets: Range<PointOffset>,
+    ) -> Result<Vec<Option<ValuePointer>>> {
+        read_slots::<P, _>(&self.storage, point_offsets)
+    }
+
+    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,

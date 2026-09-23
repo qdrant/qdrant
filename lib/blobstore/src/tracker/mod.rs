@@ -1,14 +1,16 @@
 pub(crate) mod append_only;
 pub mod iter;
+mod read;
 pub mod read_only;
 
 #[cfg(test)]
 mod tests;
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
-use common::generic_consts::Random;
+use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
@@ -17,6 +19,7 @@ use common::universal_io::{
 use smallvec::SmallVec;
 
 pub use self::iter::{Iter, PointerItem};
+pub use self::read::TrackerRead;
 pub use self::read_only::ReadOnlyTracker;
 use crate::Result;
 use crate::error::BlobstoreError;
@@ -114,36 +117,11 @@ impl ValuePointer {
     }
 }
 
-/// Read-side interface over the pointer tracker.
-///
-/// Implemented by the writable [`Tracker`] — whose reads see pending
-/// in-memory updates — and by [`ReadOnlyTracker`], which serves plain
-/// on-disk state. [`crate::GridstoreView`] is generic over this trait, so
-/// the same read logic works for both.
-pub trait TrackerRead<S: UniversalRead> {
-    /// Exclusive upper bound of point offsets that may have a pointer, as
-    /// maintained by the writer (in memory for [`Tracker`], in the stored
-    /// header for [`ReadOnlyTracker`]).
-    fn max_point_offset(&self) -> Result<PointOffset>;
-
-    /// Get the page pointer at the given point offset.
-    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>>;
-
-    /// Iterate page pointers for the given point offsets.
-    ///
-    /// Issues batched reads against the underlying storage, so async backends
-    /// can fetch entries in parallel.
-    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffset)>;
-}
-
 /// Read the slot for `point_offset` directly from `storage`.
 ///
 /// Offsets beyond the file read as `None`; so do allocated-but-never-written
 /// slots — the file is zero-initialized and all-zeroes is the `None` slot.
-fn read_slot<S: UniversalRead>(
+fn read_slot<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offset: PointOffset,
 ) -> Result<Option<ValuePointer>> {
@@ -154,8 +132,37 @@ fn read_slot<S: UniversalRead>(
     if end_offset as u64 > storage_len {
         return Ok(None);
     }
-    let opt = storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), Random)?[0];
+    let opt =
+        storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
     Ok(opt.to_option())
+}
+
+/// Read the slots for a contiguous range of point offsets directly from `storage`, with a
+/// single read.
+///
+/// Slots beyond the file read as `None`, like in [`read_slot`].
+fn read_slots<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offsets: Range<PointOffset>,
+) -> Result<Vec<Option<ValuePointer>>> {
+    let slot_size = size_of::<OptionalPointer>() as u64;
+    let start_offset =
+        size_of::<TrackerHeader>() as u64 + u64::from(point_offsets.start) * slot_size;
+    let stored_slots = storage.len::<u8>()?.saturating_sub(start_offset) / slot_size;
+    let length = (point_offsets.len() as u64).min(stored_slots);
+
+    let mut pointers = Vec::with_capacity(point_offsets.len());
+    if length > 0 {
+        let range = ReadRange {
+            byte_offset: start_offset,
+            length,
+        };
+        let slots = storage.read::<_, OptionalPointer>(range, P::default())?;
+        pointers.extend(slots.iter().map(|slot| slot.to_option()));
+    }
+    pointers.resize(point_offsets.len(), None);
+
+    Ok(pointers)
 }
 
 /// Pointer updates for a given point offset
@@ -387,38 +394,11 @@ impl<S: UniversalRead> Tracker<S> {
 
     /// Get the raw value at the given point offset
     fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        read_slot(&self.storage, point_offset)
-    }
-
-    /// Get the page pointer at the given point offset
-    pub fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        match self.pending_updates.get(&point_offset) {
-            // Pending update exists but is empty, should not happen, fall back to real data
-            Some(pending) if pending.is_empty() => {
-                debug_assert!(false, "pending updates must not be empty");
-                self.get_raw(point_offset)
-            }
-            // Use set from pending updates
-            Some(pending) => Ok(pending.current),
-            // No pending update, use real data
-            None => self.get_raw(point_offset),
-        }
-    }
-
-    /// Iterate page pointers for the given point offsets.
-    ///
-    /// Issues batched reads against the underlying storage, so async backends
-    /// can fetch entries in parallel.
-    pub fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffset)>,
-    {
-        Iter::new(point_offsets, &self.storage, &self.pending_updates)
+        read_slot::<Random, _>(&self.storage, point_offset)
     }
 
     pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
-        Ok(self.get(point_offset)?.is_some())
+        Ok(self.get::<Random>(point_offset)?.is_some())
     }
 
     pub fn populate(&self) -> Result<()> {
@@ -426,23 +406,51 @@ impl<S: UniversalRead> Tracker<S> {
     }
 }
 
-impl<S: UniversalRead> TrackerRead<S> for Tracker<S> {
+impl<S: UniversalRead> TrackerRead for Tracker<S> {
     /// Exact for the writable tracker: maintained in memory alongside the
     /// header (see [`Tracker::pointer_count`]).
     fn max_point_offset(&self) -> Result<PointOffset> {
-        Ok(self.pointer_count())
+        Ok(self.next_pointer_offset)
     }
 
-    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        Tracker::get(self, point_offset)
+    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        match self.pending_updates.get(&point_offset) {
+            // Pending update exists but is empty, should not happen, fall back to real data
+            Some(pending) if pending.is_empty() => {
+                debug_assert!(false, "pending updates must not be empty");
+                read_slot::<P, _>(&self.storage, point_offset)
+            }
+            // Use set from pending updates
+            Some(pending) => Ok(pending.current),
+            // No pending update, use real data
+            None => read_slot::<P, _>(&self.storage, point_offset),
+        }
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    fn get_range<P: AccessPattern>(
+        &self,
+        point_offsets: Range<PointOffset>,
+    ) -> Result<Vec<Option<ValuePointer>>> {
+        let start = point_offsets.start;
+        let mut pointers = read_slots::<P, _>(&self.storage, point_offsets)?;
+
+        // Pending updates take precedence over the persisted slots, see `get`
+        for (index, pointer) in pointers.iter_mut().enumerate() {
+            if let Some(pending) = self.pending_updates.get(&(start + index as PointOffset)) {
+                debug_assert!(!pending.is_empty(), "pending updates must not be empty");
+                *pointer = pending.current;
+            }
+        }
+
+        Ok(pointers)
+    }
+
+    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
     {
-        Tracker::iter(self, point_offsets)
+        Iter::new(point_offsets, &self.storage, &self.pending_updates)
     }
 }
 
@@ -596,7 +604,7 @@ where
 
     /// Unset the value at the given point offset and return its previous value
     pub fn unset(&mut self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        let pointer_opt = self.get(point_offset)?;
+        let pointer_opt = self.get::<Random>(point_offset)?;
 
         if let Some(pointer) = pointer_opt {
             self.pending_updates
