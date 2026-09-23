@@ -596,7 +596,11 @@ impl SegmentBuilder {
             let progress_sparse_vector_index = progress_segment.subtask("sparse_vector_index");
 
             let appendable_flag = segment_config.is_appendable();
-
+            // A non-appendable segment is complete once built, its payloads are only read. Before
+            // the flush, which persists the layout
+            if !appendable_flag && feature_flags.compact_logstore_tracker {
+                payload_storage.make_immutable()?;
+            }
             payload_storage.flusher()()?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
 

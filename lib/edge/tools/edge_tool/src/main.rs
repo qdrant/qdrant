@@ -29,8 +29,8 @@ fn main() -> Result<()> {
 
     // `serverless_compatible` is private on `FeatureFlags` — set only through deserialization,
     // same as the main `qdrant` binary's config loader. Its `normalize()` cascades
-    // `write_segment_manifest`, `append_only_mutations`, `compact_bitmask` and
-    // `append_only_storages` on top.
+    // `write_segment_manifest`, `append_only_mutations`, `compact_bitmask`,
+    // `append_only_storages` and `compact_logstore_tracker` on top.
     let feature_flags: common::flags::FeatureFlags =
         serde_json::from_value(serde_json::json!({ "serverless_compatible": true }))
             .expect("serverless_compatible is a valid FeatureFlags field");
