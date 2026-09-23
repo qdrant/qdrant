@@ -360,15 +360,20 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
-    fn doc_len(
+    fn doc_len_batch(
         &self,
-        point_id: PointOffsetType,
+        point_ids: &[PointOffsetType],
         _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<u32>> {
-        Ok(self
-            .point_to_doc_len
-            .as_ref()
-            .and_then(|lens| lens.get(point_id as usize).copied()))
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let lens = self.point_to_doc_len.as_deref();
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            f(
+                index,
+                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+            );
+        }
+        Ok(())
     }
 
     /// Free: the running counter is maintained by `set_doc_len` and `remove`.

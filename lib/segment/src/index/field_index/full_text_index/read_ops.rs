@@ -55,15 +55,16 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn doc_len(
+    fn doc_len_batch(
         &self,
-        point_id: PointOffsetType,
+        point_ids: &[PointOffsetType],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<u32>> {
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.doc_len(point_id, hw_counter),
-            Self::Immutable(index) => index.doc_len(point_id, hw_counter),
-            Self::OnDisk(index) => index.doc_len(point_id, hw_counter),
+            Self::Mutable(index) => index.doc_len_batch(point_ids, hw_counter, f),
+            Self::Immutable(index) => index.doc_len_batch(point_ids, hw_counter, f),
+            Self::OnDisk(index) => index.doc_len_batch(point_ids, hw_counter, f),
         }
     }
 

@@ -614,6 +614,19 @@ fn mmap_builder_records_doc_len() {
     );
 }
 
+/// Every answer of [`FullTextIndexRead::doc_len_batch`], in `point_ids` order.
+fn doc_lens(
+    index: &FullTextIndex,
+    point_ids: &[PointOffsetType],
+    hw_counter: &HardwareCounterCell,
+) -> Vec<Option<u32>> {
+    let mut out = vec![Some(u32::MAX); point_ids.len()];
+    index
+        .doc_len_batch(point_ids, hw_counter, |at, doc_len| out[at] = doc_len)
+        .unwrap();
+    out
+}
+
 /// What a scorer gets from a segment: `|d|` per point, and the total to
 /// divide by `points_count`. Goes through the read surface rather than the
 /// inverted index, since that is the side a scorer sees.
@@ -623,12 +636,13 @@ fn read_surface_exposes_doc_len_and_total() {
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
 
     let hw_counter = HardwareCounterCell::new();
-    assert_eq!(index.doc_len(0, &hw_counter).unwrap(), Some(3));
-    assert_eq!(index.doc_len(1, &hw_counter).unwrap(), Some(7));
+    // The third is outside the index. Not a zero-length document.
+    assert_eq!(
+        doc_lens(&index, &[0, 1, 2], &hw_counter),
+        [Some(3), Some(7), None]
+    );
     assert_eq!(index.total_tokens(&hw_counter).unwrap(), Some(10));
     assert_eq!(index.points_count(), 2);
-    // Outside the index. Not a zero-length document.
-    assert_eq!(index.doc_len(2, &hw_counter).unwrap(), None);
 }
 
 /// The same surface on a non-recording index: absent, not zero.
@@ -638,8 +652,7 @@ fn read_surface_reports_absence_without_scoring() {
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), false);
 
     let hw_counter = HardwareCounterCell::new();
-    assert_eq!(index.doc_len(0, &hw_counter).unwrap(), None);
-    assert_eq!(index.doc_len(1, &hw_counter).unwrap(), None);
+    assert_eq!(doc_lens(&index, &[0, 1], &hw_counter), [None, None]);
     assert_eq!(index.total_tokens(&hw_counter).unwrap(), None);
     assert_eq!(index.points_count(), 2);
 }

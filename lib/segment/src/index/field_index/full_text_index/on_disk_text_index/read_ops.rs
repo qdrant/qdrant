@@ -32,12 +32,13 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
         self.inverted_index.values_is_empty(point_id)
     }
 
-    fn doc_len(
+    fn doc_len_batch(
         &self,
-        point_id: PointOffsetType,
+        point_ids: &[PointOffsetType],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<u32>> {
-        self.inverted_index.doc_len(point_id, hw_counter)
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        self.inverted_index.doc_len_batch(point_ids, hw_counter, f)
     }
 
     fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {

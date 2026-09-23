@@ -54,15 +54,20 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn doc_len(
+    fn doc_len_batch(
         &self,
-        point_id: PointOffsetType,
+        point_ids: &[PointOffsetType],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<u32>> {
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.doc_len(point_id, hw_counter),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.doc_len(point_id, hw_counter),
-            ReadOnlyFullTextIndex::Immutable(index) => index.doc_len(point_id, hw_counter),
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.doc_len_batch(point_ids, hw_counter, f)
+            }
+            ReadOnlyFullTextIndex::OnDisk(index) => index.doc_len_batch(point_ids, hw_counter, f),
+            ReadOnlyFullTextIndex::Immutable(index) => {
+                index.doc_len_batch(point_ids, hw_counter, f)
+            }
         }
     }
 
