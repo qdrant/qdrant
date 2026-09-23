@@ -16,19 +16,21 @@ use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
-use crate::tracker::PointOffset;
 use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::{PointOffset, TrackerRead};
 
 /// Read-only storage for values of type `V`, operating in append-only mode.
 ///
 /// Holds the tracker and pages directly (no locks) since it provides only read access.
 /// For read-write access, use [`Logstore`].
 ///
-/// All data is read through the universal IO backend `S`.
+/// Value data is read through the universal IO backend `S`, mappings through the tracker `T`.
+/// Reads work with any [`TrackerRead`], opening and reloading are specific to the
+/// tracker type.
 #[derive(Debug)]
-pub struct LogstoreReader<V, S: UniversalRead> {
+pub struct LogstoreReader<V, S: UniversalRead, T> {
     config: LogstoreConfig,
-    tracker: AppendOnlyTracker<S>,
+    tracker: T,
     pages: AppendOnlyPages<S>,
     base_path: PathBuf,
     /// How to populate the files on open, and pages adopted on live reload
@@ -36,7 +38,7 @@ pub struct LogstoreReader<V, S: UniversalRead> {
     _phantom: PhantomData<V>,
 }
 
-impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
+impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads: the tracker
     /// file and the page files.
     ///
@@ -72,11 +74,6 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         })
     }
 
-    /// Create an [`LogstoreView`] borrowing this reader's data.
-    pub(crate) fn view(&self) -> LogstoreView<'_, V, S> {
-        LogstoreView::new(&self.config, &self.tracker, &self.pages)
-    }
-
     /// List all files belonging to this reader (tracker, pages, config).
     pub(crate) fn files(&self) -> Vec<PathBuf> {
         let mut paths = self.tracker.files();
@@ -85,8 +82,68 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         paths
     }
 
-    pub(crate) fn max_point_offset(&self) -> PointOffset {
-        self.tracker.pointer_count()
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+        let mut futs = vec![self.tracker.live_preload(fs)?];
+        futs.extend(self.pages.live_preload(fs, self.populate)?);
+        Ok(futs)
+    }
+
+    /// This method reloads the storage from "disk", so that it makes newly appended data
+    /// readable.
+    ///
+    /// Mappings only become visible once the pages holding their value data are loaded, so a
+    /// failure leaves the reader serving its previous, consistent state instead of a half
+    /// reloaded one.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Data is append-only, existing mappings and value data never change.
+    /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
+    ///   counted.
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+        // A writer always updates the pages before the tracker, and it is not synchronized with
+        // readers. Observe the tracker first, so that the mappings counted here are backed by
+        // page data that the page reload below is guaranteed to see. Observing the pages first
+        // would let the tracker name value data appended after the pages were read.
+        let reload = self.tracker.reload_count()?;
+
+        self.pages.live_reload(fs, self.populate)?;
+
+        // Publish the mappings last: until this point a failure above is harmless, as pages
+        // running ahead of the tracker is the safe direction — the extra value data is simply
+        // unreferenced.
+        self.tracker.commit_reload(reload);
+
+        Ok(())
+    }
+
+    /// Ask to evict the tracker and all pages from the RAM cache.
+    pub(crate) fn clear_cache(&self) -> crate::Result<()> {
+        let Self {
+            config: _,
+            tracker,
+            pages,
+            base_path: _,
+            populate: _,
+            _phantom,
+        } = self;
+        tracker.clear_cache()?;
+        pages.clear_cache()?;
+        Ok(())
+    }
+}
+
+impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
+    /// Create an [`LogstoreView`] borrowing this reader's data.
+    pub(crate) fn view(&self) -> LogstoreView<'_, V, S, T> {
+        LogstoreView::new(&self.config, &self.tracker, &self.pages)
+    }
+
+    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
     }
 
     pub(crate) fn get_value<P: AccessPattern>(
@@ -124,7 +181,7 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
-        let max_id = max_id.min(self.max_point_offset());
+        let max_id = max_id.min(self.max_point_offset()?);
         let view = self.view();
 
         // Iterate in batches to bound the size of the tracker reads
@@ -195,64 +252,11 @@ impl<V: Blob, S: UniversalRead> LogstoreReader<V, S> {
     pub(crate) fn get_storage_size_bytes(&self) -> usize {
         self.view().get_storage_size_bytes()
     }
-
-    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
-        &self,
-        fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
-        let mut futs = vec![self.tracker.live_preload(fs)?];
-        futs.extend(self.pages.live_preload(fs, self.populate)?);
-        Ok(futs)
-    }
-
-    /// This method reloads the storage from "disk", so that it makes newly appended data
-    /// readable.
-    ///
-    /// Mappings only become visible once the pages holding their value data are loaded, so a
-    /// failure leaves the reader serving its previous, consistent state instead of a half
-    /// reloaded one.
-    ///
-    /// Important assumptions:
-    ///
-    /// - Data is append-only, existing mappings and value data never change.
-    /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
-    ///   counted.
-    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
-        // A writer always updates the pages before the tracker, and it is not synchronized with
-        // readers. Observe the tracker first, so that the mappings counted here are backed by
-        // page data that the page reload below is guaranteed to see. Observing the pages first
-        // would let the tracker name value data appended after the pages were read.
-        let reload = self.tracker.reload_count()?;
-
-        self.pages.live_reload(fs, self.populate)?;
-
-        // Publish the mappings last: until this point a failure above is harmless, as pages
-        // running ahead of the tracker is the safe direction — the extra value data is simply
-        // unreferenced.
-        self.tracker.commit_reload(reload);
-
-        Ok(())
-    }
 }
 
-impl<V, S: UniversalRead> LogstoreReader<V, S> {
+impl<V, S: UniversalRead, T> LogstoreReader<V, S, T> {
     /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
     pub(crate) fn is_on_disk(&self) -> bool {
         !self.populate.to_bool::<S>()
-    }
-
-    /// Ask to evict the tracker and all pages from the RAM cache.
-    pub(crate) fn clear_cache(&self) -> crate::Result<()> {
-        let Self {
-            config: _,
-            tracker,
-            pages,
-            base_path: _,
-            populate: _,
-            _phantom,
-        } = self;
-        tracker.clear_cache()?;
-        pages.clear_cache()?;
-        Ok(())
     }
 }

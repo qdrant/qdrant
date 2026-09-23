@@ -124,3 +124,12 @@ pub enum PointerItem {
     Empty,
     OutOfRange,
 }
+
+impl From<Option<ValuePointer>> for PointerItem {
+    fn from(pointer: Option<ValuePointer>) -> Self {
+        match pointer {
+            Some(pointer) => Self::Valid(pointer),
+            None => Self::Empty,
+        }
+    }
+}

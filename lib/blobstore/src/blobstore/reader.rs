@@ -18,6 +18,7 @@ use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
+use crate::tracker::append_only::AppendOnlyTracker;
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -31,7 +32,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 #[derive(Debug)]
 pub enum BlobstoreReader<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
-    Logstore(LogstoreReader<V, S>),
+    Logstore(LogstoreReader<V, S, AppendOnlyTracker<S>>),
 }
 
 impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
@@ -55,7 +56,8 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                     GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
                 }
                 Mode::AppendOnly => {
-                    LogstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
+                    LogstoreReader::<V, S, AppendOnlyTracker<S>>::preopen(fs, &base_path, populate)
+                        .ok_not_found()?;
                 }
             }
         }
@@ -114,7 +116,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match self {
             Self::Gridstore(reader) => reader.max_point_offset(),
-            Self::Logstore(reader) => Ok(reader.max_point_offset()),
+            Self::Logstore(reader) => reader.max_point_offset(),
         }
     }
 

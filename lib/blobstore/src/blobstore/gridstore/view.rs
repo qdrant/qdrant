@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use common::counter::counter_cell::CounterCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::AccessPattern;
+use common::generic_consts::{AccessPattern, Random};
 use common::universal_io::{UniversalRead, UserData};
 
 use super::pages::Pages;
@@ -19,14 +19,14 @@ use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 /// tracker type `T` — the writable [`Tracker`](crate::tracker::Tracker) for
 /// [`crate::Blobstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
 /// for [`crate::BlobstoreReader`].
-pub(crate) struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead<S>> {
+pub(crate) struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead> {
     config: &'a GridstoreConfig,
     tracker: &'a T,
     pages: &'a Pages<S>,
     _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
+impl<'a, V, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     pub(super) fn new(config: &'a GridstoreConfig, tracker: &'a T, pages: &'a Pages<S>) -> Self {
         Self {
             config,
@@ -45,7 +45,7 @@ impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
     }
 
     fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        self.tracker.get(point_offset)
+        self.tracker.get::<Random>(point_offset)
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).
@@ -62,7 +62,7 @@ impl<'a, V, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead, T: TrackerRead<S>> GridstoreView<'a, V, S, T> {
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         self.config.compression.compress(value)
     }
