@@ -289,6 +289,28 @@ fn test_invalid_files_are_rejected() {
     assert_reads(&reopened, &expected);
 }
 
+/// The example in the [`format`](super::format) module docs, byte for byte.
+#[test]
+fn test_documented_example() {
+    let pointers = [
+        Some(ValuePointer::new(0, 0, 120)),
+        Some(ValuePointer::new(0, 120, 95)),
+        None,
+        Some(ValuePointer::new(0, 215, 130)),
+        Some(ValuePointer::new(1, 0, 4000)),
+        Some(ValuePointer::new(1, 4000, 101)),
+    ];
+    let mut expected = b"QDRANTCT".to_vec();
+    expected.extend_from_slice(&[1, 0, 0, 0, 6, 0, 0, 0]);
+    expected.extend_from_slice(&[0x01, 0x02]);
+    expected.extend_from_slice(&[0x5f, 0x0c]);
+    expected.extend_from_slice(&[0x19, 0x00, 0x00, 0x23, 0x10, 0xf4, 0x06, 0x00]);
+    expected.extend_from_slice(&[0x01, 0x03, 0x01, 0x00]);
+
+    assert_eq!(encode(&pointers), expected);
+    assert_eq!(super::format::decode(&expected).unwrap(), pointers);
+}
+
 #[test]
 fn test_packed_mappings_encode_small() {
     let lengths = (0..10_000).map(|i| 100 + (i % 37)).collect::<Vec<u32>>();
