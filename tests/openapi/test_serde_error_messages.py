@@ -67,6 +67,16 @@ def setup(collection_name):
             "group_size",
         ),
         (
+            "/points/search/groups",
+            {
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "group_by": "group",
+                "group_size": 1,
+                "limit": -1,
+            },
+            "limit",
+        ),
+        (
             "/points/query",
             {"query": {"nearest": [0.1, 0.2, 0.3, 0.4]}, "limit": -1},
             "limit",
@@ -85,6 +95,16 @@ def setup(collection_name):
             "/points/recommend",
             {"positive": [1], "limit": 5, "strategy": 123},
             "strategy",
+        ),
+        (
+            "/points/recommend",
+            {"positive": [1], "limit": -1},
+            "limit",
+        ),
+        (
+            "/points/discover",
+            {"target": 1, "context": [], "limit": -1},
+            "limit",
         ),
         (
             "/points/search",
@@ -112,6 +132,61 @@ def test_serde_errors_name_invalid_fields(collection_name, path, body, field):
     assert "u32" not in error
     assert "f32" not in error
     assert BODY_SENTINEL not in error
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "field"),
+    [
+        (
+            "/points/search",
+            {"vector": [0.1, 0.2, 0.3, 0.4], "limit": 0},
+            "limit",
+        ),
+        (
+            "/points/search/groups",
+            {
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "group_by": "group",
+                "group_size": 0,
+                "limit": 1,
+            },
+            "group_size",
+        ),
+        (
+            "/points/search/groups",
+            {
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "group_by": "group",
+                "group_size": 1,
+                "limit": 0,
+            },
+            "limit",
+        ),
+        (
+            "/points/query",
+            {"query": {"nearest": [0.1, 0.2, 0.3, 0.4]}, "limit": 0},
+            "limit",
+        ),
+        ("/points/scroll", {"limit": 0}, "limit"),
+        ("/points/recommend", {"positive": [1], "limit": 0}, "limit"),
+        (
+            "/points/discover",
+            {"target": 1, "context": [], "limit": 0},
+            "limit",
+        ),
+    ],
+)
+def test_zero_values_reach_range_validation(collection_name, path, body, field):
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}{path}",
+        json=body,
+        headers=qdrant_host_headers(),
+    )
+
+    assert response.status_code == 422
+    error = response.json()["status"]["error"]
+    assert field in error
+    assert "must be 1 or larger" in error
 
 
 @pytest.mark.parametrize(

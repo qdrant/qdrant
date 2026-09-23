@@ -68,6 +68,10 @@ where
     Err(err)
 }
 
+/// Deserialize a required non-negative integer with a field-aware public error.
+///
+/// `min` is included in errors for negative values. Values at or above zero are
+/// left to the existing validation layer so its range diagnostics stay intact.
 pub fn deserialize_usize_field<'de, D>(
     deserializer: D,
     field: &str,
@@ -80,6 +84,9 @@ where
     number_to_usize(number, field, min)
 }
 
+/// Deserialize an optional non-negative integer with a field-aware public error.
+///
+/// `null` remains `None`; present values follow [`deserialize_usize_field`].
 pub fn deserialize_option_usize_field<'de, D>(
     deserializer: D,
     field: &str,
@@ -94,6 +101,7 @@ where
         .transpose()
 }
 
+/// Deserialize a required 32-bit unsigned integer with a field-aware public error.
 pub fn deserialize_u32_field<'de, D>(
     deserializer: D,
     field: &str,
@@ -111,6 +119,7 @@ where
     })
 }
 
+/// Deserialize an optional finite 32-bit float with a field-aware public error.
 pub fn deserialize_option_f32_field<'de, D>(
     deserializer: D,
     field: &str,
