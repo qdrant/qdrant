@@ -52,6 +52,13 @@ where
     common::validation::deserialize_option_usize_field(deserializer, "limit", 1)
 }
 
+fn deserialize_optional_offset<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_usize_field(deserializer, "offset", 0)
+}
+
 fn deserialize_group_size<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -643,6 +650,7 @@ pub struct QueryRequestInternal {
     pub limit: Option<usize>,
 
     /// Offset of the result. Skip this many points. Default is 0
+    #[serde(default, deserialize_with = "deserialize_optional_offset")]
     pub offset: Option<usize>,
 
     /// Options for specifying which vectors to include into the response. Default is false.
@@ -842,9 +850,11 @@ pub struct Prefetch {
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 
     /// Max number of points to return. Default is 10.
+    #[serde(default, deserialize_with = "deserialize_optional_limit")]
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
@@ -1279,6 +1289,7 @@ pub struct SearchRequestInternal {
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
+    #[serde(default, deserialize_with = "deserialize_optional_offset")]
     pub offset: Option<usize>,
     /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
@@ -1697,6 +1708,37 @@ mod serde_error_tests {
 
         assert!(err.contains("limit"), "{err}");
         assert!(!err.contains("usize"), "{err}");
+    }
+
+    #[test]
+    fn query_offset_deserialization_error_names_field() {
+        let err = deserialize_error::<QueryRequestInternal>(
+            r#"{"query":{"nearest":[0.1,0.2,0.3,0.4]},"offset":-1}"#,
+        );
+
+        assert!(err.contains("offset"), "{err}");
+        assert!(!err.contains("usize"), "{err}");
+    }
+
+    #[test]
+    fn search_offset_deserialization_error_names_field() {
+        let err = deserialize_error::<SearchRequestInternal>(
+            r#"{"vector":[0.1,0.2,0.3,0.4],"limit":5,"offset":-1}"#,
+        );
+
+        assert!(err.contains("offset"), "{err}");
+        assert!(!err.contains("usize"), "{err}");
+    }
+
+    #[test]
+    fn prefetch_fields_have_clear_deserialization_errors() {
+        let limit_err = deserialize_error::<Prefetch>(r#"{"limit":-1}"#);
+        assert!(limit_err.contains("limit"), "{limit_err}");
+        assert!(!limit_err.contains("usize"), "{limit_err}");
+
+        let score_err = deserialize_error::<Prefetch>(r#"{"score_threshold":"not_a_number"}"#);
+        assert!(score_err.contains("score_threshold"), "{score_err}");
+        assert!(!score_err.contains("f32"), "{score_err}");
     }
 
     #[test]

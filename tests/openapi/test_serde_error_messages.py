@@ -57,6 +57,11 @@ def setup(collection_name):
             "limit",
         ),
         (
+            "/points/search",
+            {"vector": [0.1, 0.2, 0.3, 0.4], "limit": 5, "offset": -1},
+            "offset",
+        ),
+        (
             "/points/search/groups",
             {
                 "vector": [0.1, 0.2, 0.3, 0.4],
@@ -80,6 +85,40 @@ def setup(collection_name):
             "/points/query",
             {"query": {"nearest": [0.1, 0.2, 0.3, 0.4]}, "limit": -1},
             "limit",
+        ),
+        (
+            "/points/query",
+            {
+                "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                "limit": 5,
+                "offset": -1,
+            },
+            "offset",
+        ),
+        (
+            "/points/query",
+            {
+                "prefetch": {
+                    "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                    "limit": -1,
+                },
+                "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                "limit": 5,
+            },
+            "limit",
+        ),
+        (
+            "/points/query",
+            {
+                "prefetch": {
+                    "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                    "limit": 1,
+                    "score_threshold": BODY_SENTINEL,
+                },
+                "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                "limit": 5,
+            },
+            "score_threshold",
         ),
         (
             "/points/scroll",
@@ -167,6 +206,18 @@ def test_serde_errors_name_invalid_fields(collection_name, path, body, field):
             {"query": {"nearest": [0.1, 0.2, 0.3, 0.4]}, "limit": 0},
             "limit",
         ),
+        (
+            "/points/query",
+            {
+                "prefetch": {
+                    "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                    "limit": 0,
+                },
+                "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                "limit": 1,
+            },
+            "limit",
+        ),
         ("/points/scroll", {"limit": 0}, "limit"),
         ("/points/recommend", {"positive": [1], "limit": 0}, "limit"),
         (
@@ -213,8 +264,14 @@ def test_zero_values_reach_range_validation(collection_name, path, body, field):
         (
             "/points/query",
             {
+                "prefetch": {
+                    "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
+                    "limit": 1,
+                    "score_threshold": 0.0,
+                },
                 "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
                 "limit": 1,
+                "offset": 0,
                 "score_threshold": 0.0,
             },
         ),
