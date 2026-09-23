@@ -40,7 +40,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use common::uio_trace;
 use common::universal_io::{ListedFile, UioResult, UniversalKind};
 use futures::stream::{self, BoxStream, StreamExt as _};
 use io_bridge::{AsyncRead, BlobFile, BlobFs, OffsetByteStream};
@@ -121,22 +120,6 @@ fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn traced_stream(
-    request: uio_trace::Request,
-    inner: BoxStream<'static, UioResult<Bytes>>,
-) -> BoxStream<'static, UioResult<Bytes>> {
-    stream::unfold((inner, request), |(mut inner, mut request)| async move {
-        let item = inner.next().await;
-        match &item {
-            Some(Ok(_)) => {}
-            Some(Err(_)) => request.set(uio_trace::Outcome::Err),
-            None => request.set(uio_trace::Outcome::Ok),
-        }
-        item.map(|item| (item, (inner, request)))
-    })
-    .boxed()
-}
-
 impl AsyncRead for UioGrpcSource {
     type Config = UioGrpcConfig;
 
@@ -157,12 +140,9 @@ impl AsyncRead for UioGrpcSource {
         let prefix = path_to_string(prefix);
         async move {
             let client = inner.client().await?;
-            let mut request = uio_trace::Request::start(uio_trace::Op::List, &prefix, 0..0);
-            let result = client
+            client
                 .list_files(&inner.collection, inner.shard_id, &prefix)
-                .await;
-            request.set_result(&result);
-            result
+                .await
         }
     }
 
@@ -171,12 +151,9 @@ impl AsyncRead for UioGrpcSource {
         let path = path_to_string(path);
         async move {
             let client = inner.client().await?;
-            let mut request = uio_trace::Request::start(uio_trace::Op::Exists, &path, 0..0);
-            let result = client
+            client
                 .file_exists(&inner.collection, inner.shard_id, &path)
-                .await;
-            request.set_result(&result);
-            result
+                .await
         }
     }
 
@@ -191,8 +168,7 @@ impl AsyncRead for UioGrpcSource {
         let length = range.end - range.start;
         async move {
             let client = inner.client().await?;
-            let mut request = uio_trace::Request::start(uio_trace::Op::Read, &path, range.clone());
-            let stream = client
+            client
                 .read_bytes_stream_raw(
                     &inner.collection,
                     inner.shard_id,
@@ -201,8 +177,6 @@ impl AsyncRead for UioGrpcSource {
                     length,
                 )
                 .await
-                .inspect_err(|_| request.set(uio_trace::Outcome::Err))?;
-            Ok(traced_stream(request, stream))
         }
     }
 
@@ -218,13 +192,9 @@ impl AsyncRead for UioGrpcSource {
             // Unlike a single object-store GET, `StorageRead` has no open-ended
             // "from offset to EOF" RPC that also reports the total size, so we
             // learn the size first (one `FileLength`) and then stream the tail.
-            let mut request = uio_trace::Request::start(uio_trace::Op::Len, &path, 0..0);
             let total = client
                 .file_length(&inner.collection, inner.shard_id, &path)
-                .await;
-            request.set_result(&total);
-            drop(request);
-            let total = total?;
+                .await?;
             let length = total.saturating_sub(from);
             if length == 0 {
                 // Nothing to read past `from`; yield the size with an empty body
@@ -232,13 +202,9 @@ impl AsyncRead for UioGrpcSource {
                 let empty: OffsetByteStream = stream::empty().boxed();
                 return Ok((total, empty));
             }
-            let mut request =
-                uio_trace::Request::start(uio_trace::Op::ReadFrom, &path, from..total);
             let stream = client
                 .read_bytes_stream_raw(&inner.collection, inner.shard_id, &path, from, length)
-                .await
-                .inspect_err(|_| request.set(uio_trace::Outcome::Err))?;
-            let stream = traced_stream(request, stream);
+                .await?;
             Ok((total, io_bridge::with_running_offsets(stream)))
         }
     }
@@ -248,12 +214,9 @@ impl AsyncRead for UioGrpcSource {
         let path = path_to_string(path);
         async move {
             let client = inner.client().await?;
-            let mut request = uio_trace::Request::start(uio_trace::Op::Len, &path, 0..0);
-            let result = client
+            client
                 .file_length(&inner.collection, inner.shard_id, &path)
-                .await;
-            request.set_result(&result);
-            result
+                .await
         }
     }
 

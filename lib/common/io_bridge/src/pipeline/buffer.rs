@@ -2,6 +2,7 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
+use common::uio_trace;
 use common::universal_io::{UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
@@ -23,11 +24,12 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     let len = (range.end - range.start) as usize;
+    let request = uio_trace::Request::new(uio_trace::Op::Read, &file.path, range.clone());
     let stream_fut = file.inner.read_range(&file.path, range);
-    async move {
+    request.wrap(async move {
         let stream = stream_fut.await?;
         scatter_stream_into_buffer(with_running_offsets(stream), len, align).await
-    }
+    })
 }
 
 /// Like [`read_into_byte_buffer`], but fetches the whole object, sizing the
@@ -53,24 +55,33 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     from: u64,
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
+    let mut request = uio_trace::Request::new(uio_trace::Op::ReadFrom, &file.path, from..from);
     let read_fut = file.inner.read_from(&file.path, from);
     // Cloned for the cold disambiguation path only; building the `len` future is
     // deferred until a read error actually occurs.
     let inner = file.inner.clone();
     let path = file.path.clone();
     async move {
+        request.start();
         let (size, stream) = match read_fut.await {
             Ok(ok) => ok,
             Err(err) => {
-                let eof = inner.len(&path).await?;
+                request.set(uio_trace::Outcome::Err);
+                drop(request);
+                let eof = uio_trace::Request::new(uio_trace::Op::Len, &path, 0..0)
+                    .wrap(inner.len(&path))
+                    .await?;
                 if from >= eof {
                     return Ok(AVec::new(align));
                 }
                 return Err(err);
             }
         };
+        request.set_end(size);
         let len = size.saturating_sub(from) as usize;
-        scatter_stream_into_buffer(stream, len, align).await
+        let result = scatter_stream_into_buffer(stream, len, align).await;
+        request.set_result(&result);
+        result
     }
 }
 

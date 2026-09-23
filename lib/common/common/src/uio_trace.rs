@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::future::Future;
 use std::io::{self, BufWriter, Write as _};
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -41,7 +41,7 @@ enum Event {
         text: String,
     },
     /// Single GET request.
-    /// Created by UIO backend implementations, with [`Request::start`].
+    /// Created by UIO backend implementations, with [`Request::new`].
     Request {
         parent: u64,
         start_ns: Nanoseconds,
@@ -168,7 +168,7 @@ pub struct Request(Option<ActiveRequest>);
 
 struct ActiveRequest {
     parent: u64,
-    start: Instant,
+    start: Option<Instant>,
     op: Op,
     path: String,
     range: Range<u64>,
@@ -262,15 +262,21 @@ impl Drop for Phase {
 }
 
 impl Request {
-    pub fn start(op: Op, path: &str, range: Range<u64>) -> Self {
+    pub fn new(op: Op, path: &Path, range: Range<u64>) -> Self {
         Self(enabled().then(|| ActiveRequest {
             parent: Context::current().0,
-            start: Instant::now(),
+            start: None,
             op,
-            path: path.to_owned(),
+            path: path.to_string_lossy().into_owned(),
             range,
             outcome: None,
         }))
+    }
+
+    pub fn start(&mut self) {
+        if let Some(active) = &mut self.0 {
+            active.start.get_or_insert_with(Instant::now);
+        }
     }
 
     pub fn set(&mut self, outcome: Outcome) {
@@ -285,6 +291,19 @@ impl Request {
             Err(_) => Outcome::Err,
         });
     }
+
+    pub fn set_end(&mut self, end: u64) {
+        if let Some(active) = &mut self.0 {
+            active.range.end = end;
+        }
+    }
+
+    pub async fn wrap<T, E>(mut self, future: impl Future<Output = Result<T, E>>) -> Result<T, E> {
+        self.start();
+        let result = future.await;
+        self.set_result(&result);
+        result
+    }
 }
 
 impl Drop for Request {
@@ -292,9 +311,10 @@ impl Drop for Request {
         let (Some(active), Some(sink)) = (self.0.take(), SINK.get()) else {
             return;
         };
+        let Some(start) = active.start else { return };
         sink.send(Event::Request {
             parent: active.parent,
-            start_ns: elapsed_ns(sink.origin, active.start),
+            start_ns: elapsed_ns(sink.origin, start),
             end_ns: elapsed_ns(sink.origin, Instant::now()),
             op: active.op,
             path: active.path,
@@ -403,12 +423,14 @@ mod tests {
         let phase = Phase::start("open");
         phase.in_scope(|| {
             mark!("round 0 begin ({} points)", 3);
-            let mut request = Request::start(Op::Read, "links.bin", 4_096..8_192);
+            let mut request = Request::new(Op::Read, Path::new("links.bin"), 4_096..8_192);
+            request.start();
             request.set(Outcome::Ok);
+            drop(Request::new(Op::Read, Path::new("unsent.bin"), 0..1));
         });
         let ctx = phase.in_scope(Context::current);
         std::thread::spawn(move || {
-            ctx.in_scope(|| drop(Request::start(Op::Len, "meta.json", 0..0)))
+            ctx.in_scope(|| Request::new(Op::Len, Path::new("meta.json"), 0..0).start())
         })
         .join()
         .expect("thread");
