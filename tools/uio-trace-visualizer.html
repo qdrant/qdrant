@@ -41,6 +41,7 @@ button {
   background: var(--surface); color: var(--ink2);
   border: 1px solid var(--axis); border-radius: 4px; padding: 2px 8px; cursor: pointer;
 }
+button:disabled { color: var(--muted); cursor: default; }
 #file { display: none; }
 #wrap { position: relative; flex: 1; min-height: 0; background: var(--surface); }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
@@ -80,7 +81,8 @@ body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
 <body>
 <header>
   <span id="note"></span>
-  <label><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+  <label title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+  <button id="reflow" title="Hide lanes without visible requests.&#10;(when zooming in)">re<u>f</u>low</button>
   <button id="url"><u>o</u>pen URL</button>
   <button id="upload"><u>u</u>pload file</button>
   <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
@@ -126,6 +128,8 @@ const BW_BIN = 1000;  // µs
 const CPU_BIN = 2000;  // µs, the sampling interval of the tracer
 const LANE_FONT = "11px system-ui, sans-serif";
 const REQ_W = 4.5;  // px per request bar
+const REQ_GAP = 2;  // px between neighbouring bars, unless the lane is crowded
+const HIT_R = 10;  // px, how far from a request bar its tooltip still shows
 const MAP_W = 300;  // px, the file map in the request tooltip
 const BAD_DARK = darken(BAD);
 
@@ -136,9 +140,10 @@ const wrap = document.getElementById("wrap");
 const note = document.getElementById("note");
 const marksBox = document.getElementById("marks");
 const toastBox = document.getElementById("toast");
+const reflowButton = document.getElementById("reflow");
 
 const HEAD = 26;
-const W_RULER = 68, W_MARK = 26, W_SIDE = 96, GAP = 10;
+const W_RULER = 68, W_MARK = 26, W_SIDE = 96, W_HIDDEN = 32, GAP = 10;
 const view = {t0: 0, tpp: 1};
 let D = null;
 let L = null;
@@ -148,6 +153,8 @@ let select = null;  // time the drag started at
 let dirty = false;
 let refit = true;
 let toastTimer = 0;
+let hidden = new Set();  // lanes folded into one column by "reflow"
+let unseen = [];  // lanes without requests in view, as of the last draw
 
 // ---------- trace ----------
 
@@ -248,6 +255,7 @@ function build(text, name) {
     shades: colors.map(shades),
     darks: colors.map(darken),
     counts: kinds.map(k => counts.get(k)),
+    gap: tMax * 0.005,
     bytes: kinds.map(k => bytes.get(k)),
     S: Float64Array.from(reqs, r => r.s),
     conc: {bin: CONC_BIN, v: conc, max: peak(conc)},
@@ -414,26 +422,63 @@ function layout() {
   // Every lane first takes the width of its own label, then shares out what is
   // left by log of its count, so the huge `graph.neighbors` lane cannot swamp
   // the rest and a one-request lane still names itself.
-  const avail = o.reqW - 8;
+  const avail = o.reqW - 8 - (hidden.size ? W_HIDDEN : 0);
   ctx.font = LANE_FONT;
-  const floor = D.kinds.map(k => ctx.measureText(laneName(k)).width + 6);
+  const floor = D.kinds.map((k, i) => hidden.has(i) ? 0 : ctx.measureText(laneName(k)).width + 6);
   const spare = Math.max(0, avail - floor.reduce((a, b) => a + b, 0));
-  const weight = D.counts.map(c => Math.log2(c + 1));
+  const weight = D.counts.map((c, i) => hidden.has(i) ? 0 : Math.log2(c + 1));
   const sum = weight.reduce((a, b) => a + b, 0) || 1;
   let lw = floor.map((f, i) => f + spare * weight[i] / sum);
   const total = lw.reduce((a, b) => a + b, 0) || 1;
   if (total > avail) lw = lw.map(v => v * avail / total);  // too many kinds to label
-  o.laneW = lw;
   o.laneX = [];
   let lx = o.reqX + 4;
   for (const width of lw) { o.laneX.push(lx); lx += width; }
+  // The hidden lanes share one column after the rest.
+  o.hiddenX = lx;
+  for (const k of hidden) { o.laneX[k] = lx; lw[k] = W_HIDDEN; }
+  o.laneW = lw;
+  const room = lw.map(width => Math.max(1, Math.round(width - REQ_W - 2)));
+  const placedFor = room + "|" + [...hidden];
+  if (D.placedFor !== placedFor) {
+    D.placedFor = placedFor;
+    place(room);
+  }
   return o;
+}
+
+// A request prefers its random spot in the lane, but moves to the nearest spot clear
+// of the requests alongside it (or just before it); only a crowded lane lets bars overlap.
+function place(room) {
+  const active = new Map();
+  for (const req of D.reqs) {
+    const column = hidden.has(req.k) ? -1 : req.k;
+    const lane = (active.get(column) || []).filter(other => other.e + D.gap > req.s);
+    active.set(column, lane);
+    // Up to twice as thin when the bars do not fit side by side.
+    const crowd = (lane.length + 1) * (REQ_W + REQ_GAP) / room[req.k];
+    req.w = REQ_W / Math.min(2, Math.max(1, crowd));
+    req.x = req.jit * room[req.k];
+    lane.push(req);
+    if (lane.length * (req.w + REQ_GAP) > room[req.k]) continue;  // crowded, and quadratic below
+    const blocked = lane.slice(0, -1)
+      .map(other => [other.x - req.w - REQ_GAP, other.x + other.w + REQ_GAP]);
+    blocked.sort((a, b) => a[0] - b[0]).push([room[req.k], Infinity]);
+    const want = req.x;
+    let from = 0, dist = Infinity;
+    for (const [a, b] of blocked) {
+      const to = Math.min(a, room[req.k]);
+      const x = Math.min(Math.max(want, from), to);
+      if (from <= to && Math.abs(x - want) < dist) { dist = Math.abs(x - want); req.x = x; }
+      from = Math.max(from, b);
+    }
+  }
 }
 
 const yOf = t => L.top + (t - view.t0) / view.tpp;
 const tOf = y => view.t0 + (y - L.top) * view.tpp;
 const viewEnd = () => view.t0 + L.ph * view.tpp;
-const laneJit = k => Math.max(1, L.laneW[k] - REQ_W - 2);
+const reqX = req => L.laneX[req.k] + req.x;
 
 const fitTpp = () => D.t_max / L.ph;
 const clampY = y => Math.min(Math.max(y, L.top), L.h);
@@ -500,6 +545,7 @@ function drawHeader() {
   ctx.textAlign = "left";
   ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
   for (let i = 0; i < D.kinds.length; i++) {
+    if (hidden.has(i)) continue;
     ctx.save();
     ctx.beginPath();
     ctx.rect(L.laneX[i], 0, L.laneW[i] - 4, HEAD);
@@ -509,6 +555,7 @@ function drawHeader() {
     ctx.restore();
   }
   ctx.fillStyle = MUTED;
+  if (hidden.size) ctx.fillText("+" + hidden.size, L.hiddenX + 2, HEAD / 2);
   ctx.fillText("conc ≤" + D.conc.max, L.concX, HEAD / 2);
   ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.bwX, HEAD / 2);
   ctx.fillText("CPU ≤" + D.cpu.max.toFixed(1), L.cpuX, HEAD / 2);
@@ -573,24 +620,42 @@ function drawRequests() {
   ctx.beginPath();
   ctx.rect(L.reqX, L.top, L.reqW, L.ph);
   ctx.clip();
+  // One pixel short, so that back-to-back requests stay apart; errors one pixel wider.
+  const bar = req => {
+    const pad = req.outcome === "err" ? 1 : 0;
+    ctx.fillRect(reqX(req) - pad, L.top + (req.s - t0) / tpp, req.w + 2 * pad,
+      Math.max(1.5 + pad, (req.e - req.s) / tpp - 1));
+  };
   const bad = [];
+  const seen = D.kinds.map(() => false);
   let last = "";
   for (let i = lowerBound(D.S, t0 - D.maxdur); i < D.reqs.length; i++) {
     const req = D.reqs[i];
     if (req.s > vend) break;
     if (req.e < t0) continue;
+    seen[req.k] = true;
+    if (req === hover) continue;
     if (req.outcome === "err") { bad.push(req); continue; }
-    const color = req === hover ? D.darks[req.k] : D.shades[req.k][req.shade];
+    const color = D.shades[req.k][req.shade];
     if (color !== last) { ctx.fillStyle = color; last = color; }
-    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
-    ctx.fillRect(x, L.top + (req.s - t0) / tpp, REQ_W, Math.max(1.5, (req.e - req.s) / tpp));
+    bar(req);
   }
-  for (const req of bad) {
-    ctx.fillStyle = req === hover ? BAD_DARK : BAD;
-    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
-    ctx.fillRect(x - 1, L.top + (req.s - t0) / tpp, REQ_W + 2, Math.max(2, (req.e - req.s) / tpp));
+  ctx.fillStyle = BAD;
+  bad.forEach(bar);
+  if (hover) {
+    ctx.fillStyle = hover.outcome === "err" ? BAD_DARK : D.darks[hover.k];
+    bar(hover);
   }
   ctx.restore();
+  if (hidden.size) {
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L.hiddenX - 0.5, L.top); ctx.lineTo(L.hiddenX - 0.5, L.h); ctx.stroke();
+  }
+
+  // An empty view has nothing to reflow to.
+  unseen = seen.includes(true) ? D.kinds.map((_, k) => k).filter(k => !seen[k]) : [];
+  reflowButton.disabled = !hidden.size && !unseen.length;
 }
 
 function drawMarks() {
@@ -697,15 +762,15 @@ function lowerBound(arr, t) {
 
 function hitReq(mx, my) {
   if (my < L.top || mx < L.reqX || mx >= L.reqX + L.reqW) return null;
-  const t = tOf(my), tol = 3 * view.tpp;
-  let best = null, bestDx = 4;
+  const t = tOf(my), tol = HIT_R * view.tpp;
+  let best = null, bestDist = HIT_R;
   for (let i = lowerBound(D.S, t - D.maxdur - tol); i < D.reqs.length; i++) {
     const req = D.reqs[i];
     if (req.s > t + tol) break;
     if (req.e + tol < t) continue;
-    const x = L.laneX[req.k] + req.jit * laneJit(req.k);
-    const dx = mx < x ? x - mx : Math.max(0, mx - (x + REQ_W));
-    if (dx < bestDx) { bestDx = dx; best = req; }
+    const x = reqX(req), y0 = yOf(req.s), y1 = Math.max(yOf(req.e), y0 + 1.5);
+    const dist = Math.hypot(Math.max(x - mx, 0, mx - x - req.w), Math.max(y0 - my, 0, my - y1));
+    if (dist < bestDist) { bestDist = dist; best = req; }
   }
   return best;
 }
@@ -753,7 +818,10 @@ function hit(mx, my) {
 }
 
 function headTip(mx) {
-  const lane = L.laneX.findIndex((x, i) => mx >= x && mx < x + L.laneW[i]);
+  if (hidden.size && mx >= L.hiddenX && mx < L.hiddenX + W_HIDDEN) {
+    return 'press "reflow" again to expand';
+  }
+  const lane = L.laneX.findIndex((x, i) => !hidden.has(i) && mx >= x && mx < x + L.laneW[i]);
   if (lane >= 0) {
     return "<b>" + esc(D.kinds[lane]) + "</b>\n" + fmtInt(D.counts[lane]) + " requests, " +
       fmtBytes(D.bytes[lane]);
@@ -761,20 +829,24 @@ function headTip(mx) {
   const summary = (title, average, total) =>
     title + "\n<span class=k>average</span> " + average + "\n<span class=k>total</span> " + total;
   if (mx >= L.concX && mx < L.concX + W_SIDE) {
-    return summary("<b>Concurrency</b>: number of simultaneous requests",
+    return summary("<b>concurrency</b>: number of simultaneous requests",
       (D.in_flight / D.t_max).toFixed(2),
       fmtInt(D.reqs.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
   }
   if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
-    return summary("<b>Bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
+    return summary("<b>bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
       fmtBytes(D.total_bytes));
   }
   if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
-    return summary("<b>CPU utilization</b>", (D.cpu.total / D.t_max).toFixed(2) + " cores",
+    return summary("<b>cpu utilization</b>", (D.cpu.total / D.t_max).toFixed(2) + " cores",
       fmtTotalMs(D.cpu.total));
   }
   return null;
 }
+
+// Reflowing again to the same lanes would do nothing, so it toggles back.
+const reflowShowsAll = () =>
+  hidden.size > 0 && hidden.size === unseen.length && unseen.every(k => hidden.has(k));
 
 const binAt = (s, t) => s.v[Math.floor(t / s.bin)] ?? 0;
 
@@ -943,12 +1015,16 @@ document.getElementById("help").innerHTML = esc([...document.childNodes]
   .replace(/`([^`]+)`/g, "<code>$1</code>");
 
 marksBox.addEventListener("change", redraw);
+reflowButton.addEventListener("click", () => {
+  hidden = new Set(reflowShowsAll() ? [] : unseen);
+  redraw();
+});
 document.getElementById("upload").addEventListener("click", () => document.getElementById("file").click());
 
 // By key position, so that other keyboard layouts work too.
 document.addEventListener("keydown", e => {
   if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
-  const id = {KeyM: "marks", KeyO: "url", KeyU: "upload"}[e.code];
+  const id = {KeyF: "reflow", KeyM: "marks", KeyO: "url", KeyU: "upload"}[e.code];
   if (!id) return;
   e.preventDefault();
   document.getElementById(id).click();
@@ -1018,6 +1094,7 @@ async function loadTrace(name, text, hash) {
   }
   if (load !== loads) return;
   D = trace;
+  hidden = new Set();
   D.hash = hash;
   setHash(hash);
   document.title = D.name + " — uio trace";
