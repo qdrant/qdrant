@@ -5886,6 +5886,14 @@ pub struct IdfParams {
     #[validate(nested)]
     pub corpus: ::core::option::Option<Filter>,
 }
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PathSeerSearchParams {
+    /// If true, then PathSeer may be used for filtered HNSW searches.
+    /// Takes precedence over ACORN when both are enabled.
+    #[prost(bool, optional, tag = "1")]
+    pub enable: ::core::option::Option<bool>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5916,6 +5924,10 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub idf: ::core::option::Option<IdfParams>,
+    /// Experimental PathSeer search params.
+    /// Takes precedence over ACORN when both are enabled. Exact/plain search takes precedence.
+    #[prost(message, optional, tag = "7")]
+    pub pathseer: ::core::option::Option<PathSeerSearchParams>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -650,6 +650,18 @@ pub struct AcornSearchParams {
     pub max_selectivity: Option<OrderedFloat<f64>>,
 }
 
+/// Experimental PathSeer-related search parameters.
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default, Hash,
+)]
+#[serde(rename_all = "snake_case")]
+pub struct PathSeerSearchParams {
+    /// If true, then PathSeer may be used for filtered HNSW searches.
+    /// Takes precedence over ACORN when both are enabled.
+    #[serde(default)]
+    pub enable: bool,
+}
+
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -681,6 +693,13 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
+
+    /// Experimental PathSeer search params.
+    /// Takes precedence over ACORN when both are enabled. Exact/plain search takes precedence.
+    #[serde(default)]
+    #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pathseer: Option<PathSeerSearchParams>,
 
     /// Which population sparse vector IDF statistics are computed over.
     /// By default (or with explicit `"global"`) statistics are collection-wide.
@@ -5041,6 +5060,22 @@ mod tests {
             ..Default::default()
         };
         params.validate().unwrap();
+    }
+
+    #[test]
+    fn test_pathseer_search_params_json() {
+        let params: SearchParams =
+            serde_json::from_str(r#"{"hnsw_ef":40,"pathseer":{"enable":true}}"#).unwrap();
+        params.validate().unwrap();
+        assert_eq!(params.pathseer, Some(PathSeerSearchParams { enable: true }));
+        assert_eq!(
+            serde_json::to_value(params).unwrap()["pathseer"],
+            serde_json::json!({"enable": true})
+        );
+        assert_eq!(
+            serde_json::from_str::<SearchParams>("{}").unwrap().pathseer,
+            None
+        );
     }
 
     fn match_condition(key: &str, value: &str) -> Condition {
