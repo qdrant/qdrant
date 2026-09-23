@@ -208,6 +208,7 @@ fn count_files(dir: &Path, name: &str) -> usize {
 fn optimizer_makes_non_appendable_payload_storage_immutable() {
     use std::collections::HashMap;
 
+    use segment::common::memory_usage::MemoryReporter as _;
     use segment::data_types::named_vectors::NamedVectors;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -287,6 +288,13 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
 
     let built = build(&non_appendable);
     let built_path = built.data_path();
+    // The compacted mappings are reported as RAM, beyond the storage files
+    let payload_ram = built
+        .payload_storage
+        .borrow()
+        .memory_usage()
+        .extra_ram_bytes;
+    assert!(payload_ram.unwrap() >= 5 * 16, "{payload_ram:?}");
     assert_eq!(count_files(&built_path, "compacted_tracker.dat"), 1);
     assert_eq!(count_files(&built_path, "log_tracker.dat"), 1);
     assert!(
@@ -315,6 +323,12 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
     }
 
     let built = build(&appendable);
+    let payload_ram = built
+        .payload_storage
+        .borrow()
+        .memory_usage()
+        .extra_ram_bytes;
+    assert_eq!(payload_ram, Some(0));
     assert_eq!(count_files(&built.data_path(), "compacted_tracker.dat"), 0);
     assert_eq!(count_files(&built.data_path(), "log_tracker.dat"), 2);
 }
