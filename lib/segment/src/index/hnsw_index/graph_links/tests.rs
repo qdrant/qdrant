@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::IoUringFs;
 use common::universal_io::{
     CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile,
-    MmapFs, UniversalReadFileOps, UniversalReadFs,
+    MmapFs, UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync,
 };
 use rand::RngExt;
 use rstest::rstest;
@@ -369,9 +369,17 @@ fn test_preload_offsets(
 
     let options = GraphLinksFile::<DiskCache<MmapFile>>::preopen_options(residency);
     if preload {
-        fs.schedule_open_with(&links_path, Some(options), None, move |file| {
-            GraphLinksFile::preload_offsets(file, format)
-        });
+        let fs_clone = fs.clone();
+        let path_clone = links_path.clone();
+        fs.schedule(
+            links_path.clone(),
+            Box::pin(async move {
+                let file = fs_clone
+                    .open_async(path_clone, options, Default::default())
+                    .await?;
+                GraphLinksFile::preload_offsets(file, format).await
+            }),
+        );
     } else {
         fs.schedule_open(&links_path, Some(options), None);
     }

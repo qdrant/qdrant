@@ -31,7 +31,7 @@ struct Counters {
 }
 
 #[derive(Clone)]
-pub(super) struct CountingConfig {
+struct CountingConfig {
     data: Bytes,
     counters: Counters,
     short_body: bool,
@@ -41,7 +41,7 @@ pub(super) struct CountingConfig {
 /// requests it receives: `len` (HEAD), `read_whole` (single GET) and
 /// `read_range` (ranged GET).
 #[derive(Clone)]
-pub(super) struct CountingSource {
+struct CountingSource {
     data: Bytes,
     counters: Counters,
     /// Announce one byte more than the body carries, like a response cut off mid-body.
@@ -49,7 +49,7 @@ pub(super) struct CountingSource {
 }
 
 impl CountingSource {
-    pub(super) fn new(data: &'static [u8]) -> Self {
+    fn new(data: &'static [u8]) -> Self {
         Self {
             data: Bytes::from_static(data),
             counters: Counters::default(),
