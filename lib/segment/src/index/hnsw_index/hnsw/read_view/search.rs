@@ -1,6 +1,7 @@
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use common::uio_trace;
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
@@ -128,7 +129,8 @@ where
                 return Ok(None);
             };
 
-            Ok(Some(self.graph.search(GraphSearchArgs {
+            uio_trace::mark!("graph_search begin (inline vectors, ef={ef})");
+            let result = self.graph.search(GraphSearchArgs {
                 top,
                 ef: std::cmp::max(ef, oversampled_top),
                 algorithm: SearchAlgorithm::Hnsw,
@@ -139,13 +141,16 @@ where
                 }),
                 custom_entry_points,
                 is_stopped: &is_stopped,
-            })?))
+            })?;
+            Ok(Some(result))
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
+            uio_trace::mark!("filter_context begin");
             let filter_context = filter
                 .map(|f| self.payload_index.filter_context(f, &hw_counter))
                 .transpose()?;
+            uio_trace::mark!("search_scorer begin");
             let points_scorer = construct_search_scorer(
                 vector,
                 self.vector_storage,
@@ -156,6 +161,7 @@ where
                 filter_context,
             )?;
 
+            uio_trace::mark!("graph_search begin (ef={ef})");
             let search_result = self.graph.search(GraphSearchArgs {
                 top: oversampled_top,
                 ef,
@@ -165,6 +171,7 @@ where
                 is_stopped: &is_stopped,
             })?;
 
+            uio_trace::mark!("postprocess begin");
             postprocess_search_result(
                 search_result,
                 self.id_tracker.deleted_point_bitslice(),
