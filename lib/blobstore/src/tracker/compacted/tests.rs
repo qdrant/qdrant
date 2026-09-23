@@ -2,7 +2,7 @@ use common::generic_consts::Random;
 use common::universal_io::{MmapFs, UniversalWriteFileOps};
 use tempfile::TempDir;
 
-use super::format::{Header, encode};
+use super::format::{BLOCK_LEN, Header, encode};
 use super::{CompactedTracker, FILE_NAME};
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -248,13 +248,14 @@ fn test_invalid_files_are_rejected() {
     let mut bad_version = valid.clone();
     bad_version[8..12].copy_from_slice(&2u32.to_le_bytes());
 
-    // Header claims one mapping more than the payload holds
+    // A count off by a few can hide in the padding of a bit-packed block, so the count checks
+    // are only as strong as the byte layout: a whole block more than the payload holds
     let mut count_too_large = valid.clone();
-    count_too_large[12..16].copy_from_slice(&4u32.to_le_bytes());
+    count_too_large[12..16].copy_from_slice(&(3 + BLOCK_LEN as u32).to_le_bytes());
 
-    // Header claims one mapping less: the last mapping becomes trailing bytes
+    // No mappings: the length block becomes trailing bytes
     let mut count_too_small = valid.clone();
-    count_too_small[12..16].copy_from_slice(&2u32.to_le_bytes());
+    count_too_small[12..16].copy_from_slice(&0u32.to_le_bytes());
 
     let mut corrupt_payload = valid.clone();
     *corrupt_payload.last_mut().unwrap() ^= 0xff;
