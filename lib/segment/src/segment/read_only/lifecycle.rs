@@ -33,15 +33,7 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-/// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
-fn build_cached_fs<Fs: UniversalReadFsAsync>(
-    fs: &Fs,
-    segment_path: &Path,
-) -> OperationResult<CachedFs<Fs>> {
-    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-
-    cached_fs.cache_file_info()?;
-
+fn schedule_static_files<Fs: UniversalReadFsAsync>(cached_fs: &CachedFs<Fs>, segment_path: &Path) {
     // TODO(uio): Schedule static files in advance, after implementing
     // `read_whole_bytes_async`, so that their fetch can overlap with the listing
     // round-trip.
@@ -52,7 +44,16 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     ] {
         cached_fs.schedule_open(&path, None, None);
     }
+}
 
+/// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
+fn build_cached_fs<Fs: UniversalReadFsAsync>(
+    fs: &Fs,
+    segment_path: &Path,
+) -> OperationResult<CachedFs<Fs>> {
+    let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
+    cached_fs.cache_file_info()?;
+    schedule_static_files(&cached_fs, segment_path);
     Ok(cached_fs)
 }
 
@@ -118,6 +119,19 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         .finish(fs)
     }
 
+    /// Take the segment's listing snapshot without blocking, for
+    /// [`schedule_open_with_cached_fs`](Self::schedule_open_with_cached_fs).
+    /// Callers opening many segments overlap their LIST round-trips.
+    pub async fn build_cached_fs_async(
+        fs: &S::Fs,
+        segment_path: &Path,
+    ) -> OperationResult<CachedFs<S::Fs>> {
+        let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
+        cached_fs.cache_file_info_async().await?;
+        schedule_static_files(&cached_fs, segment_path);
+        Ok(cached_fs)
+    }
+
     /// Stage an open without assembling the segment: take the listing snapshot
     /// and put every fetch the open needs in flight. Callers opening many
     /// segments overlap their IO ([`StagedSegmentOpen::wait`]) before
@@ -140,6 +154,26 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let fs = build_cached_fs(fs, segment_path)?;
+        Self::schedule_open_with_cached_fs(
+            fs,
+            segment_path,
+            uuid,
+            deferred_internal_id,
+            load_profile,
+            is_stopped,
+        )
+    }
+
+    /// [`schedule_open`](Self::schedule_open) over a snapshot already taken by
+    /// [`build_cached_fs_async`](Self::build_cached_fs_async).
+    pub fn schedule_open_with_cached_fs<'a>(
+        fs: CachedFs<S::Fs>,
+        segment_path: &Path,
+        uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&'a LoadProfile>,
+        is_stopped: &'a AtomicBool,
+    ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let (config, payload_config) =
             Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;

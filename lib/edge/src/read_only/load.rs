@@ -45,18 +45,28 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
-    // Stage every open: per-segment LIST + config reads, with the bulk
-    // fetches going in flight as scheduled.
+    // Stage every open: LIST all segments concurrently, then preopen each one.
+    let listed_futs = segments.into_iter().map(|(uuid, path)| async move {
+        let cached_fs = ReadOnlySegment::<S>::build_cached_fs_async(fs, &path).await;
+        (uuid, path, cached_fs)
+    });
+    check_process_stopped(is_stopped)?;
+    let listed = futures::executor::block_on(join_all(listed_futs));
+    check_process_stopped(is_stopped)?;
+
     let mut staged = Vec::new();
-    for (uuid, segment_path) in segments {
-        match ReadOnlySegment::<S>::schedule_open(
-            fs,
-            &segment_path,
-            uuid,
-            None,
-            load_profile,
-            is_stopped,
-        ) {
+    for (uuid, segment_path, cached_fs) in listed {
+        let staged_open = cached_fs.and_then(|cached_fs| {
+            ReadOnlySegment::<S>::schedule_open_with_cached_fs(
+                cached_fs,
+                &segment_path,
+                uuid,
+                None,
+                load_profile,
+                is_stopped,
+            )
+        });
+        match staged_open {
             Ok(segment) => staged.push((uuid, segment)),
             Err(err @ OperationError::Cancelled { .. }) => return Err(err),
             Err(err) => {

@@ -2,12 +2,14 @@
 //! `ReadOnlyFs<F>` are async-capable exactly when the wrapped backend is.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::read_only::{ReadOnly, ReadOnlyFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync};
+use crate::universal_io::{
+    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+};
 
 impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
     async fn open_async(
@@ -18,6 +20,10 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
     ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
+    }
+
+    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.0.list_files_async(prefix_path).await
     }
 }
 
