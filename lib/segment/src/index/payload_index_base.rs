@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
-use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
 use serde_json::Value;
 
 use super::field_index::numeric_index::NumericFieldIndexRead;
@@ -14,7 +14,8 @@ use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::data_types::query_context::TextFieldStats;
+use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
@@ -105,6 +106,19 @@ pub trait PayloadIndexRead {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
+
+    /// Score `terms` by BM25 over the text index of `field` and return the
+    /// `limit` best documents, highest first. A field with no text index
+    /// scores nothing, as it contributes nothing to the statistics.
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        context: &TextQueryContext<'_>,
+        params: Bm25Params,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     /// Per-field-index telemetry data.
     fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>>;

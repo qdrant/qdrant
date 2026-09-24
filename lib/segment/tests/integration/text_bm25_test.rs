@@ -7,13 +7,17 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::{QueryContext, TextQueryContext, fancy_idf};
+use segment::data_types::query_context::{
+    QueryContext, SegmentQueryContext, TextQueryContext, fancy_idf,
+};
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::{NonAppendableSegmentEntry, ReadSegmentEntry};
 use segment::index::field_index::FieldIndex;
@@ -25,7 +29,8 @@ use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    PayloadFieldSchema, PayloadSchemaParams, PointIdType, SegmentConfig, SeqNumberType,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PayloadFieldSchema, PayloadSchemaParams,
+    PointIdType, ScoredPoint, SegmentConfig, SeqNumberType, WithPayload, WithVector,
 };
 use tempfile::Builder;
 
@@ -60,13 +65,24 @@ fn document(rng: &mut StdRng) -> String {
 /// A segment with a text index over `documents`, point offset `i` holding
 /// `documents[i]`, then with `deleted` removed.
 fn build_text_segment(path: &std::path::Path, documents: &[String], deleted: &[u64]) -> Segment {
+    build_text_segment_deferred(path, documents, deleted, None)
+}
+
+/// [`build_text_segment`] with every offset from `deferred_internal_id` on
+/// deferred.
+fn build_text_segment_deferred(
+    path: &std::path::Path,
+    documents: &[String],
+    deleted: &[u64],
+    deferred_internal_id: Option<PointOffsetType>,
+) -> Segment {
     let config = SegmentConfig {
         vector_data: Default::default(),
         sparse_vector_data: HashMap::new(),
         payload_storage_type: Default::default(),
         id_tracker_memory: None,
     };
-    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
     let hw_counter = HardwareCounterCell::new();
     let mut op_num: SeqNumberType = 0;
     segment
@@ -349,4 +365,198 @@ fn bm25_matches_the_reference_end_to_end() {
             );
         }
     }
+}
+
+/// Point offsets of `points`, which equal their ids in a segment built by
+/// [`build_text_segment`]: ids are upserted in order from zero.
+fn as_offsets(points: &[ScoredPoint]) -> Vec<ScoredPointOffset> {
+    points
+        .iter()
+        .map(|point| match point.id {
+            ExtendedPointId::NumId(id) => ScoredPointOffset {
+                idx: id as PointOffsetType,
+                score: point.score,
+            },
+            ExtendedPointId::Uuid(_) => panic!("the fixture uses numeric ids"),
+        })
+        .collect()
+}
+
+/// The segment entry point, from tokenized terms to `ScoredPoint`s: the
+/// reference ranking with ids, versions and payloads attached, and each
+/// exclusion a query applies on top of the index's own deletions. A filter
+/// narrows the candidates without touching the statistics, and a deleted
+/// mask in the query context takes the id tracker's place, which is how a
+/// proxy segment hides the points deleted since it was created.
+#[test]
+fn segment_entry_point_scores_what_a_query_sees() {
+    let _scoring = TextIndexParams::override_scoring(true);
+
+    let mut rng = StdRng::seed_from_u64(7);
+    let corpus: Vec<String> = (0..240).map(|_| document(&mut rng)).collect();
+    let deleted = [5, 6, 70];
+    let dir = Builder::new().prefix("bm25_entry").tempdir().unwrap();
+    let segment = build_text_segment(&dir.path().join("segment"), &corpus, &deleted);
+
+    let tokenizer = Tokenizer::new_from_text_index_params(&text_params());
+    let tokenized = [TokenizedSegment::new(&tokenizer, &corpus, &deleted)];
+    let reference = Reference {
+        segments: &tokenized,
+        params: Bm25Params::default(),
+    };
+
+    let even: AHashSet<PointIdType> = (0..corpus.len() as u64)
+        .step_by(2)
+        .map(PointIdType::from)
+        .collect();
+    let even_only = Filter::new_must(Condition::HasId(HasIdCondition::from(even)));
+    let mut mask = BitVec::repeat(false, corpus.len());
+    for idx in (0..corpus.len()).step_by(10) {
+        mask.set(idx, true);
+    }
+
+    let with_payload = WithPayload::from(true);
+    let without_vector = WithVector::Bool(false);
+    for _ in 0..QUERY_COUNT {
+        let query = (0..rng.random_range(1..=4))
+            .map(|_| word(&mut rng))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut terms = Vec::new();
+        tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
+
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field(), terms.iter().cloned());
+        segment.fill_query_context(&mut query_context).unwrap();
+        let segment_context = query_context.get_segment_query_context();
+        let expected = reference.rank(0, &terms);
+
+        let score = |filter: Option<&Filter>, context: &SegmentQueryContext| {
+            segment
+                .score_bm25(
+                    &field(),
+                    &terms,
+                    Bm25Params::default(),
+                    &with_payload,
+                    &without_vector,
+                    filter,
+                    LIMIT,
+                    context,
+                )
+                .unwrap()
+        };
+
+        let points = score(None, &segment_context);
+        assert_top_k(&as_offsets(&points), &expected, LIMIT);
+        for point in &points {
+            let ExtendedPointId::NumId(id) = point.id else {
+                unreachable!()
+            };
+            assert_eq!(
+                point.payload.as_ref().and_then(|p| p.0.get("text")),
+                Some(&serde_json::Value::from(corpus[id as usize].as_str())),
+                "payload of point {id}",
+            );
+            assert!(point.version > 0, "point {id} carries its version");
+        }
+
+        let filtered: Vec<_> = expected
+            .iter()
+            .filter(|hit| hit.idx % 2 == 0)
+            .copied()
+            .collect();
+        assert_top_k(
+            &as_offsets(&score(Some(&even_only), &segment_context)),
+            &filtered,
+            LIMIT,
+        );
+
+        let masked_context = segment_context.fork().with_deleted_points(&mask);
+        let unmasked: Vec<_> = expected
+            .iter()
+            .filter(|hit| !mask[hit.idx as usize])
+            .copied()
+            .collect();
+        assert_top_k(&as_offsets(&score(None, &masked_context)), &unmasked, LIMIT);
+    }
+}
+
+/// Scoring without statistics would silently rank by an IDF of zero
+/// documents, so a context nothing seeded for the field is an error.
+#[test]
+fn segment_entry_point_requires_seeded_statistics() {
+    let _scoring = TextIndexParams::override_scoring(true);
+    let dir = Builder::new().prefix("bm25_unseeded").tempdir().unwrap();
+    let segment = build_text_segment(
+        &dir.path().join("segment"),
+        &["term1 term2".to_owned()],
+        &[],
+    );
+    let query_context = QueryContext::default();
+    let result = segment.score_bm25(
+        &field(),
+        &["term1".to_owned()],
+        Bm25Params::default(),
+        &WithPayload::from(false),
+        &WithVector::Bool(false),
+        None,
+        LIMIT,
+        &query_context.get_segment_query_context(),
+    );
+    assert!(result.is_err(), "unseeded statistics must be refused");
+}
+
+/// Deferred points are invisible to a query until they are applied, so the
+/// entry point never scores them, while the index itself still holds them.
+#[test]
+fn segment_entry_point_skips_deferred_points() {
+    let _scoring = TextIndexParams::override_scoring(true);
+
+    const CUTOFF: PointOffsetType = 100;
+    let mut rng = StdRng::seed_from_u64(11);
+    let corpus: Vec<String> = (0..200).map(|_| document(&mut rng)).collect();
+    let dir = Builder::new().prefix("bm25_deferred").tempdir().unwrap();
+    let segment =
+        build_text_segment_deferred(&dir.path().join("segment"), &corpus, &[], Some(CUTOFF));
+    let tokenizer = Tokenizer::new_from_text_index_params(&text_params());
+
+    let mut deferred_hits = 0;
+    for _ in 0..QUERY_COUNT {
+        let query = (0..rng.random_range(1..=4))
+            .map(|_| word(&mut rng))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut terms = Vec::new();
+        tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
+
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field(), terms.iter().cloned());
+        segment.fill_query_context(&mut query_context).unwrap();
+        let segment_context = query_context.get_segment_query_context();
+        let context = segment_context.get_text_context(&field()).unwrap();
+
+        // The index ranks every point it holds; a query sees the visible ones.
+        let everything = engine_rank(&segment, &terms, &context, usize::MAX);
+        deferred_hits += everything.iter().filter(|hit| hit.idx >= CUTOFF).count();
+        let visible: Vec<_> = everything
+            .iter()
+            .filter(|hit| hit.idx < CUTOFF)
+            .copied()
+            .collect();
+
+        let points = segment
+            .score_bm25(
+                &field(),
+                &terms,
+                Bm25Params::default(),
+                &WithPayload::from(false),
+                &WithVector::Bool(false),
+                None,
+                LIMIT,
+                &segment_context,
+            )
+            .unwrap();
+        assert_top_k(&as_offsets(&points), &visible, LIMIT);
+    }
+    assert!(deferred_hits > 0, "the queries must reach deferred points");
 }
