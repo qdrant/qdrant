@@ -246,9 +246,9 @@ def test_peer_proxy_propagates_rpc_deadline(upstream, phase):
         hold = proxy.hold_rpc if phase == "request" else proxy.hold_rpc_response
         with hold(RAFT) as gate:
             request = b"block-upstream" if phase == "upstream" else b"selected"
-            # The deadline starts at dispatch, so slow CI can expire it before the
-            # intended phase. The cancellation tests above control that ordering.
-            call = rpc.future(request, timeout=1)
+            # Deadline must outlive phase arrival under slow scheduling; a 1s
+            # timeout can expire before the gate is reached.
+            call = rpc.future(request, timeout=TIMEOUT)
             if phase == "upstream":
                 assert upstream.blocked.wait(TIMEOUT)
             else:
@@ -256,7 +256,7 @@ def test_peer_proxy_propagates_rpc_deadline(upstream, phase):
             if phase != "request":
                 assert upstream.calls.get(timeout=TIMEOUT)[1] == request
             with pytest.raises(grpc.RpcError) as failure:
-                call.result(TIMEOUT)
+                call.result(TIMEOUT + 1)
             assert failure.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
             assert gate.cancelled.wait(TIMEOUT)
             if phase == "upstream":

@@ -72,8 +72,10 @@ async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_di
     let restore = target_replica_set.restore_local_replica_from(
         &source_shard_path,
         RecoveryType::Full,
+        false,
         target_collection_dir.path(),
         cancel.clone(),
+        || Ok(()),
     );
     tokio::pin!(restore);
 
@@ -133,9 +135,9 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
         Arc::new(new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await);
 
     // `clear_local_for_snapshot_recovery` refuses to run on a source-of-truth replica.
-    // The receiving replica of a snapshot transfer sits in `PartialSnapshot`.
+    // The receiving replica of a snapshot transfer sits in `Recovery`.
     target_replica_set
-        .set_replica_state(TEST_PEER_ID, ReplicaState::PartialSnapshot)
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
         .await
         .unwrap();
 
@@ -157,7 +159,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
             let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
             replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
+                .clear_local_for_snapshot_recovery(&collection_path, || Ok(()))
                 .await
                 .unwrap();
 
@@ -171,8 +173,10 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                 .restore_local_replica_from(
                     &stalled_snapshot,
                     RecoveryType::Full,
+                    true,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    || Ok(()),
                 )
                 .await
                 .unwrap()
@@ -190,7 +194,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
             let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
             replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
+                .clear_local_for_snapshot_recovery(&collection_path, || Ok(()))
                 .await
                 .unwrap();
 
@@ -198,8 +202,10 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                 .restore_local_replica_from(
                     &retry_snapshot,
                     RecoveryType::Full,
+                    true,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    || Ok(()),
                 )
                 .await
                 .unwrap();
@@ -235,6 +241,484 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
     );
 
     target_replica_set.stop_gracefully().await;
+}
+
+/// After force-delete mid snapshot transfer, the receiver may already have cleared
+/// under `Recovery`. Survivors then heal it to `Active` and accept writes.
+/// A late `restore_local_replica_from` from the deleted source must not replace that
+/// data.
+///
+/// ```text
+/// clear (Recovery) -> heal to Active -> write P_new -> late restore(A)
+///                                                         \-> must keep P_new
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+async fn test_late_snapshot_restore_after_active_must_not_drop_newer_writes() {
+    let target_collection_dir = Builder::new()
+        .prefix("late-restore-after-active")
+        .tempdir()
+        .unwrap();
+
+    let replica_set = new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+
+    // Empty snapshots: heal installs a real local shard; the abandoned restore
+    // would wipe points written after Active if it is allowed to run.
+    let (_heal_dir, heal_snapshot) = new_shard_snapshot().await;
+    let (_stale_dir, stale_snapshot) = new_shard_snapshot().await;
+
+    replica_set
+        .clear_local_for_snapshot_recovery(target_collection_dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    assert!(
+        replica_set.is_dummy().await,
+        "clear must leave a dummy while snapshot data is missing"
+    );
+
+    // Survivors heal without waiting on the abandoned snapshot recovery lock
+    // (e.g. wal_delta / stream_records in production).
+    assert!(
+        replica_set
+            .restore_local_replica_from(
+                &heal_snapshot,
+                RecoveryType::Full,
+                true,
+                target_collection_dir.path(),
+                cancel::CancellationToken::new(),
+                || Ok(()),
+            )
+            .await
+            .unwrap(),
+        "survivor heal must install a local shard"
+    );
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Active)
+        .await
+        .unwrap();
+    upsert_point(&replica_set, 42).await;
+    assert_eq!(count_points(&replica_set).await, 1);
+
+    // Abandoned restore from the deleted transfer source finally lands.
+    let error = replica_set
+        .restore_local_replica_from(
+            &stale_snapshot,
+            RecoveryType::Full,
+            true,
+            target_collection_dir.path(),
+            cancel::CancellationToken::new(),
+            || Ok(()),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.is_pre_condition_failed());
+    assert!(
+        !shard_initializing_flag_path(target_collection_dir.path(), TEST_TARGET_SHARD_ID).exists()
+    );
+
+    assert_eq!(
+        count_points(&replica_set).await,
+        1,
+        "late snapshot restore after Active must not drop newer local writes"
+    );
+
+    // User-requested recovery may intentionally replace an active replica.
+    assert!(
+        replica_set
+            .restore_local_replica_from(
+                &stale_snapshot,
+                RecoveryType::Full,
+                false,
+                target_collection_dir.path(),
+                cancel::CancellationToken::new(),
+                || Ok(()),
+            )
+            .await
+            .unwrap()
+    );
+    assert_eq!(count_points(&replica_set).await, 0);
+
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transfer_restore_checks_state_after_waiting_for_local_lock() {
+    let collection_dir = Builder::new()
+        .prefix("restore-state-check")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let (_snapshot_dir, snapshot) = new_shard_snapshot().await;
+
+    // Queue activation ahead of restore while both are blocked on the local shard.
+    let local = replica_set.local.write().await;
+    let activate = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Active);
+    tokio::pin!(activate);
+    assert!(futures::poll!(&mut activate).is_pending());
+    let restore = replica_set.restore_local_replica_from(
+        &snapshot,
+        RecoveryType::Full,
+        true,
+        collection_dir.path(),
+        cancel::CancellationToken::new(),
+        || Ok(()),
+    );
+    tokio::pin!(restore);
+    assert!(futures::poll!(&mut restore).is_pending());
+
+    drop(local);
+    let (activated, restored) = tokio::join!(activate, restore);
+    activated.unwrap();
+    assert!(restored.unwrap_err().is_pre_condition_failed());
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_retry_cannot_clear_partial_heal() {
+    let collection_dir = Builder::new().prefix("snapshot-retry").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+
+    // Let the replacement heal reach Partial while the retry waits for the local lock.
+    let local = replica_set.local.write().await;
+    let heal = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Partial);
+    tokio::pin!(heal);
+    assert!(futures::poll!(&mut heal).is_pending());
+    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path(), || Ok(()));
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+    drop(local);
+    let (healed, cleared) = tokio::join!(heal, clear);
+    healed.unwrap();
+    assert!(cleared.unwrap_err().is_pre_condition_failed());
+    assert!(!replica_set.is_dummy().await);
+    assert_eq!(count_points(&replica_set).await, 1);
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_rechecks_sender_before_clear_and_restore() {
+    use crate::shards::shard_holder::ShardHolder;
+    use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
+
+    let collection_dir = Builder::new().prefix("snapshot-sender").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let holder =
+        ShardHolder::new(collection_dir.path(), crate::config::ShardingMethod::Auto).unwrap();
+    let transfer = ShardTransfer {
+        shard_id: TEST_TARGET_SHARD_ID,
+        to_shard_id: None,
+        from: 2,
+        to: TEST_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::Snapshot),
+        filter: None,
+    };
+    holder
+        .register_start_shard_transfer(transfer.clone())
+        .unwrap();
+    let validate = || {
+        holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(transfer.from))
+    };
+    validate().unwrap();
+    let (_snapshot_dir, snapshot) = new_shard_snapshot().await;
+
+    // Both operations must check the sender after acquiring the local lock.
+    let local = replica_set.local.write().await;
+    let restore = replica_set.restore_local_replica_from(
+        &snapshot,
+        RecoveryType::Full,
+        true,
+        collection_dir.path(),
+        cancel::CancellationToken::new(),
+        validate,
+    );
+    tokio::pin!(restore);
+    assert!(futures::poll!(&mut restore).is_pending());
+    let clear = replica_set.clear_local_for_snapshot_recovery(collection_dir.path(), validate);
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+
+    holder.register_abort_transfer(&transfer.key()).unwrap();
+    holder
+        .register_start_shard_transfer(ShardTransfer {
+            from: 3,
+            ..transfer.clone()
+        })
+        .unwrap();
+    drop(local);
+    let (restored, cleared) = tokio::join!(restore, clear);
+    assert!(matches!(restored, Err(CollectionError::BadRequest { .. })));
+    assert!(matches!(cleared, Err(CollectionError::BadRequest { .. })));
+    assert_eq!(count_points(&replica_set).await, 1);
+    assert!(!replica_set.is_dummy().await);
+    assert!(!shard_initializing_flag_path(collection_dir.path(), TEST_TARGET_SHARD_ID).exists());
+
+    // The registered sender and legacy requests without sender identity still work.
+    let validate_replacement =
+        || holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(3));
+    replica_set
+        .clear_local_for_snapshot_recovery(collection_dir.path(), validate_replacement)
+        .await
+        .unwrap();
+    replica_set
+        .restore_local_replica_from(
+            &snapshot,
+            RecoveryType::Full,
+            true,
+            collection_dir.path(),
+            cancel::CancellationToken::new(),
+            || holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, None),
+        )
+        .await
+        .unwrap();
+    assert_eq!(count_points(&replica_set).await, 0);
+    replica_set.stop_gracefully().await;
+}
+
+fn pause_dummy_initialization(
+    replica_set: &ShardReplicaSet,
+    phase: crate::shards::replica_set::DummyInitPhase,
+) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+    let (reached_tx, reached_rx) = oneshot::channel();
+    let (resume_tx, resume_rx) = oneshot::channel();
+    assert!(
+        crate::shards::replica_set::DUMMY_INIT_HOOKS
+            .lock()
+            .unwrap()
+            .insert(
+                (replica_set.shard_path.clone(), phase),
+                (reached_tx, resume_rx)
+            )
+            .is_none()
+    );
+    (reached_rx, resume_tx)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_delayed_dummy_init_preserves_replacement_data() {
+    let dir = Builder::new()
+        .prefix("delayed-dummy-init")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let (reached, resume) = pause_dummy_initialization(
+        &replica_set,
+        crate::shards::replica_set::DummyInitPhase::BeforeInit,
+    );
+    let delayed = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(delayed);
+    tokio::select! {
+        result = reached => result.unwrap(),
+        result = &mut delayed => panic!("init missed the pause: {result:?}"),
+    }
+
+    replica_set
+        .init_dummy_local_shard(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Partial)
+        .await
+        .unwrap();
+    upsert_point(&replica_set, 1).await;
+    resume.send(()).unwrap();
+    let result = delayed.await;
+    assert_eq!(
+        count_points(&replica_set).await,
+        1,
+        "delayed Initiate wiped the replacement"
+    );
+    result.unwrap();
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_preserves_new_recovery_marker() {
+    let dir = Builder::new()
+        .prefix("dummy-init-marker")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let (reached, resume) = pause_dummy_initialization(
+        &replica_set,
+        crate::shards::replica_set::DummyInitPhase::BeforeMarkerRemoval,
+    );
+    let init = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(init);
+    tokio::select! {
+        result = reached => result.unwrap(),
+        result = &mut init => panic!("init missed the marker pause: {result:?}"),
+    }
+
+    let (clear_started_tx, mut clear_started_rx) = oneshot::channel();
+    let clear = replica_set.clear_local_for_snapshot_recovery(dir.path(), || {
+        clear_started_tx.send(()).unwrap();
+        Ok(())
+    });
+    tokio::pin!(clear);
+    assert!(futures::poll!(&mut clear).is_pending());
+    // The newer clear must wait for initialization to remove the old marker.
+    assert!(matches!(
+        clear_started_rx.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+    resume.send(()).unwrap();
+    init.await.unwrap();
+    clear.await.unwrap();
+    assert!(replica_set.is_dummy().await);
+    assert!(
+        shard_initializing_flag_path(dir.path(), TEST_TARGET_SHARD_ID).exists(),
+        "old Initiate removed the newer recovery marker"
+    );
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_rechecks_sender_after_waiting() {
+    use crate::shards::shard_holder::ShardHolder;
+    use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
+
+    let dir = Builder::new()
+        .prefix("dummy-init-sender")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    let holder = ShardHolder::new(dir.path(), crate::config::ShardingMethod::Auto).unwrap();
+    let transfer = ShardTransfer {
+        shard_id: TEST_TARGET_SHARD_ID,
+        to_shard_id: None,
+        from: 2,
+        to: TEST_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::Snapshot),
+        filter: None,
+    };
+    holder
+        .register_start_shard_transfer(transfer.clone())
+        .unwrap();
+    let local = replica_set.local.read().await;
+    let init = replica_set.init_dummy_local_shard(dir.path(), || {
+        holder.validate_incoming_transfer(TEST_TARGET_SHARD_ID, TEST_PEER_ID, Some(2))
+    });
+    tokio::pin!(init);
+    assert!(futures::poll!(&mut init).is_pending());
+    holder.register_abort_transfer(&transfer.key()).unwrap();
+    holder
+        .register_start_shard_transfer(ShardTransfer {
+            from: 3,
+            ..transfer
+        })
+        .unwrap();
+    drop(local);
+    assert!(matches!(
+        init.await,
+        Err(CollectionError::BadRequest { .. })
+    ));
+    assert!(replica_set.is_dummy().await);
+    assert!(shard_initializing_flag_path(dir.path(), TEST_TARGET_SHARD_ID).exists());
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_rechecks_state_after_waiting() {
+    let dir = Builder::new().prefix("dummy-init-state").tempdir().unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    upsert_point(&replica_set, 1).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    let local = replica_set.local.write().await;
+    let activate = replica_set.set_replica_state(TEST_PEER_ID, ReplicaState::Active);
+    tokio::pin!(activate);
+    assert!(futures::poll!(&mut activate).is_pending());
+    let init = replica_set.init_dummy_local_shard(dir.path(), || Ok(()));
+    tokio::pin!(init);
+    assert!(futures::poll!(&mut init).is_pending());
+    drop(local);
+    let (activated, initialized) = tokio::join!(activate, init);
+    activated.unwrap();
+    assert!(initialized.unwrap_err().is_pre_condition_failed());
+    assert_eq!(count_points(&replica_set).await, 1);
+
+    // Transfer restart deliberately resets real local data, even when it is not a dummy.
+    replica_set.init_empty_local_shard().await.unwrap();
+    assert_eq!(count_points(&replica_set).await, 0);
+    replica_set.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_dummy_init_without_recovery_marker() {
+    let dir = Builder::new()
+        .prefix("dummy-init-no-marker")
+        .tempdir()
+        .unwrap();
+    let replica_set = new_shard_replica_set(&dir, TEST_TARGET_SHARD_ID).await;
+    replica_set
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
+        .await
+        .unwrap();
+    replica_set
+        .clear_local_for_snapshot_recovery(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    // A dummy loaded after a shard load failure need not have a recovery marker.
+    fs_err::tokio::remove_file(shard_initializing_flag_path(
+        dir.path(),
+        TEST_TARGET_SHARD_ID,
+    ))
+    .await
+    .unwrap();
+    replica_set
+        .init_dummy_local_shard(dir.path(), || Ok(()))
+        .await
+        .unwrap();
+    assert!(!replica_set.is_dummy().await);
+    assert_eq!(count_points(&replica_set).await, 0);
+    replica_set.stop_gracefully().await;
 }
 
 /// Build a valid unpacked shard snapshot to recover from.

@@ -273,6 +273,8 @@ impl Collection {
             .recover_local_shard_from(
                 snapshot_shard_path,
                 recovery_type,
+                false,
+                None,
                 &self.path,
                 shard_id,
                 cancel,
@@ -334,6 +336,8 @@ impl Collection {
         shard_id: ShardId,
         snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
+        is_shard_transfer: bool,
+        from_peer_id: Option<PeerId>,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
@@ -356,6 +360,8 @@ impl Collection {
                 .restore_shard_snapshot(
                     snapshot_data,
                     recovery_type,
+                    is_shard_transfer,
+                    from_peer_id,
                     &collection_path,
                     &collection_name,
                     shard_id,
@@ -418,16 +424,24 @@ impl Collection {
     /// transfer downloads a replacement snapshot. See
     /// [`ShardReplicaSet::clear_local_for_snapshot_recovery`] for details and safety
     /// constraints.
+    ///
+    /// A shard transfer into this shard must be registered, from `from_peer_id` if that is given.
+    /// This is destructive, so a sender that drives a transfer consensus has since aborted must
+    /// not get to wipe a replica that another transfer is populating. Senders running an older
+    /// version don't identify themselves, they are only held to *some* transfer being registered.
     pub async fn clear_local_shard_for_snapshot_recovery(
         &self,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> CollectionResult<()> {
-        self.shards_holder
-            .read()
-            .await
+        let shard_holder = self.shards_holder.read().await;
+
+        shard_holder
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?
-            .clear_local_for_snapshot_recovery(&self.path)
+            .clear_local_for_snapshot_recovery(&self.path, || {
+                shard_holder.validate_incoming_transfer(shard_id, self.this_peer_id, from_peer_id)
+            })
             .await
     }
 

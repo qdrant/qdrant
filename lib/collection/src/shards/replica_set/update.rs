@@ -59,6 +59,18 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
+        // WAL replay bypasses clock checks. Once recovery ends, a delayed batch
+        // must not overwrite newer writes on the active replica.
+        if !force
+            && operation.clock_tag.is_some_and(|tag| tag.force)
+            && !state.is_partial_or_recovery()
+        {
+            return Err(CollectionError::pre_condition_failed(format!(
+                "Cannot replay WAL on shard {} in state {state:?}",
+                self.shard_id,
+            )));
+        }
+
         // Don't measure hw when resharding
         if state.is_resharding() && !hw_measurement.is_disposable() {
             hw_measurement = HwMeasurementAcc::disposable();
@@ -908,6 +920,71 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wal_replay_cannot_outlive_recovery() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let rs = new_shard_replica_set(&collection_dir).await;
+        rs.init_empty_local_shard().await.unwrap();
+        rs.set_replica_state(1, ReplicaState::Recovery)
+            .await
+            .unwrap();
+
+        let mut clock_tag = ClockTag::new_with_token(2, 0, 1, 0);
+        clock_tag.force = true;
+        let operation = OperationWithClockTag {
+            operation: CollectionUpdateOperations::PointOperation(
+                crate::operations::point_ops::PointOperations::DeletePoints {
+                    ids: vec![1.into()],
+                },
+            ),
+            clock_tag: Some(clock_tag),
+        };
+
+        let wal = {
+            let local = rs.local.read().await;
+            let Some(Shard::Local(shard)) = local.as_ref() else {
+                panic!("Expected a local shard");
+            };
+            shard.wal.wal.clone()
+        };
+        let wal_guard = wal.lock().await;
+        let replay = rs.update_local(
+            operation.clone(),
+            WaitUntil::Wal,
+            None,
+            HwMeasurementAcc::disposable(),
+            false,
+        );
+        tokio::pin!(replay);
+        assert!(futures::poll!(&mut replay).is_pending());
+
+        let activate = rs.set_replica_state(1, ReplicaState::Active);
+        tokio::pin!(activate);
+        assert!(futures::poll!(&mut activate).is_pending());
+        assert_eq!(rs.peer_state(1), Some(ReplicaState::Recovery));
+
+        drop(wal_guard);
+        assert!(replay.await.unwrap().is_some());
+        activate.await.unwrap();
+
+        let version = rs.wal_version().await.unwrap();
+        let result = rs
+            .update_local(
+                operation,
+                WaitUntil::Wal,
+                None,
+                HwMeasurementAcc::disposable(),
+                false,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(CollectionError::PreConditionFailed { .. })
+        ));
+        assert_eq!(rs.wal_version().await.unwrap(), version);
+        rs.stop_gracefully().await;
+    }
 
     #[test]
     fn test_merge_successful_update_results_wait_timeout_dominates() {

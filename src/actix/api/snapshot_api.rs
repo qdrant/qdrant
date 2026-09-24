@@ -489,6 +489,9 @@ async fn recover_shard_snapshot(
             request.checksum,
             http_client.as_ref().clone(),
             request.api_key,
+            // No transfer sender to identify: this is a user request. The shard transfer
+            // priority, the only one that clears the shard, cannot be selected here anyway.
+            None,
         )
         .await?;
 
@@ -560,6 +563,7 @@ async fn upload_shard_snapshot(
             snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Full,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
@@ -743,6 +747,7 @@ async fn recover_partial_snapshot(
             snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Partial,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
@@ -923,6 +928,7 @@ async fn recover_partial_snapshot_from(
             snapshot_data,
             SnapshotPriority::NoSync,
             RecoveryType::Partial,
+            None,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,

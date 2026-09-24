@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
-use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
@@ -17,11 +16,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
+use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-use crate::shards::{shard_initializing_flag_path, transfer};
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -148,6 +147,18 @@ impl Collection {
                  (cluster contains peers older than 1.18.0)",
             );
             shard_transfer.method = Some(default_method);
+        }
+
+        // Staging-only: pause the sender before it registers anything of the `Start`, so a test
+        // can kill this peer while the entry is committed but not yet applied. On restart the
+        // entry is replayed before this peer rejoins consensus, spawning a driver for a transfer
+        // the rest of the cluster may have aborted since.
+        #[cfg(feature = "staging")]
+        if consensus.this_peer_id() == shard_transfer.from
+            && let Ok(secs) = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_START_DELAY_SEC")
+            && let Ok(secs) = secs.parse::<f64>()
+        {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
         }
 
         let do_transfer = {
@@ -661,9 +672,14 @@ impl Collection {
     /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
     /// partial state. In that case it will remain a dummy shard, signaled by the initialization
     /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    ///
+    /// If `from_peer_id` is given, only a transfer from that peer is accepted. A sender that
+    /// drives a transfer consensus has since aborted must not be able to piggyback on another
+    /// transfer into this shard.
     pub fn initiate_shard_transfer(
         &self,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
         let shards_holder = self.shards_holder.clone();
 
@@ -693,9 +709,10 @@ impl Collection {
                 let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
                 let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
-                        shard_transfers
-                            .iter()
-                            .any(|shard_transfer| shard_transfer.is_target(this_peer_id, shard_id))
+                        shard_transfers.iter().any(|shard_transfer| {
+                            shard_transfer.is_target(this_peer_id, shard_id)
+                                && from_peer_id.is_none_or(|from| shard_transfer.from == from)
+                        })
                     },
                     Duration::from_secs(60),
                 );
@@ -752,27 +769,15 @@ impl Collection {
                 replica_set.un_proxify_local().await?;
             }
 
-            if replica_set.is_dummy().await {
-                // We can reach here because of either of these:
-                // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
-                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
-                //
-                // In both cases, it's safe to drop existing local shard data
-                log::debug!(
-                    "Initiating transfer to dummy shard {}. Initializing empty local shard first",
-                    replica_set.shard_id,
-                );
-                replica_set.init_empty_local_shard().await?;
-
-                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
-
-                if tokio_fs::try_exists(&shard_flag).await.is_ok() {
-                    // We can delete initializing flag without waiting for transfer to finish
-                    // because if transfer fails in between, Qdrant will retry it.
-                    tokio_fs::remove_file(&shard_flag).await?;
-                    log::debug!("Removed shard initializing flag {shard_flag:?}");
-                }
-            }
+            replica_set
+                .init_dummy_local_shard(&collection_path, || {
+                    shards_holder_guard.validate_incoming_transfer(
+                        shard_id,
+                        replica_set.this_peer_id(),
+                        from_peer_id,
+                    )
+                })
+                .await?;
 
             Ok(())
         }

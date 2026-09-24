@@ -53,6 +53,36 @@ use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::WaitUntil;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum DummyInitPhase {
+    BeforeInit,
+    BeforeMarkerRemoval,
+}
+
+#[cfg(test)]
+type DummyInitHook = (
+    tokio::sync::oneshot::Sender<()>,
+    tokio::sync::oneshot::Receiver<()>,
+);
+
+#[cfg(test)]
+static DUMMY_INIT_HOOKS: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<(PathBuf, DummyInitPhase), DummyInitHook>>,
+> = std::sync::LazyLock::new(Default::default);
+
+#[cfg(test)]
+async fn pause_dummy_init(shard_path: &Path, phase: DummyInitPhase) {
+    let hook = DUMMY_INIT_HOOKS
+        .lock()
+        .unwrap()
+        .remove(&(shard_path.to_path_buf(), phase));
+    if let Some((reached, resume)) = hook {
+        let _ = reached.send(());
+        let _ = resume.await;
+    }
+}
+
 //    │    Collection Created
 //    │
 //    ▼
@@ -612,6 +642,47 @@ impl ShardReplicaSet {
         }
     }
 
+    pub(crate) async fn init_dummy_local_shard(
+        &self,
+        collection_path: &Path,
+        validate_transfer: impl FnOnce() -> CollectionResult<()>,
+    ) -> CollectionResult<()> {
+        #[cfg(test)]
+        pause_dummy_init(&self.shard_path, DummyInitPhase::BeforeInit).await;
+
+        let mut local = self.local.write().await;
+        if !self
+            .peer_state(self.this_peer_id())
+            .is_some_and(|state| state.is_partial_or_recovery())
+        {
+            return Err(CollectionError::pre_condition_failed(format!(
+                "Cannot initialize shard transfer destination {}:{} outside a transfer state",
+                self.collection_id, self.shard_id,
+            )));
+        }
+        validate_transfer()?;
+
+        // Another Initiate may have initialized the shard while this request waited.
+        if !matches!(local.as_ref(), Some(Shard::Dummy(_))) {
+            return Ok(());
+        }
+        self.init_empty_local_shard_locked(&mut local).await?;
+
+        #[cfg(test)]
+        pause_dummy_init(&self.shard_path, DummyInitPhase::BeforeMarkerRemoval).await;
+
+        let shard_flag =
+            crate::shards::shard_initializing_flag_path(collection_path, self.shard_id);
+        // A newer recovery must not replace this marker before we remove it.
+        match fs_err::tokio::remove_file(&shard_flag).await {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        drop(local);
+        Ok(())
+    }
+
     /// Clears the local shard data and loads an empty local shard
     ///
     /// # Cancel safety
@@ -621,7 +692,13 @@ impl ShardReplicaSet {
     /// retried call to this method clears it and tries again.
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
+        self.init_empty_local_shard_locked(&mut local).await
+    }
 
+    async fn init_empty_local_shard_locked(
+        &self,
+        local: &mut Option<Shard>,
+    ) -> CollectionResult<()> {
         // Keep a dummy placeholder because every await below may drop the future early on
         // cancellation, we must never leave this at None
         let current_shard = local.replace(Shard::Dummy(DummyShard::new(
@@ -679,7 +756,8 @@ impl ShardReplicaSet {
         local: LocalShard,
         state: Option<ReplicaState>,
     ) -> CollectionResult<Option<Shard>> {
-        let old_shard = self.local.write().await.replace(Shard::Local(local));
+        let mut local_guard = self.local.write().await;
+        let old_shard = local_guard.replace(Shard::Local(local));
 
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
@@ -688,6 +766,7 @@ impl ShardReplicaSet {
                     rs.set_peer_state(self.this_peer_id(), state);
                 }
             })?;
+            drop(local_guard);
 
             self.on_local_state_updated(state.unwrap_or(ReplicaState::Dead))
                 .await?;
@@ -784,6 +863,13 @@ impl ShardReplicaSet {
         peer_id: PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
+        // Finish submitting updates accepted in the old state before changing it.
+        let local = if peer_id == self.this_peer_id() {
+            Some(self.local.write().await)
+        } else {
+            None
+        };
+
         log::debug!(
             "Changing local shard {}:{} state from {:?} to {state:?}",
             self.collection_id,
@@ -797,6 +883,7 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(peer_id, state);
         })?;
+        drop(local);
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
@@ -871,11 +958,13 @@ impl ShardReplicaSet {
         replicas: HashMap<PeerId, ReplicaState>,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
+        let local = self.local.write().await;
         let old_peers = self.replica_state.read().peers().clone();
 
         self.replica_state.write(|state| {
             state.set_peers(replicas.clone());
         })?;
+        drop(local);
 
         if let Some(&state) = replicas.get(&self.this_peer_id()) {
             self.on_local_state_updated(state).await?;

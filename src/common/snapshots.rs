@@ -8,7 +8,7 @@ use collection::operations::snapshot_ops::{
 };
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::shard::ShardId;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use collection::shards::shard_holder::shard_not_found_error;
 use collection::shards::transfer::RecoveryStage;
@@ -167,6 +167,7 @@ pub async fn recover_shard_snapshot(
     checksum: Option<String>,
     client: HttpClient,
     api_key: Option<String>,
+    from_peer_id: Option<PeerId>,
 ) -> Result<(), StorageError> {
     let collection_pass = auth
         .check_global_access(AccessRequirements::new().manage(), "recover_shard_snapshot")?
@@ -202,12 +203,11 @@ pub async fn recover_shard_snapshot(
 
         // For shard transfers, drop the existing shard and clear its on-disk data
         // before downloading the new snapshot so we don't need space for both copies.
-        // Safe because the shard is in `PartialSnapshot` state for the duration of
-        // the transfer and will not serve user requests. Not done for user-triggered
-        // URL recovery, where the shard may still be active.
+        // Safe while the shard is in `Recovery` and will not serve user requests.
+        // Not done for user-triggered URL recovery, where the shard may still be active.
         if matches!(snapshot_priority, SnapshotPriority::ShardTransfer) {
             collection
-                .clear_local_shard_for_snapshot_recovery(shard_id)
+                .clear_local_shard_for_snapshot_recovery(shard_id, from_peer_id)
                 .await?;
         }
 
@@ -297,6 +297,7 @@ pub async fn recover_shard_snapshot(
             snapshot_data,
             snapshot_priority,
             RecoveryType::Full,
+            from_peer_id,
             Some(recovery_guard.progress_handle()),
             cancel,
         )
@@ -324,6 +325,7 @@ pub async fn recover_shard_snapshot_impl(
     snapshot_data: SnapshotData,
     priority: SnapshotPriority,
     recovery_type: RecoveryType,
+    from_peer_id: Option<PeerId>,
     recovery_progress: Option<RecoveryProgressHandle>,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
@@ -343,6 +345,8 @@ pub async fn recover_shard_snapshot_impl(
             shard,
             snapshot_data,
             recovery_type,
+            matches!(priority, SnapshotPriority::ShardTransfer),
+            from_peer_id,
             toc.this_peer_id,
             toc.is_distributed(),
             // Default temporary path to storage dir, to allow faster recovery within the same volume

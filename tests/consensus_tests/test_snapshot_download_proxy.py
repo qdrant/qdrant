@@ -141,15 +141,16 @@ def test_snapshot_proxy_does_not_forward_cancelled_held_download(snapshot_source
 
 def test_snapshot_proxy_does_not_forward_expired_held_download(snapshot_source):
     url = snapshot_source.uri + "/collections/test/shards/0/snapshot"
-    with PeerProxy("127.0.0.1:1") as proxy, ThreadPoolExecutor() as executor:
-        with proxy.hold_snapshot_download(snapshot_source.uri, "test", 0) as gate, requests.Session() as client:
-            client.trust_env = False
-            # The read timeout starts before gate arrival, so slow CI can expire
-            # it during setup. The disconnect test above controls cancellation.
-            held = executor.submit(client.get, url, proxies={"http": proxy.http_uri}, timeout=1)
-            gate.wait_for_request(TIMEOUT)
-            with pytest.raises(requests.Timeout):
-                held.result(TIMEOUT)
+    with PeerProxy("127.0.0.1:1") as proxy:
+        with proxy.hold_snapshot_download(snapshot_source.uri, "test", 0) as gate:
+            # Start the short read timeout only after the gate is reached so slow
+            # scheduling cannot expire the client before the hold applies.
+            with socket.create_connection(("127.0.0.1", proxy.http_port), timeout=TIMEOUT) as caller:
+                caller.sendall(f"GET {url} HTTP/1.1\r\nHost: ignored\r\n\r\n".encode())
+                gate.wait_for_request(TIMEOUT)
+                caller.settimeout(1)
+                with pytest.raises(socket.timeout):
+                    caller.recv(1)
             assert gate.cancelled.wait(TIMEOUT)
             gate.release()
             with pytest.raises(Empty):
