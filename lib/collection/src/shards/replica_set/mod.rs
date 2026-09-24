@@ -52,7 +52,7 @@ use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
-use crate::shards::shard_trait::WaitUntil;
+use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 
 //    │    Collection Created
 //    │
@@ -615,7 +615,7 @@ impl ShardReplicaSet {
 
     /// Clears the local shard data and loads an empty local shard
     ///
-    /// Removes the shard initializing flag once the empty shard is loaded. The removal happens
+    /// Removes the shard initializing flag after the empty shard is built, before installing it. The removal happens
     /// under the `local` lock, so it never deletes a flag created by a concurrent
     /// [`Self::restore_local_replica_from`] for its own restore.
     ///
@@ -663,15 +663,17 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                local.replace(Shard::Local(local_shard));
-
                 let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
                 match fs_err::tokio::remove_file(&shard_flag).await {
                     Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
                     Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => return Err(err.into()),
+                    Err(err) => {
+                        local_shard.stop_gracefully().await;
+                        return Err(err.into());
+                    }
                 }
 
+                local.replace(Shard::Local(local_shard));
                 Ok(())
             }
             Err(err) => {
