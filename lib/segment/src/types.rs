@@ -2870,6 +2870,20 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
+    /// Apply what the params imply, see [`TextIndexParams::normalized`]. A
+    /// schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
+    pub fn normalized(self) -> Self {
+        match self {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)) => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.normalized()))
+            }
+            schema @ (PayloadFieldSchema::FieldType(_) | PayloadFieldSchema::FieldParams(_)) => {
+                schema
+            }
+        }
+    }
+
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),

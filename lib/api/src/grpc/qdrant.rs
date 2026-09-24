@@ -1590,6 +1590,18 @@ pub struct TextIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "11")]
     pub memory: ::core::option::Option<i32>,
+    /// Enable ranking points by BM25 over this field.
+    /// Implies `phrase_matching: true`. Changing it rebuilds the index.
+    /// Default: disabled.
+    #[prost(message, optional, tag = "12")]
+    pub scoring: ::core::option::Option<TextScoringParams>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TextScoringParams {
+    /// How documents are ranked
+    #[prost(enumeration = "TextScoringType", tag = "1")]
+    pub r#type: i32,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2654,6 +2666,30 @@ impl TokenizerType {
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
             "Multilingual" => Some(Self::Multilingual),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TextScoringType {
+    Bm25 = 0,
+}
+impl TextScoringType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Bm25 => "Bm25",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Bm25" => Some(Self::Bm25),
             _ => None,
         }
     }
