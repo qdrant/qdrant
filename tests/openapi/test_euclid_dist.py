@@ -111,3 +111,63 @@ def test_search_with_threshold(collection_name):
 
     assert response.json()['result']['points'][0]['score'] - 1.0 < 0.0001
     assert response.json()['result']['points'][1]['score'] - 1.414214 < 0.0001
+
+
+def test_binary_quantized_euclid_rescore_false_order(collection_name):
+    drop_collection(collection_name=collection_name)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        body={
+            "vectors": {
+                "size": 2,
+                "distance": "Euclid",
+                "hnsw_config": {"m": 4, "ef_construct": 64},
+            },
+            "quantization_config": {
+                "binary": {"always_ram": True},
+            },
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {"id": 0, "vector": [-0.049468, -1.582220]},
+                {"id": 1, "vector": [-0.205718, -1.302400]},
+                {"id": 2, "vector": [-0.222284, 1.090568]},
+                {"id": 3, "vector": [-0.557575, 0.653279]},
+                {"id": 4, "vector": [0.773439, -0.274751]},
+            ]
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [1.374882, -1.041541],
+            "limit": 5,
+            "params": {
+                "exact": False,
+                "quantization": {"rescore": False},
+            },
+        },
+    )
+    assert response.ok
+
+    points = response.json()["result"]["points"]
+    scores = [p["score"] for p in points]
+    assert all(a <= b + 1e-5 for a, b in zip(scores, scores[1:]))
+
+    drop_collection(collection_name=collection_name)
+
