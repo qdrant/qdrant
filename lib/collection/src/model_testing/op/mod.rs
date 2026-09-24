@@ -258,9 +258,10 @@ pub(super) enum Op {
     /// postings of immutable segments, a proxy counts twice during an optimization), so, like
     /// the vector queries, we check invariants rather than scores: every result is live, passes
     /// the filter and holds a query term; no id repeats; scores never increase; the size is
-    /// bounded by the limit and, when the matches fit in it, is exactly the matches. Then each
-    /// shard alone, where one gather serves every segment: points with the same text score the
-    /// same, whichever segment holds them.
+    /// bounded by the limit and, when the matches fit in a limit the collection does not
+    /// undersample, is exactly the matches. Then each shard alone, where one gather serves every
+    /// segment: points with the same text score the same, whichever segment holds them, and the
+    /// shards together return every match.
     QueryText {
         text: String,
         limit: usize,
