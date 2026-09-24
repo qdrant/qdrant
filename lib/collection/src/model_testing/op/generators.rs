@@ -82,6 +82,28 @@ pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
     URL_PREFIX_PROBES.choose(rng).unwrap()
 }
 
+/// Words a BM25 query over `t` draws from: every word of `TEXTS`, plus one no text holds.
+const TEXT_QUERY_WORDS: [&str; 7] = [
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "omega",
+];
+
+/// A BM25 query over `t`: one to three words, sometimes capitalized, so the shard has to
+/// tokenize it with the field's tokenizer (lowercasing) to match anything.
+pub(super) fn random_text_query(rng: &mut impl Rng) -> String {
+    let words = rng.random_range(1..=3);
+    (0..words)
+        .map(|_| {
+            let word = *TEXT_QUERY_WORDS.choose(rng).unwrap();
+            if rng.random_bool(0.25) {
+                word.to_uppercase()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(super) fn random_num(rng: &mut impl Rng) -> i64 {
     rng.random_range(0..100i64)
 }

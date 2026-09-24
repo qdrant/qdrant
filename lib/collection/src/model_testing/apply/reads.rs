@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use api::rest::RecommendStrategy;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
@@ -10,18 +10,23 @@ use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderV
 use segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::{
-    PointIdType, SearchParams, Slice, VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
+    Payload, PointIdType, ScoredPoint, SearchParams, Slice, VectorNameBuf, WithPayload,
+    WithPayloadInterface, WithVector,
 };
+use serde_json::Value;
 use shard::query::query_enum::QueryEnum;
+use shard::query::text::TextScoringQuery;
 use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use shard::scroll::ScrollRequestInternal;
 
 use super::super::op::{
-    FusionKind, NamedVectors, Prefetch, ScrollFilter, canonical_sparse, dense_diff, dense_matches,
-    has_num, match_has_id_filter, match_has_vector_filter, match_num_and_slice_filter,
-    match_num_filter, match_slice_filter, match_tag_filter, match_url_prefix_filter, num_matches,
-    optional_read_filter, passes_read_filters, tag_matches, url_prefix_matches,
+    FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, canonical_sparse, dense_diff,
+    dense_matches, has_num, match_has_id_filter, match_has_vector_filter,
+    match_num_and_slice_filter, match_num_filter, match_slice_filter, match_tag_filter,
+    match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
+    url_prefix_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -1317,6 +1322,158 @@ pub(super) async fn apply_recommend(
             !excluded.contains(&record.id),
             "recommend({strategy:?}) returned excluded id {:?}",
             record.id,
+        );
+    }
+}
+
+/// Words of a point's `t` as its text index holds them: the lowercased words of a string, or of
+/// each string of an array. Any other value (`SetPayloadByKey` can make `t` an object) holds none.
+fn text_words(payload: &Payload) -> AHashSet<String> {
+    let strings: Vec<&str> = match payload.0.get("t") {
+        Some(Value::String(text)) => vec![text.as_str()],
+        Some(Value::Array(values)) => values.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    strings
+        .into_iter()
+        .flat_map(str::split_whitespace)
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// BM25 over `t` through the query API. See `Op::QueryText` for why these are invariants and
+/// not scores.
+pub(super) async fn apply_query_text(
+    collection: &Collection,
+    model: &Model,
+    text: &str,
+    limit: usize,
+    filter_num: Option<i64>,
+    filter_url_prefix: Option<&str>,
+) {
+    let query_words: AHashSet<String> = text.split_whitespace().map(str::to_lowercase).collect();
+    let matches: AHashMap<PointIdType, &Value> = model
+        .iter()
+        .filter(|(_, entry)| passes_read_filters(&entry.payload, filter_num, filter_url_prefix))
+        .filter(|(_, entry)| !text_words(&entry.payload).is_disjoint(&query_words))
+        .map(|(id, entry)| (*id, &entry.payload.0["t"]))
+        .collect();
+
+    let run = async |shards: ShardSelectorInternal, limit: usize| {
+        collection
+            .query(
+                ShardQueryRequest {
+                    prefetches: vec![],
+                    query: Some(ScoringQuery::Text(TextScoringQuery {
+                        field: "t".parse().unwrap(),
+                        text: text.to_owned(),
+                        params: Bm25Params::default(),
+                    })),
+                    filter: optional_read_filter(filter_num, filter_url_prefix),
+                    score_threshold: None,
+                    limit,
+                    offset: 0,
+                    params: None,
+                    with_vector: WithVector::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false),
+                },
+                None,
+                None,
+                shards,
+                None,
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("text query {text:?} failed: {e:?}"))
+    };
+    let ctx = format!(
+        "text query {text:?} (limit={limit}, filter_num={filter_num:?}, \
+         filter_url_prefix={filter_url_prefix:?})",
+    );
+
+    // Across the collection: every result a live match, ranked best first, and exactly the
+    // matches when they fit in the limit.
+    let points = run(ShardSelectorInternal::All, limit).await;
+    check_ranked_matches(&points, &matches, &ctx);
+    assert!(
+        points.len() <= limit,
+        "{ctx}: {} results over the limit",
+        points.len()
+    );
+    if matches.len() <= limit {
+        assert_eq!(
+            points.len(),
+            matches.len(),
+            "{ctx}: every match fits in the limit, so every match must come back",
+        );
+    }
+
+    // Each shard alone, every match: one gather serves all of the shard's segments, so points
+    // with the same text score the same whichever segment holds them.
+    let shard_count = collection
+        .collection_config
+        .read()
+        .await
+        .params
+        .shard_number
+        .get();
+    let mut from_shards = AHashSet::new();
+    for shard_id in 0..shard_count {
+        let points = run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await;
+        let shard_ctx = format!("{ctx} on shard {shard_id}");
+        check_ranked_matches(&points, &matches, &shard_ctx);
+        let mut score_of_text: HashMap<String, (PointIdType, f32)> = HashMap::new();
+        for point in &points {
+            let text = matches[&point.id].to_string();
+            let (first, score) = *score_of_text
+                .entry(text.clone())
+                .or_insert((point.id, point.score));
+            assert!(
+                (point.score - score).abs() <= 1e-4 * score.abs().max(1.0),
+                "{shard_ctx}: points {first} and {} hold the same text {text} but score {score} \
+                 and {}",
+                point.id,
+                point.score,
+            );
+        }
+        from_shards.extend(points.iter().map(|point| point.id));
+    }
+    if matches.len() <= QUERY_TEXT_ALL {
+        let expected: AHashSet<PointIdType> = matches.keys().copied().collect();
+        assert_eq!(
+            from_shards, expected,
+            "{ctx}: the shards together return every match"
+        );
+    }
+}
+
+/// Every result is a live match and appears once, and scores never increase.
+fn check_ranked_matches(
+    points: &[ScoredPoint],
+    matches: &AHashMap<PointIdType, &Value>,
+    ctx: &str,
+) {
+    let mut seen = AHashSet::with_capacity(points.len());
+    for point in points {
+        assert!(
+            matches.contains_key(&point.id),
+            "{ctx}: point {} is not a live match (deleted, filtered out, or holds no query term)",
+            point.id,
+        );
+        assert!(
+            seen.insert(point.id),
+            "{ctx}: point {} returned twice",
+            point.id
+        );
+    }
+    for pair in points.windows(2) {
+        assert!(
+            pair[0].score >= pair[1].score,
+            "{ctx}: scores increase from point {} ({}) to point {} ({})",
+            pair[0].id,
+            pair[0].score,
+            pair[1].id,
+            pair[1].score,
         );
     }
 }
