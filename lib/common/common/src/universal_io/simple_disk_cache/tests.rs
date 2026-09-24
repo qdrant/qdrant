@@ -1276,6 +1276,10 @@ mod tests_async {
                 fail_on_completion: std::sync::atomic::AtomicBool::new(false),
             })
         }
+
+        async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files_async(prefix_path).await
+        }
     }
 
     impl UniversalRead for AsyncOnlyRemote {

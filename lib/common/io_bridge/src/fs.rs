@@ -29,6 +29,48 @@ impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
         Self { inner, runtime }
     }
+
+    /// Like the async reads, the op rides the [`BridgeRuntime`] rather than
+    /// the caller's executor, so the returned future needs no ambient reactor.
+    /// It spawns on first poll.
+    pub(crate) fn spawn<T, F>(
+        &self,
+        op: F,
+    ) -> impl Future<Output = UioResult<T>> + Send + 'static + use<A, T, F>
+    where
+        T: Send + 'static,
+        F: Future<Output = UioResult<T>> + Send + 'static,
+    {
+        let handle = self.runtime.handle().clone();
+        async move { handle.spawn(uio_trace::Context::current().wrap(op)).await? }
+    }
+}
+
+impl<A: AsyncRead + Clone> BlobFs<A> {
+    /// Traced, latency-logged LIST, not yet bound to any executor.
+    pub(crate) fn list_files_traced(
+        &self,
+        prefix_path: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
+        let request = uio_trace::Request::new(uio_trace::Op::List, prefix_path, 0..0);
+        let inner = self.inner.clone();
+        let prefix_path = prefix_path.to_path_buf();
+        async move {
+            let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+            let start_time = enabled.then(std::time::Instant::now);
+            let result = request.wrap(inner.list_files(&prefix_path)).await;
+            if let Some(start_time) = start_time {
+                log::trace!(
+                    target: crate::LATENCY_LOG_TARGET,
+                    "list_files({}) took {:?} and returned {} files",
+                    prefix_path.display(),
+                    start_time.elapsed(),
+                    result.as_ref().map_or(0, |files| files.len()),
+                );
+            }
+            result
+        }
+    }
 }
 
 impl<A: AsyncWrite + Clone> BlobFs<A> {
@@ -38,7 +80,7 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         bytes: Vec<u8>,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn_write(async move { inner.save(&path, Bytes::from(bytes)).await })
+        self.spawn(async move { inner.save(&path, Bytes::from(bytes)).await })
     }
 
     pub fn remove_async(
@@ -46,21 +88,7 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         path: PathBuf,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn_write(async move { inner.remove(&path).await })
-    }
-
-    /// Like the async reads, the write rides the [`BridgeRuntime`] rather than
-    /// the caller's executor, so the returned future needs no ambient reactor.
-    /// It spawns on first poll.
-    fn spawn_write<F>(
-        &self,
-        op: F,
-    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A, F>
-    where
-        F: Future<Output = UioResult<()>> + Send + 'static,
-    {
-        let handle = self.runtime.handle().clone();
-        async move { handle.spawn(uio_trace::Context::current().wrap(op)).await? }
+        self.spawn(async move { inner.remove(&path).await })
     }
 }
 
@@ -76,22 +104,7 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
     }
 
     fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
-        let start_time = enabled.then(std::time::Instant::now);
-        let result = self.runtime.block_on(
-            uio_trace::Request::new(uio_trace::Op::List, prefix_path, 0..0)
-                .wrap(self.inner.list_files(prefix_path)),
-        );
-        if let Some(start_time) = start_time {
-            log::trace!(
-                target: crate::LATENCY_LOG_TARGET,
-                "list_files({}) took {:?} and returned {} files",
-                prefix_path.display(),
-                start_time.elapsed(),
-                result.as_ref().map_or(0, |files| files.len()),
-            );
-        }
-        result
+        self.runtime.block_on(self.list_files_traced(prefix_path))
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {
