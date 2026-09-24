@@ -129,11 +129,11 @@ pub struct OpenOptions {
 
 impl OpenOptions {
     /// The same options with `writeable` forced on, as
-    /// [`UniversalWriteFileOps::open_append`] opens them: an append handle
+    /// [`UniversalWriteFs::open_append`] opens them: an append handle
     /// mutates the file by definition, so the flag carries no information
     /// there.
     ///
-    /// [`UniversalWriteFileOps::open_append`]: super::UniversalWriteFileOps::open_append
+    /// [`UniversalWriteFs::open_append`]: super::UniversalWriteFs::open_append
     pub fn for_append(self) -> Self {
         let Self {
             writeable: _,

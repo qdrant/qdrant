@@ -127,7 +127,7 @@ impl UniversalReadFs for BlockCacheFs {
     }
 }
 
-// Deliberately no `UniversalWriteFileOps` impl: the block cache is strictly
+// Deliberately no `UniversalWriteFs` impl: the block cache is strictly
 // read-only ([`CachedSlice`] neither writes nor appends, and `open` rejects
 // writeable opens). Mutations go straight to the underlying local
 // filesystem — `MmapFs`/`IoUringFs` over the very same paths.

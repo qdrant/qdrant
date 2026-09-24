@@ -10,7 +10,7 @@ use std::fmt;
 
 pub use append::{UniversalAppend, UniversalAppendFs};
 pub use async_io::{UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync};
-pub use file_ops::{CachedReadFs, UniversalReadFs, UniversalWriteFileOps};
+pub use file_ops::{CachedReadFs, UniversalReadFs, UniversalWriteFs};
 pub use open_extra::OpenExtra;
 pub use pipeline::{OwnedPipeline, ReadPipeline};
 pub use read::UniversalRead;

@@ -21,7 +21,7 @@ use self::error::*;
 use self::pipeline::IoUringPipeline;
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{OpenExtra, UniversalReadFs, UniversalWriteFileOps};
+use super::traits::{OpenExtra, UniversalReadFs, UniversalWriteFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -113,7 +113,7 @@ impl UniversalReadFs for IoUringFs {
     }
 }
 
-impl UniversalWriteFileOps for IoUringFs {
+impl UniversalWriteFs for IoUringFs {
     type AppendFile = IoUringFile;
 
     fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {

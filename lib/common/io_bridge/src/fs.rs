@@ -127,13 +127,13 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
     }
 }
 
-/// Deliberately no [`UniversalWriteFileOps`] impl: the write-capable
+/// Deliberately no [`UniversalWriteFs`] impl: the write-capable
 /// universal-IO filesystem for object stores is
 /// [`CachedBlobFs`](crate::CachedBlobFs), which delegates its mutating file
 /// ops to these inherent methods and hands out
 /// [`CachedBlobFile`](crate::CachedBlobFile) append handles.
 ///
-/// [`UniversalWriteFileOps`]: common::universal_io::UniversalWriteFileOps
+/// [`UniversalWriteFs`]: common::universal_io::UniversalWriteFs
 impl<A: AsyncWrite + Clone> BlobFs<A> {
     pub fn create(&self, path: &Path) -> UioResult<()> {
         self.runtime.block_on(self.inner.create(path))

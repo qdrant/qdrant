@@ -13,7 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFs,
     UserData,
 };
 use gridstore::Gridstore;

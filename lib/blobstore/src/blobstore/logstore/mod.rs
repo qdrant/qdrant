@@ -16,7 +16,7 @@ use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
     OkNotFound as _, Populate, UniversalAppend, UniversalAppendFs, UniversalRead, UniversalReadFs,
-    UniversalWriteFileOps, UserData,
+    UniversalWriteFs, UserData,
 };
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
@@ -124,7 +124,7 @@ where
     /// It should exist already.
     pub(super) fn new<Fs>(fs: &Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let tracker = AppendOnlyTracker::new(fs, &base_path)?;
         let pages = AppendOnlyPages::new(fs, &base_path)?;
@@ -176,7 +176,7 @@ where
         populate: Populate,
     ) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let tracker = AppendOnlyTracker::open_writable(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
@@ -222,7 +222,7 @@ where
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
     }
@@ -243,7 +243,7 @@ where
         hw_counter: HwMetricRefCounter,
     ) -> Result<bool>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         // Validate before buffering anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
@@ -288,7 +288,7 @@ where
     /// Completely wipes the storage, and recreates it in append-only mode.
     pub(super) fn clear<Fs>(&mut self, fs: &Fs) -> Result<()>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         self.is_alive_flush_lock.blocking_mark_dead();
 
@@ -307,7 +307,7 @@ where
     /// storage.
     pub(super) fn wipe<Fs>(self, fs: &Fs) -> Result<()>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S>,
+        Fs: UniversalWriteFs<AppendFile = S>,
     {
         let Self {
             config: _,

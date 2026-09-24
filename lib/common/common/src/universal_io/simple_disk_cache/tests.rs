@@ -16,7 +16,7 @@ use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
     CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
     UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFs,
-    UniversalWrite, UniversalWriteFileOps,
+    UniversalWrite, UniversalWriteFs,
 };
 
 // The disk cache is strictly read-only: mutating it must stay a
@@ -27,7 +27,7 @@ use crate::universal_io::{
 static_assertions::assert_not_impl_any!(
     DiskCache<MmapFile>: UniversalAppend, UniversalFlush, UniversalWrite
 );
-static_assertions::assert_not_impl_any!(DiskCacheFs<MmapFile>: UniversalWriteFileOps);
+static_assertions::assert_not_impl_any!(DiskCacheFs<MmapFile>: UniversalWriteFs);
 
 fn make_test_data(n_bytes: usize) -> Vec<u8> {
     (0..n_bytes).map(|i| (i % 251) as u8).collect()

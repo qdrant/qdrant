@@ -16,7 +16,7 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
     OpenOptions, UioResult, UniversalRead, UniversalReadAsync, UniversalReadFs,
-    UniversalReadFsAsync, UniversalWriteFileOps, UniversalWriteFsAsync,
+    UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync,
 };
 
 impl UniversalReadFsAsync for MmapFs {

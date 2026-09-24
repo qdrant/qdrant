@@ -14,7 +14,7 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::MmapReadPipeline;
-use super::traits::{UniversalReadFs, UniversalWriteFileOps};
+use super::traits::{UniversalReadFs, UniversalWriteFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -51,7 +51,7 @@ impl UniversalReadFs for MmapFs {
     }
 }
 
-impl UniversalWriteFileOps for MmapFs {
+impl UniversalWriteFs for MmapFs {
     type AppendFile = MmapFile;
 
     fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {

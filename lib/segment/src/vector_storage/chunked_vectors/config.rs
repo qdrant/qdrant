@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::universal_io::{
-    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFileOps, read_json_via,
-    read_whole_via,
+    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFs, read_json_via, read_whole_via,
 };
 use serde::{Deserialize, Serialize};
 
@@ -111,7 +110,7 @@ pub(super) fn ensure_config<T, Fs>(
     populate: bool,
 ) -> OperationResult<ChunkedVectorsConfig>
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
 {
     let config_file = config_file(directory);
     match load_config(fs, &config_file) {
@@ -135,7 +134,7 @@ where
 }
 
 fn create_config<T>(
-    fs: &impl UniversalWriteFileOps,
+    fs: &impl UniversalWriteFs,
     config_file: &Path,
     dim: usize,
     populate: bool,

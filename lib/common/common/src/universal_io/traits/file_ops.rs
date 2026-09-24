@@ -15,7 +15,7 @@ use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 /// Constructed once per backend instance from a
 /// [`Self::ContextConfig`] (e.g. a bucket name + credentials for S3, an
 /// `Arc<CacheController>` for the block cache, or `()` for local mmap).
-/// Mutating operations live on the [`UniversalWriteFileOps`] subtrait.
+/// Mutating operations live on the [`UniversalWriteFs`] subtrait.
 ///
 /// Handles are cheap to clone and shareable across threads, e.g. to move
 /// them into background flushers. They own their resources (`'static`), so
@@ -85,7 +85,7 @@ pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
 /// (e.g. `ReadOnlyFs`, the disk caches) implement only the read side, making
 /// the absence of write support a compile-time property instead of a runtime
 /// error.
-pub trait UniversalWriteFileOps: UniversalReadFs {
+pub trait UniversalWriteFs: UniversalReadFs {
     /// File handle type produced by [`Self::open_append`].
     ///
     /// Deliberately not tied to [`UniversalReadFs::File`]: a backend may serve

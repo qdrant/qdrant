@@ -139,7 +139,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
     }
 }
 
-// Deliberately no `UniversalWriteFileOps` impl: the disk cache is strictly
+// Deliberately no `UniversalWriteFs` impl: the disk cache is strictly
 // read-only, at the filesystem level as much as at the file level (see the
 // `assert_not_impl_any!` on `DiskCache`). Mutations — creating, removing and
 // appending to files — go straight to the backing storage, whose handle the

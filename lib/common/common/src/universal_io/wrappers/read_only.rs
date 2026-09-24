@@ -65,7 +65,7 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
     }
 }
 
-// Deliberately no `UniversalWriteFileOps` impl: read-only is a compile-time
+// Deliberately no `UniversalWriteFs` impl: read-only is a compile-time
 // property of this wrapper.
 
 /// Construction context for [`ReadOnlyFs`], forwarding to the inner Fs's

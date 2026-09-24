@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, UioResult,
-    UniversalReadFs, UniversalWriteFileOps,
+    UniversalReadFs, UniversalWriteFs,
 };
 
 use super::CachedBlobFile;
@@ -104,7 +104,7 @@ where
     }
 }
 
-impl<A: AsyncAppend + Clone> UniversalWriteFileOps for CachedBlobFs<A>
+impl<A: AsyncAppend + Clone> UniversalWriteFs for CachedBlobFs<A>
 where
     A::Config: Clone,
 {

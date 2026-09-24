@@ -104,7 +104,7 @@ where
         let status_file = status_file(directory);
         if !fs.exists(&status_file)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
-            //TODO(uio): migrate when UniversalWriteFileOps is available
+            //TODO(uio): migrate when UniversalWriteFs is available
             create_and_ensure_length(&status_file, length)?;
         }
         Ok(status_file)

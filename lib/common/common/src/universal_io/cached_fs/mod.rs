@@ -14,7 +14,7 @@ mod async_io;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFileOps,
+    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
 };
 
 #[derive(Clone, Debug)]
@@ -57,7 +57,7 @@ impl FileInfo {
 /// implementation.
 ///
 /// The write side is a passthrough: writable opens and
-/// [`UniversalWriteFileOps`] forward to the wrapped filesystem and do NOT
+/// [`UniversalWriteFs`] forward to the wrapped filesystem and do NOT
 /// update the snapshot — reads that must observe a post-snapshot mutation
 /// need a fresh [`CachedFs::cache_file_info`].
 ///
@@ -455,9 +455,9 @@ impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
     }
 }
 
-impl<Fs> UniversalWriteFileOps for CachedFs<Fs>
+impl<Fs> UniversalWriteFs for CachedFs<Fs>
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
 {
     type AppendFile = Fs::AppendFile;
 

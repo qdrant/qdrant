@@ -12,7 +12,7 @@ use super::*;
 fn append_grows_regular_file() {
     fn check<Fs>(fs: &Fs, path: &Path)
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
         Fs::File: UniversalAppend,
         Fs::OpenExtra: Default,
     {
@@ -77,7 +77,7 @@ fn mmap_append_requires_writeable() {
 fn write_beyond_eof_still_errors() {
     fn check<Fs>(fs: &Fs, path: &Path)
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
         Fs::File: UniversalAppend + UniversalWrite,
         Fs::OpenExtra: Default,
     {

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::universal_io::{
-    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFileOps as _,
+    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFs as _,
 };
 use futures::stream::{BoxStream, StreamExt as _};
 

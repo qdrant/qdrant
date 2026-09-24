@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 
 use super::appendable_dense_vector_storage::{DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags;
@@ -30,11 +30,7 @@ pub struct UpdateOnlyDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        path: &Path,
-        dim: usize,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, path: &Path, dim: usize) -> OperationResult<Self> {
         Ok(Self {
             deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?,
             vectors: UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?,
@@ -48,7 +44,7 @@ impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
     /// Slots are consecutive from `start_slot`: every point of the batch takes
     /// one, whether or not it has a vector here. `start_slot` must be the slot
     /// this storage ends at, since the vectors are stored positionally.
-    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         start_slot: PointOffsetType,

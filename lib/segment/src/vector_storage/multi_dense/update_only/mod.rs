@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 
 use super::appendable_mmap_multi_dense_vector_storage::{
     DELETED_DIR_PATH, MultivectorMmapOffset, OFFSETS_DIR_PATH, VECTORS_DIR_PATH,
@@ -40,11 +40,7 @@ pub struct UpdateOnlyMultiDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        path: &Path,
-        dim: usize,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, path: &Path, dim: usize) -> OperationResult<Self> {
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?;
         // One offset entry per point, so the "vector" is a single element.
@@ -62,7 +58,7 @@ impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
 
     /// Append one multi-vector per point of a batch, starting at `start_slot`,
     /// and persist them.
-    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         start_slot: PointOffsetType,

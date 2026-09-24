@@ -19,7 +19,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::universal_io::{MmapFile, MmapFs, UniversalWriteFileOps as _};
+use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::turboquant::{TQMode, TQRotation};
