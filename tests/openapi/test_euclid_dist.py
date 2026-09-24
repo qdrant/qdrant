@@ -166,8 +166,12 @@ def test_binary_quantized_euclid_rescore_false_order(collection_name):
     assert response.ok
 
     points = response.json()["result"]["points"]
-    scores = [p["score"] for p in points]
-    assert all(a <= b + 1e-5 for a, b in zip(scores, scores[1:]))
+    assert points[0]["id"] == 4
+    assert abs(points[0]["score"] - 0.0) < 1e-4
+    assert abs(points[1]["score"] - 1.0) < 1e-4
+    assert abs(points[2]["score"] - 1.0) < 1e-4
+    assert abs(points[3]["score"] - 1.4142) < 1e-4
+    assert abs(points[4]["score"] - 1.4142) < 1e-4
 
     drop_collection(collection_name=collection_name)
 
