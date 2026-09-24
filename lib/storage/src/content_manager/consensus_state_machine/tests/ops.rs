@@ -1253,6 +1253,33 @@ fn transfer_start() {
 }
 
 #[test]
+fn transfer_start_rejects_resharding_between_shard_keys() {
+    let mut state = custom_sharding_state();
+    add_peer(&mut state, PEER_ID, Some("1.18.0"));
+    add_peer(&mut state, OTHER_PEER_ID, Some("1.18.0"));
+    add_shard_key(&mut state, "source".into(), &[0]);
+    add_shard_key(&mut state, "target".into(), &[1]);
+    let transfer = ShardTransfer {
+        shard_id: 0,
+        to_shard_id: Some(1),
+        from: PEER_ID,
+        to: OTHER_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::ReshardingStreamRecords),
+        filter: None,
+    };
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(transfer)));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn transfer_start_receiver_initializes_local_shard() {
     let mut state = transfer_state();
     state
