@@ -62,6 +62,7 @@ mod cli;
 mod dry_run;
 mod generate;
 mod parse;
+mod report;
 mod schema;
 
 use std::path::PathBuf;
@@ -79,6 +80,7 @@ use crate::backend::{build_aws_config, build_cached_fs, build_gcs_config};
 use crate::cli::{Backend, Cli};
 use crate::dry_run::dry_run;
 use crate::parse::parse_point_id;
+use crate::report::IoMeter;
 use crate::schema::read_schema;
 
 /// Dry-run against a local shard directory: segments discovered by scanning
@@ -98,10 +100,19 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
     );
 
     let schema = read_schema(&shard, &common::universal_io::MmapFs, &path)?;
+    let meter = IoMeter::new(None);
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
+        apply_run(
+            shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.interactive,
+            &meter,
+        )
     } else {
-        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+        dry_run(&shard, &schema, ids, cli.op_num, cli.seed, &meter)
     }
 }
 
@@ -122,21 +133,31 @@ where
 
     let cached_fs = build_cached_fs::<A>(remote_config, &prefix, &cache_dir)?;
     log::info!("caching segment reads under {}", cache_dir.display());
+    let meter = IoMeter::new(Some(cached_fs.stats()));
 
     let enumerator = ManifestSegmentEnumerator::new(cached_fs.clone(), &prefix);
-    let shard =
+    let shard = meter.measure("open", || {
         UpdateOnlyEdgeShard::<CachedBlobFs<A>>::open(cached_fs.clone(), &prefix, enumerator)
-            .context("failed to open update-only edge shard over object storage")?;
+            .context("failed to open update-only edge shard over object storage")
+    })?;
     log::info!(
         "opened update-only shard with {} segment(s)",
         shard.segments_count()
     );
 
-    let schema = read_schema(&shard, &cached_fs, &prefix)?;
+    let schema = meter.measure("schema", || read_schema(&shard, &cached_fs, &prefix))?;
     if cli.apply {
-        apply_run(shard, &schema, ids, cli.op_num, cli.seed, cli.interactive)
+        apply_run(
+            shard,
+            &schema,
+            ids,
+            cli.op_num,
+            cli.seed,
+            cli.interactive,
+            &meter,
+        )
     } else {
-        dry_run(&shard, &schema, ids, cli.op_num, cli.seed)
+        dry_run(&shard, &schema, ids, cli.op_num, cli.seed, &meter)
     }
 }
 

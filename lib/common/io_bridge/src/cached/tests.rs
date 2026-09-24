@@ -186,6 +186,42 @@ fn rewrite_append_at_offset_zero_creates_the_missing_object() {
     assert_eq!(source.direct_appends.load(Ordering::Relaxed), 0);
 }
 
+/// The combined statistics see both halves of a rewrite append: the prefix
+/// read as a cache fetch and a remote read, the object rebuild as a save.
+#[test]
+fn rewrite_appends_are_counted_as_cache_fetches_and_remote_requests() {
+    use common::uio_trace::Op;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+    let stats = fs.stats();
+    let mut file = fs.open_append("bucket/obj", open_options()).unwrap();
+
+    file.append(0, b"abc".as_slice()).unwrap();
+    let after_create = stats.snapshot();
+    assert_eq!(after_create.cache.started, 0);
+    assert_eq!(after_create.remote.op(Op::Save).completed, 1);
+    assert_eq!(after_create.remote.op(Op::Save).bytes, 3);
+    assert_eq!(after_create.remote.op(Op::Append).started, 0);
+
+    file.append(3, b"de".as_slice()).unwrap();
+    let delta = stats.snapshot().delta_since(&after_create);
+    assert_eq!(delta.cache.completed, 1);
+    assert_eq!(delta.cache.bytes, 3);
+    assert_eq!(delta.remote.op(Op::Read).completed, 1);
+    assert_eq!(delta.remote.op(Op::Read).bytes, 3);
+    assert_eq!(delta.remote.op(Op::Save).completed, 1);
+    assert_eq!(delta.remote.op(Op::Save).bytes, 5);
+    assert_eq!(delta.remote.total().abandoned, 0);
+    assert!(
+        delta
+            .format_compact()
+            .unwrap()
+            .starts_with("cache fetches: ")
+    );
+}
+
 /// A non-zero offset against a missing object is an offset conflict —
 /// the object's length is zero, not unknowable.
 #[test]

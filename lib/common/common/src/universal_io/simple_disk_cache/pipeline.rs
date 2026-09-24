@@ -7,14 +7,15 @@ use std::time::Instant;
 use slab::Slab;
 
 use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
-use super::stats::FetchStats;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{
     DiskCache, DiskCacheRemote, block_aligned_fetch, to_block_range,
 };
-use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData};
+use crate::universal_io::{
+    OpGuard, ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData,
+};
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
@@ -31,7 +32,7 @@ where
 {
     file: &'file DiskCache<R>,
     guard: PlaceholderGuard,
-    fetch: FetchStats,
+    fetch: OpGuard,
 }
 
 impl<'file, R: UniversalRead> RemoteFetch<'file, R> {

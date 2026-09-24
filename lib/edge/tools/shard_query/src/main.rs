@@ -107,14 +107,14 @@ use clap::Parser as _;
 use common::uio_trace;
 use common::universal_io::DiskCache;
 use edge::{EdgeConfig, ReadOnlyEdgeShard};
-use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
+use io_bridge_object_store::{AsyncRead, BlobFile, CachedBlobStats, ObjectStoreSource};
 use io_bridge_uio_grpc::UioGrpcSource;
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
 
 use crate::backend::{build_aws_config, build_cached_fs, build_gcs_config, build_uio_config};
 use crate::cli::{Backend, Cli, ConnectionArgs, ReloadTrigger};
-use crate::report::{print_cache_stats, print_diff};
+use crate::report::{print_diff, print_io_stats};
 use crate::request::PreparedRequest;
 
 /// Open the read-only shard over backend `A` and dispatch the requested command.
@@ -130,7 +130,10 @@ where
     // Segment data — and the segment manifest used for discovery — are read through a disk cache:
     // fetched from object storage once, then served from the local mirror directory afterwards.
     let cached_fs = build_cached_fs::<A>(remote_config, prefix, cache_dir)?;
-    let stats = cached_fs.stats();
+    let stats = CachedBlobStats {
+        cache: cached_fs.stats(),
+        remote: cached_fs.remote_fs().stats(),
+    };
     log::info!("caching segment reads under {}", cache_dir.display());
 
     // Build the request before the open: the shard is opened for exactly this request, so the
@@ -162,18 +165,18 @@ where
             )
         })
         .context("failed to open read-only edge shard over object storage");
-    print_cache_stats("open", &stats.snapshot().delta_since(&before_open));
+    print_io_stats("open", &stats.snapshot().delta_since(&before_open));
     let shard = shard?;
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let before_prepare = stats.snapshot();
     let result = uio_trace::Phase::start("prepare").in_scope(|| request.fill_random_vector(&shard));
-    print_cache_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
+    print_io_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
     result?;
 
     let before_query = stats.snapshot();
     let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
-    print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
+    print_io_stats("query", &stats.snapshot().delta_since(&before_query));
     let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
 
@@ -194,7 +197,7 @@ where
 
         let before_reload = stats.snapshot();
         let result = uio_trace::Phase::start("reload").in_scope(|| shard.live_reload());
-        print_cache_stats("reload", &stats.snapshot().delta_since(&before_reload));
+        print_io_stats("reload", &stats.snapshot().delta_since(&before_reload));
         if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
             log::error!("live_reload failed (will retry on next reload): {err}");
@@ -207,7 +210,7 @@ where
 
         let before_query = stats.snapshot();
         let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
-        print_cache_stats("query", &stats.snapshot().delta_since(&before_query));
+        print_io_stats("query", &stats.snapshot().delta_since(&before_query));
         let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");
         print_diff(&previous, &rows)?;

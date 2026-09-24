@@ -15,7 +15,7 @@ use std::ops::Range;
 pub use config::DiskCacheConfig;
 pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
-pub use stats::{DiskCacheStats, DiskCacheStatsSnapshot};
+pub use stats::DiskCacheStats;
 
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{

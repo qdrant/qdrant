@@ -1378,12 +1378,12 @@ mod tests_async {
             assert!(futures::poll!(&mut future).is_pending());
         }
         let snapshot = stats.snapshot();
-        assert_eq!(snapshot.remote_fetches_started, 2);
-        assert_eq!(snapshot.remote_fetch_errors, 1);
-        assert_eq!(snapshot.remote_fetches_abandoned, 1);
-        assert_eq!(snapshot.remote_fetches_completed, 0);
-        assert_eq!(snapshot.downloaded_bytes, 0);
-        assert!(snapshot.avg_fetch_duration().is_none());
+        assert_eq!(snapshot.started, 2);
+        assert_eq!(snapshot.errors, 1);
+        assert_eq!(snapshot.abandoned, 1);
+        assert_eq!(snapshot.completed, 0);
+        assert_eq!(snapshot.bytes, 0);
+        assert!(snapshot.avg_duration().is_none());
     }
 
     /// A cache miss must fetch through the remote's async read and commit the
@@ -1535,17 +1535,17 @@ mod statistics {
             .unwrap();
         assert_eq!(drain_pipeline(&mut pipeline).len(), 2);
         let cold = observer.snapshot();
-        assert_eq!(cold.remote_fetches_started, 1);
-        assert_eq!(cold.remote_fetches_completed, 1);
-        assert_eq!(cold.fetch_duration_histogram.iter().sum::<u64>(), 1);
-        assert_eq!(cold.downloaded_bytes, 100);
+        assert_eq!(cold.started, 1);
+        assert_eq!(cold.completed, 1);
+        assert_eq!(cold.duration_histogram.iter().sum::<u64>(), 1);
+        assert_eq!(cold.bytes, 100);
         file.read_bytes(BLOCK_SIZE as u64..BLOCK_SIZE as u64 + 1, Random, 1)
             .unwrap();
         file.read_bytes(0..0, Random, 1).unwrap();
         let warm = observer.snapshot().delta_since(&cold);
-        assert_eq!(warm.remote_fetches_started, 0);
-        assert_eq!(warm.fetch_duration_histogram.iter().sum::<u64>(), 0);
-        assert_eq!(warm.downloaded_bytes, 0);
+        assert_eq!(warm.started, 0);
+        assert_eq!(warm.duration_histogram.iter().sum::<u64>(), 0);
+        assert_eq!(warm.bytes, 0);
         drop(pipeline);
         drop(file);
         let second = fs
@@ -1554,11 +1554,8 @@ mod statistics {
         second.read_bytes(0..1, Random, 1).unwrap();
         drop(second);
         drop(fs);
-        assert_eq!(observer.snapshot().remote_fetches_completed, 2);
-        assert_eq!(
-            observer.snapshot().downloaded_bytes,
-            BLOCK_SIZE as u64 + 100
-        );
+        assert_eq!(observer.snapshot().completed, 2);
+        assert_eq!(observer.snapshot().bytes, BLOCK_SIZE as u64 + 100);
     }
 
     #[test]
@@ -1581,10 +1578,10 @@ mod statistics {
             .unwrap();
         drop(prefilled);
         let snapshot = stats.snapshot();
-        assert_eq!(snapshot.remote_fetches_started, 2);
-        assert_eq!(snapshot.remote_fetches_abandoned, 2);
-        assert_eq!(snapshot.remote_fetches_completed, 0);
-        assert_eq!(snapshot.downloaded_bytes, 0);
+        assert_eq!(snapshot.started, 2);
+        assert_eq!(snapshot.abandoned, 2);
+        assert_eq!(snapshot.completed, 0);
+        assert_eq!(snapshot.bytes, 0);
     }
 
     #[test]
@@ -1609,10 +1606,10 @@ mod statistics {
                 scn.data.len() as u64
             };
             let snapshot = stats.snapshot();
-            assert_eq!(snapshot.remote_fetches_started, 1);
-            assert_eq!(snapshot.remote_fetches_completed, 1);
-            assert_eq!(snapshot.downloaded_bytes, expected);
-            assert_eq!(snapshot.remote_fetches_abandoned, 0);
+            assert_eq!(snapshot.started, 1);
+            assert_eq!(snapshot.completed, 1);
+            assert_eq!(snapshot.bytes, expected);
+            assert_eq!(snapshot.abandoned, 0);
         }
     }
 
@@ -1642,10 +1639,10 @@ mod statistics {
                 .await
                 .unwrap();
             let snapshot = stats.snapshot();
-            assert_eq!(snapshot.remote_fetches_started, 1);
-            assert_eq!(snapshot.remote_fetches_completed, 1);
+            assert_eq!(snapshot.started, 1);
+            assert_eq!(snapshot.completed, 1);
             assert_eq!(
-                snapshot.downloaded_bytes,
+                snapshot.bytes,
                 if matches!(populate, Populate::Partial(_) | Populate::No) {
                     100
                 } else {
@@ -1682,9 +1679,9 @@ mod statistics {
         });
         file.live_reload().unwrap();
         let delta = stats.snapshot().delta_since(&before);
-        assert_eq!(delta.remote_fetches_started, 1);
-        assert_eq!(delta.remote_fetches_completed, 1);
-        assert_eq!(delta.downloaded_bytes, 200); // includes the old partial block
+        assert_eq!(delta.started, 1);
+        assert_eq!(delta.completed, 1);
+        assert_eq!(delta.bytes, 200); // includes the old partial block
     }
 
     #[test]
@@ -1730,9 +1727,9 @@ mod statistics {
         handle2.join().unwrap();
 
         let snapshot = observer.snapshot();
-        assert_eq!(snapshot.remote_fetches_started, 1);
-        assert_eq!(snapshot.remote_fetches_completed, 1);
-        assert_eq!(snapshot.remote_fetches_abandoned, 0);
-        assert_eq!(snapshot.downloaded_bytes, BLOCK_SIZE as u64);
+        assert_eq!(snapshot.started, 1);
+        assert_eq!(snapshot.completed, 1);
+        assert_eq!(snapshot.abandoned, 0);
+        assert_eq!(snapshot.bytes, BLOCK_SIZE as u64);
     }
 }

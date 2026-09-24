@@ -1,8 +1,9 @@
-//! Human-readable output: result diffs between live-reloads and disk-cache statistics.
+//! Human-readable output: result diffs between live-reloads and IO statistics.
 
 use std::collections::HashMap;
 
 use anyhow::Result;
+use io_bridge_object_store::CachedBlobStatsSnapshot;
 
 use crate::request::Row;
 
@@ -53,54 +54,9 @@ pub fn print_diff(previous: &[Row], current: &[Row]) -> Result<()> {
     Ok(())
 }
 
-/// Print interval counters to stderr, leaving query result output unchanged.
-pub fn print_cache_stats(phase: &str, stats: &common::universal_io::DiskCacheStatsSnapshot) {
-    let mut fields = Vec::new();
-    for (label, value) in [
-        ("fetches", stats.remote_fetches_started),
-        ("completed", stats.remote_fetches_completed),
-        ("bytes", stats.downloaded_bytes),
-        ("fetch_errors", stats.remote_fetch_errors),
-        ("abandoned", stats.remote_fetches_abandoned),
-    ] {
-        if value != 0 {
-            fields.push(format!("{label}={value}"));
-        }
-    }
-    if let Some(average) = stats
-        .avg_fetch_duration()
-        .filter(|duration| !duration.is_zero())
-    {
-        fields.push(format!("avg={average:.3?}"));
-    }
-    let max_count = stats
-        .fetch_duration_histogram
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(0);
-    if fields.is_empty() && max_count == 0 {
-        return;
-    }
-    eprintln!("Disk cache ({phase}): {}", fields.join(" "));
-    if max_count == 0 {
-        return;
-    }
-    eprintln!("  Fetch latency (ms, upper bounds exclusive):");
-    let bounds = common::universal_io::DiskCacheStatsSnapshot::FETCH_DURATION_BUCKET_BOUNDS;
-    for (i, &count) in stats.fetch_duration_histogram.iter().enumerate() {
-        if count == 0 {
-            continue;
-        }
-        let label = if i == 0 {
-            format!("<{}", bounds[0].as_millis())
-        } else if i == bounds.len() {
-            format!(">={}", bounds[i - 1].as_millis())
-        } else {
-            format!("{}-{}", bounds[i - 1].as_millis(), bounds[i].as_millis())
-        };
-        // Scale to the busiest bucket; keep every non-empty bucket visible.
-        let width = (u128::from(count) * 20).div_ceil(u128::from(max_count)) as usize;
-        eprintln!("  {label:>9} | {:<20} {count}", "#".repeat(width));
+/// Print interval IO counters to stderr, leaving query result output unchanged.
+pub fn print_io_stats(phase: &str, stats: &CachedBlobStatsSnapshot) {
+    if let Some(compact) = stats.format_compact() {
+        eprintln!("IO stats ({phase}):\n{compact}");
     }
 }

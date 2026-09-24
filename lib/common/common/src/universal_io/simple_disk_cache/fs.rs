@@ -129,6 +129,11 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         self.stats.clone()
     }
 
+    /// The remote filesystem missing blocks are fetched from.
+    pub fn remote_fs(&self) -> &R::Fs {
+        &self.remote_fs
+    }
+
     pub(super) fn open_remote(
         &self,
         path: impl AsRef<Path>,

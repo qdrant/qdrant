@@ -19,6 +19,7 @@
 mod async_io;
 mod fs;
 mod pipeline;
+mod stats;
 #[cfg(test)]
 mod tests;
 
@@ -34,6 +35,7 @@ use common::universal_io::{
 };
 pub use fs::{CachedBlobFs, CachedBlobFsContext};
 pub use pipeline::CachedBlobReadPipeline;
+pub use stats::{CachedBlobStats, CachedBlobStatsSnapshot};
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;
@@ -138,7 +140,7 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
         self.check_offset(offset)?;
 
         if offset == 0 {
-            self.save_whole(data)
+            self.remote.save_whole(data)
         } else {
             // The prefix is small by construction (below the direct-append
             // threshold); read it through the cache (served locally once
@@ -147,7 +149,7 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             let mut whole = Vec::with_capacity(prefix.len() + data.len());
             whole.extend_from_slice(&prefix);
             whole.extend_from_slice(&data);
-            self.save_whole(Bytes::from(whole))
+            self.remote.save_whole(Bytes::from(whole))
         }
     }
 
@@ -168,15 +170,6 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             });
         }
         Ok(())
-    }
-
-    /// Whole-object atomic PUT.
-    // TODO: move to an inherent `BlobFile::save_whole` alongside the other
-    // specialized remote ops.
-    fn save_whole(&self, data: Bytes) -> UioResult<()> {
-        self.remote
-            .runtime()
-            .block_on(self.remote.source().save(self.remote.path(), data))
     }
 }
 

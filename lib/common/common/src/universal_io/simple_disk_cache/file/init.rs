@@ -4,10 +4,10 @@ use std::ops::Range;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use super::{DiskCache, FetchStats, State};
+use super::{DiskCache, State};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
-use crate::universal_io::{OwnedPipeline, UioResult};
+use crate::universal_io::{OpGuard, OwnedPipeline, UioResult};
 
 /// A borrowed view of a materialized [`State::Ready`]: the live `remote` handle
 /// paired with its local mmap mirror.
@@ -93,7 +93,7 @@ where
     pub(super) fn init_from_open_prefill(
         &self,
         mut pipeline: OwnedPipeline<R, ()>,
-        fetch: FetchStats,
+        fetch: OpGuard,
     ) -> UioResult<(R, LocalState)> {
         let completion = pipeline.wait()?;
         fetch.complete(completion.as_ref().map_or(0, |(_, bytes)| bytes.len()));
@@ -124,7 +124,7 @@ where
         &self,
         mut pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
-        fetch: FetchStats,
+        fetch: OpGuard,
     ) -> UioResult<(R, LocalState)> {
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
 

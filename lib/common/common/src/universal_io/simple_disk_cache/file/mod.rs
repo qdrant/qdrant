@@ -10,10 +10,12 @@ use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
 use super::local_state::LocalState;
-use super::stats::{DiskCacheStats, FetchStats};
+use super::stats::DiskCacheStats;
 use super::{DiskCacheFs, DiskCacheRemote};
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
-use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
+use crate::universal_io::{
+    OpGuard, OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs,
+};
 
 mod init;
 mod read;
@@ -89,13 +91,13 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     /// `PreferBackground`.
     OpenPrefill {
         pipeline: OwnedPipeline<R, ()>,
-        fetch: FetchStats,
+        fetch: OpGuard,
     },
     /// Open-time partial prefill
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
-        fetch: FetchStats,
+        fetch: OpGuard,
     },
 }
 

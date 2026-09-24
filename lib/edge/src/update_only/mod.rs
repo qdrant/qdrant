@@ -81,6 +81,11 @@ pub struct SegmentConfigInfo {
 }
 
 impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
+    /// The backend the segments are read from and written to, e.g. to inspect its IO statistics.
+    pub fn fs(&self) -> &Fs {
+        &self.fs
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }

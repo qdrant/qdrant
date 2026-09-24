@@ -106,6 +106,7 @@ mod fs;
 mod pipeline;
 mod read;
 mod runtime;
+mod stats;
 mod write;
 
 /// Dedicated log target for the blob-backend latency traces emitted across this
@@ -118,10 +119,14 @@ pub(crate) const LATENCY_LOG_TARGET: &str = "io_bridge::latency";
 #[cfg(test)]
 mod tests;
 
-pub use cached::{CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobReadPipeline};
+pub use cached::{
+    CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobReadPipeline, CachedBlobStats,
+    CachedBlobStatsSnapshot,
+};
 pub use file::BlobFile;
 pub use fs::BlobFs;
 pub use pipeline::BlobReadPipeline;
 pub use read::{AsyncRead, OffsetByteStream, with_running_offsets};
 pub use runtime::BridgeRuntime;
+pub use stats::{RemoteIoStats, RemoteIoStatsSnapshot};
 pub use write::{AppendSupport, AsyncAppend, AsyncWrite};

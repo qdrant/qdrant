@@ -40,7 +40,7 @@ enum Event {
         at_ns: Nanoseconds,
         text: String,
     },
-    /// Single GET request.
+    /// Single remote request.
     /// Created by UIO backend implementations, with [`Request::new`].
     Request {
         parent: u64,
@@ -71,7 +71,7 @@ enum Event {
 }
 
 /// Request operation kind.
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Op {
     List,
@@ -79,6 +79,40 @@ pub enum Op {
     Read,
     ReadFrom,
     Len,
+    Create,
+    Remove,
+    Save,
+    Append,
+}
+
+impl Op {
+    /// Every kind, in discriminant order, so `op as usize` indexes this array.
+    pub const ALL: [Op; 9] = [
+        Op::List,
+        Op::Exists,
+        Op::Read,
+        Op::ReadFrom,
+        Op::Len,
+        Op::Create,
+        Op::Remove,
+        Op::Save,
+        Op::Append,
+    ];
+
+    /// The serialized name, e.g. for labels.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Op::List => "list",
+            Op::Exists => "exists",
+            Op::Read => "read",
+            Op::ReadFrom => "read_from",
+            Op::Len => "len",
+            Op::Create => "create",
+            Op::Remove => "remove",
+            Op::Save => "save",
+            Op::Append => "append",
+        }
+    }
 }
 
 /// Request outcome.
@@ -413,6 +447,14 @@ fn process_cpu_ns() -> Nanoseconds {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn op_all_is_in_discriminant_order() {
+        for (i, op) in Op::ALL.into_iter().enumerate() {
+            assert_eq!(op as usize, i);
+            assert_eq!(serde_json::to_value(op).unwrap(), op.as_str());
+        }
+    }
 
     #[test]
     fn records_nested_spans_from_every_thread() {

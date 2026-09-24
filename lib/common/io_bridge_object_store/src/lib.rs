@@ -42,6 +42,7 @@ pub use backend::BlobBackend;
 // stack can be built from this single crate.
 pub use io_bridge::{
     AsyncAppend, AsyncRead, AsyncWrite, BlobFile, BlobFs, BlobReadPipeline, BridgeRuntime,
-    CachedBlobFile, CachedBlobFs, CachedBlobFsContext,
+    CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobStats, CachedBlobStatsSnapshot,
+    RemoteIoStats, RemoteIoStatsSnapshot,
 };
 pub use source::ObjectStoreSource;
