@@ -10,11 +10,12 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::data_types::index::{TextIndexParams, TextScoringParams};
 use segment::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, MultiVectorConfig,
-    PayloadFieldSchema, PayloadSchemaType, ProductQuantization, ProductQuantizationConfig,
-    QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
-    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
+    PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, ProductQuantization,
+    ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
+    ScalarType, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
 };
 
 use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
@@ -253,13 +254,22 @@ pub(super) async fn fixture(
         ("b", PayloadSchemaType::Bool),
         ("d", PayloadSchemaType::Datetime),
         ("g", PayloadSchemaType::Geo),
-        ("t", PayloadSchemaType::Text),
     ];
-    for (field, schema) in eager_indices {
+    // `t` scores, for `QueryText`: it records document lengths, and scoring turns on the
+    // positions (`phrase_matching`) term frequencies come from.
+    let text_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    }));
+    let eager_schemas = eager_indices
+        .iter()
+        .map(|(field, schema)| (*field, PayloadFieldSchema::FieldType(*schema)))
+        .chain([("t", text_schema)]);
+    for (field, schema) in eager_schemas {
         collection
             .create_payload_index_with_wait(
                 field.parse().unwrap(),
-                PayloadFieldSchema::FieldType(*schema),
+                schema,
                 true,
                 HwMeasurementAcc::new(),
             )
