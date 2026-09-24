@@ -412,6 +412,17 @@ message MmrInternal {
   uint32 candidates_limit = 3;
 }
 
+message TextScoringInternal {
+  // Payload field with a text index
+  string field = 1;
+  // Query text, tokenized on each shard by the field's tokenizer
+  string text = 2;
+  // BM25 term frequency saturation
+  float k1 = 3;
+  // BM25 length normalization
+  float b = 4;
+}
+
 message QueryShardPoints {
   message Query {
     oneof score {
@@ -429,6 +440,8 @@ message QueryShardPoints {
       MmrInternal mmr = 6;
       // Parameterized RRF fusion
       Rrf rrf = 7;
+      // BM25 over the text index of a payload field
+      TextScoringInternal text = 8;
     }
   }
 

@@ -14,4 +14,5 @@ mod shard_transfer_atomicity_test;
 mod snapshot_recovery_test;
 mod sparse_idf_test;
 mod stale_shard_transfer_test;
+mod text_bm25_query_test;
 mod wal_less_snapshot_clocks_test;

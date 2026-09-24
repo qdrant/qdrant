@@ -1,3 +1,4 @@
+use api::conversions::json::json_path_from_proto;
 use api::{grpc, rest};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -6,6 +7,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal,
 };
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DecayKind, ParsedFormula,
 };
@@ -17,6 +19,7 @@ use segment::vector_storage::query::{
 
 use crate::query::formula::*;
 use crate::query::query_enum::*;
+use crate::query::text::TextScoringQuery;
 use crate::query::{
     FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -377,6 +380,16 @@ impl ScoringQuery {
                     candidates_limit: candidates_limit as usize,
                 })
             }
+            grpc::query_shard_points::query::Score::Text(grpc::TextScoringInternal {
+                field,
+                text,
+                k1,
+                b,
+            }) => ScoringQuery::Text(TextScoringQuery {
+                field: json_path_from_proto(&field)?,
+                text,
+                params: Bm25Params { k1, b },
+            }),
         };
 
         Ok(scoring_query)
@@ -411,6 +424,18 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                     vector: Some(grpc::RawVector::from(vector)),
                     lambda: lambda.into_inner(),
                     candidates_limit: candidates_limit as u32,
+                })),
+            },
+            ScoringQuery::Text(TextScoringQuery {
+                field,
+                text,
+                params: Bm25Params { k1, b },
+            }) => Self {
+                score: Some(Score::Text(grpc::TextScoringInternal {
+                    field: field.to_string(),
+                    text,
+                    k1,
+                    b,
                 })),
             },
         }
@@ -967,5 +992,64 @@ mod formula_grpc_roundtrip_tests {
                 ParsedExpression::new_score_id(1),
             ]),
         ]));
+    }
+}
+
+#[cfg(test)]
+mod text_grpc_roundtrip_tests {
+    use segment::json_path::JsonPath;
+
+    use super::*;
+
+    /// A BM25 query reaches a remote shard as `QueryShardPoints`, at the root
+    /// or as a prefetch, and must arrive as it left: field path, raw text and
+    /// both parameters.
+    #[test]
+    fn text_query_survives_grpc_roundtrip() {
+        let text = ScoringQuery::Text(TextScoringQuery {
+            field: JsonPath::new("doc.body"),
+            text: "The quick fox".to_owned(),
+            params: Bm25Params { k1: 0.9, b: 0.4 },
+        });
+        let request = ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(text.clone()),
+                limit: 50,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                k: DEFAULT_RRF_K,
+                weights: None,
+            })),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+        let at_root = ShardQueryRequest {
+            prefetches: Vec::new(),
+            query: Some(text),
+            ..request.clone()
+        };
+
+        // `ShardQueryRequest` has no `PartialEq`; the scoring queries are what
+        // the conversion touches.
+        let queries = |request: &ShardQueryRequest| {
+            let prefetched = request.prefetches.iter().map(|p| p.query.clone());
+            prefetched
+                .chain([request.query.clone()])
+                .collect::<Vec<_>>()
+        };
+        for request in [request, at_root] {
+            let grpc = grpc::QueryShardPoints::from(request.clone());
+            let back = ShardQueryRequest::try_from(grpc).unwrap();
+            assert_eq!(queries(&back), queries(&request));
+        }
     }
 }
