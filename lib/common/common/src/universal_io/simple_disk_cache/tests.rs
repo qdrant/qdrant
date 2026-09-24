@@ -1171,6 +1171,8 @@ mod tests_async {
     use std::ops::Range;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use futures::future::BoxFuture;
+
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
@@ -1279,6 +1281,13 @@ mod tests_async {
                 fail_on_completion: std::sync::atomic::AtomicBool::new(false),
             })
         }
+
+        fn spawn<T: Send + 'static>(
+            &self,
+            fut: BoxFuture<'static, UioResult<T>>,
+        ) -> BoxFuture<'static, UioResult<T>> {
+            self.0.spawn(fut)
+        }
     }
 
     impl UniversalRead for AsyncOnlyRemote {
@@ -1338,6 +1347,10 @@ mod tests_async {
                 return Err(sync_read_error());
             }
             self.inner.read_bytes(range, access_pattern, align)
+        }
+
+        async fn populate_range_async(&self, _range: Range<u64>) -> UioResult<()> {
+            Ok(())
         }
     }
 

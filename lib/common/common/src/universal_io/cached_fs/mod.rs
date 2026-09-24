@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::task::Poll;
 
 use futures::StreamExt;
 use futures::future::BoxFuture;
@@ -244,12 +243,15 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         self.files_prefetched.lock().clear();
     }
 
-    fn schedule_open(
+    fn schedule_open_with<Fut>(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) {
+        then: impl FnOnce(Fs::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Fs::File>> + Send + 'static,
+    {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
@@ -282,17 +284,11 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         // Clone the fs handle so that the future can own it.
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
-        let mut fut =
-            Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
-
-        // Poll once, so that real async work begins right away
-        let scheduled = futures::executor::block_on(async move {
-            match futures::poll!(fut.as_mut()) {
-                Poll::Ready(file) => ScheduledFile::Ready(file),
-                Poll::Pending => ScheduledFile::Future(fut),
-            }
-        });
-        files_prefetched.insert(path.to_path_buf(), scheduled);
+        let fut = self.fs.spawn(Box::pin(async move {
+            let file = fs.open_async(path_owned, open_options, open_extra).await?;
+            then(file).await
+        }));
+        files_prefetched.insert(path.to_path_buf(), ScheduledFile::Future(fut));
     }
 
     // TODO(uio): merge into `schedule_open`? might make it simpler to use
@@ -317,12 +313,6 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 
         // Otherwise schedule normally
         self.schedule_open(path, open_arguments, open_extra)
-    }
-
-    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        self.files_prefetched
-            .lock()
-            .insert(path, ScheduledFile::Future(fut));
     }
 
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {

@@ -10,6 +10,7 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{
     OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync,
 };
+use futures::future::BoxFuture;
 
 use super::CachedBlobFile;
 use super::fs::CachedBlobFs;
@@ -37,6 +38,13 @@ where
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.blob_fs.spawn(fut)
+    }
 }
 
 impl<A: AsyncAppend + Clone> UniversalReadAsync for CachedBlobFile<A>
@@ -50,6 +58,11 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
+    }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.cache.populate_range_async(range)
     }
 }
 

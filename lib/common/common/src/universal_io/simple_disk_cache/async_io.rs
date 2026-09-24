@@ -8,6 +8,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use futures::future::BoxFuture;
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
@@ -102,6 +104,13 @@ where
             extra.known_etag,
         ))
     }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.remote_fs.spawn(fut)
+    }
 }
 
 impl<R> UniversalReadAsync for DiskCache<R>
@@ -150,5 +159,11 @@ where
                 }
             }
         }
+    }
+
+    async fn populate_range_async(&self, range: Range<u64>) -> UioResult<()> {
+        // Fetch will mirror the block locally.
+        _ = self.read_bytes_async(range, Sequential, 1).await?;
+        Ok(())
     }
 }

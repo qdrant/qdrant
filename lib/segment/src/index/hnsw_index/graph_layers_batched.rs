@@ -53,10 +53,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             Default::default(),
         )?;
         let links = GraphLinksFile::open(file, format)?;
-        uio_trace::file_sections(
-            &links_path.to_string_lossy(),
-            links.uio_trace_sections(format),
-        );
+        uio_trace::file_sections(&links_path.to_string_lossy(), links.uio_trace_sections());
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
             links,

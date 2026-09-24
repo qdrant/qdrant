@@ -11,6 +11,8 @@ use std::future::ready;
 use std::ops::Range;
 use std::path::PathBuf;
 
+use futures::future::BoxFuture;
+
 use super::{MmapFile, MmapFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -28,6 +30,13 @@ impl UniversalReadFsAsync for MmapFs {
     ) -> impl Future<Output = UioResult<MmapFile>> + '_ {
         ready(self.open(&path, options, extra))
     }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        Box::pin(ready(futures::executor::block_on(fut)))
+    }
 }
 
 impl UniversalReadAsync for MmapFile {
@@ -38,6 +47,10 @@ impl UniversalReadAsync for MmapFile {
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         ready(self.read_bytes(range, access_pattern, align))
+    }
+
+    fn populate_range_async(&self, _range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        std::future::ready(Ok(()))
     }
 }
 

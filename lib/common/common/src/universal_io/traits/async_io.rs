@@ -1,6 +1,8 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use futures::future::BoxFuture;
+
 use super::{UniversalRead, UniversalReadFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -22,6 +24,11 @@ pub trait UniversalReadAsync: UniversalRead {
         access_pattern: P,
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
+
+    /// Warm the cache for a range of bytes.
+    /// No-op on backends without caching.
+    fn populate_range_async(&self, range: Range<u64>)
+    -> impl Future<Output = UioResult<()>> + Send;
 }
 
 /// Async-capable extension of [`UniversalReadFs`]: filesystems whose opens
@@ -29,11 +36,11 @@ pub trait UniversalReadAsync: UniversalRead {
 /// [`UniversalReadAsync`] for which backends implement the async surface.
 ///
 /// [`CachedFs`](crate::universal_io::CachedFs) requires this of its inner
-/// filesystem: scheduled prefetches are parked `open_async` futures, resolved
-/// either by an awaited barrier
+/// filesystem: scheduled prefetches are `open_async` futures handed to
+/// [`Self::spawn`] and parked until an awaited barrier
 /// ([`CachedFs::resolve_prefetched`](crate::universal_io::CachedFs::resolve_prefetched))
-/// or lazily at consume time.
-pub trait UniversalReadFsAsync: UniversalReadFs {
+/// or consume time.
+pub trait UniversalReadFsAsync: UniversalReadFs<File: UniversalReadAsync> {
     /// Open a file, and populate it asynchronously.
     ///
     /// Must not depend on ambient async context; capture any runtime by value.
@@ -43,6 +50,11 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>>;
 }
 
 /// The async whole-file write surface, mirroring the same operations on

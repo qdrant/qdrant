@@ -13,6 +13,8 @@ use common::uio_trace;
 use common::universal_io::{
     OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
 };
+use futures::future::BoxFuture;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
@@ -28,6 +30,18 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
     ) -> UioResult<BlobFile<A>> {
         // BlobFile does not populate on open.
         self.open(path, options, extra)
+    }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        let task = AbortOnDropHandle::new(
+            self.runtime
+                .handle()
+                .spawn(uio_trace::Context::current().wrap(fut)),
+        );
+        Box::pin(async move { task.await? })
     }
 }
 
@@ -62,5 +76,12 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
             started.elapsed().as_millis()
         );
         Ok(ACow::Owned(buf))
+    }
+
+    fn populate_range_async(
+        &self,
+        _range: Range<u64>,
+    ) -> impl Future<Output = UioResult<()>> + Send {
+        std::future::ready(Ok(()))
     }
 }

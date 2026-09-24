@@ -4,6 +4,8 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use futures::future::BoxFuture;
+
 use super::read_only::{ReadOnly, ReadOnlyFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -19,6 +21,13 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
         debug_assert!(!options.writeable);
         Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
     }
+
+    fn spawn<T: Send + 'static>(
+        &self,
+        fut: BoxFuture<'static, UioResult<T>>,
+    ) -> BoxFuture<'static, UioResult<T>> {
+        self.0.spawn(fut)
+    }
 }
 
 impl<S> UniversalReadAsync for ReadOnly<S>
@@ -33,5 +42,10 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.0.read_bytes_async(range, access_pattern, align)
+    }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.0.populate_range_async(range)
     }
 }
