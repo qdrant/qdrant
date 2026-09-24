@@ -8,8 +8,7 @@ use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::StoredBitmask;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
 };
 
 use super::DiskMappingReader;
@@ -59,7 +58,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         populate: Populate,
     ) -> OperationResult<bool> {
         let i2e_path = i2e_path(segment_path);
-        if !UniversalReadFileOps::exists(fs, &i2e_path)? {
+        if !UniversalReadFs::exists(fs, &i2e_path)? {
             return Ok(false);
         }
 

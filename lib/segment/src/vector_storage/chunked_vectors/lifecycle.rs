@@ -2,8 +2,8 @@ use std::path::Path;
 
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFileOps, UniversalWrite,
-    UniversalWriteFileOps,
+    OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFs, UniversalWrite,
+    UniversalWriteFs,
 };
 
 use super::ChunkedVectors;

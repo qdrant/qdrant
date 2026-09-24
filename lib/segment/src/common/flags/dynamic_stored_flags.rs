@@ -7,9 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    OpenOptions, Populate, StoredStruct, UniversalReadFileOps, UniversalWrite,
-};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalReadFs, UniversalWrite};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -106,7 +104,7 @@ where
         let status_file = status_file(directory);
         if !fs.exists(&status_file)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
-            //TODO(uio): migrate when UniversalWriteFileOps is available
+            //TODO(uio): migrate when UniversalWriteFs is available
             create_and_ensure_length(&status_file, length)?;
         }
         Ok(status_file)

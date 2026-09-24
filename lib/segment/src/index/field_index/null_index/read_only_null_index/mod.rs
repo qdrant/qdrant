@@ -64,7 +64,7 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
     use serde_json::{Value, json};
     use tempfile::TempDir;

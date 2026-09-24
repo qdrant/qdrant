@@ -1166,7 +1166,7 @@ fn test_block_index_preopen() {
     let deleted = empty_deleted();
 
     // Same order as the segment open path: snapshot, then preopen, then open.
-    use common::universal_io::UniversalReadFileOps as _;
+    use common::universal_io::UniversalReadFs as _;
     let fs = RoFs::from_context(Default::default()).unwrap();
     let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
     cached_fs.cache_file_info().unwrap();

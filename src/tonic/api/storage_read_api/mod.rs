@@ -13,7 +13,7 @@ use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     ListedFile, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    UniversalReadFs,
 };
 use futures::Stream;
 use storage::dispatcher::Dispatcher;
@@ -70,7 +70,7 @@ where
         Ok(Response::new(FileExistsResponse { exists }))
     }
 
-    // List files via UniversalReadFileOps::list_files(prefix_path).
+    // List files via UniversalReadFs::list_files(prefix_path).
     // Return paths relative to the shard directory.
     async fn list_files(
         &self,

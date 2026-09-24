@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::UniversalWriteFs;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::tombstone_points_in_stored_mask;
@@ -15,7 +15,7 @@ use crate::types::PointIdType;
 /// immutable format, hence the shared implementation. Needs only reads plus
 /// [`atomic_save`] from the backend, so object stores qualify.
 ///
-/// [`atomic_save`]: UniversalWriteFileOps::atomic_save
+/// [`atomic_save`]: UniversalWriteFs::atomic_save
 pub struct UpdateOnlyDiskIdTracker {
     segment_path: PathBuf,
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
@@ -44,7 +44,7 @@ impl UpdateOnlyDiskIdTracker {
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()>
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
     {
         tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, points)
     }

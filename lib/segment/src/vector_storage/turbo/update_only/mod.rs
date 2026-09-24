@@ -5,7 +5,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -37,7 +37,7 @@ pub struct UpdateOnlyTurboVectorStorage {
 impl UpdateOnlyTurboVectorStorage {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+    pub fn open<Fs: UniversalWriteFs>(
         fs: &Fs,
         path: &Path,
         dim: usize,
@@ -66,7 +66,7 @@ impl UpdateOnlyTurboVectorStorage {
     ///
     /// As in the plain dense storage, a point with no vector here still takes
     /// its slot — holding an encoded zero vector — and is flagged deleted.
-    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         start_slot: PointOffsetType,

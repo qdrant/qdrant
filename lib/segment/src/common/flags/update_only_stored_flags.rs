@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{Populate, UniversalWriteFs};
 
 use super::compact_stored_flags::{COMPACT_FLAGS_FILE, open_or_create_compact_mask};
 use super::mode::FlagsMode;
@@ -37,10 +37,7 @@ impl UpdateOnlyStoredFlags {
     /// marker that they exist at all.
     ///
     /// Errors when the directory holds flags of the dynamic mode.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        directory: &Path,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, directory: &Path) -> OperationResult<Self> {
         if FlagsMode::detect(fs, directory)? == Some(FlagsMode::Dynamic) {
             return Err(OperationError::service_error(format!(
                 "flags in {} are in the dynamic mode, which the update-only writer does not \
@@ -70,7 +67,7 @@ impl UpdateOnlyStoredFlags {
 
     /// Persist the mask in one atomic whole-file write, or write nothing when
     /// it has not effectively changed since it was opened or last flushed.
-    pub fn flush<Fs: UniversalWriteFileOps>(
+    pub fn flush<Fs: UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         hw_counter: &HardwareCounterCell,

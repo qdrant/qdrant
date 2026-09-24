@@ -6,8 +6,7 @@ use common::mmap::AdviceSetting;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWrite,
-    UniversalWriteFileOps,
+    OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, UniversalWriteFs,
 };
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
@@ -36,7 +35,7 @@ pub(super) fn open_or_create_compact_mask<Fs>(
     populate: Populate,
 ) -> OperationResult<MutableStoredBitmask>
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
 {
     fs.create_dir(directory)?;
     let path = directory.join(COMPACT_FLAGS_FILE);

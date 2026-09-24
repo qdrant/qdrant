@@ -6,7 +6,7 @@ use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
-    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFileOps, UserData,
+    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 
 use crate::Result;
@@ -309,7 +309,7 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     /// The directory must exist already.
     pub fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let path = Self::tracker_file_name(dir);
         fs.create(&path, 0)?;
@@ -334,7 +334,7 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     /// start at a whole entry offset.
     pub fn open_writable<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let path = Self::tracker_file_name(dir);
         let mut file = Self::open_file(fs, &path, populate, true)?;
