@@ -432,6 +432,27 @@ impl Settings {
             );
         }
 
+        // The internal API only accepts the read-write keys. With just a
+        // read-only key configured, peers have nothing to authenticate with.
+        let read_only_key_set = !self
+            .service
+            .read_only_api_key
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty();
+        if self.cluster.enabled
+            && self.service.enforce_internal_auth.unwrap_or_default()
+            && all_keys_are_empty
+            && read_only_key_set
+        {
+            log::warn!(
+                "`service.enforce_internal_auth` is enabled with only \
+                 `read_only_api_key` configured. The internal (p2p) gRPC API \
+                 accepts `api_key` or `alt_api_key` only, so peers will not be \
+                 able to reach each other. Configure `api_key`.",
+            );
+        }
+
         //
         // Snapshot storage
         //

@@ -428,7 +428,10 @@ service:
   #
   # jwt_rbac: true
 
-  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
+  # Enforce API key authentication on the internal (p2p) gRPC API.
+  # Only `api_key` and `alt_api_key` are accepted there; the read-only key
+  # and JWT tokens are rejected, since peers joining consensus and moving
+  # shards must hold the read-write key.
   # The regular api_key is always forwarded on internal requests, but the
   # receiving side only verifies it when this flag is enabled. Keep disabled
   # during a rolling upgrade so older peers (that do not attach a key yet)

@@ -264,9 +264,13 @@ pub fn init_internal(
             // explicitly opts in. The API key is still forwarded unconditionally
             // on outgoing internal requests, so the cluster keeps working
             // across a rolling upgrade while `enforce_internal_auth` is false.
+            //
+            // The internal layer accepts read-write keys only: a read-only key
+            // or a JWT must not be able to join consensus or move shards.
             let internal_auth_layer = if settings.service.enforce_internal_auth.unwrap_or_default()
             {
-                AuthKeys::try_create(&settings.service, toc.clone()).map(auth::AuthLayer::new)
+                AuthKeys::try_create(&settings.service, toc.clone())
+                    .map(auth::AuthLayer::new_internal)
             } else {
                 None
             };
