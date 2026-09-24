@@ -1392,7 +1392,10 @@ pub(super) async fn apply_query_text(
     );
 
     // Across the collection: every result a live match, ranked best first, and exactly the
-    // matches when they fit in the limit.
+    // matches when they fit in the limit. Only below the undersampling threshold: from there the
+    // collection splits the limit across shards by an estimate, which can fall short of one
+    // shard's matches on a large id pool. Completeness at those limits is what the per-shard
+    // queries below check, since a query to one shard is never undersampled.
     let points = run(ShardSelectorInternal::All, limit).await;
     check_ranked_matches(&points, &matches, &ctx);
     assert!(
@@ -1400,7 +1403,7 @@ pub(super) async fn apply_query_text(
         "{ctx}: {} results over the limit",
         points.len()
     );
-    if matches.len() <= limit {
+    if matches.len() <= limit && limit < Collection::SHARD_QUERY_SUBSAMPLING_LIMIT {
         assert_eq!(
             points.len(),
             matches.len(),
