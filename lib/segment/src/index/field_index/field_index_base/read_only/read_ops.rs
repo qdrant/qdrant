@@ -2,17 +2,18 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
-use crate::data_types::query_context::TextFieldStats;
+use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::full_text_index::full_text_index_read::{
-    FullTextIndexRead, fill_text_statistics,
+    FullTextIndexRead, fill_text_statistics, score_bm25,
 };
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
@@ -317,6 +318,39 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             | ReadOnlyFieldIndex::UuidMapIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_)
             | ReadOnlyFieldIndex::NullIndex(_) => Ok(false),
+        }
+    }
+
+    fn score_bm25(
+        &self,
+        terms: &[String],
+        context: &TextQueryContext<'_>,
+        params: Bm25Params,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+    ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
+        match self {
+            ReadOnlyFieldIndex::FullTextIndex(index) => score_bm25(
+                index,
+                terms,
+                context,
+                params,
+                accept,
+                limit,
+                context.is_stopped(),
+                &context.hardware_counter(),
+            )
+            .map(Some),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => Ok(None),
         }
     }
 
