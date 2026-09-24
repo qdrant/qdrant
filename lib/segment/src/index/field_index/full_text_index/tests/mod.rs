@@ -657,9 +657,8 @@ fn read_surface_reports_absence_without_scoring() {
     assert_eq!(index.points_count(), 2);
 }
 
-/// The per-segment half of the corpus gather, over an index that does record
-/// lengths. The segment-level path cannot reach this while
-/// `TextIndexParams::scoring()` is a const `false`.
+/// The per-segment half of the corpus gather, over an index that records
+/// lengths.
 #[test]
 fn text_statistics_gather_sums_lengths_and_frequencies() {
     use crate::data_types::query_context::TextFieldStats;
@@ -670,7 +669,12 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     let hw_counter = HardwareCounterCell::new();
     let is_stopped = std::sync::atomic::AtomicBool::new(false);
 
-    let mut stats = TextFieldStats::seeded(["the", "alpha", "absent"].map(str::to_string));
+    let mut stats = TextFieldStats {
+        df: ["the", "alpha", "absent"]
+            .map(|term| (term.to_string(), 0))
+            .into(),
+        ..Default::default()
+    };
     fill_text_statistics(&index, &mut stats, &is_stopped, &hw_counter).unwrap();
 
     assert_eq!(stats.documents, 2);

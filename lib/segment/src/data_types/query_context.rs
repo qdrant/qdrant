@@ -60,18 +60,12 @@ pub struct TextFieldStats {
     /// Documents carrying this field: `N` in the IDF formula.
     pub documents: usize,
 
-    /// Total tokens over those documents, the numerator of `avgdl`.
-    ///
-    /// `None` as soon as one contributing segment does not record document
-    /// lengths: an average over part of the corpus is not the average, and
-    /// silently scoring against one would make a document's rank depend on
-    /// which segments happened to be built with scoring on.
+    /// Total tokens over those documents, the numerator of `avgdl`. `None` as
+    /// soon as one contributing segment does not record document lengths.
     pub total_tokens: Option<u64>,
 }
 
 impl Default for TextFieldStats {
-    /// Nothing seeded and nothing counted, with a total that is still a total:
-    /// `None` is reserved for "some segment could not contribute one".
     fn default() -> Self {
         Self {
             df: HashMap::new(),
@@ -82,17 +76,7 @@ impl Default for TextFieldStats {
 }
 
 impl TextFieldStats {
-    /// Seeded with the query's terms, and nothing counted yet.
-    pub fn seeded(terms: impl IntoIterator<Item = String>) -> Self {
-        Self {
-            df: terms.into_iter().map(|term| (term, 0)).collect(),
-            ..Default::default()
-        }
-    }
-
-    /// Fold in one segment's contribution. `total_tokens` of `None` means that
-    /// segment records no lengths, which poisons the average for the whole
-    /// corpus.
+    /// Fold in one segment's contribution.
     pub fn add_segment(&mut self, documents: usize, total_tokens: Option<u64>) {
         self.documents += documents;
         self.total_tokens = match (self.total_tokens, total_tokens) {
@@ -225,8 +209,7 @@ impl QueryContext {
 
     /// Seed the terms a scored text query needs on `field`, so that every
     /// segment of this shard reports their document frequencies. Terms must
-    /// already be tokenized the way the index tokenizes, see
-    /// `fill_text_statistics`. No corpus filter: nothing can ask for one yet.
+    /// already be tokenized the way the index tokenizes.
     pub fn init_text_stats(
         &mut self,
         field: &PayloadKeyType,
@@ -424,21 +407,16 @@ impl TextQueryContext<'_> {
         self.stats.df.get(term).copied().unwrap_or(0)
     }
 
-    /// `IDF(t)`. A term nothing holds keeps its seeded `df` of zero, the
-    /// largest value the formula produces; it matches no document, so it
-    /// contributes to no score.
-    ///
-    /// Clamped at zero: posting lists keep deleted documents while the
-    /// document count excludes them, so `df` can exceed `N` and the unclamped
-    /// formula would flip the term's sign.
+    /// `IDF(t)`, highest for a term nothing holds. Clamped at zero: posting
+    /// lists keep deleted documents while the document count excludes them,
+    /// so `df` can exceed `N`.
     pub fn idf(&self, term: &str) -> DimWeight {
         let df = self.stats.df.get(term).copied().unwrap_or(0);
         fancy_idf(self.stats.documents as DimWeight, df as DimWeight).max(0.0)
     }
 
-    /// `avgdl`, or `None` when the corpus holds no documents or some segment
-    /// records no lengths. Computed once over the summed totals: an average of
-    /// per-segment averages is a different, wrong number.
+    /// `avgdl` over the summed totals, or `None` when the corpus holds no
+    /// documents or some segment records no lengths.
     pub fn avg_doc_len(&self) -> Option<DimWeight> {
         let total_tokens = self.stats.total_tokens?;
         (self.stats.documents > 0)

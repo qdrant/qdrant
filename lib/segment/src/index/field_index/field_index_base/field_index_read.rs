@@ -73,8 +73,7 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
     /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all. A filling method rather than an `as_full_text()`
-    /// accessor: `FullTextIndexRead` has no by-reference form to return yet.
+    /// a text index at all.
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,

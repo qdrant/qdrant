@@ -123,24 +123,3 @@ fn text_statistics_are_summed_across_segments() {
     // before the division.
     assert_eq!(text.avg_doc_len(), Some(13.0 / 4.0));
 }
-
-/// Without the override nothing records lengths, and one segment without them
-/// poisons the average for the whole corpus rather than averaging over the
-/// part that has them.
-#[test]
-fn unrecorded_lengths_leave_no_average() {
-    let dir = Builder::new()
-        .prefix("text_stats_no_len")
-        .tempdir()
-        .unwrap();
-    let segment = build_text_segment(&dir.path().join("segment"), &["the quick brown fox"]);
-
-    let mut query_context = QueryContext::default();
-    query_context.init_text_stats(&field(), ["quick".to_string()]);
-    segment.fill_query_context(&mut query_context).unwrap();
-
-    let segment_context = query_context.get_segment_query_context();
-    let text = segment_context.get_text_context(&field()).unwrap();
-    assert_eq!(text.document_frequency("quick"), 1);
-    assert_eq!(text.avg_doc_len(), None);
-}

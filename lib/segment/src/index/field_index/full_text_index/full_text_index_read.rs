@@ -36,19 +36,14 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         "seeded terms must already be tokenized",
     );
 
-    // Once up front as well as per term: with no term resolved the loop below
-    // never runs, and the total after it still reads the whole sidecar on disk.
     check_process_stopped(is_stopped)?;
 
-    // The destination slot travels as the callback's user data, so no term has
-    // to be cloned and no second lookup is needed to store the count.
+    // The destination slot travels as user data, so no term is cloned.
     let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
     index.for_each_token_id(
         stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
         hw_counter,
         |df, token_id| {
-            // A term this segment never saw contributes nothing, not zero: the
-            // seeded entry already holds the zero.
             if let Some(token_id) = token_id {
                 counts.push((df, token_id as usize));
             }
@@ -62,8 +57,7 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         }
     }
 
-    // Skipped once the corpus total is already poisoned: on disk this reads the
-    // whole sidecar, and the sum would be discarded.
+    // Skipped once the corpus total is already absent.
     let total_tokens = match stats.total_tokens {
         Some(_) => index.total_tokens(hw_counter)?,
         None => None,
