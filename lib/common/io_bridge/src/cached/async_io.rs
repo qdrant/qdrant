@@ -3,12 +3,13 @@
 //! async impls.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync,
+    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+    UniversalWriteFsAsync,
 };
 
 use super::CachedBlobFile;
@@ -36,6 +37,14 @@ where
         let remote = self.blob_fs.open_async(path, options, ()).await?;
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
+    }
+
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
+        // The remote is the source of truth; mirrors are ephemeral.
+        self.blob_fs.list_files_async(prefix_path)
     }
 }
 
