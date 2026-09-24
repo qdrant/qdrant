@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
-use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
 use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
@@ -17,11 +16,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
+use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-use crate::shards::{shard_initializing_flag_path, transfer};
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -385,7 +384,7 @@ impl Collection {
             //    proposed as a WAL-delta transfer fallback (never resharding), and the
             //    fallback method fully re-populates the destination.
             if is_receiver {
-                dest_replica_set.init_empty_local_shard().await?;
+                dest_replica_set.init_empty_local_shard(&self.path).await?;
             }
 
             // 5. All peers: set the destination replica to the new method's
@@ -762,16 +761,9 @@ impl Collection {
                     "Initiating transfer to dummy shard {}. Initializing empty local shard first",
                     replica_set.shard_id,
                 );
-                replica_set.init_empty_local_shard().await?;
-
-                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
-
-                if tokio_fs::try_exists(&shard_flag).await.is_ok() {
-                    // We can delete initializing flag without waiting for transfer to finish
-                    // because if transfer fails in between, Qdrant will retry it.
-                    tokio_fs::remove_file(&shard_flag).await?;
-                    log::debug!("Removed shard initializing flag {shard_flag:?}");
-                }
+                // Also removes the initializing flag. We can do this without waiting for the
+                // transfer to finish, because if the transfer fails in between, Qdrant will retry it.
+                replica_set.init_empty_local_shard(&collection_path).await?;
             }
 
             Ok(())
