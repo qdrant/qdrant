@@ -559,8 +559,7 @@ fn test_special_check_condition_match_text_any() {
 }
 
 /// An mmap index over two documents: point 0 has 3 tokens, point 1 has 7 with
-/// repeats. With `TextIndexParams::scoring()` still a const `false`, the
-/// explicit builder parameter is the only way to reach a recording index.
+/// repeats, recording lengths as `scoring` says.
 fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
     let hw_counter = HardwareCounterCell::new();
     let config = TextIndexParams {
@@ -617,6 +616,47 @@ fn mmap_builder_records_doc_len() {
         Some([3, 7].as_slice()),
         "lengths must survive the mmap build path, counting repeats",
     );
+}
+
+/// `new_mmap` under scoring reports an index without a length sidecar absent,
+/// so the caller rebuilds it from payload, and opens one with the sidecar.
+/// Without scoring, both open.
+#[test]
+fn new_mmap_without_lengths_is_absent_under_scoring() {
+    use crate::data_types::index::TextScoringParams;
+    use crate::types::Memory;
+
+    let config = |scoring: bool| TextIndexParams {
+        tokenizer: TokenizerType::Whitespace,
+        lowercase: Some(true),
+        phrase_matching: Some(false),
+        scoring: scoring.then(TextScoringParams::default),
+        ..TextIndexParams::default()
+    };
+    let deleted = BitVec::new();
+    let open = |path: &std::path::Path, scoring: bool| {
+        FullTextIndex::new_mmap(path.to_path_buf(), config(scoring), Memory::Cold, &deleted)
+            .unwrap()
+    };
+
+    let without = Builder::new().prefix("mmap_no_lengths").tempdir().unwrap();
+    drop(two_document_mmap_index(without.path().to_path_buf(), false));
+    assert!(
+        open(without.path(), false).is_some(),
+        "opens without scoring"
+    );
+    assert!(
+        open(without.path(), true).is_none(),
+        "no sidecar under scoring must read as absent",
+    );
+
+    let with = Builder::new().prefix("mmap_lengths").tempdir().unwrap();
+    drop(two_document_mmap_index(with.path().to_path_buf(), true));
+    assert!(
+        open(with.path(), true).is_some(),
+        "the sidecar serves scoring"
+    );
+    assert!(open(with.path(), false).is_some(), "and opens without it");
 }
 
 /// Every answer of [`FullTextIndexRead::doc_len_batch`], in `point_ids` order.

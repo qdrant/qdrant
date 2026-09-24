@@ -10,7 +10,7 @@ use serde_json::Value;
 use tempfile::{Builder, TempDir};
 
 use crate::common::operation_error::OperationResult;
-use crate::data_types::index::TextIndexParams;
+use crate::data_types::index::{TextIndexParams, TextScoringParams};
 use crate::fixtures::payload_fixtures::random_full_text_payload;
 use crate::index::field_index::field_index_base::{PayloadFieldIndex, PayloadFieldIndexRead};
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
@@ -122,8 +122,11 @@ fn reopen_index(
     phrase_matching: bool,
     num_points: usize,
 ) -> FullTextIndex {
+    // The builders record lengths, so the reopen asks for them too: without
+    // `scoring` the gridstore reopen would record none.
     let config = TextIndexParams {
         phrase_matching: Some(phrase_matching),
+        scoring: Some(TextScoringParams::default()),
         ..TextIndexParams::default()
     };
 
@@ -333,10 +336,8 @@ fn test_congruence(
         }
 
         // Every shape answers the same length for every point, deleted ones
-        // included, and the same total. Only before a reopen: the production
-        // constructors read the scoring const, so the gridstore reopen records
-        // nothing while the mmap reopen still finds its sidecar.
-        if !reopen {
+        // included, and the same total, before and after a reopen.
+        {
             let total_a = index_a.total_tokens(&hw_counter).unwrap();
             assert!(total_a.is_some(), "{type_a:?} recorded no lengths");
             assert_eq!(total_a, index_b.total_tokens(&hw_counter).unwrap());
