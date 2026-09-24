@@ -1,3 +1,4 @@
+pub mod bm25;
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
 pub(super) mod mutable_inverted_index;
@@ -9,9 +10,11 @@ mod postings_iterator;
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
+use bm25::Bm25Query;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
@@ -232,6 +235,18 @@ pub trait InvertedIndex {
         token_id: TokenId,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>>;
+
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. Term frequencies come from positions, so an
+    /// index built without them cannot score and reports an error.
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     fn estimate_cardinality(
         &self,
