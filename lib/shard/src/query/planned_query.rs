@@ -6,6 +6,7 @@ use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
 use super::query_enum::QueryEnum;
 use super::scroll::{QueryScrollRequestInternal, ScrollOrder};
+use super::text::TextSearchRequestInternal;
 use super::*;
 use crate::search::CoreSearchRequest;
 
@@ -26,6 +27,9 @@ pub struct PlannedQuery {
 
     /// All the leaf scrolls
     pub scrolls: Vec<QueryScrollRequestInternal>,
+
+    /// All the leaf BM25 queries
+    pub texts: Vec<TextSearchRequestInternal>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,6 +58,9 @@ pub enum Source {
 
     /// A reference offset into the scrolls list
     ScrollsIdx(usize),
+
+    /// A reference offset into the BM25 queries list
+    TextsIdx(usize),
 
     /// A nested prefetch
     Prefetch(Box<MergePlan>),
@@ -139,7 +146,8 @@ impl PlannedQuery {
             | Some(ScoringQuery::Fusion(_))
             | Some(ScoringQuery::OrderBy(_))
             | Some(ScoringQuery::Formula(_))
-            | Some(ScoringQuery::Sample(_)) => with_vector,
+            | Some(ScoringQuery::Sample(_))
+            | Some(ScoringQuery::Text(_)) => with_vector,
             Some(ScoringQuery::Mmr(mmr)) => with_vector.merge(&WithVector::from(mmr.using.clone())),
         };
 
@@ -189,6 +197,7 @@ impl PlannedQuery {
             Some(ScoringQuery::OrderBy(_)) => None,
             Some(ScoringQuery::Formula(_)) => None,
             Some(ScoringQuery::Sample(_)) => None,
+            Some(ScoringQuery::Text(_)) => None,
             Some(ScoringQuery::Mmr(_)) => Some(RescoreStages::collection_level(RescoreParams {
                 rescore: query.clone().unwrap(),
                 limit,
@@ -207,7 +216,8 @@ impl PlannedQuery {
             Some(ScoringQuery::Vector(_))
             | Some(ScoringQuery::Fusion(_))
             | Some(ScoringQuery::Formula(_))
-            | Some(ScoringQuery::Mmr(_)) => false,
+            | Some(ScoringQuery::Mmr(_))
+            | Some(ScoringQuery::Text(_)) => false,
         };
         let requested = (with_vector, with_payload);
         let nothing = (WithVector::from(false), WithPayloadInterface::from(false));
@@ -221,6 +231,7 @@ impl PlannedQuery {
         let sources = vec![leaf_source_from_scoring_query(
             &mut self.searches,
             &mut self.scrolls,
+            &mut self.texts,
             query,
             limit,
             params,
@@ -255,8 +266,13 @@ impl PlannedQuery {
             OperationError::validation_error("cannot have prefetches without a query".to_string())
         })?;
 
-        let sources =
-            recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
+        let sources = recurse_prefetches(
+            &mut self.searches,
+            &mut self.scrolls,
+            &mut self.texts,
+            prefetches,
+            &filter,
+        )?;
 
         let rescore_stages = match rescoring_query {
             ScoringQuery::Mmr(mmr) => {
@@ -290,10 +306,12 @@ impl PlannedQuery {
                     collection_level: Some(collection_level),
                 })
             }
+            // `Text` is refused by the merge plan's validation.
             rescore @ (ScoringQuery::Vector(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_)) => Some(RescoreStages::shard_level(RescoreParams {
+            | ScoringQuery::Sample(_)
+            | ScoringQuery::Text(_)) => Some(RescoreStages::shard_level(RescoreParams {
                 rescore,
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
@@ -328,6 +346,7 @@ impl PlannedQuery {
 fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
+    texts: &mut Vec<TextSearchRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
     propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
 ) -> OperationResult<Vec<Source>> {
@@ -351,6 +370,7 @@ fn recurse_prefetches(
             leaf_source_from_scoring_query(
                 core_searches,
                 scrolls,
+                texts,
                 query,
                 limit,
                 params,
@@ -361,7 +381,8 @@ fn recurse_prefetches(
             )?
         } else {
             // This has nested prefetches. Recurse into them
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, &filter)?;
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, texts, prefetches, &filter)?;
 
             let rescore = query.ok_or_else(|| {
                 OperationError::validation_error(
@@ -392,11 +413,12 @@ fn recurse_prefetches(
 /// Crafts a "leaf source" from a scoring query. This means that the scoring query
 /// does not act over prefetched points and will be executed over the segments directly.
 ///
-/// Only `Source::SearchesIdx` or `Source::ScrollsIdx` variants are returned.
+/// Only `Source::SearchesIdx`, `Source::ScrollsIdx` or `Source::TextsIdx` variants are returned.
 #[expect(clippy::too_many_arguments)]
 fn leaf_source_from_scoring_query(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
+    texts: &mut Vec<TextSearchRequestInternal>,
     query: Option<ScoringQuery>,
     limit: usize,
     params: Option<SearchParams>,
@@ -484,6 +506,21 @@ fn leaf_source_from_scoring_query(
             core_searches.push(core_search);
 
             Source::SearchesIdx(idx)
+        }
+        Some(ScoringQuery::Text(query)) => {
+            let text = TextSearchRequestInternal {
+                query,
+                filter,
+                limit,
+                score_threshold,
+                with_vector,
+                with_payload,
+            };
+
+            let idx = texts.len();
+            texts.push(text);
+
+            Source::TextsIdx(idx)
         }
         None => {
             let scroll = QueryScrollRequestInternal {
