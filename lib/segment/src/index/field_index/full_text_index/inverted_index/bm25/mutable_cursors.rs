@@ -1,21 +1,58 @@
 use common::types::PointOffsetType;
+use roaring::RoaringBitmap;
 
 use super::super::posting_list::PostingList as MutablePostingList;
 use super::super::{Document, TokenId};
 use super::{Bm25Term, TermCursors};
 
-/// A forward cursor over a mutable posting list.
-struct BitmapCursor<'a> {
+/// A forward cursor over one mutable posting list.
+struct MutableCursor<'a> {
     iter: roaring::bitmap::Iter<'a>,
     current: Option<PointOffsetType>,
+    /// Set when the list keeps frequencies.
+    frequencies: Option<FrequencyLookup<'a>>,
 }
 
-/// Cursors over the mutable index. Its postings are plain id sets, so a term's
+/// Where a cursor's current id sits in its list's frequencies.
+struct FrequencyLookup<'a> {
+    /// The list's ids, only to rank an id a seek landed on.
+    ids: &'a RoaringBitmap,
+    values: &'a [u32],
+    /// The index of the cursor's current id in `values`, once known: a seek
+    /// loses it, and only a read of the frequency pays the rank to find it.
+    at: Option<usize>,
+}
+
+impl MutableCursor<'_> {
+    fn advance(&mut self) {
+        self.current = self.iter.next();
+        if let Some(lookup) = self.frequencies.as_mut() {
+            lookup.at = lookup.at.map(|at| at + 1);
+        }
+    }
+
+    fn seek(&mut self, target: PointOffsetType) -> Option<PointOffsetType> {
+        if self.current.is_some_and(|current| current >= target) {
+            return self.current;
+        }
+        self.iter.advance_to(target);
+        self.current = self.iter.next();
+        if let Some(lookup) = self.frequencies.as_mut() {
+            lookup.at = None;
+        }
+        self.current
+    }
+}
+
+/// Cursors over the mutable index.
+///
+/// With frequencies stored, tf is read next to the posting and this is the same
+/// shape as [`PositionalCursors`](super::PositionalCursors). With ids only, the
 /// frequency comes from the document itself: the first time a candidate is
 /// asked about, its ordered token ids are scanned once and every query term's
 /// count is kept, so the scan is paid per document rather than per term.
 pub struct MutableCursors<'a> {
-    cursors: Vec<Option<BitmapCursor<'a>>>,
+    cursors: Vec<Option<MutableCursor<'a>>>,
     documents: &'a [Option<Document>],
     /// `(token id, term index)` sorted by token id, for the scan.
     tokens: Vec<(TokenId, usize)>,
@@ -25,7 +62,7 @@ pub struct MutableCursors<'a> {
 
 impl<'a> MutableCursors<'a> {
     /// One posting list per query term, `None` for a term without one, plus the
-    /// documents the frequencies are counted from.
+    /// documents the frequencies are counted from when the postings carry none.
     pub fn new(
         postings: Vec<Option<&'a MutablePostingList>>,
         documents: &'a [Option<Document>],
@@ -35,9 +72,22 @@ impl<'a> MutableCursors<'a> {
         let cursors = postings
             .into_iter()
             .map(|posting| {
-                let mut iter = posting?.iter();
-                let current = Some(iter.next()?);
-                Some(BitmapCursor { iter, current })
+                let posting = posting?;
+                if posting.is_empty() {
+                    return None;
+                }
+                let mut iter = posting.iter();
+                let current = iter.next();
+                let frequencies = posting.frequencies().map(|values| FrequencyLookup {
+                    ids: posting.ids(),
+                    values,
+                    at: Some(0),
+                });
+                Some(MutableCursor {
+                    iter,
+                    current,
+                    frequencies,
+                })
             })
             .collect();
         let mut tokens: Vec<(TokenId, usize)> = terms
@@ -63,7 +113,7 @@ impl TermCursors for MutableCursors<'_> {
 
     fn advance(&mut self, term: usize) {
         if let Some(cursor) = self.cursors[term].as_mut() {
-            cursor.current = cursor.iter.next();
+            cursor.advance();
             if cursor.current.is_none() {
                 self.cursors[term] = None;
             }
@@ -72,18 +122,23 @@ impl TermCursors for MutableCursors<'_> {
 
     fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {
         let cursor = self.cursors[term].as_mut()?;
-        if cursor.current.is_some_and(|current| current >= target) {
-            return cursor.current;
-        }
-        cursor.iter.advance_to(target);
-        cursor.current = cursor.iter.next();
-        if cursor.current.is_none() {
+        let found = cursor.seek(target);
+        if found.is_none() {
             self.cursors[term] = None;
         }
-        cursor_current(&self.cursors[term])
+        found
     }
 
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32 {
+        if let Some(cursor) = self.cursors[term].as_mut()
+            && let Some(lookup) = cursor.frequencies.as_mut()
+        {
+            debug_assert_eq!(cursor.current, Some(doc));
+            let at = *lookup
+                .at
+                .get_or_insert_with(|| lookup.ids.rank(doc) as usize - 1);
+            return lookup.values[at];
+        }
         if self.cached_doc != Some(doc) {
             self.cached_tf.fill(0);
             let document = self.documents[doc as usize]
@@ -98,8 +153,4 @@ impl TermCursors for MutableCursors<'_> {
         }
         self.cached_tf[term]
     }
-}
-
-fn cursor_current(cursor: &Option<BitmapCursor<'_>>) -> Option<PointOffsetType> {
-    cursor.as_ref()?.current
 }
