@@ -3,7 +3,8 @@
 //! and the same queries by construction rather than by copied constants.
 //!
 //! Users: `lib/collection/benches/bm25_sparse_bench.rs` (the sparse route at
-//! shard level).
+//! shard level) and `lib/segment/tests/integration/bm25_compare.rs` (both
+//! routes at segment level).
 
 use std::collections::{HashMap, HashSet};
 
