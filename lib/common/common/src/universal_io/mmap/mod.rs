@@ -14,7 +14,7 @@ use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
 use self::pipeline::MmapReadPipeline;
-use super::traits::{UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
+use super::traits::{UniversalReadFs, UniversalWriteFileOps};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -24,7 +24,9 @@ use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MmapFs;
 
-impl UniversalReadFileOps for MmapFs {
+impl UniversalReadFs for MmapFs {
+    type File = MmapFile;
+    type OpenExtra = ();
     type ContextConfig = ();
 
     fn from_context(_: ()) -> UioResult<Self> {
@@ -37,6 +39,15 @@ impl UniversalReadFileOps for MmapFs {
 
     fn exists(&self, path: &Path) -> UioResult<bool> {
         fs_err::exists(path).map_err(UniversalIoError::from)
+    }
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        _extra: (),
+    ) -> UioResult<MmapFile> {
+        MmapFile::open_inner(path, options)
     }
 }
 
@@ -67,20 +78,6 @@ impl UniversalWriteFileOps for MmapFs {
     /// appends through a dedicated `O_APPEND` fd of its own.
     fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<MmapFile> {
         MmapFile::open_inner(path, options.for_append())
-    }
-}
-
-impl UniversalReadFs for MmapFs {
-    type File = MmapFile;
-    type OpenExtra = ();
-
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        _extra: (),
-    ) -> UioResult<MmapFile> {
-        MmapFile::open_inner(path, options)
     }
 }
 

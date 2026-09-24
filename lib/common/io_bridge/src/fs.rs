@@ -2,9 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use common::uio_trace;
-use common::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
-};
+use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
 use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 
@@ -66,7 +64,9 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
     }
 }
 
-impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
+impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
+    type File = BlobFile<A>;
+    type OpenExtra = ();
     type ContextConfig = A::Config;
 
     fn from_context(config: Self::ContextConfig) -> UioResult<Self> {
@@ -111,6 +111,20 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         }
         result
     }
+
+    /// Open a per-object handle. Blob handles have no other open-time knobs:
+    /// of [`OpenOptions`], only `writeable` is honored (it gates appends).
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        _extra: (),
+    ) -> UioResult<BlobFile<A>> {
+        Ok(
+            BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
+                .with_writeable(options.writeable),
+        )
+    }
 }
 
 /// Deliberately no [`UniversalWriteFileOps`] impl: the write-capable
@@ -133,24 +147,5 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
     pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
         self.runtime
             .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
-    }
-}
-
-impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
-    type File = BlobFile<A>;
-    type OpenExtra = ();
-
-    /// Open a per-object handle. Blob handles have no other open-time knobs:
-    /// of [`OpenOptions`], only `writeable` is honored (it gates appends).
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        _extra: (),
-    ) -> UioResult<BlobFile<A>> {
-        Ok(
-            BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
-                .with_writeable(options.writeable),
-        )
     }
 }

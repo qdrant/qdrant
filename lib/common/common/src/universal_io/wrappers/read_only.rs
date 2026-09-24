@@ -9,7 +9,6 @@ use super::WrappedReadPipeline;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::cached_fs::FileInfo;
-use crate::universal_io::traits::UniversalReadFileOps;
 use crate::universal_io::{
     Item, ListedFile, OpenOptions, ReadBytesItem, ReadRange, UioResult, UniversalIoError,
     UniversalKind, UniversalRead, UniversalReadFs, UserData,
@@ -38,7 +37,9 @@ impl<F: fmt::Debug> fmt::Debug for ReadOnlyFs<F> {
     }
 }
 
-impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
+impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
+    type File = ReadOnly<F::File>;
+    type OpenExtra = F::OpenExtra;
     type ContextConfig = ReadOnlyConfigContext<F::ContextConfig>;
 
     fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
@@ -53,14 +54,6 @@ impl<F: UniversalReadFileOps> UniversalReadFileOps for ReadOnlyFs<F> {
         self.0.exists(path)
     }
 
-    // Deliberately no `UniversalWriteFileOps` impl: read-only is a
-    // compile-time property of this wrapper.
-}
-
-impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
-    type File = ReadOnly<F::File>;
-    type OpenExtra = F::OpenExtra;
-
     fn open(
         &self,
         path: impl AsRef<Path>,
@@ -71,6 +64,9 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         Ok(ReadOnly(self.0.open(path, options, extra)?))
     }
 }
+
+// Deliberately no `UniversalWriteFileOps` impl: read-only is a compile-time
+// property of this wrapper.
 
 /// Construction context for [`ReadOnlyFs`], forwarding to the inner Fs's
 /// context.

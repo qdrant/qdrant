@@ -15,8 +15,8 @@ use crate::mmap::AdviceSetting;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
     CachedFs, CachedReadFs, MmapFile, OpenOptions, Populate, ReadPipeline, ReadRange,
-    UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    UniversalAppend, UniversalFlush, UniversalIoError, UniversalRead, UniversalReadFs,
+    UniversalWrite, UniversalWriteFileOps,
 };
 
 // The disk cache is strictly read-only: mutating it must stay a
@@ -71,7 +71,7 @@ impl Scenario {
     fn fs<R>(&self) -> DiskCacheFs<R>
     where
         R: DiskCacheRemote,
-        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+        <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
         DiskCacheFs::<R>::from_context(DiskCacheFsContext {
             config: self.config.clone(),
@@ -83,7 +83,7 @@ impl Scenario {
     fn open<R>(&self, prefill: bool) -> DiskCache<R>
     where
         R: DiskCacheRemote,
-        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+        <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
         let populate = if prefill {
             Populate::PreferBackground
@@ -110,7 +110,7 @@ impl Scenario {
     fn open_partial<R>(&self, range: std::ops::Range<u64>) -> DiskCache<R>
     where
         R: DiskCacheRemote,
-        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+        <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
         let fs = DiskCacheFs::<R>::from_context(DiskCacheFsContext {
             config: self.config.clone(),
@@ -141,7 +141,7 @@ impl Scenario {
     fn snapshot_file_info<R>(&self) -> impl Fn(&Path) -> Option<FileInfo>
     where
         R: DiskCacheRemote,
-        <R::Fs as UniversalReadFileOps>::ContextConfig: Default,
+        <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
         let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
         cached_fs.cache_file_info().unwrap();
@@ -1232,7 +1232,9 @@ mod tests_async {
     #[derive(Debug, Clone)]
     struct AsyncOnlyFs(MmapFs);
 
-    impl UniversalReadFileOps for AsyncOnlyFs {
+    impl UniversalReadFs for AsyncOnlyFs {
+        type File = AsyncOnlyRemote;
+        type OpenExtra = ();
         type ContextConfig = ();
 
         fn from_context(ctx: ()) -> UioResult<Self> {
@@ -1246,11 +1248,6 @@ mod tests_async {
         fn exists(&self, path: &Path) -> UioResult<bool> {
             self.0.exists(path)
         }
-    }
-
-    impl UniversalReadFs for AsyncOnlyFs {
-        type File = AsyncOnlyRemote;
-        type OpenExtra = ();
 
         fn open(
             &self,

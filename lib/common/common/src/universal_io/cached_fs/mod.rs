@@ -14,7 +14,7 @@ mod async_io;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFileOps, UniversalReadFs, UniversalReadFsAsync, UniversalWriteFileOps,
+    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFileOps,
 };
 
 #[derive(Clone, Debug)]
@@ -359,7 +359,12 @@ pub struct CachedReadFsContext<C> {
     pub prefix_path: PathBuf,
 }
 
-impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
+impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
+    /// The *wrapped* backend's file type: opening through the cache hands
+    /// out the very handles the inner filesystem produced (prefetched or
+    /// fallback-opened), so the wrapper never appears in stored types.
+    type File = Fs::File;
+    type OpenExtra = Fs::OpenExtra;
     type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
@@ -379,6 +384,55 @@ impl<Fs: UniversalReadFs> UniversalReadFileOps for CachedFs<Fs> {
             Some(files_info) => Ok(files_info.contains_key(path)),
             None => self.fs.exists(path),
         }
+    }
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Fs::File> {
+        let path = path.as_ref();
+
+        // Writable opens bypass the cache machinery entirely: prefetched
+        // handles are read-only, the snapshot's size may lag appends (a
+        // writer must observe the true length), and the snapshot cannot know
+        // files this writer created after the LIST.
+        if options.writeable {
+            return self.fs.open(path, options, extra);
+        }
+
+        if let Some(file) = self.files_prefetched.lock().remove(path) {
+            return match file {
+                ScheduledFile::Future(future) => futures::executor::block_on(future),
+                ScheduledFile::Ready(result) => result,
+                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
+                    path: path.to_owned(),
+                    since: self.file_info(path).and_then(|info| info.last_modified),
+                }),
+            };
+        }
+
+        // With a snapshot, unlisted paths fail locally — probing for
+        // optional files never reaches the inner filesystem.
+        if let Some(files_info) = &self.files_info
+            && !files_info.contains_key(path)
+        {
+            return Err(UniversalIoError::NotFound {
+                path: path.to_path_buf(),
+            });
+        }
+
+        // The path was never scheduled for prefetch. If a snapshot was taken it
+        // still carries the file's size, so thread it into the open as a known
+        // length — this lets the backend skip a remote `len`/HEAD round-trip
+        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
+        // snapshot this is a plain cache-bypass open.
+        let extra = match self.file_info(path) {
+            Some(info) => extra.with_known_len(info.size),
+            None => extra,
+        };
+        self.fs.open(path, options, extra)
     }
 }
 
@@ -439,62 +493,5 @@ where
         options: OpenOptions,
     ) -> UioResult<Self::AppendFile> {
         self.fs.open_append(path, options)
-    }
-}
-
-impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
-    /// The *wrapped* backend's file type: opening through the cache hands
-    /// out the very handles the inner filesystem produced (prefetched or
-    /// fallback-opened), so the wrapper never appears in stored types.
-    type File = Fs::File;
-    type OpenExtra = Fs::OpenExtra;
-
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Fs::File> {
-        let path = path.as_ref();
-
-        // Writable opens bypass the cache machinery entirely: prefetched
-        // handles are read-only, the snapshot's size may lag appends (a
-        // writer must observe the true length), and the snapshot cannot know
-        // files this writer created after the LIST.
-        if options.writeable {
-            return self.fs.open(path, options, extra);
-        }
-
-        if let Some(file) = self.files_prefetched.lock().remove(path) {
-            return match file {
-                ScheduledFile::Future(future) => futures::executor::block_on(future),
-                ScheduledFile::Ready(result) => result,
-                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
-                    path: path.to_owned(),
-                    since: self.file_info(path).and_then(|info| info.last_modified),
-                }),
-            };
-        }
-
-        // With a snapshot, unlisted paths fail locally — probing for
-        // optional files never reaches the inner filesystem.
-        if let Some(files_info) = &self.files_info
-            && !files_info.contains_key(path)
-        {
-            return Err(UniversalIoError::NotFound {
-                path: path.to_path_buf(),
-            });
-        }
-
-        // The path was never scheduled for prefetch. If a snapshot was taken it
-        // still carries the file's size, so thread it into the open as a known
-        // length — this lets the backend skip a remote `len`/HEAD round-trip
-        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
-        // snapshot this is a plain cache-bypass open.
-        let extra = match self.file_info(path) {
-            Some(info) => extra.with_known_len(info.size),
-            None => extra,
-        };
-        self.fs.open(path, options, extra)
     }
 }

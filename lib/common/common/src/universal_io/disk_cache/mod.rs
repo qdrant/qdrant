@@ -7,8 +7,8 @@ use fs_err as fs;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalIoError, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs, UserData, local_file_ops,
+    ListedFile, OpenOptions, UioResult, UniversalIoError, UniversalRead, UniversalReadFs, UserData,
+    local_file_ops,
 };
 
 mod cached_slice;
@@ -89,7 +89,9 @@ pub struct BlockCacheFs {
     controller: Arc<CacheController>,
 }
 
-impl UniversalReadFileOps for BlockCacheFs {
+impl UniversalReadFs for BlockCacheFs {
+    type File = CachedSlice;
+    type OpenExtra = ();
     type ContextConfig = BlockCacheConfigContext;
 
     fn from_context(ctx: BlockCacheConfigContext) -> UioResult<Self> {
@@ -105,16 +107,6 @@ impl UniversalReadFileOps for BlockCacheFs {
     fn exists(&self, path: &Path) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
-}
-
-// Deliberately no `UniversalWriteFileOps` impl: the block cache is strictly
-// read-only ([`CachedSlice`] neither writes nor appends, and `open` rejects
-// writeable opens). Mutations go straight to the underlying local
-// filesystem — `MmapFs`/`IoUringFs` over the very same paths.
-
-impl UniversalReadFs for BlockCacheFs {
-    type File = CachedSlice;
-    type OpenExtra = ();
 
     fn open(
         &self,
@@ -134,6 +126,11 @@ impl UniversalReadFs for BlockCacheFs {
             .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))
     }
 }
+
+// Deliberately no `UniversalWriteFileOps` impl: the block cache is strictly
+// read-only ([`CachedSlice`] neither writes nor appends, and `open` rejects
+// writeable opens). Mutations go straight to the underlying local
+// filesystem — `MmapFs`/`IoUringFs` over the very same paths.
 
 impl UniversalRead for CachedSlice {
     type Fs = BlockCacheFs;

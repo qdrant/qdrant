@@ -237,10 +237,10 @@ pub struct ReadBytesItem<U: UserData> {
     pub align: usize,
 }
 
-/// A single file matched by [`UniversalReadFileOps::list_files`]: its path
+/// A single file matched by [`UniversalReadFs::list_files`]: its path
 /// and size in bytes.
 ///
-/// [`UniversalReadFileOps::list_files`]: super::UniversalReadFileOps::list_files
+/// [`UniversalReadFs::list_files`]: super::UniversalReadFs::list_files
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ListedFile {
     pub path: std::path::PathBuf,

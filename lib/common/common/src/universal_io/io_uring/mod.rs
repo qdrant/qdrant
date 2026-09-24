@@ -21,7 +21,7 @@ use self::error::*;
 use self::pipeline::IoUringPipeline;
 use self::pool::*;
 use self::runtime::*;
-use super::traits::{OpenExtra, UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps};
+use super::traits::{OpenExtra, UniversalReadFs, UniversalWriteFileOps};
 use super::*;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
@@ -61,7 +61,9 @@ pub struct IoUringFs;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IoUringContextConfig;
 
-impl UniversalReadFileOps for IoUringFs {
+impl UniversalReadFs for IoUringFs {
+    type File = IoUringFile;
+    type OpenExtra = IoUringOpenExtra;
     type ContextConfig = IoUringContextConfig;
 
     fn from_context(_ctx: Self::ContextConfig) -> UioResult<Self> {
@@ -74,6 +76,40 @@ impl UniversalReadFileOps for IoUringFs {
 
     fn exists(&self, path: &Path) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
+    }
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: IoUringOpenExtra,
+    ) -> UioResult<IoUringFile> {
+        // Check that io_uring is supported on this system.
+        pool::check_io_uring_support()?;
+
+        let OpenOptions {
+            writeable,
+            need_sequential: _,
+            populate: _,
+            advice: _,
+        } = options;
+        let IoUringOpenExtra { prevent_caching } = extra;
+
+        let direct_io = prevent_caching;
+        let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(writeable)
+            .create(false)
+            .custom_flags(direct_io_flags)
+            .open(path.as_ref())
+            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
+
+        Ok(IoUringFile {
+            file: Arc::new(file),
+            direct_io,
+        })
     }
 }
 
@@ -128,45 +164,6 @@ impl OpenExtra for IoUringOpenExtra {
 
     fn with_known_etag(self, _known_etag: Option<String>) -> Self {
         self
-    }
-}
-
-impl UniversalReadFs for IoUringFs {
-    type File = IoUringFile;
-    type OpenExtra = IoUringOpenExtra;
-
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        extra: IoUringOpenExtra,
-    ) -> UioResult<IoUringFile> {
-        // Check that io_uring is supported on this system.
-        pool::check_io_uring_support()?;
-
-        let OpenOptions {
-            writeable,
-            need_sequential: _,
-            populate: _,
-            advice: _,
-        } = options;
-        let IoUringOpenExtra { prevent_caching } = extra;
-
-        let direct_io = prevent_caching;
-        let direct_io_flags = if direct_io { nix::libc::O_DIRECT } else { 0 };
-
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(writeable)
-            .create(false)
-            .custom_flags(direct_io_flags)
-            .open(path.as_ref())
-            .map_err(|err| UniversalIoError::extract_not_found(err, path.as_ref()))?;
-
-        Ok(IoUringFile {
-            file: Arc::new(file),
-            direct_io,
-        })
     }
 }
 

@@ -35,8 +35,8 @@ pub use self::simple_disk_cache::{
 pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{
     CachedReadFs, Item, OpenExtra, OwnedPipeline, ReadPipeline, UniversalAppend, UniversalAppendFs,
-    UniversalFlush, UniversalRead, UniversalReadAsync, UniversalReadFileOps, UniversalReadFs,
-    UniversalReadFsAsync, UniversalWrite, UniversalWriteFileOps, UniversalWriteFsAsync, UserData,
+    UniversalFlush, UniversalRead, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
+    UniversalWrite, UniversalWriteFileOps, UniversalWriteFsAsync, UserData,
 };
 pub use self::types::{
     ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,

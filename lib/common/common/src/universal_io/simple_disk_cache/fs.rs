@@ -14,7 +14,7 @@ use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    UniversalRead, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -115,7 +115,7 @@ where
 
 impl<R: UniversalRead> DiskCacheFs<R> {
     /// Wrap an already-built remote filesystem handle. The config-driven
-    /// path is [`UniversalReadFileOps::from_context`].
+    /// path is [`UniversalReadFs::from_context`].
     pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
         Self {
             config,
@@ -136,30 +136,6 @@ impl<R: UniversalRead> DiskCacheFs<R> {
     ) -> UioResult<R> {
         self.remote_fs
             .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra)
-    }
-}
-
-impl<R> UniversalReadFileOps for DiskCacheFs<R>
-where
-    R: UniversalRead + 'static,
-{
-    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
-
-    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
-        let DiskCacheFsContext { config, remote } = ctx;
-        Ok(Self {
-            config,
-            remote_fs: R::Fs::from_context(remote)?,
-            stats: DiskCacheStats::default(),
-        })
-    }
-
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files(prefix_path)
-    }
-
-    fn exists(&self, path: &Path) -> UioResult<bool> {
-        self.remote_fs.exists(path)
     }
 }
 
@@ -191,6 +167,24 @@ where
 {
     type File = DiskCache<R>;
     type OpenExtra = DiskCacheFsOpenExtra<<R::Fs as UniversalReadFs>::OpenExtra>;
+    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFs>::ContextConfig>;
+
+    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
+        let DiskCacheFsContext { config, remote } = ctx;
+        Ok(Self {
+            config,
+            remote_fs: R::Fs::from_context(remote)?,
+            stats: DiskCacheStats::default(),
+        })
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> UioResult<bool> {
+        self.remote_fs.exists(path)
+    }
 
     fn open(
         &self,

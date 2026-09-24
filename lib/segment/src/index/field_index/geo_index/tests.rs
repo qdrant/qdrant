@@ -1321,7 +1321,7 @@ fn test_block_index_fallback_equivalence() {
 #[test]
 fn test_block_index_preopen() {
     use common::universal_io::{
-        CachedFs, CachedReadFs as _, Populate, ReadOnly, UniversalRead, UniversalReadFileOps as _,
+        CachedFs, CachedReadFs as _, Populate, ReadOnly, UniversalRead, UniversalReadFs as _,
     };
 
     type Storage = ReadOnly<MmapFile>;

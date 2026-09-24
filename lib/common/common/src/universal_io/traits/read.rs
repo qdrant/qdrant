@@ -19,7 +19,7 @@ use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError,
 /// [`UniversalReadFs::open`](super::UniversalReadFs::open).
 ///
 /// This trait deliberately does *not* extend
-/// [`UniversalReadFileOps`](super::UniversalReadFileOps): a file handle is
+/// [`UniversalReadFs`](super::UniversalReadFs): a file handle is
 /// not a filesystem, and not every filesystem-level backend produces
 /// `UniversalRead` handles (e.g. a metadata-only listing service). The
 /// link to the producing filesystem is exposed via the [`Self::Fs`]

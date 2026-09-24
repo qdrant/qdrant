@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use common::universal_io::{DiskCacheConfig, UniversalReadFileOps};
+use common::universal_io::{DiskCacheConfig, UniversalReadFs};
 use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
 use io_bridge_object_store::backends::gcp::{GcsConfig, GcsCredentials};
 use io_bridge_object_store::{AsyncAppend, CachedBlobFs, CachedBlobFsContext};

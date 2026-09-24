@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use common::flags::feature_flags;
-use common::universal_io::UniversalReadFileOps;
+use common::universal_io::UniversalReadFs;
 
 use super::compact_stored_flags::COMPACT_FLAGS_FILE;
 use super::dynamic_stored_flags::{FLAGS_FILE, status_file};
@@ -44,10 +44,7 @@ impl FlagsMode {
     /// `None` when no flags exist there yet.
     ///
     /// Errors when files of both modes are present.
-    pub fn detect(
-        fs: &impl UniversalReadFileOps,
-        directory: &Path,
-    ) -> OperationResult<Option<Self>> {
+    pub fn detect(fs: &impl UniversalReadFs, directory: &Path) -> OperationResult<Option<Self>> {
         let dynamic =
             fs.exists(&status_file(directory))? || fs.exists(&directory.join(FLAGS_FILE))?;
         let compact = fs.exists(&directory.join(COMPACT_FLAGS_FILE))?;
