@@ -370,6 +370,17 @@ fn op_payload(op: &Op) -> Value {
         // The flush cadence in effect for the op events that follow, until the next
         // `SetFlushInterval` (the value is persisted, so restarts don't reset it).
         Op::SetFlushInterval(sec) => json!({ "flush_interval_sec": sec }),
+        Op::QueryText {
+            text,
+            limit,
+            filter_num,
+            filter_url_prefix,
+        } => json!({
+            "text": text,
+            "limit": limit,
+            "filter_num": filter_num,
+            "filter_url_prefix": filter_url_prefix,
+        }),
     }
 }
 
