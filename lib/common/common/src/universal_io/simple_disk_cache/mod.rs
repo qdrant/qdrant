@@ -16,7 +16,9 @@ pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
 
 use crate::mmap::AdviceSetting;
-use crate::universal_io::{OpenOptions, Populate, UniversalReadAsync, UniversalReadFs};
+use crate::universal_io::{
+    OpenOptions, Populate, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
+};
 
 /// Trait bundle for remote backends that can be cached by [`DiskCache`].
 ///
@@ -24,7 +26,7 @@ use crate::universal_io::{OpenOptions, Populate, UniversalReadAsync, UniversalRe
 /// fetch from the remote via `read_bytes_async`.
 pub trait DiskCacheRemote:
     UniversalReadAsync<
-        Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
+        Fs: Clone + Send + Sync + UniversalReadFsAsync<OpenExtra: Clone + Send + Sync>,
         ReadPipeline<'static, ()>: Send,
         ReadPipeline<'static, Range<u32>>: Send,
     > + 'static
@@ -34,7 +36,7 @@ pub trait DiskCacheRemote:
 impl<R> DiskCacheRemote for R
 where
     R: UniversalReadAsync + 'static,
-    R::Fs: Clone + Send + Sync,
+    R::Fs: UniversalReadFsAsync + Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::ReadPipeline<'static, ()>: Send,
     R::ReadPipeline<'static, Range<u32>>: Send,
