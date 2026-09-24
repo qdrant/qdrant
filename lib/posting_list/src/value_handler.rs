@@ -49,6 +49,16 @@ pub trait ValueHandler {
     fn get_value<N>(sized_value: Self::Sized, next_sized_value: N, var_data: &[u8]) -> Self::Value
     where
         N: Fn() -> Option<Self::Sized>;
+
+    /// Byte length of the stored value, without reading it.
+    ///
+    /// - For sized values it is the size of the type.
+    /// - For variable-size values it is the offset delta, so `var_data` is never
+    ///   touched: on an mmap'd list this is what keeps the value bytes from being
+    ///   faulted in when only the length is wanted.
+    fn value_len<N>(sized_value: Self::Sized, next_sized_value: N, var_data_len: usize) -> usize
+    where
+        N: Fn() -> Option<Self::Sized>;
 }
 
 /// Fixed-size value handler
@@ -68,6 +78,13 @@ impl<V: SizedValue> ValueHandler for SizedHandler<V> {
         N: Fn() -> Option<Self::Sized>,
     {
         sized_value
+    }
+
+    fn value_len<N>(_sized_value: V, _next_sized_value: N, _var_data_len: usize) -> usize
+    where
+        N: Fn() -> Option<Self::Sized>,
+    {
+        size_of::<V>()
     }
 }
 
@@ -118,5 +135,16 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         };
 
         V::from_bytes(&var_data[range])
+    }
+
+    fn value_len<N>(sized_value: Self::Sized, next_sized_value: N, var_data_len: usize) -> usize
+    where
+        N: Fn() -> Option<Self::Sized>,
+    {
+        let end = match next_sized_value() {
+            Some(next_value) => next_value.get() as usize,
+            None => var_data_len,
+        };
+        end - sized_value.get() as usize
     }
 }
