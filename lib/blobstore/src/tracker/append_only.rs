@@ -69,13 +69,24 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     }
 
     /// Schedule a prefetch of the tracker file, so a subsequent open is served from the prefetch
-    /// pool.
-    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path, populate: Populate) {
-        fs.schedule_open(
-            &Self::tracker_file_name(dir),
-            Some(Self::open_options(populate, false)),
-            None,
-        );
+    /// pool. A lazy `populate` still fetches the last `tail_mappings` entries.
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+        tail_mappings: PointOffset,
+    ) {
+        let path = Self::tracker_file_name(dir);
+        let populate = match fs.cached_file_info(&path) {
+            Some(info) if info.size >= ENTRY_SIZE => {
+                // Round down like `count_from_len`, so a torn trailing entry is left out.
+                let end = info.size - info.size % ENTRY_SIZE;
+                let start = end.saturating_sub(u64::from(tail_mappings) * ENTRY_SIZE);
+                populate.or_partial(start..end)
+            }
+            _ => populate,
+        };
+        fs.schedule_open(&path, Some(Self::open_options(populate, false)), None);
     }
 
     /// Open the tracker file handle, mapping a missing file to a service error.

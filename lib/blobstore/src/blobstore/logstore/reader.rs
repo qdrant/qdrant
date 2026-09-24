@@ -9,8 +9,8 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::page::AppendOnlyPages;
-use super::validate_consistency;
 use super::view::LogstoreView;
+use super::{OPEN_CHECK_MAPPINGS, validate_consistency};
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
@@ -49,7 +49,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
         base_path: &Path,
         populate: Populate,
     ) -> Result<()> {
-        AppendOnlyTracker::<S>::preopen(fs, base_path, populate);
+        AppendOnlyTracker::<S>::preopen(fs, base_path, populate, OPEN_CHECK_MAPPINGS);
         AppendOnlyPages::<S>::preopen(fs, base_path, populate)
     }
 

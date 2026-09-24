@@ -195,10 +195,12 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         if !fs.exists(&postings_path)? {
             return Ok(false);
         }
+        // A lazy open still reads the postings header.
+        let header_len = size_of::<types::PostingsHeader>() as u64;
         fs.schedule_open(
             &postings_path,
             Some(Self::open_options(
-                populate,
+                populate.or_partial(0..header_len),
                 AdviceSetting::Advice(Advice::Normal),
             )),
             None,
