@@ -9,13 +9,13 @@
 
 use std::future::ready;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{MmapFile, MmapFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    OpenOptions, UioResult, UniversalRead, UniversalReadAsync, UniversalReadFs,
+    ListedFile, OpenOptions, UioResult, UniversalRead, UniversalReadAsync, UniversalReadFs,
     UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync,
 };
 
@@ -27,6 +27,13 @@ impl UniversalReadFsAsync for MmapFs {
         extra: (),
     ) -> impl Future<Output = UioResult<MmapFile>> + '_ {
         ready(self.open(&path, options, extra))
+    }
+
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
+        ready(self.list_files(prefix_path))
     }
 }
 

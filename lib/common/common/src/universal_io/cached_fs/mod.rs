@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::task::Poll;
 
-use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
 use parking_lot::Mutex;
 
 mod async_io;
@@ -202,18 +201,8 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
             })
             .collect()
     }
-}
 
-/// The one impl with the `UniversalReadFsAsync` bound: `schedule_open` /
-/// `reschedule_open` park the inner filesystem's `open_async` futures in the
-/// prefetch pool. Everything else on `CachedFs` (including consuming parked
-/// futures in `open`) works over a plain `UniversalReadFs`.
-impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
-    /// Take a LIST snapshot of the filesystem and drop prefetched files.
-    fn cache_file_info(&mut self) -> UioResult<()> {
-        // List all files
-        let list = self.fs.list_files(&self.prefix_path)?;
-
+    fn apply_file_info(&mut self, list: Vec<ListedFile>) {
         let files_info: HashMap<_, _> = list
             .into_iter()
             .map(
@@ -235,7 +224,28 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 
         self.files_info = Some(files_info);
         self.files_prefetched.lock().clear();
+    }
+}
 
+impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
+    /// Async counterpart of [`CachedReadFs::cache_file_info`].
+    pub async fn cache_file_info_async(&mut self) -> UioResult<()> {
+        let list = self.fs.list_files_async(&self.prefix_path).await?;
+        self.apply_file_info(list);
+        Ok(())
+    }
+}
+
+/// The `UniversalReadFsAsync`-bound impls: `schedule_open` / `reschedule_open`
+/// park the inner filesystem's `open_async` futures in the prefetch pool, and
+/// `cache_file_info_async` awaits its LIST. Everything else on `CachedFs`
+/// (including consuming parked futures in `open`) works over a plain
+/// `UniversalReadFs`.
+impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
+    /// Take a LIST snapshot of the filesystem and drop prefetched files.
+    fn cache_file_info(&mut self) -> UioResult<()> {
+        let list = self.fs.list_files(&self.prefix_path)?;
+        self.apply_file_info(list);
         Ok(())
     }
 
@@ -286,12 +296,10 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
             Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
 
         // Poll once, so that real async work begins right away
-        let scheduled = futures::executor::block_on(async move {
-            match futures::poll!(fut.as_mut()) {
-                Poll::Ready(file) => ScheduledFile::Ready(file),
-                Poll::Pending => ScheduledFile::Future(fut),
-            }
-        });
+        let scheduled = match fut.as_mut().now_or_never() {
+            Some(file) => ScheduledFile::Ready(file),
+            None => ScheduledFile::Future(fut),
+        };
         files_prefetched.insert(path.to_path_buf(), scheduled);
     }
 
@@ -319,10 +327,13 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         self.schedule_open(path, open_arguments, open_extra)
     }
 
-    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        self.files_prefetched
-            .lock()
-            .insert(path, ScheduledFile::Future(fut));
+    fn schedule(&self, path: PathBuf, mut fut: BoxFuture<'static, UioResult<Fs::File>>) {
+        // Poll once, so that real async work begins right away
+        let scheduled = match fut.as_mut().now_or_never() {
+            Some(file) => ScheduledFile::Ready(file),
+            None => ScheduledFile::Future(fut),
+        };
+        self.files_prefetched.lock().insert(path, scheduled);
     }
 
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {

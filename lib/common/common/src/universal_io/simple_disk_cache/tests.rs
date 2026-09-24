@@ -490,6 +490,26 @@ mod tests_mod {
         assert_eq!(&*bytes, &new_data[original_len as usize..]);
     }
 
+    /// Staging from within an executor (as the edge live reload drives it)
+    /// must not enter a nested one.
+    #[test]
+    fn live_preload_within_executor() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        futures::executor::block_on(async {
+            let staged = cache.live_preload(scn.snapshot_file_info::<R>()).unwrap();
+            staged.await;
+        });
+        cache.live_reload().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
+    }
+
     /// Staging against a cold cache materializes the mirror at the known
     /// length, and applying it changes nothing.
     #[test]
@@ -1275,6 +1295,10 @@ mod tests_async {
                 async_reads: AtomicUsize::new(0),
                 fail_on_completion: std::sync::atomic::AtomicBool::new(false),
             })
+        }
+
+        async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files_async(prefix_path).await
         }
     }
 

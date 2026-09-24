@@ -1,11 +1,11 @@
 //! The [`UniversalReadFsAsync`] impl for [`CachedFs`]: prefetch-pool-aware
 //! async opens, delegating to the inner filesystem's `open_async`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{CachedFs, ScheduledFile};
 use crate::universal_io::{
-    OpenExtra, OpenOptions, UioResult, UniversalIoError, UniversalReadFsAsync,
+    ListedFile, OpenExtra, OpenOptions, UioResult, UniversalIoError, UniversalReadFsAsync,
 };
 
 impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
@@ -53,5 +53,12 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
             None => extra,
         };
         self.fs.open_async(path, options, extra).await
+    }
+
+    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        match &self.files_info {
+            Some(_) => Ok(self.cached_list_files(prefix_path)),
+            None => self.fs.list_files_async(prefix_path).await,
+        }
     }
 }

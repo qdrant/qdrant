@@ -5,13 +5,13 @@
 //! `CachedFs` prefetch pool).
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::uio_trace;
 use common::universal_io::{
-    OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
+    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
 };
 
 use crate::file::BlobFile;
@@ -28,6 +28,13 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
     ) -> UioResult<BlobFile<A>> {
         // BlobFile does not populate on open.
         self.open(path, options, extra)
+    }
+
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
+        self.spawn(self.list_files_traced(prefix_path))
     }
 }
 

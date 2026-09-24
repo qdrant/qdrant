@@ -5,7 +5,7 @@
 //! by the [`DiskCacheRemote`] bundle.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use super::file::{DiskCache, State};
@@ -16,7 +16,8 @@ use super::{DiskCacheRemote, block_aligned_fetch, to_block_range};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
-    OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
+    UniversalReadFsAsync,
 };
 
 impl<R> UniversalReadFsAsync for DiskCacheFs<R>
@@ -101,6 +102,10 @@ where
             state,
             extra.known_etag,
         ))
+    }
+
+    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files_async(prefix_path).await
     }
 }
 

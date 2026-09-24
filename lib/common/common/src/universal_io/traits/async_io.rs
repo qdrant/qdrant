@@ -1,10 +1,10 @@
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{UniversalRead, UniversalReadFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{OpenOptions, UioResult};
+use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
 /// Async-capable extension of [`UniversalRead`].
 ///
@@ -43,6 +43,12 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
+
+    /// List files matching `prefix_path` asynchronously.
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
 }
 
 /// The async whole-file write surface, mirroring the same operations on

@@ -2,6 +2,7 @@
 //! surface. The heavy lifting lives elsewhere: first-use init in [`super::init`],
 //! growth handling in [`super::reopen`].
 use std::borrow::Cow;
+use std::future::ready;
 use std::ops::Range;
 use std::path::Path;
 
@@ -71,15 +72,10 @@ where
         let mut future = self.live_preload_impl(get_file_info)?;
 
         // Poll once so that actual async work begins right away
-        let future = futures::executor::block_on(
-            #[expect(clippy::async_yields_async)] // so it can be polled externally
-            async move {
-                match futures::poll!(&mut future) {
-                    std::task::Poll::Ready(()) => async {}.left_future(),
-                    std::task::Poll::Pending => future.right_future(),
-                }
-            },
-        );
+        let future = match (&mut future).now_or_never() {
+            Some(()) => ready(()).left_future(),
+            None => future.right_future(),
+        };
 
         Ok(future)
     }

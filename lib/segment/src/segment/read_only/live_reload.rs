@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -6,7 +8,7 @@ use futures::future::{BoxFuture, join_all};
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::index::UniversalReadExt;
 
@@ -15,9 +17,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
-    pub fn live_preload(
-        &self,
-    ) -> OperationResult<impl Future<Output = ()> + Send + 'static + use<S>> {
+    pub async fn live_preload(&self, is_stopped: &AtomicBool) -> OperationResult<()> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -34,7 +34,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         let mut reload_fs = reload_fs.borrow_mut();
         // perf: one LIST per segment per refresh; could be a single shard-prefix
         // LIST partitioned into the per-segment snapshots.
-        reload_fs.cache_file_info()?;
+        reload_fs.cache_file_info_async().await?;
+
+        check_process_stopped(is_stopped)?;
+
         let fs = &*reload_fs;
 
         let mut preloads = id_tracker.borrow().live_preload(fs)?;
@@ -44,11 +47,8 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             preloads.extend(vector_data.live_preload(fs)?);
         }
 
-        let reopens = fs.wait_all();
-
-        Ok(async move {
-            futures::join!(reopens, join_all(preloads));
-        })
+        futures::join!(fs.wait_all(), join_all(preloads));
+        Ok(())
     }
 
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).

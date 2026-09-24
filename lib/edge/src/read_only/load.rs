@@ -45,18 +45,28 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
-    // Stage every open: per-segment LIST + config reads, with the bulk
-    // fetches going in flight as scheduled.
+    // Stage every open: LIST all segments concurrently, then preopen each one.
+    let listed_futs = segments.into_iter().map(|(uuid, path)| async move {
+        let cached_fs = ReadOnlySegment::<S>::build_cached_fs_async(fs, &path).await;
+        (uuid, path, cached_fs)
+    });
+    check_process_stopped(is_stopped)?;
+    let listed = futures::executor::block_on(join_all(listed_futs));
+    check_process_stopped(is_stopped)?;
+
     let mut staged = Vec::new();
-    for (uuid, segment_path) in segments {
-        match ReadOnlySegment::<S>::schedule_open(
-            fs,
-            &segment_path,
-            uuid,
-            None,
-            load_profile,
-            is_stopped,
-        ) {
+    for (uuid, segment_path, cached_fs) in listed {
+        let staged_open = cached_fs.and_then(|cached_fs| {
+            ReadOnlySegment::<S>::schedule_open_with_cached_fs(
+                cached_fs,
+                &segment_path,
+                uuid,
+                None,
+                load_profile,
+                is_stopped,
+            )
+        });
+        match staged_open {
             Ok(segment) => staged.push((uuid, segment)),
             Err(err @ OperationError::Cancelled { .. }) => return Err(err),
             Err(err) => {
@@ -118,8 +128,8 @@ fn skip_level(err: &OperationError) -> log::Level {
 /// shared access (`live_preload`), then apply under exclusive access
 /// (`live_reload`) — so the exclusive phase never waits on IO.
 ///
-/// Like [`load_segments_parallel`], the IO is driven to completion on the
-/// calling thread; `pool` only runs the staging and the CPU-bound apply.
+/// Like [`load_segments_parallel`], the preloads are driven to completion on
+/// the calling thread; `pool` only runs the CPU-bound apply.
 /// A failed preload is benign (warn): its reload still runs and surfaces
 /// anything real. Returns each segment's reload result, in input order.
 ///
@@ -128,6 +138,10 @@ fn skip_level(err: &OperationError) -> log::Level {
 /// outer error. A segment's reload is applied atomically under its write
 /// lock, so segments reloaded before the cancellation was observed stay
 /// consistent, and the rest replay their delta on the next reload.
+//
+// Preloads hold segment read locks across IO; the only writer is the apply below, serialized by
+// the shard's `live_reload_lock`, so no writer queues behind them to stall reads.
+#[expect(clippy::await_holding_lock)]
 pub(crate) fn reload_segments_parallel<S>(
     pool: &ThreadPool,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
@@ -138,27 +152,19 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
-    let ctx = uio_trace::Context::current();
-    let io_futures = pool.install(|| {
-        segments
-            .par_iter()
-            .filter_map(|(uuid, segment)| {
-                if let Err(cancelled) = check_process_stopped(is_stopped) {
-                    return Some(Err(OperationError::from(cancelled)));
-                }
-                match ctx.in_scope(|| segment.read().live_preload()) {
-                    Ok(future) => Some(Ok(future)),
-                    Err(err) => {
-                        log::warn!("live_preload of segment {uuid} failed: {err}");
-                        None
-                    }
-                }
-            })
-            .collect::<OperationResult<Vec<_>>>()
-    })?;
-
+    // Preload every segment concurrently on this thread; only the apply rides the pool.
     check_process_stopped(is_stopped)?;
-    futures::executor::block_on(join_all(io_futures));
+    futures::executor::block_on(join_all(segments.iter().map(
+        |(uuid, segment)| async move {
+            match segment.read().live_preload(is_stopped).await {
+                Ok(()) => {}
+                Err(OperationError::Cancelled { .. }) => {}
+                Err(err) => {
+                    log::warn!("live_preload of segment {uuid} failed: {err}");
+                }
+            }
+        },
+    )));
     check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments
