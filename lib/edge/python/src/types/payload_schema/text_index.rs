@@ -17,8 +17,6 @@ use crate::type_hint::Alias;
 
 /// Index parameters for text fields.
 ///
-/// Create TextIndexParams.
-///
 /// Args:
 ///     tokenizer: Tokenizer type.
 ///     min_token_len: Minimum token length.
@@ -417,8 +415,6 @@ impl From<PyLanguage> for Language {
 
 /// Custom stopwords set.
 ///
-/// Create a StopwordsSet.
-///
 /// Args:
 ///     languages: Predefined language stopwords to include.
 ///     custom: Custom stopwords to add.
@@ -557,8 +553,6 @@ impl Repr for PyStemmingAlgorithm {
 
 /// Snowball stemming algorithm parameters.
 ///
-/// Create SnowballParams.
-///
 /// Args:
 ///     language: Snowball language.
 #[pyclass(name = "SnowballParams", from_py_object)]
@@ -595,8 +589,6 @@ impl PySnowballParams {
 }
 
 /// Explicitly disable stemming, overriding the language default.
-///
-/// Create a DisabledStemmer.
 #[pyclass(name = "DisabledStemmer", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]

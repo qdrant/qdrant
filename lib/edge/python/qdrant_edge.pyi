@@ -12,8 +12,6 @@ class AcornSearchParams:
     """
     Parameters for Acorn filtered search.
 
-    Create AcornSearchParams.
-
     Args:
         enable: Whether to enable Acorn.
         max_selectivity: Maximum filter selectivity for Acorn.
@@ -39,8 +37,6 @@ class AcornSearchParams:
 class BinaryQuantizationConfig:
     """
     Configuration for binary quantization.
-
-    Create a BinaryQuantizationConfig.
 
     Args:
         always_ram: Whether to keep in RAM.
@@ -127,8 +123,6 @@ class Bm25Config:
     """
     Configuration for an edge-side BM25 model.
 
-    Create a Bm25Config.
-
     Args:
         k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
         b: Length normalization. 0=none, 1=full. Default 0.75.
@@ -186,8 +180,6 @@ class BoolIndexParams:
     """
     Index parameters for boolean fields.
 
-    Create BoolIndexParams.
-
     Args:
         on_disk: Whether to store index on disk.
         enable_hnsw: Whether to enable HNSW index for this field.
@@ -227,8 +219,6 @@ class ContextPair:
     """
     A positive/negative pair for context-based queries.
 
-    Create a ContextPair.
-
     Args:
         positive: Positive example.
         negative: Negative example.
@@ -255,8 +245,6 @@ class ContextQuery:
     """
     Query based on context pairs only.
 
-    Create a ContextQuery.
-
     Args:
         pairs: Context pairs.
     """
@@ -273,8 +261,6 @@ class ContextQuery:
 class CountRequest:
     """
     Request for count operation.
-
-    Create a CountRequest.
 
     Args:
         exact: Whether to count exactly or estimate.
@@ -300,8 +286,6 @@ class CountRequest:
 class DatetimeIndexParams:
     """
     Index parameters for datetime fields.
-
-    Create DatetimeIndexParams.
 
     Args:
         is_principal: Whether this field is a principal identifier.
@@ -370,8 +354,6 @@ class Direction:
 class DisabledStemmer:
     """
     Explicitly disable stemming, overriding the language default.
-
-    Create a DisabledStemmer.
     """
 
     def __new__(cls, /) -> DisabledStemmer: ...
@@ -380,8 +362,6 @@ class DisabledStemmer:
 class DiscoverQuery:
     """
     Query for discovery using a target and context pairs.
-
-    Create a DiscoverQuery.
 
     Args:
         target: Target vector.
@@ -421,8 +401,6 @@ class Distance:
 class EdgeConfig:
     """
     Configuration for creating a new Qdrant Edge shard.
-
-    Create an EdgeConfig.
 
     Parameters left as None are "not specified": when loading an existing shard each
     one resolves through provided -> persisted -> derived from segments -> default,
@@ -513,8 +491,6 @@ class EdgeConfig:
 class EdgeOptimizersConfig:
     """
     Optimizer-related configuration for EdgeConfig.
-
-    Create EdgeOptimizersConfig.
 
     Args:
         deleted_threshold: Min fraction of deleted vectors to run vacuum (default 0.2).
@@ -774,8 +750,6 @@ class EdgeSparseVectorParams:
     """
     Sparse vector parameters for EdgeConfig.
 
-    Create EdgeSparseVectorParams.
-
     Args:
         full_scan_threshold: Threshold for full scan vs index search.
         on_disk: If True, sparse index on disk; otherwise in RAM.
@@ -820,8 +794,6 @@ class EdgeSparseVectorParams:
 class EdgeVectorParams:
     """
     Dense vector parameters for EdgeConfig.
-
-    Create EdgeVectorParams.
 
     Args:
         size: Dimension of vectors.
@@ -1166,8 +1138,6 @@ class FacetRequest:
     """
     Request for facet operation.
 
-    Create a FacetRequest.
-
     Args:
         key: Payload field key to facet on.
         limit: Maximum number of facet hits to return.
@@ -1235,8 +1205,6 @@ class FeedbackItem:
     """
     A feedback item with vector and score.
 
-    Create a FeedbackItem.
-
     Args:
         vector: Feedback vector.
         score: Feedback score.
@@ -1260,8 +1228,6 @@ class FeedbackItem:
 class FeedbackNaiveQuery:
     """
     Query using naive feedback approach.
-
-    Create a FeedbackNaiveQuery.
 
     Args:
         target: Target vector.
@@ -1299,8 +1265,6 @@ class FeedbackNaiveQuery:
 class FieldCondition:
     """
     Condition on a payload field.
-
-    Create a FieldCondition.
 
     Args:
         key: Payload field path.
@@ -1386,8 +1350,6 @@ class Filter:
     """
     Filter conditions for queries.
 
-    Create a Filter.
-
     Args:
         must: Conditions that must all match.
         should: Conditions where at least one should match.
@@ -1433,8 +1395,6 @@ class FloatIndexParams:
     """
     Index parameters for float fields.
 
-    Create FloatIndexParams.
-
     Args:
         is_principal: Whether this field is a principal identifier.
         on_disk: Whether to store index on disk.
@@ -1470,8 +1430,6 @@ class FloatIndexParams:
 class Formula:
     """
     A scoring formula for custom ranking.
-
-    Create a Formula.
 
     Args:
         formula: Expression tree.
@@ -1531,8 +1489,6 @@ class GeoBoundingBox:
     """
     A geographic bounding box.
 
-    Create a GeoBoundingBox.
-
     Args:
         top_left: Top-left corner.
         bottom_right: Bottom-right corner.
@@ -1559,8 +1515,6 @@ class GeoIndexParams:
     """
     Index parameters for geo fields.
 
-    Create GeoIndexParams.
-
     Args:
         on_disk: Whether to store index on disk.
         enable_hnsw: Whether to enable HNSW index for this field.
@@ -1586,8 +1540,6 @@ class GeoPoint:
     """
     A geographic point.
 
-    Create a GeoPoint.
-
     Args:
         lon: Longitude (-180 to 180).
         lat: Latitude (-90 to 90).
@@ -1611,8 +1563,6 @@ class GeoPoint:
 class GeoPolygon:
     """
     A geographic polygon.
-
-    Create a GeoPolygon.
 
     Args:
         exterior: Exterior ring points.
@@ -1643,8 +1593,6 @@ class GeoRadius:
     """
     A geographic circle.
 
-    Create a GeoRadius.
-
     Args:
         center: Center point.
         radius: Radius in meters.
@@ -1669,8 +1617,6 @@ class HasIdCondition:
     """
     Check if point ID is in a set.
 
-    Create a HasIdCondition.
-
     Args:
         point_ids: Set of point IDs.
     """
@@ -1688,8 +1634,6 @@ class HasVectorCondition:
     """
     Check if point has a specific vector.
 
-    Create a HasVectorCondition.
-
     Args:
         vector: Vector name.
     """
@@ -1706,8 +1650,6 @@ class HasVectorCondition:
 class HnswIndexConfig:
     """
     Configuration for HNSW index.
-
-    Create an HnswIndexConfig.
 
     Args:
         m: Number of edges per node.
@@ -1780,8 +1722,6 @@ class IdfParams:
 
     Only applicable to sparse vectors with the IDF modifier enabled.
 
-    Create IdfParams.
-
     Args:
         corpus: Filter defining the corpus: IDF statistics are computed over
             the points matching this filter. If None, statistics are
@@ -1800,8 +1740,6 @@ class IdfParams:
 class IntegerIndexParams:
     """
     Index parameters for integer fields.
-
-    Create IntegerIndexParams.
 
     Args:
         lookup: Enable exact match filtering.
@@ -1855,8 +1793,6 @@ class IsEmptyCondition:
     """
     Check if a field is empty.
 
-    Create an IsEmptyCondition.
-
     Args:
         key: Payload field path.
     """
@@ -1874,8 +1810,6 @@ class IsNullCondition:
     """
     Check if a field is null.
 
-    Create an IsNullCondition.
-
     Args:
         key: Payload field path.
     """
@@ -1892,8 +1826,6 @@ class IsNullCondition:
 class KeywordIndexParams:
     """
     Index parameters for keyword fields.
-
-    Create KeywordIndexParams.
 
     Args:
         is_tenant: Whether this field is used for tenant separation.
@@ -1978,8 +1910,6 @@ class MatchAny:
     """
     Match any of the values.
 
-    Create a MatchAny.
-
     Args:
         any: List of values to match any of.
     """
@@ -1996,8 +1926,6 @@ class MatchAny:
 class MatchExcept:
     """
     Match any value except these.
-
-    Create a MatchExcept.
 
     Args:
         value: List of values to exclude.
@@ -2016,8 +1944,6 @@ class MatchPhrase:
     """
     Match exact phrase.
 
-    Create a MatchPhrase.
-
     Args:
         phrase: Phrase to match.
     """
@@ -2034,8 +1960,6 @@ class MatchPhrase:
 class MatchPrefix:
     """
     Match keyword values starting with the given prefix.
-
-    Create a MatchPrefix.
 
     Args:
         prefix: Prefix to match.
@@ -2054,8 +1978,6 @@ class MatchSubstring:
     """
     Match keyword values containing the given substring.
 
-    Create a MatchSubstring.
-
     Args:
         substring: Substring to match.
     """
@@ -2072,8 +1994,6 @@ class MatchSubstring:
 class MatchText:
     """
     Full-text match.
-
-    Create a MatchText.
 
     Args:
         text: Text to search for.
@@ -2092,8 +2012,6 @@ class MatchTextAny:
     """
     Match any of the words in text.
 
-    Create a MatchTextAny.
-
     Args:
         text_any: Space-separated words to match any of.
     """
@@ -2111,8 +2029,6 @@ class MatchValue:
     """
     Match exact value.
 
-    Create a MatchValue.
-
     Args:
         value: Value to match.
     """
@@ -2128,8 +2044,6 @@ class MatchValue:
 class MinShould:
     """
     Minimum number of should conditions that must match.
-
-    Create a MinShould.
 
     Args:
         conditions: List of conditions.
@@ -2156,8 +2070,6 @@ class MinShould:
 class Mmr:
     """
     Maximal Marginal Relevance for result diversification.
-
-    Create an MMR query.
 
     Args:
         vector: Query vector.
@@ -2225,8 +2137,6 @@ class MultiVectorConfig:
     """
     Configuration for multi-vector storage.
 
-    Create a MultiVectorConfig.
-
     Args:
         comparator: Multi-vector comparator.
     """
@@ -2243,8 +2153,6 @@ class MultiVectorConfig:
 class NaiveFeedbackStrategy:
     """
     Coefficients for naive feedback query.
-
-    Create NaiveFeedbackStrategy coefficients.
 
     Args:
         a: Coefficient a.
@@ -2277,8 +2185,6 @@ class NestedCondition:
     """
     Condition on nested objects.
 
-    Create a NestedCondition.
-
     Args:
         key: Path to nested array.
         filter: Filter to apply to nested objects.
@@ -2302,8 +2208,6 @@ class NestedCondition:
 class OrderBy:
     """
     Order results by a payload field.
-
-    Create an OrderBy.
 
     Args:
         key: Payload field path.
@@ -2409,8 +2313,6 @@ class PayloadSelector:
 class PlainIndexConfig:
     """
     Configuration for plain (brute-force) index.
-
-    Create a PlainIndexConfig.
     """
 
     def __new__(cls, /) -> PlainIndexConfig: ...
@@ -2420,8 +2322,6 @@ class PlainIndexConfig:
 class Point:
     """
     A point with ID, vector(s), and optional payload.
-
-    Create a Point.
 
     Args:
         id: Point ID (integer or UUID).
@@ -2456,8 +2356,6 @@ class PointVectors:
     """
     Point ID with associated vectors for update operations.
 
-    Create a PointVectors.
-
     Args:
         id: Point ID.
         vector: Vector data.
@@ -2481,8 +2379,6 @@ class PointVectors:
 class Prefetch:
     """
     A prefetch stage for multi-stage queries.
-
-    Create a Prefetch stage.
 
     Args:
         limit: Maximum number of results for this stage.
@@ -2545,8 +2441,6 @@ class ProductQuantizationConfig:
     """
     Configuration for product quantization.
 
-    Create a ProductQuantizationConfig.
-
     Args:
         compression: Compression ratio.
         always_ram: Whether to keep in RAM.
@@ -2572,8 +2466,6 @@ class ProductQuantizationConfig:
 class QuantizationSearchParams:
     """
     Parameters for quantization during search.
-
-    Create QuantizationSearchParams.
 
     Args:
         ignore: Whether to ignore quantization.
@@ -2706,9 +2598,7 @@ class Query:
 @final
 class QueryBatchRequest:
     """
-    Queries executed together as one planned batch.
-
-    Create a batch of queries, returning results in the same order.
+    Queries executed together as one planned batch, returning results in the same order.
     """
 
     def __new__(cls, /, queries: Sequence[QueryRequest]) -> QueryBatchRequest: ...
@@ -2720,8 +2610,6 @@ class QueryBatchRequest:
 class QueryRequest:
     """
     Request for query operation.
-
-    Create a QueryRequest.
 
     Args:
         limit: Maximum number of results.
@@ -2808,8 +2696,6 @@ class RangeDateTime:
     """
     Range condition for datetime values.
 
-    Create a RangeDateTime.
-
     Args:
         gte: Greater than or equal (ISO 8601 string).
         gt: Greater than (ISO 8601 string).
@@ -2854,8 +2740,6 @@ class RangeFloat:
     """
     Range condition for float values.
 
-    Create a RangeFloat.
-
     Args:
         gte: Greater than or equal.
         gt: Greater than.
@@ -2899,8 +2783,6 @@ class RangeFloat:
 class RecommendQuery:
     """
     Query for recommendation based on positive and negative examples.
-
-    Create a RecommendQuery.
 
     Args:
         positives: Positive example vectors.
@@ -2968,8 +2850,6 @@ class Sample:
 class ScalarQuantizationConfig:
     """
     Configuration for scalar quantization.
-
-    Create a ScalarQuantizationConfig.
 
     Args:
         type: Scalar type (e.g., Int8).
@@ -3061,8 +2941,6 @@ class ScrollRequest:
     """
     Request for scroll operation.
 
-    Create a ScrollRequest.
-
     Args:
         offset: Starting point ID.
         limit: Maximum number of results.
@@ -3124,8 +3002,6 @@ class SearchParams:
     """
     Parameters for search operations.
 
-    Create SearchParams.
-
     Args:
         hnsw_ef: ef parameter for HNSW search.
         exact: Whether to use exact search.
@@ -3186,8 +3062,6 @@ class SearchParams:
 class SearchRequest:
     """
     Request for search operation.
-
-    Create a SearchRequest.
 
     Args:
         query: Query (vector-based).
@@ -3334,8 +3208,6 @@ class SnowballParams:
     """
     Snowball stemming algorithm parameters.
 
-    Create SnowballParams.
-
     Args:
         language: Snowball language.
     """
@@ -3351,8 +3223,6 @@ class SnowballParams:
 class SparseVector:
     """
     A sparse vector representation.
-
-    Create a SparseVector.
 
     Args:
         indices: Non-zero dimension indices.
@@ -3380,8 +3250,6 @@ class StopwordsSet:
     """
     Custom stopwords set.
 
-    Create a StopwordsSet.
-
     Args:
         languages: Predefined language stopwords to include.
         custom: Custom stopwords to add.
@@ -3406,8 +3274,6 @@ class StopwordsSet:
 class TextIndexParams:
     """
     Index parameters for text fields.
-
-    Create TextIndexParams.
 
     Args:
         tokenizer: Tokenizer type.
@@ -3526,8 +3392,6 @@ class TurboQuantBitSize:
 class TurboQuantQuantizationConfig:
     """
     Configuration for TurboQuant quantization.
-
-    Create a TurboQuantQuantizationConfig.
 
     Args:
         always_ram: Whether to keep in RAM.
@@ -3814,8 +3678,6 @@ class UuidIndexParams:
     """
     Index parameters for UUID fields.
 
-    Create UuidIndexParams.
-
     Args:
         is_tenant: Whether this field is used for tenant separation.
         on_disk: Whether to store index on disk.
@@ -3851,8 +3713,6 @@ class UuidIndexParams:
 class ValuesCount:
     """
     Condition on count of values in array field.
-
-    Create a ValuesCount.
 
     Args:
         lt: Less than.

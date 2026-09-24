@@ -11,8 +11,6 @@ use crate::types::*;
 
 /// Request for scroll operation.
 ///
-/// Create a ScrollRequest.
-///
 /// Args:
 ///     offset: Starting point ID.
 ///     limit: Maximum number of results.

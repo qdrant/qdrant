@@ -9,8 +9,6 @@ use crate::{PyPayload, PyPointId, PyVector};
 
 /// A point with ID, vector(s), and optional payload.
 ///
-/// Create a Point.
-///
 /// Args:
 ///     id: Point ID (integer or UUID).
 ///     vector: Vector data.

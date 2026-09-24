@@ -113,8 +113,6 @@ impl Repr for PyCondition {
 
 /// Check if a field is empty.
 ///
-/// Create an IsEmptyCondition.
-///
 /// Args:
 ///     key: Payload field path.
 #[pyclass(name = "IsEmptyCondition", from_py_object)]
@@ -155,8 +153,6 @@ impl PyIsEmptyCondition {
 }
 
 /// Check if a field is null.
-///
-/// Create an IsNullCondition.
 ///
 /// Args:
 ///     key: Payload field path.
@@ -199,8 +195,6 @@ impl PyIsNullCondition {
 
 /// Check if point ID is in a set.
 ///
-/// Create a HasIdCondition.
-///
 /// Args:
 ///     point_ids: Set of point IDs.
 #[pyclass(name = "HasIdCondition", from_py_object)]
@@ -237,8 +231,6 @@ impl PyHasIdCondition {
 }
 
 /// Check if point has a specific vector.
-///
-/// Create a HasVectorCondition.
 ///
 /// Args:
 ///     vector: Vector name.

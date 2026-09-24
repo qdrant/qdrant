@@ -19,9 +19,7 @@ use super::*;
 use crate::repr::*;
 use crate::type_hint::Alias;
 
-/// Queries executed together as one planned batch.
-///
-/// Create a batch of queries, returning results in the same order.
+/// Queries executed together as one planned batch, returning results in the same order.
 #[pyclass(name = "QueryBatchRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryBatchRequest(QueryBatchRequest);
@@ -47,8 +45,6 @@ impl PyQueryBatchRequest {
 }
 
 /// Request for query operation.
-///
-/// Create a QueryRequest.
 ///
 /// Args:
 ///     limit: Maximum number of results.
@@ -183,8 +179,6 @@ impl PyQueryRequest {
 }
 
 /// A prefetch stage for multi-stage queries.
-///
-/// Create a Prefetch stage.
 ///
 /// Args:
 ///     limit: Maximum number of results for this stage.
@@ -463,8 +457,6 @@ impl From<PyFusion> for FusionInternal {
 
 /// Order results by a payload field.
 ///
-/// Create an OrderBy.
-///
 /// Args:
 ///     key: Payload field path.
 ///     direction: Sort direction.
@@ -690,8 +682,6 @@ impl From<PySample> for SampleInternal {
 }
 
 /// Maximal Marginal Relevance for result diversification.
-///
-/// Create an MMR query.
 ///
 /// Args:
 ///     vector: Query vector.

@@ -237,8 +237,6 @@ impl Repr for PyQueryInterface {
 
 /// Query for recommendation based on positive and negative examples.
 ///
-/// Create a RecommendQuery.
-///
 /// Args:
 ///     positives: Positive example vectors.
 ///     negatives: Negative example vectors.
@@ -290,8 +288,6 @@ impl PyRecommendQuery {
 
 /// Query for discovery using a target and context pairs.
 ///
-/// Create a DiscoverQuery.
-///
 /// Args:
 ///     target: Target vector.
 ///     pairs: Context pairs.
@@ -340,8 +336,6 @@ impl PyDiscoverQuery {
 
 /// Query based on context pairs only.
 ///
-/// Create a ContextQuery.
-///
 /// Args:
 ///     pairs: Context pairs.
 #[pyclass(name = "ContextQuery", from_py_object)]
@@ -378,8 +372,6 @@ impl PyContextQuery {
 }
 
 /// A positive/negative pair for context-based queries.
-///
-/// Create a ContextPair.
 ///
 /// Args:
 ///     positive: Positive example.
@@ -439,8 +431,6 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
 }
 
 /// Query using naive feedback approach.
-///
-/// Create a FeedbackNaiveQuery.
 ///
 /// Args:
 ///     target: Target vector.
@@ -503,8 +493,6 @@ impl PyFeedbackNaiveQuery {
 
 /// A feedback item with vector and score.
 ///
-/// Create a FeedbackItem.
-///
 /// Args:
 ///     vector: Feedback vector.
 ///     score: Feedback score.
@@ -563,8 +551,6 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
 }
 
 /// Coefficients for naive feedback query.
-///
-/// Create NaiveFeedbackStrategy coefficients.
 ///
 /// Args:
 ///     a: Coefficient a.

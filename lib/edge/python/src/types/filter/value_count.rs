@@ -6,8 +6,6 @@ use crate::repr::*;
 
 /// Condition on count of values in array field.
 ///
-/// Create a ValuesCount.
-///
 /// Args:
 ///     lt: Less than.
 ///     gt: Greater than.

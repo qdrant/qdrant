@@ -241,8 +241,6 @@ impl Repr for PyPayloadSchemaParams {
 
 /// Index parameters for keyword fields.
 ///
-/// Create KeywordIndexParams.
-///
 /// Args:
 ///     is_tenant: Whether this field is used for tenant separation.
 ///     on_disk: Whether to store index on disk.
@@ -314,8 +312,6 @@ impl PyKeywordIndexParams {
 }
 
 /// Index parameters for integer fields.
-///
-/// Create IntegerIndexParams.
 ///
 /// Args:
 ///     lookup: Enable exact match filtering.
@@ -399,8 +395,6 @@ impl PyIntegerIndexParams {
 
 /// Index parameters for float fields.
 ///
-/// Create FloatIndexParams.
-///
 /// Args:
 ///     is_principal: Whether this field is a principal identifier.
 ///     on_disk: Whether to store index on disk.
@@ -463,8 +457,6 @@ impl PyFloatIndexParams {
 
 /// Index parameters for geo fields.
 ///
-/// Create GeoIndexParams.
-///
 /// Args:
 ///     on_disk: Whether to store index on disk.
 ///     enable_hnsw: Whether to enable HNSW index for this field.
@@ -514,8 +506,6 @@ impl PyGeoIndexParams {
 
 /// Index parameters for boolean fields.
 ///
-/// Create BoolIndexParams.
-///
 /// Args:
 ///     on_disk: Whether to store index on disk.
 ///     enable_hnsw: Whether to enable HNSW index for this field.
@@ -564,8 +554,6 @@ impl PyBoolIndexParams {
 }
 
 /// Index parameters for datetime fields.
-///
-/// Create DatetimeIndexParams.
 ///
 /// Args:
 ///     is_principal: Whether this field is a principal identifier.
@@ -628,8 +616,6 @@ impl PyDatetimeIndexParams {
 }
 
 /// Index parameters for UUID fields.
-///
-/// Create UuidIndexParams.
 ///
 /// Args:
 ///     is_tenant: Whether this field is used for tenant separation.

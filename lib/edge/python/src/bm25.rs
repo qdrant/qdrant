@@ -14,8 +14,6 @@ use crate::types::vector::PySparseVector;
 
 /// Configuration for an edge-side BM25 model.
 ///
-/// Create a Bm25Config.
-///
 /// Args:
 ///     k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
 ///     b: Length normalization. 0=none, 1=full. Default 0.75.

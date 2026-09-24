@@ -20,8 +20,6 @@ use crate::types::PyValue;
 
 /// A scoring formula for custom ranking.
 ///
-/// Create a Formula.
-///
 /// Args:
 ///     formula: Expression tree.
 ///     defaults: Default variable values.

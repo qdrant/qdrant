@@ -10,8 +10,6 @@ use crate::*;
 
 /// Request for search operation.
 ///
-/// Create a SearchRequest.
-///
 /// Args:
 ///     query: Query (vector-based).
 ///     limit: Maximum number of results.
@@ -133,8 +131,6 @@ impl PySearchRequest {
 
 /// Parameters for search operations.
 ///
-/// Create SearchParams.
-///
 /// Args:
 ///     hnsw_ef: ef parameter for HNSW search.
 ///     exact: Whether to use exact search.
@@ -235,8 +231,6 @@ impl PySearchParams {
 ///
 /// Only applicable to sparse vectors with the IDF modifier enabled.
 ///
-/// Create IdfParams.
-///
 /// Args:
 ///     corpus: Filter defining the corpus: IDF statistics are computed over
 ///         the points matching this filter. If None, statistics are
@@ -272,8 +266,6 @@ impl PyIdfParams {
 }
 
 /// Parameters for quantization during search.
-///
-/// Create QuantizationSearchParams.
 ///
 /// Args:
 ///     ignore: Whether to ignore quantization.
@@ -331,8 +323,6 @@ impl PyQuantizationSearchParams {
 }
 
 /// Parameters for Acorn filtered search.
-///
-/// Create AcornSearchParams.
 ///
 /// Args:
 ///     enable: Whether to enable Acorn.

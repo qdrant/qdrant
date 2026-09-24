@@ -9,8 +9,6 @@ use crate::types::*;
 
 /// Condition on a payload field.
 ///
-/// Create a FieldCondition.
-///
 /// Args:
 ///     key: Payload field path.
 ///     match: Match condition.
