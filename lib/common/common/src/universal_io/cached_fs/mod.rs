@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::task::Poll;
 
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
