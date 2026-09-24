@@ -1575,17 +1575,18 @@ fn validate_transfer(
             )));
         }
 
-        // Preserve the legacy check, including its use of `to_shard_id` on both sides
         let source_key = state
             .shards_key_mapping
             .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .find(|(_, shard_ids)| shard_ids.contains(&transfer.shard_id))
             .map(|(key, _)| key);
+
         let target_key = state
             .shards_key_mapping
             .iter()
             .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
             .map(|(key, _)| key);
+
         if source_key != target_key {
             return Err(StorageError::bad_request(format!(
                 "Source and target shard must have the same shard key, but they have \
