@@ -1334,6 +1334,7 @@ dependencies = [
  "common",
  "count-min-sketch",
  "criterion",
+ "edge",
  "env_logger",
  "exhaustive",
  "fnv",
