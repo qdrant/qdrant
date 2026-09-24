@@ -64,9 +64,9 @@ use crate::grpc::qdrant::{
     PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, ShardKeyDescription,
-    StopwordsSet, StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult,
-    UpdateResultInternal, ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
-    shard_key, with_vectors_selector,
+    StopwordsSet, StrictModeConfig, TextIndexParams, TextScoringParams, TextScoringType,
+    TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount, VectorsSelector,
+    WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
 use crate::grpc::{
     self, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, DecayParamsExpression,
@@ -338,6 +338,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             stopwords,
             stemmer,
             enable_hnsw,
+            scoring,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
 
@@ -359,8 +360,40 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 stemmer: stemming_algo,
                 enable_hnsw,
                 memory: convert_memory_to_proto(memory),
+                scoring: scoring.map(TextScoringParams::from),
             })),
         }
+    }
+}
+
+impl From<segment::data_types::index::TextScoringParams> for TextScoringParams {
+    fn from(params: segment::data_types::index::TextScoringParams) -> Self {
+        let segment::data_types::index::TextScoringParams { r#type } = params;
+        let r#type = match r#type {
+            segment::data_types::index::TextScoringType::Bm25 => TextScoringType::Bm25,
+        };
+        Self {
+            r#type: r#type as i32,
+        }
+    }
+}
+
+impl TryFrom<TextScoringParams> for segment::data_types::index::TextScoringParams {
+    type Error = Status;
+
+    fn try_from(params: TextScoringParams) -> Result<Self, Self::Error> {
+        let TextScoringParams {
+            r#type: scoring_type,
+        } = params;
+        let r#type = match TextScoringType::try_from(scoring_type) {
+            Ok(TextScoringType::Bm25) => segment::data_types::index::TextScoringType::Bm25,
+            Err(_) => {
+                return Err(Status::invalid_argument(format!(
+                    "unknown text scoring type {scoring_type}",
+                )));
+            }
+        };
+        Ok(Self { r#type })
     }
 }
 
@@ -673,6 +706,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             stemmer,
             enable_hnsw,
             memory,
+            scoring,
         } = params;
 
         // Convert stopwords if present
@@ -704,6 +738,9 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             stopwords: stopwords_converted,
             stemmer,
             enable_hnsw,
+            scoring: scoring
+                .map(segment::data_types::index::TextScoringParams::try_from)
+                .transpose()?,
         })
     }
 }
@@ -3876,5 +3913,41 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
         VectorStorageDatatype::Float16 => grpc::Datatype::Float16,
         VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
         VectorStorageDatatype::Turbo4 => grpc::Datatype::Turbo4,
+    }
+}
+
+#[cfg(test)]
+mod text_scoring_tests {
+    use segment::data_types::index::{
+        TextIndexParams as SegmentTextIndexParams, TextScoringParams as SegmentTextScoringParams,
+    };
+
+    use super::*;
+
+    fn round_trip(params: SegmentTextIndexParams) -> SegmentTextIndexParams {
+        let Some(IndexParams::TextIndexParams(grpc)) =
+            PayloadIndexParams::from(params).index_params
+        else {
+            panic!("expected text index params");
+        };
+        SegmentTextIndexParams::try_from(grpc).unwrap()
+    }
+
+    /// `scoring` crosses gRPC both ways, set or not.
+    #[test]
+    fn text_scoring_survives_grpc_round_trip() {
+        let scoring = SegmentTextIndexParams {
+            scoring: Some(SegmentTextScoringParams::default()),
+            ..SegmentTextIndexParams::default()
+        };
+        assert_eq!(round_trip(scoring.clone()), scoring);
+        let plain = SegmentTextIndexParams::default();
+        assert_eq!(round_trip(plain.clone()), plain);
+    }
+
+    #[test]
+    fn unknown_text_scoring_type_is_refused() {
+        let unknown = TextScoringParams { r#type: 42 };
+        assert!(SegmentTextScoringParams::try_from(unknown).is_err());
     }
 }

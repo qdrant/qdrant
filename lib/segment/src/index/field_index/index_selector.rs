@@ -492,6 +492,7 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<FullTextIndex>> {
+        let config = config.normalized();
         Ok(match self {
             IndexSelector::NonAppendable { dir, memory } => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *memory, deleted_points)?
@@ -508,6 +509,7 @@ impl IndexSelector<'_> {
         config: TextIndexParams,
         deleted_points: &BitSlice,
     ) -> FieldIndexBuilder {
+        let config = config.normalized();
         match self {
             IndexSelector::NonAppendable { dir, memory } => {
                 let scoring = config.scoring();
