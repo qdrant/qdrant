@@ -187,8 +187,6 @@ impl Repr for PyNamedVector {
 
 /// A sparse vector representation.
 ///
-/// Create a SparseVector.
-///
 /// Args:
 ///     indices: Non-zero dimension indices.
 ///     values: Values at the non-zero dimensions.

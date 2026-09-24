@@ -176,8 +176,6 @@ impl Repr for PyIndexes {
 }
 
 /// Configuration for plain (brute-force) index.
-///
-/// Create a PlainIndexConfig.
 #[pyclass(name = "PlainIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
@@ -196,8 +194,6 @@ impl PyPlainIndexConfig {
 }
 
 /// Configuration for HNSW index.
-///
-/// Create an HnswIndexConfig.
 ///
 /// Args:
 ///     m: Number of edges per node.
@@ -315,8 +311,6 @@ impl PyHnswIndexConfig {
 }
 
 /// Configuration for multi-vector storage.
-///
-/// Create a MultiVectorConfig.
 ///
 /// Args:
 ///     comparator: Multi-vector comparator.
@@ -444,8 +438,6 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
 use edge::EdgeVectorParams;
 
 /// Dense vector parameters for EdgeConfig.
-///
-/// Create EdgeVectorParams.
 ///
 /// Args:
 ///     size: Dimension of vectors.

@@ -26,8 +26,6 @@ use crate::repr::*;
 
 /// Filter conditions for queries.
 ///
-/// Create a Filter.
-///
 /// Args:
 ///     must: Conditions that must all match.
 ///     should: Conditions where at least one should match.

@@ -18,8 +18,6 @@ use crate::repr::*;
 
 /// Configuration for creating a new Qdrant Edge shard.
 ///
-/// Create an EdgeConfig.
-///
 /// Parameters left as None are "not specified": when loading an existing shard each
 /// one resolves through provided -> persisted -> derived from segments -> default,
 /// so an unspecified parameter keeps the shard as it is. vectors and sparse_vectors

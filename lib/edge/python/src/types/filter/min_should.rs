@@ -8,8 +8,6 @@ use crate::types::filter::condition::PyCondition;
 
 /// Minimum number of should conditions that must match.
 ///
-/// Create a MinShould.
-///
 /// Args:
 ///     conditions: List of conditions.
 ///     min_count: Minimum number that must match.

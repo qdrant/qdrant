@@ -19,8 +19,6 @@ use crate::types::json_path::PyJsonPath;
 
 /// Index parameters for text fields.
 ///
-/// Create TextIndexParams.
-///
 /// Args:
 ///     tokenizer: Tokenizer type.
 ///     min_token_len: Minimum token length.
@@ -209,8 +207,6 @@ impl PyTextScoringInterface {
 /// Ranking over a text index. The index records the length of each
 /// document, which ranking normalizes by. BM25's `k` and `b` are set per
 /// query, with `Bm25Params`.
-///
-/// Create TextScoringParams.
 ///
 /// Args:
 ///     type: How documents are ranked. Default: TextScoringType.Bm25.
@@ -544,8 +540,6 @@ impl From<PyLanguage> for Language {
 
 /// Custom stopwords set.
 ///
-/// Create a StopwordsSet.
-///
 /// Args:
 ///     languages: Predefined language stopwords to include.
 ///     custom: Custom stopwords to add.
@@ -684,8 +678,6 @@ impl Repr for PyStemmingAlgorithm {
 
 /// Snowball stemming algorithm parameters.
 ///
-/// Create SnowballParams.
-///
 /// Args:
 ///     language: Snowball language.
 #[pyclass(name = "SnowballParams", from_py_object)]
@@ -722,8 +714,6 @@ impl PySnowballParams {
 }
 
 /// Explicitly disable stemming, overriding the language default.
-///
-/// Create a DisabledStemmer.
 #[pyclass(name = "DisabledStemmer", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]

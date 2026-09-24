@@ -104,8 +104,6 @@ impl Repr for PyMatch {
 
 /// Match exact value.
 ///
-/// Create a MatchValue.
-///
 /// Args:
 ///     value: Value to match.
 #[pyclass(name = "MatchValue", from_py_object)]
@@ -209,8 +207,6 @@ impl Repr for PyValueVariants {
 
 /// Full-text match.
 ///
-/// Create a MatchText.
-///
 /// Args:
 ///     text: Text to search for.
 #[pyclass(name = "MatchText", from_py_object)]
@@ -245,8 +241,6 @@ impl PyMatchText {
 }
 
 /// Match any of the words in text.
-///
-/// Create a MatchTextAny.
 ///
 /// Args:
 ///     text_any: Space-separated words to match any of.
@@ -283,8 +277,6 @@ impl PyMatchTextAny {
 
 /// Match exact phrase.
 ///
-/// Create a MatchPhrase.
-///
 /// Args:
 ///     phrase: Phrase to match.
 #[pyclass(name = "MatchPhrase", from_py_object)]
@@ -319,8 +311,6 @@ impl PyMatchPhrase {
 }
 
 /// Match keyword values starting with the given prefix.
-///
-/// Create a MatchPrefix.
 ///
 /// Args:
 ///     prefix: Prefix to match.
@@ -357,8 +347,6 @@ impl PyMatchPrefix {
 
 /// Match keyword values containing the given substring.
 ///
-/// Create a MatchSubstring.
-///
 /// Args:
 ///     substring: Substring to match.
 #[pyclass(name = "MatchSubstring", from_py_object)]
@@ -393,8 +381,6 @@ impl PyMatchSubstring {
 }
 
 /// Match any of the values.
-///
-/// Create a MatchAny.
 ///
 /// Args:
 ///     any: List of values to match any of.
@@ -432,8 +418,6 @@ impl PyMatchAny {
 }
 
 /// Match any value except these.
-///
-/// Create a MatchExcept.
 ///
 /// Args:
 ///     value: List of values to exclude.

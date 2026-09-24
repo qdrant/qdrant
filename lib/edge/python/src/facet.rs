@@ -12,8 +12,6 @@ use crate::types::{PyFilter, PyJsonPath, PyValueVariants};
 
 /// Request for facet operation.
 ///
-/// Create a FacetRequest.
-///
 /// Args:
 ///     key: Payload field key to facet on.
 ///     limit: Maximum number of facet hits to return.

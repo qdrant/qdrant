@@ -7,8 +7,6 @@ use crate::repr::*;
 
 /// Optimizer-related configuration for EdgeConfig.
 ///
-/// Create EdgeOptimizersConfig.
-///
 /// Args:
 ///     deleted_threshold: Min fraction of deleted vectors to run vacuum (default 0.2).
 ///     vacuum_min_vector_number: Min vectors in segment to run vacuum (default 1000).

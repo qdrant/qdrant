@@ -14,8 +14,6 @@ use crate::type_hint::Alias;
 
 /// A geographic point.
 ///
-/// Create a GeoPoint.
-///
 /// Args:
 ///     lon: Longitude (-180 to 180).
 ///     lat: Latitude (-90 to 90).
@@ -72,8 +70,6 @@ impl<'py> IntoPyObject<'py> for &PyGeoPoint {
 
 /// A geographic bounding box.
 ///
-/// Create a GeoBoundingBox.
-///
 /// Args:
 ///     top_left: Top-left corner.
 ///     bottom_right: Bottom-right corner.
@@ -121,8 +117,6 @@ impl PyGeoBoundingBox {
 
 /// A geographic circle.
 ///
-/// Create a GeoRadius.
-///
 /// Args:
 ///     center: Center point.
 ///     radius: Radius in meters.
@@ -169,8 +163,6 @@ impl PyGeoRadius {
 }
 
 /// A geographic polygon.
-///
-/// Create a GeoPolygon.
 ///
 /// Args:
 ///     exterior: Exterior ring points.
