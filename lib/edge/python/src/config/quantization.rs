@@ -110,8 +110,6 @@ impl Repr for PyQuantizationConfig {
 
 /// Configuration for scalar quantization.
 ///
-/// Create a ScalarQuantizationConfig.
-///
 /// Args:
 ///     type: Scalar type (e.g., Int8).
 ///     quantile: Quantile for normalization.
@@ -220,8 +218,6 @@ impl From<PyScalarType> for ScalarType {
 }
 
 /// Configuration for product quantization.
-///
-/// Create a ProductQuantizationConfig.
 ///
 /// Args:
 ///     compression: Compression ratio.
@@ -337,8 +333,6 @@ impl From<PyCompressionRatio> for CompressionRatio {
 }
 
 /// Configuration for binary quantization.
-///
-/// Create a BinaryQuantizationConfig.
 ///
 /// Args:
 ///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.
@@ -515,8 +509,6 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
 }
 
 /// Configuration for TurboQuant quantization.
-///
-/// Create a TurboQuantQuantizationConfig.
 ///
 /// Args:
 ///     always_ram: Deprecated, use memory instead. Whether to keep in RAM.

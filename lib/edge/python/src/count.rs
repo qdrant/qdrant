@@ -9,8 +9,6 @@ use crate::types::PyFilter;
 
 /// Request for count operation.
 ///
-/// Create a CountRequest.
-///
 /// Args:
 ///     exact: Whether to count exactly or estimate.
 ///     filter: Filter conditions.

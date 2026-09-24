@@ -9,8 +9,6 @@ use crate::types::*;
 
 /// Condition on nested objects.
 ///
-/// Create a NestedCondition.
-///
 /// Args:
 ///     key: Path to nested array.
 ///     filter: Filter to apply to nested objects.

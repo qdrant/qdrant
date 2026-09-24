@@ -43,8 +43,6 @@ impl From<PyRange> for RangeInterface {
 
 /// Range condition for float values.
 ///
-/// Create a RangeFloat.
-///
 /// Args:
 ///     gte: Greater than or equal.
 ///     gt: Greater than.
@@ -111,8 +109,6 @@ impl PyRangeFloat {
 }
 
 /// Range condition for datetime values.
-///
-/// Create a RangeDateTime.
 ///
 /// Args:
 ///     gte: Greater than or equal (ISO 8601 string).

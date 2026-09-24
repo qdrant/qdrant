@@ -13,8 +13,6 @@ use crate::repr::*;
 
 /// Sparse vector parameters for EdgeConfig.
 ///
-/// Create EdgeSparseVectorParams.
-///
 /// Args:
 ///     full_scan_threshold: Threshold for full scan vs index search.
 ///     on_disk: Deprecated, use memory instead. If True, sparse index on disk;

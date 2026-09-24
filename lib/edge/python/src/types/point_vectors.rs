@@ -10,8 +10,6 @@ use crate::types::{PyPointId, PyVector};
 
 /// Point ID with associated vectors for update operations.
 ///
-/// Create a PointVectors.
-///
 /// Args:
 ///     id: Point ID.
 ///     vector: Vector data.

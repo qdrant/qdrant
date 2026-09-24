@@ -21,9 +21,7 @@ use super::*;
 use crate::repr::*;
 use crate::type_hint::Alias;
 
-/// Queries executed together as one planned batch.
-///
-/// Create a batch of queries, returning results in the same order.
+/// Queries executed together as one planned batch, returning results in the same order.
 #[pyclass(name = "QueryBatchRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryBatchRequest(QueryBatchRequest);
@@ -49,8 +47,6 @@ impl PyQueryBatchRequest {
 }
 
 /// Request for query operation.
-///
-/// Create a QueryRequest.
 ///
 /// Args:
 ///     limit: Maximum number of results.
@@ -185,8 +181,6 @@ impl PyQueryRequest {
 }
 
 /// A prefetch stage for multi-stage queries.
-///
-/// Create a Prefetch stage.
 ///
 /// Args:
 ///     limit: Maximum number of results for this stage.
@@ -470,8 +464,6 @@ impl From<PyFusion> for FusionInternal {
 
 /// Order results by a payload field.
 ///
-/// Create an OrderBy.
-///
 /// Args:
 ///     key: Payload field path.
 ///     direction: Sort direction.
@@ -698,8 +690,6 @@ impl From<PySample> for SampleInternal {
 
 /// Maximal Marginal Relevance for result diversification.
 ///
-/// Create an MMR query.
-///
 /// Args:
 ///     vector: Query vector.
 ///     lambda_: Balance between relevance and diversity (0-1).
@@ -776,8 +766,6 @@ impl PyMmr {
 ///
 /// The field's index must be created with `TextIndexParams(scoring=True)`.
 ///
-/// Create a TextQuery.
-///
 /// Args:
 ///     field: Payload field whose text index scores the points.
 ///     query: Text to search for, tokenized by the field's text index.
@@ -836,8 +824,6 @@ impl PyTextQuery {
 }
 
 /// BM25 parameters of a TextQuery.
-///
-/// Create Bm25Params.
 ///
 /// Args:
 ///     k: Term frequency saturation, non-negative. Default: 1.2.
