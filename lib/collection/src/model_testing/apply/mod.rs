@@ -211,6 +211,22 @@ pub(super) async fn apply(
             unreachable!("CreateSnapshot is handled in the run loop, not apply()")
         }
         Op::SetFlushInterval(sec) => writes::apply_set_flush_interval(collection, *sec).await,
+        Op::QueryText {
+            text,
+            limit,
+            filter_num,
+            filter_url_prefix,
+        } => {
+            reads::apply_query_text(
+                collection,
+                model,
+                text,
+                *limit,
+                *filter_num,
+                filter_url_prefix.as_deref(),
+            )
+            .await
+        }
     }
 }
 
