@@ -7151,6 +7151,7 @@ dependencies = [
  "bitvec",
  "blink-alloc",
  "blobstore",
+ "bm25",
  "bytemuck",
  "byteorder",
  "bytes",
