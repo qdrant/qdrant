@@ -49,6 +49,8 @@ impl PyTextIndexParams {
             memory: None,
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
+            // Not exposed: edge does not run BM25 over a text index yet.
+            scoring: None,
         })
     }
 
@@ -119,6 +121,7 @@ impl PyTextIndexParams {
             on_disk: _,
             stemmer: _,
             enable_hnsw: _,
+            scoring: _, // not exposed: edge does not run BM25 over a text index yet
         } = self.0;
     }
 }

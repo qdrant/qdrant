@@ -8027,6 +8027,17 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "scoring": {
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Implies `phrase_matching: true`, since term frequencies come from the positions it stores. Changing it rebuilds the index. Default: disabled.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextScoringInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8186,6 +8197,36 @@
         "type": "string",
         "enum": [
           "none"
+        ]
+      },
+      "TextScoringInterface": {
+        "description": "BM25 scoring for a text index: `true` for the default parameters, `false` to disable it, or the parameters themselves.",
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "$ref": "#/components/schemas/TextScoringParams"
+          }
+        ]
+      },
+      "TextScoringParams": {
+        "description": "Parameters of ranking over a text index. The index records the length of each document, which BM25 normalizes by. `k1` and `b` are set per query.",
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/TextScoringType"
+          }
+        }
+      },
+      "TextScoringType": {
+        "description": "How a text index ranks documents.",
+        "type": "string",
+        "enum": [
+          "bm25"
         ]
       },
       "BoolIndexParams": {
