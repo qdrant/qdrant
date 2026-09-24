@@ -67,7 +67,7 @@ impl CompactedTracker {
             pointers: Vec::new(),
             dirty: Arc::new(AtomicBool::new(false)),
         };
-        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers))?;
+        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers)?)?;
         Ok(tracker)
     }
 
@@ -157,12 +157,13 @@ impl CompactedTracker {
         let dirty = Arc::clone(&self.dirty);
 
         Box::new(move || {
-            let result = fs.atomic_save(&path, &format::encode(&pointers));
+            let result = format::encode(&pointers)
+                .map_err(BlobstoreError::from)
+                .and_then(|bytes| Ok(fs.atomic_save(&path, &bytes)?));
             if result.is_err() {
                 dirty.store(true, Ordering::Relaxed);
             }
-            result?;
-            Ok(())
+            result
         })
     }
 }
