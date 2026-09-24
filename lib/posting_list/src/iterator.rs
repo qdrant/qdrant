@@ -27,6 +27,10 @@ impl<'a, V: PostingValue> PostingIterator<'a, V> {
     /// the head of the iterator, so it does not need to be advanced.
     ///
     /// `None` means the iterator is exhausted.
+    ///
+    /// The seek leaves the iterator *on* the element it returns, not past it: a following
+    /// [`Iterator::next`] yields that same element again. Callers mixing the two on one iterator
+    /// have to skip it themselves.
     pub fn advance_until_greater_or_equal(
         &mut self,
         target_id: PointOffsetType,
