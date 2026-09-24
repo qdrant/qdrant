@@ -62,7 +62,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             root_plans,
             searches,
             scrolls,
+            texts,
         } = planned_query;
+        if !texts.is_empty() {
+            return Err(text_not_supported());
+        }
 
         let mut search_results = self.search_batch(&searches)?;
 
@@ -158,6 +162,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 Source::ScrollsIdx(idx) => {
                     sources.push(take_prefetched_source(scroll_results, idx)?)
                 }
+
+                // Refused before planning resolves, see `query_batch`.
+                Source::TextsIdx(_) => return Err(text_not_supported()),
 
                 Source::Prefetch(merge_plan) => {
                     let merged = self.recurse_prefetch(
@@ -297,6 +304,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             },
 
             ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit, hw_counter_acc),
+            // Refused when the query is planned, see `MergePlan::validate`.
+            ScoringQuery::Text(_) => Err(text_not_supported()),
         }
     }
 
@@ -462,6 +471,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         Ok(query_response)
     }
+}
+
+/// Edge keeps no shard-level path for BM25 over a text index yet.
+fn text_not_supported() -> OperationError {
+    OperationError::validation_error("BM25 over a text index is not supported on edge yet")
 }
 
 fn take_prefetched_source<T: Default>(items: &mut [T], index: usize) -> OperationResult<T> {

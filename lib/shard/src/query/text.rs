@@ -1,27 +1,69 @@
 //! BM25 over the text index of a payload field, as a shard runs it.
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::ScoreType;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
 use segment::json_path::JsonPath;
-use segment::types::PayloadSchemaParams;
+use segment::types::{Filter, PayloadSchemaParams, WithPayloadInterface, WithVector};
+use serde::Serialize;
 
+use crate::operation_rate_cost;
 use crate::payload_index_schema::PayloadIndexSchema;
 
 /// A BM25 query: raw text scored against the text index of one payload field.
 ///
 /// It carries the text, not tokens: each shard tokenizes it with the field's
 /// own tokenizer, the one that built the vocabulary the terms are looked up in.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TextScoringQuery {
     pub field: JsonPath,
     pub text: String,
     pub params: Bm25Params,
+}
+
+impl Hash for TextScoringQuery {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let Self {
+            field,
+            text,
+            params: Bm25Params { k1, b },
+        } = self;
+        field.hash(state);
+        text.hash(state);
+        k1.to_bits().hash(state);
+        b.to_bits().hash(state);
+    }
+}
+
+/// A BM25 leaf of a planned query: one text query run against every segment
+/// of the shard, as a search leaf is for a vector query.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextSearchRequestInternal {
+    pub query: TextScoringQuery,
+    pub filter: Option<Filter>,
+    pub limit: usize,
+    /// Keep only points scoring above this.
+    pub score_threshold: Option<ScoreType>,
+    pub with_vector: WithVector,
+    pub with_payload: WithPayloadInterface,
+}
+
+impl TextSearchRequestInternal {
+    /// Priced like a scroll: a base cost plus the filter's.
+    pub fn text_rate_cost(&self) -> usize {
+        let mut cost = operation_rate_cost::BASE_COST;
+        if let Some(filter) = &self.filter {
+            cost += operation_rate_cost::filter_rate_cost(filter);
+        }
+        cost
+    }
 }
 
 impl TextScoringQuery {
