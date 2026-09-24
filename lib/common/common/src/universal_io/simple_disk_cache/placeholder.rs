@@ -7,10 +7,11 @@ use parking_lot::Mutex;
 
 use super::local_state::LocalState;
 
-const PLACEHOLDER_WAIT_TIMEOUT: std::time::Duration = cfg_select! {
-    not(test) => std::time::Duration::from_secs(10),
-    test => std::time::Duration::from_millis(100),
-};
+const PLACEHOLDER_WAIT_TIMEOUT: std::time::Duration =
+    cfg_select! {
+        not(test) => std::time::Duration::from_secs(10),
+        test => std::time::Duration::from_millis(100),
+    };
 
 #[derive(Debug)]
 enum PlaceholderState {
