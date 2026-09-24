@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::UniversalWriteFs;
 
 use super::deleted_storage::tombstone_points_in_stored_mask;
 use crate::common::operation_error::OperationResult;
@@ -15,7 +15,7 @@ use crate::types::PointIdType;
 /// mask ([`DELETED_FILE_NAME`](super::DELETED_FILE_NAME)). Needs only reads
 /// plus [`atomic_save`] from the backend, so object stores qualify.
 ///
-/// [`atomic_save`]: UniversalWriteFileOps::atomic_save
+/// [`atomic_save`]: UniversalWriteFs::atomic_save
 pub struct UpdateOnlyImmutableIdTracker {
     segment_path: PathBuf,
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
@@ -44,7 +44,7 @@ impl UpdateOnlyImmutableIdTracker {
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()>
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
     {
         tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, points)
     }

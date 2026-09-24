@@ -1498,7 +1498,7 @@ fn test_live_reload_disk_cache() {
     use std::sync::Arc;
 
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, UniversalReadFileOps,
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, UniversalReadFs,
     };
 
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
@@ -1910,7 +1910,7 @@ async fn test_preopen_schedules_files_for_open(
     #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
 ) {
     use common::universal_io::{
-        CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFileOps,
+        CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFs,
     };
 
     let hw_counter = HardwareCounterCell::new();
@@ -1965,7 +1965,7 @@ async fn test_preopen_schedules_files_for_open(
 /// opens its pages and tracker read-only.
 #[test]
 fn read_only_reader_over_write_enforced_backend() {
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
 
     let hw_counter = HardwareCounterCell::new();
 

@@ -14,7 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{Populate, UniversalWrite, UniversalWriteFileOps, UserData};
+use common::universal_io::{Populate, UniversalWrite, UniversalWriteFs, UserData};
 use itertools::Itertools;
 use parking_lot::RwLock;
 pub(super) use reader::GridstoreReader;

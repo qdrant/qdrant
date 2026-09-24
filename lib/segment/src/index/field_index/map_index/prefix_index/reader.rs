@@ -8,8 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFileOps,
-    UniversalReadFs,
+    CachedReadFs, MmapFile, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
 };
 
 use super::PREFIX_INDEX_PATH;
@@ -77,7 +76,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         populate: Populate,
     ) -> OperationResult<()> {
         let file_path = dir.join(PREFIX_INDEX_PATH);
-        if !UniversalReadFileOps::exists(fs, &file_path)? {
+        if !UniversalReadFs::exists(fs, &file_path)? {
             return Ok(());
         }
 
@@ -94,7 +93,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         populate: Populate,
     ) -> OperationResult<Option<Self>> {
         let file_path = dir.join(PREFIX_INDEX_PATH);
-        if !UniversalReadFileOps::exists(fs, &file_path)? {
+        if !UniversalReadFs::exists(fs, &file_path)? {
             return Ok(None);
         }
 

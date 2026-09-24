@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::stored_bitmask::save_bitmask;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalWriteFileOps;
+use common::universal_io::UniversalWriteFs;
 use roaring::RoaringBitmap;
 use uuid::Uuid;
 
@@ -139,7 +139,7 @@ pub fn store_i2e<W: Write>(
 /// Persist the `is_uuid` flag of every i2e slot (`id_tracker.is_uuid`) as a
 /// compact stored bitmask over internal offsets, written atomically.
 pub fn store_is_uuid(
-    fs: &impl UniversalWriteFileOps,
+    fs: &impl UniversalWriteFs,
     segment_path: &Path,
     mappings: &CompressedPointMappings,
 ) -> OperationResult<()> {

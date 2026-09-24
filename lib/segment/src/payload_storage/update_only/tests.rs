@@ -3,7 +3,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, Populate, ReadOnly, UniversalRead, UniversalReadFileOps as _,
+    MmapFile, MmapFs, Populate, ReadOnly, UniversalRead, UniversalReadFs as _,
 };
 use tempfile::TempDir;
 

@@ -258,7 +258,7 @@ mod tests {
 
     use common::universal_io::{
         DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
-        UniversalReadFileOps,
+        UniversalReadFs,
     };
     use tempfile::Builder;
 

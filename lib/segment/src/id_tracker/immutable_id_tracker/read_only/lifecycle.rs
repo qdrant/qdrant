@@ -6,8 +6,7 @@ use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
 
 use super::ReadOnlyImmutableIdTracker;
@@ -37,7 +36,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
     ) -> OperationResult<bool> {
-        if !UniversalReadFileOps::exists(fs, &mappings_path(segment_path))? {
+        if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
             return Ok(false);
         }
 
@@ -67,7 +66,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
     ) -> OperationResult<Option<Self>> {
-        if !UniversalReadFileOps::exists(fs, &mappings_path(segment_path))? {
+        if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
             return Ok(None);
         }
         Ok(Some(Self::open(fs, segment_path)?))

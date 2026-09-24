@@ -43,7 +43,7 @@ where
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
     use serde_json::Value;
     use tempfile::TempDir;

@@ -4,7 +4,7 @@ use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{OpenOptions, Populate, UniversalWriteFs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::PointIdType;
@@ -27,7 +27,7 @@ pub(crate) fn tombstone_points_in_stored_mask<Fs>(
     points: &[(PointIdType, PointOffsetType)],
 ) -> OperationResult<()>
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
 {
     if points.is_empty() {
         return Ok(());

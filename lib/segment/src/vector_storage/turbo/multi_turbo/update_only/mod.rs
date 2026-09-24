@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -41,7 +41,7 @@ pub struct UpdateOnlyMultiTurboVectorStorage {
 impl UpdateOnlyMultiTurboVectorStorage {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+    pub fn open<Fs: UniversalWriteFs>(
         fs: &Fs,
         path: &Path,
         dim: usize,
@@ -71,7 +71,7 @@ impl UpdateOnlyMultiTurboVectorStorage {
 
     /// Append one encoded multi-vector per point of a batch, starting at
     /// `start_slot`, and persist them.
-    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         start_slot: PointOffsetType,

@@ -250,7 +250,7 @@ mod tests {
         use std::sync::Arc;
 
         use common::universal_io::{
-            DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+            DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
         };
 
         const DIM: usize = 32;

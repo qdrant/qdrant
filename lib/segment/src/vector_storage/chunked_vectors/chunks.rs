@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
     ListedFile, OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs, UniversalWrite,
+    UniversalReadFs, UniversalWrite,
 };
 
 use super::config::{MMAP_CHUNKS_PATTERN_END, MMAP_CHUNKS_PATTERN_START};
@@ -49,7 +49,7 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
 
 /// List the chunk files under `directory`, keyed by chunk id.
 pub(super) fn list_chunk_files(
-    fs: &impl UniversalReadFileOps,
+    fs: &impl UniversalReadFs,
     directory: &Path,
 ) -> Result<AHashMap<usize, ListedFile>, UniversalIoError> {
     let mut chunks_files = AHashMap::new();

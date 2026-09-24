@@ -34,7 +34,7 @@ where
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use serde_json::Value;
     use tempfile::TempDir;
 

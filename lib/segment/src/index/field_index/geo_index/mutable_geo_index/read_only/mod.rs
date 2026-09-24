@@ -28,7 +28,7 @@ pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use tempfile::TempDir;
 
     use super::super::MutableGeoIndex;

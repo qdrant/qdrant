@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::UniversalWriteFs;
 use serde_json::Value;
 
 use super::lifecycle::classify_payload;
@@ -21,10 +21,7 @@ pub struct UpdateOnlyNullIndex {
 
 impl UpdateOnlyNullIndex {
     /// Open the index at `dir` for writing, reading both masks into memory.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        dir: &Path,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> OperationResult<Self> {
         Ok(Self {
             has_values: UpdateOnlyStoredFlags::open(fs, &dir.join(HAS_VALUES_DIRNAME))?,
             is_null: UpdateOnlyStoredFlags::open(fs, &dir.join(IS_NULL_DIRNAME))?,
@@ -47,7 +44,7 @@ impl UpdateOnlyNullIndex {
     }
 
     /// Persist both masks.
-    pub fn flush<Fs: UniversalWriteFileOps>(
+    pub fn flush<Fs: UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         hw_counter: &HardwareCounterCell,

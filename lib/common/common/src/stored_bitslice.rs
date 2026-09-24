@@ -16,7 +16,7 @@ use crate::bitvec::BitVec;
 use crate::generic_consts::Random;
 use crate::universal_io::{
     Flusher, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
-    UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    UniversalReadFs, UniversalWrite, UniversalWriteFs,
 };
 
 /// `IterOnes` view over a `BitSlice<u64, Lsb0>` — type alias so `self_cell`
@@ -91,7 +91,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// [`atomic_save`]: the one mutation that works on backends without
     /// random-offset writes. When `update` errors, nothing is written.
     ///
-    /// [`atomic_save`]: UniversalWriteFileOps::atomic_save
+    /// [`atomic_save`]: UniversalWriteFs::atomic_save
     pub fn atomic_update<Fs, R, E>(
         fs: &Fs,
         path: impl AsRef<Path>,
@@ -101,7 +101,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         update: impl FnOnce(&mut BitVec) -> Result<R, E>,
     ) -> UioResult<Result<R, E>>
     where
-        Fs: UniversalReadFs<File = S> + UniversalWriteFileOps,
+        Fs: UniversalWriteFs<File = S>,
     {
         let path = path.as_ref();
 

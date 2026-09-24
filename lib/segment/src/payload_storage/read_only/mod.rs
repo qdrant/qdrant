@@ -22,7 +22,7 @@ pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs};
     use rstest::rstest;
     use tempfile::TempDir;
 

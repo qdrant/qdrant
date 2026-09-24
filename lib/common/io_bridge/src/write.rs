@@ -9,12 +9,12 @@ use crate::read::AsyncRead;
 /// Mutating blob-backend operations (filesystem-level).
 ///
 /// The write-side counterpart of [`AsyncRead`], powering the
-/// [`UniversalWriteFileOps`] impl on [`BlobFs`](crate::BlobFs). Same rules as
+/// [`UniversalWriteFs`] impl on [`BlobFs`](crate::BlobFs). Same rules as
 /// [`AsyncRead`]: implementations only describe the async work as
 /// `Send + 'static` futures; the sync wrappers own the runtime and drive
 /// them.
 ///
-/// [`UniversalWriteFileOps`]: common::universal_io::UniversalWriteFileOps
+/// [`UniversalWriteFs`]: common::universal_io::UniversalWriteFs
 pub trait AsyncWrite: AsyncRead {
     /// Create (or truncate to empty) the object at `path`.
     fn create(&self, path: &Path) -> impl Future<Output = UioResult<()>> + Send + 'static;

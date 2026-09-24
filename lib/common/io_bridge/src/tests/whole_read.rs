@@ -11,7 +11,7 @@ use common::generic_consts::Sequential;
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
     Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    UniversalReadFs,
 };
 use futures::stream::{BoxStream, StreamExt};
 

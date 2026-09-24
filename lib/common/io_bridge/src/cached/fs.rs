@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, UioResult,
-    UniversalReadFileOps, UniversalReadFs, UniversalWriteFileOps,
+    UniversalReadFs, UniversalWriteFs,
 };
 
 use super::CachedBlobFile;
@@ -36,7 +36,7 @@ pub struct CachedBlobFs<A: AsyncRead + Clone> {
 
 impl<A: AsyncRead + Clone> CachedBlobFs<A> {
     /// Build both halves around one shared backend handle — unlike
-    /// [`from_context`](UniversalReadFileOps::from_context), which
+    /// [`from_context`](UniversalReadFs::from_context), which
     /// constructs each half's backend from the config.
     pub fn new(remote: A, runtime: BridgeRuntime, disk_cache: Arc<DiskCacheConfig>) -> Self {
         Self {
@@ -56,10 +56,12 @@ impl<A: AsyncRead + Clone> std::fmt::Debug for CachedBlobFs<A> {
     }
 }
 
-impl<A: AsyncRead + Clone> UniversalReadFileOps for CachedBlobFs<A>
+impl<A: AsyncAppend + Clone> UniversalReadFs for CachedBlobFs<A>
 where
     A::Config: Clone,
 {
+    type File = CachedBlobFile<A>;
+    type OpenExtra = <DiskCacheFs<BlobFile<A>> as UniversalReadFs>::OpenExtra;
     type ContextConfig = CachedBlobFsContext<A::Config>;
 
     fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
@@ -82,14 +84,6 @@ where
     fn exists(&self, path: &Path) -> UioResult<bool> {
         self.blob_fs.exists(path)
     }
-}
-
-impl<A: AsyncAppend + Clone> UniversalReadFs for CachedBlobFs<A>
-where
-    A::Config: Clone,
-{
-    type File = CachedBlobFile<A>;
-    type OpenExtra = <DiskCacheFs<BlobFile<A>> as UniversalReadFs>::OpenExtra;
 
     fn open(
         &self,
@@ -110,7 +104,7 @@ where
     }
 }
 
-impl<A: AsyncAppend + Clone> UniversalWriteFileOps for CachedBlobFs<A>
+impl<A: AsyncAppend + Clone> UniversalWriteFs for CachedBlobFs<A>
 where
     A::Config: Clone,
 {

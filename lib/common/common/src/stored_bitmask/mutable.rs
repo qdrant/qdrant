@@ -6,7 +6,7 @@ use roaring::RoaringBitmap;
 use super::format::MAX_LOGICAL_LEN;
 use super::read::StoredBitmask;
 use super::write::bitmask_file_bytes;
-use crate::universal_io::{OpenOptions, UioResult, UniversalReadFs, UniversalWriteFileOps};
+use crate::universal_io::{OpenOptions, UioResult, UniversalReadFs, UniversalWriteFs};
 
 /// Mutable in-RAM handle over a bitmask persisted by [`save_bitmask`].
 ///
@@ -153,7 +153,7 @@ impl MutableStoredBitmask {
     /// Returns the number of bytes written, zero when the write was skipped.
     ///
     /// A failed save leaves the mask dirty, so a later retry writes again.
-    pub fn save(&mut self, fs: &impl UniversalWriteFileOps, path: &Path) -> UioResult<usize> {
+    pub fn save(&mut self, fs: &impl UniversalWriteFs, path: &Path) -> UioResult<usize> {
         if !self.is_dirty() {
             return Ok(0);
         }

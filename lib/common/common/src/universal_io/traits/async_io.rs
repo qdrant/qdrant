@@ -46,7 +46,7 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
 }
 
 /// The async whole-file write surface, mirroring the same operations on
-/// [`UniversalWriteFileOps`]: a batch of saves runs as one concurrent wave
+/// [`UniversalWriteFs`]: a batch of saves runs as one concurrent wave
 /// instead of a thread per file.
 ///
 /// As with [`UniversalReadFsAsync::open_async`], the futures must not depend on
@@ -55,7 +55,7 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
 /// first poll, so a caller that bounds its wave really does bound the in-flight
 /// saves, however it collects the futures.
 ///
-/// [`UniversalWriteFileOps`]: crate::universal_io::UniversalWriteFileOps
+/// [`UniversalWriteFs`]: crate::universal_io::UniversalWriteFs
 pub trait UniversalWriteFsAsync: Send + Sync {
     /// Backends without materialized directories may treat this as a no-op.
     fn create_dir_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;

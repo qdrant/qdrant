@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::UniversalWriteFs;
 use serde_json::Value;
 
 use super::super::MutableBoolIndex;
@@ -21,10 +21,7 @@ pub struct UpdateOnlyBoolIndex {
 
 impl UpdateOnlyBoolIndex {
     /// Open the index at `dir` for writing, reading both masks into memory.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        dir: &Path,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> OperationResult<Self> {
         Ok(Self {
             trues: UpdateOnlyStoredFlags::open(fs, &dir.join(TRUES_DIRNAME))?,
             falses: UpdateOnlyStoredFlags::open(fs, &dir.join(FALSES_DIRNAME))?,
@@ -44,7 +41,7 @@ impl UpdateOnlyBoolIndex {
     }
 
     /// Persist both masks.
-    pub fn flush<Fs: UniversalWriteFileOps>(
+    pub fn flush<Fs: UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         hw_counter: &HardwareCounterCell,

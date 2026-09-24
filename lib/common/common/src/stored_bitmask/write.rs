@@ -5,7 +5,7 @@ use std::path::Path;
 use roaring::RoaringBitmap;
 
 use super::format::{BitmaskHeader, Encoding, HEADER_SIZE, MAX_LOGICAL_LEN};
-use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFileOps};
+use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFs};
 
 /// Atomically persist a bitmask of `logical_len` bits whose set positions are
 /// `ones`.
@@ -13,7 +13,7 @@ use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFileOps};
 /// Picks the cheapest encoding: a roaring bitmap of the minority bit value,
 /// or raw dense bits when the roaring payload would not be smaller.
 pub fn save_bitmask(
-    fs: &impl UniversalWriteFileOps,
+    fs: &impl UniversalWriteFs,
     path: &Path,
     logical_len: u64,
     ones: RoaringBitmap,

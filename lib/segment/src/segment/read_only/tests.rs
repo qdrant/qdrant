@@ -365,7 +365,7 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
 #[ignore = "requires a running S3-compatible server (set S3_INTEGRATION_TEST=1)"]
 fn read_only_segment_over_s3() {
     use bytes::Bytes;
-    use common::universal_io::UniversalReadFileOps;
+    use common::universal_io::UniversalReadFs;
     use io_bridge_object_store::backends::aws::{AwsConfig, AwsCredentials};
     use io_bridge_object_store::{BlobBackend, BlobFile, BlobFs, ObjectStoreSource};
     use object_store::ObjectStoreExt;

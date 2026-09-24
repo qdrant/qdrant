@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn blob_fs_write_ops_round_trip() {
-        use common::universal_io::UniversalReadFileOps as _;
+        use common::universal_io::UniversalReadFs as _;
 
         let source = MutableMockSource::default();
         let fs = BlobFs::new(source.clone(), BridgeRuntime::global());

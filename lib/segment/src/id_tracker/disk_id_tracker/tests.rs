@@ -424,7 +424,7 @@ fn deletion_and_live_reload_disk_cache() {
     use std::sync::Arc;
 
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
     };
 
     use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
