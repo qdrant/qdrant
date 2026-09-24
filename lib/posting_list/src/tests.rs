@@ -241,3 +241,22 @@ where
 
     posting_list
 }
+
+/// Pins the contract documented on `advance_until_greater_or_equal`: after a
+/// seek, `next` yields the element the seek returned, for both iterators.
+#[test]
+fn next_after_seek_yields_the_seeked_element_again() {
+    let mut builder = PostingBuilder::new();
+    for id in [1, 4, 9, 16] {
+        builder.add(id, TestString(format!("value {id}")));
+    }
+    let posting_list = builder.build();
+
+    let mut values = posting_list.iter();
+    assert_eq!(values.advance_until_greater_or_equal(5).unwrap().id, 9);
+    assert_eq!(values.next().unwrap().id, 9);
+
+    let mut lens = posting_list.view().len_iter();
+    assert_eq!(lens.advance_until_greater_or_equal(5).unwrap().id, 9);
+    assert_eq!(lens.next().unwrap().id, 9);
+}
