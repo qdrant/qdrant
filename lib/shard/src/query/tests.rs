@@ -885,3 +885,59 @@ fn test_try_from_text_rescore_is_refused() {
     assert_matches!(error, OperationError::ValidationError { .. });
     assert!(error.to_string().contains("BM25"), "{error}");
 }
+
+/// A corpus-scoped `idf` would change the scores, and text statistics cover the
+/// whole collection, so it is refused on a text leaf, at the root or as a
+/// prefetch. The global scope is what text already does, so it passes.
+#[test]
+fn test_try_from_text_refuses_an_idf_corpus() {
+    let corpus = || SearchParams {
+        idf: Some(IdfParams::Corpus(IdfCorpusParams {
+            corpus: Filter::new_must(Condition::Field(FieldCondition::new_match(
+                "tenant".try_into().unwrap(),
+                "a".to_string().into(),
+            ))),
+        })),
+        ..SearchParams::default()
+    };
+    let global = || SearchParams {
+        idf: Some(IdfParams::Scope(IdfScope::Global)),
+        ..SearchParams::default()
+    };
+    let at_root = |params| ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Text(text_query("fox"))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: Some(params),
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+    let as_prefetch = |params| ShardQueryRequest {
+        prefetches: vec![ShardPrefetch {
+            prefetches: Vec::new(),
+            query: Some(ScoringQuery::Text(text_query("fox"))),
+            limit: 10,
+            params: Some(params),
+            filter: None,
+            score_threshold: None,
+        }],
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
+        params: None,
+        ..at_root(SearchParams::default())
+    };
+
+    for request in [at_root(corpus()), as_prefetch(corpus())] {
+        let error = PlannedQuery::try_from(vec![request]).unwrap_err();
+        assert_matches!(error, OperationError::ValidationError { .. });
+        assert!(error.to_string().contains("idf"), "{error}");
+    }
+    for request in [at_root(global()), as_prefetch(global())] {
+        PlannedQuery::try_from(vec![request]).unwrap();
+    }
+}
