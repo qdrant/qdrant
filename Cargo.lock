@@ -2351,6 +2351,7 @@ dependencies = [
  "log",
  "object_store",
  "rand 0.10.2",
+ "segment",
  "serde_json",
 ]
 
@@ -2368,6 +2369,7 @@ dependencies = [
  "log",
  "object_store",
  "rand 0.10.2",
+ "segment",
  "serde_json",
 ]
 
