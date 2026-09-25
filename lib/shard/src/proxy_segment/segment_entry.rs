@@ -258,6 +258,12 @@ impl ReadSegmentEntry for ProxySegment {
         top: usize,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        // Like `search_batch` on a stale vector: the index the proxy presents
+        // for `field` is not the wrapped one, and holds no points here yet.
+        if self.is_wrapped_index_stale(field) {
+            return Ok(Vec::new());
+        }
+
         // Same exclusions as `search_batch`: redacted vector names, and points
         // deleted after the proxy was created. The text statistics in
         // `query_context` still count those points, as they do for every
@@ -854,11 +860,31 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
+        // A text field whose wrapped index is stale contributes nothing, as it
+        // scores nothing: its statistics are set aside while the wrapped
+        // segment fills the rest, which only fills the fields it is given.
+        let stale: Vec<_> = query_context
+            .mut_text_stats()
+            .keys()
+            .filter(|field| self.is_wrapped_index_stale(field))
+            .cloned()
+            .collect();
+        let set_aside: Vec<_> = stale
+            .into_iter()
+            .filter_map(|field| {
+                let stats = query_context.mut_text_stats().remove(&field)?;
+                Some((field, stats))
+            })
+            .collect();
+
         // Information from temporary segment is not too important for query context
-        self.wrapped_segment
+        let filled = self
+            .wrapped_segment
             .get()
             .read()
-            .fill_query_context(query_context)
+            .fill_query_context(query_context);
+        query_context.mut_text_stats().extend(set_aside);
+        filled
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
