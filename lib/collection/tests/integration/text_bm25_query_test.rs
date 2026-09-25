@@ -228,8 +228,11 @@ async fn text_query_merges_shards() {
 async fn text_query_fuses_with_a_dense_prefetch() {
     let dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = text_collection(dir.path(), 2).await;
+    // Ranks ids 0 to 9 first, while only ids 5 to 34 hold `gamma`: the two
+    // top tens share at most five points, so the fusion has at least 15 to
+    // return whatever the per-shard statistics make of the text ranking.
     let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-        vec![0.0, 1.0, 0.0, 0.0].into(),
+        vec![0.0, -1.0, 0.0, 0.0].into(),
         "",
     )));
     let prefetch = |query| ShardPrefetch {
