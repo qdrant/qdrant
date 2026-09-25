@@ -686,13 +686,24 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     stemmer,
                     enable_hnsw,
                 } = config;
+                let min_token_len = token_len("min_token_len", min_token_len)?;
+                let max_token_len = token_len("max_token_len", max_token_len)?;
+                // Same rule the server enforces on its API: a min above max
+                // rejects every token and would silently build an empty index.
+                segment_index::validate_text_index_params(&min_token_len, &max_token_len)
+                    .map_err(|_| {
+                        EdgeError::invalid_argument(
+                            "text index: the 'min_token_len' cannot be greater than \
+                             the 'max_token_len'",
+                        )
+                    })?;
                 Ok(PayloadSchemaParams::Text(segment_index::TextIndexParams {
                     r#type: segment_index::TextIndexType::Text,
                     tokenizer: tokenizer
                         .map(segment_index::TokenizerType::from)
                         .unwrap_or_default(),
-                    min_token_len: token_len("min_token_len", min_token_len)?,
-                    max_token_len: token_len("max_token_len", max_token_len)?,
+                    min_token_len,
+                    max_token_len,
                     lowercase,
                     ascii_folding,
                     phrase_matching,
