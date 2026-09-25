@@ -72,16 +72,19 @@ where
                     Some(len) => len,
                     None => remote.len::<u8>()?,
                 };
-                let byte_range = read_range.into_byte_range::<u8>();
-                let (block_range, fetch_range) =
-                    block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
-
-                let content = remote
-                    .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
-
+                // An empty requested range, or one with nothing valid to fetch
+                // (zero-length object, range past EOF), has nothing to populate.
+                // Mirror the sync open: create the local mirror and skip the fetch.
                 let local = LocalState::new(&local_path, file_len, options)?;
-                unsafe { local.write_mmap_bytes(&content, block_range) };
+
+                let byte_range = read_range.into_byte_range::<u8>();
+                if let Some((block_range, fetch_range)) = block_aligned_fetch(byte_range, file_len)
+                {
+                    let content = remote
+                        .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                        .await?;
+                    unsafe { local.write_mmap_bytes(&content, block_range) };
+                }
                 State::ready(remote, local)
             }
         };
