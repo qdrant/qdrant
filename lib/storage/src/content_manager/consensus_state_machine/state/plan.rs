@@ -1551,16 +1551,15 @@ fn validate_transfer(
     }
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(StorageError::bad_request(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(StorageError::bad_request(
                 "Target shard is not set for resharding transfer",
             ));
+        };
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(StorageError::bad_request(format!(
+                "Destination shard {to_shard_id} does not exist",
+            )));
         };
         if transfer.shard_id == to_shard_id {
             return Err(StorageError::bad_request(format!(
@@ -1594,16 +1593,15 @@ fn validate_transfer(
             )));
         }
     } else if transfer.filter.is_some() {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(StorageError::bad_request(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(StorageError::bad_request(
                 "Target shard is not set for filtered points transfer",
             ));
+        };
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(StorageError::bad_request(format!(
+                "Destination shard {to_shard_id} does not exist",
+            )));
         };
         if transfer.shard_id == to_shard_id {
             return Err(StorageError::bad_request(format!(
