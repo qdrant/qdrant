@@ -1326,37 +1326,94 @@ pub(super) async fn apply_recommend(
     }
 }
 
-/// Words of a point's `t` as its text index holds them: the lowercased words of a string, or of
-/// each string of an array. Any other value (`SetPayloadByKey` can make `t` an object) holds none.
-fn text_words(payload: &Payload) -> AHashSet<String> {
+/// A `t` document as BM25 counts it: the term frequencies and length of the string values of `t`,
+/// lowercased as the field's tokenizer does. An array's values make one document, the boundaries
+/// between them not counted. Any other value (`SetPayloadByKey` can make `t` an object) holds no
+/// terms.
+struct TextDoc {
+    tf: AHashMap<String, u32>,
+    len: u32,
+}
+
+fn text_doc(payload: &Payload) -> TextDoc {
     let strings: Vec<&str> = match payload.0.get("t") {
         Some(Value::String(text)) => vec![text.as_str()],
         Some(Value::Array(values)) => values.iter().filter_map(Value::as_str).collect(),
         _ => Vec::new(),
     };
-    strings
-        .into_iter()
-        .flat_map(str::split_whitespace)
-        .map(str::to_lowercase)
-        .collect()
+    let mut tf = AHashMap::new();
+    let mut len = 0;
+    for token in strings.into_iter().flat_map(str::split_whitespace) {
+        *tf.entry(token.to_lowercase()).or_default() += 1;
+        len += 1;
+    }
+    TextDoc { tf, len }
 }
 
-/// BM25 over `t` through the query API. See `Op::QueryText` for why these are invariants and
-/// not scores.
+/// What a document's BM25 score depends on, once the shard's statistics are fixed: each query
+/// term's frequency and the document length. `k1 = 0` keeps only whether a term is present, and
+/// `k1 = 0` or `b = 0` drops the length.
+fn bm25_features(doc: &TextDoc, terms: &[String], params: Bm25Params) -> (Vec<u32>, u32) {
+    let tf = terms
+        .iter()
+        .map(|term| {
+            let tf = doc.tf.get(term).copied().unwrap_or(0);
+            if params.k1 == 0.0 { tf.min(1) } else { tf }
+        })
+        .collect();
+    let len = if params.k1 == 0.0 || params.b == 0.0 {
+        0
+    } else {
+        doc.len
+    };
+    (tf, len)
+}
+
+fn scores_match(a: f32, b: f32) -> bool {
+    (a - b).abs() <= 1e-4 * a.abs().max(b.abs()).max(1.0)
+}
+
+/// BM25 over `t` through the query API.
+///
+/// Across the collection and on each shard alone: every result is a live match, appears once,
+/// and ranks best first, and every match comes back when they fit. On each shard, where one
+/// gather serves every segment, the score is a function of the document: equal term frequencies
+/// and length score the same, and a document with at least another's frequencies and no more
+/// length does not score lower. Neither needs the statistics, so both hold while the optimizer
+/// runs.
+///
+/// Across queries, which only holds while the statistics stay put: each shard's ranking is taken
+/// before and after the others, and when the two agree, the top `top_k` of a shard are the top of
+/// its full ranking (what the scorer's pruning must get right) and the collection's top `limit`
+/// is the merge of the shards'. With `no_proxies` (the optimizer off, and no snapshot proxying
+/// segments) they must agree, and the statistics are exactly the model's: no segment keeps
+/// deleted points in its postings, and no proxy counts a moved point twice. So there every score
+/// is also checked against BM25 by definition, over the model's documents in that shard.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn apply_query_text(
     collection: &Collection,
     model: &Model,
     text: &str,
     limit: usize,
+    top_k: usize,
+    params: Bm25Params,
+    no_proxies: bool,
     filter_num: Option<i64>,
     filter_url_prefix: Option<&str>,
 ) {
-    let query_words: AHashSet<String> = text.split_whitespace().map(str::to_lowercase).collect();
-    let matches: AHashMap<PointIdType, &Value> = model
+    // Query terms count once: the scorer deduplicates them.
+    let mut terms: Vec<String> = text.split_whitespace().map(str::to_lowercase).collect();
+    terms.sort();
+    terms.dedup();
+    let docs: AHashMap<PointIdType, TextDoc> = model
+        .iter()
+        .map(|(id, entry)| (*id, text_doc(&entry.payload)))
+        .collect();
+    let matches: AHashSet<PointIdType> = model
         .iter()
         .filter(|(_, entry)| passes_read_filters(&entry.payload, filter_num, filter_url_prefix))
-        .filter(|(_, entry)| !text_words(&entry.payload).is_disjoint(&query_words))
-        .map(|(id, entry)| (*id, &entry.payload.0["t"]))
+        .filter(|(id, _)| terms.iter().any(|term| docs[*id].tf.contains_key(term)))
+        .map(|(id, _)| *id)
         .collect();
 
     let run = async |shards: ShardSelectorInternal, limit: usize| {
@@ -1367,7 +1424,7 @@ pub(super) async fn apply_query_text(
                     query: Some(ScoringQuery::Text(TextScoringQuery {
                         field: "t".parse().unwrap(),
                         text: text.to_owned(),
-                        params: Bm25Params::default(),
+                        params,
                     })),
                     filter: optional_read_filter(filter_num, filter_url_prefix),
                     score_threshold: None,
@@ -1387,16 +1444,45 @@ pub(super) async fn apply_query_text(
             .unwrap_or_else(|e| panic!("text query {text:?} failed: {e:?}"))
     };
     let ctx = format!(
-        "text query {text:?} (limit={limit}, filter_num={filter_num:?}, \
+        "text query {text:?} (limit={limit}, top_k={top_k}, {params:?}, filter_num={filter_num:?}, \
          filter_url_prefix={filter_url_prefix:?})",
     );
+    let shard_count = collection
+        .collection_config
+        .read()
+        .await
+        .params
+        .shard_number
+        .get();
 
-    // Across the collection: every result a live match, ranked best first, and exactly the
-    // matches when they fit in the limit. Only below the undersampling threshold: from there the
-    // collection splits the limit across shards by an estimate, which can fall short of one
-    // shard's matches on a large id pool. Completeness at those limits is what the per-shard
-    // queries below check, since a query to one shard is never undersampled.
+    let mut before = Vec::with_capacity(shard_count as usize);
+    for shard_id in 0..shard_count {
+        before.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
+    }
     let points = run(ShardSelectorInternal::All, limit).await;
+    // Several cuts, since pruning goes wrong at small ones.
+    let mut cuts = vec![1, top_k, 10];
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut tops = Vec::with_capacity(shard_count as usize);
+    for shard_id in 0..shard_count {
+        let mut shard_tops = Vec::with_capacity(cuts.len());
+        for &cut in &cuts {
+            shard_tops.push((
+                cut,
+                run(ShardSelectorInternal::ShardId(shard_id), cut).await,
+            ));
+        }
+        tops.push(shard_tops);
+    }
+    let mut after = Vec::with_capacity(shard_count as usize);
+    for shard_id in 0..shard_count {
+        after.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
+    }
+
+    // Across the collection. Exactly the matches only below the undersampling threshold: from
+    // there the collection splits the limit across shards by an estimate, which can fall short of
+    // one shard's matches on a large id pool.
     check_ranked_matches(&points, &matches, &ctx);
     assert!(
         points.len() <= limit,
@@ -1411,55 +1497,53 @@ pub(super) async fn apply_query_text(
         );
     }
 
-    // Each shard alone, every match: one gather serves all of the shard's segments, so points
-    // with the same text score the same whichever segment holds them.
-    let shard_count = collection
-        .collection_config
-        .read()
-        .await
-        .params
-        .shard_number
-        .get();
     let mut from_shards = AHashSet::new();
+    let mut stable = true;
     for shard_id in 0..shard_count {
-        let points = run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await;
         let shard_ctx = format!("{ctx} on shard {shard_id}");
-        check_ranked_matches(&points, &matches, &shard_ctx);
-        let mut score_of_text: HashMap<String, (PointIdType, f32)> = HashMap::new();
-        for point in &points {
-            let text = matches[&point.id].to_string();
-            let (first, score) = *score_of_text
-                .entry(text.clone())
-                .or_insert((point.id, point.score));
-            assert!(
-                (point.score - score).abs() <= 1e-4 * score.abs().max(1.0),
-                "{shard_ctx}: points {first} and {} hold the same text {text} but score {score} \
-                 and {}",
-                point.id,
-                point.score,
-            );
+        let full = &before[shard_id as usize];
+        check_ranked_matches(full, &matches, &shard_ctx);
+        check_ranked_matches(&after[shard_id as usize], &matches, &shard_ctx);
+        for (_, top) in &tops[shard_id as usize] {
+            check_ranked_matches(top, &matches, &shard_ctx);
         }
-        from_shards.extend(points.iter().map(|point| point.id));
+        check_score_follows_features(full, &docs, &terms, params, &shard_ctx);
+        check_single_term_fit(full, &docs, &terms, params, &shard_ctx);
+        from_shards.extend(full.iter().map(|point| point.id));
+
+        let shard_stable = same_scores(full, &after[shard_id as usize]);
+        assert!(
+            shard_stable || !no_proxies,
+            "{shard_ctx}: the same query scored differently twice with no proxy in the shard",
+        );
+        stable &= shard_stable;
+        if shard_stable {
+            for (cut, top) in &tops[shard_id as usize] {
+                check_top_k(top, full, *cut, &shard_ctx);
+            }
+        }
+        if no_proxies {
+            let shard_docs = shard_point_ids(collection, shard_id).await;
+            check_scores_by_definition(full, &docs, &shard_docs, &terms, params, &shard_ctx);
+        }
     }
     if matches.len() <= QUERY_TEXT_ALL {
-        let expected: AHashSet<PointIdType> = matches.keys().copied().collect();
         assert_eq!(
-            from_shards, expected,
+            from_shards, matches,
             "{ctx}: the shards together return every match"
         );
+    }
+    if stable && limit < Collection::SHARD_QUERY_SUBSAMPLING_LIMIT {
+        check_merge(&points, &before, limit, &ctx);
     }
 }
 
 /// Every result is a live match and appears once, and scores never increase.
-fn check_ranked_matches(
-    points: &[ScoredPoint],
-    matches: &AHashMap<PointIdType, &Value>,
-    ctx: &str,
-) {
+fn check_ranked_matches(points: &[ScoredPoint], matches: &AHashSet<PointIdType>, ctx: &str) {
     let mut seen = AHashSet::with_capacity(points.len());
     for point in points {
         assert!(
-            matches.contains_key(&point.id),
+            matches.contains(&point.id),
             "{ctx}: point {} is not a live match (deleted, filtered out, or holds no query term)",
             point.id,
         );
@@ -1477,6 +1561,253 @@ fn check_ranked_matches(
             pair[0].score,
             pair[1].id,
             pair[1].score,
+        );
+    }
+}
+
+/// On one shard, the score is a function of what BM25 reads off the document: equal features
+/// score the same, and features that dominate (every term at least as frequent, and the document
+/// no longer) do not score lower. IDF is never negative, and each term's contribution rises with
+/// its frequency and falls with the length, so both hold whatever the statistics are.
+fn check_score_follows_features(
+    points: &[ScoredPoint],
+    docs: &AHashMap<PointIdType, TextDoc>,
+    terms: &[String],
+    params: Bm25Params,
+    ctx: &str,
+) {
+    let mut by_features: HashMap<(Vec<u32>, u32), (PointIdType, f32)> = HashMap::new();
+    for point in points {
+        let features = bm25_features(&docs[&point.id], terms, params);
+        let (first, score) = *by_features
+            .entry(features.clone())
+            .or_insert((point.id, point.score));
+        assert!(
+            scores_match(point.score, score),
+            "{ctx}: points {first} and {} have the same term frequencies and length {features:?} \
+             but score {score} and {}",
+            point.id,
+            point.score,
+        );
+    }
+    let classes: Vec<_> = by_features.into_iter().collect();
+    for ((tf_a, len_a), (id_a, score_a)) in &classes {
+        for ((tf_b, len_b), (id_b, score_b)) in &classes {
+            let dominates = len_a <= len_b && tf_a.iter().zip(tf_b).all(|(a, b)| a >= b);
+            assert!(
+                !dominates || *score_a >= *score_b || scores_match(*score_a, *score_b),
+                "{ctx}: point {id_a} ({tf_a:?}, length {len_a}) scores {score_a}, below point \
+                 {id_b} ({tf_b:?}, length {len_b}) at {score_b}, though its terms are at least as \
+                 frequent and it is no longer",
+            );
+        }
+    }
+}
+
+/// For a one-term query, every score of one shard's ranking is `idf * g(tf, len)` for a single
+/// `idf` and average length, whatever the statistics are: the shard's gather serves every segment.
+/// Two points with the same `tf` and different lengths pin both down, since the ratio of their
+/// scores is linear in `b / avgdl`, and every other point must then fit. Checks each point's term
+/// frequency and length where the model cannot reproduce the statistics.
+fn check_single_term_fit(
+    points: &[ScoredPoint],
+    docs: &AHashMap<PointIdType, TextDoc>,
+    terms: &[String],
+    params: Bm25Params,
+    ctx: &str,
+) {
+    let [term] = terms else { return };
+    let (k1, b) = (f64::from(params.k1), f64::from(params.b));
+    if k1 == 0.0 || b == 0.0 {
+        return;
+    }
+    let observed: Vec<(f64, f64, f64, PointIdType)> = points
+        .iter()
+        .map(|point| {
+            let doc = &docs[&point.id];
+            let tf = f64::from(doc.tf.get(term).copied().unwrap_or(0));
+            (tf, f64::from(doc.len), f64::from(point.score), point.id)
+        })
+        .filter(|(_, _, score, _)| *score > 0.0)
+        .collect();
+    // The best-conditioned pair: the same term frequency, lengths as far apart as they get.
+    let Some(((tf, len_a, score_a, id_a), (_, len_b, score_b, id_b))) = observed
+        .iter()
+        .flat_map(|a| observed.iter().map(move |b| (*a, *b)))
+        .filter(|(a, b)| a.0 == b.0 && a.1 < b.1)
+        .max_by(|(a, b), (c, d)| (b.1 - a.1).total_cmp(&(d.1 - c.1)))
+    else {
+        return;
+    };
+    // score = idf * tf (k1 + 1) / (tf + k1 (1 - b) + k1 len x), with x = b / avgdl.
+    let base = tf + k1 * (1.0 - b);
+    let ratio = score_a / score_b;
+    let x = base * (ratio - 1.0) / (k1 * (len_b - ratio * len_a));
+    assert!(
+        x.is_finite() && x > 0.0,
+        "{ctx}: points {id_a} and {id_b} hold {term:?} {tf} times at lengths {len_a} and {len_b}          and score {score_a} and {score_b}, which no average length explains",
+    );
+    let g = |tf: f64, len: f64| tf * (k1 + 1.0) / (tf + k1 * (1.0 - b) + k1 * len * x);
+    let idf = score_a / g(tf, len_a);
+    for (tf, len, score, id) in &observed {
+        let expected = idf * g(*tf, *len);
+        assert!(
+            (score - expected).abs() <= 1e-3 * score.abs().max(expected.abs()),
+            "{ctx}: point {id} ({term:?} {tf} times, length {len}) scores {score}, where the IDF              {idf} and average length {} that points {id_a} and {id_b} imply give {expected}",
+            b / x,
+        );
+    }
+}
+
+/// Whether two rankings of the same shard gave every point the same score, so the statistics did
+/// not move between them.
+fn same_scores(a: &[ScoredPoint], b: &[ScoredPoint]) -> bool {
+    let b: AHashMap<PointIdType, f32> = b.iter().map(|point| (point.id, point.score)).collect();
+    a.len() == b.len()
+        && a.iter().all(|point| {
+            b.get(&point.id)
+                .is_some_and(|score| scores_match(point.score, *score))
+        })
+}
+
+/// A shard's top `top_k` are the top of its full ranking: as many as it has, the same scores rank
+/// by rank, and each point with the score the full ranking gives it. Ties may be broken
+/// differently, so ids are compared through their scores.
+fn check_top_k(top: &[ScoredPoint], full: &[ScoredPoint], top_k: usize, ctx: &str) {
+    assert_eq!(
+        top.len(),
+        full.len().min(top_k),
+        "{ctx}: the top {top_k} holds {} of the {} matches",
+        top.len(),
+        full.len(),
+    );
+    let full_scores: AHashMap<PointIdType, f32> =
+        full.iter().map(|point| (point.id, point.score)).collect();
+    for (rank, (point, expected)) in top.iter().zip(full).enumerate() {
+        assert!(
+            scores_match(point.score, expected.score),
+            "{ctx}: rank {rank} of the top {top_k} scores {} (point {}), where the full ranking \
+             has {} (point {})",
+            point.score,
+            point.id,
+            expected.score,
+            expected.id,
+        );
+        assert!(
+            scores_match(point.score, full_scores[&point.id]),
+            "{ctx}: point {} scores {} in the top {top_k} and {} in the full ranking",
+            point.id,
+            point.score,
+            full_scores[&point.id],
+        );
+    }
+}
+
+/// The collection's top `limit` is the merge of the shards' rankings: the same scores rank by
+/// rank.
+fn check_merge(points: &[ScoredPoint], shards: &[Vec<ScoredPoint>], limit: usize, ctx: &str) {
+    let mut merged: Vec<f32> = shards.iter().flatten().map(|point| point.score).collect();
+    merged.sort_by(|a, b| b.total_cmp(a));
+    merged.truncate(limit);
+    assert_eq!(
+        points.len(),
+        merged.len(),
+        "{ctx}: the collection returned {} points where the shards' merge has {}",
+        points.len(),
+        merged.len(),
+    );
+    for (rank, (point, expected)) in points.iter().zip(&merged).enumerate() {
+        assert!(
+            scores_match(point.score, *expected),
+            "{ctx}: rank {rank} of the collection scores {} (point {}), where the shards' merge \
+             has {expected}",
+            point.score,
+            point.id,
+        );
+    }
+}
+
+/// Every point one shard holds, found by scrolling it alone.
+async fn shard_point_ids(collection: &Collection, shard_id: u32) -> Vec<PointIdType> {
+    collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: None,
+                limit: Some(usize::MAX),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: WithVector::Bool(false),
+                order_by: None,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::ShardId(shard_id),
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("scrolling shard {shard_id} failed: {e:?}"))
+        .points
+        .into_iter()
+        .map(|record| record.id)
+        .collect()
+}
+
+/// Every score of one shard's ranking is BM25 by definition over the model's documents in that
+/// shard: `N` and the average length over those holding a term, `df` over those holding each query
+/// term, IDF clamped at zero.
+fn check_scores_by_definition(
+    points: &[ScoredPoint],
+    docs: &AHashMap<PointIdType, TextDoc>,
+    shard_ids: &[PointIdType],
+    terms: &[String],
+    params: Bm25Params,
+    ctx: &str,
+) {
+    let shard_docs: Vec<&TextDoc> = shard_ids
+        .iter()
+        .map(|id| &docs[id])
+        .filter(|doc| doc.len > 0)
+        .collect();
+    let n = shard_docs.len() as f64;
+    let avg_len = shard_docs.iter().map(|doc| f64::from(doc.len)).sum::<f64>() / n;
+    let idf: Vec<f64> = terms
+        .iter()
+        .map(|term| {
+            let df = shard_docs
+                .iter()
+                .filter(|doc| doc.tf.contains_key(term))
+                .count() as f64;
+            ((n - df + 0.5) / (df + 0.5) + 1.0).ln().max(0.0)
+        })
+        .collect();
+    let (k1, b) = (f64::from(params.k1), f64::from(params.b));
+    for point in points {
+        let doc = &docs[&point.id];
+        let expected: f64 = terms
+            .iter()
+            .zip(&idf)
+            .map(|(term, idf)| {
+                let tf = f64::from(doc.tf.get(term).copied().unwrap_or(0));
+                if tf == 0.0 {
+                    return 0.0;
+                }
+                let norm = 1.0 - b + b * f64::from(doc.len) / avg_len;
+                idf * tf * (k1 + 1.0) / (tf + k1 * norm)
+            })
+            .sum();
+        assert!(
+            scores_match(point.score, expected as f32),
+            "{ctx}: point {} (terms {:?}, length {}) scores {}, where BM25 over the shard's {} \
+             documents (average length {avg_len}, IDF {idf:?}) gives {expected}",
+            point.id,
+            terms
+                .iter()
+                .map(|term| doc.tf.get(term).copied().unwrap_or(0))
+                .collect::<Vec<_>>(),
+            doc.len,
+            point.score,
+            shard_docs.len(),
         );
     }
 }
