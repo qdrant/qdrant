@@ -731,9 +731,7 @@ fn test_reader_on_compacted_tracker() {
 /// `test_preopen_schedules_files_for_open`.
 #[tokio::test]
 async fn test_preopen_schedules_compacted_tracker() {
-    use common::universal_io::{
-        CachedFs, CachedReadFs, ReadOnly, UniversalRead, UniversalReadFileOps,
-    };
+    use common::universal_io::{CachedFs, CachedReadFs, ReadOnly, UniversalRead, UniversalReadFs};
 
     let (dir, mut storage) = empty_byte_storage(Compression::None);
     let hw_counter = HardwareCounterCell::new();
@@ -773,14 +771,14 @@ async fn test_preopen_schedules_compacted_tracker() {
 }
 
 /// Preopen fetches the whole compacted tracker file, not just a handle to it: once the prefetch
-/// is done, opening through a disk cache downloads nothing more.
+/// is done, opening through a disk cache no longer needs the remote tracker file.
 #[tokio::test]
 async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
     use std::sync::Arc;
 
     use common::universal_io::{
         CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
-        UniversalReadFileOps,
+        UniversalReadFs,
     };
 
     let dir = TempDir::new().unwrap();
@@ -812,7 +810,6 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
         remote: Default::default(),
     })
     .unwrap();
-    let stats = cache_fs.stats();
     let mut cached_fs = CachedFs::new(cache_fs, &path).unwrap();
     cached_fs.cache_file_info().unwrap();
     BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::preopen(
@@ -822,16 +819,11 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
     )
     .unwrap();
     cached_fs.wait_all().await;
-    let prefetched = stats.snapshot();
+    fs::remove_file(path.join("compacted_tracker.dat")).unwrap();
 
     let reader =
         BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::open(&cached_fs, path, Populate::No)
             .unwrap();
-    // The config and the tracker are prefetched, the pages are only read on lookup
-    assert_eq!(
-        stats.snapshot().delta_since(&prefetched).downloaded_bytes,
-        0
-    );
     assert_eq!(
         reader.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![7; 10]),

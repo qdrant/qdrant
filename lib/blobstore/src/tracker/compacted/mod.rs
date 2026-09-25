@@ -77,7 +77,7 @@ impl CompactedTracker {
     /// file if it already exists.
     ///
     /// The directory must exist already.
-    pub fn from_tracker<Fs: UniversalWriteFileOps>(
+    pub fn from_tracker<Fs: UniversalWriteFs>(
         fs: &Fs,
         dir: &Path,
         source: &impl TrackerRead,
@@ -87,7 +87,7 @@ impl CompactedTracker {
             pointers: source.get_range::<Sequential>(0..source.max_point_offset()?)?,
             dirty: Arc::new(AtomicBool::new(false)),
         };
-        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers))?;
+        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers)?)?;
         Ok(tracker)
     }
 
