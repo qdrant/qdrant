@@ -825,10 +825,11 @@ mod copy_dir {
     }
 
     #[test]
-    fn a_failed_save_removes_what_landed() {
-        let local = segment_like_dir(12);
+    fn a_failed_save_removes_what_landed_and_stops_the_rest() {
+        let local = segment_like_dir(COPY_CONCURRENCY * 5);
         let fs = RecordingFs::default();
-        fs.0.lock().unwrap().fail_save_at = Some(5);
+        let failing_attempt = 5;
+        fs.0.lock().unwrap().fail_save_at = Some(failing_attempt);
         let remote = Path::new("shard/segments/uuid");
 
         let err = futures::executor::block_on(copy_dir(&fs, local.path(), remote))
@@ -837,7 +838,16 @@ mod copy_dir {
         assert!(err.to_string().contains("injected save failure"), "{err}");
         let log = fs.0.lock().unwrap();
         assert_eq!(log.in_flight, 0, "no save is left in flight");
-        assert_eq!(log.saves.len(), 11, "only the failed save is missing");
+        assert!(
+            log.attempts <= failing_attempt + (COPY_CONCURRENCY - 1),
+            "only the saves already in flight finish after the failure, got {} attempts",
+            log.attempts
+        );
+        assert_eq!(
+            log.saves.len(),
+            log.attempts - 1,
+            "every attempt but the failed one landed"
+        );
         for (path, _) in &log.saves {
             assert!(
                 log.removed.contains(path),
