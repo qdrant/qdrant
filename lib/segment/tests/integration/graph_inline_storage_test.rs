@@ -44,7 +44,7 @@ fn indexed_config(
         m: 16,
         ef_construct: 64,
         full_scan_threshold: 1,
-        max_indexing_threads: 2,
+        max_indexing_threads: 1,
         on_disk: None,
         memory: None,
         payload_m: None,
