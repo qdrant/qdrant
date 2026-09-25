@@ -49,6 +49,8 @@ impl Query {
         if strict_mode_config.search_allow_exact == Some(false) {
             match &self {
                 Query::Fusion(_) | Query::OrderBy(_) | Query::Formula(_) | Query::Sample(_) => (),
+                // A text index, always indexed.
+                Query::Text(_) => (),
                 Query::Vector(_) => {
                     let config = collection.collection_config.read().await;
 
