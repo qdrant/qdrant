@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
@@ -98,10 +99,13 @@ pub trait PayloadIndexRead {
 
     /// Add this segment's contribution to the corpus statistics of a text
     /// field: document frequency per seeded term, document count, and total
-    /// tokens. A field with no text index contributes nothing.
+    /// tokens. A field with no text index contributes nothing. `deleted` is
+    /// the id tracker's deleted bitslice: points it marks are not documents,
+    /// even when the deletion never reached the field index.
     fn fill_text_statistics(
         &self,
         field: PayloadKeyTypeRef,
+        deleted: &BitSlice,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,

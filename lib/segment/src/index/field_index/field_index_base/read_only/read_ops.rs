@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -299,13 +300,14 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
 
     fn fill_text_statistics(
         &self,
+        deleted: &BitSlice,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match self {
             ReadOnlyFieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, stats, is_stopped, hw_counter)?;
+                fill_text_statistics(index, deleted, stats, is_stopped, hw_counter)?;
                 Ok(true)
             }
             ReadOnlyFieldIndex::IntIndex(_)

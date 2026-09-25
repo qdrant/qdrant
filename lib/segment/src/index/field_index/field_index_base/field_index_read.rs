@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
@@ -74,9 +75,10 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
     /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all.
+    /// a text index at all. `deleted` is the id tracker's deleted bitslice.
     fn fill_text_statistics(
         &self,
+        deleted: &BitSlice,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
