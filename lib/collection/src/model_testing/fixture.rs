@@ -12,10 +12,11 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::index::{TextIndexParams, TextScoringParams};
 use segment::types::{
-    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, MultiVectorConfig,
-    PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, ProductQuantization,
-    ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
-    ScalarType, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, Memory,
+    MultiVectorConfig, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
+    ScalarQuantizationConfig, ScalarType, TurboQuantBitSize, TurboQuantQuantizationConfig,
+    TurboQuantization,
 };
 
 use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
@@ -113,6 +114,7 @@ pub(super) async fn fixture(
     max_segment_size_kb: usize,
     indexing_threshold_kb: usize,
     on_disk: bool,
+    text_memory: Memory,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
     let snapshots_dir = storage_path.join("snapshots");
@@ -259,6 +261,7 @@ pub(super) async fn fixture(
     // positions (`phrase_matching`) term frequencies come from.
     let text_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
         scoring: Some(TextScoringParams::default()),
+        memory: Some(text_memory),
         ..TextIndexParams::default()
     }));
     let eager_schemas = eager_indices
@@ -278,6 +281,16 @@ pub(super) async fn fixture(
     }
 
     (collection_dir, snapshots_dir, collection)
+}
+
+/// Where the `t` text index lives once a segment is optimized, by seed parity: in RAM (the
+/// immutable index) or on disk (the mmap one, which reads lengths in batches).
+pub(super) fn text_index_memory(seed: u64) -> Memory {
+    if seed.is_multiple_of(2) {
+        Memory::Pinned
+    } else {
+        Memory::Cold
+    }
 }
 
 pub(super) async fn reopen_collection(collection_dir: &Path, snapshots_dir: &Path) -> Collection {
