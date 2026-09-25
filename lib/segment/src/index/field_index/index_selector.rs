@@ -521,10 +521,8 @@ impl IndexSelector<'_> {
             }
             IndexSelector::Appendable { dir } => {
                 let scoring = config.scoring();
-                FieldIndexBuilder::FullTextGridstoreIndex(FullTextIndex::builder_gridstore(
-                    text_dir(dir, field),
-                    config,
-                    scoring,
+                FieldIndexBuilder::FullTextGridstoreIndex(Box::new(
+                    FullTextIndex::builder_gridstore(text_dir(dir, field), config, scoring),
                 ))
             }
         }
