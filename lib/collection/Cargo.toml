@@ -119,3 +119,7 @@ harness = false
 [[bench]]
 name = "bm25_sparse_bench"
 harness = false
+
+[[bench]]
+name = "bm25_text_bench"
+harness = false
