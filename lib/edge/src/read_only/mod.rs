@@ -68,6 +68,11 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
+    /// The backend the segments are read from, e.g. to inspect its IO statistics.
+    pub fn fs(&self) -> &S::Fs {
+        &self.fs
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }

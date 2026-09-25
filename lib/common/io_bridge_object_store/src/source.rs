@@ -626,9 +626,12 @@ mod tests {
 
     /// A bounded probe on an empty object is an unsatisfiable range, so the
     /// raw `read_from` errors; the pipeline's `len` disambiguation (see
-    /// `read_from_into_byte_buffer`) turns that into an empty buffer.
+    /// `read_from_into_byte_buffer`) turns that into an empty buffer, counted
+    /// as a completed read rather than an error.
     #[test]
     fn read_whole_empty_object_yields_empty_buffer() {
+        use common::uio_trace::Op;
+
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("empty", b"")]);
 
@@ -640,9 +643,18 @@ mod tests {
             "bounded probe on an empty object is unsatisfiable"
         );
 
-        let file = make_file(runtime, store, "empty");
+        let stats = io_bridge::RemoteIoStats::default();
+        let file = make_file(runtime, store, "empty").with_stats(stats.clone());
         let bytes = file.read_whole::<u8>().expect("read_whole");
         assert!(bytes.is_empty());
+
+        let snapshot = stats.snapshot();
+        let read_from = snapshot.op(Op::ReadFrom);
+        assert_eq!(
+            (read_from.completed, read_from.errors, read_from.bytes),
+            (1, 0, 0)
+        );
+        assert_eq!(snapshot.op(Op::Len).completed, 1);
     }
 
     #[test]

@@ -8,6 +8,7 @@ use edge::external::uuid::Uuid;
 use edge::{FullyQualifiedPoint, PointAction, PointId, UpdateOnlyEdgeShard};
 
 use crate::generate::generate_batch;
+use crate::report::IoMeter;
 use crate::schema::ShardSchema;
 
 fn log_preview_point(point: &edge::PointPreview) {
@@ -88,12 +89,15 @@ pub fn dry_run<Fs: UniversalAppendFs>(
     ids: &[PointId],
     op_num: u64,
     seed: u64,
+    meter: &IoMeter,
 ) -> Result<()> {
     let operation = generate_batch(schema, ids, seed);
 
-    let preview = shard
-        .preview_batch([(op_num, operation)])
-        .context("failed to resolve the batch")?;
+    let preview = meter.measure("preview", || {
+        shard
+            .preview_batch([(op_num, operation)])
+            .context("failed to resolve the batch")
+    })?;
 
     let mut stored = 0usize;
     let mut skipped = 0usize;

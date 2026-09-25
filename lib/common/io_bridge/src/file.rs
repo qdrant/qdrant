@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use bytes::Bytes;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::uio_trace;
+use common::uio_trace::Op;
 use common::universal_io::{
     ByteOffset, Flusher, Item, UioResult, UniversalFlush, UniversalIoError, UniversalKind,
     UniversalRead, UserData,
@@ -15,7 +15,8 @@ use crate::fs::BlobFs;
 use crate::pipeline::{BlobReadPipeline, read_into_byte_buffer, read_whole_into_byte_buffer};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
-use crate::write::AsyncAppend;
+use crate::stats::RemoteIoStats;
+use crate::write::{AsyncAppend, AsyncWrite};
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
@@ -32,6 +33,7 @@ pub struct BlobFile<A: AsyncRead> {
     /// are writeable; [`BlobFs::open`] feeds `OpenOptions::writeable`
     /// through [`Self::with_writeable`].
     writeable: bool,
+    pub(crate) stats: RemoteIoStats,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
@@ -40,12 +42,14 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
             runtime,
             path,
             writeable,
+            stats,
             inner: _,
         } = self;
         f.debug_struct("BlobFile")
             .field("runtime", runtime)
             .field("path", path)
             .field("writeable", writeable)
+            .field("stats", stats)
             .finish_non_exhaustive()
     }
 }
@@ -57,12 +61,19 @@ impl<A: AsyncRead> BlobFile<A> {
             runtime,
             path: path.into(),
             writeable: true,
+            stats: RemoteIoStats::default(),
         }
     }
 
     /// Set whether this handle accepts appends.
     pub fn with_writeable(mut self, writeable: bool) -> Self {
         self.writeable = writeable;
+        self
+    }
+
+    /// Report this handle's remote requests into `stats`.
+    pub fn with_stats(mut self, stats: RemoteIoStats) -> Self {
+        self.stats = stats;
         self
     }
 
@@ -142,7 +153,8 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         let start_time = enabled.then(std::time::Instant::now);
         let item_size = size_of::<T>() as u64;
         let len = self.runtime.block_on(
-            uio_trace::Request::new(uio_trace::Op::Len, &self.path, 0..0)
+            self.stats
+                .request(Op::Len, &self.path, 0..0)
                 .wrap(self.inner.len(&self.path)),
         )?;
         debug_assert_eq!(len % item_size, 0);
@@ -210,9 +222,30 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
             )));
         }
 
+        let request =
+            self.stats
+                .request(Op::Append, &self.path, offset..offset + data.len() as u64);
         self.runtime
-            .block_on(self.inner.append(&self.path, offset, data, expected_etag))
+            .block_on(request.wrap(self.inner.append(&self.path, offset, data, expected_etag)))
             .map(drop)
+    }
+}
+
+impl<A: AsyncWrite + Clone> BlobFile<A> {
+    /// Replace the whole object with `data` in one atomic put.
+    pub fn save_whole(&self, data: Bytes) -> UioResult<()> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "save requires a handle opened with writeable=true",
+            )));
+        }
+
+        let request = self
+            .stats
+            .request(Op::Save, &self.path, 0..data.len() as u64);
+        self.runtime
+            .block_on(request.wrap(self.inner.save(&self.path, data)))
     }
 }
 
@@ -674,5 +707,58 @@ mod tests {
 
         fs.remove(path).unwrap();
         assert!(!fs.exists(path).unwrap());
+    }
+
+    /// Every remote request issued through the filesystem and the files it
+    /// opens lands in the shared per-operation statistics, with the payload
+    /// length of successful transfers.
+    #[test]
+    fn remote_requests_are_counted_per_op() {
+        use common::uio_trace::Op;
+        use common::universal_io::{OpenOptions, UniversalReadFs as _};
+
+        let source = MutableMockSource::default();
+        let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
+        let stats = fs.stats();
+        let path = Path::new("obj");
+
+        fs.create(path).unwrap();
+        let file = fs.open(path, OpenOptions::new_for_test(), ()).unwrap();
+        file.append_bytes(0, Bytes::from_static(b"abcdef"), None)
+            .unwrap();
+        assert_eq!(file.read_bytes(1..4, Random, 1).unwrap().as_ref(), b"bcd");
+        assert_eq!(file.read_whole::<u8>().unwrap().len(), 6);
+        assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 6);
+        file.save_whole(Bytes::from_static(b"xy")).unwrap();
+        assert!(fs.exists(path).unwrap());
+        fs.remove(path).unwrap();
+        assert!(file.read_bytes(0..1, Random, 1).is_err());
+        assert!(file.read_whole::<u8>().is_err());
+        assert!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).is_err());
+
+        let snapshot = stats.snapshot();
+        let counts = |op: Op| {
+            let op = snapshot.op(op);
+            (op.started, op.completed, op.not_found, op.errors, op.bytes)
+        };
+        assert_eq!(counts(Op::Create), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Append), (1, 1, 0, 0, 6));
+        assert_eq!(counts(Op::Read), (2, 1, 1, 0, 3));
+        assert_eq!(counts(Op::ReadFrom), (2, 1, 1, 0, 6));
+        // No `len` probe behind the missing object's `read_from`.
+        assert_eq!(counts(Op::Len), (2, 1, 1, 0, 0));
+        assert_eq!(counts(Op::Save), (1, 1, 0, 0, 2));
+        assert_eq!(counts(Op::Exists), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Remove), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::List), (0, 0, 0, 0, 0));
+        assert_eq!(snapshot.total().started, 11);
+        assert_eq!(snapshot.total().errors, 0);
+        assert_eq!(snapshot.total().abandoned, 0);
+        assert!(
+            snapshot
+                .format_compact()
+                .unwrap()
+                .contains("append: started=1")
+        );
     }
 }

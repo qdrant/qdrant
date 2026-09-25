@@ -11,6 +11,7 @@ mod io_uring;
 mod local_file_ops;
 mod mmap;
 mod oneshot;
+mod op_stats;
 mod simple_disk_cache;
 mod sorted_block_index;
 mod traits;
@@ -28,9 +29,9 @@ pub use self::error::{IsNotFound, OkNotFound, OkUnchanged, UniversalIoError};
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_supported};
 pub use self::mmap::{MmapFile, MmapFs};
 pub use self::oneshot::OneshotFile;
+pub use self::op_stats::{LATENCY_BOUNDS, LATENCY_BUCKETS, OpGuard, OpStats, OpStatsSnapshot};
 pub use self::simple_disk_cache::{
-    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote, DiskCacheStats,
-    DiskCacheStatsSnapshot,
+    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
 pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{

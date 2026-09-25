@@ -2,8 +2,8 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::uio_trace;
-use common::universal_io::{UioResult, UniversalIoError};
+use common::uio_trace::{Op, Outcome};
+use common::universal_io::{IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
 use crate::file::BlobFile;
@@ -24,7 +24,7 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     let len = (range.end - range.start) as usize;
-    let request = uio_trace::Request::new(uio_trace::Op::Read, &file.path, range.clone());
+    let request = file.stats.request(Op::Read, &file.path, range.clone());
     let stream_fut = file.inner.read_range(&file.path, range);
     request.wrap(async move {
         let stream = stream_fut.await?;
@@ -55,25 +55,37 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     from: u64,
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
-    let mut request = uio_trace::Request::new(uio_trace::Op::ReadFrom, &file.path, from..from);
+    let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
     let read_fut = file.inner.read_from(&file.path, from);
     // Cloned for the cold disambiguation path only; building the `len` future is
     // deferred until a read error actually occurs.
     let inner = file.inner.clone();
+    let stats = file.stats.clone();
     let path = file.path.clone();
     async move {
         request.start();
         let (size, stream) = match read_fut.await {
             Ok(ok) => ok,
+            // A missing object has no tail to be empty; the probe would only repeat the answer.
+            Err(err) if err.is_not_found() => {
+                request.set_err(&err);
+                return Err(err);
+            }
             Err(err) => {
-                request.set(uio_trace::Outcome::Err);
-                drop(request);
-                let eof = uio_trace::Request::new(uio_trace::Op::Len, &path, 0..0)
+                // Settled after the `len` probe: a tail at or past EOF is an empty
+                // read, not a failed one.
+                let eof = stats
+                    .request(Op::Len, &path, 0..0)
                     .wrap(inner.len(&path))
-                    .await?;
-                if from >= eof {
+                    .await;
+                if let Ok(eof) = eof
+                    && from >= eof
+                {
+                    request.set(Outcome::Ok);
                     return Ok(AVec::new(align));
                 }
+                request.set_err(&err);
+                eof?;
                 return Err(err);
             }
         };
