@@ -33,6 +33,7 @@ use segment::data_types::query_context::{QueryContext, VectorQueryContext, fancy
 use segment::data_types::vectors::QueryVector;
 use segment::fixtures::bm25_corpus::{B, K1, LIMIT, QUERY_COUNT, Reference, Vocabulary, recall};
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_from_iter;
+use segment::id_tracker::InvisiblePoints;
 use segment::index::VectorIndexRead;
 use segment::index::field_index::FieldIndexBuilderTrait;
 use segment::index::field_index::full_text_index::full_text_index_read::{
@@ -190,7 +191,7 @@ fn text_search(
     query_context.init_text_stats(field, terms.iter().cloned());
     fill_text_statistics(
         index,
-        &BitVec::new(),
+        InvisiblePoints::deleted(&BitVec::new()),
         query_context.mut_text_stats().get_mut(field).unwrap(),
         &is_stopped,
         &hw_counter,

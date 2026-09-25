@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -8,6 +7,7 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::id_tracker::InvisiblePoints;
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
@@ -300,14 +300,14 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
 
     fn fill_text_statistics(
         &self,
-        deleted: &BitSlice,
+        invisible: InvisiblePoints<'_>,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match self {
             ReadOnlyFieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, deleted, stats, is_stopped, hw_counter)?;
+                fill_text_statistics(index, invisible, stats, is_stopped, hw_counter)?;
                 Ok(true)
             }
             ReadOnlyFieldIndex::IntIndex(_)

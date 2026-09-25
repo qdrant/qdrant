@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -13,6 +12,7 @@ use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::id_tracker::InvisiblePoints;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -28,15 +28,16 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
 /// of zero, the largest IDF the formula produces. A debug build checks it.
 ///
-/// `deleted` is the id tracker's deleted bitslice. `N`, the total tokens and
-/// `df` leave out the points it marks even when the deletion never reached
-/// this index, as a tombstone-only deletion does not. Leaving them in `df`
-/// alone would be worse than leaving them everywhere: `df` would exceed `N`
-/// and IDF clamp to zero. Deletions that did reach an immutable or on-disk
-/// index still count in its `df`, see [`FullTextIndexRead::posting_len`].
+/// `invisible` are the points a query cannot see, per the id tracker. `N`,
+/// the total tokens and `df` leave them out even where this index still
+/// counts them: a tombstone-only deletion never reaches it, and deferred or
+/// shadowed points are indexed like any other. Leaving them in `df` alone
+/// would be worse than leaving them everywhere: `df` would exceed `N` and IDF
+/// clamp to zero. Deletions that did reach an immutable or on-disk index still
+/// count in its `df`, see [`FullTextIndexRead::posting_len`].
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
-    deleted: &BitSlice,
+    invisible: InvisiblePoints<'_>,
     stats: &mut TextFieldStats,
     is_stopped: &AtomicBool,
     hw_counter: &HardwareCounterCell,
@@ -73,33 +74,32 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         None => None,
     };
 
-    // Deleted by the id tracker, yet still counted by this index: the
-    // append-only delete path tombstones a point without clearing its payload,
-    // so the index's own counters keep it. Any other deletion has already
-    // emptied the point here.
+    // Invisible to a query, yet still counted by this index: the append-only
+    // delete path tombstones a point without clearing its payload, and a
+    // deferred or shadowed point is indexed as usual. A deletion that reached
+    // the index has already emptied the point here.
     check_process_stopped(is_stopped)?;
-    let tombstoned: Vec<PointOffsetType> = deleted
-        .iter_ones()
+    let invisible: Vec<PointOffsetType> = invisible
+        .iter()
         .stop_if(is_stopped)
-        .map(|point_id| point_id as PointOffsetType)
         .filter(|&point_id| !index.values_is_empty(point_id))
         .collect();
     // A stopped scan is partial: report the stop, not a statistic.
     check_process_stopped(is_stopped)?;
-    let mut tombstoned_tokens = 0;
-    if total_tokens.is_some() && !tombstoned.is_empty() {
-        index.doc_len_batch(&tombstoned, hw_counter, |_, doc_len| {
-            tombstoned_tokens += u64::from(doc_len.unwrap_or(0));
+    let mut invisible_tokens = 0;
+    if total_tokens.is_some() && !invisible.is_empty() {
+        index.doc_len_batch(&invisible, hw_counter, |_, doc_len| {
+            invisible_tokens += u64::from(doc_len.unwrap_or(0));
         })?;
     }
     // They are in the postings too, so they come off `df` as well.
-    if !tombstoned.is_empty() {
+    if !invisible.is_empty() {
         for (df, token_id) in &mut counts {
             let holds_term = ParsedQuery::AnyTokens(TokenSet::from_iter([*token_id]));
             let mut holding = 0;
             index.check_match_batch(
                 &holds_term,
-                tombstoned.iter().map(|&point_id| ((), point_id)),
+                invisible.iter().map(|&point_id| ((), point_id)),
                 |(), holds| holding += usize::from(holds),
             )?;
             **df = df.saturating_sub(holding);
@@ -107,8 +107,8 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     }
 
     stats.add_segment(
-        index.points_count().saturating_sub(tombstoned.len()),
-        total_tokens.map(|total| total.saturating_sub(tombstoned_tokens)),
+        index.points_count().saturating_sub(invisible.len()),
+        total_tokens.map(|total| total.saturating_sub(invisible_tokens)),
     );
     Ok(())
 }

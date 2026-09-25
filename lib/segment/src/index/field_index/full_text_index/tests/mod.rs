@@ -12,6 +12,7 @@ use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::id_tracker::InvisiblePoints;
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
 use crate::index::field_index::{
@@ -685,7 +686,14 @@ fn text_statistics_gather_skips_tombstoned_points() {
                 df: ["the", "alpha"].map(|term| (term.to_string(), 0)).into(),
                 ..Default::default()
             };
-            fill_text_statistics(&*index, deleted, &mut stats, &is_stopped, &hw_counter).unwrap();
+            fill_text_statistics(
+                &*index,
+                InvisiblePoints::deleted(deleted),
+                &mut stats,
+                &is_stopped,
+                &hw_counter,
+            )
+            .unwrap();
             stats
         };
 
@@ -809,7 +817,14 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
             .into(),
         ..Default::default()
     };
-    fill_text_statistics(&index, &BitVec::new(), &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(
+        &index,
+        InvisiblePoints::deleted(&BitVec::new()),
+        &mut stats,
+        &is_stopped,
+        &hw_counter,
+    )
+    .unwrap();
 
     assert_eq!(stats.documents, 2);
     assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
@@ -821,7 +836,14 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     // corpus rather than letting it be taken over the segments that do.
     let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
     let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
-    fill_text_statistics(&plain, &BitVec::new(), &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(
+        &plain,
+        InvisiblePoints::deleted(&BitVec::new()),
+        &mut stats,
+        &is_stopped,
+        &hw_counter,
+    )
+    .unwrap();
 
     assert_eq!(stats.documents, 4);
     assert_eq!(stats.df["the"], 2, "frequencies still sum");

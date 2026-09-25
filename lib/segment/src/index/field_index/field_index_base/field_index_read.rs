@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicBool;
 
-use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::payload_field_index::PayloadFieldIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::id_tracker::InvisiblePoints;
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
@@ -75,10 +75,10 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
     /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all. `deleted` is the id tracker's deleted bitslice.
+    /// a text index at all. `invisible` are the points a query cannot see.
     fn fill_text_statistics(
         &self,
-        deleted: &BitSlice,
+        invisible: InvisiblePoints<'_>,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
