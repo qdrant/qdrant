@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use common::uio_trace;
+use common::uio_trace::{self, Op};
 use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
+use crate::stats::RemoteIoStats;
 use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 
 /// Filesystem handle for an object-store backend: an [`AsyncRead`] handle plus
@@ -14,20 +15,42 @@ use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 pub struct BlobFs<A: AsyncRead> {
     inner: A,
     runtime: BridgeRuntime,
+    stats: RemoteIoStats,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { runtime, inner: _ } = self;
+        let Self {
+            runtime,
+            stats,
+            inner: _,
+        } = self;
         f.debug_struct("BlobFs")
             .field("runtime", runtime)
+            .field("stats", stats)
             .finish_non_exhaustive()
     }
 }
 
 impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
-        Self { inner, runtime }
+        Self {
+            inner,
+            runtime,
+            stats: RemoteIoStats::default(),
+        }
+    }
+
+    /// Report the remote requests of this filesystem, and of the files it opens, into `stats`.
+    pub fn with_stats(mut self, stats: RemoteIoStats) -> Self {
+        self.stats = stats;
+        self
+    }
+
+    /// Observer of the remote requests issued through this filesystem, its clones, and the
+    /// files it opened.
+    pub fn stats(&self) -> RemoteIoStats {
+        self.stats.clone()
     }
 
     /// Like the async reads, the op rides the [`BridgeRuntime`] rather than
@@ -52,7 +75,7 @@ impl<A: AsyncRead + Clone> BlobFs<A> {
         &self,
         prefix_path: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
-        let request = uio_trace::Request::new(uio_trace::Op::List, prefix_path, 0..0);
+        let request = self.stats.request(Op::List, prefix_path, 0..0);
         let inner = self.inner.clone();
         let prefix_path = prefix_path.to_path_buf();
         async move {
@@ -80,7 +103,8 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         bytes: Vec<u8>,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn(async move { inner.save(&path, Bytes::from(bytes)).await })
+        let request = self.stats.request(Op::Save, &path, 0..bytes.len() as u64);
+        self.spawn(async move { request.wrap(inner.save(&path, Bytes::from(bytes))).await })
     }
 
     pub fn remove_async(
@@ -88,7 +112,8 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         path: PathBuf,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn(async move { inner.remove(&path).await })
+        let request = self.stats.request(Op::Remove, &path, 0..0);
+        self.spawn(async move { request.wrap(inner.remove(&path)).await })
     }
 }
 
@@ -111,7 +136,8 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let result = self.runtime.block_on(
-            uio_trace::Request::new(uio_trace::Op::Exists, path, 0..0)
+            self.stats
+                .request(Op::Exists, path, 0..0)
                 .wrap(self.inner.exists(path)),
         );
         if let Some(start_time) = start_time {
@@ -135,7 +161,8 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
     ) -> UioResult<BlobFile<A>> {
         Ok(
             BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
-                .with_writeable(options.writeable),
+                .with_writeable(options.writeable)
+                .with_stats(self.stats.clone()),
         )
     }
 }
@@ -149,16 +176,27 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
 /// [`UniversalWriteFs`]: common::universal_io::UniversalWriteFs
 impl<A: AsyncWrite + Clone> BlobFs<A> {
     pub fn create(&self, path: &Path) -> UioResult<()> {
-        self.runtime.block_on(self.inner.create(path))
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Create, path, 0..0)
+                .wrap(self.inner.create(path)),
+        )
     }
 
     pub fn remove(&self, path: &Path) -> UioResult<()> {
-        self.runtime.block_on(self.inner.remove(path))
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Remove, path, 0..0)
+                .wrap(self.inner.remove(path)),
+        )
     }
 
     /// A whole-object put, atomic on object stores.
     pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.runtime
-            .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Save, path, 0..bytes.len() as u64)
+                .wrap(self.inner.save(path, Bytes::copy_from_slice(bytes))),
+        )
     }
 }

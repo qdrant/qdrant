@@ -40,7 +40,7 @@ enum Event {
         at_ns: Nanoseconds,
         text: String,
     },
-    /// Single GET request.
+    /// Single remote request.
     /// Created by UIO backend implementations, with [`Request::new`].
     Request {
         parent: u64,
@@ -71,14 +71,33 @@ enum Event {
 }
 
 /// Request operation kind.
-#[derive(Clone, Copy, Serialize)]
+///
+/// Fieldless with implicit discriminants, so `op as usize` indexes an array of
+/// [`Op::COUNT`](strum::EnumCount::COUNT) entries in [`Op::iter`](strum::IntoEnumIterator::iter)
+/// order.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    strum::EnumCount,
+    strum::EnumIter,
+    strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Op {
     List,
     Exists,
     Read,
     ReadFrom,
     Len,
+    Create,
+    Remove,
+    Save,
+    Append,
 }
 
 /// Request outcome.
@@ -86,6 +105,9 @@ pub enum Op {
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     Ok,
+    /// The target does not exist: an expected answer to existence and length probes,
+    /// kept apart from failures.
+    NotFound,
     Err,
     Cancelled,
 }
@@ -359,7 +381,7 @@ fn write_events_thread(
     mut out: BufWriter<File>,
     origin: Instant,
 ) -> io::Result<()> {
-    const CPU_INTERVAL: Duration = Duration::from_millis(2);
+    const CPU_INTERVAL: Duration = Duration::from_millis(10);
 
     let mut write_event = |event: &Event| {
         serde_json::to_writer(&mut out, event)?;
@@ -413,6 +435,16 @@ fn process_cpu_ns() -> Nanoseconds {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn op_iter_is_in_discriminant_order() {
+        use strum::IntoEnumIterator as _;
+
+        for (i, op) in Op::iter().enumerate() {
+            assert_eq!(op as usize, i);
+            assert_eq!(serde_json::to_value(op).unwrap(), <&str>::from(op));
+        }
+    }
 
     #[test]
     fn records_nested_spans_from_every_thread() {

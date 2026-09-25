@@ -3900,6 +3900,7 @@ dependencies = [
  "futures",
  "log",
  "slab",
+ "strum",
  "tempfile",
  "tokio",
 ]

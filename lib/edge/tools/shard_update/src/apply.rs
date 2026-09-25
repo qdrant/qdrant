@@ -7,6 +7,7 @@ use edge::{PointApplyKind, PointApplyRecord, PointId, UpdateOnlyEdgeShard};
 
 use crate::generate::generate_batch;
 use crate::parse::prompt_next_ids;
+use crate::report::IoMeter;
 use crate::schema::ShardSchema;
 
 /// Generate the random batch and apply it for real: appends to the write
@@ -21,14 +22,17 @@ pub fn apply_run<Fs: UniversalAppendFs>(
     mut op_num: u64,
     mut seed: u64,
     interactive: bool,
+    meter: &IoMeter,
 ) -> Result<()> {
     let mut ids = ids.to_vec();
     loop {
         let operation = generate_batch(schema, &ids, seed);
 
-        let (returned, outcome) = shard
-            .apply_batch([(op_num, operation)])
-            .context("failed to apply the batch")?;
+        let (returned, outcome) = meter.measure("apply", || {
+            shard
+                .apply_batch([(op_num, operation)])
+                .context("failed to apply the batch")
+        })?;
         shard = returned;
 
         log::info!(
