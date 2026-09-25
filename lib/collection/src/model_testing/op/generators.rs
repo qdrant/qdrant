@@ -34,9 +34,29 @@ const DATETIMES: [&str; 5] = [
     "2023-10-15T00:00:00Z",
     "2023-12-31T00:00:00Z",
 ];
-/// Words the `t` documents are made of, most common first: `random_text` draws them with a skew,
-/// so some terms are in most documents (low IDF) and others in few (high IDF).
-const TEXT_WORDS: [&str; 6] = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"];
+/// Words the `t` documents are made of, with the weight `random_text` draws each with: skewed, so
+/// some terms are in most documents (low IDF) and others in few (high IDF). Past the Greek letters,
+/// words that the tokenizer variants of `fixture::text_index_params` turn into something else: stems
+/// that merge, stopwords, an accent to fold, words below and above the length limits, and
+/// punctuation that only the whitespace tokenizer keeps.
+const TEXT_WORDS: [(&str, u32); 16] = [
+    ("alpha", 60),
+    ("beta", 30),
+    ("gamma", 20),
+    ("delta", 15),
+    ("epsilon", 12),
+    ("zeta", 10),
+    ("running", 8),
+    ("runs", 8),
+    ("run", 8),
+    ("the", 12),
+    ("and", 8),
+    ("café", 6),
+    ("ab", 6),
+    ("extraordinary", 5),
+    ("fox,", 5),
+    ("fox.", 5),
+];
 // Identifier-like strings with shared prefixes — exercises keyword prefix index + filter.
 const URLS: [&str; 6] = [
     "https://qdrant.tech",
@@ -79,9 +99,27 @@ pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
     URL_PREFIX_PROBES.choose(rng).unwrap()
 }
 
-/// Words a BM25 query over `t` draws from: every word of `TEXT_WORDS`, plus one no text holds.
-const TEXT_QUERY_WORDS: [&str; 7] = [
-    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "omega",
+/// Words a BM25 query over `t` draws from: every word of `TEXT_WORDS`, a form only a query holds
+/// (`cafe`, which folding matches), and one no text holds.
+const TEXT_QUERY_WORDS: [&str; 18] = [
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "running",
+    "runs",
+    "run",
+    "the",
+    "and",
+    "café",
+    "cafe",
+    "ab",
+    "extraordinary",
+    "fox,",
+    "fox",
+    "omega",
 ];
 
 /// BM25 parameters for a text query: half the time the defaults, otherwise drawn from the edges of
@@ -128,20 +166,19 @@ pub(super) fn random_text(rng: &mut impl Rng) -> Value {
     }
 }
 
-/// One to twelve words of `TEXT_WORDS`, word `i` drawn with weight `1 / (i + 1)`.
+/// One to twelve words of `TEXT_WORDS`, by their weights.
 fn random_text_document(rng: &mut impl Rng) -> String {
-    const WEIGHTS: [u32; TEXT_WORDS.len()] = [60, 30, 20, 15, 12, 10];
-    let total: u32 = WEIGHTS.iter().sum();
+    let total: u32 = TEXT_WORDS.iter().map(|(_, weight)| weight).sum();
     let len = rng.random_range(1..=12);
     (0..len)
         .map(|_| {
             let mut draw = rng.random_range(0..total);
             let mut at = 0;
-            while draw >= WEIGHTS[at] {
-                draw -= WEIGHTS[at];
+            while draw >= TEXT_WORDS[at].1 {
+                draw -= TEXT_WORDS[at].1;
                 at += 1;
             }
-            let word = TEXT_WORDS[at];
+            let word = TEXT_WORDS[at].0;
             if rng.random_bool(0.1) {
                 word.to_uppercase()
             } else {

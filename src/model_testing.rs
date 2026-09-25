@@ -88,8 +88,11 @@ struct Args {
     max_segment_size_kb: u64,
 
     /// Optimizer `indexing_threshold` in KB. Same rationale as `max_segment_size_kb`:
-    /// scaled down from production (~20 MB) to fire on the soak's small workload.
-    #[clap(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..))]
+    /// scaled down from production (~20 MB) to fire on the soak's small workload. Low enough
+    /// that a vector crosses it inside a `max_segment_size_kb` segment: only an indexed vector
+    /// makes a segment non-appendable, and only a non-appendable segment builds the immutable
+    /// and on-disk payload indexes. At 5, no segment ever did.
+    #[clap(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
     indexing_threshold_kb: u64,
 
     /// Per-iteration probability (0.0..=1.0) of restarting the collection mid-run:

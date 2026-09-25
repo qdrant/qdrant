@@ -10,7 +10,10 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::index::{TextIndexParams, TextScoringParams};
+use segment::data_types::index::{
+    Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface,
+    TextIndexParams, TextScoringParams, TokenizerType,
+};
 use segment::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, Memory,
     MultiVectorConfig, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -114,7 +117,7 @@ pub(super) async fn fixture(
     max_segment_size_kb: usize,
     indexing_threshold_kb: usize,
     on_disk: bool,
-    text_memory: Memory,
+    text_params: TextIndexParams,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
     let snapshots_dir = storage_path.join("snapshots");
@@ -261,8 +264,7 @@ pub(super) async fn fixture(
     // positions (`phrase_matching`) term frequencies come from.
     let text_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
         scoring: Some(TextScoringParams::default()),
-        memory: Some(text_memory),
-        ..TextIndexParams::default()
+        ..text_params
     }));
     let eager_schemas = eager_indices
         .iter()
@@ -283,13 +285,52 @@ pub(super) async fn fixture(
     (collection_dir, snapshots_dir, collection)
 }
 
-/// Where the `t` text index lives once a segment is optimized, by seed parity: in RAM (the
-/// immutable index) or on disk (the mmap one, which reads lengths in batches).
-pub(super) fn text_index_memory(seed: u64) -> Memory {
-    if seed.is_multiple_of(2) {
+/// The `t` text index of a run, keyed off the seed so the op stream is unchanged. Its parity picks
+/// where the index lives once a segment is optimized: in RAM (the immutable index) or on disk (the
+/// mmap one, which reads lengths in batches). The rest picks the tokenizer, each variant changing
+/// what the words of `random_text` become: case kept, stopwords dropped and stems merged, short
+/// and long words filtered out, prefixes indexed, or segmentation by language.
+pub(super) fn text_index_params(seed: u64) -> TextIndexParams {
+    let memory = if seed.is_multiple_of(2) {
         Memory::Pinned
     } else {
         Memory::Cold
+    };
+    let base = TextIndexParams {
+        memory: Some(memory),
+        ..TextIndexParams::default()
+    };
+    match (seed / 2) % 6 {
+        0 => base,
+        1 => TextIndexParams {
+            tokenizer: TokenizerType::Whitespace,
+            lowercase: Some(false),
+            ..base
+        },
+        2 => TextIndexParams {
+            stopwords: Some(StopwordsInterface::Language(Language::English)),
+            stemmer: Some(StemmingAlgorithm::Snowball(SnowballParams {
+                r#type: Snowball::Snowball,
+                language: SnowballLanguage::English,
+            })),
+            ascii_folding: Some(true),
+            ..base
+        },
+        3 => TextIndexParams {
+            min_token_len: Some(3),
+            max_token_len: Some(7),
+            ..base
+        },
+        4 => TextIndexParams {
+            tokenizer: TokenizerType::Prefix,
+            min_token_len: Some(2),
+            max_token_len: Some(5),
+            ..base
+        },
+        _ => TextIndexParams {
+            tokenizer: TokenizerType::Multilingual,
+            ..base
+        },
     }
 }
 
