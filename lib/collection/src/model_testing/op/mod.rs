@@ -7,12 +7,12 @@ use std::num::NonZeroU32;
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
 use generators::{
-    random_direction, random_distinct_ids, random_distinct_points, random_existing_ids,
-    random_flush_interval_sec, random_num, random_partial_named_vectors, random_payload,
-    random_payload_key, random_payload_keys, random_point, random_prefetch, random_query_for_name,
-    random_recommend_strategy, random_scroll_filter, random_slice, random_tag, random_text_query,
-    random_update_mode, random_url_prefix_probe, random_vector_name, random_vector_name_subset,
-    random_with_payload, random_with_vector, upsert_fallback,
+    random_bm25_params, random_direction, random_distinct_ids, random_distinct_points,
+    random_existing_ids, random_flush_interval_sec, random_num, random_partial_named_vectors,
+    random_payload, random_payload_key, random_payload_keys, random_point, random_prefetch,
+    random_query_for_name, random_recommend_strategy, random_scroll_filter, random_slice,
+    random_tag, random_text_query, random_update_mode, random_url_prefix_probe, random_vector_name,
+    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -265,6 +265,10 @@ pub(super) enum Op {
     QueryText {
         text: String,
         limit: usize,
+        /// Per-shard limit of the top-k check, a small cut the scorer's pruning has to get right.
+        top_k: usize,
+        k1: f32,
+        b: f32,
         filter_num: Option<i64>,
         filter_url_prefix: Option<String>,
     },
@@ -807,20 +811,26 @@ impl Op {
                 Op::CountBySlice { total, index }
             }
             39 => Op::SetFlushInterval(random_flush_interval_sec(rng)),
-            40 => Op::QueryText {
-                text: random_text_query(rng),
-                // Half the time a limit above the id pool, so every match comes back and the
-                // exact-size check applies; otherwise a small one, so the top-k cut is exercised.
-                limit: if rng.random_bool(0.5) {
-                    rng.random_range(1..=20)
-                } else {
-                    QUERY_TEXT_ALL
-                },
-                filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
-                filter_url_prefix: rng
-                    .random_bool(0.5)
-                    .then(|| random_url_prefix_probe(rng).to_string()),
-            },
+            40 => {
+                let (k1, b) = random_bm25_params(rng);
+                Op::QueryText {
+                    text: random_text_query(rng),
+                    top_k: rng.random_range(1..=10),
+                    k1,
+                    b,
+                    // Half the time a limit above the id pool, so every match comes back and the
+                    // exact-size check applies; otherwise a small one, so the top-k cut is exercised.
+                    limit: if rng.random_bool(0.5) {
+                        rng.random_range(1..=20)
+                    } else {
+                        QUERY_TEXT_ALL
+                    },
+                    filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                    filter_url_prefix: rng
+                        .random_bool(0.5)
+                        .then(|| random_url_prefix_probe(rng).to_string()),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }

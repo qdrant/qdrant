@@ -527,6 +527,10 @@ pub async fn run(
 ) {
     assert_candidates_predictable();
 
+    // Where optimized segments keep the `t` text index: RAM or disk, so both scorers and both
+    // length read paths run. Keyed off the seed rather than drawn, so the op stream is the same.
+    let text_memory = fixture::text_index_memory(seed);
+    println!("model_testing: text index memory {text_memory:?}");
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -534,6 +538,7 @@ pub async fn run(
         max_segment_size_kb,
         indexing_threshold_kb,
         on_disk,
+        text_memory,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
@@ -800,7 +805,13 @@ pub async fn run(
                     log::debug!("op:{i} CreateSnapshot skipped (one already in flight)");
                 }
             } else {
-                apply::apply(&collection, &mut model, &mut active_names, &op).await;
+                // No segment is wrapped in a proxy: the optimizer is off, and no snapshot is
+                // proxying segments while it runs. Only then are statistics the model's.
+                let no_proxies = disable_optimizer
+                    && pending_snapshot
+                        .as_ref()
+                        .is_none_or(JoinHandle::is_finished);
+                apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
             }
         }
         // Reap a finished background snapshot (non-blocking check); panics if it errored.

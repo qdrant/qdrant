@@ -373,11 +373,17 @@ fn op_payload(op: &Op) -> Value {
         Op::QueryText {
             text,
             limit,
+            top_k,
+            k1,
+            b,
             filter_num,
             filter_url_prefix,
         } => json!({
             "text": text,
             "limit": limit,
+            "top_k": top_k,
+            "k1": k1,
+            "b": b,
             "filter_num": filter_num,
             "filter_url_prefix": filter_url_prefix,
         }),
