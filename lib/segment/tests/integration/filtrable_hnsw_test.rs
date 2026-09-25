@@ -466,10 +466,10 @@ fn acorn_searches_are_counted_separately() {
         },
     )));
 
-    let search = |acorn: Option<AcornSearchParams>| {
+    let search = |vectors: &[&QueryVector], acorn: Option<AcornSearchParams>| {
         hnsw_index
             .search(
-                &[&query],
+                vectors,
                 Some(&filter),
                 3,
                 Some(&SearchParams {
@@ -487,28 +487,53 @@ fn acorn_searches_are_counted_separately() {
         )
     };
 
-    // Half the points match, so the search takes the graph and ACORN is within its threshold.
-    let allowed = search(Some(AcornSearchParams {
+    let allow_acorn = Some(AcornSearchParams {
         enable: true,
         max_selectivity: Some(OrderedFloat(1.0)),
-    }));
+    });
+
+    // Half the points match, so the search takes the graph and ACORN is within its threshold.
+    let allowed = search(&[&query], allow_acorn);
     assert_eq!(allowed, (1, 1), "an allowed ACORN search counts in both");
 
     // Same search, but no selectivity is low enough to let ACORN run.
-    let refused = search(Some(AcornSearchParams {
-        enable: true,
-        max_selectivity: Some(OrderedFloat(0.0)),
-    }));
+    let refused = search(
+        &[&query],
+        Some(AcornSearchParams {
+            enable: true,
+            max_selectivity: Some(OrderedFloat(0.0)),
+        }),
+    );
     assert_eq!(
         refused,
         (2, 1),
         "a refused ACORN search counts only as a graph search"
     );
 
-    let without = search(None);
+    let without = search(&[&query], None);
     assert_eq!(
         without,
         (3, 1),
         "a search that never asked for ACORN leaves it alone"
+    );
+
+    // The path counters count one search per batch, and so must this one.
+    let batch: Vec<_> = (0..4)
+        .map(|_| random_query(&QueryVariant::Nearest, &mut rng, dim))
+        .collect();
+    let batched = search(&batch.iter().collect::<Vec<_>>(), allow_acorn);
+    assert_eq!(
+        batched,
+        (4, 2),
+        "a batch of four vectors is one search, not four"
+    );
+
+    // Discover searches the graph twice per query; that is still one search.
+    let discover = random_query(&QueryVariant::Discover, &mut rng, dim);
+    let discovered = search(&[&discover], allow_acorn);
+    assert_eq!(
+        discovered,
+        (5, 3),
+        "discover's two graph passes are one search"
     );
 }
