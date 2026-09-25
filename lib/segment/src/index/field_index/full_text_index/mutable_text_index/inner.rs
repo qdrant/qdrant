@@ -50,6 +50,19 @@ impl FullTextIndexRead for MutableFullTextIndexInner {
         self.inverted_index.values_is_empty(point_id)
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        self.inverted_index.doc_len_batch(point_ids, hw_counter, f)
+    }
+
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+        self.inverted_index.total_tokens(hw_counter)
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
