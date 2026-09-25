@@ -317,6 +317,7 @@ bitvec = "1.0.1"
 smallvec = { version = "1.15.1", features = ["write"] }
 dashmap = "6.2"
 walkdir = "2.5.0"
+zstd = "0.13"
 
 [patch.crates-io]
 tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.14.6-qdrant" }

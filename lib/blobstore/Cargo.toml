@@ -29,6 +29,7 @@ bitvec = { workspace = true }
 itertools = { workspace = true }
 zerocopy = { workspace = true }
 common = { path = "../common/common" }
+zstd = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
