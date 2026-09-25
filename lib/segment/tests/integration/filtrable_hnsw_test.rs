@@ -26,8 +26,8 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    Range, SearchParams, SeqNumberType,
+    AcornSearchParams, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    PayloadSchemaType, Range, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
@@ -367,4 +367,148 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             &Default::default(),
         )
         .unwrap();
+}
+
+/// The path counters cannot tell an ACORN search from an ordinary filtered one, so ACORN gets
+/// its own. It counts a subset of the graph searches, and only while ACORN is allowed to run.
+#[test]
+fn acorn_searches_are_counted_separately() {
+    let stopped = AtomicBool::new(false);
+
+    let dim = 8;
+    let num_vectors: u64 = 2_000;
+    // 16 KB over 8 float dimensions: a filter must keep more than 512 points to take the graph.
+    let full_scan_threshold = 16;
+    let matching_points = 1_000;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let int_key = "int";
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
+    for n in 0..num_vectors {
+        let vector = random_vector(&mut rng, dim);
+        // The payload is the point's own id, so a range filter keeps a known share of them.
+        segment
+            .upsert_point(
+                n as SeqNumberType,
+                n.into(),
+                only_default_vector(&vector),
+                &hw_counter,
+            )
+            .unwrap();
+        segment
+            .set_full_payload(
+                n as SeqNumberType,
+                n.into(),
+                &payload_json! {int_key: n as i64},
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    let payload_index_ptr = segment.payload_index.clone();
+    payload_index_ptr
+        .borrow_mut()
+        .set_indexed(
+            &JsonPath::new(int_key),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
+        .unwrap();
+
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .quantized_vectors
+                .clone(),
+            payload_index: payload_index_ptr.clone(),
+            hnsw_config: HnswConfig {
+                memory: None,
+                m: 8,
+                ef_construct: 16,
+                full_scan_threshold,
+                max_indexing_threads: 2,
+                on_disk: Some(false),
+                payload_m: None,
+                inline_storage: None,
+            },
+        },
+        VectorIndexBuildArgs {
+            permit: Arc::new(ResourcePermit::dummy(1)),
+            old_indices: &[],
+            gpu_device: None,
+            rng: &mut rng,
+            stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
+            progress: ProgressTracker::new_for_test(),
+        },
+    )
+    .unwrap();
+
+    let query = random_query(&QueryVariant::Nearest, &mut rng, dim);
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+        JsonPath::new(int_key),
+        Range {
+            lt: None,
+            gt: None,
+            gte: Some(OrderedFloat(0.0)),
+            lte: Some(OrderedFloat(f64::from(matching_points - 1))),
+        },
+    )));
+
+    let search = |acorn: Option<AcornSearchParams>| {
+        hnsw_index
+            .search(
+                &[&query],
+                Some(&filter),
+                3,
+                Some(&SearchParams {
+                    hnsw_ef: Some(32),
+                    acorn,
+                    ..Default::default()
+                }),
+                &Default::default(),
+            )
+            .unwrap();
+        let telemetry = hnsw_index.get_telemetry_data(TelemetryDetail::default());
+        (
+            telemetry.filtered_large_cardinality.count,
+            telemetry.filtered_acorn.count,
+        )
+    };
+
+    // Half the points match, so the search takes the graph and ACORN is within its threshold.
+    let allowed = search(Some(AcornSearchParams {
+        enable: true,
+        max_selectivity: Some(OrderedFloat(1.0)),
+    }));
+    assert_eq!(allowed, (1, 1), "an allowed ACORN search counts in both");
+
+    // Same search, but no selectivity is low enough to let ACORN run.
+    let refused = search(Some(AcornSearchParams {
+        enable: true,
+        max_selectivity: Some(OrderedFloat(0.0)),
+    }));
+    assert_eq!(
+        refused,
+        (2, 1),
+        "a refused ACORN search counts only as a graph search"
+    );
+
+    let without = search(None);
+    assert_eq!(
+        without,
+        (3, 1),
+        "a search that never asked for ACORN leaves it alone"
+    );
 }

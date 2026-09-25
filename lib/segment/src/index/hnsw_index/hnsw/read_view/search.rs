@@ -6,6 +6,7 @@ use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
+use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -90,6 +91,11 @@ where
                 algorithm = SearchAlgorithm::Acorn;
             }
         }
+
+        // The path timer started at dispatch cannot tell the two algorithms apart, so count the
+        // ACORN ones here. It nests inside that timer rather than adding to it.
+        let _acorn_timer = matches!(algorithm, SearchAlgorithm::Acorn)
+            .then(|| ScopeDurationMeasurer::new(&self.searches_telemetry.acorn));
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
