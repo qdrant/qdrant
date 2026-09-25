@@ -525,11 +525,11 @@ where
             }
         }
 
-        let deleted = self.id_tracker.deleted_point_bitslice();
+        let invisible = self.id_tracker.point_mappings().invisible_points();
         for (field, stats) in query_context.mut_text_stats().iter_mut() {
             self.payload_index.fill_text_statistics(
                 field,
-                deleted,
+                invisible,
                 stats,
                 &is_stopped,
                 &hw_counter,
