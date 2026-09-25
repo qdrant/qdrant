@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::BitSlice;
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -103,6 +104,7 @@ where
     fn fill_text_statistics(
         &self,
         field: PayloadKeyTypeRef,
+        deleted: &BitSlice,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -112,7 +114,7 @@ where
         };
         // At most one text index per field.
         for index in indexes {
-            if index.fill_text_statistics(stats, is_stopped, hw_counter)? {
+            if index.fill_text_statistics(deleted, stats, is_stopped, hw_counter)? {
                 break;
             }
         }

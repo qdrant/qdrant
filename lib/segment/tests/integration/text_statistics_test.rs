@@ -123,3 +123,37 @@ fn text_statistics_are_summed_across_segments() {
     // before the division.
     assert_eq!(text.avg_doc_len(), Some(13.0 / 4.0));
 }
+
+/// A deleted point leaves `N` and `avgdl` whichever way the segment deletes
+/// it. Tombstone-only deletion (append-only mutations) leaves the payload and
+/// the field index untouched, so the id tracker is the only one that knows.
+#[test]
+fn deleted_points_leave_text_statistics() {
+    let _scoring = TextIndexParams::override_scoring(true);
+    let hw_counter = HardwareCounterCell::new();
+
+    for append_only in [false, true] {
+        let dir = Builder::new()
+            .prefix("text_stats_delete")
+            .tempdir()
+            .unwrap();
+        let mut segment = build_text_segment(
+            &dir.path().join("segment"),
+            &["the quick brown fox", "a quick fox", "unrelated text"],
+        );
+        segment.append_only_mutations = append_only;
+        segment
+            .delete_point(100, PointIdType::from(1), &hw_counter)
+            .unwrap();
+
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field(), ["quick"].map(str::to_string));
+        segment.fill_query_context(&mut query_context).unwrap();
+        let segment_context = query_context.get_segment_query_context();
+        let text = segment_context.get_text_context(&field()).unwrap();
+
+        assert_eq!(text.document_count(), 2, "append_only: {append_only}");
+        // 4 + 2 tokens over the 2 remaining documents.
+        assert_eq!(text.avg_doc_len(), Some(3.0), "append_only: {append_only}");
+    }
+}
