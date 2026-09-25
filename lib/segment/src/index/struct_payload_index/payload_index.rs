@@ -28,9 +28,12 @@ impl PayloadIndex for StructPayloadIndex {
             let transition = classify(&prev_schema.schema, payload_schema);
             return match transition {
                 SchemaTransition::Identical => Ok(BuildIndexResult::AlreadyBuilt),
-                // Only `on_disk` differs: reuse the existing files (loaded in
-                // the new mode) instead of rebuilding from payload.
-                SchemaTransition::OnlyOnDiskFlipped { .. } => {
+                // In-place flags (`on_disk` and/or `enable_hnsw`): reuse the
+                // existing files (reloaded in the new mode when `on_disk`
+                // flipped) instead of rebuilding from payload. Returning
+                // `Built` ensures `apply_index` persists the updated schema
+                // even for metadata-only changes.
+                SchemaTransition::Compatible(_) => {
                     self.reuse_or_build_index(field, payload_schema, hw_counter)
                 }
                 SchemaTransition::Incompatible => Ok(BuildIndexResult::IncompatibleSchema),
@@ -127,10 +130,13 @@ impl PayloadIndex for StructPayloadIndex {
 
         match classify(&current_schema.schema, new_payload_schema) {
             SchemaTransition::Identical => Ok(false),
-            // Only `on_disk` flipped on a non-appendable (mmap) segment: keep the
+            // Metadata-only (`enable_hnsw`): keep indexes on every storage type;
+            // `build_index` reuses files and `apply_index` updates the schema.
+            SchemaTransition::Compatible(diff) if diff.metadata_only() => Ok(false),
+            // `on_disk` flipped on a non-appendable (mmap) segment: keep the
             // existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.
-            SchemaTransition::OnlyOnDiskFlipped { .. }
+            SchemaTransition::Compatible(_)
                 if matches!(self.storage_type, StorageType::NonAppendable) =>
             {
                 Ok(false)
@@ -138,7 +144,7 @@ impl PayloadIndex for StructPayloadIndex {
             // Appendable Gridstore (its `on_disk` change goes through the normal
             // drop-and-rebuild path) or any incompatible change: drop so
             // `build_index` rebuilds.
-            SchemaTransition::OnlyOnDiskFlipped { .. } | SchemaTransition::Incompatible => {
+            SchemaTransition::Compatible(_) | SchemaTransition::Incompatible => {
                 self.drop_index(field)
             }
         }

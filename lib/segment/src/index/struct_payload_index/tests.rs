@@ -356,6 +356,95 @@ fn drop_index_if_incompatible_drops_appendable_index_on_on_disk_only_change() {
 }
 
 #[test]
+fn drop_index_if_incompatible_keeps_index_on_enable_hnsw_only_change() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    // Appendable: enable_hnsw does not affect index format, so the index must
+    // be kept (unlike on_disk, which still drops on appendable segments).
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+
+    let dropped = index.drop_index_if_incompatible(&field, &schema).unwrap();
+
+    assert!(
+        !dropped,
+        "an enable_hnsw-only change must keep the index on appendable segments",
+    );
+    assert!(
+        index.field_indexes.contains_key(&field),
+        "the index must remain present after an enable_hnsw-only change",
+    );
+}
+
+#[test]
+fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::index::field_index::PayloadFieldIndexRead;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let before_count: usize = index
+        .field_indexes
+        .get(&field)
+        .unwrap()
+        .iter()
+        .map(|i| i.count_indexed_points().unwrap())
+        .sum();
+    assert!(before_count > 0, "fixture should index some integer points");
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+    index.set_indexed(&field, schema.clone(), &hw_counter).unwrap();
+
+    let stored = index
+        .config()
+        .indices
+        .get(&field)
+        .expect("index config must still list the field");
+    assert_eq!(
+        stored.schema, schema,
+        "enable_hnsw flip must persist the new schema without rebuild",
+    );
+    assert!(
+        !stored.schema.enable_hnsw(),
+        "persisted schema must reflect enable_hnsw=false",
+    );
+
+    let after_count: usize = index
+        .field_indexes
+        .get(&field)
+        .unwrap()
+        .iter()
+        .map(|i| i.count_indexed_points().unwrap())
+        .sum();
+    assert_eq!(
+        after_count, before_count,
+        "enable_hnsw in-place update must preserve indexed points",
+    );
+}
+
+#[test]
 fn build_index_reloads_in_new_mode_on_on_disk_change() {
     use std::collections::HashMap;
     use std::sync::Arc;
