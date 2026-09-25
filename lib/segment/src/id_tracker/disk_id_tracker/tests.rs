@@ -238,6 +238,7 @@ fn detect_and_load_selects_disk_format() {
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
+    assert!(loaded.is_persisted());
     assert_read_parity(&immutable, &loaded);
 
     // An immutable-format segment loads as the immutable reader.
@@ -253,6 +254,7 @@ fn detect_and_load_selects_disk_format() {
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
+    assert!(loaded.is_persisted());
 
     // An empty segment (no mapping files) falls back to the appendable reader.
     let empty_dir = Builder::new().prefix("empty").tempdir().unwrap();
@@ -264,6 +266,7 @@ fn detect_and_load_selects_disk_format() {
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only appendable id tracker");
+    assert!(!loaded.is_persisted());
 }
 
 #[test]

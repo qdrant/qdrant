@@ -7145,6 +7145,7 @@ version = "0.6.0"
 dependencies = [
  "ahash",
  "anyhow",
+ "async-trait",
  "atomic_refcell",
  "atomicwrites",
  "bincode 1.3.3",

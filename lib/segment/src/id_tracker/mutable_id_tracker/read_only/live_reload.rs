@@ -190,6 +190,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let Some(file_len) = file.len::<u8>().ok_not_found()? else {
             return Ok(Vec::new());
         };
+        self.persisted = true;
 
         // Defensive: committed entries are never removed, but a flush may truncate a partial
         // trailing entry. If the file ever ends up shorter than our read position, continue from
@@ -257,6 +258,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
             return Ok(internal_to_version.len());
         };
+        self.persisted = true;
         let versions_len = versions_bytes / VERSION_ELEMENT_SIZE;
 
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and

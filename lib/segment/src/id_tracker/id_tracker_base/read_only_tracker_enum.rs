@@ -45,7 +45,8 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     ///
     /// Order: disk-resident (the serverless/object-storage format) first, then
     /// the in-RAM immutable format, then the appendable/mutable format (whose
-    /// open tolerates absent files, i.e. a fresh or empty segment).
+    /// open tolerates absent files, i.e. a fresh or empty segment; see
+    /// [`Self::is_persisted`]).
     /// `populate` applies to the disk-resident format only, see [`Self::preopen`].
     pub fn detect_and_load(
         fs: &impl UniversalReadFs<File = S>,
@@ -64,6 +65,15 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             segment_path,
             deferred_internal_id,
         )?))
+    }
+
+    /// Whether a persisted tracker was found. Only the appendable variant answers `false`: a
+    /// segment with no tracker files falls through to it, and its open tolerates the absence.
+    pub fn is_persisted(&self) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.is_persisted(),
+            Self::Immutable(_) | Self::DiskResident(_) => true,
+        }
     }
 
     /// Stage everything the next [`Self::live_reload`] needs. Shared access.

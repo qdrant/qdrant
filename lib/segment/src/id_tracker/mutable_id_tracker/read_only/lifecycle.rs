@@ -74,6 +74,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
             mappings_file: None,
             versions_file: None,
+            persisted: false,
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
@@ -102,6 +103,12 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// id and those whose version was never committed.
     pub fn max_claimed_internal_id(&self) -> Option<PointOffsetType> {
         self.max_claimed_internal_id
+    }
+
+    /// Whether a reload has read either log. Both are absent until the writer's first flush, and
+    /// [`Self::open`] tolerates that, so without them it yields an empty tracker.
+    pub fn is_persisted(&self) -> bool {
+        self.persisted
     }
 
     /// External ids the mappings log has inserted whose slots the versions array does not cover, in

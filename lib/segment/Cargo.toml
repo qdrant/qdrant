@@ -20,6 +20,7 @@ gpu = ["gpu/gpu"]
 cc = { workspace = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 clap = { workspace = true }
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }

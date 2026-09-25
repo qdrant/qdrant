@@ -104,6 +104,42 @@ fn test_open_without_storage_is_empty() {
 }
 
 #[test]
+fn test_open_without_storage_is_not_persisted() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    // Opens empty, like the test above — but with nothing there to open.
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert!(!read_only.is_persisted());
+}
+
+#[test]
+fn test_open_after_a_flush_is_persisted() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert!(read_only.is_persisted());
+}
+
+#[test]
+fn test_a_tracker_emptied_by_deletes_is_still_persisted() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    // Emptied by deletes, so the counts match a segment that never had a tracker. The logs do not.
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    mutable.drop(100.into()).unwrap();
+    flush(&mutable);
+
+    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(read_only.available_point_count(), 0);
+    assert!(read_only.is_persisted());
+}
+
+#[test]
 fn test_open_with_missing_versions_is_empty() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
@@ -451,4 +487,160 @@ fn test_merge_empty_is_noop() {
     assert!(empty.is_empty());
     empty.merge(LiveReloadResult::default());
     assert!(empty.is_empty());
+}
+
+/// Over an object store a handle is handed out before the object is touched, so a missing log only
+/// reports itself on the first read. These exercise the real stack the serverless read path uses.
+mod over_object_storage {
+    use std::fmt;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    use common::universal_io::{DiskCache, DiskCacheConfig, DiskCacheFs, UioResult, UniversalKind};
+    use futures::stream::BoxStream;
+    use io_bridge_object_store::{BlobBackend, BlobFile, BlobFs, BridgeRuntime, ObjectStoreSource};
+    use object_store::memory::InMemory;
+    use object_store::path::Path as ObjectPath;
+    use object_store::{
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload, PutResult,
+    };
+
+    use super::*;
+
+    /// An in-memory store behind the `BlobBackend` bound the bridge wants.
+    #[derive(Debug)]
+    struct TestStore(InMemory);
+
+    impl fmt::Display for TestStore {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "TestStore")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for TestStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> object_store::Result<PutResult> {
+            self.0.put_opts(location, payload, opts).await
+        }
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> object_store::Result<Box<dyn MultipartUpload>> {
+            self.0.put_multipart_opts(location, opts).await
+        }
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> object_store::Result<GetResult> {
+            self.0.get_opts(location, options).await
+        }
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, object_store::Result<ObjectPath>>,
+        ) -> BoxStream<'static, object_store::Result<ObjectPath>> {
+            self.0.delete_stream(locations)
+        }
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, object_store::Result<ObjectMeta>> {
+            self.0.list(prefix)
+        }
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> object_store::Result<ListResult> {
+            self.0.list_with_delimiter(prefix).await
+        }
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> object_store::Result<()> {
+            self.0.copy_opts(from, to, options).await
+        }
+    }
+
+    impl BlobBackend for TestStore {
+        type Config = ();
+
+        fn build_store(_config: &Self::Config) -> UioResult<Self> {
+            Ok(Self(InMemory::new()))
+        }
+
+        fn kind() -> UniversalKind {
+            UniversalKind::S3
+        }
+    }
+
+    type Remote = BlobFile<ObjectStoreSource<TestStore>>;
+    type Cached = DiskCacheFs<Remote>;
+
+    /// The cached blob filesystem the read path opens segments through, rooted at the bucket.
+    fn cached_fs(store: TestStore, scratch: &Path) -> Cached {
+        let remote = BlobFs::new(
+            ObjectStoreSource::new(Arc::new(store)),
+            BridgeRuntime::global(),
+        );
+        let config = DiskCacheConfig::new(PathBuf::new(), scratch.to_path_buf()).unwrap();
+        Cached::new(Arc::new(config), remote)
+    }
+
+    /// Mirror a locally written tracker's files into the store under `prefix`.
+    fn upload(store: &TestStore, local: &Path, prefix: &str) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        for path in [mappings_path(local), versions_path(local)] {
+            let Ok(body) = fs::read(&path) else { continue };
+            let name = path.file_name().unwrap().to_str().unwrap();
+            let key = ObjectPath::from(format!("{prefix}/{name}"));
+            runtime.block_on(store.put(&key, body.into())).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_a_segment_with_no_objects_is_not_persisted() {
+        let scratch = Builder::new().prefix("scratch").tempdir().unwrap();
+        let fs = cached_fs(TestStore(InMemory::new()), scratch.path());
+
+        let read_only =
+            ReadOnlyAppendableIdTracker::<DiskCache<Remote>>::open(&fs, Path::new("seg"), None)
+                .unwrap();
+
+        assert_eq!(read_only.available_point_count(), 0);
+        assert!(
+            !read_only.is_persisted(),
+            "the store hands out a handle before touching the object, so only a read can tell",
+        );
+    }
+
+    #[test]
+    fn test_an_uploaded_tracker_is_persisted() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        insert(&mut mutable, 100.into(), 0, 10);
+        flush(&mutable);
+
+        let store = TestStore(InMemory::new());
+        upload(&store, segment_dir.path(), "seg");
+        let scratch = Builder::new().prefix("scratch").tempdir().unwrap();
+        let fs = cached_fs(store, scratch.path());
+
+        let read_only =
+            ReadOnlyAppendableIdTracker::<DiskCache<Remote>>::open(&fs, Path::new("seg"), None)
+                .unwrap();
+
+        assert_eq!(read_only.available_point_count(), 1);
+        assert!(read_only.is_persisted());
+    }
 }

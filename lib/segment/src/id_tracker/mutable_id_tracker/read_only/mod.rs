@@ -71,4 +71,9 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// Backing handle for the random-access versions array. `None` until the file exists; opened
     /// lazily and refreshed on live-reload.
     versions_file: Option<S>,
+
+    /// Whether a reload has ever read a log's length. A lazy backend hands out a handle for an
+    /// object that does not exist and only reports it on the first read, so the handles above
+    /// cannot answer this.
+    persisted: bool,
 }
