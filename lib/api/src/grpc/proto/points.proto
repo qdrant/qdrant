@@ -1094,7 +1094,21 @@ message Query {
     Rrf rrf = 10;
     // Search with feedback from some oracle.
     RelevanceFeedbackInput relevance_feedback = 11;
+    // Rank by BM25 over the text index of the payload field named by `using`.
+    TextQuery text = 12;
   }
+}
+
+// Rank by BM25 over the text index of the payload field named by `using`,
+// which must have `scoring` set. A point scores when it holds any of the
+// query's terms: required or excluded terms belong in the request's filter.
+message TextQuery {
+  // Text to search for, tokenized by the field's text index.
+  string query = 1;
+  // Term frequency saturation. Default is 1.2.
+  optional float k = 2;
+  // Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
+  optional float b = 3;
 }
 
 message PrefetchQuery {
@@ -1106,6 +1120,7 @@ message PrefetchQuery {
   optional Query query = 2;
   // Define which vector to use for querying.
   // If missing, the default vector is used.
+  // For a `text` query, the payload field whose text index to search.
   optional string using = 3;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 4;
@@ -1130,6 +1145,7 @@ message QueryPoints {
   optional Query query = 3;
   // Define which vector to use for querying.
   // If missing, the default vector is used.
+  // For a `text` query, the payload field whose text index to search.
   optional string using = 4;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 5;
@@ -1176,6 +1192,7 @@ message QueryPointGroups {
   optional Query query = 3;
   // Define which vector to use for querying.
   // If missing, the default vector is used.
+  // For a `text` query, the payload field whose text index to search.
   optional string using = 4;
   // Filter conditions - return only those points that satisfy the specified conditions.
   optional Filter filter = 5;
