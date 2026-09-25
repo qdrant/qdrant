@@ -54,6 +54,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         requests: Vec<ShardQueryRequest>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
+        // The planner fetches `limit + offset` points; the offset is cut off here.
+        let offsets: Vec<_> = requests.iter().map(|request| request.offset).collect();
         let planned_query = PlannedQuery::try_from(requests)?;
 
         let PlannedQuery {
@@ -71,10 +73,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         }
 
         let mut scored_points_batch = Vec::with_capacity(root_plans.len());
-        for root_plan in root_plans {
+        for (root_plan, offset) in root_plans.into_iter().zip(offsets) {
             self.check_stopped()?;
             let scored_points = self.resolve_plan(
                 root_plan,
+                offset,
                 &mut search_results,
                 &mut scroll_results,
                 HwMeasurementAcc::disposable_edge(),
@@ -89,6 +92,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     fn resolve_plan(
         &self,
         root_plan: RootPlan,
+        offset: usize,
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -100,13 +104,14 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             with_vector,
         } = root_plan;
 
-        let results = self.recurse_prefetch(
+        let mut results = self.recurse_prefetch(
             merge_plan,
             search_results,
             scroll_results,
             0,
             hw_measurement_acc.clone(),
         )?;
+        results.drain(..offset.min(results.len()));
 
         let [result] = self
             .fill_with_payload_or_vectors(
@@ -407,7 +412,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     }
 
     /// This function always filters deferred points.
-    fn fill_with_payload_or_vectors(
+    pub(super) fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
         with_payload: WithPayloadInterface,
@@ -543,6 +548,25 @@ mod tests {
         assert_eq!(batches[0][0].id, 3.into());
         assert_eq!(batches[1][0].id, 3.into());
         assert_eq!(batches[1][1].id, 2.into());
+    }
+
+    #[test]
+    fn query_skips_offset() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 4);
+
+        let request = QueryRequestBuilder::new(1)
+            .query(nearest_query(1.0))
+            .offset(2)
+            .build();
+        let ids: Vec<_> = shard
+            .query(request)
+            .unwrap()
+            .into_iter()
+            .map(|point| point.id)
+            .collect();
+
+        assert_eq!(ids, vec![2.into()]);
     }
 
     #[test]
