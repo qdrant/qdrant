@@ -165,6 +165,11 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
+    // `serverless_compatible` is private on `FeatureFlags`: set only through deserialization.
+    let feature_flags: common::flags::FeatureFlags =
+        serde_json::from_value(serde_json::json!({ "serverless_compatible": true }))
+            .expect("serverless_compatible is a valid FeatureFlags field");
+    common::flags::init_feature_flags(feature_flags);
 
     let cli = Cli::parse();
 

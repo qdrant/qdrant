@@ -2,12 +2,10 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
-use super::stats::DiskCacheStats;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
@@ -73,7 +71,6 @@ where
 {
     pub(super) config: Arc<DiskCacheConfig>,
     pub(super) remote_fs: R::Fs,
-    pub(super) stats: DiskCacheStats,
 }
 
 impl<R> Clone for DiskCacheFs<R>
@@ -82,15 +79,10 @@ where
     R::Fs: Clone,
 {
     fn clone(&self) -> Self {
-        let Self {
-            config,
-            remote_fs,
-            stats,
-        } = self;
+        let Self { config, remote_fs } = self;
         Self {
             config: config.clone(),
             remote_fs: remote_fs.clone(),
-            stats: stats.clone(),
         }
     }
 }
@@ -100,13 +92,8 @@ where
     R: UniversalRead,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            config,
-            remote_fs,
-            stats,
-        } = self;
+        let Self { config, remote_fs } = self;
         f.debug_struct("DiskCacheFs")
-            .field("stats", stats)
             .field("config", config)
             .field("remote_fs", remote_fs)
             .finish()
@@ -117,16 +104,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
     /// Wrap an already-built remote filesystem handle. The config-driven
     /// path is [`UniversalReadFs::from_context`].
     pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
-        Self {
-            config,
-            remote_fs,
-            stats: DiskCacheStats::default(),
-        }
-    }
-
-    /// Observer aggregating this filesystem, its clones, and all opened files.
-    pub fn stats(&self) -> DiskCacheStats {
-        self.stats.clone()
+        Self { config, remote_fs }
     }
 
     /// The remote filesystem missing blocks are fetched from.
@@ -179,7 +157,6 @@ where
         Ok(Self {
             config,
             remote_fs: R::Fs::from_context(remote)?,
-            stats: DiskCacheStats::default(),
         })
     }
 
@@ -233,13 +210,9 @@ where
                 let mut pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
-                let started = Instant::now();
                 pipeline.schedule_whole((), 0)?;
 
-                State::OpenPrefill {
-                    pipeline,
-                    fetch: self.stats.fetch(started),
-                }
+                State::OpenPrefill { pipeline }
             }
             // Special case of no known length and empty range. Don't initialize.
             (None, Populate::Partial(range)) if range.into_byte_range::<u8>().is_empty() => {
@@ -263,7 +236,6 @@ where
                     let mut pipeline = OwnedPipeline::new(remote)?;
 
                     // FIXME: check `can_schedule` in a loop first
-                    let started = Instant::now();
                     pipeline.schedule::<Sequential>(
                         blocks_range,
                         byte_range,
@@ -273,7 +245,6 @@ where
                     State::PartialPrefill {
                         pipeline,
                         len: file_len,
-                        fetch: self.stats.fetch(started),
                     }
                 } else {
                     // empty byte range, just initialize with length.

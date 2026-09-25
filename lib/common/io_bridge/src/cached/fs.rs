@@ -9,7 +9,6 @@ use common::universal_io::{
 };
 
 use super::CachedBlobFile;
-use super::stats::CachedBlobStats;
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
 use crate::read::AsyncRead;
@@ -48,13 +47,10 @@ impl<A: AsyncRead + Clone> CachedBlobFs<A> {
         }
     }
 
-    /// Observer of the disk-cache fetches and of every remote request, shared
-    /// by this filesystem, its clones, and the files it opens.
-    pub fn stats(&self) -> CachedBlobStats {
-        CachedBlobStats {
-            cache: self.cache_fs.stats(),
-            remote: self.blob_fs.stats(),
-        }
+    /// Observer of every remote request, shared by this filesystem, its
+    /// clones, and the files it opens.
+    pub fn stats(&self) -> RemoteIoStats {
+        self.blob_fs.stats()
     }
 }
 

@@ -7,7 +7,6 @@
 
 use std::io::{self, ErrorKind};
 use std::path::Path;
-use std::time::Instant;
 
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
@@ -188,19 +187,15 @@ where
                     // Fresh remote handle
                     let new_remote = self.open_remote()?;
                     let (tx, rx) = futures::channel::oneshot::channel();
-                    let stats = self.stats.clone();
                     let future = {
                         async move {
-                            let timing = stats.fetch(Instant::now());
                             let fetch = || async {
                                 Ok(new_remote
                                     .read_bytes_async(byte_range, Sequential, REMOTE_READ_ALIGNMENT)
                                     .await?
                                     .into_owned(1))
                             };
-                            let result = fetch().await;
-                            timing.result(&result);
-                            let result = result.map(|fetched| (new_remote, fetched));
+                            let result = fetch().await.map(|fetched| (new_remote, fetched));
 
                             tx.send(result).ok();
                         }

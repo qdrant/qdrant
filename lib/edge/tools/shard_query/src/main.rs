@@ -107,7 +107,7 @@ use clap::Parser as _;
 use common::uio_trace;
 use common::universal_io::DiskCache;
 use edge::{EdgeConfig, ReadOnlyEdgeShard};
-use io_bridge_object_store::{AsyncRead, BlobFile, CachedBlobStats, ObjectStoreSource};
+use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
 use io_bridge_uio_grpc::UioGrpcSource;
 use object_store::aws::AmazonS3;
 use object_store::gcp::GoogleCloudStorage;
@@ -130,10 +130,7 @@ where
     // Segment data — and the segment manifest used for discovery — are read through a disk cache:
     // fetched from object storage once, then served from the local mirror directory afterwards.
     let cached_fs = build_cached_fs::<A>(remote_config, prefix, cache_dir)?;
-    let stats = CachedBlobStats {
-        cache: cached_fs.stats(),
-        remote: cached_fs.remote_fs().stats(),
-    };
+    let stats = cached_fs.remote_fs().stats();
     log::info!("caching segment reads under {}", cache_dir.display());
 
     // Build the request before the open: the shard is opened for exactly this request, so the
@@ -223,6 +220,11 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
+    // `serverless_compatible` is private on `FeatureFlags`: set only through deserialization.
+    let feature_flags: common::flags::FeatureFlags =
+        serde_json::from_value(serde_json::json!({ "serverless_compatible": true }))
+            .expect("serverless_compatible is a valid FeatureFlags field");
+    common::flags::init_feature_flags(feature_flags);
     let cli = Cli::parse();
     let conn = &cli.connection;
     let _flush_trace = conn.uio_trace.as_ref().map(uio_trace::start).transpose()?;

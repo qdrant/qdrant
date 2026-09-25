@@ -6,7 +6,6 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
@@ -60,12 +59,9 @@ where
                 // empty body (see `AsyncRead::read_range`), so skip the fetch.
                 if len > 0 {
                     let byte_range = 0..len;
-                    let fetch = self.stats.fetch(Instant::now());
                     let content = remote
                         .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                        .await;
-                    fetch.result(&content);
-                    let content = content?;
+                        .await?;
                     unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
                 }
                 State::ready(remote, local)
@@ -80,12 +76,9 @@ where
                 let (block_range, fetch_range) =
                     block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
 
-                let fetch = self.stats.fetch(Instant::now());
                 let content = remote
                     .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await;
-                fetch.result(&content);
-                let content = content?;
+                    .await?;
 
                 let local = LocalState::new(&local_path, file_len, options)?;
                 unsafe { local.write_mmap_bytes(&content, block_range) };
@@ -138,13 +131,10 @@ where
                 blocks_range,
                 blocks_byte_range,
             } => {
-                let fetch = self.stats.fetch(Instant::now());
                 let bytes = state
                     .remote
                     .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
-                    .await;
-                fetch.result(&bytes);
-                let bytes = bytes?;
+                    .await?;
                 // SAFETY: `bytes` is the remote content of `blocks_range`
                 // (clamped to EOF), which covers `range`.
                 unsafe {

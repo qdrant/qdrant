@@ -75,11 +75,12 @@ impl RemoteIoStatsSnapshot {
         }
     }
 
-    /// One summary line per operation kind with activity; `None` when there is none.
+    /// Summary line and latency histogram per operation kind with activity; `None` when
+    /// there is none.
     pub fn format_compact(&self) -> Option<String> {
         let lines: Vec<String> = self
             .iter()
-            .filter_map(|(op, stats)| Some(format!("{}: {}", op.as_str(), stats.format_summary()?)))
+            .filter_map(|(op, stats)| Some(format!("{}: {}", op.as_str(), stats.format_compact()?)))
             .collect();
         (!lines.is_empty()).then(|| lines.join("\n"))
     }

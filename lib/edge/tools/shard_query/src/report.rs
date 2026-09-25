@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use io_bridge_object_store::CachedBlobStatsSnapshot;
+use io_bridge_object_store::RemoteIoStatsSnapshot;
 
 use crate::request::Row;
 
@@ -55,7 +55,7 @@ pub fn print_diff(previous: &[Row], current: &[Row]) -> Result<()> {
 }
 
 /// Print interval IO counters to stderr, leaving query result output unchanged.
-pub fn print_io_stats(phase: &str, stats: &CachedBlobStatsSnapshot) {
+pub fn print_io_stats(phase: &str, stats: &RemoteIoStatsSnapshot) {
     if let Some(compact) = stats.format_compact() {
         eprintln!("IO stats ({phase}):\n{compact}");
     }

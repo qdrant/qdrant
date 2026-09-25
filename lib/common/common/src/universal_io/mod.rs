@@ -31,7 +31,7 @@ pub use self::mmap::{MmapFile, MmapFs};
 pub use self::oneshot::OneshotFile;
 pub use self::op_stats::{LATENCY_BOUNDS, LATENCY_BUCKETS, OpGuard, OpStats, OpStatsSnapshot};
 pub use self::simple_disk_cache::{
-    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote, DiskCacheStats,
+    DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
 pub use self::sorted_block_index::SortedBlockIndex;
 pub use self::traits::{

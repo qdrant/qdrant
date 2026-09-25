@@ -225,16 +225,6 @@ impl OpGuard {
         self.finished = true;
         self.stats.0.errors.fetch_add(1, Ordering::Relaxed);
     }
-
-    pub fn result<T: std::ops::Deref<Target = [u8]>>(
-        self,
-        result: &crate::universal_io::UioResult<T>,
-    ) {
-        match result {
-            Ok(bytes) => self.complete(bytes.len()),
-            Err(_) => self.failed(),
-        }
-    }
 }
 
 impl Drop for OpGuard {

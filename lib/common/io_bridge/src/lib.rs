@@ -119,10 +119,7 @@ pub(crate) const LATENCY_LOG_TARGET: &str = "io_bridge::latency";
 #[cfg(test)]
 mod tests;
 
-pub use cached::{
-    CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobReadPipeline, CachedBlobStats,
-    CachedBlobStatsSnapshot,
-};
+pub use cached::{CachedBlobFile, CachedBlobFs, CachedBlobFsContext, CachedBlobReadPipeline};
 pub use file::BlobFile;
 pub use fs::BlobFs;
 pub use pipeline::BlobReadPipeline;

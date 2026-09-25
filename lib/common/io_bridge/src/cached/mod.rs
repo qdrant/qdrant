@@ -19,7 +19,6 @@
 mod async_io;
 mod fs;
 mod pipeline;
-mod stats;
 #[cfg(test)]
 mod tests;
 
@@ -35,7 +34,6 @@ use common::universal_io::{
 };
 pub use fs::{CachedBlobFs, CachedBlobFsContext};
 pub use pipeline::CachedBlobReadPipeline;
-pub use stats::{CachedBlobStats, CachedBlobStatsSnapshot};
 
 use crate::file::BlobFile;
 use crate::read::AsyncRead;

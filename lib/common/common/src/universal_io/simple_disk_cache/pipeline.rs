@@ -2,7 +2,6 @@ use std::cell::OnceCell;
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::sync::Arc;
-use std::time::Instant;
 
 use slab::Slab;
 
@@ -13,9 +12,7 @@ use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{
     DiskCache, DiskCacheRemote, block_aligned_fetch, to_block_range,
 };
-use crate::universal_io::{
-    OpGuard, ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData,
-};
+use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData};
 
 #[cfg(target_os = "linux")]
 /// Required alignment when using io_uring with `O_DIRECT` on Linux
@@ -32,7 +29,6 @@ where
 {
     file: &'file DiskCache<R>,
     guard: PlaceholderGuard,
-    fetch: OpGuard,
 }
 
 impl<'file, R: UniversalRead> RemoteFetch<'file, R> {
@@ -146,12 +142,7 @@ unsafe fn commit_and_complete<'file, R>(fetch: RemoteFetch<'file, R>, bytes: &[u
 where
     R: DiskCacheRemote,
 {
-    let RemoteFetch {
-        file,
-        guard,
-        fetch: timing,
-    } = fetch;
-    timing.complete(bytes.len());
+    let RemoteFetch { file, guard } = fetch;
 
     let local = file.state()?.local;
 
@@ -217,7 +208,6 @@ where
     {
         let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
         let entry = self.in_flight.vacant_entry();
-        let started = Instant::now();
         let placeholder = guard.placeholder().clone();
         let state = file.state()?;
 
@@ -237,11 +227,7 @@ where
             )?;
         }
 
-        entry.insert(RemoteFetch {
-            file,
-            guard,
-            fetch: file.stats.fetch(started),
-        });
+        entry.insert(RemoteFetch { file, guard });
 
         Ok(placeholder)
     }

@@ -1,13 +1,13 @@
 //! IO statistics reporting around each batch, for the object-storage backends.
 
-use io_bridge_object_store::CachedBlobStats;
+use io_bridge_object_store::RemoteIoStats;
 
 /// Brackets a unit of work with IO statistics snapshots. Absent for the local
 /// backend, which has no remote requests to count.
-pub struct IoMeter(Option<CachedBlobStats>);
+pub struct IoMeter(Option<RemoteIoStats>);
 
 impl IoMeter {
-    pub fn new(stats: Option<CachedBlobStats>) -> Self {
+    pub fn new(stats: Option<RemoteIoStats>) -> Self {
         Self(stats)
     }
 
