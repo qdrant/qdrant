@@ -265,3 +265,194 @@ fn read_archived_newest_clocks(snapshot_path: &Path) -> ArchivedClockMap {
         snapshot_path.display(),
     );
 }
+
+/// Concurrency regression test for WAL-less snapshot clock fence.
+///
+/// Continuously upsert points in parallel tasks while creating WAL-less snapshots,
+/// and verify that archived clocks in `newest_clocks.json` never fail or deadlock
+/// and correctly synchronize with update_lock fence.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_wal_less_snapshot_concurrency_race_fence() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let optimizer_config = OptimizersConfig {
+        deleted_threshold: 0.9,
+        vacuum_min_vector_number: 1000,
+        default_segment_number: 2,
+        max_segment_size: None,
+        #[expect(deprecated)]
+        memmap_threshold: None,
+        indexing_threshold: Some(50_000),
+        flush_interval_sec: 1,
+        max_optimization_threads: Some(2),
+        prevent_unoptimized: None,
+    };
+
+    let config = CollectionConfigInternal {
+        params: CollectionParams {
+            vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            ..CollectionParams::empty()
+        },
+        optimizer_config,
+        wal_config: WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        },
+        hnsw_config: Default::default(),
+        quantization_config: Default::default(),
+        strict_mode_config: Default::default(),
+        uuid: None,
+        metadata: None,
+    };
+
+    let collection_dir = Builder::new()
+        .prefix("test_collection_race")
+        .tempdir()
+        .unwrap();
+    let snapshots_dir = Builder::new()
+        .prefix("test_snapshots_race")
+        .tempdir()
+        .unwrap();
+    let snapshot_temp_dir = Builder::new()
+        .prefix("snapshot_temp_race")
+        .tempdir()
+        .unwrap();
+
+    let collection = Collection::new(
+        "test_race".to_string(),
+        PEER_ID,
+        collection_dir.path(),
+        snapshots_dir.path(),
+        &config,
+        Arc::new(SharedStorageConfig {
+            node_type: NodeType::Normal,
+            ..Default::default()
+        }),
+        CollectionShardDistribution::all_local(Some(1), PEER_ID),
+        None,
+        ChannelService::new(REST_PORT, false, None, None),
+        dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
+        None,
+        None,
+        ResourceBudget::default(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    collection
+        .set_shard_replica_state(SHARD_ID, PEER_ID, ReplicaState::Active, None)
+        .await
+        .unwrap();
+
+    let collection = Arc::new(collection);
+    let stop = Arc::new(AtomicBool::new(false));
+
+    let mut writer_handles = Vec::new();
+    for worker_idx in 0..4 {
+        let collection = collection.clone();
+        let stop = stop.clone();
+        writer_handles.push(tokio::spawn(async move {
+            let mut id = worker_idx * 10_000;
+            while !stop.load(Ordering::Relaxed) {
+                upsert_point(&collection, id, false).await;
+                id += 1;
+                tokio::task::yield_now().await;
+            }
+        }));
+    }
+
+    sleep(Duration::from_millis(50)).await;
+
+    for _ in 0..3 {
+        let snapshot = collection
+            .create_shard_snapshot(SHARD_ID, snapshot_temp_dir.path())
+            .await
+            .unwrap();
+
+        let snapshot_path = snapshots_dir
+            .path()
+            .join(format!("shards/{SHARD_ID}"))
+            .join(&snapshot.name);
+
+        let archived = read_archived_newest_clocks(&snapshot_path);
+        assert!(
+            !archived.clocks.is_empty(),
+            "the snapshot should archive shard clocks",
+        );
+
+        // Restore snapshot into a new isolated collection to verify segment data vs archived clocks
+        let restored_collection_dir = Builder::new()
+            .prefix("restored_collection_race")
+            .tempdir()
+            .unwrap();
+        let restored_snapshots_dir = Builder::new()
+            .prefix("restored_snapshots_race")
+            .tempdir()
+            .unwrap();
+
+        let restored_collection = Collection::new(
+            "restored_race".to_string(),
+            PEER_ID,
+            restored_collection_dir.path(),
+            restored_snapshots_dir.path(),
+            &config,
+            Arc::new(SharedStorageConfig {
+                node_type: NodeType::Normal,
+                ..Default::default()
+            }),
+            CollectionShardDistribution::all_local(Some(1), PEER_ID),
+            None,
+            ChannelService::new(REST_PORT, false, None, None),
+            dummy_on_replica_failure(),
+            dummy_request_shard_transfer(),
+            dummy_abort_shard_transfer(),
+            None,
+            None,
+            ResourceBudget::default(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        restored_collection
+            .restore_shard_snapshot(SHARD_ID, &snapshot_path, snapshot_temp_dir.path(), true)
+            .await
+            .unwrap();
+
+        // Verify the restored recovery point matches the archived clocks, and that no clock exceeds segment data
+        let restored_recovery = restored_collection
+            .shard_recovery_point(SHARD_ID)
+            .await
+            .unwrap();
+        let restored_clocks: HashMap<(u64, u32), u64> = restored_recovery
+            .iter_as_clock_tags()
+            .map(|tag| ((tag.peer_id, tag.clock_id), tag.clock_tick))
+            .collect();
+
+        for clock in &archived.clocks {
+            let restored_tick = restored_clocks
+                .get(&(clock.peer_id, clock.clock_id))
+                .copied();
+            assert!(
+                restored_tick.is_some_and(|tick| clock.current_tick <= tick),
+                "archived clock (peer={}, clock_id={}) tick {} is ahead of restored segment data (tick {:?})",
+                clock.peer_id,
+                clock.clock_id,
+                clock.current_tick,
+                restored_tick,
+            );
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    }
+
+    stop.store(true, Ordering::Relaxed);
+    for handle in writer_handles {
+        handle.await.unwrap();
+    }
+}
