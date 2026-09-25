@@ -36,6 +36,7 @@ pub fn adjust_to_available_vectors(
             max: 0,
         };
     }
+    let estimation = bounded_by(estimation, available_points);
 
     let number_of_deleted_vectors = available_points.saturating_sub(available_vectors);
 
@@ -79,6 +80,7 @@ pub fn adjust_for_deferred_points(
             max: 0,
         };
     }
+    let estimation = bounded_by(estimation, total_points);
 
     let number_of_deferred_points = total_points.saturating_sub(visible_points);
 
@@ -105,6 +107,26 @@ pub fn adjust_for_deferred_points(
         min,
         exp,
         max,
+    }
+}
+
+/// Bound `estimation` by `population`: a filter selects no more points than
+/// exist. A payload index can count points the id tracker has already dropped:
+/// append-only deletion tombstones a point and leaves its payload and field
+/// indexes in place. Scaled down unbounded, such an `exp` would stay above the
+/// `max` the callers cap at the population.
+fn bounded_by(estimation: CardinalityEstimation, population: usize) -> CardinalityEstimation {
+    let CardinalityEstimation {
+        primary_clauses,
+        min,
+        exp,
+        max,
+    } = estimation;
+    CardinalityEstimation {
+        primary_clauses,
+        min: min.min(population),
+        exp: exp.min(population),
+        max: max.min(population),
     }
 }
 
@@ -686,5 +708,36 @@ mod tests {
         assert_eq!(new_estimation.min, 0);
         assert_eq!(new_estimation.exp, 16);
         assert_eq!(new_estimation.max, 50);
+    }
+
+    /// A payload index that still counts tombstoned points (append-only
+    /// deletion) estimates above the available points; the adjustment must
+    /// still return `min <= exp <= max`, within the available points. The
+    /// numbers are those of a model testing run that tripped the debug
+    /// assertion.
+    #[test]
+    fn test_adjust_estimation_above_available_points() {
+        let estimation = CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 10,
+            exp: 30,
+            max: 40,
+        };
+
+        let adjusted = adjust_to_available_vectors(estimation.clone(), 70, 22);
+        assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
+        assert_eq!(adjusted.max, 22);
+        assert_eq!(adjusted.exp, 22);
+
+        // Fewer vectors than points: scaled from the bounded estimate.
+        let adjusted = adjust_to_available_vectors(estimation.clone(), 11, 22);
+        assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
+        assert_eq!(adjusted.max, 11);
+        assert_eq!(adjusted.exp, 11);
+
+        let adjusted = adjust_for_deferred_points(estimation, 11, 22);
+        assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
+        assert_eq!(adjusted.max, 11);
+        assert_eq!(adjusted.exp, 11);
     }
 }
