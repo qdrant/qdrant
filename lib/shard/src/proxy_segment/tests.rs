@@ -1429,3 +1429,98 @@ fn test_score_bm25_hides_proxy_deletions() {
         .collect();
     assert_eq!(score(&double_proxy, &*wrapped), expected);
 }
+
+/// A pending change that replaces or drops the wrapped segment's text index
+/// makes the proxy score nothing and contribute no text statistics for that
+/// field, as `search_batch` does for a stale vector: the wrapped index is not
+/// the one the proxy presents. A change the wrapped index already satisfies
+/// leaves it serving.
+#[test]
+fn test_bm25_skips_a_stale_wrapped_text_index() {
+    use segment::data_types::index::{TextIndexParams, TokenizerType};
+    use segment::entry::ReadSegmentEntry;
+    use segment::index::field_index::full_text_index::Bm25Params;
+    use segment::json_path::JsonPath;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
+
+    let _scoring = TextIndexParams::override_scoring(true);
+    let hw_counter = HardwareCounterCell::new();
+    let field = JsonPath::new("text");
+    let terms = ["alpha".to_owned(), "gamma".to_owned()];
+    let count = 20;
+    let wrapped_schema = || {
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+            phrase_matching: Some(true),
+            ..TextIndexParams::default()
+        }))
+    };
+    let other_schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+            tokenizer: TokenizerType::Whitespace,
+            phrase_matching: Some(true),
+            ..TextIndexParams::default()
+        }));
+
+    // (documents gathered, points scored) through a proxy after `change`.
+    let through_proxy = |change: &dyn Fn(&mut ProxySegment)| {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let wrapped = LockedSegment::new(build_text_segment(dir.path(), count));
+        let mut proxy = ProxySegment::new(wrapped);
+        change(&mut proxy);
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field, terms.iter().cloned());
+        proxy.fill_query_context(&mut query_context).unwrap();
+        let documents = query_context.mut_text_stats()[&field].documents;
+        let scored = proxy
+            .score_bm25(
+                &field,
+                &terms,
+                Bm25Params::default(),
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                count as usize,
+                &query_context.get_segment_query_context(),
+            )
+            .unwrap()
+            .len();
+        (documents, scored)
+    };
+
+    let serving = (count as usize, count as usize);
+    assert_eq!(through_proxy(&|_| {}), serving, "no pending change");
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy.delete_field_index(100, &field).unwrap();
+        }),
+        (0, 0),
+        "pending delete",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .create_field_index(100, &field, Some(&other_schema), &hw_counter)
+                .unwrap();
+        }),
+        (0, 0),
+        "pending create of another schema",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .delete_field_index_if_incompatible(100, &field, &other_schema)
+                .unwrap();
+        }),
+        (0, 0),
+        "pending replacement the wrapped index does not match",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .delete_field_index_if_incompatible(100, &field, &wrapped_schema())
+                .unwrap();
+        }),
+        serving,
+        "pending replacement the wrapped index already matches",
+    );
+}

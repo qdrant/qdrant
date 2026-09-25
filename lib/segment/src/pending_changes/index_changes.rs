@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use itertools::Itertools as _;
 
 use super::change::ProxyIndexChange;
-use crate::types::PayloadKeyType;
+use crate::types::{PayloadFieldSchema, PayloadKeyType};
 
 #[derive(Debug, Default)]
 pub struct ProxyIndexChanges {
@@ -45,6 +45,29 @@ impl ProxyIndexChanges {
     /// Iterate over proxy index changes in arbitrary order.
     pub fn iter_unordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
         self.changes.iter()
+    }
+
+    /// Whether the wrapped segment's index on `key`, of `wrapped_schema`, is
+    /// no longer the one the proxy presents: a pending `Delete`, a
+    /// `DeleteIfIncompatible` it does not match, or a `Create` of another
+    /// schema. The same reading as `ProxySegment::get_indexed_fields`.
+    ///
+    /// Only read paths for which the index is the data need this. A filter
+    /// gives the same answer through an old index, so it does not; BM25 ranks
+    /// by the index's tokenizer, vocabulary and lengths, so it does.
+    pub fn is_wrapped_index_stale(
+        &self,
+        key: &PayloadKeyType,
+        wrapped_schema: Option<&PayloadFieldSchema>,
+    ) -> bool {
+        match self.changes.get(key) {
+            None => false,
+            Some(ProxyIndexChange::Delete(_)) => true,
+            Some(ProxyIndexChange::DeleteIfIncompatible(_, schema)) => {
+                wrapped_schema.is_some_and(|wrapped| wrapped != schema)
+            }
+            Some(ProxyIndexChange::Create(schema, _)) => wrapped_schema != Some(schema),
+        }
     }
 
     pub fn merge(&mut self, other: &Self) {
