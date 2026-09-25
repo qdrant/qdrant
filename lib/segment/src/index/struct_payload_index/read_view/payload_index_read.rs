@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::bitvec::BitSlice;
 use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -14,7 +13,7 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOff
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
-use crate::id_tracker::IdTrackerRead;
+use crate::id_tracker::{IdTrackerRead, InvisiblePoints};
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
@@ -104,7 +103,7 @@ where
     fn fill_text_statistics(
         &self,
         field: PayloadKeyTypeRef,
-        deleted: &BitSlice,
+        invisible: InvisiblePoints<'_>,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -114,7 +113,7 @@ where
         };
         // At most one text index per field.
         for index in indexes {
-            if index.fill_text_statistics(deleted, stats, is_stopped, hw_counter)? {
+            if index.fill_text_statistics(invisible, stats, is_stopped, hw_counter)? {
                 break;
             }
         }
