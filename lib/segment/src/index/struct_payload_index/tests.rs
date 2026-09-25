@@ -415,7 +415,9 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
             enable_hnsw: Some(false),
             ..Default::default()
         }));
-    index.set_indexed(&field, schema.clone(), &hw_counter).unwrap();
+    index
+        .set_indexed(&field, schema.clone(), &hw_counter)
+        .unwrap();
 
     let stored = index
         .config()

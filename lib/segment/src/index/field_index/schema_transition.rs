@@ -366,7 +366,10 @@ mod tests {
     #[test]
     fn float_on_disk_flip_only() {
         assert_eq!(
-            classify(&wrap(float(Some(false), None)), &wrap(float(Some(true), None))),
+            classify(
+                &wrap(float(Some(false), None)),
+                &wrap(float(Some(true), None))
+            ),
             on_disk_only(true),
         );
     }
@@ -487,20 +490,26 @@ mod tests {
 
     #[test]
     fn compatible_diff_metadata_only_helper() {
-        assert!(CompatibleDiff {
-            on_disk: None,
-            metadata: true,
-        }
-        .metadata_only());
-        assert!(!CompatibleDiff {
-            on_disk: Some(true),
-            metadata: true,
-        }
-        .metadata_only());
-        assert!(!CompatibleDiff {
-            on_disk: Some(false),
-            metadata: false,
-        }
-        .metadata_only());
+        assert!(
+            CompatibleDiff {
+                on_disk: None,
+                metadata: true,
+            }
+            .metadata_only()
+        );
+        assert!(
+            !CompatibleDiff {
+                on_disk: Some(true),
+                metadata: true,
+            }
+            .metadata_only()
+        );
+        assert!(
+            !CompatibleDiff {
+                on_disk: Some(false),
+                metadata: false,
+            }
+            .metadata_only()
+        );
     }
 }
