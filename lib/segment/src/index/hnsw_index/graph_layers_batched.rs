@@ -436,6 +436,8 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut batch = Vec::with_capacity(links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut bridges: Vec<PointOffsetType> = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut bridge_quotas: Vec<usize> = Vec::with_capacity(links_batch_size);
 
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
@@ -472,8 +474,22 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 to_score.push(id)
             });
 
-            // Non-matches go to 2-hop exploration.
-            let to_explore = arena.alloc_slice_fill_iter(non_matches.iter().map(|link| link.id));
+            // Non-matches go to 2-hop exploration, under the same per-candidate
+            // cap as the matches. `non_matches` spans the batch, so the quota is
+            // per position, like `admit_matches`.
+            bridge_quotas.clear();
+            bridge_quotas.resize(batch.len(), hop1_limit);
+            bridges.clear();
+            for link in non_matches {
+                let quota = &mut bridge_quotas[link.position as usize];
+                if *quota > 0 {
+                    *quota -= 1;
+                    bridges.push(link.id);
+                } else {
+                    hop1_visited_list.unvisit(link.id);
+                }
+            }
+            let to_explore = arena.alloc_slice_fill_iter(bridges.iter().copied());
             if !to_explore.is_empty() {
                 unchecked_links.clear();
                 self.links
