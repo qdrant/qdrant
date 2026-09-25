@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWriteFileOps,
+    IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalWriteFs,
 };
 
 use crate::Result;
@@ -61,7 +61,7 @@ impl CompactedTracker {
     /// exists.
     ///
     /// The directory must exist already.
-    pub fn new<Fs: UniversalWriteFileOps>(fs: &Fs, dir: &Path) -> Result<Self> {
+    pub fn new<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> Result<Self> {
         let tracker = Self {
             path: Self::tracker_file_name(dir),
             pointers: Vec::new(),
@@ -146,7 +146,7 @@ impl CompactedTracker {
     /// once after being built, not one that is flushed after every batch.
     pub fn flusher<Fs>(&self, fs: Fs) -> Flusher
     where
-        Fs: UniversalWriteFileOps + Send + 'static,
+        Fs: UniversalWriteFs + Send + 'static,
     {
         if !self.dirty.swap(false, Ordering::Relaxed) {
             return Box::new(|| Ok(()));

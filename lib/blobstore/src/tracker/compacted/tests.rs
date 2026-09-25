@@ -1,5 +1,5 @@
 use common::generic_consts::Random;
-use common::universal_io::{MmapFs, UniversalWriteFileOps};
+use common::universal_io::{MmapFs, UniversalWriteFs};
 use tempfile::TempDir;
 
 use super::format::{Header, encode};
