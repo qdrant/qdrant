@@ -2,7 +2,7 @@ use common::generic_consts::Random;
 use common::universal_io::{MmapFs, UniversalWriteFileOps};
 use tempfile::TempDir;
 
-use super::format::{BLOCK_LEN, Header, encode};
+use super::format::{Header, encode};
 use super::{CompactedTracker, FILE_NAME};
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -239,7 +239,7 @@ fn test_failed_flush_leaves_tracker_dirty() {
 fn test_invalid_files_are_rejected() {
     let expected = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, tracker) = tracker_with(&expected);
-    let valid = encode(&tracker.pointers);
+    let valid = encode(&tracker.pointers).unwrap();
     let header_size = size_of::<Header>();
 
     let mut bad_magic = valid.clone();
@@ -248,14 +248,19 @@ fn test_invalid_files_are_rejected() {
     let mut bad_version = valid.clone();
     bad_version[8..12].copy_from_slice(&2u32.to_le_bytes());
 
-    // A count off by a few can hide in the padding of a bit-packed block, so the count checks
-    // are only as strong as the byte layout: a whole block more than the payload holds
-    let mut count_too_large = valid.clone();
-    count_too_large[12..16].copy_from_slice(&(3 + BLOCK_LEN as u32).to_le_bytes());
+    // The count is inside the checksummed frame, so recompress with another one
+    let with_count = |count: u32| {
+        let mut raw = zstd::decode_all(&valid[header_size..]).unwrap();
+        raw[..4].copy_from_slice(&count.to_le_bytes());
+        let mut bytes = valid[..header_size].to_vec();
+        bytes.extend(zstd::encode_all(&raw[..], 0).unwrap());
+        bytes
+    };
 
-    // No mappings: the length block becomes trailing bytes
-    let mut count_too_small = valid.clone();
-    count_too_small[12..16].copy_from_slice(&0u32.to_le_bytes());
+    // A count off by a few can hide in the padding bits of the bitmap, so the count checks are
+    // only as strong as the byte layout: a whole bitmap byte more than the payload holds
+    let count_too_large = with_count(3 + 8);
+    let count_too_small = with_count(2);
 
     let mut corrupt_payload = valid.clone();
     *corrupt_payload.last_mut().unwrap() ^= 0xff;
@@ -289,35 +294,13 @@ fn test_invalid_files_are_rejected() {
     assert_reads(&reopened, &expected);
 }
 
-/// The example in the [`format`](super::format) module docs, byte for byte.
-#[test]
-fn test_documented_example() {
-    let pointers = [
-        Some(ValuePointer::new(0, 0, 120)),
-        Some(ValuePointer::new(0, 120, 95)),
-        None,
-        Some(ValuePointer::new(0, 215, 130)),
-        Some(ValuePointer::new(1, 0, 4000)),
-        Some(ValuePointer::new(1, 4000, 101)),
-    ];
-    let mut expected = b"QDRANTCT".to_vec();
-    expected.extend_from_slice(&[1, 0, 0, 0, 6, 0, 0, 0]);
-    expected.extend_from_slice(&[0x01, 0x02]);
-    expected.extend_from_slice(&[0x5f, 0x0c]);
-    expected.extend_from_slice(&[0x19, 0x00, 0x00, 0x23, 0x10, 0xf4, 0x06, 0x00]);
-    expected.extend_from_slice(&[0x01, 0x03, 0x01, 0x00]);
-
-    assert_eq!(encode(&pointers), expected);
-    assert_eq!(super::format::decode(&expected).unwrap(), pointers);
-}
-
 #[test]
 fn test_packed_mappings_encode_small() {
     let lengths = (0..10_000).map(|i| 100 + (i % 37)).collect::<Vec<u32>>();
     let expected = packed_pointers(&lengths, &[], 1 << 20);
     let (_dir, tracker) = tracker_with(&expected);
 
-    let bytes = encode(&tracker.pointers);
+    let bytes = encode(&tracker.pointers).unwrap();
     // 16 bytes per entry in the flat tracker file; the deltas are zeros here, only the
     // lengths carry information, so the file should be a small fraction of that
     assert!(
