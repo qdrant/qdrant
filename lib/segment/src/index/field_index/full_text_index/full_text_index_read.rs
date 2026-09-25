@@ -28,10 +28,12 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
 /// of zero, the largest IDF the formula produces. A debug build checks it.
 ///
-/// `deleted` is the id tracker's deleted bitslice. `N` and the total tokens
-/// leave out the points it marks even when the deletion never reached this
-/// index, as a tombstone-only deletion does not. `df` does not: it counts
-/// what the postings hold, see [`FullTextIndexRead::posting_len`].
+/// `deleted` is the id tracker's deleted bitslice. `N`, the total tokens and
+/// `df` leave out the points it marks even when the deletion never reached
+/// this index, as a tombstone-only deletion does not. Leaving them in `df`
+/// alone would be worse than leaving them everywhere: `df` would exceed `N`
+/// and IDF clamp to zero. Deletions that did reach an immutable or on-disk
+/// index still count in its `df`, see [`FullTextIndexRead::posting_len`].
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
     deleted: &BitSlice,
@@ -47,21 +49,21 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     check_process_stopped(is_stopped)?;
 
     // The destination slot travels as user data, so no term is cloned.
-    let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
+    let mut counts: Vec<(&mut usize, TokenId)> = Vec::with_capacity(stats.df.len());
     index.for_each_token_id(
         stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
         hw_counter,
         |df, token_id| {
             if let Some(token_id) = token_id {
-                counts.push((df, token_id as usize));
+                counts.push((df, token_id));
             }
         },
     )?;
 
-    for (df, token_id) in counts {
+    for (df, token_id) in &mut counts {
         check_process_stopped(is_stopped)?;
-        if let Some(posting_len) = index.posting_len(token_id as TokenId, hw_counter)? {
-            *df += posting_len;
+        if let Some(posting_len) = index.posting_len(*token_id, hw_counter)? {
+            **df += posting_len;
         }
     }
 
@@ -89,6 +91,19 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         index.doc_len_batch(&tombstoned, hw_counter, |_, doc_len| {
             tombstoned_tokens += u64::from(doc_len.unwrap_or(0));
         })?;
+    }
+    // They are in the postings too, so they come off `df` as well.
+    if !tombstoned.is_empty() {
+        for (df, token_id) in &mut counts {
+            let holds_term = ParsedQuery::AnyTokens(TokenSet::from_iter([*token_id]));
+            let mut holding = 0;
+            index.check_match_batch(
+                &holds_term,
+                tombstoned.iter().map(|&point_id| ((), point_id)),
+                |(), holds| holding += usize::from(holds),
+            )?;
+            **df = df.saturating_sub(holding);
+        }
     }
 
     stats.add_segment(
