@@ -4,6 +4,12 @@
 Visualizer for traces written by the `uio_trace` module.
 See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
 
+Requests are grouped into lanes by the file tree of their paths; click a tree node
+(or a lane header) to expand or collapse it, shift+click to do so for its whole subtree.
+Files that report `sections` split into one child per section.
+Filter by path (substring or glob: `*` within a path segment, `**` across them)
+and by operation. Phases, marks and CPU usage show only when the trace has them.
+
 -->
 <html lang="en">
 <head>
@@ -29,21 +35,43 @@ body {
   display: flex; flex-direction: column;
 }
 header {
-  display: flex; gap: 8px; align-items: baseline;
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
   padding: 5px 10px; border-bottom: 1px solid var(--axis);
 }
 header #note {
   flex: 1; min-width: 0; color: var(--bad);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-header label { color: var(--ink2); }
+header label { color: var(--ink2); white-space: nowrap; }
+header .off { display: none; }
+#ops { display: flex; gap: 8px; }
+#filter {
+  width: 26ch; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--axis); border-radius: 4px; padding: 2px 6px; font: inherit;
+}
 button {
   background: var(--surface); color: var(--ink2);
   border: 1px solid var(--axis); border-radius: 4px; padding: 2px 8px; cursor: pointer;
 }
 button:disabled { color: var(--muted); cursor: default; }
 #file { display: none; }
-#wrap { position: relative; flex: 1; min-height: 0; background: var(--surface); }
+#wrap { position: relative; flex: 1; min-height: 0; display: flex; background: var(--surface); }
+#tree {
+  width: 280px; flex: none; overflow: auto; border-right: 1px solid var(--axis);
+  padding: 4px 0; font-size: 12px; user-select: none;
+}
+#tree .row {
+  display: flex; align-items: center; gap: 5px; padding: 1px 8px 1px 0;
+  cursor: default; white-space: nowrap;
+}
+#tree .row.branch { cursor: pointer; }
+#tree .row:hover { background: #ffffff10; }
+#tree .row.dim { opacity: 0.4; }
+#tree .tw { width: 10px; flex: none; color: var(--muted); text-align: center; }
+#tree .sw { width: 9px; height: 9px; flex: none; border-radius: 2px; }
+#tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink2); }
+#tree .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+#stage { position: relative; flex: 1; min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 #tip {
   position: absolute; display: none; pointer-events: none; max-width: 460px;
@@ -81,16 +109,21 @@ body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
 <body>
 <header>
   <span id="note"></span>
-  <label title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+  <input type="search" id="filter" placeholder="filter paths (/)" title="Substring or glob: `*` within a path segment, `**` across them.">
+  <span id="ops"></span>
+  <label id="marksLabel" title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
   <button id="reflow" title="Hide lanes without visible requests.&#10;(when zooming in)">re<u>f</u>low</button>
   <button id="url"><u>o</u>pen URL</button>
   <button id="upload"><u>u</u>pload file</button>
   <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
 </header>
 <div id="wrap">
-  <canvas id="c"></canvas>
-  <div id="tip"></div>
-  <div id="toast">ctrl+wheel or pinch to zoom</div>
+  <div id="tree"></div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="tip"></div>
+    <div id="toast">ctrl+wheel or pinch to zoom</div>
+  </div>
   <div id="drop">
     <b>What is it?</b>
     <div id="help"></div>
@@ -106,26 +139,10 @@ const [AXIS, BAD, GRID, INK, INK2, MUTED, SURFACE] =
   ["axis", "bad", "grid", "ink", "ink2", "muted", "surface"]
     .map(name => CSS.getPropertyValue("--" + name).trim());
 
-// Lane order, left to right; also the categorical slot order; `null` draws muted.
-const KIND_COLOR = {
-  "vectors": "#3987e5",
-  "graph.neighbors": "#d95926",
-  "graph.offsets": "#199e70",
-  "graph.reindex": "#c98500",
-  "graph.header": "#d55181",
-  "graph": null,
-  "payload_index": "#008300",
-  "payload_storage": "#9085e9",
-  "id_tracker": null,
-  "vector_meta": null,
-  "index_meta": null,
-  "meta": null,
-};
-
-const SHADES = 8;  // tints per kind, so a dense lane reads as texture, not a flat wall
+const SHADES = 8;  // tints per lane, so a dense lane reads as texture, not a flat wall
 const CONC_BIN = 250;  // µs
 const BW_BIN = 1000;  // µs
-const CPU_BIN = 2000;  // µs, the sampling interval of the tracer
+const AUTO_LANES = 12;  // the initial expansion stops before exceeding this many lanes
 const LANE_FONT = "11px system-ui, sans-serif";
 const REQ_W = 4.5;  // px per request bar
 const REQ_GAP = 2;  // px between neighbouring bars, unless the lane is crowded
@@ -136,9 +153,12 @@ const BAD_DARK = darken(BAD);
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 const tip = document.getElementById("tip");
-const wrap = document.getElementById("wrap");
+const stage = document.getElementById("stage");
+const treeBox = document.getElementById("tree");
 const note = document.getElementById("note");
 const marksBox = document.getElementById("marks");
+const filterBox = document.getElementById("filter");
+const opsBox = document.getElementById("ops");
 const toastBox = document.getElementById("toast");
 const reflowButton = document.getElementById("reflow");
 
@@ -158,23 +178,11 @@ let unseen = [];  // lanes without requests in view, as of the last draw
 
 // ---------- trace ----------
 
-// Coarse read type, from the file name alone; a `sections` record refines it.
-function classify(path) {
-  if (/(matrix\.dat|quantized\.data)$/.test(path)) return "vectors";
-  if (path.includes("/vector_storage/")) return "vector_meta";
-  if (/(links_compressed|links_comp_vec|links|graph)\.bin$/.test(path)) return "graph";
-  if (path.includes("/vector_index/")) return "index_meta";
-  if (path.includes("/payload_index/")) return "payload_index";
-  if (path.includes("/payload_storage/")) return "payload_storage";
-  if (path.includes("id_tracker")) return "id_tracker";
-  return "meta";
-}
-
 function build(text, name) {
   const layouts = new Map();
   const phases = [];
   const marks = [];
-  const reqs = [];
+  const all = [];
   const cpu = [];
   let dropped = 0, bad = 0;
   for (const line of text.split("\n")) {
@@ -192,80 +200,49 @@ function build(text, name) {
     } else if (ev.kind === "mark") {
       marks.push({at: ev.at_ns / 1000, text: ev.text});
     } else if (ev.kind === "request") {
-      reqs.push({
+      all.push({
         // Requests are not numbered in the trace; the file order names them.
-        id: reqs.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
+        id: all.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
         op: ev.op, path: ev.path, off: Number(ev.offset), len: Number(ev.length), outcome: ev.outcome,
       });
     }
   }
-  if (!reqs.length && !phases.length) throw new Error("no spans in " + name);
+  if (!all.length && !phases.length) throw new Error("no spans in " + name);
+
+  for (const req of all) req.spans = sections(layouts, req);
+  // Built before sorting by start time: tree order is the order of first appearance in the file.
+  const tree = buildTree(all, layouts);
+  const ops = [...new Set(all.map(req => req.op))];
 
   phases.sort((a, b) => a.s - b.s || b.e - a.e);
   marks.sort((a, b) => a.at - b.at);
-  reqs.sort((a, b) => a.s - b.s);
+  all.sort((a, b) => a.s - b.s);
   nest(phases);
-  const byId = new Map(phases.map(phase => [phase.id, phase]));
-  for (const req of reqs) {
-    req.spans = sections(layouts, req);
-    req.kind = req.spans?.length ? classify(req.path) + "." + req.spans[0][0] : classify(req.path);
-    req.phase = byId.get(req.parent);
-  }
 
-  const counts = new Map(), bytes = new Map();
-  for (const req of reqs) {
-    counts.set(req.kind, (counts.get(req.kind) || 0) + 1);
-    bytes.set(req.kind, (bytes.get(req.kind) || 0) + req.len);
-  }
-  const kinds = Object.keys(KIND_COLOR).filter(k => counts.has(k));
-  kinds.push(...[...counts.keys()].filter(k => !kinds.includes(k)).sort());
-  const index = new Map(kinds.map((k, i) => [k, i]));
-  const colors = kinds.map(k => KIND_COLOR[k] || MUTED);
-
-  let tMax = 1, maxdur = 1;
-  for (const req of reqs) {
-    req.k = index.get(req.kind);
+  let tMax = 1;
+  for (const req of all) {
     // Disjoint bits of one avalanching hash, so the shade does not correlate
     // with the jitter that spreads the bars across the lane.
     const h = hash32(req.id);
     req.jit = (h >>> 8) / (1 << 24);
     req.shade = h % SHADES;
     tMax = Math.max(tMax, req.e);
-    maxdur = Math.max(maxdur, req.e - req.s);
   }
   for (const phase of phases) tMax = Math.max(tMax, phase.e);
   for (const mark of marks) tMax = Math.max(tMax, mark.at);
 
   ctx.font = LANE_FONT;
-  const phaseW = phases.reduce(
+  const phaseW = phases.length ? phases.reduce(
     (w, phase) => Math.max(w, 18 + phase.depth * 11 + ctx.measureText(phase.name).width),
-    ctx.measureText("phases").width + 8);
+    ctx.measureText("phases").width + 8) : 0;
 
-  const conc = concurrency(reqs, tMax);
-  const bw = throughput(reqs, tMax);
-  const busy = cores(cpu, tMax);
-  // The samples count process CPU time from its start, not from the trace start.
-  const cpu0 = cpu.length ? cpu[0].cpu : 0;
   return {
-    name, kinds, colors, reqs, phases, marks, dropped, bad, maxdur, phaseW,
+    name, all, phases, marks, dropped, bad, phaseW, tree, ops,
+    opsOn: new Set(ops),
     t_max: tMax,
-    files: files(layouts, reqs),
-    in_flight: reqs.reduce((sum, r) => sum + r.e - r.s, 0),
-    total_bytes: reqs.reduce((sum, r) => sum + r.len, 0),
-    shades: colors.map(shades),
-    darks: colors.map(darken),
-    counts: kinds.map(k => counts.get(k)),
+    files: files(layouts, all),
     gap: tMax * 0.005,
-    bytes: kinds.map(k => bytes.get(k)),
-    S: Float64Array.from(reqs, r => r.s),
-    conc: {bin: CONC_BIN, v: conc, max: peak(conc)},
-    bw: {bin: BW_BIN, v: bw, max: peak(bw), sum: prefixSum(bw)},
-    cpu: {
-      bin: CPU_BIN, v: busy, max: peak(busy),
-      total: cpu.length ? cpu[cpu.length - 1].cpu - cpu0 : 0,
-      at: Float64Array.from(cpu, c => c.at),
-      used: Float64Array.from(cpu, c => c.cpu - cpu0),
-    },
+    cpu: cpuSeries(cpu, tMax),
   };
 }
 
@@ -295,8 +272,74 @@ function sections(layouts, req) {
   return out.sort((a, b) => b[1] - a[1]);
 }
 
+const pathKey = path => "/" + path.split("/").filter(Boolean).join("/");
+const leafKey = req => pathKey(req.path) + (req.spans?.length ? "#" + req.spans[0][0] : "");
+
 /**
- * Per path, the strips of the file map: `[color, start, end]`.
+ * The path tree of all requests, one node per path segment, plus one per section under a
+ * file with a reported layout. Children keep the order of their first request in the file;
+ * sections keep the layout's order. A chain of single children without requests of their
+ * own collapses into one node.
+ */
+function buildTree(reqs, layouts) {
+  let created = 0;
+  const node = (name, key, sep, parent) => ({
+    name, key, sep, parent, kids: new Map(), children: [], own: 0, open: false,
+    color: palette(created++), count: 0, bytes: 0, ownVisible: 0,
+  });
+  const child = (parent, name, key, sep) => {
+    let found = parent.kids.get(name);
+    if (!found) {
+      found = node(name, key, sep, parent);
+      parent.kids.set(name, found);
+      parent.children.push(found);
+    }
+    return found;
+  };
+  const root = node("", "", "", null);
+  for (const req of reqs) {
+    let at = root;
+    let key = "";
+    for (const part of req.path.split("/").filter(Boolean)) {
+      key += "/" + part;
+      at = child(at, part, key, "/");
+    }
+    if (req.spans?.length) at = child(at, req.spans[0][0], key + "#" + req.spans[0][0], "#");
+    at.own++;
+  }
+  const layoutOf = new Map([...layouts].map(([path, layout]) => [pathKey(path), layout]));
+  // Merged-away keys keep pointing at the node that absorbed them.
+  const byKey = new Map();
+  const settle = n => {
+    byKey.set(n.key, n);
+    while (n.children.length === 1 && !n.own) {
+      const only = n.children[0];
+      n.name = n.name ? n.name + only.sep + only.name : only.name;
+      n.key = only.key;
+      n.own = only.own;
+      n.color = only.color;
+      n.children = only.children;
+      for (const c of n.children) c.parent = n;
+      byKey.set(n.key, n);
+    }
+    const layout = layoutOf.get(n.key);
+    if (layout && n.children.every(c => c.sep === "#")) {
+      const order = new Map(layout.map(([name], i) => [name, i]));
+      n.children.sort((a, b) => order.get(a.name) - order.get(b.name));
+    }
+    n.children.forEach(settle);
+  };
+  settle(root);
+  for (const req of reqs) {
+    req.chain = [];
+    for (let n = byKey.get(leafKey(req)); n; n = n.parent) req.chain.push(n);
+    req.chain.reverse();
+  }
+  return {root, byKey};
+}
+
+/**
+ * Per path, the strips of the file map: `[section name | null, start, end]`.
  * The file size is not traced, so the map ends where the furthest read does.
  */
 function files(layouts, reqs) {
@@ -306,13 +349,150 @@ function files(layouts, reqs) {
   for (const [path, size] of sizes) {
     const layout = layouts.get(path) || [[null, 0]];
     const strips = layout.map(([name, start], i) => {
-      const kind = name === null ? classify(path) : classify(path) + "." + name;
       const end = i + 1 < layout.length ? layout[i + 1][1] : size;
-      return [KIND_COLOR[kind] || MUTED, Math.min(start, size), Math.min(end, size)];
+      return [name, Math.min(start, size), Math.min(end, size)];
     });
     out.set(path, {size, strips});
   }
   return out;
+}
+
+/** Requests matching the filters, their lanes, and the series derived from them. */
+function refilter() {
+  const re = globRe(filterBox.value);
+  D.reqs = D.all.filter(req => D.opsOn.has(req.op) && (!re || re.test(req.path)));
+  for (const n of D.tree.byKey.values()) { n.count = 0; n.bytes = 0; n.ownVisible = 0; }
+  let maxdur = 1;
+  for (const req of D.reqs) {
+    for (const n of req.chain) { n.count++; n.bytes += req.len; }
+    req.chain[req.chain.length - 1].ownVisible++;
+    maxdur = Math.max(maxdur, req.e - req.s);
+  }
+  D.maxdur = maxdur;
+  D.S = Float64Array.from(D.reqs, r => r.s);
+  D.in_flight = D.reqs.reduce((sum, r) => sum + r.e - r.s, 0);
+  D.total_bytes = D.reqs.reduce((sum, r) => sum + r.len, 0);
+  const conc = concurrency(D.reqs, D.t_max);
+  const bw = throughput(D.reqs, D.t_max);
+  D.conc = {bin: CONC_BIN, v: conc, max: peak(conc)};
+  D.bw = {bin: BW_BIN, v: bw, max: peak(bw), sum: prefixSum(bw)};
+  relane();
+}
+
+/** Glob with `*` inside a segment and `**` across them; plain text matches as a substring. */
+function globRe(pattern) {
+  pattern = pattern.trim();
+  if (!pattern) return null;
+  const source = pattern.split(/(\*\*|\*|\?)/).map(token =>
+    token === "**" ? ".*" : token === "*" ? "[^/]*" : token === "?" ? "[^/]" :
+      token.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(source, "i");
+}
+
+/** Lanes, left to right: every collapsed node or leaf with visible requests. */
+function relane() {
+  const lanes = [];
+  const walk = n => {
+    if (!n.count) return;
+    if (n.open && n.children.length) {
+      // A node's own requests, e.g. a listing of a directory whose files are also read.
+      if (n.ownVisible) lanes.push({node: n, self: true});
+      n.children.forEach(walk);
+    } else {
+      lanes.push({node: n, self: false});
+    }
+  };
+  walk(D.tree.root);
+  const index = new Map(lanes.map((lane, i) => [lane.node.key + (lane.self ? "\0" : ""), i]));
+  for (const req of D.reqs) {
+    const last = req.chain.length - 1;
+    const at = req.chain.findIndex(n => !n.open || !n.children.length);
+    req.k = at >= 0 ? index.get(req.chain[at].key) : index.get(req.chain[last].key + "\0");
+  }
+  const counts = lanes.map(() => 0), bytes = lanes.map(() => 0);
+  for (const req of D.reqs) { counts[req.k]++; bytes[req.k] += req.len; }
+  D.lanes = lanes;
+  D.counts = counts;
+  D.bytes = bytes;
+  D.colors = lanes.map(lane => lane.node.color);
+  D.shades = D.colors.map(shades);
+  D.darks = D.colors.map(darken);
+  D.placedFor = null;
+  hidden = new Set();
+  renderTree();
+  redraw();
+}
+
+/** Opens the busiest node while the lanes stay within `AUTO_LANES`. */
+function autoOpen() {
+  const lanes = n => !n.count ? 0 :
+    n.open && n.children.length ? (n.ownVisible ? 1 : 0) + n.children.reduce((s, c) => s + lanes(c), 0) : 1;
+  for (;;) {
+    let best = null;
+    const find = n => {
+      if (!n.children.length || !n.count) return;
+      if (!n.open) { if (!best || n.count > best.count) best = n; return; }
+      n.children.forEach(find);
+    };
+    find(D.tree.root);
+    if (!best) return;
+    const before = lanes(D.tree.root);
+    best.open = true;
+    if (lanes(D.tree.root) > AUTO_LANES && before > 1) { best.open = false; return; }
+  }
+}
+
+function toggle(n, deep) {
+  if (!n.children.length) return;
+  const open = !n.open;
+  const set = m => { m.open = open; if (deep) m.children.forEach(set); };
+  set(n);
+  relane();
+}
+
+function renderTree() {
+  const rows = [];
+  const walk = (n, depth) => {
+    const branch = n.children.length > 0;
+    rows.push("<div class='row" + (branch ? " branch" : "") + (n.count ? "" : " dim") +
+      "' data-key='" + esc(n.key) + "' title='" + esc(n.key.slice(1) || "/") + "' style='padding-left:" +
+      (4 + depth * 12) + "px'><span class=tw>" + (branch ? (n.open ? "▾" : "▸") : "") +
+      "</span><i class=sw style='background:" + n.color + "'></i><span class=nm>" + esc(n.name || "/") +
+      "</span><span class=ct>" + fmtInt(n.count) + " · " + fmtBytes(n.bytes) + "</span></div>");
+    if (n.open) for (const c of n.children) walk(c, depth + 1);
+  };
+  walk(D.tree.root, 0);
+  treeBox.innerHTML = rows.join("");
+}
+
+function renderOps() {
+  const counts = new Map();
+  for (const req of D.all) counts.set(req.op, (counts.get(req.op) || 0) + 1);
+  opsBox.innerHTML = D.ops.map(op =>
+    "<label title='" + fmtInt(counts.get(op)) + " requests'><input type=checkbox data-op='" + esc(op) +
+    "'" + (D.opsOn.has(op) ? " checked" : "") + "> " + esc(op) + "</label>").join("");
+}
+
+/** Cores busy per bin of the trace's own sampling interval; `null` without usable samples. */
+function cpuSeries(samples, tMax) {
+  if (samples.length < 2 || samples[samples.length - 1].cpu === samples[0].cpu) return null;
+  const steps = samples.slice(1).map((sample, i) => sample.at - samples[i].at).sort((a, b) => a - b);
+  const bin = Math.max(1, steps[steps.length >> 1]);
+  const v = new Array(Math.floor(tMax / bin) + 1).fill(0);
+  for (let i = 1; i < samples.length; i++) {
+    const [previous, sample] = [samples[i - 1], samples[i]];
+    const busy = (sample.cpu - previous.cpu) / Math.max(sample.at - previous.at, 1);
+    const last = Math.min(Math.floor(sample.at / bin), v.length - 1);
+    for (let b = Math.floor(previous.at / bin); b <= last; b++) v[b] = Math.max(v[b], busy);
+  }
+  // The samples count process CPU time from its start, not from the trace start.
+  const cpu0 = samples[0].cpu;
+  return {
+    bin, v, max: peak(v),
+    total: samples[samples.length - 1].cpu - cpu0,
+    at: Float64Array.from(samples, c => c.at),
+    used: Float64Array.from(samples, c => c.cpu - cpu0),
+  };
 }
 
 /** Peak in-flight request count per `CONC_BIN` bucket. */
@@ -349,20 +529,6 @@ function throughput(reqs, tMax) {
   return out.map(Math.round);
 }
 
-/** Cores busy per `CPU_BIN` bucket, from the cumulative CPU samples. */
-function cores(samples, tMax) {
-  const out = new Array(Math.floor(tMax / CPU_BIN) + 1).fill(0);
-  for (let i = 1; i < samples.length; i++) {
-    const [previous, sample] = [samples[i - 1], samples[i]];
-    const busy = (sample.cpu - previous.cpu) / Math.max(sample.at - previous.at, 1);
-    const last = Math.min(Math.floor(sample.at / CPU_BIN), out.length - 1);
-    for (let b = Math.floor(previous.at / CPU_BIN); b <= last; b++) {
-      out[b] = Math.max(out[b], busy);
-    }
-  }
-  return out;
-}
-
 const peak = values => values.reduce((a, b) => Math.max(a, b), 0);
 
 function prefixSum(values) {
@@ -376,11 +542,21 @@ function hash32(x) {
   return (x ^ (x >>> 16)) >>> 0;
 }
 
+/** The `i`-th categorical colour: golden-angle hue steps and three lightness levels. */
+function palette(i) {
+  const h = (210 + i * 137.508) % 360, s = 0.62, l = [0.6, 0.72, 0.5][i % 3];
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const c = l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return "#" + f(0) + f(8) + f(4);
+}
+
 /**
  * Tints of one colour, mixed towards white.
  *
- * Only ever lighter than the base, so contrast against the dark surface can
- * only improve and every tint keeps the base's validated 3:1.
+ * Only ever lighter than the base, so contrast against the dark surface can only improve.
  */
 function shades(color) {
   return Array.from({length: SHADES}, (_, i) => mix(color, "#ffffff", 0.22 * i / (SHADES - 1)));
@@ -408,29 +584,32 @@ function rgba(hex, alpha) {
 
 // ---------- layout ----------
 
+/** The side columns present in this trace, left to right. */
+const series = () => D.cpu ? ["conc", "bw", "cpu"] : ["conc", "bw"];
+
 function layout() {
   const w = cv.clientWidth, h = cv.clientHeight;
   const o = {w: w, h: h, top: HEAD, ph: Math.max(1, h - HEAD)};
   o.phaseX = W_RULER;
   o.markX = o.phaseX + D.phaseW;
-  o.reqX = o.markX + W_MARK;
-  o.reqW = Math.max(80, w - o.reqX - 4 * GAP - 3 * W_SIDE);
-  o.concX = o.reqX + o.reqW + GAP;
-  o.bwX = o.concX + W_SIDE + GAP;
-  o.cpuX = o.bwX + W_SIDE + GAP;
+  o.reqX = o.markX + (D.marks.length ? W_MARK : 0);
+  const side = series();
+  o.reqW = Math.max(80, w - o.reqX - (side.length + 1) * GAP - side.length * W_SIDE);
+  o.side = {};
+  side.forEach((key, i) => { o.side[key] = o.reqX + o.reqW + GAP + i * (W_SIDE + GAP); });
 
   // Every lane first takes the width of its own label, then shares out what is
-  // left by log of its count, so the huge `graph.neighbors` lane cannot swamp
-  // the rest and a one-request lane still names itself.
+  // left by log of its count, so one huge lane cannot swamp the rest and a
+  // one-request lane still names itself.
   const avail = o.reqW - 8 - (hidden.size ? W_HIDDEN : 0);
   ctx.font = LANE_FONT;
-  const floor = D.kinds.map((k, i) => hidden.has(i) ? 0 : ctx.measureText(laneName(k)).width + 6);
+  const floor = D.lanes.map((lane, i) => hidden.has(i) ? 0 : ctx.measureText(laneName(lane)).width + 6);
   const spare = Math.max(0, avail - floor.reduce((a, b) => a + b, 0));
   const weight = D.counts.map((c, i) => hidden.has(i) ? 0 : Math.log2(c + 1));
   const sum = weight.reduce((a, b) => a + b, 0) || 1;
   let lw = floor.map((f, i) => f + spare * weight[i] / sum);
   const total = lw.reduce((a, b) => a + b, 0) || 1;
-  if (total > avail) lw = lw.map(v => v * avail / total);  // too many kinds to label
+  if (total > avail) lw = lw.map(v => v * avail / total);  // too many lanes to label
   o.laneX = [];
   let lx = o.reqX + 4;
   for (const width of lw) { o.laneX.push(lx); lx += width; }
@@ -505,7 +684,7 @@ function redraw() {
 
 function draw() {
   const dpr = window.devicePixelRatio || 1;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const w = stage.clientWidth, h = stage.clientHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
     cv.width = Math.round(w * dpr);
     cv.height = Math.round(h * dpr);
@@ -524,9 +703,7 @@ function draw() {
   drawPhases();
   drawRequests();
   drawMarks();
-  drawSeries(D.conc, L.concX);
-  drawSeries(D.bw, L.bwX);
-  drawSeries(D.cpu, L.cpuX);
+  for (const key of series()) drawSeries(D[key], L.side[key]);
   drawSelection();
   drawHeader();
   drawCrosshair();
@@ -543,25 +720,25 @@ function drawHeader() {
   ctx.textAlign = "right";
   ctx.fillText("ms", W_RULER - 6, HEAD / 2);
   ctx.textAlign = "left";
-  ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
-  for (let i = 0; i < D.kinds.length; i++) {
+  if (D.phases.length) ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
+  for (let i = 0; i < D.lanes.length; i++) {
     if (hidden.has(i)) continue;
     ctx.save();
     ctx.beginPath();
     ctx.rect(L.laneX[i], 0, L.laneW[i] - 4, HEAD);
     ctx.clip();
     ctx.fillStyle = D.colors[i];
-    ctx.fillText(laneName(D.kinds[i]), L.laneX[i] + 2, HEAD / 2);
+    ctx.fillText(laneName(D.lanes[i]), L.laneX[i] + 2, HEAD / 2);
     ctx.restore();
   }
   ctx.fillStyle = MUTED;
   if (hidden.size) ctx.fillText("+" + hidden.size, L.hiddenX + 2, HEAD / 2);
-  ctx.fillText("conc ≤" + D.conc.max, L.concX, HEAD / 2);
-  ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.bwX, HEAD / 2);
-  ctx.fillText("CPU ≤" + D.cpu.max.toFixed(1), L.cpuX, HEAD / 2);
+  ctx.fillText("conc ≤" + D.conc.max, L.side.conc, HEAD / 2);
+  ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.side.bw, HEAD / 2);
+  if (D.cpu) ctx.fillText("CPU ≤" + D.cpu.max.toFixed(1), L.side.cpu, HEAD / 2);
 }
 
-const laneName = kind => kind.replace("graph.", "g.");
+const laneName = lane => (lane.node.name || "/") + (lane.self ? " ·" : "");
 
 function niceStep(target) {
   const magnitude = 10 ** Math.floor(Math.log10(target));
@@ -588,6 +765,7 @@ function drawRuler() {
 }
 
 function drawPhases() {
+  if (!D.phases.length) return;
   ctx.save();
   ctx.beginPath();
   ctx.rect(L.phaseX, L.top, D.phaseW, L.ph);
@@ -627,7 +805,7 @@ function drawRequests() {
       Math.max(1.5 + pad, (req.e - req.s) / tpp - 1));
   };
   const bad = [];
-  const seen = D.kinds.map(() => false);
+  const seen = D.lanes.map(() => false);
   let last = "";
   for (let i = lowerBound(D.S, t0 - D.maxdur); i < D.reqs.length; i++) {
     const req = D.reqs[i];
@@ -654,11 +832,12 @@ function drawRequests() {
   }
 
   // An empty view has nothing to reflow to.
-  unseen = seen.includes(true) ? D.kinds.map((_, k) => k).filter(k => !seen[k]) : [];
+  unseen = seen.includes(true) ? D.lanes.map((_, k) => k).filter(k => !seen[k]) : [];
   reflowButton.disabled = !hidden.size && !unseen.length;
 }
 
 function drawMarks() {
+  if (!D.marks.length) return;
   const vend = viewEnd();
   ctx.font = LANE_FONT;
   ctx.lineWidth = 1;
@@ -775,10 +954,16 @@ function hitReq(mx, my) {
   return best;
 }
 
+const inSide = (key, mx) => L.side[key] !== undefined && mx >= L.side[key] && mx < L.side[key] + W_SIDE;
+
+function hitLane(mx) {
+  return L.laneX.findIndex((x, i) => !hidden.has(i) && mx >= x && mx < x + L.laneW[i]);
+}
+
 function hit(mx, my) {
   if (my < L.top) return headTip(mx);
   const t = tOf(my);
-  if (mx >= L.markX && mx < L.markX + W_MARK) {
+  if (D.marks.length && mx >= L.markX && mx < L.reqX) {
     let best = null, bestDy = 5;
     for (const mark of D.marks) {
       const dy = Math.abs(yOf(mark.at) - my);
@@ -800,17 +985,17 @@ function hit(mx, my) {
     }
   }
   const at = "<span class=k>t</span> " + fmtMs(t) + " ms\n<span class=k>so far</span> ";
-  if (mx >= L.concX && mx < L.concX + W_SIDE) {
+  if (inSide("conc", mx)) {
     return "<b>concurrency " + binAt(D.conc, t) + "</b>\n" + at +
       fmtInt(lowerBound(D.S, t)) + " requests";
   }
-  if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
+  if (inSide("bw", mx)) {
     const v = binAt(D.bw, t);
     return "<b>" + (v / D.bw.bin).toFixed(1) + " MB/s</b>\n" + at +
       fmtBytes(D.bw.sum[Math.min(Math.floor(t / D.bw.bin), D.bw.sum.length - 1)]) +
       "\n<span class=k>bin</span> " + (v / 1e3).toFixed(1) + " kB / " + (D.bw.bin / 1e3) + " ms";
   }
-  if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
+  if (inSide("cpu", mx)) {
     return "<b>" + binAt(D.cpu, t).toFixed(2) + " cores busy</b>\n" + at +
       fmtTotalMs(D.cpu.used[lowerBound(D.cpu.at, t) - 1] ?? 0);
   }
@@ -821,23 +1006,25 @@ function headTip(mx) {
   if (hidden.size && mx >= L.hiddenX && mx < L.hiddenX + W_HIDDEN) {
     return 'press "reflow" again to expand';
   }
-  const lane = L.laneX.findIndex((x, i) => !hidden.has(i) && mx >= x && mx < x + L.laneW[i]);
+  const lane = hitLane(mx);
   if (lane >= 0) {
-    return "<b>" + esc(D.kinds[lane]) + "</b>\n" + fmtInt(D.counts[lane]) + " requests, " +
-      fmtBytes(D.bytes[lane]);
+    const {node, self} = D.lanes[lane];
+    const action = self ? "\nclick to collapse" : node.children.length ? "\nclick to expand" : "";
+    return "<b>" + esc(node.key.slice(1) || "/") + (self ? "</b> (own requests)" : "</b>") + "\n" +
+      fmtInt(D.counts[lane]) + " requests, " + fmtBytes(D.bytes[lane]) + action;
   }
   const summary = (title, average, total) =>
     title + "\n<span class=k>average</span> " + average + "\n<span class=k>total</span> " + total;
-  if (mx >= L.concX && mx < L.concX + W_SIDE) {
+  if (inSide("conc", mx)) {
     return summary("<b>concurrency</b>: number of simultaneous requests",
       (D.in_flight / D.t_max).toFixed(2),
       fmtInt(D.reqs.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
   }
-  if (mx >= L.bwX && mx < L.bwX + W_SIDE) {
+  if (inSide("bw", mx)) {
     return summary("<b>bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
       fmtBytes(D.total_bytes));
   }
-  if (mx >= L.cpuX && mx < L.cpuX + W_SIDE) {
+  if (inSide("cpu", mx)) {
     return summary("<b>cpu utilization</b>", (D.cpu.total / D.t_max).toFixed(2) + " cores",
       fmtTotalMs(D.cpu.total));
   }
@@ -864,31 +1051,33 @@ function selectionTip() {
 }
 
 function reqTip(req) {
-  return "<b>#" + req.id + " " + esc(req.kind) + "</b>\n" + times(req) +
-    "<span class=k>op</span> " + esc(req.op) +
-    "  <span class=k>range</span> " + fmtInt(req.off) + "<span class=k>…</span>" +
+  const section = req.spans?.length ? " <span class=k>#</span>" + esc(req.spans[0][0]) : "";
+  return "<b>#" + req.id + " " + esc(req.op) + "</b>" + section + "\n" + times(req) +
+    "<span class=k>range</span> " + fmtInt(req.off) + "<span class=k>…</span>" +
     fmtInt(req.off + req.len) + "  <span class=k>size</span> " + fmtBytes(req.len) + "\n" + fileMap(req) + spanTip(req) +
     (req.outcome === "ok" ? "" : "<span class=k>outcome</span> <b class=err>" + esc(req.outcome) + "</b>\n") +
-    // The segment prefix is long and alike across files; the rest tells them apart.
-    "<span class=k>" + esc(req.path.replace(/^(.*?\bsegments\/[0-9a-f-]{36}\/)(?=.)/, "$1\n")) + "</span>";
+    "<span class=k>" + esc(req.path) + "</span>";
 }
 
 /** The file as a bar: sections dimmed, the requested range in full colour. */
 function fileMap(req) {
   if (!req.len) return "";
   const file = D.files.get(req.path);
+  const key = pathKey(req.path);
+  const own = D.tree.byKey.get(key)?.color || MUTED;
+  const color = name => name === null ? own : D.tree.byKey.get(key + "#" + name)?.color || MUTED;
   // Bytes `from..to` of the file stretched over `width` px.
   const gradient = (from, to, width, tint) => "linear-gradient(to right," + file.strips
     .map(strip => {
       const px = offset => width * (Math.min(Math.max(offset, from), to) - from) / (to - from);
-      return tint(strip[0]) + " " + px(strip[1]) + "px " + px(strip[2]) + "px";
+      return tint(color(strip[0])) + " " + px(strip[1]) + "px " + px(strip[2]) + "px";
     })
     .join(",") + ")";
   const width = Math.max(3, MAP_W * req.len / file.size);
   const left = Math.min(MAP_W * req.off / file.size, MAP_W - width);
   return "<div class=map style='width:" + MAP_W + "px;background:" +
-    gradient(0, file.size, MAP_W, color => mix(color, "#000000", 0.5)) + "'><i style='left:" +
-    left + "px;width:" + width + "px;background:" + gradient(req.off, req.off + req.len, width, color => color) +
+    gradient(0, file.size, MAP_W, c => mix(c, "#000000", 0.5)) + "'><i style='left:" +
+    left + "px;width:" + width + "px;background:" + gradient(req.off, req.off + req.len, width, c => c) +
     "'></i></div>";
 }
 
@@ -935,7 +1124,8 @@ function fmtBytes(n) {
 }
 
 function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/'/g, "&#39;");
 }
 
 // ---------- events ----------
@@ -969,7 +1159,17 @@ cv.addEventListener("wheel", e => {
 }, {passive: false});
 
 cv.addEventListener("pointerdown", e => {
-  if (!D || !L || e.button !== 0 || e.offsetY < L.top) return;
+  if (!D || !L || e.button !== 0) return;
+  if (e.offsetY < L.top) {
+    const lane = hitLane(e.offsetX);
+    if (lane >= 0) {
+      const {node, self} = D.lanes[lane];
+      // A node's own lane stands for the open node; collapsing it merges its children back.
+      if (self || node.children.length) toggle(node, e.shiftKey);
+      pointAt(e.offsetX, e.offsetY);
+    }
+    return;
+  }
   select = tOf(e.offsetY);
   cv.setPointerCapture(e.pointerId);
   pointAt(e.offsetX, e.offsetY);
@@ -1002,7 +1202,7 @@ function pointAt(x, y) {
   } else {
     tip.innerHTML = html;
     tip.style.display = "block";
-    const r = wrap.getBoundingClientRect();
+    const r = stage.getBoundingClientRect();
     tip.style.left = Math.max(4, Math.min(x + 16, r.width - tip.offsetWidth - 6)) + "px";
     tip.style.top = Math.max(4, Math.min(y + 16, r.height - tip.offsetHeight - 6)) + "px";
   }
@@ -1014,6 +1214,17 @@ document.getElementById("help").innerHTML = esc([...document.childNodes]
   .find(node => node.nodeType === Node.COMMENT_NODE).data.trim())
   .replace(/`([^`]+)`/g, "<code>$1</code>");
 
+treeBox.addEventListener("click", e => {
+  const row = e.target.closest(".row");
+  const n = row && D?.tree.byKey.get(row.dataset.key);
+  if (n) toggle(n, e.shiftKey);
+});
+filterBox.addEventListener("input", () => { if (D) refilter(); });
+opsBox.addEventListener("change", e => {
+  const op = e.target.dataset.op;
+  if (e.target.checked) D.opsOn.add(op); else D.opsOn.delete(op);
+  refilter();
+});
 marksBox.addEventListener("change", redraw);
 reflowButton.addEventListener("click", () => {
   hidden = new Set(reflowShowsAll() ? [] : unseen);
@@ -1023,7 +1234,12 @@ document.getElementById("upload").addEventListener("click", () => document.getEl
 
 // By key position, so that other keyboard layouts work too.
 document.addEventListener("keydown", e => {
-  if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+  if (e.ctrlKey || e.altKey || e.metaKey || e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.code === "Slash") {
+    e.preventDefault();
+    filterBox.focus();
+    return;
+  }
   const id = {KeyF: "reflow", KeyM: "marks", KeyO: "url", KeyU: "upload"}[e.code];
   if (!id) return;
   e.preventDefault();
@@ -1094,15 +1310,19 @@ async function loadTrace(name, text, hash) {
   }
   if (load !== loads) return;
   D = trace;
-  hidden = new Set();
   D.hash = hash;
   setHash(hash);
   document.title = D.name + " — uio trace";
   document.getElementById("drop").classList.add("gone");
+  document.getElementById("marksLabel").classList.toggle("off", !D.marks.length);
   note.textContent = [
     D.dropped && D.dropped + " events dropped",
     D.bad && D.bad + " unparsed lines",
   ].filter(Boolean).join(" · ");
+  renderOps();
+  refilter();
+  autoOpen();
+  relane();
   fit();
 }
 
