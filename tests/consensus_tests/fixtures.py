@@ -82,6 +82,31 @@ def update_points_payload(
     return r_batch.json()
 
 
+def delete_points_by_filter(
+        peer_url,
+        filter,
+        collection_name="test_collection",
+        wait="true",
+):
+    return requests.post(
+        f"{peer_url}/collections/{collection_name}/points/delete?wait={wait}",
+        json={"filter": filter},
+    )
+
+
+def set_payload_by_filter(
+        peer_url,
+        payload,
+        filter,
+        collection_name="test_collection",
+        wait="true",
+):
+    return requests.post(
+        f"{peer_url}/collections/{collection_name}/points/payload?wait={wait}",
+        json={"payload": payload, "filter": filter},
+    )
+
+
 def upsert_random_points(
     peer_url,
     num,
