@@ -19,8 +19,13 @@ impl<T> ContextPair<T> {
         let positive_similarity = similarity(&self.positive);
         let negative_similarity = similarity(&self.negative);
 
-        // if closer to positive, return 1, else -1
-        positive_similarity.total_cmp(&negative_similarity) as RankType
+        // if closer to or equally similar to positive, return 1, else -1
+        // The documented rule uses >=: equal similarity is treated as positive zone
+        if positive_similarity >= negative_similarity {
+            1
+        } else {
+            -1
+        }
     }
 }
 
@@ -100,7 +105,7 @@ mod test {
     #[case::no_pairs(vec![], 0)]
     #[case::closer_to_positive(vec![(10, 4)], 1)]
     #[case::closer_to_negative(vec![(4, 10)], -1)]
-    #[case::equal_scores(vec![(11, 11)], 0)]
+    #[case::equal_scores(vec![(11, 11)], 1)]
     #[case::neutral_zone(vec![(10, 4), (4, 10)], 0)]
     #[case::best_zone(vec![(10, 4), (4, 2)], 2)]
     #[case::worst_zone(vec![(4, 10), (2, 4)], -2)]
@@ -120,7 +125,39 @@ mod test {
         );
     }
 
-    /// Compares the score of a query against a fixed score
+    /// Regression test for issue #10609:
+    /// When positive_similarity == negative_similarity the point is on the boundary and
+    /// should be counted as positive zone (rank +1), not zero, per the documented >= rule.
+    #[test]
+    fn test_issue_10609_equal_similarity_is_positive_zone() {
+        // Both context vectors yield the same similarity → tie → should be +1
+        let pair = ContextPair::from((5isize, 5isize));
+        let query = DiscoverQuery::new(0isize, vec![pair]);
+        let rank = query.rank_by(dummy_similarity);
+        assert_eq!(
+            rank, 1,
+            "equal similarities must yield +1 (positive zone, >= rule)"
+        );
+    }
+
+    /// Verifies all three boundary cases are handled consistently.
+    #[test]
+    fn test_rank_boundary_consistency() {
+        let cases: &[((isize, isize), RankType)] = &[
+            ((10, 4), 1),  // closer to positive → +1
+            ((7, 7), 1),   // exactly equal      → +1  (the bug: was 0)
+            ((4, 10), -1), // closer to negative → -1
+        ];
+        for &((p, n), expected) in cases {
+            let rank = DiscoverQuery::new(0isize, vec![ContextPair::from((p, n))])
+                .rank_by(dummy_similarity);
+            assert_eq!(
+                rank, expected,
+                "pair ({p}, {n}): expected rank {expected}, got {rank}"
+            );
+        }
+    }
+
     #[rstest]
     #[case::no_pairs(1, vec![], Ordering::Less)]
     #[case::just_above(1, vec![(1,0),(1,0)], Ordering::Greater)]
