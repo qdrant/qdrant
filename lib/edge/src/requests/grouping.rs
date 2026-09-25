@@ -5,9 +5,9 @@ use crate::requests::query::QueryRequest;
 /// Group the results of a base query by a payload field.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupRequest {
-    /// Base scoring query. Its `limit`/`offset`/`with_payload`/`filter` are adjusted
-    /// by the grouping driver; the query vector, params, prefetch and score_threshold
-    /// are honoured.
+    /// Base scoring query. Its `limit`/`offset`/`filter` are adjusted by the grouping
+    /// driver; the query vector, params, prefetch, score_threshold and the
+    /// `with_payload`/`with_vector` of the returned hits are honoured.
     pub query: QueryRequest,
     /// Payload field to group by.
     pub group_by: JsonPath,
