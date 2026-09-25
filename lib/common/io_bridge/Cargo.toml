@@ -13,6 +13,7 @@ bytemuck = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 slab = { workspace = true }
+strum = { workspace = true }
 tokio = { workspace = true }
 aligned-vec = "0.6.4"
 log = { workspace = true }

@@ -71,8 +71,23 @@ enum Event {
 }
 
 /// Request operation kind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+///
+/// Fieldless with implicit discriminants, so `op as usize` indexes an array of
+/// [`Op::COUNT`](strum::EnumCount::COUNT) entries in [`Op::iter`](strum::IntoEnumIterator::iter)
+/// order.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    strum::EnumCount,
+    strum::EnumIter,
+    strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Op {
     List,
     Exists,
@@ -85,41 +100,14 @@ pub enum Op {
     Append,
 }
 
-impl Op {
-    /// Every kind, in discriminant order, so `op as usize` indexes this array.
-    pub const ALL: [Op; 9] = [
-        Op::List,
-        Op::Exists,
-        Op::Read,
-        Op::ReadFrom,
-        Op::Len,
-        Op::Create,
-        Op::Remove,
-        Op::Save,
-        Op::Append,
-    ];
-
-    /// The serialized name, e.g. for labels.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Op::List => "list",
-            Op::Exists => "exists",
-            Op::Read => "read",
-            Op::ReadFrom => "read_from",
-            Op::Len => "len",
-            Op::Create => "create",
-            Op::Remove => "remove",
-            Op::Save => "save",
-            Op::Append => "append",
-        }
-    }
-}
-
 /// Request outcome.
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     Ok,
+    /// The target does not exist: an expected answer to existence and length probes,
+    /// kept apart from failures.
+    NotFound,
     Err,
     Cancelled,
 }
@@ -449,10 +437,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn op_all_is_in_discriminant_order() {
-        for (i, op) in Op::ALL.into_iter().enumerate() {
+    fn op_iter_is_in_discriminant_order() {
+        use strum::IntoEnumIterator as _;
+
+        for (i, op) in Op::iter().enumerate() {
             assert_eq!(op as usize, i);
-            assert_eq!(serde_json::to_value(op).unwrap(), op.as_str());
+            assert_eq!(serde_json::to_value(op).unwrap(), <&str>::from(op));
         }
     }
 

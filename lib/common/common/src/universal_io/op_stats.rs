@@ -27,6 +27,7 @@ pub struct OpStats(Arc<Counters>);
 struct Counters {
     started: AtomicU64,
     completed: AtomicU64,
+    not_found: AtomicU64,
     errors: AtomicU64,
     abandoned: AtomicU64,
     bytes: AtomicU64,
@@ -35,13 +36,16 @@ struct Counters {
 }
 
 /// Cumulative snapshot. Fields may reflect slightly different instants during concurrent updates.
-/// Once updates settle, `started` equals `completed + errors + abandoned + in flight`.
+/// Once updates settle, `started` equals `completed + not_found + errors + abandoned + in flight`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OpStatsSnapshot {
     /// Operations started.
     pub started: u64,
     /// Operations whose successful result was observed.
     pub completed: u64,
+    /// Operations answered with "not found". An expected answer to existence and length
+    /// probes, so not counted as an error; no bytes or duration are recorded.
+    pub not_found: u64,
     /// Operations that failed.
     pub errors: u64,
     /// Operations dropped without an observed result.
@@ -62,6 +66,7 @@ impl OpStats {
         OpStatsSnapshot {
             started: self.0.started.load(Ordering::Relaxed),
             completed: self.0.completed.load(Ordering::Relaxed),
+            not_found: self.0.not_found.load(Ordering::Relaxed),
             errors: self.0.errors.load(Ordering::Relaxed),
             abandoned: self.0.abandoned.load(Ordering::Relaxed),
             bytes: self.0.bytes.load(Ordering::Relaxed),
@@ -115,6 +120,7 @@ impl OpStatsSnapshot {
         Self {
             started: self.started.saturating_sub(earlier.started),
             completed: self.completed.saturating_sub(earlier.completed),
+            not_found: self.not_found.saturating_sub(earlier.not_found),
             errors: self.errors.saturating_sub(earlier.errors),
             abandoned: self.abandoned.saturating_sub(earlier.abandoned),
             bytes: self.bytes.saturating_sub(earlier.bytes),
@@ -132,6 +138,7 @@ impl OpStatsSnapshot {
             ("started", self.started),
             ("completed", self.completed),
             ("bytes", self.bytes),
+            ("not_found", self.not_found),
             ("errors", self.errors),
             ("abandoned", self.abandoned),
         ] {
@@ -191,6 +198,7 @@ impl std::ops::AddAssign<&OpStatsSnapshot> for OpStatsSnapshot {
     fn add_assign(&mut self, other: &Self) {
         self.started += other.started;
         self.completed += other.completed;
+        self.not_found += other.not_found;
         self.errors += other.errors;
         self.abandoned += other.abandoned;
         self.bytes += other.bytes;
@@ -219,6 +227,11 @@ impl OpGuard {
     pub fn complete(mut self, bytes: usize) {
         self.finished = true;
         self.stats.record_completed(bytes, self.started.elapsed());
+    }
+
+    pub fn not_found(mut self) {
+        self.finished = true;
+        self.stats.0.not_found.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn failed(mut self) {
@@ -260,11 +273,13 @@ mod tests {
     fn guard_outcomes() {
         let stats = OpStats::default();
         stats.start(Instant::now()).complete(10);
+        stats.start(Instant::now()).not_found();
         stats.start(Instant::now()).failed();
         drop(stats.start(Instant::now()));
         let snapshot = stats.snapshot();
-        assert_eq!(snapshot.started, 3);
+        assert_eq!(snapshot.started, 4);
         assert_eq!(snapshot.completed, 1);
+        assert_eq!(snapshot.not_found, 1);
         assert_eq!(snapshot.errors, 1);
         assert_eq!(snapshot.abandoned, 1);
         assert_eq!(snapshot.bytes, 10);

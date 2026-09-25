@@ -733,22 +733,26 @@ mod tests {
         assert!(fs.exists(path).unwrap());
         fs.remove(path).unwrap();
         assert!(file.read_bytes(0..1, Random, 1).is_err());
+        assert!(file.read_whole::<u8>().is_err());
+        assert!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).is_err());
 
         let snapshot = stats.snapshot();
         let counts = |op: Op| {
             let op = snapshot.op(op);
-            (op.started, op.completed, op.errors, op.bytes)
+            (op.started, op.completed, op.not_found, op.errors, op.bytes)
         };
-        assert_eq!(counts(Op::Create), (1, 1, 0, 0));
-        assert_eq!(counts(Op::Append), (1, 1, 0, 6));
-        assert_eq!(counts(Op::Read), (2, 1, 1, 3));
-        assert_eq!(counts(Op::ReadFrom), (1, 1, 0, 6));
-        assert_eq!(counts(Op::Len), (1, 1, 0, 0));
-        assert_eq!(counts(Op::Save), (1, 1, 0, 2));
-        assert_eq!(counts(Op::Exists), (1, 1, 0, 0));
-        assert_eq!(counts(Op::Remove), (1, 1, 0, 0));
-        assert_eq!(counts(Op::List), (0, 0, 0, 0));
-        assert_eq!(snapshot.total().started, 9);
+        assert_eq!(counts(Op::Create), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Append), (1, 1, 0, 0, 6));
+        assert_eq!(counts(Op::Read), (2, 1, 1, 0, 3));
+        assert_eq!(counts(Op::ReadFrom), (2, 1, 1, 0, 6));
+        // No `len` probe behind the missing object's `read_from`.
+        assert_eq!(counts(Op::Len), (2, 1, 1, 0, 0));
+        assert_eq!(counts(Op::Save), (1, 1, 0, 0, 2));
+        assert_eq!(counts(Op::Exists), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Remove), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::List), (0, 0, 0, 0, 0));
+        assert_eq!(snapshot.total().started, 11);
+        assert_eq!(snapshot.total().errors, 0);
         assert_eq!(snapshot.total().abandoned, 0);
         assert!(
             snapshot

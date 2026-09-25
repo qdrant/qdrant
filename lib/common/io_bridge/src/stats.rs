@@ -9,9 +9,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use common::uio_trace::{self, Op, Outcome};
-use common::universal_io::{OpGuard, OpStats, OpStatsSnapshot};
+use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
+use strum::{EnumCount as _, IntoEnumIterator as _};
 
-const OPS: usize = Op::ALL.len();
+const OPS: usize = Op::COUNT;
 
 /// Cloneable observer shared by a filesystem, its clones, and the files it opens.
 #[derive(Clone, Debug, Default)]
@@ -52,7 +53,7 @@ impl RemoteIoStatsSnapshot {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Op, &OpStatsSnapshot)> {
-        Op::ALL.into_iter().zip(&self.ops)
+        Op::iter().zip(&self.ops)
     }
 
     /// All operations summed together.
@@ -80,7 +81,9 @@ impl RemoteIoStatsSnapshot {
     pub fn format_compact(&self) -> Option<String> {
         let lines: Vec<String> = self
             .iter()
-            .filter_map(|(op, stats)| Some(format!("{}: {}", op.as_str(), stats.format_compact()?)))
+            .filter_map(|(op, stats)| {
+                Some(format!("{}: {}", <&str>::from(op), stats.format_compact()?))
+            })
             .collect();
         (!lines.is_empty()).then(|| lines.join("\n"))
     }
@@ -117,19 +120,31 @@ impl RequestObserver {
         };
         match outcome {
             Outcome::Ok => guard.complete(self.range.end.saturating_sub(self.range.start) as usize),
+            Outcome::NotFound => guard.not_found(),
             Outcome::Err => guard.failed(),
             Outcome::Cancelled => drop(guard),
         }
     }
 
-    pub fn set_result<T, E>(&mut self, result: &Result<T, E>) {
-        self.set(match result {
-            Ok(_) => Outcome::Ok,
-            Err(_) => Outcome::Err,
+    pub fn set_result<T, E: IsNotFound>(&mut self, result: &Result<T, E>) {
+        match result {
+            Ok(_) => self.set(Outcome::Ok),
+            Err(err) => self.set_err(err),
+        }
+    }
+
+    pub fn set_err(&mut self, err: &impl IsNotFound) {
+        self.set(if err.is_not_found() {
+            Outcome::NotFound
+        } else {
+            Outcome::Err
         });
     }
 
-    pub async fn wrap<T, E>(mut self, future: impl Future<Output = Result<T, E>>) -> Result<T, E> {
+    pub async fn wrap<T, E: IsNotFound>(
+        mut self,
+        future: impl Future<Output = Result<T, E>>,
+    ) -> Result<T, E> {
         self.start();
         let result = future.await;
         self.set_result(&result);

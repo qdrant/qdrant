@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
 use common::uio_trace::{Op, Outcome};
-use common::universal_io::{UioResult, UniversalIoError};
+use common::universal_io::{IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
 use crate::file::BlobFile;
@@ -66,16 +66,26 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
         request.start();
         let (size, stream) = match read_fut.await {
             Ok(ok) => ok,
+            // A missing object has no tail to be empty; the probe would only repeat the answer.
+            Err(err) if err.is_not_found() => {
+                request.set_err(&err);
+                return Err(err);
+            }
             Err(err) => {
-                request.set(Outcome::Err);
-                drop(request);
+                // Settled after the `len` probe: a tail at or past EOF is an empty
+                // read, not a failed one.
                 let eof = stats
                     .request(Op::Len, &path, 0..0)
                     .wrap(inner.len(&path))
-                    .await?;
-                if from >= eof {
+                    .await;
+                if let Ok(eof) = eof
+                    && from >= eof
+                {
+                    request.set(Outcome::Ok);
                     return Ok(AVec::new(align));
                 }
+                request.set_err(&err);
+                eof?;
                 return Err(err);
             }
         };
