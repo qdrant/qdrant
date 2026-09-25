@@ -393,7 +393,7 @@ fn write_events_thread(
     mut out: BufWriter<File>,
     origin: Instant,
 ) -> io::Result<()> {
-    const CPU_INTERVAL: Duration = Duration::from_millis(2);
+    const CPU_INTERVAL: Duration = Duration::from_millis(10);
 
     let mut write_event = |event: &Event| {
         serde_json::to_writer(&mut out, event)?;
