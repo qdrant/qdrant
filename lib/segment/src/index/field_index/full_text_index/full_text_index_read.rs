@@ -58,6 +58,34 @@ pub trait FullTextIndexRead {
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
+    /// Number of tokens indexed for each of `point_ids`, repetitions included:
+    /// `|d|` in BM25. `f(index, doc_len)` once per entry, with `index` into
+    /// `point_ids`, in no particular order. `None` when this index does not
+    /// record lengths or the point is outside it, `Some(0)` when it holds no
+    /// tokens for that point, whether because the document was deleted or
+    /// because its tokens were all filtered away. Every backend answers
+    /// identically for the same data.
+    ///
+    /// Batched only, on purpose: an on-disk index may sit on a slow or remote
+    /// disk, where a length read per point is a round trip per point.
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()>;
+
+    /// Total tokens over the points this index still holds. Paired with
+    /// [`Self::points_count`] it gives an average document length, but the
+    /// division belongs to whoever has summed both over every segment, not
+    /// here.
+    ///
+    /// Both are counted over the same population on every backend: the
+    /// documents this index still holds that carry at least one indexed
+    /// token. A value that tokenizes to nothing is in neither, so the ratio
+    /// does not move with the storage placement.
+    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,

@@ -55,6 +55,9 @@ pub struct ImmutableInvertedIndex {
     /// tokens" mask, so after a round trip through disk that document is
     /// indistinguishable from a deleted one.
     pub(super) point_to_doc_len: Option<Vec<u32>>,
+    /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
+    /// meaningful when that vector exists.
+    pub(super) total_tokens: u64,
     pub(super) points_count: usize,
 }
 
@@ -306,6 +309,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(idx as usize))
         {
+            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
             *doc_len = 0;
         }
         self.points_count = self.points_count.saturating_sub(1);
@@ -374,6 +378,28 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        _hw_counter: &HardwareCounterCell,
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let lens = self.point_to_doc_len.as_deref();
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            f(
+                index,
+                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+            );
+        }
+        Ok(())
+    }
+
+    /// Maintained, not summed: both ways into this index already have the
+    /// number, and `remove` is the only mutation after that.
+    fn total_tokens(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+        Ok(self.point_to_doc_len.is_some().then_some(self.total_tokens))
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
@@ -393,9 +419,11 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             point_to_tokens,
             point_to_doc,
             mut point_to_doc_len,
-            // Not carried: deletions are masked on load, so a total written at
-            // build time would be stale. Whoever needs it sums the vector.
-            total_tokens: _,
+            // Carried as-is: the counter is already the sum of the vector being
+            // moved across, and the padding below only adds zeroes. Masking is
+            // what a total read back from disk cannot survive, and that path
+            // recomputes instead.
+            total_tokens,
             points_count,
         } = index;
 
@@ -442,6 +470,7 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens,
             points_count,
         }
     }
@@ -586,6 +615,9 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
 
         // Document lengths are masked the same way, so that whoever sums them
         // gets the live total rather than one inflated by deleted points.
+        // Summed here rather than later: this walk already has to touch every
+        // element to apply the mask.
+        let mut total_tokens = 0;
         let point_to_doc_len = match &index.storage.point_to_doc_len {
             None => None,
             Some(storage) => {
@@ -599,6 +631,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
                     {
                         *doc_len = 0;
                     }
+                    total_tokens += u64::from(*doc_len);
                 }
                 Some(lens)
             }
@@ -609,6 +642,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens,
             points_count: index.points_count(),
         })
     }
@@ -622,6 +656,7 @@ impl ImmutableInvertedIndex {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens: _,
             points_count: _,
         } = self;
 

@@ -4,6 +4,8 @@
 
 mod test_congruence;
 
+use std::path::PathBuf;
+
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -552,15 +554,10 @@ fn test_special_check_condition_match_text_any() {
     );
 }
 
-/// The mmap build path records lengths too, end to end: `add_many` measures,
-/// `create` writes the sidecar, and the index that comes back out of `finalize`
-/// carries them. With `TextIndexParams::scoring()` still a const `false`, the
-/// explicit builder parameter is the only way to reach this.
-#[test]
-fn mmap_builder_records_doc_len() {
-    use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-
-    let temp_dir = Builder::new().prefix("mmap_doc_len").tempdir().unwrap();
+/// An mmap index over two documents: point 0 has 3 tokens, point 1 has 7 with
+/// repeats. With `TextIndexParams::scoring()` still a const `false`, the
+/// explicit builder parameter is the only way to reach a recording index.
+fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
     let hw_counter = HardwareCounterCell::new();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
@@ -578,13 +575,7 @@ fn mmap_builder_records_doc_len() {
     };
 
     let empty_deleted = BitVec::new();
-    let mut builder = FullTextIndex::builder_mmap(
-        temp_dir.path().to_path_buf(),
-        config,
-        true,
-        &empty_deleted,
-        true,
-    );
+    let mut builder = FullTextIndex::builder_mmap(path, config, true, &empty_deleted, scoring);
     builder.init().unwrap();
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     builder
@@ -598,7 +589,18 @@ fn mmap_builder_records_doc_len() {
         )
         .unwrap();
 
-    let index = builder.finalize().unwrap();
+    builder.finalize().unwrap()
+}
+
+/// The mmap build path records lengths too, end to end: `add_many` measures,
+/// `create` writes the sidecar, and the index that comes back out of `finalize`
+/// carries them.
+#[test]
+fn mmap_builder_records_doc_len() {
+    use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
+
+    let temp_dir = Builder::new().prefix("mmap_doc_len").tempdir().unwrap();
+    let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
     let FullTextIndex::OnDisk(on_disk) = &index else {
         panic!("expected an on-disk index");
     };
@@ -610,4 +612,47 @@ fn mmap_builder_records_doc_len() {
         Some([3, 7].as_slice()),
         "lengths must survive the mmap build path, counting repeats",
     );
+}
+
+/// Every answer of [`FullTextIndexRead::doc_len_batch`], in `point_ids` order.
+fn doc_lens(
+    index: &FullTextIndex,
+    point_ids: &[PointOffsetType],
+    hw_counter: &HardwareCounterCell,
+) -> Vec<Option<u32>> {
+    let mut out = vec![Some(u32::MAX); point_ids.len()];
+    index
+        .doc_len_batch(point_ids, hw_counter, |at, doc_len| out[at] = doc_len)
+        .unwrap();
+    out
+}
+
+/// What a scorer gets from a segment: `|d|` per point, and the total to
+/// divide by `points_count`. Goes through the read surface rather than the
+/// inverted index, since that is the side a scorer sees.
+#[test]
+fn read_surface_exposes_doc_len_and_total() {
+    let temp_dir = Builder::new().prefix("doc_len_reads").tempdir().unwrap();
+    let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
+
+    let hw_counter = HardwareCounterCell::new();
+    // The third is outside the index. Not a zero-length document.
+    assert_eq!(
+        doc_lens(&index, &[0, 1, 2], &hw_counter),
+        [Some(3), Some(7), None]
+    );
+    assert_eq!(index.total_tokens(&hw_counter).unwrap(), Some(10));
+    assert_eq!(index.points_count(), 2);
+}
+
+/// The same surface on a non-recording index: absent, not zero.
+#[test]
+fn read_surface_reports_absence_without_scoring() {
+    let temp_dir = Builder::new().prefix("no_doc_len_reads").tempdir().unwrap();
+    let index = two_document_mmap_index(temp_dir.path().to_path_buf(), false);
+
+    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(doc_lens(&index, &[0, 1], &hw_counter), [None, None]);
+    assert_eq!(index.total_tokens(&hw_counter).unwrap(), None);
+    assert_eq!(index.points_count(), 2);
 }
