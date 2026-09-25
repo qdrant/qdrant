@@ -59,7 +59,76 @@ pub fn arb_state_and_operation() -> impl Strategy<Value = (ClusterState, Consens
         let operations = arb_consensus_operation(names, peers);
 
         (Just(state), operations)
+            .prop_filter("valid internal transfer operation", |(state, operation)| {
+                is_valid_internal_transfer(state, operation)
+            })
     })
+}
+
+// Check that transfer operation is valid and should not trigger debug assertions
+fn is_valid_internal_transfer(state: &ClusterState, operation: &ConsensusOperations) -> bool {
+    let ConsensusOperations::CollectionMeta(operation) = operation else {
+        return true;
+    };
+
+    let CollectionMetaOperations::TransferShard(collection, operation) = operation.as_ref() else {
+        return true;
+    };
+
+    let Ok(collection) = state.resolve_collection(collection) else {
+        return true;
+    };
+
+    let collection = state.collection(&collection).expect("collection resolved");
+
+    match operation {
+        ShardTransferOperations::Start(_)
+        | ShardTransferOperations::Finish(_)
+        | ShardTransferOperations::Abort { .. } => true,
+
+        ShardTransferOperations::Restart(restart) => {
+            let transfer = collection
+                .transfers
+                .iter()
+                .find(|transfer| restart.key().check(transfer));
+
+            let Some(transfer) = transfer else {
+                return true;
+            };
+
+            let is_no_op = transfer.method == Some(restart.method);
+            let is_ordinary = transfer.to_shard_id.is_none() && transfer.filter.is_none();
+
+            let is_resharding_transfer =
+                transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords);
+
+            let is_resharding_restart =
+                restart.method == ShardTransferMethod::ReshardingStreamRecords;
+
+            is_no_op || is_ordinary && !is_resharding_transfer && !is_resharding_restart
+        }
+
+        ShardTransferOperations::SnapshotRecovered(key)
+        | ShardTransferOperations::RecoveryToPartial(key) => {
+            let transfer = collection
+                .transfers
+                .iter()
+                .find(|transfer| key.check(transfer));
+
+            let Some(transfer) = transfer else {
+                return true;
+            };
+
+            let is_snapshot_or_wal_delta = matches!(
+                transfer.method,
+                Some(ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta),
+            );
+
+            let is_ordinary = transfer.to_shard_id.is_none() && transfer.filter.is_none();
+
+            is_snapshot_or_wal_delta && is_ordinary
+        }
+    }
 }
 
 pub fn arb_cluster_state() -> impl Strategy<Value = ClusterState> {
