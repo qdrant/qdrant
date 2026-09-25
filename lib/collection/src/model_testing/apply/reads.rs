@@ -11,15 +11,17 @@ use segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
 use segment::index::field_index::full_text_index::Bm25Params;
+use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
 use segment::types::{
-    Payload, PointIdType, ScoredPoint, SearchParams, Slice, VectorNameBuf, WithPayload,
-    WithPayloadInterface, WithVector,
+    Payload, PayloadSchemaParams, PointIdType, ScoredPoint, SearchParams, SegmentType, Slice,
+    VectorNameBuf, WithPayload, WithPayloadInterface, WithVector,
 };
 use serde_json::Value;
 use shard::query::query_enum::QueryEnum;
 use shard::query::text::TextScoringQuery;
 use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use shard::scroll::ScrollRequestInternal;
+use shard::segment_holder::SegmentId;
 
 use super::super::op::{
     FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, canonical_sparse, dense_diff,
@@ -1327,15 +1329,19 @@ pub(super) async fn apply_recommend(
 }
 
 /// A `t` document as BM25 counts it: the term frequencies and length of the string values of `t`,
-/// lowercased as the field's tokenizer does. An array's values make one document, the boundaries
+/// as the field's tokenizer splits them. An array's values make one document, the boundaries
 /// between them not counted. Any other value (`SetPayloadByKey` can make `t` an object) holds no
 /// terms.
+///
+/// The tokenizer is the engine's, built from the field's params: a stemmer or a stopword list is
+/// not something to reimplement here, and the tokenizers have tests of their own. What this checks
+/// is everything after tokenization.
 struct TextDoc {
     tf: AHashMap<String, u32>,
     len: u32,
 }
 
-fn text_doc(payload: &Payload) -> TextDoc {
+fn text_doc(payload: &Payload, tokenizer: &Tokenizer) -> TextDoc {
     let strings: Vec<&str> = match payload.0.get("t") {
         Some(Value::String(text)) => vec![text.as_str()],
         Some(Value::Array(values)) => values.iter().filter_map(Value::as_str).collect(),
@@ -1343,11 +1349,24 @@ fn text_doc(payload: &Payload) -> TextDoc {
     };
     let mut tf = AHashMap::new();
     let mut len = 0;
-    for token in strings.into_iter().flat_map(str::split_whitespace) {
-        *tf.entry(token.to_lowercase()).or_default() += 1;
-        len += 1;
+    for value in strings {
+        tokenizer.tokenize_doc(value, |token| {
+            *tf.entry(token.into_owned()).or_default() += 1;
+            len += 1;
+        });
     }
     TextDoc { tf, len }
+}
+
+/// The tokenizer of `t`'s text index, from the collection's payload schema.
+fn text_tokenizer(collection: &Collection) -> Tokenizer {
+    let schema = collection
+        .payload_key_index_schema(&"t".parse().unwrap())
+        .expect("`t` is indexed eagerly");
+    let PayloadSchemaParams::Text(params) = schema.expand().into_owned() else {
+        panic!("`t` is indexed as {schema:?}, not as text");
+    };
+    Tokenizer::new_from_text_index_params(&params)
 }
 
 /// What a document's BM25 score depends on, once the shard's statistics are fixed: each query
@@ -1401,13 +1420,15 @@ pub(super) async fn apply_query_text(
     filter_num: Option<i64>,
     filter_url_prefix: Option<&str>,
 ) {
-    // Query terms count once: the scorer deduplicates them.
-    let mut terms: Vec<String> = text.split_whitespace().map(str::to_lowercase).collect();
+    // Query terms count once: the scorer deduplicates them. Tokenized as the shard does.
+    let tokenizer = text_tokenizer(collection);
+    let mut terms: Vec<String> = Vec::new();
+    tokenizer.tokenize_query(text, |token| terms.push(token.into_owned()));
     terms.sort();
     terms.dedup();
     let docs: AHashMap<PointIdType, TextDoc> = model
         .iter()
-        .map(|(id, entry)| (*id, text_doc(&entry.payload)))
+        .map(|(id, entry)| (*id, text_doc(&entry.payload, &tokenizer)))
         .collect();
     let matches: AHashSet<PointIdType> = model
         .iter()
@@ -1455,8 +1476,10 @@ pub(super) async fn apply_query_text(
         .shard_number
         .get();
 
+    let mut layouts_before = Vec::with_capacity(shard_count as usize);
     let mut before = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
+        layouts_before.push(exact_stats_layout(collection, shard_id).await);
         before.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
     }
     let points = run(ShardSelectorInternal::All, limit).await;
@@ -1476,8 +1499,10 @@ pub(super) async fn apply_query_text(
         tops.push(shard_tops);
     }
     let mut after = Vec::with_capacity(shard_count as usize);
+    let mut layouts_after = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
         after.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
+        layouts_after.push(exact_stats_layout(collection, shard_id).await);
     }
 
     // Across the collection. Exactly the matches only below the undersampling threshold: from
@@ -1508,7 +1533,7 @@ pub(super) async fn apply_query_text(
             check_ranked_matches(top, &matches, &shard_ctx);
         }
         check_score_follows_features(full, &docs, &terms, params, &shard_ctx);
-        check_single_term_fit(full, &docs, &terms, params, &shard_ctx);
+        check_bm25_fit(full, &docs, &terms, params, &shard_ctx);
         from_shards.extend(full.iter().map(|point| point.id));
 
         let shard_stable = same_scores(full, &after[shard_id as usize]);
@@ -1522,7 +1547,11 @@ pub(super) async fn apply_query_text(
                 check_top_k(top, full, *cut, &shard_ctx);
             }
         }
-        if no_proxies {
+        // Exact with the optimizer running too, while the shard's layout allows it, which is
+        // what reaches the immutable and on-disk indexes: they only exist once it has run.
+        let layout = &layouts_before[shard_id as usize];
+        let exact_layout = layout.is_some() && *layout == layouts_after[shard_id as usize];
+        if no_proxies || (exact_layout && shard_stable) {
             let shard_docs = shard_point_ids(collection, shard_id).await;
             check_scores_by_definition(full, &docs, &shard_docs, &terms, params, &shard_ctx);
         }
@@ -1604,56 +1633,129 @@ fn check_score_follows_features(
     }
 }
 
-/// For a one-term query, every score of one shard's ranking is `idf * g(tf, len)` for a single
-/// `idf` and average length, whatever the statistics are: the shard's gather serves every segment.
-/// Two points with the same `tf` and different lengths pin both down, since the ratio of their
-/// scores is linear in `b / avgdl`, and every other point must then fit. Checks each point's term
-/// frequency and length where the model cannot reproduce the statistics.
-fn check_single_term_fit(
+/// Every score of one shard's ranking is `sum over terms of idf(t) * g(tf, len)`, for one IDF per
+/// term and one average length, whatever the statistics are: the shard's gather serves every
+/// segment. The points holding a single query term pin both down: two of them with the same `tf`
+/// and different lengths give `b / avgdl`, since the ratio of their scores is linear in it, which
+/// every term's own pair must agree on, and then that term's IDF. Every point whose terms all have
+/// an IDF must then fit. Checks each point's term frequencies and length where the model cannot
+/// reproduce the statistics, so on immutable and on-disk segments too.
+fn check_bm25_fit(
     points: &[ScoredPoint],
     docs: &AHashMap<PointIdType, TextDoc>,
     terms: &[String],
     params: Bm25Params,
     ctx: &str,
 ) {
-    let [term] = terms else { return };
     let (k1, b) = (f64::from(params.k1), f64::from(params.b));
-    if k1 == 0.0 || b == 0.0 {
+    if k1 == 0.0 || b == 0.0 || terms.is_empty() {
         return;
     }
-    let observed: Vec<(f64, f64, f64, PointIdType)> = points
+    let observed: Vec<(Vec<f64>, f64, f64, PointIdType)> = points
         .iter()
         .map(|point| {
             let doc = &docs[&point.id];
-            let tf = f64::from(doc.tf.get(term).copied().unwrap_or(0));
+            let tf = terms
+                .iter()
+                .map(|term| f64::from(doc.tf.get(term).copied().unwrap_or(0)))
+                .collect();
             (tf, f64::from(doc.len), f64::from(point.score), point.id)
         })
         .filter(|(_, _, score, _)| *score > 0.0)
         .collect();
-    // The best-conditioned pair: the same term frequency, lengths as far apart as they get.
-    let Some(((tf, len_a, score_a, id_a), (_, len_b, score_b, id_b))) = observed
+    let g = |tf: f64, len: f64, x: f64| tf * (k1 + 1.0) / (tf + k1 * (1.0 - b) + k1 * len * x);
+
+    // Per term, the best-conditioned pair of points holding only it: the same frequency, lengths as
+    // far apart as they get.
+    struct Pair {
+        tf: f64,
+        len_a: f64,
+        score_a: f64,
+        id_a: PointIdType,
+        len_b: f64,
+        score_b: f64,
+        id_b: PointIdType,
+    }
+    let pairs: Vec<Option<Pair>> = (0..terms.len())
+        .map(|term| {
+            let alone: Vec<_> = observed
+                .iter()
+                .filter(|(tf, ..)| {
+                    tf.iter()
+                        .enumerate()
+                        .all(|(at, tf)| (at == term) == (*tf > 0.0))
+                })
+                .collect();
+            alone
+                .iter()
+                .flat_map(|a| alone.iter().map(move |b| (*a, *b)))
+                .filter(|(a, b)| a.0[term] == b.0[term] && a.1 < b.1)
+                .max_by(|(a, b), (c, d)| (b.1 - a.1).total_cmp(&(d.1 - c.1)))
+                .map(|(a, b)| Pair {
+                    tf: a.0[term],
+                    len_a: a.1,
+                    score_a: a.2,
+                    id_a: a.3,
+                    len_b: b.1,
+                    score_b: b.2,
+                    id_b: b.3,
+                })
+        })
+        .collect();
+
+    // score_a / score_b = (base + k1 len_b x) / (base + k1 len_a x), base = tf + k1 (1 - b).
+    let solve = |pair: &Pair| {
+        let base = pair.tf + k1 * (1.0 - b);
+        let ratio = pair.score_a / pair.score_b;
+        base * (ratio - 1.0) / (k1 * (pair.len_b - ratio * pair.len_a))
+    };
+    let Some(reference) = pairs
         .iter()
-        .flat_map(|a| observed.iter().map(move |b| (*a, *b)))
-        .filter(|(a, b)| a.0 == b.0 && a.1 < b.1)
-        .max_by(|(a, b), (c, d)| (b.1 - a.1).total_cmp(&(d.1 - c.1)))
+        .flatten()
+        .max_by(|a, b| (a.len_b - a.len_a).total_cmp(&(b.len_b - b.len_a)))
     else {
         return;
     };
-    // score = idf * tf (k1 + 1) / (tf + k1 (1 - b) + k1 len x), with x = b / avgdl.
-    let base = tf + k1 * (1.0 - b);
-    let ratio = score_a / score_b;
-    let x = base * (ratio - 1.0) / (k1 * (len_b - ratio * len_a));
+    let x = solve(reference);
     assert!(
         x.is_finite() && x > 0.0,
-        "{ctx}: points {id_a} and {id_b} hold {term:?} {tf} times at lengths {len_a} and {len_b}          and score {score_a} and {score_b}, which no average length explains",
+        "{ctx}: points {} and {} hold one query term {} times at lengths {} and {} and score {} \
+         and {}, which no average length explains",
+        reference.id_a,
+        reference.id_b,
+        reference.tf,
+        reference.len_a,
+        reference.len_b,
+        reference.score_a,
+        reference.score_b,
     );
-    let g = |tf: f64, len: f64| tf * (k1 + 1.0) / (tf + k1 * (1.0 - b) + k1 * len * x);
-    let idf = score_a / g(tf, len_a);
+    let idf: Vec<Option<f64>> = pairs
+        .iter()
+        .map(|pair| {
+            pair.as_ref()
+                .map(|pair| pair.score_a / g(pair.tf, pair.len_a, x))
+        })
+        .collect();
+
     for (tf, len, score, id) in &observed {
-        let expected = idf * g(*tf, *len);
+        let Some(expected) = tf
+            .iter()
+            .zip(&idf)
+            .map(|(tf, idf)| {
+                if *tf == 0.0 {
+                    Some(0.0)
+                } else {
+                    idf.map(|idf| idf * g(*tf, *len, x))
+                }
+            })
+            .sum::<Option<f64>>()
+        else {
+            continue;
+        };
         assert!(
             (score - expected).abs() <= 1e-3 * score.abs().max(expected.abs()),
-            "{ctx}: point {id} ({term:?} {tf} times, length {len}) scores {score}, where the IDF              {idf} and average length {} that points {id_a} and {id_b} imply give {expected}",
+            "{ctx}: point {id} (term frequencies {tf:?}, length {len}) scores {score}, where the \
+             IDF {idf:?} and average length {} that the single-term points imply give {expected}",
             b / x,
         );
     }
@@ -1725,6 +1827,38 @@ fn check_merge(points: &[ScoredPoint], shards: &[Vec<ScoredPoint>], limit: usize
             point.id,
         );
     }
+}
+
+/// One shard's segments as `(id, appendable, available points)`, when its text statistics are
+/// exactly the model's: no proxy (which would count a moved point twice), and no deleted point in
+/// an immutable or on-disk segment (which masks the point but keeps its postings, so `df` counts
+/// it). `None` otherwise. Compared before and after the queries, so a layout that changed in
+/// between does not count.
+async fn exact_stats_layout(
+    collection: &Collection,
+    shard_id: u32,
+) -> Option<Vec<(SegmentId, bool, usize)>> {
+    let holder = collection.shards_holder.read().await;
+    let segments = holder
+        .get_shard(shard_id)?
+        .local_segments_for_test()
+        .await?;
+    let segments = segments.read();
+    let mut layout = Vec::new();
+    for (id, segment) in segments.iter() {
+        let segment = segment.get();
+        let segment = segment.read();
+        if segment.segment_type() == SegmentType::Special {
+            return None;
+        }
+        let appendable = segment.is_appendable();
+        if !appendable && segment.deleted_point_count() > 0 {
+            return None;
+        }
+        layout.push((id, appendable, segment.available_point_count()));
+    }
+    layout.sort_unstable();
+    Some(layout)
 }
 
 /// Every point one shard holds, found by scrolling it alone.

@@ -527,10 +527,22 @@ pub async fn run(
 ) {
     assert_candidates_predictable();
 
-    // Where optimized segments keep the `t` text index: RAM or disk, so both scorers and both
-    // length read paths run. Keyed off the seed rather than drawn, so the op stream is the same.
-    let text_memory = fixture::text_index_memory(seed);
-    println!("model_testing: text index memory {text_memory:?}");
+    // The `t` text index: where optimized segments keep it (RAM or disk, so both scorers and both
+    // length read paths run) and how it tokenizes. Keyed off the seed rather than drawn, so the op
+    // stream is the same.
+    let text_params = fixture::text_index_params(seed);
+    println!(
+        "model_testing: text index memory={:?} tokenizer={:?} lowercase={:?} min/max={:?}/{:?} \
+         stopwords={:?} stemmer={:?} ascii_folding={:?}",
+        text_params.memory,
+        text_params.tokenizer,
+        text_params.lowercase,
+        text_params.min_token_len,
+        text_params.max_token_len,
+        text_params.stopwords,
+        text_params.stemmer,
+        text_params.ascii_folding,
+    );
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -538,7 +550,7 @@ pub async fn run(
         max_segment_size_kb,
         indexing_threshold_kb,
         on_disk,
-        text_memory,
+        text_params,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
@@ -984,7 +996,9 @@ const HARNESS_UUID_ID_FRACTION: f64 = 0.5;
 #[cfg(test)]
 const HARNESS_MAX_SEGMENT_SIZE_KB: usize = 10;
 #[cfg(test)]
-const HARNESS_INDEXING_THRESHOLD_KB: usize = 5;
+// See the soak binary's `--indexing-threshold-kb`: above this, no segment of the harness ever
+// becomes non-appendable, and the immutable and on-disk payload indexes never run.
+const HARNESS_INDEXING_THRESHOLD_KB: usize = 1;
 #[cfg(test)]
 const HARNESS_SWARM_INTERVAL: usize = 2500;
 
