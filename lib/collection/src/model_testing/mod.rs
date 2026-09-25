@@ -1436,7 +1436,7 @@ mod seed_support_tests {
                 "--max-segment-size-kb",
                 "10",
                 "--indexing-threshold-kb",
-                "5",
+                "1",
                 "--restart-probability",
                 "0.002",
                 "--swarm-interval",
