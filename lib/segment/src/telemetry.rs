@@ -63,6 +63,11 @@ pub struct VectorIndexSearchesTelemetry {
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_large_cardinality: OperationDurationStatistics,
 
+    /// Filtered graph searches that ACORN ran. A subset of `filtered_*` above, not an addition:
+    /// the path counters say where a search went, this one says which algorithm took it.
+    #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub filtered_acorn: OperationDurationStatistics,
+
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_exact: OperationDurationStatistics,
 

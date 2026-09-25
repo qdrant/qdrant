@@ -34,6 +34,7 @@ impl SparseSearchesTelemetry {
             unfiltered_hnsw: Default::default(),
             filtered_small_cardinality: self.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: Default::default(),
+            filtered_acorn: Default::default(),
             filtered_exact: Default::default(),
             filtered_sparse: self.filtered_sparse.lock().get_statistics(detail),
             unfiltered_sparse: self.unfiltered_sparse.lock().get_statistics(detail),
