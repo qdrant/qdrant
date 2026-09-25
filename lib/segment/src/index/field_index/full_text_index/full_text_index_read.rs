@@ -28,8 +28,8 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
 /// of zero, the largest IDF the formula produces. A debug build checks it.
 ///
-/// `invisible` are the points a query cannot see, per the id tracker. `N`,
-/// the total tokens and `df` leave them out even where this index still
+/// `invisible_points` are the points a query cannot see, per the id tracker.
+/// `N`, the total tokens and `df` leave them out even where this index still
 /// counts them: a tombstone-only deletion never reaches it, and deferred or
 /// shadowed points are indexed like any other. Leaving them in `df` alone
 /// would be worse than leaving them everywhere: `df` would exceed `N` and IDF
@@ -37,7 +37,7 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// count in its `df`, see [`FullTextIndexRead::posting_len`].
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
-    invisible: InvisiblePoints<'_>,
+    invisible_points: InvisiblePoints<'_>,
     stats: &mut TextFieldStats,
     is_stopped: &AtomicBool,
     hw_counter: &HardwareCounterCell,
@@ -77,40 +77,99 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     // Invisible to a query, yet still counted by this index: the append-only
     // delete path tombstones a point without clearing its payload, and a
     // deferred or shadowed point is indexed as usual. A deletion that reached
-    // the index has already emptied the point here.
+    // the index has already emptied the point here. They are in the postings
+    // too, so they come off `df` as well as `N` and the total.
+    //
+    // Checked in bounded batches rather than collected: a deferred tail can be
+    // large.
     check_process_stopped(is_stopped)?;
-    let invisible: Vec<PointOffsetType> = invisible
+    let holds_term: Vec<ParsedQuery> = counts
+        .iter()
+        .map(|(_, token_id)| ParsedQuery::AnyTokens(TokenSet::from_iter([*token_id])))
+        .collect();
+    let read_lengths = total_tokens.is_some();
+    let mut invisible = InvisibleTally {
+        count: 0,
+        tokens: 0,
+        df: vec![0; counts.len()],
+    };
+    let mut batch = Vec::new();
+    let counted = invisible_points
         .iter()
         .stop_if(is_stopped)
-        .filter(|&point_id| !index.values_is_empty(point_id))
-        .collect();
-    // A stopped scan is partial: report the stop, not a statistic.
-    check_process_stopped(is_stopped)?;
-    let mut invisible_tokens = 0;
-    if total_tokens.is_some() && !invisible.is_empty() {
-        index.doc_len_batch(&invisible, hw_counter, |_, doc_len| {
-            invisible_tokens += u64::from(doc_len.unwrap_or(0));
-        })?;
-    }
-    // They are in the postings too, so they come off `df` as well.
-    if !invisible.is_empty() {
-        for (df, token_id) in &mut counts {
-            let holds_term = ParsedQuery::AnyTokens(TokenSet::from_iter([*token_id]));
-            let mut holding = 0;
-            index.check_match_batch(
-                &holds_term,
-                invisible.iter().map(|&point_id| ((), point_id)),
-                |(), holds| holding += usize::from(holds),
-            )?;
-            **df = df.saturating_sub(holding);
+        .filter(|&point_id| !index.values_is_empty(point_id));
+    for point_id in counted {
+        batch.push(point_id);
+        if batch.len() == INVISIBLE_LENGTHS_BATCH {
+            invisible.add_batch(index, &batch, read_lengths, &holds_term, hw_counter)?;
+            batch.clear();
         }
     }
+    if !batch.is_empty() {
+        invisible.add_batch(index, &batch, read_lengths, &holds_term, hw_counter)?;
+    }
+    // A stopped scan is partial: report the stop, not a statistic.
+    check_process_stopped(is_stopped)?;
 
+    for ((df, _), holding) in counts.iter_mut().zip(&invisible.df) {
+        **df = df.saturating_sub(*holding);
+    }
     stats.add_segment(
-        index.points_count().saturating_sub(invisible.len()),
-        total_tokens.map(|total| total.saturating_sub(invisible_tokens)),
+        index.points_count().saturating_sub(invisible.count),
+        total_tokens.map(|total| total.saturating_sub(invisible.tokens)),
     );
     Ok(())
+}
+
+/// Invisible points checked at once: their lengths read in one
+/// `doc_len_batch`, and each query term in one `check_match_batch`. Bounds
+/// the ids held at once.
+pub(super) const INVISIBLE_LENGTHS_BATCH: usize = 1024;
+
+/// What the invisible points of one segment add up to, to take off its
+/// statistics.
+struct InvisibleTally {
+    count: usize,
+    tokens: u64,
+    /// Per query term, in the order of `holds_term`.
+    df: Vec<usize>,
+}
+
+impl InvisibleTally {
+    fn add_batch<T: FullTextIndexRead>(
+        &mut self,
+        index: &T,
+        point_ids: &[PointOffsetType],
+        read_lengths: bool,
+        holds_term: &[ParsedQuery],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.count += point_ids.len();
+        if read_lengths {
+            self.tokens += sum_doc_lens(index, point_ids, hw_counter)?;
+        }
+        for (query, df) in holds_term.iter().zip(&mut self.df) {
+            index.check_match_batch(
+                query,
+                point_ids.iter().map(|&point_id| ((), point_id)),
+                |(), holds| *df += usize::from(holds),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Total length of `point_ids`, read in one batch.
+fn sum_doc_lens<T: FullTextIndexRead>(
+    index: &T,
+    point_ids: &[PointOffsetType],
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<u64> {
+    let mut total = 0;
+    index.doc_len_batch(point_ids, hw_counter, |_, doc_len| {
+        total += u64::from(doc_len.unwrap_or(0));
+    })?;
+    Ok(total)
 }
 
 /// Whether `term` survives this index's tokenizer unchanged, which is what

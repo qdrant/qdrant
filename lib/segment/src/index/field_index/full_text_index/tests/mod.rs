@@ -715,6 +715,55 @@ fn text_statistics_gather_skips_tombstoned_points() {
     }
 }
 
+/// More invisible points than one batch of length reads: every batch is
+/// summed, the last partial one included.
+#[test]
+fn text_statistics_gather_sums_lengths_across_batches() {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::{
+        INVISIBLE_LENGTHS_BATCH, fill_text_statistics,
+    };
+
+    let hw_counter = HardwareCounterCell::new();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+    let config = TextIndexParams {
+        tokenizer: TokenizerType::Whitespace,
+        phrase_matching: Some(true),
+        ..TextIndexParams::default()
+    };
+    let dir = Builder::new().prefix("stats_batches").tempdir().unwrap();
+    let mut index = FullTextIndex::builder_gridstore(dir.path().to_path_buf(), config, true)
+        .make_empty()
+        .unwrap();
+
+    // Two tokens each, all deleted but the last, which holds three.
+    let invisible = 2 * INVISIBLE_LENGTHS_BATCH + 7;
+    for point_id in 0..=invisible {
+        let text = if point_id < invisible { "a b" } else { "a b c" };
+        index
+            .add_many(
+                point_id as PointOffsetType,
+                vec![text.to_string()],
+                &hw_counter,
+            )
+            .unwrap();
+    }
+    let mut deleted = BitVec::repeat(false, invisible + 1);
+    deleted[..invisible].fill(true);
+
+    let mut stats = TextFieldStats::default();
+    fill_text_statistics(
+        &index,
+        InvisiblePoints::deleted(&deleted),
+        &mut stats,
+        &is_stopped,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(stats.documents, 1);
+    assert_eq!(stats.total_tokens, Some(3));
+}
+
 /// `new_mmap` under scoring reports an index without a length sidecar absent,
 /// so the caller rebuilds it from payload, and opens one with the sidecar.
 /// Without scoring, both open.
