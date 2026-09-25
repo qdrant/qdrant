@@ -27,13 +27,13 @@ use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
 pub use self::shared_shard_holder::*;
+pub use shard_mapping::ShardKeyMapping;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::RecoveryStage;
