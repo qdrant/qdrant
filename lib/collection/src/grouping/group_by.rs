@@ -105,6 +105,8 @@ impl GroupRequest {
                 ShardQueryRequest::from(core_search)
             }
             SourceRequest::Query(query_req) => {
+                collection.check_text_queries(&query_req)?;
+
                 // Lift nested prefetches to root queries for vector resolution
                 let resolver_requests = build_vector_resolver_query(&query_req, &shard_selection);
 

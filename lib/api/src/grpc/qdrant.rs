@@ -6852,7 +6852,7 @@ pub struct Rrf {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -6894,7 +6894,29 @@ pub mod query {
         /// Search with feedback from some oracle.
         #[prost(message, tag = "11")]
         RelevanceFeedback(super::RelevanceFeedbackInput),
+        /// Rank by BM25 over the text index of the payload field named by `using`.
+        #[prost(message, tag = "12")]
+        Text(super::TextQuery),
     }
+}
+/// Rank by BM25 over the text index of the payload field named by `using`,
+/// which must have `scoring` set. A point scores when it holds any of the
+/// query's terms: required or excluded terms belong in the request's filter.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TextQuery {
+    /// Text to search for, tokenized by the field's text index.
+    #[prost(string, tag = "1")]
+    pub query: ::prost::alloc::string::String,
+    /// Term frequency saturation. Default is 1.2.
+    #[prost(float, optional, tag = "2")]
+    #[validate(range(min = 0.0))]
+    pub k: ::core::option::Option<f32>,
+    /// Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
+    #[prost(float, optional, tag = "3")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub b: ::core::option::Option<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6912,6 +6934,7 @@ pub struct PrefetchQuery {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "3")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6956,6 +6979,7 @@ pub struct QueryPoints {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -7041,6 +7065,7 @@ pub struct QueryPointGroups {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.

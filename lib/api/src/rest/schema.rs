@@ -579,6 +579,7 @@ pub struct QueryRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -671,6 +672,9 @@ pub enum Query {
 
     /// Use feedback from an oracle to improve the results
     RelevanceFeedback(RelevanceFeedbackQuery),
+
+    /// Rank by BM25 over the text index of the payload field named by `using`.
+    Text(TextQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -712,6 +716,47 @@ pub struct ContextQuery {
 pub struct OrderByQuery {
     #[validate(nested)]
     pub order_by: OrderByInterface,
+}
+
+/// Rank by BM25 over the text index of the payload field named by `using`, which must have
+/// `scoring` set. A point scores when it holds any of the query's terms: required or excluded
+/// terms belong in the request's `filter`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TextQuery {
+    #[validate(nested)]
+    pub text: TextInterface,
+}
+
+/// The text to search for, or the text with BM25 parameters.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected a string, or an object with a query and optional k and b")]
+pub enum TextInterface {
+    Query(String),
+    Struct(TextQueryInput),
+}
+
+impl Validate for TextInterface {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            TextInterface::Query(_) => Ok(()),
+            TextInterface::Struct(input) => input.validate(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TextQueryInput {
+    /// Text to search for, tokenized by the field's text index.
+    pub query: String,
+    /// Term frequency saturation. Default is 1.2.
+    #[validate(range(min = 0.0))]
+    pub k: Option<f32>,
+    /// Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub b: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -785,6 +830,7 @@ pub struct Prefetch {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -1275,6 +1321,7 @@ pub struct QueryGroupsRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.

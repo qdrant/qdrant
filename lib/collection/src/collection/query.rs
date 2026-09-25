@@ -453,6 +453,15 @@ impl Collection {
         Ok(result)
     }
 
+    /// Check the text queries of `request` against this collection's payload
+    /// schema, see [`CollectionQueryRequest::check_text_queries`].
+    pub(crate) fn check_text_queries(
+        &self,
+        request: &CollectionQueryRequest,
+    ) -> CollectionResult<()> {
+        request.check_text_queries(&self.payload_index_schema.read())
+    }
+
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
@@ -470,6 +479,10 @@ impl Collection {
         Fut: Future<Output = Option<Arc<Collection>>>,
     {
         let start = Instant::now();
+
+        for (request, _) in &requests_batch {
+            self.check_text_queries(request)?;
+        }
 
         // Lift nested prefetches to root queries for vector resolution
         let resolver_requests = build_vector_resolver_queries(&requests_batch);
