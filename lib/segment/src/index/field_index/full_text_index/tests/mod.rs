@@ -700,7 +700,10 @@ fn text_statistics_gather_skips_tombstoned_points() {
         assert_eq!(stats.documents, 1);
         assert_eq!(stats.total_tokens, Some(3));
         assert_eq!(stats.df["alpha"], 1);
-        assert_eq!(stats.df["the"], 1, "df counts what the postings still hold");
+        assert_eq!(
+            stats.df["the"], 0,
+            "the tombstoned point leaves df too, though its postings remain",
+        );
     }
 }
 

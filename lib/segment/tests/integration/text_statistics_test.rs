@@ -153,6 +153,11 @@ fn deleted_points_leave_text_statistics() {
         let text = segment_context.get_text_context(&field()).unwrap();
 
         assert_eq!(text.document_count(), 2, "append_only: {append_only}");
+        assert_eq!(
+            text.document_frequency("quick"),
+            1,
+            "append_only: {append_only}"
+        );
         // 4 + 2 tokens over the 2 remaining documents.
         assert_eq!(text.avg_doc_len(), Some(3.0), "append_only: {append_only}");
     }
