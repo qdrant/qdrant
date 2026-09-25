@@ -78,9 +78,12 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     check_process_stopped(is_stopped)?;
     let tombstoned: Vec<PointOffsetType> = deleted
         .iter_ones()
+        .stop_if(is_stopped)
         .map(|point_id| point_id as PointOffsetType)
         .filter(|&point_id| !index.values_is_empty(point_id))
         .collect();
+    // A stopped scan is partial: report the stop, not a statistic.
+    check_process_stopped(is_stopped)?;
     let mut tombstoned_tokens = 0;
     if total_tokens.is_some() && !tombstoned.is_empty() {
         index.doc_len_batch(&tombstoned, hw_counter, |_, doc_len| {
