@@ -1409,7 +1409,15 @@ impl ShardHolder {
                             if cancel.is_cancelled() {
                                 return Err(cancel::Error::Cancelled.into());
                             }
-                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir)?;
+                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir).map_err(|err| {
+                                if err.kind() == std::io::ErrorKind::InvalidData {
+                                    CollectionError::bad_input(format!(
+                                        "Malformed snapshot archive: {err}"
+                                    ))
+                                } else {
+                                    CollectionError::from(err)
+                                }
+                            })?;
                             snapshot_path.close()?;
                         }
                         SnapshotData::Unpacked(snapshot_dir) => {
