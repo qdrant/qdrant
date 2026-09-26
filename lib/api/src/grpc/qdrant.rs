@@ -11311,6 +11311,22 @@ pub struct MmrInternal {
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TextScoringInternal {
+    /// Payload field with a text index
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    /// Query text, tokenized on each shard by the field's tokenizer
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+    /// BM25 term frequency saturation
+    #[prost(float, tag = "3")]
+    pub k1: f32,
+    /// BM25 length normalization
+    #[prost(float, tag = "4")]
+    pub b: f32,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryShardPoints {
     #[prost(message, repeated, tag = "1")]
     pub prefetch: ::prost::alloc::vec::Vec<query_shard_points::Prefetch>,
@@ -11339,7 +11355,7 @@ pub mod query_shard_points {
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -11368,6 +11384,9 @@ pub mod query_shard_points {
             /// Parameterized RRF fusion
             #[prost(message, tag = "7")]
             Rrf(super::super::Rrf),
+            /// BM25 over the text index of a payload field
+            #[prost(message, tag = "8")]
+            Text(super::super::TextScoringInternal),
         }
     }
     #[derive(serde::Serialize)]

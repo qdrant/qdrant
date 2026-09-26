@@ -25,7 +25,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 
 /// Saturation and length normalization. Request-time parameters: they are not
 /// part of the index, so changing them never rebuilds anything.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bm25Params {
     pub k1: ScoreType,
     pub b: ScoreType,

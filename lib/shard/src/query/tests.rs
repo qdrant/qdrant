@@ -726,3 +726,218 @@ fn test_from_batch_of_requests() {
     assert_eq!(planned_query.scrolls[0].limit, 20);
     assert_eq!(planned_query.scrolls[1].limit, 50);
 }
+
+fn text_query(text: &str) -> text::TextScoringQuery {
+    text::TextScoringQuery {
+        field: JsonPath::new("body"),
+        text: text.to_owned(),
+        params: segment::index::field_index::full_text_index::Bm25Params::default(),
+    }
+}
+
+/// BM25 without prefetches is a leaf of its own, planned like a search: the
+/// leaf stays bare and the root plan retrieves for the merged result.
+#[test]
+fn test_try_from_text_without_prefetch() {
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "city".try_into().unwrap(),
+        "Berlin".to_string().into(),
+    )));
+    let request = ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Text(text_query("quick fox"))),
+        filter: Some(filter.clone()),
+        score_threshold: Some(OrderedFloat(0.5)),
+        limit: 10,
+        offset: 5,
+        params: None,
+        with_vector: WithVector::Bool(true),
+        with_payload: WithPayloadInterface::Bool(true),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
+
+    assert!(planned_query.searches.is_empty());
+    assert!(planned_query.scrolls.is_empty());
+    assert_eq!(
+        planned_query.texts,
+        vec![text::TextSearchRequestInternal {
+            query: text_query("quick fox"),
+            filter: Some(filter),
+            limit: 15,
+            score_threshold: Some(0.5),
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+        }]
+    );
+    assert_eq!(
+        planned_query.root_plans,
+        vec![RootPlan {
+            with_payload: WithPayloadInterface::Bool(true),
+            with_vector: WithVector::Bool(true),
+            merge_plan: MergePlan {
+                sources: vec![Source::TextsIdx(0)],
+                rescore_stages: None,
+            },
+        }]
+    );
+}
+
+/// Hybrid search: BM25 as one prefetch next to a dense one, fused at the
+/// collection level. The outer filter reaches the text leaf too.
+#[test]
+fn test_try_from_text_prefetch_fused() {
+    let outer = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "country".try_into().unwrap(),
+        "Germany".to_string().into(),
+    )));
+    let request = ShardQueryRequest {
+        prefetches: vec![
+            ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+                    "dense",
+                )))),
+                limit: 100,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            },
+            ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(ScoringQuery::Text(text_query("quick fox"))),
+                limit: 50,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            },
+        ],
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
+        filter: Some(outer.clone()),
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_payload: WithPayloadInterface::Bool(false),
+        with_vector: WithVector::Bool(false),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
+
+    assert_eq!(planned_query.searches.len(), 1);
+    assert_eq!(planned_query.texts.len(), 1);
+    assert_eq!(planned_query.texts[0].limit, 50);
+    assert_eq!(planned_query.texts[0].filter, Some(outer));
+    assert_eq!(
+        planned_query.root_plans[0].merge_plan.sources,
+        vec![Source::SearchesIdx(0), Source::TextsIdx(0)],
+    );
+}
+
+/// BM25 cannot score a set of prefetched points yet, at the root or nested.
+#[test]
+fn test_try_from_text_rescore_is_refused() {
+    let prefetch = || ShardPrefetch {
+        prefetches: Vec::new(),
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
+        limit: 100,
+        params: None,
+        filter: None,
+        score_threshold: None,
+    };
+    let request = |prefetches, query| ShardQueryRequest {
+        prefetches,
+        query: Some(query),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_payload: WithPayloadInterface::Bool(false),
+        with_vector: WithVector::Bool(false),
+    };
+
+    let at_root = request(vec![prefetch()], ScoringQuery::Text(text_query("fox")));
+    let error = PlannedQuery::try_from(vec![at_root]).unwrap_err();
+    assert_matches!(error, OperationError::ValidationError { .. });
+    assert!(error.to_string().contains("BM25"), "{error}");
+
+    let nested = ShardPrefetch {
+        prefetches: vec![prefetch()],
+        query: Some(ScoringQuery::Text(text_query("fox"))),
+        ..prefetch()
+    };
+    let nested = request(
+        vec![nested],
+        ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        }),
+    );
+    let error = PlannedQuery::try_from(vec![nested]).unwrap_err();
+    assert_matches!(error, OperationError::ValidationError { .. });
+    assert!(error.to_string().contains("BM25"), "{error}");
+}
+
+/// A corpus-scoped `idf` would change the scores, and text statistics cover the
+/// whole collection, so it is refused on a text leaf, at the root or as a
+/// prefetch. The global scope is what text already does, so it passes.
+#[test]
+fn test_try_from_text_refuses_an_idf_corpus() {
+    let corpus = || SearchParams {
+        idf: Some(IdfParams::Corpus(IdfCorpusParams {
+            corpus: Filter::new_must(Condition::Field(FieldCondition::new_match(
+                "tenant".try_into().unwrap(),
+                "a".to_string().into(),
+            ))),
+        })),
+        ..SearchParams::default()
+    };
+    let global = || SearchParams {
+        idf: Some(IdfParams::Scope(IdfScope::Global)),
+        ..SearchParams::default()
+    };
+    let at_root = |params| ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Text(text_query("fox"))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: Some(params),
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+    let as_prefetch = |params| ShardQueryRequest {
+        prefetches: vec![ShardPrefetch {
+            prefetches: Vec::new(),
+            query: Some(ScoringQuery::Text(text_query("fox"))),
+            limit: 10,
+            params: Some(params),
+            filter: None,
+            score_threshold: None,
+        }],
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
+        params: None,
+        ..at_root(SearchParams::default())
+    };
+
+    for request in [at_root(corpus()), as_prefetch(corpus())] {
+        let error = PlannedQuery::try_from(vec![request]).unwrap_err();
+        assert_matches!(error, OperationError::ValidationError { .. });
+        assert!(error.to_string().contains("idf"), "{error}");
+    }
+    for request in [at_root(global()), as_prefetch(global())] {
+        PlannedQuery::try_from(vec![request]).unwrap();
+    }
+}
