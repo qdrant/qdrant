@@ -29,7 +29,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{LogstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
-use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::tracker_enum::TrackerEnum;
 use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 
 /// Number of most recent mappings validated against the page file lengths when opening
@@ -86,6 +86,9 @@ fn validate_consistency<S: UniversalRead, T: TrackerRead>(
 /// Values cannot be updated or deleted, and must be put at monotonically increasing point
 /// offsets. All files are read and written through the universal IO backend `S`.
 ///
+/// The tracker is in whichever format is on disk, see [`TrackerEnum`]. New storages always start
+/// with the append-only format.
+///
 /// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
 pub struct Logstore<V, S>
@@ -93,7 +96,7 @@ where
     S: UniversalAppend + 'static,
 {
     pub(super) config: LogstoreConfig,
-    tracker: Arc<RwLock<AppendOnlyTracker<S>>>,
+    tracker: Arc<RwLock<TrackerEnum<S>>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
@@ -126,7 +129,7 @@ where
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = AppendOnlyTracker::new(fs, &base_path)?;
+        let tracker = TrackerEnum::new(fs, &base_path)?;
         let pages = AppendOnlyPages::new(fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
@@ -178,7 +181,7 @@ where
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = AppendOnlyTracker::open_writable(fs, &base_path, populate)?;
+        let tracker = TrackerEnum::open_writable(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
         validate_consistency(&tracker, &pages)?;
 
@@ -196,7 +199,7 @@ where
     /// view.
     pub(super) fn with_view<R>(
         &self,
-        f: impl FnOnce(LogstoreView<'_, V, S, AppendOnlyTracker<S>>) -> R,
+        f: impl FnOnce(LogstoreView<'_, V, S, TrackerEnum<S>>) -> R,
     ) -> R {
         let tracker = self.tracker.read();
         let pages = self.pages.read();
@@ -507,7 +510,7 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
             let tracker_flusher = {
                 let mut tracker_guard = tracker.write();
                 tracker_guard.write_pending(target)?;
-                tracker_guard.flusher()
+                tracker_guard.flusher(target)
             };
             tracker_flusher()?;
 

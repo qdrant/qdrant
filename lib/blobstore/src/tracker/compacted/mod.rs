@@ -14,6 +14,7 @@ mod read;
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, UioResult, UniversalRead, UniversalReadFs,
     UniversalWriteFs,
 };
 
@@ -36,12 +37,39 @@ use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 /// to load the incompatible file format of another.
 const FILE_NAME: &str = "compacted_tracker.dat";
 
+/// Atomically replaces a whole file through the filesystem a writable tracker was given.
+///
+/// Type-erased, so that the tracker type does not depend on the filesystem type: writers
+/// receive their filesystem as a generic parameter, not as the file type's `S::Fs`.
+#[derive(Clone)]
+struct Saver(Arc<SaveFn>);
+
+type SaveFn = dyn Fn(&Path, &[u8]) -> UioResult<()> + Send + Sync;
+
+impl Saver {
+    fn new<Fs: UniversalWriteFs>(fs: &Fs) -> Self {
+        let fs = fs.clone();
+        Self(Arc::new(move |path, bytes| fs.atomic_save(path, bytes)))
+    }
+
+    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        (self.0)(path, bytes)
+    }
+}
+
+impl fmt::Debug for Saver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Saver")
+    }
+}
+
 /// Tracker of value pointers for the append-only storage mode, held entirely in RAM.
 ///
 /// Mappings can be set in any order and replaced. Skipped point offsets read as `None`.
 ///
-/// Flushing rewrites the whole file from a copy of the mappings, see [`Self::flusher`].
-/// Opening decodes the whole file once; reads never touch the disk afterwards.
+/// Flushing rewrites the whole file from a copy of the mappings, through the filesystem the
+/// tracker was created or opened writable with, see [`Self::flusher`]. Opening decodes the whole
+/// file once; reads never touch the disk afterwards.
 #[derive(Debug)]
 pub struct CompactedTracker {
     /// Path to the tracker file
@@ -52,43 +80,13 @@ pub struct CompactedTracker {
     ///
     /// Shared with the flushers, so that a failed flush can mark the tracker dirty again.
     dirty: Arc<AtomicBool>,
+    /// Rewrites the file on flush. `None` if opened read-only.
+    saver: Option<Saver>,
 }
 
 impl CompactedTracker {
     fn tracker_file_name(dir: &Path) -> PathBuf {
         dir.join(FILE_NAME)
-    }
-
-    /// Create a new empty tracker in the given directory, replacing the file if it already
-    /// exists.
-    ///
-    /// The directory must exist already.
-    pub fn new<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> Result<Self> {
-        let tracker = Self {
-            path: Self::tracker_file_name(dir),
-            pointers: Vec::new(),
-            dirty: Arc::new(AtomicBool::new(false)),
-        };
-        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers)?)?;
-        Ok(tracker)
-    }
-
-    /// Create a tracker in the given directory holding every mapping of `source`, replacing the
-    /// file if it already exists.
-    ///
-    /// The directory must exist already.
-    pub fn from_tracker<Fs: UniversalWriteFs>(
-        fs: &Fs,
-        dir: &Path,
-        source: &impl TrackerRead,
-    ) -> Result<Self> {
-        let tracker = Self {
-            path: Self::tracker_file_name(dir),
-            pointers: source.get_range::<Sequential>(0..source.max_point_offset()?)?,
-            dirty: Arc::new(AtomicBool::new(false)),
-        };
-        fs.atomic_save(&tracker.path, &format::encode(&tracker.pointers)?)?;
-        Ok(tracker)
     }
 
     /// The file is always read whole right after opening, so it is populated regardless of how
@@ -117,7 +115,8 @@ impl CompactedTracker {
         );
     }
 
-    /// Open an existing tracker in the given directory, decoding the whole file into RAM.
+    /// Open an existing tracker in the given directory read-only, decoding the whole file into
+    /// RAM.
     ///
     /// If the file does not exist or does not decode, return an error.
     pub fn open<Fs: UniversalReadFs>(fs: &Fs, dir: &Path) -> Result<Self> {
@@ -148,6 +147,7 @@ impl CompactedTracker {
             path,
             pointers,
             dirty: Arc::new(AtomicBool::new(false)),
+            saver: None,
         })
     }
 
@@ -176,36 +176,99 @@ impl CompactedTracker {
     fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
     }
+}
 
-    /// Create a flusher that rewrites the whole file from a copy of the current mappings.
+impl CompactedTracker {
+    /// Create a new empty tracker in the given directory, replacing the file if it already
+    /// exists.
+    ///
+    /// The directory must exist already.
+    pub fn new<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> Result<Self> {
+        Self::with_pointers(fs, dir, Vec::new())
+    }
+
+    /// Create a tracker in the given directory holding every mapping of `source`, replacing the
+    /// file if it already exists.
+    ///
+    /// The directory must exist already.
+    pub fn from_tracker<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+        source: &impl TrackerRead,
+    ) -> Result<Self> {
+        let pointers = source.get_range::<Sequential>(0..source.max_point_offset()?)?;
+        Self::with_pointers(fs, dir, pointers)
+    }
+
+    fn with_pointers<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+        pointers: Vec<Option<ValuePointer>>,
+    ) -> Result<Self> {
+        let path = Self::tracker_file_name(dir);
+        fs.atomic_save(&path, &format::encode(&pointers)?)?;
+        Ok(Self {
+            path,
+            pointers,
+            dirty: Arc::new(AtomicBool::new(false)),
+            saver: Some(Saver::new(fs)),
+        })
+    }
+
+    /// Open an existing tracker in the given directory for writing, decoding the whole file into
+    /// RAM. Flushes rewrite the file through `fs`.
+    ///
+    /// If the file does not exist or does not decode, return an error.
+    pub fn open_writable<Fs: UniversalReadFs + UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+    ) -> Result<Self> {
+        let mut tracker = Self::open(fs, dir)?;
+        tracker.saver = Some(Saver::new(fs));
+        Ok(tracker)
+    }
+
+    /// Create a flusher that rewrites the whole file from a copy of the mappings below
+    /// `target`, a point offset count.
     ///
     /// A clean tracker gets a flusher that does nothing. Taking the copy marks the tracker
-    /// clean, so mappings set while a flush is in progress are left for the next flush, and a
-    /// failed flush marks it dirty again, so the next flush retries. The file is replaced
-    /// atomically.
+    /// clean, unless mappings at or past `target` are left out of it, so mappings set while a
+    /// flush is in progress are left for the next flush. A failed flush marks it dirty again, so
+    /// the next flush retries. The file is replaced atomically.
     ///
     /// Rewriting is linear in the number of mappings, which suits a storage that is flushed
     /// once after being built, not one that is flushed after every batch.
-    pub fn flusher<Fs>(&self, fs: Fs) -> Flusher
-    where
-        Fs: UniversalWriteFs + Send + 'static,
-    {
+    pub fn flusher(&self, target: PointOffset) -> Flusher {
         if !self.dirty.swap(false, Ordering::Relaxed) {
             return Box::new(|| Ok(()));
         }
 
+        let end = (target as usize).min(self.pointers.len());
+        if end < self.pointers.len() {
+            self.dirty.store(true, Ordering::Relaxed);
+        }
+
+        let saver = self.saver.clone();
         let path = self.path.clone();
-        let pointers = self.pointers.clone();
+        let pointers = self.pointers[..end].to_vec();
         let dirty = Arc::clone(&self.dirty);
 
         Box::new(move || {
+            let Some(saver) = &saver else {
+                dirty.store(true, Ordering::Relaxed);
+                return Err(BlobstoreError::service_error(format!(
+                    "compacted tracker {} was opened read-only and cannot be flushed",
+                    path.display(),
+                )));
+            };
             let result = format::encode(&pointers)
                 .map_err(BlobstoreError::from)
-                .and_then(|bytes| Ok(fs.atomic_save(&path, &bytes)?));
+                .and_then(|bytes| Ok(saver.save(&path, &bytes)?));
             if result.is_err() {
                 dirty.store(true, Ordering::Relaxed);
             }
-            result
+            result?;
+            Ok(())
         })
     }
 }

@@ -2,18 +2,22 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::generic_consts::AccessPattern;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalAppend, UniversalRead, UniversalReadFs, UniversalWriteFs,
+    UserData,
+};
 use itertools::Either;
 
 use crate::Result;
+use crate::blobstore::Flusher;
 use crate::tracker::append_only::AppendOnlyTracker;
 use crate::tracker::compacted::CompactedTracker;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
-/// Read-only tracker of the append-only storage mode, in whichever format is on disk.
+/// Tracker of the append-only storage mode, in whichever format is on disk.
 ///
 /// A storage holds exactly one of the two tracker files. The compacted one is written for
-/// storages that are complete and never change afterwards.
+/// storages that are complete, and rewrites its whole file on every flush that has changes.
 #[derive(Debug)]
 pub enum TrackerEnum<S> {
     AppendOnly(AppendOnlyTracker<S>),
@@ -21,7 +25,8 @@ pub enum TrackerEnum<S> {
 }
 
 impl<S: UniversalRead> TrackerEnum<S> {
-    /// Schedule a prefetch for the tracker file a subsequent [`open`](Self::open) reads.
+    /// Schedule a prefetch for the tracker file a subsequent [`open_read_only`](Self::open_read_only)
+    /// reads.
     pub fn preopen<Fs: CachedReadFs<File = S>>(
         fs: &Fs,
         dir: &Path,
@@ -38,7 +43,7 @@ impl<S: UniversalRead> TrackerEnum<S> {
     /// Open the tracker in the given directory read-only, in the format found on disk.
     ///
     /// If no tracker file exists, return an error.
-    pub fn open<Fs: UniversalReadFs<File = S>>(
+    pub fn open_read_only<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         dir: &Path,
         populate: Populate,
@@ -58,12 +63,88 @@ impl<S: UniversalRead> TrackerEnum<S> {
         }
     }
 
+    /// Number of mappings, including pending ones: one past the highest point offset that was
+    /// ever set.
+    pub fn pointer_count(&self) -> PointOffset {
+        match self {
+            Self::AppendOnly(tracker) => tracker.pointer_count(),
+            Self::Compacted(tracker) => tracker.pointer_count(),
+        }
+    }
+
+    /// Populate the tracker file into the RAM cache. The compacted tracker lives in RAM already.
+    pub fn populate(&self) -> Result<()> {
+        match self {
+            Self::AppendOnly(tracker) => tracker.populate(),
+            Self::Compacted(_) => Ok(()),
+        }
+    }
+
     /// Ask to evict the tracker file from the RAM cache. The compacted tracker lives in RAM and
     /// has nothing to evict.
     pub fn clear_cache(&self) -> Result<()> {
         match self {
             Self::AppendOnly(tracker) => tracker.clear_cache(),
             Self::Compacted(_) => Ok(()),
+        }
+    }
+}
+
+impl<S: UniversalAppend> TrackerEnum<S> {
+    /// Create a new empty tracker in the given directory, always in the append-only format.
+    ///
+    /// The directory must exist already.
+    pub fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
+    where
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
+    {
+        Ok(Self::AppendOnly(AppendOnlyTracker::new(fs, dir)?))
+    }
+
+    /// Open the tracker in the given directory for writing, in the format found on disk.
+    ///
+    /// If no tracker file exists, return an error.
+    pub fn open_writable<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> Result<Self>
+    where
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
+    {
+        if CompactedTracker::exists(fs, dir)? {
+            let tracker = CompactedTracker::open_writable(fs, dir)?;
+            Ok(Self::Compacted(tracker))
+        } else {
+            let tracker = AppendOnlyTracker::open_writable(fs, dir, populate)?;
+            Ok(Self::AppendOnly(tracker))
+        }
+    }
+
+    /// Set the mapping for the given point offset, see [`AppendOnlyTracker::set`].
+    pub fn set(&mut self, point_offset: PointOffset, pointer: ValuePointer) -> Result<()> {
+        match self {
+            Self::AppendOnly(tracker) => tracker.set(point_offset, pointer),
+            Self::Compacted(tracker) => {
+                tracker.set(point_offset, pointer);
+                Ok(())
+            }
+        }
+    }
+
+    /// Write pending mappings below `target`, see [`AppendOnlyTracker::write_pending`]. A
+    /// compacted tracker writes its whole file in the flusher instead.
+    pub fn write_pending(&mut self, target: PointOffset) -> Result<()> {
+        match self {
+            Self::AppendOnly(tracker) => tracker.write_pending(target),
+            Self::Compacted(_) => Ok(()),
+        }
+    }
+
+    /// Create a closure that persists the mappings below `target`, a point offset count.
+    ///
+    /// The append-only tracker syncs what [`Self::write_pending`] wrote up to `target`, the
+    /// compacted tracker rewrites its file with the mappings below `target`.
+    pub fn flusher(&self, target: PointOffset) -> Flusher {
+        match self {
+            Self::AppendOnly(tracker) => tracker.flusher(),
+            Self::Compacted(tracker) => tracker.flusher(target),
         }
     }
 }

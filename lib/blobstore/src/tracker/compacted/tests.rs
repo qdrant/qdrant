@@ -83,7 +83,7 @@ fn assert_reads(tracker: &CompactedTracker, expected: &[Option<ValuePointer>]) {
 
 /// Flush, reopen, and check that the reopened tracker serves `expected`.
 fn assert_roundtrip(tracker: &CompactedTracker, dir: &TempDir, expected: &[Option<ValuePointer>]) {
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     assert_reads(&reopened, expected);
     assert_eq!(reopened.files(), vec![dir.path().join(FILE_NAME)]);
@@ -153,7 +153,7 @@ fn test_set_any_order_and_overwrite() {
 fn test_unflushed_mappings_are_not_persisted() {
     let expected = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, mut tracker) = tracker_with(&expected);
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
 
     tracker.set(3, ValuePointer::new(0, 6, 4));
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
@@ -164,7 +164,7 @@ fn test_unflushed_mappings_are_not_persisted() {
 fn test_flusher_snapshots_and_rewrites_whole_file() {
     let first = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, mut tracker) = tracker_with(&first);
-    let flusher = tracker.flusher(MmapFs);
+    let flusher = tracker.flusher(PointOffset::MAX);
 
     // Set after the flusher was created, not part of its snapshot
     tracker.set(3, ValuePointer::new(0, 6, 4));
@@ -173,7 +173,7 @@ fn test_flusher_snapshots_and_rewrites_whole_file() {
     assert_reads(&reopened, &first);
 
     // The next flush rewrites the file with everything
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     let mut second = first;
     second.push(Some(ValuePointer::new(0, 6, 4)));
@@ -188,23 +188,23 @@ fn test_clean_tracker_flush_is_noop() {
 
     // A clean flush does not touch the disk: a removed file stays removed
     MmapFs.remove(&path).unwrap();
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     assert!(!path.exists());
 
     tracker.set(0, ValuePointer::new(0, 0, 1));
     assert!(tracker.is_dirty());
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     assert!(path.exists());
     assert!(!tracker.is_dirty());
 
     // Clean again after the flush
     MmapFs.remove(&path).unwrap();
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     assert!(!path.exists());
 
     // Opening a file makes a clean tracker as well
     tracker.set(1, ValuePointer::new(0, 1, 1));
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     assert!(!reopened.is_dirty());
 }
@@ -213,7 +213,7 @@ fn test_clean_tracker_flush_is_noop() {
 fn test_failed_flush_leaves_tracker_dirty() {
     let (dir, mut tracker) = tracker_with(&[]);
     tracker.set(0, ValuePointer::new(0, 0, 1));
-    let flusher = tracker.flusher(MmapFs);
+    let flusher = tracker.flusher(PointOffset::MAX);
     assert!(
         !tracker.is_dirty(),
         "taking the copy marks the tracker clean"
@@ -229,10 +229,34 @@ fn test_failed_flush_leaves_tracker_dirty() {
     );
 
     MmapFs.create_dir(dir.path()).unwrap();
-    tracker.flusher(MmapFs)().unwrap();
+    tracker.flusher(PointOffset::MAX)().unwrap();
     assert!(!tracker.is_dirty());
     let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
     assert_reads(&reopened, &[Some(ValuePointer::new(0, 0, 1))]);
+}
+
+#[test]
+fn test_read_only_tracker_flush_fails_only_when_dirty() {
+    let expected = packed_pointers(&[1, 2, 3], &[], 1024);
+    let (dir, tracker) = tracker_with(&expected);
+    tracker.flusher(PointOffset::MAX)().unwrap();
+
+    let mut read_only = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    read_only.flusher(PointOffset::MAX)().unwrap();
+
+    read_only.set(3, ValuePointer::new(0, 6, 4));
+    let err = read_only.flusher(PointOffset::MAX)().unwrap_err();
+    assert!(err.to_string().contains("read-only"), "{err}");
+    assert!(read_only.is_dirty(), "the mapping is still unpersisted");
+    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    assert_reads(&reopened, &expected);
+
+    // Opened writable, the same mapping persists
+    let mut writable = CompactedTracker::open_writable(&MmapFs, dir.path()).unwrap();
+    writable.set(3, ValuePointer::new(0, 6, 4));
+    writable.flusher(PointOffset::MAX)().unwrap();
+    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    assert_reads(&reopened, &packed_pointers(&[1, 2, 3, 4], &[], 1024));
 }
 
 #[test]
