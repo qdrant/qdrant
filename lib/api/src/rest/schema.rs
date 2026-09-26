@@ -41,7 +41,11 @@ pub(crate) fn validate_non_empty_dense(vector: &[f32]) -> Result<(), ValidationE
 /// Vector Data
 /// Vectors can be described directly with values
 /// Or specified with source "objects" for inference
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+///
+/// `Deserialize` is implemented manually (see `vector_from_json_value`): it accepts
+/// exactly what `#[serde(untagged)]` accepted, but reports the closest-matching
+/// variant's failure instead of the generic untagged fallthrough message.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(DenseVector),
@@ -96,7 +100,12 @@ fn named_vector_example() -> HashMap<VectorNameBuf, Vector> {
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+///
+/// `Deserialize` is implemented manually (see `vector_struct_from_json_value`):
+/// it accepts exactly what `#[serde(untagged)]` accepted, but reports the
+/// closest-matching variant's failure instead of the generic untagged
+/// fallthrough message (qdrant/qdrant#10555).
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     #[schemars(example = "vector_example")]
@@ -153,6 +162,285 @@ impl Validate for VectorStruct {
             VectorStruct::Image(_) => Ok(()),
             VectorStruct::Object(_) => Ok(()),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Vector {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = JsonValue::deserialize(deserializer)?;
+        vector_from_json_value(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for VectorStruct {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = JsonValue::deserialize(deserializer)?;
+        vector_struct_from_json_value(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Render a `serde_json::Error` for embedding into a larger message.
+///
+/// Errors produced while deserializing from a buffered `serde_json::Value`
+/// carry a meaningless `at line 1 column 0` position suffix; drop it so the
+/// message stays focused on the actual problem.
+fn compact_serde_error(err: serde_json::Error) -> String {
+    let message = err.to_string();
+    message
+        .strip_suffix(" at line 1 column 0")
+        .map(str::to_owned)
+        .unwrap_or(message)
+}
+
+/// Try `DenseVector` then `MultiDenseVector` (in untagged declaration order)
+/// against a JSON array, reporting the closest-matching variant's failure.
+///
+/// An array of arrays is closest to a multi-dense vector, anything else to a
+/// dense vector.
+fn dense_vectors_from_json_array<T>(
+    value: &JsonValue,
+    wrap_dense: impl FnOnce(DenseVector) -> T,
+    wrap_multi_dense: impl FnOnce(MultiDenseVector) -> T,
+) -> Result<T, String> {
+    let dense = DenseVector::deserialize(value).map(wrap_dense);
+    let multi_dense = MultiDenseVector::deserialize(value).map(wrap_multi_dense);
+    match (dense, multi_dense) {
+        (Ok(vector), _) => Ok(vector),
+        (Err(_), Ok(vector)) => Ok(vector),
+        (Err(dense_err), Err(multi_dense_err)) => {
+            let nested = value
+                .as_array()
+                .and_then(|array| array.first())
+                .is_some_and(JsonValue::is_array);
+            Err(if nested {
+                let err = compact_serde_error(multi_dense_err);
+                format!("invalid multi-dense vector: {err}")
+            } else {
+                let err = compact_serde_error(dense_err);
+                format!("invalid dense vector: {err}")
+            })
+        }
+    }
+}
+
+/// Deserialize a [`Vector`] from a buffered JSON value.
+///
+/// Accepts exactly the same inputs as the previous `#[serde(untagged)]` derive
+/// (variants are tried in declaration order, the first success wins), but when
+/// every variant fails it reports the failure of the closest-matching variant
+/// instead of serde's generic "did not match any variant of untagged enum"
+/// fallthrough, so the 400 response names the offending field.
+fn vector_from_json_value(value: &JsonValue) -> Result<Vector, String> {
+    if value.is_array() {
+        return dense_vectors_from_json_array(value, Vector::Dense, Vector::MultiDense);
+    }
+    if let Some(map) = value.as_object() {
+        return vector_from_json_map(value, map);
+    }
+    Err(format!(
+        "invalid vector: expected an array of numbers, an array of arrays of numbers, or an object \
+         with one of the shapes {{\"indices\": [...], \"values\": [...]}} (sparse), \
+         {{\"text\": ..., \"model\": ...}} (document), {{\"image\": ..., \"model\": ...}} (image), \
+         {{\"object\": ..., \"model\": ...}} (inference object); got {value}"
+    ))
+}
+
+fn vector_from_json_map(
+    value: &JsonValue,
+    map: &serde_json::Map<String, JsonValue>,
+) -> Result<Vector, String> {
+    // Variants are tried in untagged declaration order; the first success wins.
+    // `Dense`/`MultiDense` cannot match a JSON object, so they are skipped here.
+    // Candidates are attempted sequentially: a successful variant returns
+    // immediately instead of also paying for the failed deserializations of
+    // the remaining ones.
+    let sparse_err = match sparse_vector_from_json_map(map) {
+        Ok(vector) => return Ok(Vector::Sparse(vector)),
+        Err(err) => err,
+    };
+    let document_err = match Document::deserialize(value) {
+        Ok(document) => return Ok(Vector::Document(document)),
+        Err(err) => compact_serde_error(err),
+    };
+    let image_err = match Image::deserialize(value) {
+        Ok(image) => return Ok(Vector::Image(image)),
+        Err(err) => compact_serde_error(err),
+    };
+    let object_err = match InferenceObject::deserialize(value) {
+        Ok(object) => return Ok(Vector::Object(object)),
+        Err(err) => compact_serde_error(err),
+    };
+    Err(pick_vector_map_error(
+        map,
+        sparse_err,
+        &document_err,
+        &image_err,
+        &object_err,
+    ))
+}
+
+/// Deserialize a [`SparseVector`] from a JSON object, naming the offending
+/// field on failure.
+///
+/// Unknown fields are ignored, exactly like the derived implementation.
+fn sparse_vector_from_json_map(
+    map: &serde_json::Map<String, JsonValue>,
+) -> Result<SparseVector, String> {
+    let indices = map
+        .get("indices")
+        .ok_or_else(|| "missing field `indices`".to_string())
+        .and_then(|value| {
+            Vec::<u32>::deserialize(value).map_err(|err| {
+                let err = compact_serde_error(err);
+                format!("invalid value for field `indices`: {err}")
+            })
+        })?;
+    let values = map
+        .get("values")
+        .ok_or_else(|| "missing field `values`".to_string())
+        .and_then(|value| {
+            Vec::<f32>::deserialize(value).map_err(|err| {
+                let err = compact_serde_error(err);
+                format!("invalid value for field `values`: {err}")
+            })
+        })?;
+    Ok(SparseVector { indices, values })
+}
+
+/// Pick the most informative failure among the object-shaped [`Vector`] variants.
+///
+/// The variant whose discriminating fields are present in the input is the one
+/// the client most likely meant, so its failure is reported.
+fn pick_vector_map_error(
+    map: &serde_json::Map<String, JsonValue>,
+    sparse_err: String,
+    document_err: &str,
+    image_err: &str,
+    object_err: &str,
+) -> String {
+    if map.contains_key("indices") || map.contains_key("values") {
+        format!("invalid sparse vector: {sparse_err}")
+    } else if map.contains_key("text") {
+        format!("invalid document: {document_err}")
+    } else if map.contains_key("image") {
+        format!("invalid image: {image_err}")
+    } else if map.contains_key("object") {
+        format!("invalid inference object: {object_err}")
+    } else {
+        let keys = map
+            .keys()
+            .map(|key| format!("{key:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "invalid vector: expected a sparse vector ({{\"indices\": [...], \"values\": [...]}}), \
+             a document ({{\"text\": ..., \"model\": ...}}), an image \
+             ({{\"image\": ..., \"model\": ...}}) or an inference object \
+             ({{\"object\": ..., \"model\": ...}}); got an object with keys [{keys}]"
+        )
+    }
+}
+
+/// Deserialize a [`VectorStruct`] from a buffered JSON value.
+///
+/// Same contract as [`vector_from_json_value`]: identical accept/reject
+/// behavior to the previous `#[serde(untagged)]` derive, but the reported
+/// failure names the closest-matching variant and, for named vectors, the
+/// offending vector name and field.
+fn vector_struct_from_json_value(value: &JsonValue) -> Result<VectorStruct, String> {
+    if value.is_array() {
+        return dense_vectors_from_json_array(
+            value,
+            VectorStruct::Single,
+            VectorStruct::MultiDense,
+        );
+    }
+    if let Some(map) = value.as_object() {
+        return vector_struct_from_json_map(value, map);
+    }
+    Err(format!(
+        "invalid vector: expected a dense vector ([...]), a multi-dense vector ([[...], ...]), \
+         named vectors ({{\"name\": ...}}), a document, an image or an inference object; \
+         got {value}"
+    ))
+}
+
+fn vector_struct_from_json_map(
+    value: &JsonValue,
+    map: &serde_json::Map<String, JsonValue>,
+) -> Result<VectorStruct, String> {
+    // `Named` is tried before `Document`/`Image`/`Object`, matching untagged
+    // declaration order: `{"text": [...]}` is a named vector called "text".
+    // Candidates are attempted sequentially: a successful variant returns
+    // immediately instead of also paying for the failed deserializations of
+    // the remaining ones.
+    let named_err = match named_vectors_from_json_map(map) {
+        Ok(named) => return Ok(VectorStruct::Named(named)),
+        Err(err) => err,
+    };
+    let document_err = match Document::deserialize(value) {
+        Ok(document) => return Ok(VectorStruct::Document(document)),
+        Err(err) => compact_serde_error(err),
+    };
+    let image_err = match Image::deserialize(value) {
+        Ok(image) => return Ok(VectorStruct::Image(image)),
+        Err(err) => compact_serde_error(err),
+    };
+    let object_err = match InferenceObject::deserialize(value) {
+        Ok(object) => return Ok(VectorStruct::Object(object)),
+        Err(err) => compact_serde_error(err),
+    };
+    Err(pick_vector_struct_map_error(
+        map,
+        &named_err,
+        &document_err,
+        &image_err,
+        &object_err,
+    ))
+}
+
+/// Deserialize the `Named` variant: every value of the map must be a [`Vector`].
+///
+/// The first failing entry (in document order) is reported with its vector name.
+fn named_vectors_from_json_map(
+    map: &serde_json::Map<String, JsonValue>,
+) -> Result<HashMap<VectorNameBuf, Vector>, String> {
+    let mut vectors = HashMap::with_capacity(map.len());
+    for (name, value) in map {
+        match vector_from_json_value(value) {
+            Ok(vector) => {
+                vectors.insert(name.clone(), vector);
+            }
+            Err(err) => return Err(format!("invalid vector {name:?}: {err}")),
+        }
+    }
+    Ok(vectors)
+}
+
+/// Pick the most informative failure among the object-shaped [`VectorStruct`]
+/// variants, using the same discriminating-field heuristic as
+/// [`pick_vector_map_error`].
+fn pick_vector_struct_map_error(
+    map: &serde_json::Map<String, JsonValue>,
+    named_err: &str,
+    document_err: &str,
+    image_err: &str,
+    object_err: &str,
+) -> String {
+    if map.contains_key("text") {
+        format!("invalid document: {document_err}")
+    } else if map.contains_key("image") {
+        format!("invalid image: {image_err}")
+    } else if map.contains_key("object") {
+        format!("invalid inference object: {object_err}")
+    } else {
+        named_err.to_owned()
     }
 }
 
@@ -309,6 +597,134 @@ mod tests {
         let options: DocumentOptions = serde_json::from_str(&valid_bm25_config).unwrap();
         // Bm25 option is used only for schema, actual deserialization will happen in specialized code
         assert_matches!(options, DocumentOptions::Common(_));
+    }
+
+    #[test]
+    fn test_vector_struct_valid_shapes_keep_untagged_parity() {
+        // Every shape the old `#[serde(untagged)]` derive accepted must still
+        // parse into the same variant, in the same precedence order.
+        let single: VectorStruct = serde_json::from_str("[0.1, 0.2]").unwrap();
+        assert_eq!(single, VectorStruct::Single(vec![0.1, 0.2]));
+
+        let multi: VectorStruct = serde_json::from_str("[[0.1], [0.2]]").unwrap();
+        assert_eq!(multi, VectorStruct::MultiDense(vec![vec![0.1], vec![0.2]]));
+
+        let named: VectorStruct = serde_json::from_str(
+            r#"{"dense": [0.1], "sparse": {"indices": [1], "values": [0.5]}}"#,
+        )
+        .unwrap();
+        let VectorStruct::Named(map) = named else {
+            panic!("expected Named, got {named:?}");
+        };
+        assert!(matches!(map["dense"], Vector::Dense(_)));
+        assert!(matches!(map["sparse"], Vector::Sparse(_)));
+
+        // `Named` wins over `Document` for `{"text": [...]}`, like untagged order.
+        let named_text: VectorStruct = serde_json::from_str(r#"{"text": [0.1]}"#).unwrap();
+        assert!(matches!(named_text, VectorStruct::Named(_)));
+
+        let document: VectorStruct =
+            serde_json::from_str(r#"{"text": "hello", "model": "model"}"#).unwrap();
+        assert!(matches!(document, VectorStruct::Document(_)));
+
+        // A sparse-looking map with extra document fields still parses as sparse,
+        // because untagged tries `Sparse` before `Document`.
+        let sparse: Vector =
+            serde_json::from_str(r#"{"indices": [1], "values": [0.5], "model": "m"}"#).unwrap();
+        assert!(matches!(sparse, Vector::Sparse(_)));
+
+        // Serialization is untouched (still untagged).
+        assert_eq!(serde_json::to_string(&single).unwrap(), "[0.1,0.2]");
+    }
+
+    #[test]
+    fn test_vector_struct_malformed_sparse_names_field_and_vector() {
+        // Legs from qdrant/qdrant#10555: each 400 must name the offending field
+        // and the named-vector slot, not the generic untagged fallthrough.
+        let legs = [
+            (r#"{"sparse": {"indices": [1, 2]}}"#, "values"),
+            (r#"{"sparse": {"values": [0.5]}}"#, "indices"),
+            (
+                r#"{"sparse": {"indices": [-1], "values": [0.5]}}"#,
+                "indices",
+            ),
+            (
+                r#"{"sparse": {"indices": [1.5], "values": [0.5]}}"#,
+                "indices",
+            ),
+            (
+                r#"{"sparse": {"indices": [18446744073709551616], "values": [0.5]}}"#,
+                "indices",
+            ),
+        ];
+        for (json, field) in legs {
+            let err = serde_json::from_str::<VectorStruct>(json).unwrap_err();
+            let message = err.to_string();
+            assert!(
+                !message.contains("did not match any variant"),
+                "generic untagged fallthrough leaked for {json}: {message}"
+            );
+            assert!(
+                message.contains(field),
+                "error for {json} should name field `{field}`: {message}"
+            );
+            assert!(
+                message.contains("\"sparse\""),
+                "error for {json} should name the vector slot: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_vector_malformed_sparse_names_field() {
+        let err = serde_json::from_str::<Vector>(r#"{"indices": [1, 2]}"#).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            !message.contains("did not match any variant"),
+            "generic untagged fallthrough leaked: {message}"
+        );
+        assert!(message.contains("sparse"), "got: {message}");
+        assert!(message.contains("values"), "got: {message}");
+    }
+
+    #[test]
+    fn test_vector_struct_malformed_dense_names_variant() {
+        let err = serde_json::from_str::<VectorStruct>(r#"[0.1, "oops"]"#).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            !message.contains("did not match any variant"),
+            "generic untagged fallthrough leaked: {message}"
+        );
+        assert!(message.contains("dense vector"), "got: {message}");
+
+        let err = serde_json::from_str::<VectorStruct>(r#"[[0.1], "oops"]"#).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("multi-dense vector"), "got: {message}");
+    }
+
+    #[test]
+    fn test_vector_struct_malformed_document_names_variant() {
+        let err =
+            serde_json::from_str::<VectorStruct>(r#"{"text": 42, "model": "m"}"#).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            !message.contains("did not match any variant"),
+            "generic untagged fallthrough leaked: {message}"
+        );
+        assert!(message.contains("document"), "got: {message}");
+    }
+
+    #[test]
+    fn test_vector_struct_rejects_garbage_shapes() {
+        for json in [r#""just a string""#, "42", "null", "true"] {
+            let err = serde_json::from_str::<VectorStruct>(json).unwrap_err();
+            let message = err.to_string();
+            assert!(
+                !message.contains("did not match any variant"),
+                "generic untagged fallthrough leaked for {json}: {message}"
+            );
+            assert!(message.contains("invalid vector"), "got: {message}");
+        }
     }
 }
 
