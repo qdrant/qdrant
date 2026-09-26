@@ -34,11 +34,28 @@ const DATETIMES: [&str; 5] = [
     "2023-10-15T00:00:00Z",
     "2023-12-31T00:00:00Z",
 ];
-const TEXTS: [&str; 4] = [
-    "alpha beta gamma",
-    "alpha delta",
-    "beta epsilon",
-    "gamma delta zeta",
+/// Words the `t` documents are made of, with the weight `random_text` draws each with: skewed, so
+/// some terms are in most documents (low IDF) and others in few (high IDF). Past the Greek letters,
+/// words that the tokenizer variants of `fixture::text_index_params` turn into something else: stems
+/// that merge, stopwords, an accent to fold, words below and above the length limits, and
+/// punctuation that only the whitespace tokenizer keeps.
+const TEXT_WORDS: [(&str, u32); 16] = [
+    ("alpha", 60),
+    ("beta", 30),
+    ("gamma", 20),
+    ("delta", 15),
+    ("epsilon", 12),
+    ("zeta", 10),
+    ("running", 8),
+    ("runs", 8),
+    ("run", 8),
+    ("the", 12),
+    ("and", 8),
+    ("café", 6),
+    ("ab", 6),
+    ("extraordinary", 5),
+    ("fox,", 5),
+    ("fox.", 5),
 ];
 // Identifier-like strings with shared prefixes — exercises keyword prefix index + filter.
 const URLS: [&str; 6] = [
@@ -80,6 +97,96 @@ pub(super) fn random_url(rng: &mut impl Rng) -> &'static str {
 
 pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
     URL_PREFIX_PROBES.choose(rng).unwrap()
+}
+
+/// Words a BM25 query over `t` draws from: every word of `TEXT_WORDS`, a form only a query holds
+/// (`cafe`, which folding matches), and one no text holds.
+const TEXT_QUERY_WORDS: [&str; 18] = [
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "running",
+    "runs",
+    "run",
+    "the",
+    "and",
+    "café",
+    "cafe",
+    "ab",
+    "extraordinary",
+    "fox,",
+    "fox",
+    "omega",
+];
+
+/// BM25 parameters for a text query: half the time the defaults, otherwise drawn from the edges of
+/// their domain too, where `k1 = 0` ignores term frequency and `b = 0` ignores length.
+pub(super) fn random_bm25_params(rng: &mut impl Rng) -> (f32, f32) {
+    if rng.random_bool(0.5) {
+        return (1.2, 0.75);
+    }
+    let k1 = *[0.0, 0.5, 1.2, 2.0, 8.0].choose(rng).unwrap();
+    let b = *[0.0, 0.25, 0.75, 1.0].choose(rng).unwrap();
+    (k1, b)
+}
+
+/// A BM25 query over `t`: one to three words, sometimes capitalized, so the shard has to
+/// tokenize it with the field's tokenizer (lowercasing) to match anything.
+pub(super) fn random_text_query(rng: &mut impl Rng) -> String {
+    let words = rng.random_range(1..=3);
+    (0..words)
+        .map(|_| {
+            let word = *TEXT_QUERY_WORDS.choose(rng).unwrap();
+            if rng.random_bool(0.25) {
+                word.to_uppercase()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A `t` value for BM25 to rank: words repeat, so term frequencies go above one, and lengths vary
+/// from one to twelve words, so length normalization has something to normalize. Sometimes an
+/// array, whose values the index concatenates; sometimes empty, which is not a document; sometimes
+/// capitalized, which the field's tokenizer lowercases.
+pub(super) fn random_text(rng: &mut impl Rng) -> Value {
+    match rng.random_range(0..20) {
+        0 => Value::from(""),
+        1 | 2 => Value::from(
+            (0..rng.random_range(2..=3))
+                .map(|_| Value::from(random_text_document(rng)))
+                .collect::<Vec<_>>(),
+        ),
+        _ => Value::from(random_text_document(rng)),
+    }
+}
+
+/// One to twelve words of `TEXT_WORDS`, by their weights.
+fn random_text_document(rng: &mut impl Rng) -> String {
+    let total: u32 = TEXT_WORDS.iter().map(|(_, weight)| weight).sum();
+    let len = rng.random_range(1..=12);
+    (0..len)
+        .map(|_| {
+            let mut draw = rng.random_range(0..total);
+            let mut at = 0;
+            while draw >= TEXT_WORDS[at].1 {
+                draw -= TEXT_WORDS[at].1;
+                at += 1;
+            }
+            let word = TEXT_WORDS[at].0;
+            if rng.random_bool(0.1) {
+                word.to_uppercase()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub(super) fn random_num(rng: &mut impl Rng) -> i64 {
@@ -377,7 +484,7 @@ pub(super) fn random_payload(rng: &mut impl Rng) -> Payload {
     geo.insert("lat".to_string(), Value::from(lat));
     geo.insert("lon".to_string(), Value::from(lon));
     map.insert("g".to_string(), Value::Object(geo));
-    map.insert("t".to_string(), Value::from(*TEXTS.choose(rng).unwrap()));
+    map.insert("t".to_string(), random_text(rng));
     map.insert("url".to_string(), Value::from(random_url(rng)));
     Payload(map)
 }

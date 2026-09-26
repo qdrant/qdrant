@@ -4,6 +4,7 @@ mod writes;
 use std::collections::{BTreeSet, HashMap};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::VectorNameBuf;
 
 use super::op::{NamedVectors, Op};
@@ -17,6 +18,7 @@ pub(super) async fn apply(
     model: &mut Model,
     active: &mut BTreeSet<VectorNameBuf>,
     op: &Op,
+    no_proxies: bool,
 ) {
     match op {
         Op::Upsert(id, vecs, payload) => {
@@ -211,6 +213,28 @@ pub(super) async fn apply(
             unreachable!("CreateSnapshot is handled in the run loop, not apply()")
         }
         Op::SetFlushInterval(sec) => writes::apply_set_flush_interval(collection, *sec).await,
+        Op::QueryText {
+            text,
+            limit,
+            top_k,
+            k1,
+            b,
+            filter_num,
+            filter_url_prefix,
+        } => {
+            reads::apply_query_text(
+                collection,
+                model,
+                text,
+                *limit,
+                *top_k,
+                Bm25Params { k1: *k1, b: *b },
+                no_proxies,
+                *filter_num,
+                filter_url_prefix.as_deref(),
+            )
+            .await
+        }
     }
 }
 
