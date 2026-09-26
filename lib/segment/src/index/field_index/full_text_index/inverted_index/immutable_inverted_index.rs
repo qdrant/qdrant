@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
+use super::bm25::{Bm25Query, PositionalCursors, score_top_k};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -326,6 +328,50 @@ impl InvertedIndex for ImmutableInvertedIndex {
             ParsedQuery::Phrase(tokens) => Ok(Box::new(self.filter_has_phrase(tokens))),
             ParsedQuery::AnyTokens(tokens) => Ok(Box::new(self.filter_has_any(tokens))),
         }
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let ImmutablePostings::WithPositions(postings) = &self.postings else {
+            return Err(OperationError::service_error(
+                "text index stores no positions, term frequencies cannot be computed",
+            ));
+        };
+        let views = query
+            .terms()
+            .iter()
+            .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
+            .collect();
+        let mut cursors = PositionalCursors::new(views);
+        let lengths = self.point_to_doc_len.as_deref();
+        // Deleted points stay in these postings and are masked here, as the
+        // filter path does.
+        let is_active = |point_id: PointOffsetType| {
+            self.point_to_tokens_count
+                .get(point_id as usize)
+                .is_some_and(|count| *count > 0)
+                && accept(point_id)
+        };
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                }
+                Ok(())
+            },
+            is_active,
+            limit,
+            is_stopped,
+        )
     }
 
     fn get_posting_len(

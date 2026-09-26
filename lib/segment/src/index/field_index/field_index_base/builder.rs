@@ -63,7 +63,7 @@ pub enum FieldIndexBuilder {
     GeoMmapIndex(GeoIndexMmapBuilder),
     GeoGridstoreIndex(GeoIndexGridstoreBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
-    FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
+    FullTextGridstoreIndex(Box<FullTextGridstoreIndexBuilder>),
     BoolMmapIndex(ImmutableBoolIndexBuilder),
     BoolGridstoreIndex(MutableBoolIndexBuilder),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
@@ -125,7 +125,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
                 FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
             Self::FullTextGridstoreIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder.as_mut(), id, payload, hw_counter)
             }
             Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
             Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),

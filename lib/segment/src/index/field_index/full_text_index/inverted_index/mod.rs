@@ -1,3 +1,4 @@
+pub mod bm25;
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
 pub(super) mod mutable_inverted_index;
@@ -9,9 +10,11 @@ mod postings_iterator;
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
+use bm25::Bm25Query;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
@@ -233,6 +236,18 @@ pub trait InvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>>;
 
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. Term frequencies come from positions, so an
+    /// index built without them cannot score and reports an error.
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
+
     fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
@@ -453,7 +468,7 @@ pub trait InvertedIndex {
 #[cfg(test)]
 mod tests {
 
-    use common::bitvec::BitVec;
+    use common::bitvec::{BitSlice, BitVec};
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -843,6 +858,56 @@ mod tests {
             [Some(0)],
             "a runtime deletion must read as no tokens, not as the stale length",
         );
+    }
+
+    /// The on-disk total is summed once and then kept by `remove`. After any
+    /// sequence of removals it must equal the sum a fresh open computes from
+    /// the same deletion mask, and only the first call may read the sidecar.
+    #[rstest]
+    fn on_disk_total_tokens_follows_runtime_removals(#[values(false, true)] phrase_matching: bool) {
+        let immutable =
+            ImmutableInvertedIndex::from(mutable_inverted_index(64, 8, phrase_matching));
+        let lens_at_build = immutable.point_to_doc_len.clone().unwrap();
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let open = |deleted: &BitSlice| {
+            OnDiskInvertedIndex::<MmapFile>::open(
+                &MmapFs,
+                mmap_dir.path().to_path_buf(),
+                Populate::No,
+                phrase_matching,
+                deleted,
+            )
+            .unwrap()
+            .unwrap()
+        };
+
+        let mut mmap = open(&BitVec::new());
+        let hw_counter = HardwareCounterCell::new();
+        let initial = mmap.total_tokens(&hw_counter).unwrap().unwrap();
+        let cached = HardwareCounterCell::new();
+        assert_eq!(mmap.total_tokens(&cached).unwrap(), Some(initial));
+        assert_eq!(
+            cached.payload_index_io_read_counter().get(),
+            0,
+            "a kept total must not read the sidecar again",
+        );
+
+        let live = lens_at_build.iter().position(|&len| len > 0).unwrap();
+        let empty = lens_at_build.iter().position(|&len| len == 0).unwrap();
+        let mut deleted = BitVec::repeat(false, lens_at_build.len());
+        // A live point, the same point again, a point empty at build, and a
+        // point past the index.
+        for victim in [live, live, empty, lens_at_build.len() + 10] {
+            mmap.remove(victim as PointOffsetType);
+            if victim < deleted.len() {
+                deleted.set(victim, true);
+            }
+        }
+
+        let expected = open(&deleted).total_tokens(&hw_counter).unwrap().unwrap();
+        assert_eq!(expected, initial - u64::from(lens_at_build[live]));
+        assert_eq!(mmap.total_tokens(&hw_counter).unwrap(), Some(expected));
     }
 
     /// Rebuilding the same directory without lengths must not leave the

@@ -1,14 +1,16 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 
+use super::bm25::{Bm25Query, MutableCursors, score_top_k};
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[cfg_attr(test, derive(Clone))]
 pub struct MutableInvertedIndex {
@@ -299,6 +301,44 @@ impl InvertedIndex for MutableInvertedIndex {
         _: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>> {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let Some(documents) = self.point_to_doc.as_deref() else {
+            return Err(OperationError::service_error(
+                "text index stores no positions, term frequencies cannot be computed",
+            ));
+        };
+        let postings = query
+            .terms()
+            .iter()
+            .map(|term| self.postings.get(term.token_id as usize))
+            .collect();
+        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        let lengths = self.point_to_doc_len.as_deref();
+        // Deleted points are removed from these postings, so only the caller's
+        // filter applies.
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                }
+                Ok(())
+            },
+            accept,
+            limit,
+            is_stopped,
+        )
     }
 
     fn for_each_vocab_with_postings_len(

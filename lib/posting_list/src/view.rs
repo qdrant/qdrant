@@ -5,7 +5,7 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 
-use crate::iterator::PostingIterator;
+use crate::iterator::{PostingIterator, PostingLenIterator};
 use crate::posting_list::RemainderPosting;
 use crate::value_handler::PostingValue;
 use crate::visitor::PostingVisitor;
@@ -42,6 +42,11 @@ impl<'a, V: PostingValue> IntoIterator for PostingListView<'a, V> {
 impl<'a, V: PostingValue> PostingListView<'a, V> {
     pub fn visitor(self) -> PostingVisitor<'a, V> {
         PostingVisitor::new(self)
+    }
+
+    /// Iterate over ids and value lengths without reading the values.
+    pub fn len_iter(self) -> PostingLenIterator<'a, V> {
+        PostingLenIterator::new(self.visitor())
     }
 
     // not implemented as ToOwned trait because it requires PostingList's Borrow to return
