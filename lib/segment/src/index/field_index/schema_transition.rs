@@ -96,8 +96,8 @@ mod tests {
     use crate::data_types::index::{
         BoolIndexParams, BoolIndexType, DatetimeIndexParams, DatetimeIndexType, FloatIndexParams,
         FloatIndexType, GeoIndexParams, GeoIndexType, IntegerIndexParams, IntegerIndexType,
-        KeywordIndexParams, KeywordIndexType, TextIndexParams, TextIndexType, TokenizerType,
-        UuidIndexParams, UuidIndexType,
+        KeywordIndexParams, KeywordIndexType, TextIndexParams, TextIndexType, TextScoringParams,
+        TokenizerType, UuidIndexParams, UuidIndexType,
     };
     use crate::types::PayloadSchemaType;
 
@@ -161,6 +161,7 @@ mod tests {
             on_disk,
             stemmer: None,
             enable_hnsw: None,
+            scoring: None,
         })
     }
 
@@ -242,6 +243,40 @@ mod tests {
         assert_eq!(
             classify(&with_prefix, &plain),
             SchemaTransition::Incompatible
+        );
+    }
+
+    /// Turning scoring on or off records or drops the document lengths, and
+    /// may add positions: a full rebuild either way, never `Identical`, which
+    /// would skip persisting the new params. Also when only `on_disk` differs
+    /// besides.
+    #[test]
+    fn text_scoring_change_is_incompatible() {
+        let with_scoring = |on_disk| {
+            let PayloadSchemaParams::Text(params) = text(on_disk, TokenizerType::Word) else {
+                unreachable!()
+            };
+            wrap(PayloadSchemaParams::Text(TextIndexParams {
+                scoring: Some(TextScoringParams::default()),
+                ..params
+            }))
+        };
+        let plain = wrap(text(Some(false), TokenizerType::Word));
+        assert_eq!(
+            classify(&plain, &with_scoring(Some(false))),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&with_scoring(Some(false)), &plain),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&plain, &with_scoring(Some(true))),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&with_scoring(Some(false)), &with_scoring(Some(false))),
+            SchemaTransition::Identical,
         );
     }
 

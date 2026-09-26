@@ -803,6 +803,19 @@ message TextIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
+  // Enable ranking points by BM25 over this field.
+  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Default: disabled.
+  optional TextScoringParams scoring = 12;
+}
+
+enum TextScoringType {
+  Bm25 = 0;
+}
+
+message TextScoringParams {
+  // How documents are ranked
+  TextScoringType type = 1;
 }
 
 message StemmingAlgorithm {

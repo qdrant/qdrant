@@ -701,6 +701,8 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory: memory.map(SegmentMemory::from),
                     stemmer: stemmer.map(segment_index::StemmingAlgorithm::from),
                     enable_hnsw,
+                    // Not exposed: edge does not run BM25 over a text index yet.
+                    scoring: None,
                 }))
             }
             PayloadIndexParams::Bool { config } => {
@@ -853,6 +855,8 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     stemmer,
                     enable_hnsw,
+                    // Not exposed, see the conversion the other way.
+                    scoring: _,
                 } = params;
                 PayloadIndexParams::Text {
                     config: TextIndexParams {

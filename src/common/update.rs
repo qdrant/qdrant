@@ -947,6 +947,9 @@ pub async fn do_create_index(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
     };
+    // Once, before the schema is proposed and applied: every node, and the
+    // direct index operation below, must see the same params.
+    let field_schema = field_schema.normalized();
 
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
         collection_name: collection_name.clone(),
