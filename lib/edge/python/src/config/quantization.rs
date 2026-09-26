@@ -7,40 +7,56 @@ use std::fmt;
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::types::*;
 
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyQuantizationConfig(pub QuantizationConfig);
 
+pub const QUANTIZATION_CONFIG: Alias = Alias {
+    name: "QuantizationConfigType",
+    definition: QuantizationConfigHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum QuantizationConfigHelper {
+    Scalar(PyScalarQuantizationConfig),
+    Product(PyProductQuantizationConfig),
+    Binary(PyBinaryQuantizationConfig),
+    Turbo(PyTurboQuantQuantizationConfig),
+}
+
 impl FromPyObject<'_, '_> for PyQuantizationConfig {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = QUANTIZATION_CONFIG.hint();
 
     fn extract(conf: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Scalar(PyScalarQuantizationConfig),
-            Product(PyProductQuantizationConfig),
-            Binary(PyBinaryQuantizationConfig),
-            Turbo(PyTurboQuantQuantizationConfig),
-        }
-
         let conf = match conf.extract()? {
-            Helper::Scalar(scalar) => QuantizationConfig::Scalar(ScalarQuantization {
-                scalar: ScalarQuantizationConfig::from(scalar),
-            }),
-            Helper::Product(product) => QuantizationConfig::Product(ProductQuantization {
-                product: ProductQuantizationConfig::from(product),
-            }),
-            Helper::Binary(binary) => QuantizationConfig::Binary(BinaryQuantization {
-                binary: BinaryQuantizationConfig::from(binary),
-            }),
-            Helper::Turbo(turbo) => QuantizationConfig::Turbo(TurboQuantization {
-                turbo: TurboQuantQuantizationConfig::from(turbo),
-            }),
+            QuantizationConfigHelper::Scalar(scalar) => {
+                QuantizationConfig::Scalar(ScalarQuantization {
+                    scalar: ScalarQuantizationConfig::from(scalar),
+                })
+            }
+            QuantizationConfigHelper::Product(product) => {
+                QuantizationConfig::Product(ProductQuantization {
+                    product: ProductQuantizationConfig::from(product),
+                })
+            }
+            QuantizationConfigHelper::Binary(binary) => {
+                QuantizationConfig::Binary(BinaryQuantization {
+                    binary: BinaryQuantizationConfig::from(binary),
+                })
+            }
+            QuantizationConfigHelper::Turbo(turbo) => {
+                QuantizationConfig::Turbo(TurboQuantization {
+                    turbo: TurboQuantQuantizationConfig::from(turbo),
+                })
+            }
         };
 
         Ok(Self(conf))
@@ -51,22 +67,24 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = QUANTIZATION_CONFIG.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             QuantizationConfig::Scalar(ScalarQuantization { scalar }) => {
-                PyScalarQuantizationConfig(scalar).into_bound_py_any(py)
+                QuantizationConfigHelper::Scalar(PyScalarQuantizationConfig(scalar))
             }
             QuantizationConfig::Product(ProductQuantization { product }) => {
-                PyProductQuantizationConfig(product).into_bound_py_any(py)
+                QuantizationConfigHelper::Product(PyProductQuantizationConfig(product))
             }
             QuantizationConfig::Binary(BinaryQuantization { binary }) => {
-                PyBinaryQuantizationConfig(binary).into_bound_py_any(py)
+                QuantizationConfigHelper::Binary(PyBinaryQuantizationConfig(binary))
             }
             QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                PyTurboQuantQuantizationConfig(turbo).into_bound_py_any(py)
+                QuantizationConfigHelper::Turbo(PyTurboQuantQuantizationConfig(turbo))
             }
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -89,6 +107,12 @@ impl Repr for PyQuantizationConfig {
     }
 }
 
+/// Configuration for scalar quantization.
+///
+/// Args:
+///     type: Scalar type (e.g., Int8).
+///     quantile: Quantile for normalization.
+///     always_ram: Whether to keep in RAM.
 #[pyclass(name = "ScalarQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -108,16 +132,19 @@ impl PyScalarQuantizationConfig {
         })
     }
 
+    /// Scalar type.
     #[getter]
     pub fn r#type(&self) -> PyScalarType {
         PyScalarType::from(self.0.r#type)
     }
 
+    /// Quantile.
     #[getter]
     pub fn quantile(&self) -> Option<f32> {
         self.0.quantile
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
@@ -140,17 +167,11 @@ impl PyScalarQuantizationConfig {
     }
 }
 
+/// Scalar quantization types.
 #[pyclass(name = "ScalarType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyScalarType {
     Int8,
-}
-
-#[pymethods]
-impl PyScalarType {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyScalarType {
@@ -179,6 +200,11 @@ impl From<PyScalarType> for ScalarType {
     }
 }
 
+/// Configuration for product quantization.
+///
+/// Args:
+///     compression: Compression ratio.
+///     always_ram: Whether to keep in RAM.
 #[pyclass(name = "ProductQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -197,11 +223,13 @@ impl PyProductQuantizationConfig {
         })
     }
 
+    /// Compression ratio.
     #[getter]
     pub fn compression(&self) -> PyCompressionRatio {
         PyCompressionRatio::from(self.0.compression)
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
@@ -223,6 +251,7 @@ impl PyProductQuantizationConfig {
     }
 }
 
+/// Product quantization compression ratios.
 #[pyclass(name = "CompressionRatio", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyCompressionRatio {
@@ -231,13 +260,6 @@ pub enum PyCompressionRatio {
     X16,
     X32,
     X64,
-}
-
-#[pymethods]
-impl PyCompressionRatio {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyCompressionRatio {
@@ -278,6 +300,12 @@ impl From<PyCompressionRatio> for CompressionRatio {
     }
 }
 
+/// Configuration for binary quantization.
+///
+/// Args:
+///     always_ram: Whether to keep in RAM.
+///     encoding: Binary encoding type.
+///     query_encoding: Query encoding type.
 #[pyclass(name = "BinaryQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -301,16 +329,19 @@ impl PyBinaryQuantizationConfig {
         })
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
     }
 
+    /// Encoding.
     #[getter]
     pub fn encoding(&self) -> Option<PyBinaryQuantizationEncoding> {
         self.0.encoding.map(PyBinaryQuantizationEncoding::from)
     }
 
+    /// Query encoding.
     #[getter]
     pub fn query_encoding(&self) -> Option<PyBinaryQuantizationQueryEncoding> {
         self.0
@@ -335,19 +366,13 @@ impl PyBinaryQuantizationConfig {
     }
 }
 
+/// Binary quantization encoding types.
 #[pyclass(name = "BinaryQuantizationEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationEncoding {
     OneBit,
     TwoBits,
     OneAndHalfBits,
-}
-
-#[pymethods]
-impl PyBinaryQuantizationEncoding {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyBinaryQuantizationEncoding {
@@ -386,6 +411,7 @@ impl From<PyBinaryQuantizationEncoding> for BinaryQuantizationEncoding {
     }
 }
 
+/// Binary quantization query encoding types.
 #[pyclass(name = "BinaryQuantizationQueryEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationQueryEncoding {
@@ -393,13 +419,6 @@ pub enum PyBinaryQuantizationQueryEncoding {
     Binary,
     Scalar4Bits,
     Scalar8Bits,
-}
-
-#[pymethods]
-impl PyBinaryQuantizationQueryEncoding {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyBinaryQuantizationQueryEncoding {
@@ -445,6 +464,11 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
     }
 }
 
+/// Configuration for TurboQuant quantization.
+///
+/// Args:
+///     always_ram: Whether to keep in RAM.
+///     bits: Bit size used for compressed codes.
 #[pyclass(name = "TurboQuantQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -463,11 +487,13 @@ impl PyTurboQuantQuantizationConfig {
         })
     }
 
+    /// Always RAM flag.
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
     }
 
+    /// Bit size.
     #[getter]
     pub fn bits(&self) -> Option<PyTurboQuantBitSize> {
         self.0.bits.map(PyTurboQuantBitSize::from)
@@ -489,6 +515,7 @@ impl PyTurboQuantQuantizationConfig {
     }
 }
 
+/// TurboQuant bit size for compressed codes.
 #[pyclass(name = "TurboQuantBitSize", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTurboQuantBitSize {
@@ -496,13 +523,6 @@ pub enum PyTurboQuantBitSize {
     Bits1_5,
     Bits2,
     Bits4,
-}
-
-#[pymethods]
-impl PyTurboQuantBitSize {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyTurboQuantBitSize {

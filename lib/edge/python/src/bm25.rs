@@ -13,6 +13,19 @@ use crate::types::payload_schema::{PyStemmingAlgorithm, PyStopwords, PyTokenizer
 use crate::types::vector::PySparseVector;
 
 /// Configuration for an edge-side BM25 model.
+///
+/// Args:
+///     k: Term-frequency saturation. Higher = TF has more impact. Default 1.2.
+///     b: Length normalization. 0=none, 1=full. Default 0.75.
+///     avg_len: Expected average document length in tokens. Default 256.
+///     tokenizer: Tokenizer type to use.
+///     language: Language for default stopwords/stemmer (e.g., "english").
+///     lowercase: Lowercase before tokenization. Default True.
+///     ascii_folding: Fold accents to ASCII. Default False.
+///     stopwords: Custom stopwords (language or set). Defaults to language.
+///     stemmer: Stemming algorithm. Defaults to language-appropriate stemmer.
+///     min_token_len: Drop tokens shorter than this.
+///     max_token_len: Drop tokens longer than this.
 #[pyclass(name = "Bm25Config", from_py_object)]
 #[derive(Clone, Debug, Default, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -148,8 +161,12 @@ impl PyBm25Config {
     }
 }
 
-/// BM25 sparse-vector embedding model. Construct once with a [`Bm25Config`],
-/// then call [`embed_query`] / [`embed_document`] to get sparse vectors.
+/// BM25 sparse-vector embedding model.
+///
+/// Create a Bm25 model with the given configuration (defaults if `None`).
+///
+/// Raises `ValueError` for invalid configuration: unsupported `language`,
+/// non-positive `avg_len`, `b` outside `[0.0, 1.0]`, or negative `k`.
 #[pyclass(name = "Bm25")]
 #[derive(Debug)]
 pub struct PyBm25(EdgeBm25);
@@ -170,7 +187,8 @@ impl PyBm25 {
         PySparseVector(self.0.embed_query(text))
     }
 
-    /// Embed `text` as an indexed document: term-frequency weights with `(k, b, avg_len)`.
+    /// Embed `text` as an indexed document: term-frequency weights with
+    /// `(k, b, avg_len)` from the model config.
     pub fn embed_document(&self, text: &str) -> PySparseVector {
         PySparseVector(self.0.embed_document(text))
     }
