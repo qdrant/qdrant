@@ -5,7 +5,8 @@ use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, TextQueryInternal, VectorInputInternal,
+    VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -296,6 +297,9 @@ fn convert_query_with_inferred(
         Variant::Rrf(rrf) => Query::Fusion(FusionInternal::try_from(rrf)?),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
+        Variant::Text(grpc::TextQuery { query, k, b }) => {
+            Query::Text(TextQueryInternal::new(query, k, b))
+        }
         Variant::NearestWithMmr(grpc::NearestInputWithMmr { nearest, mmr }) => {
             let nearest =
                 nearest.ok_or_else(|| Status::invalid_argument("nearest vector is missing"))?;
