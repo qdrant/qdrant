@@ -8,8 +8,8 @@
 //!   new storage mode.
 //! - `enable_hnsw` flip: update persisted schema only; live index handles are kept.
 //!
-//! Each per-kind arm normalizes the known in-place fields on a clone and
-//! compares the rest via the derived `PartialEq`, so a newly added field is
+//! The known in-place fields are cleared on clones of both schemas and the
+//! rest is compared via the derived `PartialEq`, so a newly added field is
 //! accounted for automatically: any difference outside those fields yields
 //! `Incompatible`.
 
@@ -71,59 +71,49 @@ pub fn classify(old: &PayloadFieldSchema, new: &PayloadFieldSchema) -> SchemaTra
 }
 
 fn compatible_diff(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> Option<CompatibleDiff> {
-    use PayloadSchemaParams as P;
-
     // Compare `on_disk` / `enable_hnsw` at the `Option<bool>` level: `None` vs
     // `Some(false)` (or `Some(true)` for enable_hnsw) both may mean the same
     // effective value yet the persisted value differs, so it still counts as a
-    // flip. Every other field goes through the derived `PartialEq` after
-    // normalizing those flags on a clone — a newly added field is therefore
+    // flip. Every other field (and the kind itself) goes through the derived
+    // `PartialEq` after clearing those flags — a newly added field is therefore
     // accounted for automatically (any difference makes this `None`, i.e.
     // `Incompatible`, the safe default).
-    macro_rules! compatible {
-        ($a:expr, $b:expr) => {{
-            let on_disk_changed = $a.on_disk != $b.on_disk;
-            let metadata_changed = $a.enable_hnsw != $b.enable_hnsw;
-            if !on_disk_changed && !metadata_changed {
-                None
-            } else {
-                let mut normalized = $a.clone();
-                normalized.on_disk = $b.on_disk;
-                normalized.enable_hnsw = $b.enable_hnsw;
-                if normalized == *$b {
-                    Some(CompatibleDiff {
-                        // Placeholder; `classify` overwrites with `new.is_on_disk()`.
-                        on_disk: on_disk_changed.then_some(false),
-                        metadata: metadata_changed,
-                    })
-                } else {
-                    None
-                }
-            }
-        }};
+    let mut old = old.clone();
+    let mut new = new.clone();
+    let (old_on_disk, old_enable_hnsw) = take_in_place_flags(&mut old);
+    let (new_on_disk, new_enable_hnsw) = take_in_place_flags(&mut new);
+
+    if old != new {
+        return None;
     }
 
-    match (old, new) {
-        (P::Keyword(a), P::Keyword(b)) => compatible!(a, b),
-        (P::Integer(a), P::Integer(b)) => compatible!(a, b),
-        (P::Float(a), P::Float(b)) => compatible!(a, b),
-        (P::Geo(a), P::Geo(b)) => compatible!(a, b),
-        (P::Text(a), P::Text(b)) => compatible!(a, b),
-        (P::Bool(a), P::Bool(b)) => compatible!(a, b),
-        (P::Datetime(a), P::Datetime(b)) => compatible!(a, b),
-        (P::Uuid(a), P::Uuid(b)) => compatible!(a, b),
-        // Cross-kind pairs cannot be compatible in-place. Listed exhaustively
-        // (rather than `_ =>`) so a new `PayloadSchemaParams` variant triggers
-        // a compile error here.
-        (P::Keyword(_), _)
-        | (P::Integer(_), _)
-        | (P::Float(_), _)
-        | (P::Geo(_), _)
-        | (P::Text(_), _)
-        | (P::Bool(_), _)
-        | (P::Datetime(_), _)
-        | (P::Uuid(_), _) => None,
+    let on_disk_changed = old_on_disk != new_on_disk;
+    let metadata_changed = old_enable_hnsw != new_enable_hnsw;
+    if !on_disk_changed && !metadata_changed {
+        return None;
     }
+
+    Some(CompatibleDiff {
+        // Placeholder; `classify` overwrites with `new.is_on_disk()`.
+        on_disk: on_disk_changed.then_some(false),
+        metadata: metadata_changed,
+    })
+}
+
+/// Resets the in-place-updatable flags of `params` to `None` and returns their
+/// previous values as `(on_disk, enable_hnsw)`.
+fn take_in_place_flags(params: &mut PayloadSchemaParams) -> (Option<bool>, Option<bool>) {
+    let (on_disk, enable_hnsw) = match params {
+        PayloadSchemaParams::Keyword(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Integer(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Float(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Geo(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Text(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Bool(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Datetime(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Uuid(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+    };
+    (on_disk.take(), enable_hnsw.take())
 }
 
 #[cfg(test)]
