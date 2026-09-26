@@ -618,6 +618,95 @@ fn mmap_builder_records_doc_len() {
     );
 }
 
+/// A point the id tracker deleted without the deletion reaching the index, as
+/// the append-only delete path does, is not a document of the gather on any
+/// shape, while one whose deletion did reach the index is not subtracted twice.
+#[test]
+fn text_statistics_gather_skips_tombstoned_points() {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::fill_text_statistics;
+
+    let hw_counter = HardwareCounterCell::new();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+    let config = TextIndexParams {
+        tokenizer: TokenizerType::Whitespace,
+        lowercase: Some(true),
+        phrase_matching: Some(true),
+        ..TextIndexParams::default()
+    };
+    // 3, 7 and 2 tokens.
+    let documents = [
+        "alpha beta gamma",
+        "the cat sat on the mat the",
+        "delta epsilon",
+    ];
+
+    let dir = Builder::new().prefix("stats_tombstone").tempdir().unwrap();
+    let empty_deleted = BitVec::new();
+    let mut mutable =
+        FullTextIndex::builder_gridstore(dir.path().join("mutable"), config.clone(), true)
+            .make_empty()
+            .unwrap();
+    let mut builders = [false, true].map(|is_on_disk| {
+        let mut builder = FullTextIndex::builder_mmap(
+            dir.path().join(format!("mmap_{is_on_disk}")),
+            config.clone(),
+            is_on_disk,
+            &empty_deleted,
+            true,
+        );
+        builder.init().unwrap();
+        builder
+    });
+    for (point_id, text) in documents.iter().enumerate() {
+        let point_id = point_id as PointOffsetType;
+        mutable
+            .add_many(point_id, vec![text.to_string()], &hw_counter)
+            .unwrap();
+        for builder in &mut builders {
+            builder
+                .add_many(point_id, vec![text.to_string()], &hw_counter)
+                .unwrap();
+        }
+    }
+    let [immutable, on_disk] = builders.map(|builder| builder.finalize().unwrap());
+    let mut indexes = [mutable, immutable, on_disk];
+
+    // Point 2 is deleted through the index, point 1 only in the id tracker,
+    // and bit 7 lies past every index.
+    let mut deleted = BitVec::repeat(false, 8);
+    for point_id in [1, 2, 7] {
+        deleted.set(point_id, true);
+    }
+    for index in &mut indexes {
+        index.remove_point(2).unwrap();
+        let gather = |deleted: &BitVec| {
+            let mut stats = TextFieldStats {
+                df: ["the", "alpha"].map(|term| (term.to_string(), 0)).into(),
+                ..Default::default()
+            };
+            fill_text_statistics(&*index, deleted, &mut stats, &is_stopped, &hw_counter).unwrap();
+            stats
+        };
+
+        let untracked = gather(&BitVec::new());
+        assert_eq!(
+            untracked.documents, 2,
+            "the index alone still counts point 1"
+        );
+        assert_eq!(untracked.total_tokens, Some(10));
+
+        let stats = gather(&deleted);
+        assert_eq!(stats.documents, 1);
+        assert_eq!(stats.total_tokens, Some(3));
+        assert_eq!(stats.df["alpha"], 1);
+        assert_eq!(
+            stats.df["the"], 0,
+            "the tombstoned point leaves df too, though its postings remain",
+        );
+    }
+}
+
 /// `new_mmap` under scoring reports an index without a length sidecar absent,
 /// so the caller rebuilds it from payload, and opens one with the sidecar.
 /// Without scoring, both open.
@@ -720,7 +809,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
             .into(),
         ..Default::default()
     };
-    fill_text_statistics(&index, &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(&index, &BitVec::new(), &mut stats, &is_stopped, &hw_counter).unwrap();
 
     assert_eq!(stats.documents, 2);
     assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
@@ -732,7 +821,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     // corpus rather than letting it be taken over the segments that do.
     let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
     let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
-    fill_text_statistics(&plain, &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(&plain, &BitVec::new(), &mut stats, &is_stopped, &hw_counter).unwrap();
 
     assert_eq!(stats.documents, 4);
     assert_eq!(stats.df["the"], 2, "frequencies still sum");

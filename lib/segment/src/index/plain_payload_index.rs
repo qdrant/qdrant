@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
+use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
@@ -202,6 +203,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn fill_text_statistics(
         &self,
         _field: PayloadKeyTypeRef,
+        _deleted: &BitSlice,
         _stats: &mut TextFieldStats,
         _is_stopped: &AtomicBool,
         _hw_counter: &HardwareCounterCell,

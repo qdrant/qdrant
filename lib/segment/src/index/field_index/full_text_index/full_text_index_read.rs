@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -26,8 +27,16 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// **Seeded terms must already be tokenized.** Resolution is a bare vocabulary
 /// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
 /// of zero, the largest IDF the formula produces. A debug build checks it.
+///
+/// `deleted` is the id tracker's deleted bitslice. `N`, the total tokens and
+/// `df` leave out the points it marks even when the deletion never reached
+/// this index, as a tombstone-only deletion does not. Leaving them in `df`
+/// alone would be worse than leaving them everywhere: `df` would exceed `N`
+/// and IDF clamp to zero. Deletions that did reach an immutable or on-disk
+/// index still count in its `df`, see [`FullTextIndexRead::posting_len`].
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
+    deleted: &BitSlice,
     stats: &mut TextFieldStats,
     is_stopped: &AtomicBool,
     hw_counter: &HardwareCounterCell,
@@ -40,21 +49,21 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     check_process_stopped(is_stopped)?;
 
     // The destination slot travels as user data, so no term is cloned.
-    let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
+    let mut counts: Vec<(&mut usize, TokenId)> = Vec::with_capacity(stats.df.len());
     index.for_each_token_id(
         stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
         hw_counter,
         |df, token_id| {
             if let Some(token_id) = token_id {
-                counts.push((df, token_id as usize));
+                counts.push((df, token_id));
             }
         },
     )?;
 
-    for (df, token_id) in counts {
+    for (df, token_id) in &mut counts {
         check_process_stopped(is_stopped)?;
-        if let Some(posting_len) = index.posting_len(token_id as TokenId, hw_counter)? {
-            *df += posting_len;
+        if let Some(posting_len) = index.posting_len(*token_id, hw_counter)? {
+            **df += posting_len;
         }
     }
 
@@ -63,7 +72,44 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         Some(_) => index.total_tokens(hw_counter)?,
         None => None,
     };
-    stats.add_segment(index.points_count(), total_tokens);
+
+    // Deleted by the id tracker, yet still counted by this index: the
+    // append-only delete path tombstones a point without clearing its payload,
+    // so the index's own counters keep it. Any other deletion has already
+    // emptied the point here.
+    check_process_stopped(is_stopped)?;
+    let tombstoned: Vec<PointOffsetType> = deleted
+        .iter_ones()
+        .stop_if(is_stopped)
+        .map(|point_id| point_id as PointOffsetType)
+        .filter(|&point_id| !index.values_is_empty(point_id))
+        .collect();
+    // A stopped scan is partial: report the stop, not a statistic.
+    check_process_stopped(is_stopped)?;
+    let mut tombstoned_tokens = 0;
+    if total_tokens.is_some() && !tombstoned.is_empty() {
+        index.doc_len_batch(&tombstoned, hw_counter, |_, doc_len| {
+            tombstoned_tokens += u64::from(doc_len.unwrap_or(0));
+        })?;
+    }
+    // They are in the postings too, so they come off `df` as well.
+    if !tombstoned.is_empty() {
+        for (df, token_id) in &mut counts {
+            let holds_term = ParsedQuery::AnyTokens(TokenSet::from_iter([*token_id]));
+            let mut holding = 0;
+            index.check_match_batch(
+                &holds_term,
+                tombstoned.iter().map(|&point_id| ((), point_id)),
+                |(), holds| holding += usize::from(holds),
+            )?;
+            **df = df.saturating_sub(holding);
+        }
+    }
+
+    stats.add_segment(
+        index.points_count().saturating_sub(tombstoned.len()),
+        total_tokens.map(|total| total.saturating_sub(tombstoned_tokens)),
+    );
     Ok(())
 }
 
@@ -216,8 +262,8 @@ pub trait FullTextIndexRead {
     /// summed across segments. `None` when the token is not in the vocabulary.
     ///
     /// Counts what the posting list holds. The mutable index removes deleted
-    /// points from its postings; the immutable and on-disk ones keep them until
-    /// the segment is rebuilt. So `df` can exceed `N`, and the same data can
+    /// points from its postings, unless the deletion was tombstone-only; the
+    /// immutable and on-disk ones keep them until the segment is rebuilt. So `df` can exceed `N`, and the same data can
     /// report a different `df` before and after an optimization.
     fn posting_len(
         &self,
