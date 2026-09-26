@@ -17,12 +17,20 @@ impl MemoryReporter for PayloadStorageEnum {
                     FileStorageIntent::Cached
                 };
 
-                ComponentMemoryUsage::from_files(s.files(), intent)
+                ComponentMemoryUsage::from_files_and_ram(
+                    s.files(),
+                    intent,
+                    s.ram_usage_bytes() as u64,
+                )
             }
             #[cfg(target_os = "linux")]
             PayloadStorageEnum::IoUring(s) => {
                 debug_assert!(s.is_on_disk());
-                ComponentMemoryUsage::from_files(s.files(), FileStorageIntent::OnDisk)
+                ComponentMemoryUsage::from_files_and_ram(
+                    s.files(),
+                    FileStorageIntent::OnDisk,
+                    s.ram_usage_bytes() as u64,
+                )
             }
         }
     }

@@ -838,8 +838,11 @@ fn test_make_immutable_is_persisted_by_flush() {
     }
     storage.flusher()().unwrap();
     storage.put_value(5, &vec![5; 10], hw_counter_ref).unwrap();
+    assert_eq!(storage.ram_usage_bytes(), 0);
 
     storage.make_immutable().unwrap();
+    // Every mapping is held in RAM, not only the present ones
+    assert!(storage.ram_usage_bytes() >= 6 * size_of::<Option<ValuePointer>>());
     assert!(!dir.path().join("log_tracker.dat").exists());
     assert!(!dir.path().join("compacted_tracker.dat").exists());
     assert_eq!(
@@ -892,6 +895,7 @@ fn test_make_immutable_leaves_mutable_mode_alone() {
     storage.make_immutable().unwrap();
     storage.flusher()().unwrap();
     assert_eq!(storage.files(), files_before);
+    assert_eq!(storage.ram_usage_bytes(), 0);
     assert!(!dir.path().join("compacted_tracker.dat").exists());
 }
 

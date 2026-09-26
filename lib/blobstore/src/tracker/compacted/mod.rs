@@ -149,6 +149,17 @@ impl CompactedTracker {
         self.pointers.len() as PointOffset
     }
 
+    /// Heap RAM held by the mappings. The file is only read on open, not kept.
+    pub fn ram_usage_bytes(&self) -> usize {
+        let Self {
+            path: _,
+            pointers,
+            dirty: _,
+            fs: _,
+        } = self;
+        pointers.capacity() * size_of::<Option<ValuePointer>>()
+    }
+
     /// Set the mapping for the given point offset, replacing any previous one.
     ///
     /// Point offsets can be set in any order. Skipped offsets read as `None`.
