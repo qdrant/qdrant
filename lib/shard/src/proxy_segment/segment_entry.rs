@@ -20,6 +20,7 @@ use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::StorageSegmentEntry;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -244,6 +245,80 @@ impl ReadSegmentEntry for ProxySegment {
             )?
         };
         Ok(wrapped_results)
+    }
+
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        // Like `search_batch` on a stale vector: the index the proxy presents
+        // for `field` is not the wrapped one, and holds no points here yet.
+        if self.is_wrapped_index_stale(field) {
+            return Ok(Vec::new());
+        }
+
+        // Same exclusions as `search_batch`: redacted vector names, and points
+        // deleted after the proxy was created. The text statistics in
+        // `query_context` still count those points, as they do for every
+        // proxy, see `fill_query_context`.
+        let with_vector = self
+            .pending_changes
+            .vector_name_changes()
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let with_vector = with_vector.as_ref();
+
+        let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
+
+        let wrapped = self.wrapped_segment.get();
+        let wrapped = wrapped.read();
+        if self.pending_changes.deleted_points().is_empty() {
+            return wrapped.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter.as_deref(),
+                top,
+                query_context,
+            );
+        }
+        if let Some(deleted_points) = self.deleted_mask.as_ref() {
+            let query_context_with_deleted =
+                query_context.fork().with_deleted_points(deleted_points);
+            wrapped.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter.as_deref(),
+                top,
+                &query_context_with_deleted,
+            )
+        } else {
+            let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                filter,
+                self.pending_changes.deleted_points().keys().copied(),
+            );
+            wrapped.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                Some(&wrapped_filter),
+                top,
+                query_context,
+            )
+        }
     }
 
     fn rescore_with_formula(
@@ -785,11 +860,31 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
+        // A text field whose wrapped index is stale contributes nothing, as it
+        // scores nothing: its statistics are set aside while the wrapped
+        // segment fills the rest, which only fills the fields it is given.
+        let stale: Vec<_> = query_context
+            .mut_text_stats()
+            .keys()
+            .filter(|field| self.is_wrapped_index_stale(field))
+            .cloned()
+            .collect();
+        let set_aside: Vec<_> = stale
+            .into_iter()
+            .filter_map(|field| {
+                let stats = query_context.mut_text_stats().remove(&field)?;
+                Some((field, stats))
+            })
+            .collect();
+
         // Information from temporary segment is not too important for query context
-        self.wrapped_segment
+        let filled = self
+            .wrapped_segment
             .get()
             .read()
-            .fill_query_context(query_context)
+            .fill_query_context(query_context);
+        query_context.mut_text_stats().extend(set_aside);
+        filled
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {

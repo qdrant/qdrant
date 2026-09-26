@@ -292,7 +292,12 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context
             .text_stats
             .get(field)
-            .map(|stats| TextQueryContext { stats })
+            .map(|stats| TextQueryContext {
+                stats,
+                is_stopped: &self.query_context.is_stopped,
+                deleted_points: self.deleted_points,
+                hardware_counter: self.hardware_counter.fork(),
+            })
     }
 
     pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
@@ -393,9 +398,26 @@ impl Default for VectorQueryContext<'_> {
 #[derive(Debug)]
 pub struct TextQueryContext<'a> {
     stats: &'a TextFieldStats,
+    is_stopped: &'a AtomicBool,
+    /// Replaces the id tracker's deletions when set, as a proxy segment does
+    /// for the segment it wraps. Same role as in [`VectorQueryContext`].
+    deleted_points: Option<&'a BitSlice>,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl TextQueryContext<'_> {
+    pub fn is_stopped(&self) -> &AtomicBool {
+        self.is_stopped
+    }
+
+    pub fn deleted_points(&self) -> Option<&BitSlice> {
+        self.deleted_points
+    }
+
+    pub fn hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter.fork()
+    }
+
     /// `N`: documents carrying the field, over this shard's segments.
     pub fn document_count(&self) -> usize {
         self.stats.documents
