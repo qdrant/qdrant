@@ -36,6 +36,7 @@ impl VectorIndexRead for HNSWIndex {
             unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
+            filtered_acorn: tm.acorn.lock().get_statistics(detail),
             filtered_exact: tm.exact_filtered.lock().get_statistics(detail),
             filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(detail),

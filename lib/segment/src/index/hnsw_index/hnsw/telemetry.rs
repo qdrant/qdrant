@@ -11,6 +11,8 @@ pub(crate) struct HNSWSearchesTelemetry {
     pub(super) unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
+    /// Of the graph searches counted above, the ones ACORN ran.
+    pub(super) acorn: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) exact_filtered: Arc<Mutex<OperationDurationsAggregator>>,
     pub(super) exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -23,6 +25,7 @@ impl HNSWSearchesTelemetry {
             unfiltered_hnsw: OperationDurationsAggregator::new(),
             small_cardinality: OperationDurationsAggregator::new(),
             large_cardinality: OperationDurationsAggregator::new(),
+            acorn: OperationDurationsAggregator::new(),
             exact_filtered: OperationDurationsAggregator::new(),
             exact_unfiltered: OperationDurationsAggregator::new(),
         }
