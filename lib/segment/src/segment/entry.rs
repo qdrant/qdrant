@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
-use crate::common::{Flusher, check_named_vectors, check_vector_name};
+use crate::common::{Flusher, check_named_vectors, check_stored_vector_values, check_vector_name};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
@@ -754,6 +754,7 @@ impl SegmentEntry for Segment {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
+        check_stored_vector_values(&vectors, &self.segment_config)?;
         let stored_internal_point = self
             .id_tracker
             .borrow()
@@ -856,6 +857,7 @@ impl SegmentEntry for Segment {
         // Raw bytes are the stored form, already preprocessed on first
         // ingestion; only the freshly decoded overlay needs preprocessing.
         updated_vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
+        check_stored_vector_values(&updated_vectors, &self.segment_config)?;
         let stored_internal_point = self
             .id_tracker
             .borrow()
@@ -919,6 +921,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
+        check_stored_vector_values(&vectors, &self.segment_config)?;
         let internal_id = self
             .id_tracker
             .borrow()
