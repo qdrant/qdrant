@@ -129,6 +129,23 @@ pub fn validate_integer_index_params(
     Ok(())
 }
 
+pub fn validate_text_index_params(
+    min_token_len: &Option<usize>,
+    max_token_len: &Option<usize>,
+) -> Result<(), ValidationErrors> {
+    if let (Some(min), Some(max)) = (min_token_len, max_token_len) {
+        if min > max {
+            let mut errors = ValidationErrors::new();
+            let error = ValidationError::new(
+                "the 'min_token_len' value can't be greater than 'max_token_len'",
+            );
+            errors.add("min_token_len", error);
+            return Err(errors);
+        }
+    }
+    Ok(())
+}
+
 // UUID
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -308,6 +325,26 @@ pub struct TextIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+}
+
+impl Validate for TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let TextIndexParams {
+            r#type: _,
+            tokenizer: _,
+            min_token_len,
+            max_token_len,
+            lowercase: _,
+            ascii_folding: _,
+            phrase_matching: _,
+            stopwords: _,
+            on_disk: _,
+            memory: _,
+            stemmer: _,
+            enable_hnsw: _,
+        } = &self;
+        validate_text_index_params(min_token_len, max_token_len)
+    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -648,6 +685,20 @@ pub struct DatetimeIndexParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_text_index_params() {
+        // Valid: min < max, min == max, and unset values.
+        assert!(validate_text_index_params(&Some(1), &Some(10)).is_ok());
+        assert!(validate_text_index_params(&Some(5), &Some(5)).is_ok());
+        assert!(validate_text_index_params(&None, &Some(10)).is_ok());
+        assert!(validate_text_index_params(&Some(1), &None).is_ok());
+        assert!(validate_text_index_params(&None, &None).is_ok());
+
+        // Invalid: min > max.
+        let err = validate_text_index_params(&Some(10), &Some(5)).unwrap_err();
+        assert!(err.field_errors().contains_key("min_token_len"));
+    }
 
     #[test]
     fn test_stemming_algorithm_serialization() {

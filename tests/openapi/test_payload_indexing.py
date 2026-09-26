@@ -28,6 +28,25 @@ def test_payload_indexing_validation(collection_name):
     assert response.status_code == 422
     assert "Validation error: the 'lookup' and 'range' capabilities can't be both disabled" in response.json()["status"]["error"]
 
+def test_payload_indexing_text_token_len_validation(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "test_payload",
+            "field_schema": {
+              "type": "text",
+              "tokenizer": "word",
+              "min_token_len": 10,
+              "max_token_len": 5,
+            }
+        }
+    )
+    assert response.status_code == 422
+    assert "Validation error: the 'min_token_len' value can't be greater than 'max_token_len'" in response.json()["status"]["error"]
+
 def test_payload_indexing_operations(collection_name):
     # create payload
     response = request_with_validation(
