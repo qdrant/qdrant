@@ -35,6 +35,7 @@ pub(crate) fn node_context() -> NodeContext {
         max_collections: None,
         wal: Default::default(),
         optimizers: optimizers_config(),
+        optimizers_overwrite: None,
         hnsw_index: Default::default(),
         payload: None,
         on_disk_payload: false,

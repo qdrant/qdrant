@@ -489,19 +489,18 @@ impl ShardHolder {
     }
 
     /// Update an existing transfer record's method in place, preserving its `sync` flag.
-    /// This is the last durable write of a shard-transfer restart.
+    /// Updating the record completes a shard-transfer restart.
     ///
-    /// The record is updated in place, never removed and re-inserted, so it is
-    /// always present. A restart replayed after a crash can therefore always find
-    /// the record and re-run.
+    /// The record is updated in place, never removed and re-inserted, so it is always present.
+    /// When restart is re-applied after a crash, it should always find transfer record
+    /// and re-apply cleanly.
     ///
     /// Returns the resulting record:
-    /// - No matching record: returns `None`. The record is never removed during a
-    ///   restart, so this is a stale duplicate restart (the caller dismisses it).
+    /// - No matching record: returns `None`. The record is never removed during a restart,
+    ///   so this is a duplicate restart operation (the caller dismisses it).
     /// - Method already updated: returns the record unchanged, without writing.
-    ///   This is a replay whose method update already landed.
-    /// - Otherwise: replaces the method (resetting `to_shard_id` and `filter`) and
-    ///   returns the updated record.
+    ///   This is a replay of operation that was already applied.
+    /// - Otherwise: replaces the method and returns updated record.
     pub fn register_restart_transfer(
         &self,
         key: &ShardTransferKey,
@@ -512,12 +511,15 @@ impl ShardHolder {
         self.shard_transfers.write_optional(|transfers| {
             let existing = transfers.iter().find(|transfer| key.check(transfer))?;
 
-            // Replay: the method was already updated on a previous apply. Return
-            // the record without rewriting the file.
+            // Replay: the method was already updated on a previous apply.
+            // Return the record without rewriting the file.
             if existing.method == Some(new_method) {
                 updated = Some(existing.clone());
                 return None;
             }
+
+            // Transfer restart should only be used for *ordinary* transfers.
+            // Ordinary transfers must never specify `to_shard_id` and `filter`.
 
             let new_transfer = ShardTransfer {
                 shard_id: existing.shard_id,
@@ -533,17 +535,19 @@ impl ShardHolder {
             let mut transfers = transfers.clone();
             transfers.retain(|transfer| !key.check(transfer));
             transfers.insert(new_transfer.clone());
+
             updated = Some(new_transfer);
+
             Some(transfers)
         })?;
 
-        // A restart is semantically the old transfer aborted and a new one
-        // started; notify watchers as that pair (there is no dedicated Restart
-        // change variant).
+        // A restart is equivalent to aborting old transfer, and starting a new one.
+        // Notify watchers for `Abort` and `Start` transfer changes.
         if let Some(transfer) = &updated {
             let _ = self
                 .shard_transfer_changes
                 .send(ShardTransferChange::Abort(*key));
+
             let _ = self
                 .shard_transfer_changes
                 .send(ShardTransferChange::Start(transfer.clone()));
@@ -1673,10 +1677,9 @@ pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
 }
 
-/// `register_restart_transfer` is the last durable write of a shard-transfer
-/// restart (finding E). These tests pin its replay-safety: the record is never
-/// removed, so a replay after the method-updating write reports the record
-/// (rather than "no transfer"), and the update is value-idempotent.
+/// `register_restart_transfer` completes transfer restart by updating its record on disk.
+/// These tests assert its replay-safety: the record is never removed, so replaying operation
+/// after record is already updated should be a no-op instead of returning "no transfer" error.
 #[cfg(test)]
 mod restart_transfer_tests {
     use super::*;
@@ -1687,7 +1690,7 @@ mod restart_transfer_tests {
         (dir, holder)
     }
 
-    // A wal-delta transfer, the only shape that gets restarted.
+    // A WAL-delta transfer, is the only transfer type that gets restarted.
     //
     // `sync: false` and `filter: Some(..)` are chosen so the assertions below
     // fail if restart hardcodes `sync: true` or keeps the old `filter`.

@@ -170,18 +170,18 @@ impl Collection {
                 CollectionError::bad_request(format!("shard {to_shard_id} doesn't exist"))
             })?;
 
-            let _was_not_transferred =
-                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
-
-            let from_is_local = from_replica_set.is_local().await;
-            let to_is_local = to_replica_set.is_local().await;
-
             // Checked at the top of the function — the method is always set by the
             // peer that submitted this transfer to consensus.
             let transfer_method = shard_transfer.method.expect("transfer method must be set");
             let initial_state = self
                 .initial_replica_state_for_transfer(transfer_method)
                 .await?;
+
+            let _was_not_transferred =
+                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
+
+            let from_is_local = from_replica_set.is_local().await;
+            let to_is_local = to_replica_set.is_local().await;
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
             // (on all peers, regardless if shard is local or remote on that peer).

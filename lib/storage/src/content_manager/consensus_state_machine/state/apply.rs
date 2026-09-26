@@ -199,11 +199,74 @@ impl ClusterState {
                 shard.replicas.insert(*peer_id, *replica_state);
             }
 
+            Action::RemoveReplica {
+                collection,
+                shard_id,
+                peer_id,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard) = state.shards.get_mut(shard_id) else {
+                    return;
+                };
+
+                shard.replicas.remove(peer_id);
+            }
+
+            // Builds or resets a node-local shard without changing consensus state
+            Action::InitLocalShard { .. } => {}
+
+            Action::RegisterTransfer {
+                collection,
+                transfer,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.transfers.insert(transfer.clone());
+            }
+
+            Action::SetTransferMethod {
+                collection,
+                key,
+                method,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let transfer = state
+                    .transfers
+                    .iter()
+                    .find(|transfer| key.check(transfer))
+                    .cloned();
+
+                let Some(mut transfer) = transfer else {
+                    return;
+                };
+
+                state.transfers.remove(&transfer);
+
+                // Transfer restart should only be used for *ordinary* transfers.
+                // Ordinary transfers must never specify `to_shard_id` and `filter`.
+
+                transfer.method = Some(*method);
+                transfer.to_shard_id = None;
+                transfer.filter = None;
+
+                state.transfers.insert(transfer);
+            }
+
             // These actions only affect data or node-local runtime state
             Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
             | Action::StopTransferDriver { .. }
-            | Action::RevertProxyShard { .. } => {}
+            | Action::RevertProxyShard { .. }
+            | Action::UnproxifyShard { .. }
+            | Action::SpawnTransferDriver { .. } => {}
 
             Action::SetReshardingState {
                 collection,
@@ -237,7 +300,7 @@ impl ClusterState {
                     return;
                 };
 
-                state.transfers.retain(|transfer| transfer.key() != *key);
+                state.transfers.retain(|transfer| !key.check(transfer));
             }
 
             Action::UpdateAliases { set, remove } => {

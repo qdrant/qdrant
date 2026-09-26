@@ -150,17 +150,16 @@ pub fn validate_transfer(
     }
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::bad_request(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
-
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(CollectionError::bad_request(
                 "Target shard is not set for resharding transfer",
             ));
+        };
+
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(CollectionError::bad_request(format!(
+                "Destination shard {to_shard_id} does not exist",
+            )));
         };
 
         if transfer.shard_id == to_shard_id {
@@ -180,7 +179,7 @@ pub fn validate_transfer(
         // Both shard IDs must share the same shard key
         let source_shard_key = shards_key_mapping
             .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .find(|(_, shard_ids)| shard_ids.contains(&transfer.shard_id))
             .map(|(key, _)| key);
         let target_shard_key = shards_key_mapping
             .iter()
@@ -192,17 +191,16 @@ pub fn validate_transfer(
             )));
         }
     } else if transfer.filter.is_some() {
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(CollectionError::bad_request(format!(
-                "Destination shard {} does not exist",
-                transfer.shard_id,
-            )));
-        };
-
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(CollectionError::bad_request(
                 "Target shard is not set for filtered points transfer",
             ));
+        };
+
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(CollectionError::bad_request(format!(
+                "Destination shard {to_shard_id} does not exist",
+            )));
         };
 
         if transfer.shard_id == to_shard_id {
@@ -226,4 +224,42 @@ pub fn validate_transfer(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reject_resharding_transfer_between_shard_keys() {
+        let transfer = ShardTransfer {
+            shard_id: 0,
+            to_shard_id: Some(1),
+            from: 1,
+            to: 2,
+            sync: true,
+            method: Some(ShardTransferMethod::ReshardingStreamRecords),
+            filter: None,
+        };
+        let all_peers = HashSet::from([transfer.from, transfer.to]);
+        let source_replicas = HashMap::from([(transfer.from, ReplicaState::Active)]);
+        let destination_replicas = HashMap::from([(transfer.to, ReplicaState::Active)]);
+        let mut shards_key_mapping = ShardKeyMapping::default();
+        shards_key_mapping.insert("source".into(), HashSet::from([transfer.shard_id]));
+        shards_key_mapping.insert(
+            "target".into(),
+            HashSet::from([transfer.to_shard_id.unwrap()]),
+        );
+
+        let result = validate_transfer(
+            &transfer,
+            &all_peers,
+            Some(&source_replicas),
+            Some(&destination_replicas),
+            &HashSet::new(),
+            &shards_key_mapping,
+        );
+
+        assert!(matches!(result, Err(CollectionError::BadRequest { .. })));
+    }
 }
