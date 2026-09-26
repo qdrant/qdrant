@@ -2,9 +2,11 @@ use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::generic_consts::Random;
+use common::progress_tracker::ProgressTracker;
 use common::types::DeferredBehavior;
 use common::universal_io::MmapFs;
 use rand::rngs::StdRng;
@@ -28,6 +30,7 @@ use segment::types::{
 use segment::vector_storage::VectorStorageRead;
 use tap::Tap;
 use tempfile::Builder;
+use uuid::Uuid;
 
 const DIM: usize = 16;
 const NUM_VECTORS: usize = 600;
@@ -152,7 +155,21 @@ fn build_indexed(dir: &std::path::Path, sources: &[&Segment], config: &SegmentCo
             &HardwareCounterCell::new(),
         )
         .unwrap();
-    builder.build_for_test(dir)
+    // One CPU and a seeded RNG make the HNSW graph deterministic: the pool size
+    // comes from the permit, and point levels come from the RNG.
+    builder
+        .build(
+            dir,
+            Uuid::new_v4(),
+            None,
+            true,
+            ResourcePermit::dummy(1),
+            &AtomicBool::new(false),
+            &mut StdRng::seed_from_u64(42),
+            &HardwareCounterCell::new(),
+            ProgressTracker::new_for_test(),
+        )
+        .unwrap()
 }
 
 fn search(segment: &impl ReadSegmentEntry, query: &[f32], filter: Option<&Filter>) -> Vec<u64> {
