@@ -153,6 +153,87 @@ pub fn combine_should_estimations(
     }
 }
 
+/// Expected cardinality for `match_any` on a single map-indexed field.
+///
+/// Values of one field are negatively dependent when points are mostly
+/// single-valued, and closer to independent when points carry many values.
+/// With average values-per-point `a = values_count / indexed_points`:
+///
+/// ```text
+/// P(∪) = (1/a) · min(1, Σ pᵢ) + (1 - 1/a) · (1 - Π(1 - pᵢ))
+/// ```
+///
+/// This recovers the exact sum for single-valued fields (`a = 1`) and the
+/// independence-OR estimator as `a → ∞`, without a hard branch.
+///
+/// # Arguments
+///
+/// * `estimations` - per-value cardinalities (posting sizes)
+/// * `indexed_points` - points present in the map index (`get_indexed_points`)
+/// * `values_count` - total value incidences in the index (`get_values_count`)
+pub fn expected_match_any_estimation(
+    estimations: impl Iterator<Item = usize>,
+    indexed_points: usize,
+    values_count: usize,
+) -> usize {
+    if indexed_points == 0 {
+        return 0;
+    }
+
+    // Collect once so we can compute both the exclusive sum and the
+    // independence-OR product without requiring a cloneable iterator.
+    let counts: Vec<usize> = estimations.collect();
+    let indep = expected_should_estimation(counts.iter().copied(), indexed_points);
+    let excl = counts.iter().copied().sum::<usize>().min(indexed_points);
+
+    // Consistent indexes satisfy values_count >= indexed_points (each indexed
+    // point has ≥1 value). Clamp so `a` never drops below 1 under transient
+    // inconsistency.
+    let a = (values_count as f64 / indexed_points as f64).max(1.0);
+
+    let exp = (excl as f64) / a + (1.0 - 1.0 / a) * (indep as f64);
+    exp.round() as usize
+}
+
+/// Combine per-value cardinalities for same-field `match_any`.
+///
+/// Unlike [`combine_should_estimations`] (used for cross-field `should`, where
+/// independence is a reasonable default), this mixes the exclusive sum with
+/// the independence-OR using the field's average values-per-point. See
+/// [`expected_match_any_estimation`].
+pub fn combine_match_any_estimations(
+    estimations: &[CardinalityEstimation],
+    indexed_points: usize,
+    values_count: usize,
+) -> CardinalityEstimation {
+    let mut clauses: Vec<PrimaryCondition> = vec![];
+    for estimation in estimations {
+        if estimation.primary_clauses.is_empty() {
+            // If some branch is un-indexed - we can't make
+            // any assumptions about the whole `match_any` clause
+            clauses = vec![];
+            break;
+        }
+        clauses.append(&mut estimation.primary_clauses.clone());
+    }
+
+    let min_estimation = estimations.iter().map(|x| x.min).max().unwrap_or(0);
+    let max_estimation = min(estimations.iter().map(|x| x.max).sum(), indexed_points);
+    let expected_count = expected_match_any_estimation(
+        estimations.iter().map(|x| x.exp),
+        indexed_points,
+        values_count,
+    )
+    .clamp(min_estimation, max_estimation);
+
+    CardinalityEstimation {
+        primary_clauses: clauses,
+        min: min_estimation,
+        exp: expected_count,
+        max: max_estimation,
+    }
+}
+
 /// Estimate cardinality for `min_should` (at least `min_count` conditions).
 ///
 /// Returns zero immediately when `min_count` exceeds the number of
@@ -686,5 +767,68 @@ mod tests {
         assert_eq!(new_estimation.min, 0);
         assert_eq!(new_estimation.exp, 16);
         assert_eq!(new_estimation.max, 50);
+    }
+
+    #[test]
+    fn match_any_single_valued_field_uses_exclusive_sum() {
+        // Five mutually exclusive values covering the whole collection
+        // (issue #10127 repro shape). With a = 1 the estimator must return
+        // the exact sum, not the independence-OR under-count (~337).
+        let indexed_points = 500;
+        let values_count = 500; // one value per point
+        let counts = [100usize, 100, 100, 100, 100];
+
+        let exp =
+            expected_match_any_estimation(counts.iter().copied(), indexed_points, values_count);
+        assert_eq!(exp, 500);
+
+        let indep = expected_should_estimation(counts.iter().copied(), indexed_points);
+        assert!(
+            indep < exp,
+            "independence-OR under-counts exclusive values: {indep}"
+        );
+    }
+
+    #[test]
+    fn match_any_highly_multi_valued_field_approaches_independence_or() {
+        let indexed_points = 1000;
+        // Very many values per point → γ ≈ 1 → independence-OR.
+        let values_count = 1_000_000;
+        let counts = [200usize, 300];
+
+        let exp =
+            expected_match_any_estimation(counts.iter().copied(), indexed_points, values_count);
+        let indep = expected_should_estimation(counts.iter().copied(), indexed_points);
+        assert_eq!(exp, indep);
+    }
+
+    #[test]
+    fn match_any_interpolates_between_sum_and_independence_or() {
+        let indexed_points = 1000;
+        let values_count = 2000; // a = 2 → equal mix
+        let counts = [300usize, 300];
+
+        let exp =
+            expected_match_any_estimation(counts.iter().copied(), indexed_points, values_count);
+        let excl = 600;
+        let indep = expected_should_estimation(counts.iter().copied(), indexed_points);
+        let expected = ((excl as f64) / 2.0 + (indep as f64) / 2.0).round() as usize;
+
+        assert_eq!(exp, expected);
+        assert!(exp < excl);
+        assert!(exp > indep);
+    }
+
+    #[test]
+    fn combine_match_any_clamps_exp_to_min_max() {
+        let estimations = vec![
+            CardinalityEstimation::exact(100),
+            CardinalityEstimation::exact(100),
+        ];
+        let estimation = combine_match_any_estimations(&estimations, 150, 150);
+        assert_eq!(estimation.min, 100);
+        assert_eq!(estimation.max, 150);
+        assert_eq!(estimation.exp, 150); // exclusive sum capped at indexed_points
+        assert!(estimation.min <= estimation.exp && estimation.exp <= estimation.max);
     }
 }
