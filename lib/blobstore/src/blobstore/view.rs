@@ -10,7 +10,7 @@ use super::logstore::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::error::BlobstoreError;
-use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::tracker_enum::TrackerEnum;
 use crate::tracker::{PointOffset, ReadOnlyTracker, ValuePointer};
 
 /// A non-owning view into blobstore data.
@@ -25,7 +25,7 @@ pub struct BlobstoreView<'a, V, S: UniversalRead> {
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
     Gridstore(GridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    Logstore(LogstoreView<'a, V, S, AppendOnlyTracker<S>>),
+    Logstore(LogstoreView<'a, V, S, TrackerEnum<S>>),
 }
 
 impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
@@ -35,7 +35,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn from_logstore(view: LogstoreView<'a, V, S, AppendOnlyTracker<S>>) -> Self {
+    pub(super) fn from_logstore(view: LogstoreView<'a, V, S, TrackerEnum<S>>) -> Self {
         Self {
             variant: ViewVariant::Logstore(view),
         }
