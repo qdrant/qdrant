@@ -196,7 +196,8 @@ pub trait PayloadIndex {
     /// Remove index
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool>;
 
-    /// Remove index if incompatible with new payload schema
+    /// Remove index if incompatible with new payload schema.
+    /// A metadata-only schema change (e.g. `enable_hnsw`) is persisted in place instead.
     fn drop_index_if_incompatible(
         &mut self,
         field: PayloadKeyTypeRef,
