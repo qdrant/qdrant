@@ -320,6 +320,19 @@ impl PayloadStorageEnum {
         }
         Ok(())
     }
+
+    /// Switch to a layout for a storage that is only read from now on, for storages that have
+    /// one. Persisted by the next flush, the storage stays writable.
+    pub fn make_immutable(&self) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(_) => {}
+            PayloadStorageEnum::Mmap(s) => s.make_immutable()?,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.make_immutable()?,
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

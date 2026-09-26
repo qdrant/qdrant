@@ -650,8 +650,9 @@ fn test_reader_on_append_only_storage() {
 fn compact_tracker(dir: &TempDir) {
     let tracker =
         AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No).unwrap();
-    CompactedTracker::from_tracker(&MmapFs, dir.path(), &tracker).unwrap();
+    let compacted = CompactedTracker::from_tracker(&MmapFs, dir.path(), &tracker).unwrap();
     drop(tracker);
+    compacted.flusher(PointOffset::MAX)().unwrap();
     fs::remove_file(dir.path().join("log_tracker.dat")).unwrap();
 }
 
@@ -803,6 +804,97 @@ fn test_writable_open_on_compacted_tracker() {
     }
 }
 
+/// Values of the given point offsets, as the tests put them, read through a fresh reader.
+fn assert_reader_values(dir: &TempDir, count: PointOffset, present: &[PointOffset]) {
+    let hw_counter = HardwareCounterCell::new();
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), count);
+    for point_offset in 0..count + 1 {
+        let expected = present
+            .contains(&point_offset)
+            .then(|| vec![point_offset as u8; 10]);
+        assert_eq!(
+            reader
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            expected,
+        );
+    }
+}
+
+/// Making the storage immutable removes the append-only tracker file; the next flush saves the
+/// compacted tracker with every put, flushed before or not.
+#[test]
+fn test_make_immutable_is_persisted_by_flush() {
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    for point_offset in [0, 1, 4] {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+    storage.put_value(5, &vec![5; 10], hw_counter_ref).unwrap();
+
+    storage.make_immutable().unwrap();
+    assert!(!dir.path().join("log_tracker.dat").exists());
+    assert!(!dir.path().join("compacted_tracker.dat").exists());
+    assert_eq!(
+        storage.get_value::<Random>(5, &hw_counter).unwrap(),
+        Some(vec![5; 10]),
+    );
+    // Again changes nothing
+    storage.make_immutable().unwrap();
+
+    storage.flusher()().unwrap();
+    assert!(dir.path().join("compacted_tracker.dat").exists());
+    assert!(
+        storage
+            .files()
+            .contains(&dir.path().join("compacted_tracker.dat"))
+    );
+    assert_reader_values(&dir, 6, &[0, 1, 4, 5]);
+
+    // Still writable
+    storage.put_value(7, &vec![7; 10], hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+    assert_reader_values(&dir, 8, &[0, 1, 4, 5, 7]);
+}
+
+/// Until the flush after making it immutable, the storage on disk has no tracker file and does
+/// not open.
+#[test]
+fn test_make_immutable_needs_a_flush() {
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    storage
+        .put_value(0, &vec![0; 10], hw_counter.ref_payload_io_write_counter())
+        .unwrap();
+    storage.flusher()().unwrap();
+
+    storage.make_immutable().unwrap();
+    drop(storage);
+
+    let err =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap_err();
+    assert!(err.to_string().contains("does not exist"), "{err}");
+}
+
+#[test]
+fn test_make_immutable_leaves_mutable_mode_alone() {
+    let (dir, storage) = crate::fixtures::empty_storage();
+    let files_before = storage.files();
+    storage.make_immutable().unwrap();
+    storage.flusher()().unwrap();
+    assert_eq!(storage.files(), files_before);
+    assert!(!dir.path().join("compacted_tracker.dat").exists());
+}
+
 /// Puts made after a flusher was created are not persisted by it, even though the compacted
 /// tracker writes its whole file: their value data is not durable yet.
 #[test]
@@ -914,8 +1006,9 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
     drop(storage);
     let tracker =
         AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &path, Populate::No).unwrap();
-    CompactedTracker::from_tracker(&MmapFs, &path, &tracker).unwrap();
+    let compacted = CompactedTracker::from_tracker(&MmapFs, &path, &tracker).unwrap();
     drop(tracker);
+    compacted.flusher(PointOffset::MAX)().unwrap();
     fs::remove_file(path.join("log_tracker.dat")).unwrap();
 
     let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {

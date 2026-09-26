@@ -359,10 +359,12 @@ fn test_convert_real_tracker() {
             AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &source_dir, Populate::No)
                 .unwrap();
         let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
+        tracker.flusher(PointOffset::MAX)().unwrap();
         (source.files().remove(0), tracker)
     } else {
         let source = Tracker::<MmapFile>::open(&MmapFs, &source_dir, Populate::No, false).unwrap();
         let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
+        tracker.flusher(PointOffset::MAX)().unwrap();
         (source.files().remove(0), tracker)
     };
     let convert_time = start.elapsed();

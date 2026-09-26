@@ -29,6 +29,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{LogstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
+use crate::tracker::compacted::CompactedTracker;
 use crate::tracker::tracker_enum::TrackerEnum;
 use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 
@@ -300,6 +301,29 @@ where
 
         *self = Self::new(fs, self.base_path.clone(), self.config.clone())?;
 
+        Ok(())
+    }
+
+    /// Hold the mappings in the compacted tracker format from now on, see [`TrackerEnum`]. Does
+    /// nothing if the tracker is compacted already.
+    ///
+    /// The append-only file is removed right away, the next flush saves the compacted one after
+    /// the value data as always. Until then the storage on disk has no tracker file and cannot be
+    /// opened, so this suits a storage being built, which a crash discards anyway.
+    pub(super) fn make_immutable<Fs: UniversalWriteFs>(&self, fs: &Fs) -> Result<()> {
+        let mut tracker = self.tracker.write();
+        let (compacted, append_only_files) = match &*tracker {
+            TrackerEnum::AppendOnly(append_only) => (
+                CompactedTracker::from_tracker(fs, &self.base_path, append_only)?,
+                append_only.files(),
+            ),
+            TrackerEnum::Compacted(_) => return Ok(()),
+        };
+        // Drops the append-only file handle before the file is removed
+        *tracker = TrackerEnum::Compacted(compacted);
+        for path in append_only_files {
+            fs.remove(&path)?;
+        }
         Ok(())
     }
 
