@@ -197,7 +197,7 @@ impl<T> DerefMut for SaveOnDisk<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, mpsc};
     use std::thread;
     use std::thread::sleep;
     use std::time::Duration;
@@ -246,10 +246,9 @@ mod tests {
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
+            // A single write exercises the wake-up path without an unrelated
+            // atomic overwrite, which can be flaky on Windows CI.
             counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
         });
 
         assert!(counter.wait_for(|counter| *counter > 5, Duration::from_secs(2)));
@@ -262,16 +261,24 @@ mod tests {
         let counter_file = dir.path().join("counter");
         let counter: Arc<SaveOnDisk<u32>> =
             Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
+        let (check_tx, check_rx) = mpsc::channel();
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 3).unwrap();
-            sleep(Duration::from_millis(200));
-            counter_copy.write(|counter| *counter += 7).unwrap();
-            sleep(Duration::from_millis(200));
+            counter_copy.wait_for(
+                |counter| {
+                    check_tx.send(()).unwrap();
+                    *counter > 5
+                },
+                Duration::from_secs(2),
+            )
         });
 
-        assert!(!counter.wait_for(|counter| *counter > 5, Duration::from_millis(300)));
-        handle.join().unwrap();
+        // Wait until the condition has been checked before writing, then
+        // verify that the notification causes it to be checked again.
+        check_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        counter.write(|counter| *counter += 3).unwrap();
+        check_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        assert!(!handle.join().unwrap());
     }
 }
