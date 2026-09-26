@@ -860,8 +860,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             // So if `invert` is true we return XOR, otherwise we return (dim - XOR)
             (DistanceType::Dot | DistanceType::Cosine, true) => xor_product - zeros_count,
             (DistanceType::Dot | DistanceType::Cosine, false) => zeros_count - xor_product,
-            // This also results in exact ordering as L1 and L2 but reversed.
-            (DistanceType::L1 | DistanceType::L2, true) => zeros_count - xor_product,
+            // Keep inverted distance scores non-positive so the public distance
+            // postprocessing preserves the ordering of the search results.
+            (DistanceType::L1 | DistanceType::L2, true) => -xor_product,
             (DistanceType::L1 | DistanceType::L2, false) => xor_product - zeros_count,
         }
     }
