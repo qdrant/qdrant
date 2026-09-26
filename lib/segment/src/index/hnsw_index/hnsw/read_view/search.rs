@@ -6,6 +6,7 @@ use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
+use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -14,7 +15,9 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
-use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
+use crate::index::hnsw_index::point_scorer::{
+    BatchFilteredSearcher, FilteredScorer, ScorerFilters,
+};
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
@@ -190,6 +193,52 @@ where
         } else {
             // Graph with vectors is not available, fallback to regular graph search.
             regular_search()
+        }
+    }
+
+    /// Filtered graph search, unless the graph has no entry point satisfying `filter`.
+    ///
+    /// With `m = 0` (per-payload-block graphs only) a filter that adds a condition on top
+    /// of the block condition can reject every entry point of that block, and the graph
+    /// search would return an empty result while matching points exist. In that case the
+    /// query is served by a plain search over the filtered points, as the planner already
+    /// does for small cardinalities. Entry points depend on the filter only, so the check
+    /// is done once per batch.
+    pub(super) fn search_vectors_with_graph_or_plain(
+        &self,
+        vectors: &[&QueryVector],
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let has_entry_point = {
+            let hw_counter = vector_query_context.hardware_counter();
+            let deleted_points = vector_query_context
+                .deleted_points()
+                .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+            let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+            let filters = ScorerFilters::new(
+                Some(filter_context),
+                self.vector_storage.not_deleted_checker(deleted_points),
+            );
+            self.graph.has_entry_point(&filters, None)?
+        };
+        if has_entry_point {
+            self.search_vectors_with_graph(vectors, Some(filter), top, params, vector_query_context)
+        } else {
+            // Counted as a plain filtered search, so telemetry tells the fallback apart
+            // from a graph search routed by the same cardinality decision.
+            let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain);
+            self.search_vectors_plain(
+                vectors,
+                filter,
+                query_cardinality,
+                top,
+                params,
+                vector_query_context,
+            )
         }
     }
 
