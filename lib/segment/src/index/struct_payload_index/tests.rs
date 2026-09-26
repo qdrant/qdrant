@@ -447,6 +447,44 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
 }
 
 #[test]
+fn set_indexed_enable_hnsw_change_keeps_unflushed_appendable_updates() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // Not flushed: only the live index handles know about this value.
+    let payload: Payload = serde_json::from_str(r#"{"int": 123456789}"#).unwrap();
+    index.overwrite_payload(0, &payload, &hw_counter).unwrap();
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+    index.set_indexed(&field, schema, &hw_counter).unwrap();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        field,
+        Match::new_value(ValueVariants::Integer(123456789)),
+    )));
+    let hits = index
+        .with_view(|view| view.query_points(&filter, &hw_counter, &AtomicBool::new(false)))
+        .unwrap();
+    assert_eq!(
+        hits,
+        vec![0],
+        "an enable_hnsw-only change must keep the live index handles",
+    );
+}
+
+#[test]
 fn build_index_reloads_in_new_mode_on_on_disk_change() {
     use std::collections::HashMap;
     use std::sync::Arc;

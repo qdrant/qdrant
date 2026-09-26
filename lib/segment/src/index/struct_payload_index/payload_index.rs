@@ -28,11 +28,14 @@ impl PayloadIndex for StructPayloadIndex {
             let transition = classify(&prev_schema.schema, payload_schema);
             return match transition {
                 SchemaTransition::Identical => Ok(BuildIndexResult::AlreadyBuilt),
-                // In-place flags (`on_disk` and/or `enable_hnsw`): reuse the
-                // existing files (reloaded in the new mode when `on_disk`
-                // flipped) instead of rebuilding from payload. Returning
-                // `Built` ensures `apply_index` persists the updated schema
-                // even for metadata-only changes.
+                // Metadata-only changes are persisted by `drop_index_if_incompatible`;
+                // the live index handles stay untouched.
+                SchemaTransition::Compatible(diff) if diff.metadata_only() => {
+                    Ok(BuildIndexResult::AlreadyBuilt)
+                }
+                // `on_disk` flipped (possibly together with `enable_hnsw`): reuse the
+                // existing files, reloaded in the new mode, instead of rebuilding from
+                // payload.
                 SchemaTransition::Compatible(_) => {
                     self.reuse_or_build_index(field, payload_schema, hw_counter)
                 }
@@ -124,15 +127,21 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
-        let Some(current_schema) = self.config().indices.get(field) else {
+        let Some(current_schema) = self.config.indices.get_mut(field) else {
             return Ok(false);
         };
 
         match classify(&current_schema.schema, new_payload_schema) {
             SchemaTransition::Identical => Ok(false),
-            // Metadata-only (`enable_hnsw`): keep indexes on every storage type;
-            // `build_index` reuses files and `apply_index` updates the schema.
-            SchemaTransition::Compatible(diff) if diff.metadata_only() => Ok(false),
+            // Metadata-only (`enable_hnsw`): index data does not depend on it, so
+            // persist the new schema and keep the live index handles on every
+            // storage type. Re-opening appendable files would drop their
+            // unflushed updates.
+            SchemaTransition::Compatible(diff) if diff.metadata_only() => {
+                current_schema.schema = new_payload_schema.clone();
+                self.save_config()?;
+                Ok(false)
+            }
             // `on_disk` flipped on a non-appendable (mmap) segment: keep the
             // existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.

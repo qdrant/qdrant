@@ -6,7 +6,7 @@
 //!
 //! - `on_disk` flip on non-appendable segments: reload existing files in the
 //!   new storage mode.
-//! - `enable_hnsw` flip: update persisted schema only; index files are unchanged.
+//! - `enable_hnsw` flip: update persisted schema only; live index handles are kept.
 //!
 //! Each per-kind arm normalizes the known in-place fields on a clone and
 //! compares the rest via the derived `PartialEq`, so a newly added field is
