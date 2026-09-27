@@ -53,6 +53,7 @@ impl CollectionsTelemetry {
         // Shard transfers
         let mut shard_transfers_in = Vec::with_capacity(num_collections);
         let mut shard_transfers_out = Vec::with_capacity(num_collections);
+        let mut shard_transfers_failed = Vec::with_capacity(num_collections);
 
         // Update queue
         let mut update_queue_length = Vec::with_capacity(num_collections);
@@ -172,6 +173,7 @@ impl CollectionsTelemetry {
 
             let mut incoming_transfers = 0;
             let mut outgoing_transfers = 0;
+            let mut failed_transfers = 0;
 
             if let Some(this_peer_id) = peer_id {
                 for transfer in collection.transfers.iter().flatten() {
@@ -180,6 +182,9 @@ impl CollectionsTelemetry {
                     }
                     if transfer.from == this_peer_id {
                         outgoing_transfers += 1;
+                        if transfer.failed {
+                            failed_transfers += 1;
+                        }
                     }
                 }
             }
@@ -190,6 +195,10 @@ impl CollectionsTelemetry {
             ));
             shard_transfers_out.push(gauge(
                 f64::from(outgoing_transfers),
+                &[("id", &collection.id)],
+            ));
+            shard_transfers_failed.push(gauge(
+                f64::from(failed_transfers),
                 &[("id", &collection.id)],
             ));
 
@@ -352,6 +361,14 @@ impl CollectionsTelemetry {
             "outgoing shard transfers currently running",
             MetricType::GAUGE,
             shard_transfers_out,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_shard_transfer_failed",
+            "number of failed shard transfers",
+            MetricType::GAUGE,
+            shard_transfers_failed,
             prefix,
         ));
 
