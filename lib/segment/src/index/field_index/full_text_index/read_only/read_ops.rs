@@ -83,11 +83,11 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+    fn total_tokens(&self) -> Option<u64> {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.total_tokens(hw_counter),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.total_tokens(hw_counter),
-            ReadOnlyFullTextIndex::Immutable(index) => index.total_tokens(hw_counter),
+            ReadOnlyFullTextIndex::Appendable(index) => index.total_tokens(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.total_tokens(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.total_tokens(),
         }
     }
 

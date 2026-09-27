@@ -377,8 +377,8 @@ impl InvertedIndex for MutableInvertedIndex {
     }
 
     /// Free: the running counter is maintained by `set_doc_len` and `remove`.
-    fn total_tokens(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
-        Ok(self.records_doc_len().then_some(self.total_tokens))
+    fn total_tokens(&self) -> Option<u64> {
+        self.records_doc_len().then_some(self.total_tokens)
     }
 
     fn for_each_token_id<'a, U: UserData>(

@@ -118,7 +118,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
-            total_tokens: _,
+            total_tokens,
             points_count: _,
         } = inverted_index;
 
@@ -130,9 +130,11 @@ impl OnDiskInvertedIndex<MmapFile> {
         let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         match postings {
-            ImmutablePostings::Ids(postings) => create_postings_file(postings_path, postings)?,
+            ImmutablePostings::Ids(postings) => {
+                create_postings_file(postings_path, postings, *total_tokens)?
+            }
             ImmutablePostings::WithPositions(postings) => {
-                create_postings_file(postings_path, postings)?
+                create_postings_file(postings_path, postings, *total_tokens)?
             }
         }
 
@@ -159,8 +161,6 @@ impl OnDiskInvertedIndex<MmapFile> {
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
-        // No segment total is written: deletions are applied on open, so it can
-        // only be summed after masking.
         match point_to_doc_len {
             Some(lens) => MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?,
             // Every other file here is rewritten in place, so this is the only
@@ -938,33 +938,13 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         })
     }
 
-    /// Reads the whole sidecar and applies the deletion mask: 4 bytes per
-    /// point, so several megabytes on a large segment, and under `Populate::No`
-    /// it faults in the file this placement exists to keep out of RAM. Cheap
-    /// enough once, wasteful per query.
-    ///
-    /// Not cached yet, rather than uncacheable: `remove` is the only mutation
-    /// of the mask after `open`, so a memo cleared there would be correct.
-    /// Left out until something calls this often enough to pay for it.
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
-        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
-            return Ok(None);
-        };
-        let doc_lens = storage.read_whole()?;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of_val(doc_lens.as_ref()));
-        let total = doc_lens
-            .iter()
-            .enumerate()
-            .filter(|(point_id, _)| {
-                self.storage
-                    .deleted_points
-                    .is_active(*point_id as PointOffsetType)
-            })
-            .map(|(_, doc_len)| u64::from(*doc_len))
-            .sum();
-        Ok(Some(total))
+    /// The build-time total from the postings header: deletions since the
+    /// build are not subtracted, the same way `posting_len` keeps them.
+    fn total_tokens(&self) -> Option<u64> {
+        self.storage
+            .point_to_doc_len
+            .is_some()
+            .then(|| self.storage.postings.total_tokens())
     }
 
     fn for_each_token_id<'a, U: UserData>(

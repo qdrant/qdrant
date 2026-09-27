@@ -641,7 +641,7 @@ fn read_surface_exposes_doc_len_and_total() {
         doc_lens(&index, &[0, 1, 2], &hw_counter),
         [Some(3), Some(7), None]
     );
-    assert_eq!(index.total_tokens(&hw_counter).unwrap(), Some(10));
+    assert_eq!(index.total_tokens(), Some(10));
     assert_eq!(index.points_count(), 2);
 }
 
@@ -653,7 +653,7 @@ fn read_surface_reports_absence_without_scoring() {
 
     let hw_counter = HardwareCounterCell::new();
     assert_eq!(doc_lens(&index, &[0, 1], &hw_counter), [None, None]);
-    assert_eq!(index.total_tokens(&hw_counter).unwrap(), None);
+    assert_eq!(index.total_tokens(), None);
     assert_eq!(index.points_count(), 2);
 }
 

@@ -439,7 +439,7 @@ pub trait InvertedIndex {
     /// Deliberately not divided by [`Self::points_count`] here. The average
     /// is a corpus statistic, and a per-segment average would drift from the
     /// one a search actually needs, which is summed over every segment.
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+    fn total_tokens(&self) -> Option<u64>;
 
     /// Resolve token -> token_id and call the closure for each token_id.
     fn for_each_token_id<'a, U: UserData>(
@@ -819,25 +819,17 @@ mod tests {
             "a runtime deletion must be masked out on load",
         );
 
-        // Summing has to mask too. The agreement test cannot catch this: its
-        // deletions happen before `create`, so every inactive slot is already
-        // zero on disk and dropping the mask there changes nothing.
-        let live_total: u64 = lens_at_build
-            .iter()
-            .enumerate()
-            .filter(|(point_id, _)| *point_id != victim)
-            .map(|(_, doc_len)| u64::from(*doc_len))
-            .sum();
+        // The on-disk total is the build-time one, like `posting_len`. The
+        // loaded copy sums the masked lengths.
+        let build_total: u64 = lens_at_build.iter().copied().map(u64::from).sum();
+        let live_total = build_total - u64::from(lens_at_build[victim]);
         let hw_counter = HardwareCounterCell::new();
         assert_eq!(
-            mmap.total_tokens(&hw_counter).unwrap(),
-            Some(live_total),
-            "the total must not count a point the id tracker deleted",
+            mmap.total_tokens(),
+            Some(build_total),
+            "the on-disk total does not subtract runtime deletions",
         );
-        assert_eq!(
-            imm_mmap.total_tokens(&hw_counter).unwrap(),
-            Some(live_total)
-        );
+        assert_eq!(imm_mmap.total_tokens(), Some(live_total));
         assert_eq!(
             doc_lens(&mmap, &[victim as PointOffsetType], &hw_counter),
             [Some(0)],
@@ -1025,13 +1017,10 @@ mod tests {
         );
 
         for (backend, total) in [
-            ("mutable", mutable.total_tokens(&hw_counter).unwrap()),
-            ("immutable", immutable.total_tokens(&hw_counter).unwrap()),
-            ("mmap", mmap.total_tokens(&hw_counter).unwrap()),
-            (
-                "immutable from mmap",
-                imm_mmap.total_tokens(&hw_counter).unwrap(),
-            ),
+            ("mutable", mutable.total_tokens()),
+            ("immutable", immutable.total_tokens()),
+            ("mmap", mmap.total_tokens()),
+            ("immutable from mmap", imm_mmap.total_tokens()),
         ] {
             assert_eq!(
                 total,
@@ -1073,9 +1062,9 @@ mod tests {
         assert_eq!(doc_lens(&mutable, &point_ids, &hw_counter), [None; 16]);
         assert_eq!(doc_lens(&immutable, &point_ids, &hw_counter), [None; 16]);
         assert_eq!(doc_lens(&mmap, &point_ids, &hw_counter), [None; 16]);
-        assert_eq!(mutable.total_tokens(&hw_counter).unwrap(), None);
-        assert_eq!(immutable.total_tokens(&hw_counter).unwrap(), None);
-        assert_eq!(mmap.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(mutable.total_tokens(), None);
+        assert_eq!(immutable.total_tokens(), None);
+        assert_eq!(mmap.total_tokens(), None);
     }
 
     #[rstest]

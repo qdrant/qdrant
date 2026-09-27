@@ -176,6 +176,11 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         Ok(None)
     }
 
+    /// [`PostingsHeader::total_tokens`], read at open.
+    pub fn total_tokens(&self) -> u64 {
+        self.header.total_tokens
+    }
+
     /// Number of elements in the posting list for `token_id`. Reads only the
     /// per-token header, not the posting bytes.
     pub fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
