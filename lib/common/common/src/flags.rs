@@ -59,6 +59,12 @@ pub struct FeatureFlags {
     /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
     pub append_only_storages: bool,
 
+    /// In non-appendable segments built by the optimizer, store the tracker of an append-only
+    /// payload storage in the compacted format: read into RAM whole on open instead of one lookup
+    /// per value. Only has an effect together with [`Self::append_only_storages`]. Gates creation
+    /// only: both formats are always readable.
+    pub compact_logstore_tracker: bool,
+
     /// Transfer points as storage-native bytes (raw points), for every collection rather than
     /// only those whose vector storage would lose precision in a decode-encode round-trip
     /// (TurboQuant).
@@ -87,8 +93,8 @@ pub struct FeatureFlags {
     pub combined_vector_storage: bool,
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
-    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`]
-    /// and [`Self::persist_proxy_segments`].
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
+    /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -107,6 +113,7 @@ impl Default for FeatureFlags {
             append_only_mutations: false,
             compact_bitmask: false,
             append_only_storages: false,
+            compact_logstore_tracker: false,
             transfer_raw_points: false,
             transfer_raw_payloads: false,
             persist_proxy_segments: false,
@@ -141,6 +148,7 @@ impl FeatureFlags {
             // persisted storage format, and `all` is enabled in dev and e2e configs.
             append_only_mutations: false,
             append_only_storages: false,
+            compact_logstore_tracker: false,
             compact_bitmask: true,
             // Deliberately not enabled by `all`: a node only accepts these once it runs a
             // version that understands them, so they can only be switched on a release later.
@@ -165,6 +173,7 @@ impl FeatureFlags {
             self.append_only_mutations = true;
             self.compact_bitmask = true;
             self.append_only_storages = true;
+            self.compact_logstore_tracker = true;
             self.persist_proxy_segments = true;
         }
 
@@ -225,6 +234,7 @@ mod tests {
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
+        assert!(flags.compact_logstore_tracker);
         assert!(flags.persist_proxy_segments);
     }
 
@@ -241,6 +251,7 @@ mod tests {
         assert!(flags.append_only_mutations);
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
+        assert!(flags.compact_logstore_tracker);
         assert!(flags.persist_proxy_segments);
     }
 

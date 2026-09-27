@@ -87,6 +87,13 @@ where
         self.storage.clear_cache()?;
         Ok(())
     }
+
+    /// Switch to a layout for a storage that is only read from now on, persisted by the next
+    /// flush, see [`Blobstore::make_immutable`].
+    pub fn make_immutable(&self) -> OperationResult<()> {
+        self.storage.make_immutable()?;
+        Ok(())
+    }
 }
 
 impl<S> PayloadStorageRead for PayloadStorageImpl<S>

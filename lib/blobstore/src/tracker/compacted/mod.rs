@@ -37,29 +37,18 @@ use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 /// to load the incompatible file format of another.
 const FILE_NAME: &str = "compacted_tracker.dat";
 
-/// Atomically replaces a whole file through the filesystem a writable tracker was given.
+/// The file operation a writable tracker needs from the filesystem it was given.
 ///
-/// Type-erased, so that the tracker type does not depend on the filesystem type: writers
+/// Object safe, so that the tracker type does not depend on the filesystem type: writers
 /// receive their filesystem as a generic parameter, not as the file type's `S::Fs`.
-#[derive(Clone)]
-struct Saver(Arc<SaveFn>);
-
-type SaveFn = dyn Fn(&Path, &[u8]) -> UioResult<()> + Send + Sync;
-
-impl Saver {
-    fn new<Fs: UniversalWriteFs>(fs: &Fs) -> Self {
-        let fs = fs.clone();
-        Self(Arc::new(move |path, bytes| fs.atomic_save(path, bytes)))
-    }
-
-    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        (self.0)(path, bytes)
-    }
+trait TrackerFs: fmt::Debug + Send + Sync {
+    /// Atomically replace the whole file at `path`
+    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()>;
 }
 
-impl fmt::Debug for Saver {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Saver")
+impl<Fs: UniversalWriteFs> TrackerFs for Fs {
+    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        self.atomic_save(path, bytes)
     }
 }
 
@@ -80,8 +69,8 @@ pub struct CompactedTracker {
     ///
     /// Shared with the flushers, so that a failed flush can mark the tracker dirty again.
     dirty: Arc<AtomicBool>,
-    /// Rewrites the file on flush. `None` if opened read-only.
-    saver: Option<Saver>,
+    /// Filesystem the file is rewritten through on flush. `None` if opened read-only.
+    fs: Option<Arc<dyn TrackerFs>>,
 }
 
 impl CompactedTracker {
@@ -147,7 +136,7 @@ impl CompactedTracker {
             path,
             pointers,
             dirty: Arc::new(AtomicBool::new(false)),
-            saver: None,
+            fs: None,
         })
     }
 
@@ -184,34 +173,28 @@ impl CompactedTracker {
     ///
     /// The directory must exist already.
     pub fn new<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> Result<Self> {
-        Self::with_pointers(fs, dir, Vec::new())
+        let path = Self::tracker_file_name(dir);
+        fs.atomic_save(&path, &format::encode(&[])?)?;
+        Ok(Self {
+            path,
+            pointers: Vec::new(),
+            dirty: Arc::new(AtomicBool::new(false)),
+            fs: Some(Arc::new(fs.clone())),
+        })
     }
 
-    /// Create a tracker in the given directory holding every mapping of `source`, replacing the
-    /// file if it already exists.
-    ///
-    /// The directory must exist already.
+    /// Convert `source`, the tracker of the storage in the given directory, holding all of its
+    /// mappings. Nothing is written, the first flush saves the file.
     pub fn from_tracker<Fs: UniversalWriteFs>(
         fs: &Fs,
         dir: &Path,
         source: &impl TrackerRead,
     ) -> Result<Self> {
-        let pointers = source.get_range::<Sequential>(0..source.max_point_offset()?)?;
-        Self::with_pointers(fs, dir, pointers)
-    }
-
-    fn with_pointers<Fs: UniversalWriteFs>(
-        fs: &Fs,
-        dir: &Path,
-        pointers: Vec<Option<ValuePointer>>,
-    ) -> Result<Self> {
-        let path = Self::tracker_file_name(dir);
-        fs.atomic_save(&path, &format::encode(&pointers)?)?;
         Ok(Self {
-            path,
-            pointers,
-            dirty: Arc::new(AtomicBool::new(false)),
-            saver: Some(Saver::new(fs)),
+            path: Self::tracker_file_name(dir),
+            pointers: source.get_range::<Sequential>(0..source.max_point_offset()?)?,
+            dirty: Arc::new(AtomicBool::new(true)),
+            fs: Some(Arc::new(fs.clone())),
         })
     }
 
@@ -224,7 +207,7 @@ impl CompactedTracker {
         dir: &Path,
     ) -> Result<Self> {
         let mut tracker = Self::open(fs, dir)?;
-        tracker.saver = Some(Saver::new(fs));
+        tracker.fs = Some(Arc::new(fs.clone()));
         Ok(tracker)
     }
 
@@ -248,13 +231,13 @@ impl CompactedTracker {
             self.dirty.store(true, Ordering::Relaxed);
         }
 
-        let saver = self.saver.clone();
+        let fs = self.fs.clone();
         let path = self.path.clone();
         let pointers = self.pointers[..end].to_vec();
         let dirty = Arc::clone(&self.dirty);
 
         Box::new(move || {
-            let Some(saver) = &saver else {
+            let Some(fs) = &fs else {
                 dirty.store(true, Ordering::Relaxed);
                 return Err(BlobstoreError::service_error(format!(
                     "compacted tracker {} was opened read-only and cannot be flushed",
@@ -263,7 +246,7 @@ impl CompactedTracker {
             };
             let result = format::encode(&pointers)
                 .map_err(BlobstoreError::from)
-                .and_then(|bytes| Ok(saver.save(&path, &bytes)?));
+                .and_then(|bytes| Ok(fs.save(&path, &bytes)?));
             if result.is_err() {
                 dirty.store(true, Ordering::Relaxed);
             }

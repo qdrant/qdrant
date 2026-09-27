@@ -207,6 +207,20 @@ where
         }
     }
 
+    /// Switch to a layout for a storage that is complete and only read from now on, such as one
+    /// of a segment the optimizer built. The next flush persists the new layout; until then the
+    /// storage on disk cannot be opened, so this suits a storage being built.
+    ///
+    /// In the append-only mode the value mappings are stored compacted: opening reads them into
+    /// RAM whole, so a lookup no longer costs a read. The storage stays writable, but every flush
+    /// then rewrites the whole mapping file. The mutable mode is left as is.
+    pub fn make_immutable(&self) -> Result<()> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => Ok(()),
+            BlobstoreInner::Logstore(storage) => storage.make_immutable(&self.fs),
+        }
+    }
+
     /// Wipe the storage, drop all pages and delete the base directory.
     ///
     /// Takes ownership because this function leaves Blobstore in an inconsistent state which does
