@@ -199,6 +199,7 @@ pub(super) async fn transfer_snapshot(
 
     let mut snapshot_temp_paths = Vec::new();
     let mut shard_download_url = local_rest_address;
+    let mut snapshot_checksum: Option<String> = None;
 
     let encoded_collection_name = urlencoding::encode(collection_id);
     if use_streaming_endpoint {
@@ -215,6 +216,9 @@ pub(super) async fn transfer_snapshot(
             .await?
             .await?;
 
+        // Capture checksum for integrity verification on the remote
+        snapshot_checksum = snapshot_description.checksum.clone();
+
         // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
         let snapshot_temp_path = shard_holder_read
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
@@ -225,6 +229,7 @@ pub(super) async fn transfer_snapshot(
                 ))
             })?;
         let snapshot_temp_path = TempPath::try_from_path(snapshot_temp_path)?;
+
         let snapshot_checksum_temp_path =
             TempPath::try_from_path(get_checksum_path(&snapshot_temp_path))?;
         snapshot_temp_paths.push(snapshot_temp_path);
@@ -255,6 +260,8 @@ pub(super) async fn transfer_snapshot(
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
             local_api_key,
+            // Pass checksum for remote to verify snapshot integrity
+            snapshot_checksum.as_deref(),
         )
         .await
         .map_err(|err| {
