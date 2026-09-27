@@ -726,6 +726,119 @@ fn test_reader_on_compacted_tracker() {
     );
 }
 
+/// A compacted storage opens writable, as every segment storage does, and keeps its tracker
+/// compacted across puts and flushes.
+#[test]
+fn test_writable_open_on_compacted_tracker() {
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    for point_offset in [0, 1, 4] {
+        storage
+            .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+    drop(storage);
+    compact_tracker(&dir);
+
+    let mut storage =
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert_eq!(storage.max_point_offset(), 5);
+    assert_eq!(
+        storage.get_value::<Random>(4, &hw_counter).unwrap(),
+        Some(vec![4; 10]),
+    );
+    storage.populate().unwrap();
+    storage.clear_cache().unwrap();
+
+    storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
+    assert_eq!(storage.max_point_offset(), 7);
+    assert_eq!(
+        storage.get_value::<Random>(6, &hw_counter).unwrap(),
+        Some(vec![6; 10]),
+    );
+    storage.flusher()().unwrap();
+    let mut files = storage.files();
+    files.sort();
+    assert_eq!(
+        files,
+        [
+            dir.path().join("compacted_tracker.dat"),
+            dir.path().join(CONFIG_FILENAME),
+            dir.path().join("log_page_0.dat"),
+        ],
+    );
+    drop(storage);
+    assert!(!dir.path().join("log_tracker.dat").exists());
+
+    // The update-only writers open through `open_or_create`, same outcome
+    let mut logstore = crate::Logstore::<Vec<u8>, MmapFile>::open_or_create(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        LogstoreConfig::DEFAULT,
+        Populate::No,
+    )
+    .unwrap();
+    logstore
+        .put_value(&MmapFs, 7, &vec![7; 10], hw_counter_ref)
+        .unwrap();
+    logstore.flusher()().unwrap();
+    drop(logstore);
+
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 8);
+    for point_offset in 0..9 {
+        let expected = [0, 1, 4, 6, 7]
+            .contains(&point_offset)
+            .then(|| vec![point_offset as u8; 10]);
+        assert_eq!(
+            reader
+                .get_value::<Random>(point_offset, &hw_counter)
+                .unwrap(),
+            expected,
+        );
+    }
+}
+
+/// Puts made after a flusher was created are not persisted by it, even though the compacted
+/// tracker writes its whole file: their value data is not durable yet.
+#[test]
+fn test_compacted_flusher_skips_later_puts() {
+    let (dir, mut storage) = empty_byte_storage(Compression::None);
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    storage.put_value(0, &vec![0; 10], hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+    drop(storage);
+    compact_tracker(&dir);
+
+    let mut storage =
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    storage.put_value(1, &vec![1; 10], hw_counter_ref).unwrap();
+    let flusher = storage.flusher();
+    storage.put_value(2, &vec![2; 10], hw_counter_ref).unwrap();
+    flusher().unwrap();
+
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 2);
+
+    // The next flush persists the rest
+    storage.flusher()().unwrap();
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    assert_eq!(
+        reader.get_value::<Random>(2, &hw_counter).unwrap(),
+        Some(vec![2; 10]),
+    );
+}
+
 /// Preopen schedules the compacted tracker file: once the prefetch is done, the open succeeds
 /// with every file it reads through the backend deleted, see
 /// `test_preopen_schedules_files_for_open`.
