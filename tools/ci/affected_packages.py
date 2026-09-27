@@ -1,100 +1,66 @@
 #!/usr/bin/env python3
 """Select the workspace packages whose tests can be affected by a set of changed files.
 
-Prints nextest package arguments: `--workspace`, a list of `-p <name>`, or nothing when
-no Rust tests are affected.
+Prints nextest package arguments: `--workspace` or a list of `-p <name>`.
 
     tools/ci/affected_packages.py <base-rev>       # files changed between base-rev and HEAD
     tools/ci/affected_packages.py --files a b ...  # explicit file list
 
-A changed file selects the package owning it plus every workspace package depending on
-it, directly or transitively, through any dependency kind. Files that belong to no
-package fall back to the full workspace unless they are known to be irrelevant to Rust
-tests.
+Everything is derived from `cargo metadata`. A package owns its directory; the root
+package, whose directory is the whole repository, owns only the directories of its
+target sources. A changed file selects its owner plus every workspace package depending
+on it, directly or transitively, through any dependency kind. A file with no owner
+selects the whole workspace.
 """
 
 import json
+import os
 import subprocess
 import sys
 
-# Paths that never affect Rust tests
-IGNORED = (
-    "docs/",
-    "tests/",
-    "openapi/",
-    "pkg/",
-    "tools/",
-    ".github/",
-    "README.md",
-    "LICENSE",
-    "Dockerfile",
-    "shell.nix",
-    "clippy.toml",
-    "rustfmt.toml",
-    ".gitignore",
-    ".dockerignore",
-)
-
-# Paths outside `lib/*` read by the root `qdrant` package
-ROOT_OWNED = ("src/", "config/")
-
-# Reads of another package's files that are not a cargo dependency: path prefix -> readers
-EXTRA_READERS = {
-    "lib/api/src/grpc/proto/": ["uio-grpc-client"],
-}
-
-# Paths that change how everything builds or runs; must stay ahead of `IGNORED`
-FULL_RUN = (
-    "tools/ci/",
-    ".github/workflows/rust.yml",
-    ".github/actions/",
-)
-
 
 def workspace_packages():
+    """Directory prefixes owned by each package, and its workspace dependencies."""
     metadata = json.loads(
         subprocess.check_output(
             ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked"]
         )
     )
-    root = metadata["workspace_root"].rstrip("/") + "/"
+    root = metadata["workspace_root"]
+
+    def relative_dir(path):
+        directory = os.path.relpath(os.path.dirname(path), root)
+        return "" if directory == "." else directory + "/"
+
     packages = {}
     for package in metadata["packages"]:
-        manifest_dir = package["manifest_path"][len(root) :].rsplit("Cargo.toml", 1)[0]
+        prefixes = {relative_dir(package["manifest_path"])}
+        if prefixes == {""}:
+            prefixes = {relative_dir(target["src_path"]) for target in package["targets"]}
+        prefixes.discard("")
         dependencies = {dep["name"] for dep in package["dependencies"] if "path" in dep}
-        packages[package["name"]] = (manifest_dir, dependencies)
+        packages[package["name"]] = (prefixes, dependencies)
     return packages
 
 
-def owners(path, packages):
-    """Packages directly affected by `path`, or `None` if the whole workspace is."""
-    if path.startswith(FULL_RUN):
-        return None
-    extra = [
-        reader for prefix, readers in EXTRA_READERS.items() if path.startswith(prefix) for reader in readers
+def owner(path, packages):
+    matches = [
+        (len(prefix), name)
+        for name, (prefixes, _) in packages.items()
+        for prefix in prefixes
+        if path.startswith(prefix)
     ]
-    if path.startswith(ROOT_OWNED):
-        return {"qdrant", *extra}
-
-    owner = max(
-        (name for name, (manifest_dir, _) in packages.items() if manifest_dir and path.startswith(manifest_dir)),
-        key=lambda name: len(packages[name][0]),
-        default=None,
-    )
-    if owner is not None:
-        return {owner, *extra}
-    if path.startswith(IGNORED):
-        return set()
-    return None
+    return max(matches, default=(0, None))[1]
 
 
 def affected(paths, packages):
+    """Selected packages, or `None` for the whole workspace."""
     selected = set()
     for path in paths:
-        direct = owners(path, packages)
-        if direct is None:
+        name = owner(path, packages)
+        if name is None:
             return None
-        selected |= direct
+        selected.add(name)
 
     dependents = {name: set() for name in packages}
     for name, (_, dependencies) in packages.items():
