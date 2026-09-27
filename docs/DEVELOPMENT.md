@@ -402,5 +402,5 @@ Here is a good [tonic tutorial](https://github.com/hyperium/tonic/blob/master/ex
 ### System integration
 
 On top of the API definitions, Qdrant has a few system integrations that need to be considered when making changes:
-1. add new endpoints to the metrics allow lists in `src/common/metrics.rs`
+1. add new endpoints to the metrics allow lists in `src/common/metrics/requests.rs`
 2. test the JWT integration in `tests/auth_tests`
