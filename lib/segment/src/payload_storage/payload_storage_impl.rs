@@ -88,6 +88,11 @@ where
         Ok(())
     }
 
+    /// Heap RAM held beyond the page cache of the storage files.
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
+    }
+
     /// Switch to a layout for a storage that is only read from now on, persisted by the next
     /// flush, see [`Blobstore::make_immutable`].
     pub fn make_immutable(&self) -> OperationResult<()> {

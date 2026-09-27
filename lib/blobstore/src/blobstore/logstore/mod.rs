@@ -447,6 +447,11 @@ where
         self.tracker.read().pointer_count()
     }
 
+    /// Heap RAM held beyond the page cache of the files, see [`TrackerEnum::ram_usage_bytes`].
+    pub(super) fn ram_usage_bytes(&self) -> usize {
+        self.tracker.read().ram_usage_bytes()
+    }
+
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.

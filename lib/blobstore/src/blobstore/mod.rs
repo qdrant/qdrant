@@ -233,6 +233,15 @@ where
         }
     }
 
+    /// Heap RAM held beyond the page cache of [`Self::files`]: the value mappings, when they are
+    /// held compacted, see [`Self::make_immutable`].
+    pub fn ram_usage_bytes(&self) -> usize {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => 0,
+            BlobstoreInner::Logstore(storage) => storage.ram_usage_bytes(),
+        }
+    }
+
     /// Return the storage size in bytes.
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
         match &self.inner {
