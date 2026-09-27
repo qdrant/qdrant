@@ -1595,6 +1595,7 @@ impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
             sync,
             method: _,
             comment: _,
+            failed: _,
         } = value;
         Self {
             shard_id,
