@@ -13,6 +13,11 @@ on:
       - "lib/common/common/src/universal_io/**"
       - ".github/workflows/io-bridge-object-store-tests.yml"
 
+concurrency:
+  # Pushes to dev/master get a unique group and always run to completion
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
