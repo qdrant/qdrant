@@ -310,3 +310,54 @@ fn test_packed_mappings_encode_small() {
         expected.len()
     );
 }
+
+/// Convert a real tracker and report how much smaller the compacted file is.
+///
+/// `COMPACTED_TRACKER_SOURCE=<dir with log_tracker.dat or tracker.dat> cargo test -p blobstore
+/// --release test_convert_real_tracker -- --ignored --nocapture`
+#[test]
+#[ignore = "needs a real tracker, see COMPACTED_TRACKER_SOURCE"]
+fn test_convert_real_tracker() {
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    use common::universal_io::{MmapFile, Populate};
+
+    use crate::tracker::Tracker;
+    use crate::tracker::append_only::AppendOnlyTracker;
+
+    let source_dir = PathBuf::from(std::env::var("COMPACTED_TRACKER_SOURCE").unwrap());
+    let dir = TempDir::new().unwrap();
+
+    let start = Instant::now();
+    let (source_file, tracker) = if source_dir.join("log_tracker.dat").exists() {
+        let source =
+            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &source_dir, Populate::No)
+                .unwrap();
+        let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
+        (source.files().remove(0), tracker)
+    } else {
+        let source = Tracker::<MmapFile>::open(&MmapFs, &source_dir, Populate::No, false).unwrap();
+        let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
+        (source.files().remove(0), tracker)
+    };
+    let convert_time = start.elapsed();
+
+    let start = Instant::now();
+    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let open_time = start.elapsed();
+    assert_eq!(reopened.pointers, tracker.pointers);
+
+    let source_size = fs_err::metadata(&source_file).unwrap().len();
+    let compacted_size = fs_err::metadata(dir.path().join(FILE_NAME)).unwrap().len();
+    let count = tracker.pointers.len();
+    let present = tracker.pointers.iter().flatten().count();
+    println!("source:    {} ({source_size} bytes)", source_file.display());
+    println!("mappings:  {count} ({present} present)");
+    println!(
+        "compacted: {compacted_size} bytes, {:.3} bytes/mapping, {:.2}x smaller",
+        compacted_size as f64 / count.max(1) as f64,
+        source_size as f64 / compacted_size.max(1) as f64,
+    );
+    println!("convert:   {convert_time:?}, open: {open_time:?}");
+}

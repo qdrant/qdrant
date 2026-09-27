@@ -18,7 +18,7 @@ use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
-use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::tracker_enum::TrackerEnum;
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -32,7 +32,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 #[derive(Debug)]
 pub enum BlobstoreReader<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
-    Logstore(LogstoreReader<V, S, AppendOnlyTracker<S>>),
+    Logstore(LogstoreReader<V, S, TrackerEnum<S>>),
 }
 
 impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
@@ -56,7 +56,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                     GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
                 }
                 Mode::AppendOnly => {
-                    LogstoreReader::<V, S, AppendOnlyTracker<S>>::preopen(fs, &base_path, populate)
+                    LogstoreReader::<V, S, TrackerEnum<S>>::preopen(fs, &base_path, populate)
                         .ok_not_found()?;
                 }
             }
