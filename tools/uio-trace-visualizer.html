@@ -7,8 +7,10 @@ See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this t
 Requests are grouped into lanes by the file tree of their paths; click a tree node
 (or a lane header) to expand or collapse it, shift+click to do so for its whole subtree.
 Files that report `sections` split into one child per section.
-Filter by path (substring or glob: `*` within a path segment, `**` across them)
-and by operation. Phases, marks and CPU usage show only when the trace has them.
+Click a tree node's swatch to give it a random colour (again to clear), right-click the node to pick one;
+requests take the colour of their nearest coloured node. Click a request to reveal it in the tree.
+Filter by path (substring or glob: `*` within a path segment, `**` across them) to grey
+out the rest, and by operation to hide it. Phases, marks and CPU usage show only when the trace has them.
 
 -->
 <html lang="en">
@@ -67,8 +69,16 @@ button:disabled { color: var(--muted); cursor: default; }
 #tree .row.branch { cursor: pointer; }
 #tree .row:hover { background: #ffffff10; }
 #tree .row.dim { opacity: 0.4; }
+#tree .row.on { background: #ffffff24; }
 #tree .tw { width: 10px; flex: none; color: var(--muted); text-align: center; }
-#tree .sw { width: 9px; height: 9px; flex: none; border-radius: 2px; }
+#tree .sw { width: 9px; height: 9px; flex: none; border-radius: 2px; cursor: pointer; }
+#tree .sw.none { box-shadow: inset 0 0 0 1px var(--muted); }
+#pal {
+  position: fixed; display: none; z-index: 4; grid-template-columns: repeat(6, 16px); gap: 4px;
+  padding: 6px; background: var(--surface); border: 1px solid var(--axis); border-radius: 5px;
+}
+#pal i { width: 16px; height: 16px; border-radius: 3px; cursor: pointer; }
+#pal i.none { box-shadow: inset 0 0 0 1px var(--muted); }
 #tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink2); }
 #tree .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
 #stage { position: relative; flex: 1; min-width: 0; }
@@ -130,6 +140,7 @@ body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
     <b id="hint">drop a trace here</b>
   </div>
 </div>
+<div id="pal"></div>
 <script>
 "use strict";
 
@@ -149,6 +160,9 @@ const REQ_GAP = 2;  // px between neighbouring bars, unless the lane is crowded
 const HIT_R = 10;  // px, how far from a request bar its tooltip still shows
 const MAP_W = 300;  // px, the file map in the request tooltip
 const BAD_DARK = darken(BAD);
+const PAL = 18;  // colours in the right-click palette
+const UNCOLORED = INK2;  // requests without a coloured node on their path
+const DIMMED = mix(MUTED, SURFACE, 0.6);  // requests the path filter does not match
 
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
@@ -161,6 +175,7 @@ const filterBox = document.getElementById("filter");
 const opsBox = document.getElementById("ops");
 const toastBox = document.getElementById("toast");
 const reflowButton = document.getElementById("reflow");
+const palBox = document.getElementById("pal");
 
 const HEAD = 26;
 const W_RULER = 68, W_MARK = 26, W_SIDE = 96, W_HIDDEN = 32, GAP = 10;
@@ -175,6 +190,9 @@ let refit = true;
 let toastTimer = 0;
 let hidden = new Set();  // lanes folded into one column by "reflow"
 let unseen = [];  // lanes without requests in view, as of the last draw
+let pressed = null;  // request under the pointer when the button went down
+let picked = null;  // tree node of the last clicked request
+let painting = null;  // tree node the palette is open for
 
 // ---------- trace ----------
 
@@ -282,10 +300,9 @@ const leafKey = req => pathKey(req.path) + (req.spans?.length ? "#" + req.spans[
  * own collapses into one node.
  */
 function buildTree(reqs, layouts) {
-  let created = 0;
   const node = (name, key, sep, parent) => ({
     name, key, sep, parent, kids: new Map(), children: [], own: 0, open: false,
-    color: palette(created++), count: 0, bytes: 0, ownVisible: 0,
+    color: null, count: 0, hits: 0, bytes: 0, ownVisible: 0,
   });
   const child = (parent, name, key, sep) => {
     let found = parent.kids.get(name);
@@ -317,7 +334,6 @@ function buildTree(reqs, layouts) {
       n.name = n.name ? n.name + only.sep + only.name : only.name;
       n.key = only.key;
       n.own = only.own;
-      n.color = only.color;
       n.children = only.children;
       for (const c of n.children) c.parent = n;
       byKey.set(n.key, n);
@@ -357,23 +373,32 @@ function files(layouts, reqs) {
   return out;
 }
 
-/** Requests matching the filters, their lanes, and the series derived from them. */
+/**
+ * Requests of the checked operations, their lanes, and the series derived from those
+ * matching the path filter. Requests off the path filter stay in their lanes, greyed out.
+ */
 function refilter() {
   const re = globRe(filterBox.value);
-  D.reqs = D.all.filter(req => D.opsOn.has(req.op) && (!re || re.test(req.path)));
-  for (const n of D.tree.byKey.values()) { n.count = 0; n.bytes = 0; n.ownVisible = 0; }
+  D.reqs = D.all.filter(req => D.opsOn.has(req.op));
+  for (const n of D.tree.byKey.values()) { n.count = 0; n.hits = 0; n.bytes = 0; n.ownVisible = 0; }
   let maxdur = 1;
   for (const req of D.reqs) {
-    for (const n of req.chain) { n.count++; n.bytes += req.len; }
+    req.match = !re || re.test(req.path);
+    for (const n of req.chain) {
+      n.count++;
+      if (req.match) { n.hits++; n.bytes += req.len; }
+    }
     req.chain[req.chain.length - 1].ownVisible++;
     maxdur = Math.max(maxdur, req.e - req.s);
   }
+  D.hits = re ? D.reqs.filter(req => req.match) : D.reqs;
   D.maxdur = maxdur;
   D.S = Float64Array.from(D.reqs, r => r.s);
-  D.in_flight = D.reqs.reduce((sum, r) => sum + r.e - r.s, 0);
-  D.total_bytes = D.reqs.reduce((sum, r) => sum + r.len, 0);
-  const conc = concurrency(D.reqs, D.t_max);
-  const bw = throughput(D.reqs, D.t_max);
+  D.hitS = Float64Array.from(D.hits, r => r.s);
+  D.in_flight = D.hits.reduce((sum, r) => sum + r.e - r.s, 0);
+  D.total_bytes = D.hits.reduce((sum, r) => sum + r.len, 0);
+  const conc = concurrency(D.hits, D.t_max);
+  const bw = throughput(D.hits, D.t_max);
   D.conc = {bin: CONC_BIN, v: conc, max: peak(conc)};
   D.bw = {bin: BW_BIN, v: bw, max: peak(bw), sum: prefixSum(bw)};
   relane();
@@ -414,9 +439,6 @@ function relane() {
   D.lanes = lanes;
   D.counts = counts;
   D.bytes = bytes;
-  D.colors = lanes.map(lane => lane.node.color);
-  D.shades = D.colors.map(shades);
-  D.darks = D.colors.map(darken);
   D.placedFor = null;
   hidden = new Set();
   renderTree();
@@ -442,6 +464,51 @@ function autoOpen() {
   }
 }
 
+/** The colour of `n`, or of its nearest coloured ancestor. */
+function colorOf(n) {
+  while (n && !n.color) n = n.parent;
+  return n?.color || null;
+}
+
+/** Each request takes the colour of the deepest coloured node on its path. */
+function recolor() {
+  for (const req of D.all) {
+    let color = null;
+    for (const n of req.chain) color = n.color || color;
+    req.color = color || UNCOLORED;
+  }
+}
+
+function paint(n, color) {
+  n.color = color;
+  recolor();
+  renderTree();
+  redraw();
+}
+
+function openPalette(n, x, y) {
+  painting = n;
+  palBox.innerHTML = Array.from({length: PAL}, (_, i) =>
+    "<i style='background:" + palette(i) + "' data-color='" + palette(i) + "'></i>").join("") +
+    "<i class=none title='no colour' data-color=''></i>";
+  palBox.style.display = "grid";
+  palBox.style.left = Math.min(x, innerWidth - palBox.offsetWidth - 4) + "px";
+  palBox.style.top = Math.min(y, innerHeight - palBox.offsetHeight - 4) + "px";
+}
+
+function closePalette() {
+  painting = null;
+  palBox.style.display = "none";
+}
+
+/** Opens every node on the path of `req`, so that its own lane shows, and marks it in the tree. */
+function reveal(req) {
+  for (const n of req.chain) if (n.children.length) n.open = true;
+  picked = req.chain[req.chain.length - 1];
+  relane();
+  [...treeBox.children].find(row => row.dataset.key === picked.key)?.scrollIntoView({block: "nearest"});
+}
+
 function toggle(n, deep) {
   if (!n.children.length) return;
   const open = !n.open;
@@ -454,11 +521,12 @@ function renderTree() {
   const rows = [];
   const walk = (n, depth) => {
     const branch = n.children.length > 0;
-    rows.push("<div class='row" + (branch ? " branch" : "") + (n.count ? "" : " dim") +
+    rows.push("<div class='row" + (branch ? " branch" : "") + (n.hits ? "" : " dim") + (n === picked ? " on" : "") +
       "' data-key='" + esc(n.key) + "' title='" + esc(n.key.slice(1) || "/") + "' style='padding-left:" +
       (4 + depth * 12) + "px'><span class=tw>" + (branch ? (n.open ? "▾" : "▸") : "") +
-      "</span><i class=sw style='background:" + n.color + "'></i><span class=nm>" + esc(n.name || "/") +
-      "</span><span class=ct>" + fmtInt(n.count) + " · " + fmtBytes(n.bytes) + "</span></div>");
+      "</span><i class='sw" + (n.color ? "' style='background:" + n.color : " none") +
+      "' title='click: random colour or none, right-click the row: pick one'></i><span class=nm>" + esc(n.name || "/") +
+      "</span><span class=ct>" + fmtInt(n.hits) + " · " + fmtBytes(n.bytes) + "</span></div>");
     if (n.open) for (const c of n.children) walk(c, depth + 1);
   };
   walk(D.tree.root, 0);
@@ -553,13 +621,20 @@ function palette(i) {
   return "#" + f(0) + f(8) + f(4);
 }
 
+const shadeCache = new Map();
+
 /**
  * Tints of one colour, mixed towards white.
  *
  * Only ever lighter than the base, so contrast against the dark surface can only improve.
  */
 function shades(color) {
-  return Array.from({length: SHADES}, (_, i) => mix(color, "#ffffff", 0.22 * i / (SHADES - 1)));
+  let out = shadeCache.get(color);
+  if (!out) {
+    out = Array.from({length: SHADES}, (_, i) => mix(color, "#ffffff", 0.22 * i / (SHADES - 1)));
+    shadeCache.set(color, out);
+  }
+  return out;
 }
 
 /** One colour, darkened: the bar under the cursor. */
@@ -727,7 +802,7 @@ function drawHeader() {
     ctx.beginPath();
     ctx.rect(L.laneX[i], 0, L.laneW[i] - 4, HEAD);
     ctx.clip();
-    ctx.fillStyle = D.colors[i];
+    ctx.fillStyle = colorOf(D.lanes[i].node) || INK2;
     ctx.fillText(laneName(D.lanes[i]), L.laneX[i] + 2, HEAD / 2);
     ctx.restore();
   }
@@ -804,24 +879,30 @@ function drawRequests() {
     ctx.fillRect(reqX(req) - pad, L.top + (req.s - t0) / tpp, req.w + 2 * pad,
       Math.max(1.5 + pad, (req.e - req.s) / tpp - 1));
   };
-  const bad = [];
+  const bad = [], lit = [];
   const seen = D.lanes.map(() => false);
-  let last = "";
+  // Greyed-out requests first, so that the matching ones stay on top.
+  ctx.fillStyle = DIMMED;
   for (let i = lowerBound(D.S, t0 - D.maxdur); i < D.reqs.length; i++) {
     const req = D.reqs[i];
     if (req.s > vend) break;
     if (req.e < t0) continue;
     seen[req.k] = true;
     if (req === hover) continue;
-    if (req.outcome === "err") { bad.push(req); continue; }
-    const color = D.shades[req.k][req.shade];
+    if (!req.match) bar(req);
+    else if (req.outcome === "err") bad.push(req);
+    else lit.push(req);
+  }
+  let last = "";
+  for (const req of lit) {
+    const color = shades(req.color)[req.shade];
     if (color !== last) { ctx.fillStyle = color; last = color; }
     bar(req);
   }
   ctx.fillStyle = BAD;
   bad.forEach(bar);
   if (hover) {
-    ctx.fillStyle = hover.outcome === "err" ? BAD_DARK : D.darks[hover.k];
+    ctx.fillStyle = hover.outcome === "err" ? BAD_DARK : darken(hover.match ? hover.color : DIMMED);
     bar(hover);
   }
   ctx.restore();
@@ -987,7 +1068,7 @@ function hit(mx, my) {
   const at = "<span class=k>t</span> " + fmtMs(t) + " ms\n<span class=k>so far</span> ";
   if (inSide("conc", mx)) {
     return "<b>concurrency " + binAt(D.conc, t) + "</b>\n" + at +
-      fmtInt(lowerBound(D.S, t)) + " requests";
+      fmtInt(lowerBound(D.hitS, t)) + " requests";
   }
   if (inSide("bw", mx)) {
     const v = binAt(D.bw, t);
@@ -1018,7 +1099,7 @@ function headTip(mx) {
   if (inSide("conc", mx)) {
     return summary("<b>concurrency</b>: number of simultaneous requests",
       (D.in_flight / D.t_max).toFixed(2),
-      fmtInt(D.reqs.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
+      fmtInt(D.hits.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
   }
   if (inSide("bw", mx)) {
     return summary("<b>bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
@@ -1064,8 +1145,8 @@ function fileMap(req) {
   if (!req.len) return "";
   const file = D.files.get(req.path);
   const key = pathKey(req.path);
-  const own = D.tree.byKey.get(key)?.color || MUTED;
-  const color = name => name === null ? own : D.tree.byKey.get(key + "#" + name)?.color || MUTED;
+  const own = colorOf(D.tree.byKey.get(key)) || MUTED;
+  const color = name => name === null ? own : colorOf(D.tree.byKey.get(key + "#" + name)) || own;
   // Bytes `from..to` of the file stretched over `width` px.
   const gradient = (from, to, width, tint) => "linear-gradient(to right," + file.strips
     .map(strip => {
@@ -1171,6 +1252,7 @@ cv.addEventListener("pointerdown", e => {
     return;
   }
   select = tOf(e.offsetY);
+  pressed = hover;
   cv.setPointerCapture(e.pointerId);
   pointAt(e.offsetX, e.offsetY);
 });
@@ -1178,7 +1260,10 @@ cv.addEventListener("pointerdown", e => {
 for (const type of ["pointerup", "pointercancel"]) {
   cv.addEventListener(type, e => {
     if (select === null) return;
+    const click = type === "pointerup" && pressed && !selecting();
     select = null;
+    if (click) reveal(pressed);
+    pressed = null;
     pointAt(e.offsetX, e.offsetY);
   });
 }
@@ -1214,11 +1299,28 @@ document.getElementById("help").innerHTML = esc([...document.childNodes]
   .find(node => node.nodeType === Node.COMMENT_NODE).data.trim())
   .replace(/`([^`]+)`/g, "<code>$1</code>");
 
-treeBox.addEventListener("click", e => {
+const rowNode = e => {
   const row = e.target.closest(".row");
-  const n = row && D?.tree.byKey.get(row.dataset.key);
-  if (n) toggle(n, e.shiftKey);
+  return row && D?.tree.byKey.get(row.dataset.key);
+};
+treeBox.addEventListener("click", e => {
+  const n = rowNode(e);
+  if (!n) return;
+  if (e.target.classList.contains("sw")) paint(n, n.color ? null : palette(Math.floor(Math.random() * 1e6)));
+  else toggle(n, e.shiftKey);
 });
+treeBox.addEventListener("contextmenu", e => {
+  const n = rowNode(e);
+  if (!n) return;
+  e.preventDefault();
+  openPalette(n, e.clientX, e.clientY);
+});
+palBox.addEventListener("click", e => {
+  const color = e.target.dataset.color;
+  if (color !== undefined && painting) paint(painting, color || null);
+  closePalette();
+});
+document.addEventListener("pointerdown", e => { if (painting && !palBox.contains(e.target)) closePalette(); });
 filterBox.addEventListener("input", () => { if (D) refilter(); });
 opsBox.addEventListener("change", e => {
   const op = e.target.dataset.op;
@@ -1234,6 +1336,7 @@ document.getElementById("upload").addEventListener("click", () => document.getEl
 
 // By key position, so that other keyboard layouts work too.
 document.addEventListener("keydown", e => {
+  if (e.code === "Escape") closePalette();
   if (e.ctrlKey || e.altKey || e.metaKey || e.repeat || e.target instanceof HTMLInputElement) return;
   if (e.code === "Slash") {
     e.preventDefault();
@@ -1319,6 +1422,9 @@ async function loadTrace(name, text, hash) {
     D.dropped && D.dropped + " events dropped",
     D.bad && D.bad + " unparsed lines",
   ].filter(Boolean).join(" · ");
+  picked = null;
+  closePalette();
+  recolor();
   renderOps();
   refilter();
   autoOpen();
