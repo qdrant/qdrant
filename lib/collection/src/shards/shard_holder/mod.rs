@@ -37,7 +37,7 @@ pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::RecoveryStage;
-use super::transfer::transfer_tasks_pool::TransferTasksPool;
+use super::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
@@ -615,13 +615,17 @@ impl ShardHolder {
             let sync = shard_transfer.sync;
             let method = shard_transfer.method;
 
+            let status = tasks_pool.get_task_status(&shard_transfer.key());
+            let failed = status
+                .as_ref()
+                .is_some_and(|status| status.result == TaskResult::Failed);
+
             // Check for active recovery on destination shard first, then sender task status
             let target_shard = to_shard_id.unwrap_or(shard_id);
-            let comment = self.active_recoveries.comment(target_shard).or_else(|| {
-                tasks_pool
-                    .get_task_status(&shard_transfer.key())
-                    .map(|p| p.comment)
-            });
+            let comment = self
+                .active_recoveries
+                .comment(target_shard)
+                .or_else(|| status.map(|status| status.comment));
 
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
@@ -631,6 +635,7 @@ impl ShardHolder {
                 sync,
                 method,
                 comment,
+                failed,
             })
         }
         shard_transfers.sort_by_key(|k| k.shard_id);

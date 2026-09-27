@@ -380,6 +380,11 @@ pub struct ShardTransferInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
+
+    /// Whether the local sender task failed. Internal state for metrics only.
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub failed: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]

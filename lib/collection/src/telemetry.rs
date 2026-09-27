@@ -350,6 +350,7 @@ mod internal_conversions {
                     })?
                     .map(ShardTransferMethod::from),
                 comment: (!comment.is_empty()).then_some(comment),
+                failed: false,
             })
         }
     }
@@ -392,6 +393,7 @@ mod internal_conversions {
                 sync,
                 method,
                 comment,
+                failed: _,
             } = value;
 
             grpc::ShardTransferTelemetry {
