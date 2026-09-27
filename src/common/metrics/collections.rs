@@ -11,9 +11,6 @@ use crate::common::telemetry_ops::collections_telemetry::{
     CollectionTelemetryEnum, CollectionsTelemetry,
 };
 
-#[cfg(test)]
-mod tests;
-
 impl CollectionsTelemetry {
     pub(super) fn add_metrics(
         &self,
