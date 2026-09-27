@@ -16,7 +16,7 @@ use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
-use crate::tracker::append_only::AppendOnlyTracker;
+use crate::tracker::tracker_enum::TrackerEnum;
 use crate::tracker::{PointOffset, TrackerRead};
 
 /// Read-only storage for values of type `V`, operating in append-only mode.
@@ -38,7 +38,7 @@ pub struct LogstoreReader<V, S: UniversalRead, T> {
     _phantom: PhantomData<V>,
 }
 
-impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
+impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads: the tracker
     /// file and the page files.
     ///
@@ -49,7 +49,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
         base_path: &Path,
         populate: Populate,
     ) -> Result<()> {
-        AppendOnlyTracker::<S>::preopen(fs, base_path, populate);
+        TrackerEnum::<S>::preopen(fs, base_path, populate)?;
         AppendOnlyPages::<S>::preopen(fs, base_path, populate)
     }
 
@@ -60,7 +60,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
         config: LogstoreConfig,
         populate: Populate,
     ) -> Result<Self> {
-        let tracker = AppendOnlyTracker::open_read_only(fs, &base_path, populate)?;
+        let tracker = TrackerEnum::open(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
         validate_consistency(&tracker, &pages)?;
 
@@ -86,9 +86,15 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
         &self,
         fs: &Fs,
     ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
-        let mut futs = vec![self.tracker.live_preload(fs)?];
-        futs.extend(self.pages.live_preload(fs, self.populate)?);
-        Ok(futs)
+        match &self.tracker {
+            TrackerEnum::AppendOnly(tracker) => {
+                let mut futs = vec![tracker.live_preload(fs)?];
+                futs.extend(self.pages.live_preload(fs, self.populate)?);
+                Ok(futs)
+            }
+            // Nothing changes on disk, see `live_reload`
+            TrackerEnum::Compacted(_) => Ok(Vec::new()),
+        }
     }
 
     /// This method reloads the storage from "disk", so that it makes newly appended data
@@ -103,19 +109,26 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, AppendOnlyTracker<S>> {
     /// - Data is append-only, existing mappings and value data never change.
     /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
     ///   counted.
+    ///
+    /// A storage with a compacted tracker is complete and never changes, reloading it is a no-op.
     pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+        let tracker = match &mut self.tracker {
+            TrackerEnum::AppendOnly(tracker) => tracker,
+            TrackerEnum::Compacted(_) => return Ok(()),
+        };
+
         // A writer always updates the pages before the tracker, and it is not synchronized with
         // readers. Observe the tracker first, so that the mappings counted here are backed by
         // page data that the page reload below is guaranteed to see. Observing the pages first
         // would let the tracker name value data appended after the pages were read.
-        let reload = self.tracker.reload_count()?;
+        let reload = tracker.reload_count()?;
 
         self.pages.live_reload(fs, self.populate)?;
 
         // Publish the mappings last: until this point a failure above is harmless, as pages
         // running ahead of the tracker is the safe direction — the extra value data is simply
         // unreferenced.
-        self.tracker.commit_reload(reload);
+        tracker.commit_reload(reload);
 
         Ok(())
     }

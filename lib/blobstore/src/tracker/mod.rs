@@ -1,10 +1,11 @@
 pub(crate) mod append_only;
-// Not wired into the storages yet
+// Only read by the storages yet, nothing writes it
 #[cfg_attr(not(test), expect(dead_code))]
 pub(crate) mod compacted;
 pub mod iter;
 mod read;
 pub mod read_only;
+pub(crate) mod tracker_enum;
 
 #[cfg(test)]
 mod tests;
