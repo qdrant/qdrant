@@ -1,14 +1,17 @@
 //! Classify a payload index schema transition between the previously stored
 //! schema and the newly requested one.
 //!
-//! Used by `StructPayloadIndex::set_indexed` to detect the case where the
-//! only difference is the `on_disk` flag. For non-appendable segments this
-//! lets us swap the in-memory wrapper variant in place instead of dropping
-//! and rebuilding the entire field index from payload storage.
+//! Used by `StructPayloadIndex::set_indexed` to detect in-place updates that
+//! do not require rebuilding the field index from payload storage:
 //!
-//! Each per-kind arm normalizes `on_disk` on a clone and compares the rest
-//! via the derived `PartialEq`, so a newly added field is accounted for
-//! automatically: any difference outside `on_disk` yields `Incompatible`.
+//! - `on_disk` flip on non-appendable segments: reload existing files in the
+//!   new storage mode.
+//! - `enable_hnsw` flip: update persisted schema only; live index handles are kept.
+//!
+//! The known in-place fields are cleared on clones of both schemas and the
+//! rest is compared via the derived `PartialEq`, so a newly added field is
+//! accounted for automatically: any difference outside those fields yields
+//! `Incompatible`.
 
 // Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
 // handled here for backward compatibility with the new `memory` parameter
@@ -16,14 +19,31 @@
 
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
+/// Compatible in-place schema diff. Fields are independent so combinations
+/// (e.g. `on_disk` + `enable_hnsw`) need no extra enum variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompatibleDiff {
+    /// `Some(new_on_disk)` if the `on_disk` flag flipped; `None` if unchanged.
+    pub on_disk: Option<bool>,
+    /// True if `enable_hnsw` (persisted `Option<bool>`) changed.
+    pub metadata: bool,
+}
+
+impl CompatibleDiff {
+    /// True when only schema-metadata flags changed (no storage placement flip).
+    pub fn metadata_only(self) -> bool {
+        self.on_disk.is_none() && self.metadata
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchemaTransition {
     /// The two schemas are functionally identical (modulo `FieldType` vs
     /// fully-expanded `FieldParams`).
     Identical,
-    /// The two schemas differ only in their `on_disk` flag. Eligible for the
-    /// in-place swap fast path on non-appendable segments.
-    OnlyOnDiskFlipped { new_on_disk: bool },
+    /// The two schemas differ only in in-place-updatable flags (`on_disk`
+    /// and/or `enable_hnsw`). See [`CompatibleDiff`].
+    Compatible(CompatibleDiff),
     /// The two schemas differ in a way that requires the legacy
     /// drop-and-rebuild path.
     Incompatible,
@@ -39,55 +59,61 @@ pub fn classify(old: &PayloadFieldSchema, new: &PayloadFieldSchema) -> SchemaTra
         return SchemaTransition::Identical;
     }
 
-    if only_on_disk_differs(old, new) {
-        return SchemaTransition::OnlyOnDiskFlipped {
-            new_on_disk: new.is_on_disk(),
-        };
+    if let Some(mut diff) = compatible_diff(old, new) {
+        // Resolve through `is_on_disk()` so `memory` placement is respected.
+        if diff.on_disk.is_some() {
+            diff.on_disk = Some(new.is_on_disk());
+        }
+        return SchemaTransition::Compatible(diff);
     }
 
     SchemaTransition::Incompatible
 }
 
-fn only_on_disk_differs(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> bool {
-    use PayloadSchemaParams as P;
-
-    // Compare `on_disk` at the `Option<bool>` level: `None` vs `Some(false)`
-    // both mean "false" yet the persisted value differs, so it still counts as
-    // a flip. Every other field goes through the derived `PartialEq` after
-    // normalizing `on_disk` on a clone — a newly added field is therefore
-    // accounted for automatically (any difference makes this `false`, i.e.
+fn compatible_diff(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> Option<CompatibleDiff> {
+    // Compare `on_disk` / `enable_hnsw` at the `Option<bool>` level: `None` vs
+    // `Some(false)` (or `Some(true)` for enable_hnsw) both may mean the same
+    // effective value yet the persisted value differs, so it still counts as a
+    // flip. Every other field (and the kind itself) goes through the derived
+    // `PartialEq` after clearing those flags — a newly added field is therefore
+    // accounted for automatically (any difference makes this `None`, i.e.
     // `Incompatible`, the safe default).
-    macro_rules! only_on_disk {
-        ($a:expr, $b:expr) => {
-            $a.on_disk != $b.on_disk && {
-                let mut normalized = $a.clone();
-                normalized.on_disk = $b.on_disk;
-                normalized == *$b
-            }
-        };
+    let mut old = old.clone();
+    let mut new = new.clone();
+    let (old_on_disk, old_enable_hnsw) = take_in_place_flags(&mut old);
+    let (new_on_disk, new_enable_hnsw) = take_in_place_flags(&mut new);
+
+    if old != new {
+        return None;
     }
 
-    match (old, new) {
-        (P::Keyword(a), P::Keyword(b)) => only_on_disk!(a, b),
-        (P::Integer(a), P::Integer(b)) => only_on_disk!(a, b),
-        (P::Float(a), P::Float(b)) => only_on_disk!(a, b),
-        (P::Geo(a), P::Geo(b)) => only_on_disk!(a, b),
-        (P::Text(a), P::Text(b)) => only_on_disk!(a, b),
-        (P::Bool(a), P::Bool(b)) => only_on_disk!(a, b),
-        (P::Datetime(a), P::Datetime(b)) => only_on_disk!(a, b),
-        (P::Uuid(a), P::Uuid(b)) => only_on_disk!(a, b),
-        // Cross-kind pairs cannot be "only on_disk differs". Listed
-        // exhaustively (rather than `_ =>`) so a new `PayloadSchemaParams`
-        // variant triggers a compile error here.
-        (P::Keyword(_), _)
-        | (P::Integer(_), _)
-        | (P::Float(_), _)
-        | (P::Geo(_), _)
-        | (P::Text(_), _)
-        | (P::Bool(_), _)
-        | (P::Datetime(_), _)
-        | (P::Uuid(_), _) => false,
+    let on_disk_changed = old_on_disk != new_on_disk;
+    let metadata_changed = old_enable_hnsw != new_enable_hnsw;
+    if !on_disk_changed && !metadata_changed {
+        return None;
     }
+
+    Some(CompatibleDiff {
+        // Placeholder; `classify` overwrites with `new.is_on_disk()`.
+        on_disk: on_disk_changed.then_some(false),
+        metadata: metadata_changed,
+    })
+}
+
+/// Resets the in-place-updatable flags of `params` to `None` and returns their
+/// previous values as `(on_disk, enable_hnsw)`.
+fn take_in_place_flags(params: &mut PayloadSchemaParams) -> (Option<bool>, Option<bool>) {
+    let (on_disk, enable_hnsw) = match params {
+        PayloadSchemaParams::Keyword(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Integer(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Float(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Geo(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Text(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Bool(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Datetime(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+        PayloadSchemaParams::Uuid(p) => (&mut p.on_disk, &mut p.enable_hnsw),
+    };
+    (on_disk.take(), enable_hnsw.take())
 }
 
 #[cfg(test)]
@@ -105,18 +131,26 @@ mod tests {
         PayloadFieldSchema::FieldParams(p)
     }
 
-    fn keyword(on_disk: Option<bool>, is_tenant: Option<bool>) -> PayloadSchemaParams {
+    fn keyword(
+        on_disk: Option<bool>,
+        is_tenant: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> PayloadSchemaParams {
         PayloadSchemaParams::Keyword(KeywordIndexParams {
             memory: None,
             r#type: KeywordIndexType::Keyword,
             is_tenant,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
             prefix: None,
         })
     }
 
-    fn integer(on_disk: Option<bool>, lookup: Option<bool>) -> PayloadSchemaParams {
+    fn integer(
+        on_disk: Option<bool>,
+        lookup: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> PayloadSchemaParams {
         PayloadSchemaParams::Integer(IntegerIndexParams {
             memory: None,
             r#type: IntegerIndexType::Integer,
@@ -124,30 +158,34 @@ mod tests {
             range: Some(true),
             is_principal: None,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn float(on_disk: Option<bool>) -> PayloadSchemaParams {
+    fn float(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Float(FloatIndexParams {
             memory: None,
             r#type: FloatIndexType::Float,
             is_principal: None,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn geo(on_disk: Option<bool>) -> PayloadSchemaParams {
+    fn geo(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Geo(GeoIndexParams {
             memory: None,
             r#type: GeoIndexType::Geo,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn text(on_disk: Option<bool>, tokenizer: TokenizerType) -> PayloadSchemaParams {
+    fn text(
+        on_disk: Option<bool>,
+        tokenizer: TokenizerType,
+        enable_hnsw: Option<bool>,
+    ) -> PayloadSchemaParams {
         PayloadSchemaParams::Text(TextIndexParams {
             memory: None,
             r#type: TextIndexType::Text,
@@ -160,42 +198,64 @@ mod tests {
             stopwords: None,
             on_disk,
             stemmer: None,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn bool_p(on_disk: Option<bool>) -> PayloadSchemaParams {
+    fn bool_p(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> PayloadSchemaParams {
         PayloadSchemaParams::Bool(BoolIndexParams {
             memory: None,
             r#type: BoolIndexType::Bool,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn datetime(on_disk: Option<bool>, is_principal: Option<bool>) -> PayloadSchemaParams {
+    fn datetime(
+        on_disk: Option<bool>,
+        is_principal: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> PayloadSchemaParams {
         PayloadSchemaParams::Datetime(DatetimeIndexParams {
             memory: None,
             r#type: DatetimeIndexType::Datetime,
             is_principal,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
         })
     }
 
-    fn uuid(on_disk: Option<bool>, is_tenant: Option<bool>) -> PayloadSchemaParams {
+    fn uuid(
+        on_disk: Option<bool>,
+        is_tenant: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> PayloadSchemaParams {
         PayloadSchemaParams::Uuid(UuidIndexParams {
             memory: None,
             r#type: UuidIndexType::Uuid,
             is_tenant,
             on_disk,
-            enable_hnsw: None,
+            enable_hnsw,
+        })
+    }
+
+    fn on_disk_only(new_on_disk: bool) -> SchemaTransition {
+        SchemaTransition::Compatible(CompatibleDiff {
+            on_disk: Some(new_on_disk),
+            metadata: false,
+        })
+    }
+
+    fn metadata_only() -> SchemaTransition {
+        SchemaTransition::Compatible(CompatibleDiff {
+            on_disk: None,
+            metadata: true,
         })
     }
 
     #[test]
     fn identical_returns_identical() {
-        let s = wrap(keyword(Some(false), None));
+        let s = wrap(keyword(Some(false), None, None));
         assert_eq!(classify(&s, &s.clone()), SchemaTransition::Identical);
     }
 
@@ -210,15 +270,30 @@ mod tests {
 
     #[test]
     fn keyword_on_disk_flip_only() {
-        let off = wrap(keyword(Some(false), None));
-        let on = wrap(keyword(Some(true), None));
+        let off = wrap(keyword(Some(false), None, None));
+        let on = wrap(keyword(Some(true), None, None));
+        assert_eq!(classify(&off, &on), on_disk_only(true));
+        assert_eq!(classify(&on, &off), on_disk_only(false));
+    }
+
+    #[test]
+    fn keyword_enable_hnsw_flip_only() {
+        let enabled = wrap(keyword(Some(false), None, Some(true)));
+        let disabled = wrap(keyword(Some(false), None, Some(false)));
+        assert_eq!(classify(&enabled, &disabled), metadata_only());
+        assert_eq!(classify(&disabled, &enabled), metadata_only());
+    }
+
+    #[test]
+    fn keyword_on_disk_and_enable_hnsw_flip() {
+        let a = wrap(keyword(Some(false), None, Some(true)));
+        let b = wrap(keyword(Some(true), None, Some(false)));
         assert_eq!(
-            classify(&off, &on),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
-        );
-        assert_eq!(
-            classify(&on, &off),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: false },
+            classify(&a, &b),
+            SchemaTransition::Compatible(CompatibleDiff {
+                on_disk: Some(true),
+                metadata: true,
+            }),
         );
     }
 
@@ -226,7 +301,7 @@ mod tests {
     fn keyword_prefix_change_is_incompatible() {
         // Enabling or disabling prefix matching requires building or dropping
         // the sorted key dictionary — a full rebuild, never an in-place swap.
-        let plain = wrap(keyword(Some(false), None));
+        let plain = wrap(keyword(Some(false), None, None));
         let with_prefix = wrap(PayloadSchemaParams::Keyword(KeywordIndexParams {
             memory: None,
             r#type: KeywordIndexType::Keyword,
@@ -248,45 +323,52 @@ mod tests {
     #[test]
     fn keyword_other_field_differs_is_incompatible() {
         // Same on_disk, but is_tenant differs.
-        let a = wrap(keyword(Some(false), Some(false)));
-        let b = wrap(keyword(Some(false), Some(true)));
+        let a = wrap(keyword(Some(false), Some(false), None));
+        let b = wrap(keyword(Some(false), Some(true), None));
         assert_eq!(classify(&a, &b), SchemaTransition::Incompatible);
         // Both on_disk AND another field differ — also Incompatible (swap
         // can't paper over the other change).
-        let c = wrap(keyword(Some(true), Some(true)));
+        let c = wrap(keyword(Some(true), Some(true), None));
         assert_eq!(classify(&a, &c), SchemaTransition::Incompatible);
     }
 
     #[test]
     fn integer_on_disk_flip_only() {
-        let off = wrap(integer(Some(false), Some(true)));
-        let on = wrap(integer(Some(true), Some(true)));
-        assert_eq!(
-            classify(&off, &on),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
-        );
+        let off = wrap(integer(Some(false), Some(true), None));
+        let on = wrap(integer(Some(true), Some(true), None));
+        assert_eq!(classify(&off, &on), on_disk_only(true));
+    }
+
+    #[test]
+    fn integer_enable_hnsw_flip_only() {
+        let a = wrap(integer(Some(false), Some(true), Some(true)));
+        let b = wrap(integer(Some(false), Some(true), Some(false)));
+        assert_eq!(classify(&a, &b), metadata_only());
     }
 
     #[test]
     fn integer_lookup_change_is_incompatible() {
-        let a = wrap(integer(Some(false), Some(true)));
-        let b = wrap(integer(Some(false), Some(false)));
+        let a = wrap(integer(Some(false), Some(true), None));
+        let b = wrap(integer(Some(false), Some(false), None));
         assert_eq!(classify(&a, &b), SchemaTransition::Incompatible);
     }
 
     #[test]
     fn float_on_disk_flip_only() {
         assert_eq!(
-            classify(&wrap(float(Some(false))), &wrap(float(Some(true)))),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            classify(
+                &wrap(float(Some(false), None)),
+                &wrap(float(Some(true), None))
+            ),
+            on_disk_only(true),
         );
     }
 
     #[test]
     fn geo_on_disk_flip_only() {
         assert_eq!(
-            classify(&wrap(geo(Some(false))), &wrap(geo(Some(true)))),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            classify(&wrap(geo(Some(false), None)), &wrap(geo(Some(true), None))),
+            on_disk_only(true),
         );
     }
 
@@ -294,10 +376,10 @@ mod tests {
     fn text_on_disk_flip_only() {
         assert_eq!(
             classify(
-                &wrap(text(Some(false), TokenizerType::Word)),
-                &wrap(text(Some(true), TokenizerType::Word)),
+                &wrap(text(Some(false), TokenizerType::Word, None)),
+                &wrap(text(Some(true), TokenizerType::Word, None)),
             ),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            on_disk_only(true),
         );
     }
 
@@ -305,8 +387,8 @@ mod tests {
     fn text_tokenizer_change_is_incompatible() {
         assert_eq!(
             classify(
-                &wrap(text(Some(false), TokenizerType::Word)),
-                &wrap(text(Some(false), TokenizerType::Whitespace)),
+                &wrap(text(Some(false), TokenizerType::Word, None)),
+                &wrap(text(Some(false), TokenizerType::Whitespace, None)),
             ),
             SchemaTransition::Incompatible,
         );
@@ -315,8 +397,11 @@ mod tests {
     #[test]
     fn bool_on_disk_flip_only() {
         assert_eq!(
-            classify(&wrap(bool_p(Some(false))), &wrap(bool_p(Some(true)))),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            classify(
+                &wrap(bool_p(Some(false), None)),
+                &wrap(bool_p(Some(true), None))
+            ),
+            on_disk_only(true),
         );
     }
 
@@ -324,10 +409,10 @@ mod tests {
     fn datetime_on_disk_flip_only() {
         assert_eq!(
             classify(
-                &wrap(datetime(Some(false), None)),
-                &wrap(datetime(Some(true), None))
+                &wrap(datetime(Some(false), None, None)),
+                &wrap(datetime(Some(true), None, None))
             ),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            on_disk_only(true),
         );
     }
 
@@ -335,10 +420,10 @@ mod tests {
     fn uuid_on_disk_flip_only() {
         assert_eq!(
             classify(
-                &wrap(uuid(Some(false), None)),
-                &wrap(uuid(Some(true), None))
+                &wrap(uuid(Some(false), None, None)),
+                &wrap(uuid(Some(true), None, None))
             ),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
+            on_disk_only(true),
         );
     }
 
@@ -346,13 +431,16 @@ mod tests {
     fn cross_kind_is_incompatible() {
         assert_eq!(
             classify(
-                &wrap(keyword(Some(false), None)),
-                &wrap(integer(Some(false), Some(true)))
+                &wrap(keyword(Some(false), None, None)),
+                &wrap(integer(Some(false), Some(true), None))
             ),
             SchemaTransition::Incompatible,
         );
         assert_eq!(
-            classify(&wrap(geo(Some(false))), &wrap(float(Some(false)))),
+            classify(
+                &wrap(geo(Some(false), None)),
+                &wrap(float(Some(false), None))
+            ),
             SchemaTransition::Incompatible,
         );
     }
@@ -360,30 +448,58 @@ mod tests {
     #[test]
     fn on_disk_none_treated_as_default_false() {
         // Both `None` => Identical (both expand to default).
-        let none_a = wrap(keyword(None, None));
-        let none_b = wrap(keyword(None, None));
+        let none_a = wrap(keyword(None, None, None));
+        let none_b = wrap(keyword(None, None, None));
         assert_eq!(classify(&none_a, &none_b), SchemaTransition::Identical);
 
         // None vs Some(true) is a flip from default-false to explicit-true.
-        let none = wrap(keyword(None, None));
-        let on = wrap(keyword(Some(true), None));
-        assert_eq!(
-            classify(&none, &on),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: true },
-        );
+        let none = wrap(keyword(None, None, None));
+        let on = wrap(keyword(Some(true), None, None));
+        assert_eq!(classify(&none, &on), on_disk_only(true));
 
         // None vs Some(false) — both mean "false", so they are Identical.
         // The field-level comparison (`Option<bool>`) sees them as different,
         // but `is_on_disk()` reads `unwrap_or_default()` so they're semantically equal.
         //
-        // We choose to surface this as `OnlyOnDiskFlipped { new_on_disk: false }` rather than
+        // We choose to surface this as `Compatible { on_disk: Some(false) }` rather than
         // Identical, because the persisted on_disk value differs (None vs Some(false)) and the
         // caller may want the persisted value updated. The swap itself is a no-op in that case.
-        let none = wrap(keyword(None, None));
-        let off = wrap(keyword(Some(false), None));
-        assert_eq!(
-            classify(&none, &off),
-            SchemaTransition::OnlyOnDiskFlipped { new_on_disk: false },
+        let none = wrap(keyword(None, None, None));
+        let off = wrap(keyword(Some(false), None, None));
+        assert_eq!(classify(&none, &off), on_disk_only(false));
+    }
+
+    #[test]
+    fn enable_hnsw_none_vs_some_true_is_metadata() {
+        // Default enable_hnsw is true; None vs Some(true) still updates the
+        // persisted value via the metadata-only path.
+        let none = wrap(keyword(Some(false), None, None));
+        let explicit = wrap(keyword(Some(false), None, Some(true)));
+        assert_eq!(classify(&none, &explicit), metadata_only());
+    }
+
+    #[test]
+    fn compatible_diff_metadata_only_helper() {
+        assert!(
+            CompatibleDiff {
+                on_disk: None,
+                metadata: true,
+            }
+            .metadata_only()
+        );
+        assert!(
+            !CompatibleDiff {
+                on_disk: Some(true),
+                metadata: true,
+            }
+            .metadata_only()
+        );
+        assert!(
+            !CompatibleDiff {
+                on_disk: Some(false),
+                metadata: false,
+            }
+            .metadata_only()
         );
     }
 }
