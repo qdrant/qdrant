@@ -13,7 +13,7 @@ use crate::types::SeqNumberType;
 /// * [] operator
 /// * len
 /// * push
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompressedVersions {
     lower_bytes: Vec<u32>,
     upper_bytes: AHashMap<u32, u32>,

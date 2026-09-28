@@ -11,8 +11,8 @@ use common::universal_io::UniversalWrite;
 use super::DiskIdTracker;
 use super::mappings::DiskMappingsSource as _;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
+use crate::common::operation_error::OperationResult;
+use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -26,7 +26,8 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
         debug_assert!(has_version, "Can't extend version list in disk id tracker");
         if has_version {
             self.internal_to_version.set(internal_id, version);
-            self.internal_to_version_wrapper.set(internal_id, version);
+            let is_deleted = self.point_deleted(internal_id)?;
+            self.versions_file.set(internal_id, version, is_deleted);
         }
         Ok(())
     }
@@ -64,12 +65,15 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
     }
 
     fn versions_flusher(&self) -> Flusher {
-        let flusher = self.internal_to_version_wrapper.flusher();
-        Box::new(move || flusher().map_err(OperationError::from))
+        self.versions_file
+            .flusher(&self.path, &self.internal_to_version)
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![deleted_path(&self.path), version_mapping_path(&self.path)];
+        let mut files = vec![
+            deleted_path(&self.path),
+            self.versions_file.path(&self.path),
+        ];
         files.extend(self.mapping_files());
         files
     }
@@ -85,10 +89,10 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
             deleted: _, // kept in RAM
             deleted_wrapper,
             internal_to_version: _, // kept in RAM
-            internal_to_version_wrapper,
+            versions_file,
         } = self;
         deleted_wrapper.clear_cache()?;
-        internal_to_version_wrapper.clear_cache()?;
+        versions_file.clear_cache()?;
         for file in self.mapping_files() {
             clear_disk_cache(&file)?;
         }

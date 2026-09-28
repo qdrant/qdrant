@@ -5,15 +5,13 @@ use std::sync::OnceLock;
 
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{
-    CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
-};
+use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyDiskIdTracker;
+use super::versions::ReadOnlyVersions;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
-use crate::types::SeqNumberType;
+use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub(super) fn open_options(populate: Populate) -> OpenOptions {
@@ -48,8 +46,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             return Ok(false);
         }
 
-        let options = Self::open_options(populate);
-        fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
+        ReadOnlyVersions::schedule_preopen(fs, segment_path, populate)?;
         fs.schedule_open(
             &deleted_path(segment_path),
             Some(Self::deleted_open_options()),
@@ -89,14 +86,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             return Ok(None);
         };
 
-        let options = Self::open_options(populate);
-
-        let versions = TypedStorage::<S, SeqNumberType>::new(fs.open(
-            version_mapping_path(segment_path),
-            options,
-            Default::default(),
-        )?);
-        let versions_len = versions.len()?;
+        let versions = ReadOnlyVersions::open(fs, segment_path, populate)?;
 
         let deleted_file = StoredBitSlice::open(
             fs,
@@ -109,7 +99,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             path: segment_path.to_path_buf(),
             reader,
             versions,
-            versions_len,
             deleted_file,
             deleted_full: OnceLock::new(),
         }))
