@@ -567,3 +567,99 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         }
     }
 }
+
+/// A mutable keyword index with corrupt data must be rebuilt from payload storage when the
+/// segment loads, instead of failing to load the segment.
+///
+/// Corrupt data can be left behind by a torn write after a hard crash, or by a bit flip. Here a
+/// pointer in the index's Gridstore tracker points at zeroed blocks, so its value fails to
+/// decode. This used to panic on startup, failing to load the local shard.
+///
+/// See: <github.com/qdrant/qdrant/issues/9857>
+#[test]
+fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let key = JsonPath::from_str("name").unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let segment_path = {
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        for i in 0..3 {
+            segment
+                .upsert_point(
+                    1 + i,
+                    i.into(),
+                    only_default_vector(&[1.0, 1.0]),
+                    &hw_counter,
+                )
+                .unwrap();
+            let payload: Payload =
+                serde_json::from_str(&format!(r#"{{ "name": "name_{i}" }}"#)).unwrap();
+            segment
+                .set_full_payload(10 + i, i.into(), &payload, &hw_counter)
+                .unwrap();
+        }
+        segment
+            .create_field_index(20, &key, Some(&schema), &hw_counter)
+            .unwrap();
+        segment.flush(true).unwrap();
+        segment.segment_path.clone()
+    };
+
+    let map_index_dir = fs_err::read_dir(segment_path.join("payload_index"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.to_string_lossy().ends_with("-map"))
+        .expect("keyword index must be stored in a map index directory");
+    let tracker_path = map_index_dir.join("tracker.dat");
+
+    // Tracker file layout: a 4-byte header, then one 16-byte record per point offset holding
+    // `[discriminant][page_id][block_offset][length]` as little-endian `u32`s
+    let record_start = 4 + 16; // point offset 1
+    let block_offset_range = record_start + 8..record_start + 12;
+    let read_block_offset =
+        |bytes: &[u8]| u32::from_le_bytes(bytes[block_offset_range.clone()].try_into().unwrap());
+
+    // Point the value of point offset 1 at zeroed blocks far behind the stored values
+    let corrupt_block_offset = 100;
+    let mut tracker_bytes = fs_err::read(&tracker_path).unwrap();
+    assert_eq!(
+        tracker_bytes[record_start..record_start + 4],
+        1u32.to_le_bytes(),
+        "record must hold a Some pointer",
+    );
+    let block_offset = read_block_offset(&tracker_bytes);
+    assert!(block_offset < corrupt_block_offset);
+    tracker_bytes[block_offset_range.clone()].copy_from_slice(&corrupt_block_offset.to_le_bytes());
+    fs_err::write(&tracker_path, &tracker_bytes).unwrap();
+
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load, rebuilding the corrupt index");
+
+    // The rebuilt index covers all points, including the one with the corrupt value
+    for i in 0..3 {
+        let hits = segment
+            .payload_index
+            .borrow()
+            .with_view(|view| {
+                view.query_points(
+                    &name_filter(&key, &format!("name_{i}")),
+                    &hw_counter,
+                    &AtomicBool::new(false),
+                )
+            })
+            .unwrap();
+        assert_eq!(hits, vec![i as u32], "name_{i}");
+    }
+
+    // The rebuilt index is persisted, the corrupt pointer is gone from disk
+    let tracker_bytes = fs_err::read(&tracker_path).unwrap();
+    assert_ne!(read_block_offset(&tracker_bytes), corrupt_block_offset);
+}

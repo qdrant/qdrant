@@ -124,6 +124,7 @@ impl StructPayloadIndex {
         let id_tracker_borrow = self.id_tracker.borrow();
         let deleted_points = id_tracker_borrow.deleted_point_bitslice();
         let mut rebuild = false;
+        let mut load_error = None;
         let mut is_dirty = false;
 
         let mut indexes = if payload_schema.types.is_empty() {
@@ -183,6 +184,9 @@ impl StructPayloadIndex {
                 .take_while(|index| {
                     let is_loaded = index.as_ref().is_ok_and(|index| index.is_some());
                     rebuild |= !is_loaded;
+                    if let Err(err) = index {
+                        load_error = Some(err.to_string());
+                    }
                     is_loaded
                 })
                 .filter_map(|index| index.transpose())
@@ -191,7 +195,14 @@ impl StructPayloadIndex {
 
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
-            log::debug!("Rebuilding payload index for field `{field}`...");
+            match &load_error {
+                // For example corrupt index data, repaired by rebuilding from payload storage
+                Some(err) => log::warn!(
+                    "Failed to load payload index for field `{field}` at {}, rebuilding it: {err}",
+                    self.path.display(),
+                ),
+                None => log::debug!("Rebuilding payload index for field `{field}`..."),
+            }
             // Close any partially-loaded index storages first: the rebuild wipes
             // their directories before building fresh.
             indexes.clear();
