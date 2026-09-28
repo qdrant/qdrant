@@ -271,6 +271,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             snapshot_priority,
             checksum,
             api_key,
+            from_peer_id,
         } = request;
 
         let timing = Instant::now();
@@ -285,6 +286,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             checksum,
             self.http_client.clone(),
             api_key,
+            from_peer_id,
         )
         .await?;
 
