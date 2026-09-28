@@ -1,8 +1,9 @@
 //! A replica receiving a shard transfer, and the dummy shard a snapshot recovery puts in its place
-//! before downloading. Only a registered transfer may trigger that clear, and a transfer from a
-//! peer left with such a dummy must still abort cleanly.
+//! before downloading. Only a registered transfer may be initiated or trigger that clear, and a
+//! transfer from a peer left with such a dummy must still abort cleanly.
 
 use std::path::Path;
+use std::time::Duration;
 
 use collection::collection::Collection;
 use collection::operations::types::CollectionError;
@@ -59,6 +60,37 @@ async fn is_dummy(collection: &Collection) -> bool {
         .unwrap()
         .is_dummy()
         .await
+}
+
+#[tokio::test]
+async fn test_initiate_shard_transfer_refuses_unregistered_sender() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = receiving_collection(dir.path()).await;
+    collection
+        .shards_holder()
+        .read()
+        .await
+        .register_start_shard_transfer(transfer(SOURCE_PEER_ID, THIS_PEER_ID))
+        .unwrap();
+
+    // With a transfer from another peer registered, one from this sender never will be. Refuse
+    // right away rather than waiting for it until the timeout.
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        collection.initiate_shard_transfer(SHARD_ID, Some(STALE_PEER_ID)),
+    )
+    .await
+    .expect("refusing an unregistered sender must not wait for its transfer");
+    assert!(
+        matches!(result, Err(CollectionError::BadRequest { .. })),
+        "initiating for an unregistered sender must be refused, got {result:?}",
+    );
+
+    // The registered source may
+    collection
+        .initiate_shard_transfer(SHARD_ID, Some(SOURCE_PEER_ID))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
