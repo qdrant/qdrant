@@ -653,8 +653,12 @@ impl Collection {
             query_infos.into_iter().zip(all_shards_result_by_transposed)
         {
             // `shards_results` shape: [num_shards, num_scored_points]
-            let order =
-                shard_query::query_result_order(query_info.scoring_query, &collection_params)?;
+            let order = match request.query.as_ref() {
+                Some(ScoringQuery::Mmr(mmr)) => {
+                    Some(collection_params.get_distance(&mmr.using)?.distance_order())
+                }
+                _ => shard_query::query_result_order(query_info.scoring_query, &collection_params)?,
+            };
             let number_of_shards = shards_results.len();
 
             // Equivalent to:

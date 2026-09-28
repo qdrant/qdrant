@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
+use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::SearchRequestInternal;
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{
@@ -14,6 +16,7 @@ use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
     ScrollResult, UpdateStatus,
 };
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -23,14 +26,17 @@ use ordered_float::OrderedFloat;
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
-    PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
+    Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, SearchParams, WithPayloadInterface,
 };
 use serde_json::Map;
 use shard::query::{MmrInternal, SampleInternal, ScoringQuery, ShardQueryRequest};
 use tempfile::Builder;
 
-use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
+use crate::common::{
+    N_SHARDS, TEST_OPTIMIZERS_CONFIG, load_local_collection, new_local_collection,
+    simple_collection_fixture,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_updater() {
@@ -1196,4 +1202,143 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
         .await
         .unwrap();
     assert!(oversized_offset_page.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_multishard_mmr_keeps_globally_best_candidates() {
+    for distance in [Distance::Dot, Distance::Euclid] {
+        let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+        let config = CollectionConfigInternal {
+            params: CollectionParams {
+                vectors: VectorParamsBuilder::new(4, distance).build().into(),
+                shard_number: NonZeroU32::new(2).unwrap(),
+                ..CollectionParams::empty()
+            },
+            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+            wal_config: WalConfig {
+                wal_capacity_mb: 1,
+                wal_segments_ahead: 0,
+                wal_retain_closed: 1,
+            },
+            hnsw_config: Default::default(),
+            quantization_config: Default::default(),
+            strict_mode_config: Default::default(),
+            uuid: None,
+            metadata: None,
+        };
+        let snapshots = collection_dir.path().join("snapshots");
+        let collection = new_local_collection(
+            "test".to_string(),
+            collection_dir.path(),
+            &snapshots,
+            &config,
+        )
+        .await
+        .unwrap();
+
+        let batch = BatchPersisted {
+            ids: (1..=8).map(u64::into).collect_vec(),
+            vectors: BatchVectorStructPersisted::Single(
+                (0..8)
+                    .map(|i| vec![1.0 - 0.2 * i as f32, 0.0, 0.0, 0.0])
+                    .collect(),
+            ),
+            payloads: None,
+        };
+        collection
+            .update_from_client_simple(
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                    PointInsertOperationsInternal::from(batch),
+                )),
+                true,
+                None,
+                WriteOrdering::default(),
+                HwMeasurementAcc::new(),
+            )
+            .await
+            .unwrap();
+
+        // Ensure both shards have points; shard placement is determined by the hash ring.
+        let mut extra_id = 9u64;
+        loop {
+            let mut occupied = [false; 2];
+            for shard_id in 0..2u32 {
+                let count = collection
+                    .count(
+                        CountRequestInternal {
+                            filter: None,
+                            exact: true,
+                        },
+                        None,
+                        None,
+                        &ShardSelectorInternal::ShardId(shard_id),
+                        None,
+                        HwMeasurementAcc::new(),
+                    )
+                    .await
+                    .unwrap()
+                    .count;
+                occupied[shard_id as usize] = count > 0;
+            }
+            if occupied == [true, true] {
+                break;
+            }
+            let extra = BatchPersisted {
+                ids: vec![extra_id.into()],
+                vectors: BatchVectorStructPersisted::Single(vec![vec![-2.0, 0.0, 0.0, 0.0]]),
+                payloads: None,
+            };
+            collection
+                .update_from_client_simple(
+                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                        PointInsertOperationsInternal::from(extra),
+                    )),
+                    true,
+                    None,
+                    WriteOrdering::default(),
+                    HwMeasurementAcc::new(),
+                )
+                .await
+                .unwrap();
+            extra_id += 1;
+            assert!(extra_id < 40, "both shards should receive a point");
+        }
+
+        let expected = vec![1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
+        let request = ShardQueryRequest {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Mmr(MmrInternal {
+                vector: vec![1.0, 0.0, 0.0, 0.0].into(),
+                using: "".into(),
+                lambda: OrderedFloat(1.0),
+                candidates_limit: 4,
+            })),
+            filter: None,
+            score_threshold: None,
+            limit: 4,
+            offset: 0,
+            params: Some(SearchParams {
+                exact: true,
+                ..Default::default()
+            }),
+            with_vector: false.into(),
+            with_payload: false.into(),
+        };
+
+        for _ in 0..8 {
+            let hits = collection
+                .query(
+                    request.clone(),
+                    None,
+                    None,
+                    ShardSelectorInternal::All,
+                    None,
+                    HwMeasurementAcc::new(),
+                )
+                .await
+                .unwrap();
+            let ids = hits.iter().map(|point| point.id).collect_vec();
+            assert_eq!(ids, expected, "{distance:?}");
+        }
+    }
 }
