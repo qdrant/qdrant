@@ -138,10 +138,11 @@ pub trait FullTextIndexRead {
     /// here.
     ///
     /// Both are counted over the documents that carry at least one indexed
-    /// token. A value that tokenizes to nothing is in neither, so the ratio
-    /// does not move with the storage placement. Deletions since the last
-    /// build may still be counted, as in [`Self::posting_len`]: the on-disk
-    /// index returns its build-time total.
+    /// token. A value that tokenizes to nothing is in neither, so that does
+    /// not move the ratio across storage placements. Deletions since the last
+    /// build do: the on-disk index returns its build-time total, which still
+    /// counts them as [`Self::posting_len`] does, while the immutable index
+    /// loaded from the same files subtracts them.
     fn total_tokens(&self) -> Option<u64>;
 
     /// Documents in this segment containing `token_id`: `df(t)` before it is
