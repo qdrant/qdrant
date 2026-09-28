@@ -239,10 +239,6 @@ pub trait InvertedIndex {
     /// The `limit` best documents for `query` by BM25, highest first, among
     /// those `accept` allows. Term frequencies come from positions, so an
     /// index built without them cannot score and reports an error.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "called once `FullTextIndexRead` scores")
-    )]
     fn score_bm25(
         &self,
         query: &Bm25Query,

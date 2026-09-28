@@ -28,5 +28,6 @@ mod sparse_discover_test;
 mod sparse_idf_corpus_test;
 mod sparse_vector_index_search_tests;
 mod tenant_graph_test;
+mod text_bm25_test;
 mod text_statistics_test;
 mod unindexed_text_match_test;
