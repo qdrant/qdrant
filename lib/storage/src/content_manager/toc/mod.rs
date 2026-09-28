@@ -615,13 +615,14 @@ impl TableOfContent {
         &self,
         collection_name: String,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> Result<(), StorageError> {
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
         let initiate_shard_transfer_future = self
             .get_collection_unchecked(&collection_name)
             .await?
-            .initiate_shard_transfer(shard_id);
+            .initiate_shard_transfer(shard_id, from_peer_id);
         initiate_shard_transfer_future.await?;
         Ok(())
     }

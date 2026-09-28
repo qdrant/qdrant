@@ -149,6 +149,18 @@ impl Collection {
             shard_transfer.method = Some(default_method);
         }
 
+        // Staging-only: pause the sender before it registers anything of the `Start`, so a test
+        // can kill this peer while the entry is committed but not yet applied. On restart the
+        // entry is replayed before this peer rejoins consensus, spawning a driver for a transfer
+        // the rest of the cluster may have aborted since.
+        #[cfg(feature = "staging")]
+        if consensus.this_peer_id() == shard_transfer.from
+            && let Ok(secs) = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_START_DELAY_SEC")
+            && let Ok(secs) = secs.parse::<f64>()
+        {
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
+        }
+
         let do_transfer = {
             let this_peer_id = consensus.this_peer_id();
             let is_receiver = this_peer_id == shard_transfer.to;
@@ -660,9 +672,14 @@ impl Collection {
     /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
     /// partial state. In that case it will remain a dummy shard, signaled by the initialization
     /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    ///
+    /// If `from_peer_id` is given, only a transfer from that peer is accepted. A sender that
+    /// drives a transfer consensus has since aborted must not be able to piggyback on another
+    /// transfer into this shard.
     pub fn initiate_shard_transfer(
         &self,
         shard_id: ShardId,
+        from_peer_id: Option<PeerId>,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
         let shards_holder = self.shards_holder.clone();
 
@@ -698,24 +715,45 @@ impl Collection {
                     },
                     Duration::from_secs(60),
                 );
+                if !shard_transfer_registered {
+                    return Ok(false);
+                }
+
+                // Check the sender after waiting rather than as part of it. If a transfer from
+                // another peer is registered, one from a stale sender never will be, and waiting
+                // for it would hold the shard holder lock until the timeout. If this peer is
+                // behind instead, with the previous transfer still registered, the sender is
+                // refused as well and retries.
+                if let Some(from_peer_id) = from_peer_id
+                    && shards_holder_guard
+                        .get_transfers(|transfer| {
+                            transfer.is_target(this_peer_id, shard_id)
+                                && transfer.from == from_peer_id
+                        })
+                        .is_empty()
+                {
+                    return Err(CollectionError::bad_request(format!(
+                        "Refusing to initiate shard transfer into shard {shard_id}: \
+                         the registered shard transfer is not from peer {from_peer_id}",
+                    )));
+                }
 
                 // It is not enough to check for shard_transfer_registered,
                 // because it is registered before the state of the shard is changed.
-                shard_transfer_registered
-                    && replica_set.wait_for_state_condition_sync(
-                        |state| {
-                            state
-                                .get_peer_state(this_peer_id)
-                                .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
-                        },
-                        defaults::CONSENSUS_META_OP_WAIT,
-                    )
+                Ok(replica_set.wait_for_state_condition_sync(
+                    |state| {
+                        state
+                            .get_peer_state(this_peer_id)
+                            .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
+                    },
+                    defaults::CONSENSUS_META_OP_WAIT,
+                ))
             });
 
             match AbortOnDropHandle::new(shard_transfer_requested).await {
-                Ok(true) => Ok(()),
+                Ok(Ok(true)) => Ok(()),
 
-                Ok(false) => {
+                Ok(Ok(false)) => {
                     let description = "\
                         Failed to initiate shard transfer: \
                         Didn't receive shard transfer notification from consensus in 60 seconds";
@@ -724,6 +762,8 @@ impl Collection {
                         description: description.into(),
                     })
                 }
+
+                Ok(Err(err)) => Err(err),
 
                 Err(err) => Err(CollectionError::service_error(format!(
                     "Failed to initiate shard transfer: \

@@ -250,11 +250,12 @@ pub(super) async fn transfer_snapshot(
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_id,
-            shard_id,
+            remote_shard.id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
             local_api_key,
+            transfer_config.from,
         )
         .await
         .map_err(|err| {
