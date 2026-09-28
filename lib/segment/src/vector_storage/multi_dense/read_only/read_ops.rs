@@ -56,7 +56,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> MultiVectorStorageRead<T>
         read_multi_vector::<T, P, _>(&self.offsets, &self.vectors, key)
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
@@ -72,7 +76,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> MultiVectorStorageRead<T>
                 Ok(())
             },
         )
-        .expect("read vectors");
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {

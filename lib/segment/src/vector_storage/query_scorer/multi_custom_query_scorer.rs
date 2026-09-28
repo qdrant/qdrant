@@ -126,8 +126,7 @@ impl<
             .for_each_in_batch_multi(ids, |idx, vector| {
                 self.hw.vector_io_read(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
-        Ok(())
+            })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
