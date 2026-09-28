@@ -67,7 +67,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
-        Ok(bytes.map(|bytes| V::from_bytes(&bytes)))
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
     /// Get the serialized value for a given point offset.
@@ -85,7 +85,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        Ok(Some(self.config.compression.decompress(raw)))
+        Ok(Some(self.config.compression.decompress(raw)?))
     }
 
     /// Iterate over all given values and execute callback for each one.
@@ -109,7 +109,8 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         self.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, point_offset, bytes| {
-                callback(user_data, point_offset, bytes.map(V::from_bytes))
+                let value = bytes.map(V::from_bytes).transpose()?;
+                callback(user_data, point_offset, value)
             },
             hw_counter_cell,
         )
@@ -152,7 +153,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
             |(user_data, point_offset), bytes| {
                 hw_counter_cell.incr_delta(bytes.len());
 
-                let decompressed = self.config.compression.decompress(bytes);
+                let decompressed = self.config.compression.decompress(bytes)?;
                 callback(user_data, point_offset, Some(&decompressed))
             },
         )
@@ -196,8 +197,8 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
             .read_batch_values::<Sequential, _, _>(pointers, |point_offset, bytes| {
                 hw_counter.incr_delta(bytes.len());
 
-                let decompressed = self.config.compression.decompress(bytes);
-                let value = V::from_bytes(&decompressed);
+                let decompressed = self.config.compression.decompress(bytes)?;
+                let value = V::from_bytes(&decompressed)?;
 
                 callback(point_offset, value)
             })

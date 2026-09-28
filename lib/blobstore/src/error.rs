@@ -25,6 +25,9 @@ pub enum BlobstoreError {
     PageNotFound { page_id: PageId },
     #[error("value {point_offset} not found")]
     ValueNotFound { point_offset: PointOffset },
+    /// Stored bytes don't decode into a value, the storage is corrupt
+    #[error("Failed to decode value: {description}")]
+    DecodeError { description: String },
 }
 
 impl BlobstoreError {
@@ -45,6 +48,12 @@ impl BlobstoreError {
             operation: operation.into(),
         }
     }
+
+    pub fn decode_error(description: impl Into<String>) -> Self {
+        BlobstoreError::DecodeError {
+            description: description.into(),
+        }
+    }
 }
 
 impl IsNotFound for BlobstoreError {
@@ -59,7 +68,8 @@ impl IsNotFound for BlobstoreError {
             | BlobstoreError::ValidationError { .. }
             | BlobstoreError::UnsupportedOperation { .. }
             | BlobstoreError::PageNotFound { .. }
-            | BlobstoreError::ValueNotFound { .. } => false,
+            | BlobstoreError::ValueNotFound { .. }
+            | BlobstoreError::DecodeError { .. } => false,
         }
     }
 }

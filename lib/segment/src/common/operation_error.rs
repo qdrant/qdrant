@@ -387,6 +387,7 @@ impl From<BlobstoreError> for OperationError {
             },
             BlobstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
             BlobstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
+            BlobstoreError::DecodeError { .. } => Self::service_error(err.to_string()),
         }
     }
 }
