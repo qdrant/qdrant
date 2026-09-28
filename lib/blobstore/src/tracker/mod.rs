@@ -88,10 +88,18 @@ impl OptionalPointer {
 
     pub fn to_option(self) -> Option<ValuePointer> {
         if self.discriminant == Self::OPTIONAL_NONE {
-            None
-        } else {
-            Some(self.value)
+            return None;
         }
+
+        // We never write pointers with length zero, but it may appear on a torn mapping write
+        // Disallow in debug builds, disregard in release builds to avoid panics on startup
+        #[cfg(not(test))]
+        debug_assert_ne!(self.value.length, 0, "ValuePointer with length 0 must not exist");
+        if self.value.length == 0 {
+            return None;
+        }
+
+        Some(self.value)
     }
 }
 
