@@ -710,31 +710,51 @@ impl Collection {
                 let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
                 let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
-                        shard_transfers.iter().any(|shard_transfer| {
-                            shard_transfer.is_target(this_peer_id, shard_id)
-                                && from_peer_id.is_none_or(|from| shard_transfer.from == from)
-                        })
+                        shard_transfers
+                            .iter()
+                            .any(|shard_transfer| shard_transfer.is_target(this_peer_id, shard_id))
                     },
                     Duration::from_secs(60),
                 );
+                if !shard_transfer_registered {
+                    return Ok(false);
+                }
+
+                // Check the sender after waiting rather than as part of it. If a transfer from
+                // another peer is registered, one from a stale sender never will be, and waiting
+                // for it would hold the shard holder lock until the timeout. If this peer is
+                // behind instead, with the previous transfer still registered, the sender is
+                // refused as well and retries.
+                if let Some(from_peer_id) = from_peer_id
+                    && shards_holder_guard
+                        .get_transfers(|transfer| {
+                            transfer.is_target(this_peer_id, shard_id)
+                                && transfer.from == from_peer_id
+                        })
+                        .is_empty()
+                {
+                    return Err(CollectionError::bad_request(format!(
+                        "Refusing to initiate shard transfer into shard {shard_id}: \
+                         the registered shard transfer is not from peer {from_peer_id}",
+                    )));
+                }
 
                 // It is not enough to check for shard_transfer_registered,
                 // because it is registered before the state of the shard is changed.
-                shard_transfer_registered
-                    && replica_set.wait_for_state_condition_sync(
-                        |state| {
-                            state
-                                .get_peer_state(this_peer_id)
-                                .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
-                        },
-                        defaults::CONSENSUS_META_OP_WAIT,
-                    )
+                Ok(replica_set.wait_for_state_condition_sync(
+                    |state| {
+                        state
+                            .get_peer_state(this_peer_id)
+                            .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
+                    },
+                    defaults::CONSENSUS_META_OP_WAIT,
+                ))
             });
 
             match AbortOnDropHandle::new(shard_transfer_requested).await {
-                Ok(true) => Ok(()),
+                Ok(Ok(true)) => Ok(()),
 
-                Ok(false) => {
+                Ok(Ok(false)) => {
                     let description = "\
                         Failed to initiate shard transfer: \
                         Didn't receive shard transfer notification from consensus in 60 seconds";
@@ -743,6 +763,8 @@ impl Collection {
                         description: description.into(),
                     })
                 }
+
+                Ok(Err(err)) => Err(err),
 
                 Err(err) => Err(CollectionError::service_error(format!(
                     "Failed to initiate shard transfer: \
