@@ -318,6 +318,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         let Self {
             config: _,
             len: _,
+            status_len: _,
             chunks: _,
             directory: _,
             advice: _,

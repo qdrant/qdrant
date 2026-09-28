@@ -57,17 +57,20 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             )));
         }
 
-        let len = read_status_len(fs, &status_file(directory))?;
+        let status_len = read_status_len(fs, &status_file(directory))?;
         let chunks = read_chunks(fs, directory, advice, populate, false)?;
 
-        Ok(Self {
+        let mut storage = Self {
             config,
-            len,
+            len: status_len,
+            status_len,
             chunks,
             directory: directory.to_owned(),
             advice,
             populate,
-        })
+        };
+        storage.len = status_len.min(storage.served_len()?);
+        Ok(storage)
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -95,6 +98,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         let Self {
             config: _,
             len: _,
+            status_len: _,
             chunks,
             directory: _,
             advice: _,

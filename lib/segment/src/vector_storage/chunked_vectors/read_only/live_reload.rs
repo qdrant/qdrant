@@ -60,10 +60,13 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         _new_points: &SortedSlice<'_, PointOffsetType>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let Some(new_len) = read_status_len(fs, &status_file(&self.directory)).ok_unchanged()?
-        else {
-            return Ok(());
+        let new_len = match read_status_len(fs, &status_file(&self.directory)).ok_unchanged()? {
+            Some(new_len) => new_len,
+            // An unchanged status still owes whatever a previous reload capped.
+            None if self.status_len > self.len => self.status_len,
+            None => return Ok(()),
         };
+        self.status_len = new_len;
 
         // Same len is also no-op
         if new_len == self.len {
