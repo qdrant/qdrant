@@ -376,7 +376,8 @@ pub struct ShardTransferInfo {
     #[anonymize(false)]
     pub method: Option<ShardTransferMethod>,
 
-    /// A human-readable report of the transfer progress. Available only on the source peer.
+    /// A human-readable report of the transfer progress. Available only on the source peer, and
+    /// on the target peer during snapshot recovery.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
