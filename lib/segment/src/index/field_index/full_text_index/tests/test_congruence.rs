@@ -333,13 +333,16 @@ fn test_congruence(
         }
 
         // Every shape answers the same length for every point, deleted ones
-        // included, and the same total. Only before a reopen: the production
+        // included, and the same total without deletions: the on-disk total
+        // is the build-time one. Only before a reopen: the production
         // constructors read the scoring const, so the gridstore reopen records
         // nothing while the mmap reopen still finds its sidecar.
         if !reopen {
-            let total_a = index_a.total_tokens(&hw_counter).unwrap();
+            let total_a = index_a.total_tokens();
             assert!(total_a.is_some(), "{type_a:?} recorded no lengths");
-            assert_eq!(total_a, index_b.total_tokens(&hw_counter).unwrap());
+            if !deleted {
+                assert_eq!(total_a, index_b.total_tokens());
+            }
             let point_ids: Vec<PointOffsetType> = (0..POINT_COUNT as PointOffsetType).collect();
             let doc_lens = |index: &FullTextIndex| {
                 let mut out = vec![None; point_ids.len()];
