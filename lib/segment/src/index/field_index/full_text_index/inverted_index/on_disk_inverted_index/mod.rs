@@ -40,7 +40,7 @@ pub mod on_disk_postings_enum;
 mod raw_posting_list;
 pub mod types;
 
-const POSTINGS_FILE: &str = "postings.dat";
+pub(super) const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
@@ -945,6 +945,9 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             .point_to_doc_len
             .is_some()
             .then(|| self.storage.postings.total_tokens())
+            // Zero over live documents is a header written before it carried
+            // the total: report no lengths rather than a wrong average.
+            .filter(|&total| total > 0 || self.points_count() == 0)
     }
 
     fn for_each_token_id<'a, U: UserData>(

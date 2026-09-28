@@ -464,8 +464,9 @@ mod tests {
     use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::PostingsHeader;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::{
-        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE,
+        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE,
     };
 
     fn generate_word() -> String {
@@ -951,6 +952,36 @@ mod tests {
             !opened.records_doc_len(),
             "a truncated sidecar must not be padded into looking complete",
         );
+    }
+
+    /// A header written before it carried the total reads it as zero. Over
+    /// live documents that is not a real total, so it is reported as absent.
+    #[rstest]
+    fn zero_header_total_reports_no_total(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+
+        let postings = mmap_dir.path().join(POSTINGS_FILE);
+        let mut bytes = fs_err::read(&postings).unwrap();
+        let offset = std::mem::offset_of!(PostingsHeader, total_tokens);
+        bytes[offset..offset + size_of::<u64>()].fill(0);
+        fs_err::write(&postings, bytes).unwrap();
+
+        let empty_deleted = BitVec::new();
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .expect("the index still opens");
+        assert!(opened.points_count() > 0);
+        assert_eq!(opened.total_tokens(), None);
     }
 
     /// Every backend answers `doc_len_batch` with the same number for every point,
