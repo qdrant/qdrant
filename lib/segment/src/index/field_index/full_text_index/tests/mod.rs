@@ -689,16 +689,24 @@ fn text_statistics_gather_skips_tombstoned_points() {
             stats
         };
 
+        // The on-disk total is the build-time one: point 2's deletion reached
+        // the index, yet its 2 tokens stay counted, as its postings stay in df.
+        let kept = if matches!(index, FullTextIndex::OnDisk(_)) {
+            2
+        } else {
+            0
+        };
+
         let untracked = gather(&BitVec::new());
         assert_eq!(
             untracked.documents, 2,
             "the index alone still counts point 1"
         );
-        assert_eq!(untracked.total_tokens, Some(10));
+        assert_eq!(untracked.total_tokens, Some(10 + kept));
 
         let stats = gather(&deleted);
         assert_eq!(stats.documents, 1);
-        assert_eq!(stats.total_tokens, Some(3));
+        assert_eq!(stats.total_tokens, Some(3 + kept));
         assert_eq!(stats.df["alpha"], 1);
         assert_eq!(
             stats.df["the"], 0,

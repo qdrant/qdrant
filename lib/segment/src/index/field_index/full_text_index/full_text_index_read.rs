@@ -72,7 +72,8 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     // Deleted by the id tracker, yet still counted by this index: the
     // append-only delete path tombstones a point without clearing its payload,
     // so the index's own counters keep it. Any other deletion has already
-    // emptied the point here.
+    // emptied the point here, though the on-disk total keeps its length, as
+    // `posting_len` keeps its postings.
     check_process_stopped(is_stopped)?;
     let tombstoned: Vec<PointOffsetType> = deleted
         .iter_ones()
