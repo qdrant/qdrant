@@ -14,7 +14,7 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
-    ScrollResult, UpdateStatus,
+    ScrollResult, UpdateStatus, VectorsConfig,
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::recommendations::recommend_by;
@@ -24,10 +24,11 @@ use fs_err::File;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, SearchParams, WithPayloadInterface,
+    WithVector,
 };
 use serde_json::Map;
 use shard::query::{MmrInternal, SampleInternal, ScoringQuery, ShardQueryRequest};
@@ -1210,7 +1211,7 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
         let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
         let config = CollectionConfigInternal {
             params: CollectionParams {
-                vectors: VectorParamsBuilder::new(4, distance).build().into(),
+                vectors: VectorsConfig::from(VectorParamsBuilder::new(4, distance).build()),
                 shard_number: NonZeroU32::new(2).unwrap(),
                 ..CollectionParams::empty()
             },
@@ -1237,7 +1238,7 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
         .unwrap();
 
         let batch = BatchPersisted {
-            ids: (1..=8).map(u64::into).collect_vec(),
+            ids: (1..=8).map(PointIdType::from).collect_vec(),
             vectors: BatchVectorStructPersisted::Single(
                 (0..8)
                     .map(|i| vec![1.0 - 0.2 * i as f32, 0.0, 0.0, 0.0])
@@ -1284,7 +1285,7 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
                 break;
             }
             let extra = BatchPersisted {
-                ids: vec![extra_id.into()],
+                ids: vec![PointIdType::from(extra_id)],
                 vectors: BatchVectorStructPersisted::Single(vec![vec![-2.0, 0.0, 0.0, 0.0]]),
                 payloads: None,
             };
@@ -1304,12 +1305,17 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
             assert!(extra_id < 40, "both shards should receive a point");
         }
 
-        let expected = vec![1u64.into(), 2u64.into(), 3u64.into(), 4u64.into()];
+        let expected = vec![
+            PointIdType::from(1u64),
+            PointIdType::from(2u64),
+            PointIdType::from(3u64),
+            PointIdType::from(4u64),
+        ];
         let request = ShardQueryRequest {
             prefetches: vec![],
             query: Some(ScoringQuery::Mmr(MmrInternal {
-                vector: vec![1.0, 0.0, 0.0, 0.0].into(),
-                using: "".into(),
+                vector: VectorInternal::from(vec![1.0, 0.0, 0.0, 0.0]),
+                using: String::from(""),
                 lambda: OrderedFloat(1.0),
                 candidates_limit: 4,
             })),
@@ -1321,8 +1327,8 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
                 exact: true,
                 ..Default::default()
             }),
-            with_vector: false.into(),
-            with_payload: false.into(),
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
         };
 
         for _ in 0..8 {
