@@ -4,7 +4,8 @@
 //! Guarantees:
 //!
 //! - resident RAM does not scale with point count (only the
-//!   [`DiskMappingReader`] core is held);
+//!   [`DiskMappingReader`] core is held), except for
+//!   [compact versions](super::compact_versions), held at 4 bytes per point;
 //! - read-by-id never loads the full deleted set — deletion is a single lazy
 //!   `get_bit`;
 //! - the full deleted set is materialized at most once, and only for paths
@@ -14,19 +15,20 @@
 mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
+mod versions;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{TypedStorage, UniversalRead};
+use common::universal_io::UniversalRead;
 
+use self::versions::ReadOnlyVersions;
 use super::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
-use crate::types::SeqNumberType;
+use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 /// Read-only id tracker backed by the on-disk format files, read lazily
 /// through a [`UniversalRead`] backend.
@@ -36,8 +38,7 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     /// Lazy mapping read core (resident: headers, sparse index, `is_uuid`).
     reader: DiskMappingReader<S>,
 
-    versions: TypedStorage<S, SeqNumberType>,
-    versions_len: u64,
+    versions: ReadOnlyVersions<S>,
     /// Kept for per-point `get_bit`; replaced with a freshly opened handle on
     /// every [`Self::live_reload`].
     deleted_file: StoredBitSlice<S>,
@@ -53,7 +54,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             i2e_path(&self.path),
             e2i_path(&self.path),
             is_uuid_path(&self.path),
-            version_mapping_path(&self.path),
+            self.versions.path(&self.path),
             deleted_path(&self.path),
         ]
     }
