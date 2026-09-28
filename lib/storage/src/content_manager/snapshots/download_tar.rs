@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use cancel::CancellationToken;
+use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use common::tar_unpack::tar_unpack_reader;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
@@ -146,6 +147,7 @@ impl<R: Read> Read for HashingReader<R> {
 /// * `url` - The URL to download the tar file from
 /// * `target_dir` - The directory to extract the tar contents into
 /// * `compute_checksum` - If true, compute and return the SHA-256 hash of the downloaded data
+/// * `recovery_progress` - If set, count the downloaded bytes into this recovery progress
 ///
 /// # Returns
 ///
@@ -156,6 +158,7 @@ pub async fn download_and_unpack_tar(
     url: &Url,
     target_dir: &Path,
     compute_checksum: bool,
+    recovery_progress: Option<RecoveryProgressHandle>,
 ) -> Result<Option<String>, StorageError> {
     log::debug!(
         "Streaming tar download from {url} to {}",
@@ -172,7 +175,14 @@ pub async fn download_and_unpack_tar(
     }
 
     // Convert the response body stream into an AsyncRead with timeout
-    let stream = response.bytes_stream().map_err(std::io::Error::other);
+    let stream = response
+        .bytes_stream()
+        .inspect_ok(move |bytes| {
+            if let Some(recovery_progress) = &recovery_progress {
+                recovery_progress.lock().add_bytes(bytes.len());
+            }
+        })
+        .map_err(std::io::Error::other);
     let stream_reader = StreamReader::new(stream);
     // Wrap with timeout to detect stalled downloads
     let async_reader = TimeoutReader::new(stream_reader, STREAM_READ_TIMEOUT);
@@ -240,7 +250,7 @@ mod tests {
         let client = reqwest::Client::new();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let hash = download_and_unpack_tar(&client, &url, temp_dir.path(), true)
+        let hash = download_and_unpack_tar(&client, &url, temp_dir.path(), true, None)
             .await
             .unwrap();
 

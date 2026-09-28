@@ -25,6 +25,11 @@ impl EtaCalculator {
         self.estimate_raw(Instant::now(), target_progress)
     }
 
+    /// Calculate the current progress rate per second.
+    pub fn rate(&self) -> Option<f64> {
+        self.rate_raw(Instant::now())
+    }
+
     fn new_raw(now: Instant) -> Self {
         Self([(now, 0)].as_ref().into())
     }
@@ -72,6 +77,20 @@ impl EtaCalculator {
         let elapsed = (now - last_time).as_secs_f64();
         let eta = (value_diff as f64 / rate - elapsed).max(0.0);
         Duration::try_from_secs_f64(eta).ok()
+    }
+
+    fn rate_raw(&self, now: Instant) -> Option<f64> {
+        let &(_, last_progress) = self.0.back()?;
+
+        // Find the oldest measurement that is not too old.
+        let &(old_time, old_progress) = self
+            .0
+            .iter()
+            .find(|(time, _)| now - *time <= Self::DURATION * Self::SIZE as u32)?;
+
+        // Measure up to now, so the rate drops when progress stalls.
+        let elapsed = (now - old_time).as_secs_f64();
+        (elapsed > 0.0).then(|| (last_progress - old_progress) as f64 / elapsed)
     }
 }
 
