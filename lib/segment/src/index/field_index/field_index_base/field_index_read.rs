@@ -1,8 +1,11 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::payload_field_index::PayloadFieldIndexRead;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::TextFieldStats;
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -68,6 +71,15 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     ///
     /// [`PayloadIndexRead::numeric_index_for`]: crate::index::PayloadIndexRead::numeric_index_for
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
+
+    /// Add this index's text statistics to `stats`, and report whether it is
+    /// a text index at all.
+    fn fill_text_statistics(
+        &self,
+        stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 
     /// Borrowed facet view, if this index supports faceting.
     ///

@@ -462,6 +462,11 @@ where
                 }
             }
         }
+
+        for (field, stats) in query_context.mut_text_stats().iter_mut() {
+            self.payload_index
+                .fill_text_statistics(field, stats, &is_stopped, &hw_counter)?;
+        }
         Ok(())
     }
 }

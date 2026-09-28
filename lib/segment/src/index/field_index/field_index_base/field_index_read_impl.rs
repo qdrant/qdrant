@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -7,10 +9,13 @@ use super::field_index::FieldIndex;
 use super::field_index_read::FieldIndexRead;
 use super::payload_field_index::PayloadFieldIndexRead;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::TextFieldStats;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
-use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
+use crate::index::field_index::full_text_index::full_text_index_read::{
+    FullTextIndexRead, fill_text_statistics,
+};
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
@@ -255,6 +260,30 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_)
             | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    fn fill_text_statistics(
+        &self,
+        stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        match self {
+            FieldIndex::FullTextIndex(index) => {
+                fill_text_statistics(index, stats, is_stopped, hw_counter)?;
+                Ok(true)
+            }
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::NullIndex(_) => Ok(false),
         }
     }
 
