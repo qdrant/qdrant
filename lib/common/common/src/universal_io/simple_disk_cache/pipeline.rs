@@ -78,12 +78,13 @@ where
         });
     }
 
-    if range.end > local.mmap().len::<u8>()? {
+    let local_len = local.mmap().len::<u8>()?;
+    if range.end > local_len {
         // If remote file has grown, and `reopen` hasn't been called, it is OOB
         return Err(UniversalIoError::OutOfBounds {
             start: range.start,
             end: range.end,
-            elements: (range.end - range.start) as usize,
+            elements: local_len as usize,
         });
     }
 

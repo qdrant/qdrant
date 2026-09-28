@@ -108,7 +108,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
 
         self.chunks.truncate(fresh_from);
         self.chunks.extend(new_chunks);
-        self.len = new_len;
+        // The status can be visible before the bytes it counts; the next
+        // reload sees it still ahead of `len` and picks up the rest.
+        self.len = new_len.min(self.served_len()?);
         Ok(())
     }
 }

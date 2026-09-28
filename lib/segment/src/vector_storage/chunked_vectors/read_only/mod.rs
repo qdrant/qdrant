@@ -49,14 +49,24 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
     use super::super::chunks::chunk_name;
+    use super::super::config::status_file;
     use super::super::test_utils::{append_range, make_vec};
     use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::*;
     use crate::common::live_reload::LiveReload;
+
+    /// Move the stored count ahead of the chunks it describes.
+    fn set_status_len(directory: &std::path::Path, len: usize) {
+        let path = status_file(directory);
+        let mut bytes = fs_err::read(&path).unwrap();
+        bytes[..std::mem::size_of::<usize>()].copy_from_slice(&len.to_ne_bytes());
+        fs_err::write(&path, &bytes).unwrap();
+    }
 
     /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
@@ -405,5 +415,46 @@ mod tests {
             Some(make_vec(99, DIM).as_slice()),
             "vector 99 must survive a failed reload",
         );
+    }
+
+    /// A reload must not advertise vectors its chunks cannot serve: the status
+    /// file and the chunks are separate objects, and the count can arrive
+    /// first.
+    #[test]
+    fn live_reload_does_not_outrun_its_chunks() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        set_status_len(dir.path(), 150);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(
+            reader.len(),
+            100,
+            "reload must not count vectors the chunks do not hold",
+        );
+
+        let keys: Vec<PointOffsetType> = (0..reader.len() as PointOffsetType).collect();
+        let mut seen = 0;
+        reader
+            .for_each_in_batch(&keys, |_, _| seen += 1)
+            .expect("every advertised vector is readable");
+        assert_eq!(seen, 100);
     }
 }
