@@ -193,9 +193,7 @@ pub trait GraphLayersBase {
             to_explore.clear();
             to_score.clear();
 
-            // Collect 1-hop neighbors (direct neighbors). A link is marked
-            // visited only when admitted: one skipped by a cap stays reachable
-            // from another candidate, as if it were not in this list.
+            // Collect 1-hop neighbors (direct neighbors)
             _ = self.try_for_each_link(candidate.idx, level, |hop1| {
                 if hop1_visited_list.check(hop1) {
                     return ControlFlow::Continue(());
@@ -208,11 +206,6 @@ pub trait GraphLayersBase {
                         return ControlFlow::Break(());
                     }
                 } else if to_explore.len() < hop1_limit {
-                    // Same cap as the matches above. With `payload_m`, a point's
-                    // level-0 links are the base graph's plus every payload
-                    // block's, appended unpruned, so uncapped this is hundreds
-                    // of 2-hop expansions. Base-graph links come first: storage
-                    // reorders the first `m0` but keeps them in front.
                     hop1_visited_list.check_and_update_visited(hop1);
                     to_explore.push(hop1);
                 }

@@ -474,9 +474,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 to_score.push(id)
             });
 
-            // Non-matches go to 2-hop exploration, under the same per-candidate
-            // cap as the matches. `non_matches` spans the batch, so the quota is
-            // per position, like `admit_matches`.
+            // Non-matches go to 2-hop exploration.
             bridge_quotas.clear();
             bridge_quotas.resize(batch.len(), hop1_limit);
             bridges.clear();
