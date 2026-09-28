@@ -7234,6 +7234,7 @@ dependencies = [
  "vaporetto",
  "walkdir",
  "zerocopy",
+ "zstd",
 ]
 
 [[package]]

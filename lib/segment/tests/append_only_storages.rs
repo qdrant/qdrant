@@ -302,6 +302,8 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
             .join("payload_storage/compacted_tracker.dat")
             .exists()
     );
+    assert!(built_path.join("id_tracker.compact_versions").exists());
+    assert!(!built_path.join("id_tracker.versions").exists());
     drop(built);
 
     let reloaded = load_segment(
@@ -320,6 +322,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         );
         let sparse = reloaded.vector("sparse", id.into(), &hw_counter).unwrap();
         assert!(sparse.is_some(), "sparse vector of point {id}");
+        assert_eq!(reloaded.point_version(id.into()), Some(2));
     }
 
     let built = build(&appendable);

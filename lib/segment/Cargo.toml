@@ -96,6 +96,7 @@ tokio = { workspace = true }
 byteorder = { workspace = true }
 stumpalo = { workspace = true }
 zerocopy = { workspace = true }
+zstd = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory

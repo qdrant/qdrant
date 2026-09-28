@@ -9,6 +9,7 @@
 //! - [`ReadOnlyDiskIdTracker`] — fully read-only; picks up external deletions
 //!   via live-reload.
 
+pub mod compact_versions;
 mod id_tracker;
 mod id_tracker_read;
 mod lifecycle;
@@ -22,6 +23,8 @@ pub mod update_only;
 mod tests;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
 use common::universal_io::{SliceBufferedUpdateWrapper, UniversalWrite};
@@ -48,9 +51,20 @@ pub struct DiskIdTracker<S: UniversalWrite> {
     deleted: BitVec,
     deleted_wrapper: BufferedUpdateBitSlice<S>,
 
-    /// Resident per-point versions; persisted via the wrapper.
+    /// Resident per-point versions; persisted via `versions_file`.
     internal_to_version: CompressedVersions,
-    internal_to_version_wrapper: SliceBufferedUpdateWrapper<S, SeqNumberType>,
+    versions_file: VersionsFile<S>,
+}
+
+/// Persistence of the resident versions.
+#[derive(Debug)]
+enum VersionsFile<S: UniversalWrite> {
+    /// Flat `id_tracker.versions`, one `u64` per point, updated in place.
+    Flat(SliceBufferedUpdateWrapper<S, SeqNumberType>),
+    /// [`compact_versions`] file, replaced whole on flush once `dirty`.
+    ///
+    /// `dirty` is shared with the flushers, so that a failed flush can mark it again.
+    Compact { fs: S::Fs, dirty: Arc<AtomicBool> },
 }
 
 impl<S: UniversalWrite> DiskIdTracker<S> {
@@ -63,7 +77,7 @@ impl<S: UniversalWrite> DiskIdTracker<S> {
             deleted,
             deleted_wrapper: _, // mmap-backed, accounted via files
             internal_to_version,
-            internal_to_version_wrapper: _, // mmap-backed, accounted via files
+            versions_file: _, // file-backed, accounted via files
         } = self;
         internal_to_version.ram_usage_bytes()
             + deleted.capacity().div_ceil(u8::BITS as usize)

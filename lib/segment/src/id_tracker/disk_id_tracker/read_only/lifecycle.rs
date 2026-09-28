@@ -9,8 +9,9 @@ use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
 };
 
-use super::ReadOnlyDiskIdTracker;
+use super::{ReadOnlyDiskIdTracker, ReadOnlyVersions};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::disk_id_tracker::compact_versions::{self, compact_versions_path};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
 use crate::types::SeqNumberType;
@@ -20,6 +21,16 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         OpenOptions {
             writeable: false,
             need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// The compact versions file is read whole at open.
+    fn compact_versions_open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: true,
             populate,
             advice: AdviceSetting::Global,
         }
@@ -48,8 +59,19 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             return Ok(false);
         }
 
-        let options = Self::open_options(populate);
-        fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
+        let compact_versions_path = compact_versions_path(segment_path);
+        if UniversalReadFs::exists(fs, &compact_versions_path)? {
+            fs.schedule_open(
+                &compact_versions_path,
+                Some(Self::compact_versions_open_options(
+                    Populate::PreferBackground,
+                )),
+                None,
+            );
+        } else {
+            let options = Self::open_options(populate);
+            fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
+        }
         fs.schedule_open(
             &deleted_path(segment_path),
             Some(Self::deleted_open_options()),
@@ -89,14 +111,19 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             return Ok(None);
         };
 
-        let options = Self::open_options(populate);
-
-        let versions = TypedStorage::<S, SeqNumberType>::new(fs.open(
-            version_mapping_path(segment_path),
-            options,
-            Default::default(),
-        )?);
-        let versions_len = versions.len()?;
+        let compact_options = Self::compact_versions_open_options(Populate::Blocking);
+        let versions = match compact_versions::load(fs, segment_path, compact_options)? {
+            Some(versions) => ReadOnlyVersions::Compact(versions),
+            None => {
+                let file = TypedStorage::<S, SeqNumberType>::new(fs.open(
+                    version_mapping_path(segment_path),
+                    Self::open_options(populate),
+                    Default::default(),
+                )?);
+                let len = file.len()?;
+                ReadOnlyVersions::Flat { file, len }
+            }
+        };
 
         let deleted_file = StoredBitSlice::open(
             fs,
@@ -109,7 +136,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             path: segment_path.to_path_buf(),
             reader,
             versions,
-            versions_len,
             deleted_file,
             deleted_full: OnceLock::new(),
         }))
