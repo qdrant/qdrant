@@ -838,8 +838,13 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn get_posting_len(
         &self,
         token_id: TokenId,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>> {
+        // One header read, and the statistics gather performs one per query
+        // term per segment.
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(READ_ENTRY_OVERHEAD);
         self.storage.postings.posting_len(token_id)
     }
 
