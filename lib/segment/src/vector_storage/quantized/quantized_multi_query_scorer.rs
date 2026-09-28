@@ -6,6 +6,7 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
 
 use super::quantized_query_scorer::InternalScorerUnsupported;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::spaces::metric::Metric;
@@ -97,7 +98,11 @@ where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hardware_counter
@@ -109,7 +114,8 @@ where
             |score_fn| score_fn(&self.query),
             scores,
             &self.hardware_counter,
-        )
+        );
+        Ok(())
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

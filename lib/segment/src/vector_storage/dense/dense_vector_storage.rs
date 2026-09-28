@@ -846,6 +846,7 @@ mod tests {
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer
             .score_points(&mut query_points, 0)
+            .unwrap()
             .collect::<Vec<_>>();
 
         assert_eq!(res.len(), 3);

@@ -335,4 +335,62 @@ mod tests {
         }
         assert!(!reader.is_deleted_vector(0));
     }
+
+    /// A failed storage read has to reach the caller as an error. The scorer
+    /// runs inside the rayon search pool, where a panic takes the query down
+    /// and reports nothing the caller can act on.
+    #[test]
+    fn score_stored_batch_reports_a_failed_read() {
+        use crate::spaces::simple::DotProductMetric;
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+
+        const POINT_COUNT: PointOffsetType = 64;
+        const DIM: usize = 16;
+
+        let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+        {
+            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+            for id in 0..POINT_COUNT {
+                let vector: DenseVector = vec![id as VectorElementType; DIM];
+                storage
+                    .insert_vector(id, VectorRef::from(&vector), &hw)
+                    .unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+
+        let storage = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        let query: DenseVector = vec![1.0; DIM];
+        let scorer = MetricQueryScorer::<VectorElementType, DotProductMetric, _>::new(
+            query,
+            &storage,
+            HardwareCounterCell::disposable(),
+        );
+
+        let mut scores = [0.0; 1];
+        assert!(
+            scorer
+                .score_stored_batch(&[POINT_COUNT + 8], &mut scores)
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
 }

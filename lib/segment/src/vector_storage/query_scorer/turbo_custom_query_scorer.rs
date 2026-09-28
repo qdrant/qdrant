@@ -3,6 +3,7 @@ use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::TurboScoring;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -78,7 +79,11 @@ where
     }
 
     #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         // One vector of IO per point; CPU is counted per sub-query below,
@@ -86,14 +91,12 @@ where
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
         let cpu_counter = self.hardware_counter.cpu_counter();
 
-        self.storage
-            .for_each_in_dense_tq_batch(ids, |idx, bytes| {
-                scores[idx] = self.query.score_by(|query| {
-                    cpu_counter.incr();
-                    self.storage.score_query_bytes(query, bytes)
-                });
-            })
-            .expect("read TQ vectors");
+        self.storage.for_each_in_dense_tq_batch(ids, |idx, bytes| {
+            scores[idx] = self.query.score_by(|query| {
+                cpu_counter.incr();
+                self.storage.score_query_bytes(query, bytes)
+            });
+        })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

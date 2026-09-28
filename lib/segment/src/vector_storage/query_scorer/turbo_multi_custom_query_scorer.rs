@@ -4,6 +4,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -66,7 +67,11 @@ where
         })
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         let keys = ids.iter().copied().enumerate();
 
         let hw_counter = &self.hardware_counter;
@@ -83,7 +88,6 @@ where
                     self.storage.score_records_max_similarity(query, records)
                 });
             })
-            .expect("Failed to score stored batch");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
