@@ -36,7 +36,11 @@ use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSpars
 use crate::vector_storage::{TurboMultiScoring, TurboScoring};
 
 pub trait RawScorer {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>;
 
     /// Score stored vector with vector under the given index
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
@@ -479,9 +483,13 @@ fn new_multi_scorer_with_metric<
 }
 
 impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         assert_eq!(points.len(), scores.len());
-        self.query_scorer.score_stored_batch(points, scores);
+        self.query_scorer.score_stored_batch(points, scores)
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
