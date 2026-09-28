@@ -15,7 +15,7 @@ use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_only::load::{load_segments_parallel, reload_segments_parallel};
 
 /// How a single [`live_reload_attempt`](ReadOnlyEdgeShard::live_reload_attempt) ended.
-enum LiveReloadOutcome {
+pub enum LiveReloadOutcome {
     /// The attempt fully converged on its manifest snapshot.
     Complete,
     /// Segments vanished benignly mid-attempt (the leader removed them, confirmed
@@ -41,7 +41,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// and the next live_reload replays its unapplied delta (see `pending_reload`).
     ///
     /// Not cancellable; see [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
-    pub fn live_reload(&self) -> OperationResult<()>
+    pub fn live_reload(&self) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -59,7 +59,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// [`OperationError::Cancelled`] and the shard keeps whatever state was reached: every swap is
     /// atomic and every segment reload is applied under its write lock, so reads stay consistent and
     /// the next live_reload continues from there. The call never sets or resets the caller's flag.
-    pub fn live_reload_with_cancellation(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<()>
+    pub fn live_reload_with_cancellation(
+        &self,
+        is_stopped: Arc<AtomicBool>,
+    ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -67,7 +70,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     }
 
     /// [`live_reload`](Self::live_reload) with a caller-supplied hardware counter.
-    pub fn live_reload_with(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    pub fn live_reload_with(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -76,7 +82,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
     /// Shared by the counter-less entry points and by [`open`](Self::open), which is a live_reload
     /// over an empty shard.
-    pub(super) fn live_reload_cancellable(&self, is_stopped: &AtomicBool) -> OperationResult<()>
+    pub(super) fn live_reload_cancellable(
+        &self,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -88,7 +97,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         &self,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<()>
+    ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -103,7 +112,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
 
         for _ in 0..MAX_ATTEMPTS {
             match self.live_reload_attempt(hw_counter, is_stopped)? {
-                LiveReloadOutcome::Complete => return Ok(()),
+                LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
                 LiveReloadOutcome::ManifestChanged => {}
             }
         }
@@ -115,7 +124,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             "shard live_reload did not converge after {MAX_ATTEMPTS} attempts \
              (leader keeps replacing segments); serving the state reached so far",
         );
-        Ok(())
+        Ok(LiveReloadOutcome::ManifestChanged)
     }
 
     /// One live_reload pass over a single manifest snapshot.
