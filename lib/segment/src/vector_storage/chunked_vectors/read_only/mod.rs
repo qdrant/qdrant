@@ -527,11 +527,11 @@ mod tests {
             self.0.open_async(path, options, extra)
         }
 
-        fn list_files_async<'a>(
-            &'a self,
-            prefix_path: &'a std::path::Path,
-        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
-            async move { Ok(with_etags(self.0.list_files_async(prefix_path).await?)) }
+        async fn list_files_async(
+            &self,
+            prefix_path: &std::path::Path,
+        ) -> UioResult<Vec<ListedFile>> {
+            Ok(with_etags(self.0.list_files_async(prefix_path).await?))
         }
     }
 
@@ -560,8 +560,8 @@ mod tests {
 
         let empty = SortedSlice::new(&[]).unwrap();
         let mut cached_fs = CachedFs::new(EtaggedFs(MmapFs), dir.path()).unwrap();
-        let mut cycle = |reader: &mut ReadOnlyChunkedVectors<f32, MmapFile>,
-                         cached_fs: &mut CachedFs<EtaggedFs>| {
+        let cycle = |reader: &mut ReadOnlyChunkedVectors<f32, MmapFile>,
+                     cached_fs: &mut CachedFs<EtaggedFs>| {
             cached_fs.rotate_cache_file_info();
             cached_fs.cache_file_info().unwrap();
             LiveReload::live_preload(&*reader, cached_fs).unwrap();
