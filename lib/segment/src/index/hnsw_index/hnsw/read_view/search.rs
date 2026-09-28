@@ -34,6 +34,7 @@ where
     P: PayloadIndexRead,
     S: UniversalRead,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn search_with_graph(
         &self,
         vector: &QueryVector,
