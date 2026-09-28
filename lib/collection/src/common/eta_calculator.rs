@@ -115,11 +115,19 @@ mod tests {
             ((100 - 40) * delta).as_secs_f64(),
             max_relative = 0.02,
         );
+        assert_relative_eq!(eta.rate_raw(now).unwrap(), 2.0, max_relative = 0.02);
+        // Rate drops while progress stalls.
+        assert_relative_eq!(
+            eta.rate_raw(now + Duration::from_secs(5)).unwrap(),
+            1.0,
+            max_relative = 0.02,
+        );
         // Emulate a stall.
         assert!(
             eta.estimate_raw(now + Duration::from_secs(20), 100)
                 .is_none(),
         );
+        assert!(eta.rate_raw(now + Duration::from_secs(20)).is_none());
 
         // Change the speed.
         let delta = Duration::from_millis(5000);
@@ -132,6 +140,7 @@ mod tests {
             ((100 - 60) * delta).as_secs_f64(),
             max_relative = 0.02,
         );
+        assert_relative_eq!(eta.rate_raw(now).unwrap(), 0.2, max_relative = 0.02);
 
         // Should be 0 when the target progress is reached or overreached.
         assert_eq!(eta.estimate_raw(now, 60).unwrap(), Duration::from_secs(0));
