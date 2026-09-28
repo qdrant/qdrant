@@ -18,7 +18,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_estimator::expected_should_estimation;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
@@ -243,20 +243,14 @@ pub trait InvertedIndex {
         not(test),
         expect(dead_code, reason = "called once `FullTextIndexRead` scores")
     )]
-    ///
-    /// Only the mutable index scores for now; the others report an error.
     fn score_bm25(
         &self,
-        _query: &Bm25Query,
-        _accept: &dyn Fn(PointOffsetType) -> bool,
-        _limit: usize,
-        _is_stopped: &AtomicBool,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
-        Err(OperationError::service_error(
-            "BM25 scoring is not supported by this text index yet",
-        ))
-    }
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     fn estimate_cardinality(
         &self,
