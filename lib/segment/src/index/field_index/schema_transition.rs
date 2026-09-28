@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn text_scoring_change_is_incompatible() {
         let with_scoring = |on_disk| {
-            let PayloadSchemaParams::Text(params) = text(on_disk, TokenizerType::Word) else {
+            let PayloadSchemaParams::Text(params) = text(on_disk, TokenizerType::Word, None) else {
                 unreachable!()
             };
             wrap(PayloadSchemaParams::Text(TextIndexParams {
@@ -336,7 +336,7 @@ mod tests {
                 ..params
             }))
         };
-        let plain = wrap(text(Some(false), TokenizerType::Word));
+        let plain = wrap(text(Some(false), TokenizerType::Word, None));
         assert_eq!(
             classify(&plain, &with_scoring(Some(false))),
             SchemaTransition::Incompatible
