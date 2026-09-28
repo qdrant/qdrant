@@ -330,10 +330,16 @@ impl InvertedIndex for MutableInvertedIndex {
         }
         // Deleted points are removed from these postings, so only the caller's
         // filter applies.
-        score_top_k(
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
             query,
             &mut cursors,
-            |point_id| lengths.and_then(|lengths| lengths.get(point_id as usize).copied()),
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                }
+                Ok(())
+            },
             accept,
             limit,
             is_stopped,

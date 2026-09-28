@@ -12,13 +12,15 @@
 //! scores, so the same document scores the same wherever it lives.
 
 mod mutable_cursors;
+mod positional_cursors;
 #[cfg(test)]
 mod tests;
 mod top_k;
 
 use common::types::{PointOffsetType, ScoreType};
 pub use mutable_cursors::MutableCursors;
-pub use top_k::score_top_k;
+pub use positional_cursors::PositionalCursors;
+pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
