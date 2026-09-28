@@ -69,7 +69,7 @@ fn payload_populate(config: &SegmentConfig) -> Populate {
 
 /// Segments of up to this many points preload the id tracker data search
 /// reads, unless a placement is configured explicitly.
-const ID_TRACKER_PRELOAD_MAX_POINTS: u64 = 1_000_000;
+const ID_TRACKER_PRELOAD_MAX_POINTS: u64 = 1024 * 1024;
 
 /// How the disk-resident id tracker's per-point data is brought into memory;
 /// the other tracker formats hold it in RAM regardless.
