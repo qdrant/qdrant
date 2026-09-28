@@ -80,11 +80,11 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
+    fn total_tokens(&self) -> Option<u64> {
         match self {
-            Self::Mutable(index) => index.total_tokens(hw_counter),
-            Self::Immutable(index) => index.total_tokens(hw_counter),
-            Self::OnDisk(index) => index.total_tokens(hw_counter),
+            Self::Mutable(index) => index.total_tokens(),
+            Self::Immutable(index) => index.total_tokens(),
+            Self::OnDisk(index) => index.total_tokens(),
         }
     }
 

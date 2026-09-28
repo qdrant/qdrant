@@ -49,8 +49,8 @@ impl FullTextIndexRead for MutableFullTextIndex {
         self.inner.posting_len(token_id, hw_counter)
     }
 
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
-        self.inner.total_tokens(hw_counter)
+    fn total_tokens(&self) -> Option<u64> {
+        self.inner.total_tokens()
     }
 
     fn for_each_token_id<'a, U: UserData>(

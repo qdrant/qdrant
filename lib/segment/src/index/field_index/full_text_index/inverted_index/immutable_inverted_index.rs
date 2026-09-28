@@ -396,8 +396,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
     /// Maintained, not summed: both ways into this index already have the
     /// number, and `remove` is the only mutation after that.
-    fn total_tokens(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
-        Ok(self.point_to_doc_len.is_some().then_some(self.total_tokens))
+    fn total_tokens(&self) -> Option<u64> {
+        self.point_to_doc_len.is_some().then_some(self.total_tokens)
     }
 
     fn for_each_token_id<'a, U: UserData>(
