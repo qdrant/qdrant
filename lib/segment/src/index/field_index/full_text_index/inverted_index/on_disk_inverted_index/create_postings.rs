@@ -20,8 +20,9 @@ use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted
 /// offset 0
 /// ┌────────────────────────────────────────────────┐
 /// │ PostingsHeader                                 │  size_of::<PostingsHeader>()
-/// │   posting_count: usize    (one per term)       │  = 8 + 32 = 40 bytes
-/// │   _reserved: [u8; 32]                          │
+/// │   posting_count: usize    (one per term)       │  = 8 + 8 + 24 = 40 bytes
+/// │   total_tokens: u64                            │
+/// │   _reserved: [u8; 24]                          │
 /// ├────────────────────────────────────────────────┤
 /// │ PostingListHeader[0]   ── token_id 0           │  each
 /// │ PostingListHeader[1]   ── token_id 1           │  size_of::<PostingListHeader>()
@@ -74,6 +75,7 @@ use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted
 pub fn create_postings_file<V: ZerocopyPostingValue>(
     path: PathBuf,
     compressed_postings: &[PostingList<V>],
+    total_tokens: u64,
 ) -> io::Result<()> {
     // Create a new empty file, where we will write the compressed posting lists and the header
     let (file, temp_path) = tempfile::Builder::new()
@@ -85,7 +87,8 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
 
     let postings_header = PostingsHeader {
         posting_count: compressed_postings.len(),
-        _reserved: [0; 32],
+        total_tokens,
+        _reserved: [0; 24],
     };
 
     bufw.write_all(bytemuck::bytes_of(&postings_header))?;

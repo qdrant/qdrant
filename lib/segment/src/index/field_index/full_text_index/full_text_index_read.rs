@@ -57,12 +57,7 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         }
     }
 
-    // Skipped once the corpus total is already absent.
-    let total_tokens = match stats.total_tokens {
-        Some(_) => index.total_tokens(hw_counter)?,
-        None => None,
-    };
-    stats.add_segment(index.points_count(), total_tokens);
+    stats.add_segment(index.points_count(), index.total_tokens());
     Ok(())
 }
 
@@ -142,11 +137,13 @@ pub trait FullTextIndexRead {
     /// division belongs to whoever has summed both over every segment, not
     /// here.
     ///
-    /// Both are counted over the same population on every backend: the
-    /// documents this index still holds that carry at least one indexed
-    /// token. A value that tokenizes to nothing is in neither, so the ratio
-    /// does not move with the storage placement.
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+    /// Both are counted over the documents that carry at least one indexed
+    /// token. A value that tokenizes to nothing is in neither, so that does
+    /// not move the ratio across storage placements. Deletions since the last
+    /// build do: the on-disk index returns its build-time total, which still
+    /// counts them as [`Self::posting_len`] does, while the immutable index
+    /// loaded from the same files subtracts them.
+    fn total_tokens(&self) -> Option<u64>;
 
     /// Documents in this segment containing `token_id`: `df(t)` before it is
     /// summed across segments. `None` when the token is not in the vocabulary.

@@ -49,8 +49,8 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
         self.inverted_index.get_posting_len(token_id, hw_counter)
     }
 
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>> {
-        self.inverted_index.total_tokens(hw_counter)
+    fn total_tokens(&self) -> Option<u64> {
+        self.inverted_index.total_tokens()
     }
 
     fn for_each_token_id<'a, U: UserData>(

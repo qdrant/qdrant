@@ -439,7 +439,7 @@ pub trait InvertedIndex {
     /// Deliberately not divided by [`Self::points_count`] here. The average
     /// is a corpus statistic, and a per-segment average would drift from the
     /// one a search actually needs, which is summed over every segment.
-    fn total_tokens(&self, hw_counter: &HardwareCounterCell) -> OperationResult<Option<u64>>;
+    fn total_tokens(&self) -> Option<u64>;
 
     /// Resolve token -> token_id and call the closure for each token_id.
     fn for_each_token_id<'a, U: UserData>(
@@ -464,8 +464,9 @@ mod tests {
     use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::PostingsHeader;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::{
-        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE,
+        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE,
     };
 
     fn generate_word() -> String {
@@ -819,25 +820,17 @@ mod tests {
             "a runtime deletion must be masked out on load",
         );
 
-        // Summing has to mask too. The agreement test cannot catch this: its
-        // deletions happen before `create`, so every inactive slot is already
-        // zero on disk and dropping the mask there changes nothing.
-        let live_total: u64 = lens_at_build
-            .iter()
-            .enumerate()
-            .filter(|(point_id, _)| *point_id != victim)
-            .map(|(_, doc_len)| u64::from(*doc_len))
-            .sum();
+        // The on-disk total is the build-time one, like `posting_len`. The
+        // loaded copy sums the masked lengths.
+        let build_total: u64 = lens_at_build.iter().copied().map(u64::from).sum();
+        let live_total = build_total - u64::from(lens_at_build[victim]);
         let hw_counter = HardwareCounterCell::new();
         assert_eq!(
-            mmap.total_tokens(&hw_counter).unwrap(),
-            Some(live_total),
-            "the total must not count a point the id tracker deleted",
+            mmap.total_tokens(),
+            Some(build_total),
+            "the on-disk total does not subtract runtime deletions",
         );
-        assert_eq!(
-            imm_mmap.total_tokens(&hw_counter).unwrap(),
-            Some(live_total)
-        );
+        assert_eq!(imm_mmap.total_tokens(), Some(live_total));
         assert_eq!(
             doc_lens(&mmap, &[victim as PointOffsetType], &hw_counter),
             [Some(0)],
@@ -961,6 +954,36 @@ mod tests {
         );
     }
 
+    /// A header written before it carried the total reads it as zero. Over
+    /// live documents that is not a real total, so it is reported as absent.
+    #[rstest]
+    fn zero_header_total_reports_no_total(#[values(false, true)] phrase_matching: bool) {
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+
+        let postings = mmap_dir.path().join(POSTINGS_FILE);
+        let mut bytes = fs_err::read(&postings).unwrap();
+        let offset = std::mem::offset_of!(PostingsHeader, total_tokens);
+        bytes[offset..offset + size_of::<u64>()].fill(0);
+        fs_err::write(&postings, bytes).unwrap();
+
+        let empty_deleted = BitVec::new();
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .expect("the index still opens");
+        assert!(opened.points_count() > 0);
+        assert_eq!(opened.total_tokens(), None);
+    }
+
     /// Every backend answers `doc_len_batch` with the same number for every point,
     /// including the ones it holds no tokens for, and every total is the sum of
     /// those answers. This is the whole contract a scorer gets from a segment,
@@ -1025,13 +1048,10 @@ mod tests {
         );
 
         for (backend, total) in [
-            ("mutable", mutable.total_tokens(&hw_counter).unwrap()),
-            ("immutable", immutable.total_tokens(&hw_counter).unwrap()),
-            ("mmap", mmap.total_tokens(&hw_counter).unwrap()),
-            (
-                "immutable from mmap",
-                imm_mmap.total_tokens(&hw_counter).unwrap(),
-            ),
+            ("mutable", mutable.total_tokens()),
+            ("immutable", immutable.total_tokens()),
+            ("mmap", mmap.total_tokens()),
+            ("immutable from mmap", imm_mmap.total_tokens()),
         ] {
             assert_eq!(
                 total,
@@ -1073,9 +1093,9 @@ mod tests {
         assert_eq!(doc_lens(&mutable, &point_ids, &hw_counter), [None; 16]);
         assert_eq!(doc_lens(&immutable, &point_ids, &hw_counter), [None; 16]);
         assert_eq!(doc_lens(&mmap, &point_ids, &hw_counter), [None; 16]);
-        assert_eq!(mutable.total_tokens(&hw_counter).unwrap(), None);
-        assert_eq!(immutable.total_tokens(&hw_counter).unwrap(), None);
-        assert_eq!(mmap.total_tokens(&hw_counter).unwrap(), None);
+        assert_eq!(mutable.total_tokens(), None);
+        assert_eq!(immutable.total_tokens(), None);
+        assert_eq!(mmap.total_tokens(), None);
     }
 
     #[rstest]
