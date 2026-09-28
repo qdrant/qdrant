@@ -13011,7 +13011,6 @@
       "VectorIndexSearchesTelemetry": {
         "type": "object",
         "required": [
-          "filtered_acorn",
           "filtered_exact",
           "filtered_large_cardinality",
           "filtered_plain",
