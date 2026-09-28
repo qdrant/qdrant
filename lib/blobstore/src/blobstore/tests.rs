@@ -2181,3 +2181,87 @@ fn test_open_repairs_gaps_length_mismatch() {
     let gaps_bytes = fs::read(dir.path().join("gaps.dat")).unwrap();
     assert_eq!(gaps_bytes.len(), 2 * 6, "one 6-byte entry per region");
 }
+
+/// Reproduces a torn write of a pointer in the tracker, as left by a hard crash (power loss /
+/// kernel crash) during a flush.
+///
+/// A tracker record is 16 bytes: `[discriminant][page_id][block_offset][length]`. If the crash
+/// persists the first 12 bytes of a new pointer but not its length, a slot that was empty before
+/// reads back as a `Some` pointer with a length of zero. No real write produces a zero length, so
+/// such a pointer must read as no value. WAL replay rewrites the slot afterwards.
+///
+/// This used to panic when deserializing the empty value, which blocks loading the segment.
+///
+/// See: <github.com/qdrant/qdrant/issues/9857>
+#[test]
+fn test_torn_pointer_with_zero_length_reads_as_none() {
+    // Payload indices store their values uncompressed
+    let (dir, mut storage) = empty_storage_sized(DEFAULT_PAGE_SIZE_BYTES, Compression::None);
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+
+    let payloads: Vec<Payload> = (0..3)
+        .map(|i| {
+            let mut map = serde_json::Map::new();
+            map.insert("category".to_string(), format!("cat_{i}").into());
+            Payload(map)
+        })
+        .collect();
+    for (offset, payload) in payloads.iter().enumerate() {
+        storage
+            .put_value(offset as PointOffset, payload, hw_counter)
+            .unwrap();
+    }
+
+    storage.flusher()().unwrap();
+    drop(storage);
+
+    // Simulate the torn write: zero the length of the pointer at offset 1.
+    // Tracker file layout: a 4-byte header, then one 16-byte record per point offset.
+    let torn_offset = 1;
+    let tracker_path = dir.path().join("tracker.dat");
+    let mut tracker_bytes = fs::read(&tracker_path).unwrap();
+    let record_start = 4 + torn_offset * 16;
+    let length_range = record_start + 12..record_start + 16;
+    assert_eq!(
+        tracker_bytes[record_start..record_start + 4],
+        1u32.to_le_bytes(),
+        "record must hold a Some pointer",
+    );
+    assert_eq!(
+        tracker_bytes[length_range.clone()],
+        (payloads[torn_offset].to_bytes().len() as u32).to_le_bytes(),
+        "record must hold the length of the stored value",
+    );
+    tracker_bytes[length_range].fill(0);
+    fs::write(&tracker_path, &tracker_bytes).unwrap();
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    // The torn pointer reads as no value, the other values are unaffected
+    for (offset, payload) in payloads.iter().enumerate() {
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, &hw_cell)
+            .unwrap();
+        let expected = (offset != torn_offset).then_some(payload);
+        assert_eq!(stored.as_ref(), expected, "value {offset}");
+    }
+
+    // Iterating, as payload indices do when they are loaded, skips the torn pointer
+    let mut iterated = Vec::new();
+    storage
+        .iter::<_, BlobstoreError>(
+            |offset, payload| {
+                iterated.push((offset, payload));
+                Ok(true)
+            },
+            hw_counter,
+        )
+        .unwrap();
+    assert_eq!(
+        iterated,
+        [(0, payloads[0].clone()), (2, payloads[2].clone())],
+    );
+}
