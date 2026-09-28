@@ -245,7 +245,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
         Some(flattened_to_multi_vector(flattened, self.vectors.dim()))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
@@ -255,13 +259,14 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
             .offsets
             .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
 
-        self.vectors
-            .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
+        self.vectors.for_each_vector::<Sequential, _>(
+            row_offsets.into_iter(),
+            |index, flattened| {
                 let vector = TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
                 callback(index, vector);
                 Ok(())
-            })
-            .expect("read vectors");
+            },
+        )
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
