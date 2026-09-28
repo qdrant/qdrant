@@ -14,7 +14,15 @@ use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
+    /// An `Auto` populate preloads, as search reads versions per result.
     pub(super) fn open_options(populate: Populate) -> OpenOptions {
+        let populate = match populate {
+            Populate::Auto => Populate::PreferBackground,
+            Populate::No
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => populate,
+        };
         OpenOptions {
             writeable: false,
             need_sequential: false,

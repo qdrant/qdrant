@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::low_memory::low_memory_mode;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -14,6 +15,7 @@ use uuid::Uuid;
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
+use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -65,12 +67,30 @@ fn payload_populate(config: &SegmentConfig) -> Populate {
     }
 }
 
+/// Segments of up to this many points preload the id tracker data search
+/// reads, unless a placement is configured explicitly.
+const ID_TRACKER_PRELOAD_MAX_POINTS: u64 = 1024 * 1024;
+
 /// How the disk-resident id tracker's per-point data is brought into memory;
 /// the other tracker formats hold it in RAM regardless.
-fn id_tracker_populate(config: &SegmentConfig) -> Populate {
+///
+/// A cold default placement preloads what search reads (`Populate::Auto`:
+/// `i2e` and versions, not `e2i`) in segments of up to
+/// [`ID_TRACKER_PRELOAD_MAX_POINTS`], sized from the listing snapshot.
+fn id_tracker_populate(
+    config: &SegmentConfig,
+    fs: &impl CachedReadFs,
+    segment_path: &Path,
+) -> Populate {
     let memory = config.id_tracker_memory_placement().clamp_to_low_memory();
     if memory.populate_on_open() {
-        Populate::PreferBackground
+        return Populate::PreferBackground;
+    }
+    let is_small = fs
+        .cached_file_info(&i2e_path(segment_path))
+        .is_some_and(|info| info.size / size_of::<u128>() as u64 <= ID_TRACKER_PRELOAD_MAX_POINTS);
+    if config.id_tracker_memory.is_none() && !low_memory_mode().skip_populate() && is_small {
+        Populate::Auto
     } else {
         Populate::No
     }
@@ -213,7 +233,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         check_process_stopped(is_stopped)?;
 
         // Id tracker; always loaded — every request resolves ids through it.
-        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, id_tracker_populate(&config))?;
+        ReadOnlyIdTrackerEnum::preopen(
+            fs,
+            segment_path,
+            id_tracker_populate(&config, fs, segment_path),
+        )?;
 
         // Vector storages
         for (vector_name, vector_config) in &config.vector_data {
@@ -340,7 +364,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             &fs,
             segment_path,
             deferred_internal_id,
-            id_tracker_populate(&config),
+            id_tracker_populate(&config, &fs, segment_path),
         )?));
 
         // Open all vector storages up front: the payload index needs them.
