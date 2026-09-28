@@ -16,7 +16,9 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicBool;
 
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use posting_list::{PostingLenIterator, PostingListView};
 
+use super::positions::Positions;
 use super::posting_list::PostingList as MutablePostingList;
 use super::{Document, TokenId};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -170,6 +172,63 @@ pub trait TermCursors {
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32;
 }
 
+/// Cursors over compressed posting lists that store positions. A term's
+/// frequency is the byte length of its positions divided by their width, read
+/// from the offsets alone.
+pub struct PositionalCursors<'a> {
+    cursors: Vec<Option<PostingLenIterator<'a, Positions>>>,
+}
+
+impl<'a> PositionalCursors<'a> {
+    /// One view per query term, `None` for a term this index holds no posting
+    /// list for.
+    pub fn new(views: Vec<Option<PostingListView<'a, Positions>>>) -> Self {
+        let cursors = views
+            .into_iter()
+            .map(|view| {
+                let mut cursor = view?.len_iter();
+                cursor.next()?;
+                Some(cursor)
+            })
+            .collect();
+        Self { cursors }
+    }
+}
+
+impl TermCursors for PositionalCursors<'_> {
+    fn current(&self, term: usize) -> Option<PointOffsetType> {
+        self.cursors[term].as_ref()?.current().map(|elem| elem.id)
+    }
+
+    fn advance(&mut self, term: usize) {
+        if let Some(cursor) = self.cursors[term].as_mut()
+            && cursor.next().is_none()
+        {
+            self.cursors[term] = None;
+        }
+    }
+
+    fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {
+        let cursor = self.cursors[term].as_mut()?;
+        match cursor.advance_until_greater_or_equal(target) {
+            Some(elem) => Some(elem.id),
+            None => {
+                self.cursors[term] = None;
+                None
+            }
+        }
+    }
+
+    fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32 {
+        let elem = self.cursors[term]
+            .as_ref()
+            .and_then(|cursor| cursor.current())
+            .expect("tf is only asked for the current document");
+        debug_assert_eq!(elem.id, doc);
+        (elem.value_len / size_of::<u32>()) as u32
+    }
+}
+
 /// A forward cursor over a mutable posting list.
 struct BitmapCursor<'a> {
     iter: roaring::bitmap::Iter<'a>,
@@ -270,6 +329,12 @@ fn cursor_current(cursor: &Option<BitmapCursor<'_>>) -> Option<PointOffsetType> 
     cursor.as_ref()?.current
 }
 
+/// Candidates the on-disk index gathers before reading their lengths, one
+/// batch per block. Large enough to hide a remote read's latency behind the
+/// others in flight, small enough that the essential terms a block starts with
+/// do not go stale for long.
+pub const ON_DISK_BLOCK: usize = 128;
+
 /// Score every document that contains at least one query term and keep the
 /// `limit` best, highest first.
 ///
@@ -281,13 +346,21 @@ fn cursor_current(cursor: &Option<BitmapCursor<'_>>) -> Option<PointOffsetType> 
 /// since a term's contribution is capped at `idf * (k1 + 1)`.
 ///
 /// `accept` decides which documents may be scored at all: deletions the
-/// posting lists do not know about, and any outer filter. `doc_len` gives an
-/// accepted candidate's length, and is only called when the query normalizes
-/// by length.
-pub fn score_top_k<C: TermCursors>(
+/// posting lists do not know about, and any outer filter.
+///
+/// Candidates are gathered in blocks of up to `BLOCK` before any of them
+/// is scored, so that `doc_lens` fetches their lengths in one batch, filling
+/// the output slice for the given ids. It is only called when the query
+/// normalizes by length. Within a block the candidates come from the terms that
+/// were essential when it began: a term that turns non-essential part way
+/// through still produces candidates until the block ends. That costs at most a
+/// block's worth of extra candidates and never a result, since the threshold
+/// only rises and only prunes. A `BLOCK` of 1 is plain document-at-a-time,
+/// and a constant so that it compiles to it, without the block bookkeeping.
+pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
     cursors: &mut C,
-    doc_len: impl Fn(PointOffsetType) -> Option<u32>,
+    mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
     accept: impl Fn(PointOffsetType) -> bool,
     limit: usize,
     is_stopped: &AtomicBool,
@@ -297,6 +370,7 @@ pub fn score_top_k<C: TermCursors>(
     if term_count == 0 || limit == 0 {
         return Ok(Vec::new());
     }
+    const { assert!(BLOCK > 0) };
 
     // `prefix[i]` bounds what terms `0..=i` together can add to a score.
     let mut prefix = Vec::with_capacity(term_count);
@@ -312,70 +386,106 @@ pub fn score_top_k<C: TermCursors>(
         BinaryHeap::with_capacity(limit.min(1024) + 1);
     let mut threshold = ScoreType::NEG_INFINITY;
     // Terms below this index cannot lift a document into the top `limit` on
-    // their own, so they stop producing candidates. It only rises, so none of
-    // them turns essential again and their cursors stay behind every candidate.
+    // their own, so they stop producing candidates.
     let mut first_essential = 0;
     let mut visited: usize = 0;
 
+    // One block: its candidates, the `(term, tf)` hits each had on the
+    // essential terms, as ranges of `hits` ending at `hits_end`, and their
+    // lengths.
+    let mut candidates: [PointOffsetType; BLOCK] = [0; BLOCK];
+    let mut hits_end: [usize; BLOCK] = [0; BLOCK];
+    let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
+    let mut hits: Vec<(usize, u32)> = Vec::with_capacity(term_count * BLOCK);
+
     while first_essential < term_count {
-        visited += 1;
-        if visited.is_multiple_of(1024) {
-            check_process_stopped(is_stopped)?;
+        // The essential terms of this block. Those below it are consulted by
+        // seeking; `first_essential` only rises, so none of them turns
+        // essential again and their cursors stay behind every candidate.
+        let block_essential = first_essential;
+        let mut count = 0;
+        hits.clear();
+
+        while count < BLOCK {
+            visited += 1;
+            if visited.is_multiple_of(1024) {
+                check_process_stopped(is_stopped)?;
+            }
+
+            let Some(doc) = (block_essential..term_count)
+                .filter_map(|term| cursors.current(term))
+                .min()
+            else {
+                break;
+            };
+
+            // Move every essential cursor standing on this document, whether
+            // or not it gets scored, keeping its frequency if it will be.
+            let accepted = accept(doc);
+            let hits_start = hits.len();
+            for term in block_essential..term_count {
+                if cursors.current(term) == Some(doc) {
+                    if accepted {
+                        hits.push((term, cursors.tf(term, doc)));
+                    }
+                    cursors.advance(term);
+                }
+            }
+            if accepted {
+                debug_assert!(hits.len() > hits_start);
+                candidates[count] = doc;
+                hits_end[count] = hits.len();
+                count += 1;
+            }
+        }
+        if count == 0 {
+            break;
         }
 
-        let Some(doc) = (first_essential..term_count)
-            .filter_map(|term| cursors.current(term))
-            .min()
-        else {
-            break;
-        };
-
-        // Move every essential cursor standing on this document, whether or
-        // not it gets scored, adding its contribution if it is.
-        let accepted = accept(doc);
-        let len = if accepted && normalizes {
-            doc_len(doc)
+        let lengths = &mut lengths[..count];
+        if normalizes {
+            doc_lens(&candidates[..count], lengths)?;
         } else {
-            None
-        };
-        let mut score = 0.0;
-        for (term, weight) in terms.iter().enumerate().skip(first_essential) {
-            if cursors.current(term) == Some(doc) {
-                if accepted {
+            lengths.fill(None);
+        }
+
+        let mut hits_start = 0;
+        for ((&doc, &len), &end) in candidates[..count]
+            .iter()
+            .zip(lengths.iter())
+            .zip(&hits_end[..count])
+        {
+            let mut score = 0.0;
+            for &(term, tf) in &hits[hits_start..end] {
+                score += query.term_score(terms[term].idf, tf, len);
+            }
+            hits_start = end;
+
+            // Non-essential terms, strongest first, while the rest could still
+            // lift this document over the threshold.
+            for (term, weight) in terms.iter().enumerate().take(block_essential).rev() {
+                if score + prefix[term] <= threshold {
+                    break;
+                }
+                if cursors.seek(term, doc) == Some(doc) {
                     let tf = cursors.tf(term, doc);
                     score += query.term_score(weight.idf, tf, len);
                 }
-                cursors.advance(term);
             }
-        }
-        if !accepted {
-            continue;
-        }
 
-        // Non-essential terms, strongest first, while the rest could still
-        // lift this document over the threshold.
-        for (term, weight) in terms.iter().enumerate().take(first_essential).rev() {
-            if score + prefix[term] <= threshold {
-                break;
-            }
-            if cursors.seek(term, doc) == Some(doc) {
-                let tf = cursors.tf(term, doc);
-                score += query.term_score(weight.idf, tf, len);
-            }
-        }
-
-        if score > threshold {
-            heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
-            if heap.len() > limit {
-                heap.pop();
-            }
-            if heap.len() == limit {
-                threshold = heap
-                    .peek()
-                    .map(|Reverse(min)| min.score)
-                    .unwrap_or(threshold);
-                while first_essential < term_count && prefix[first_essential] <= threshold {
-                    first_essential += 1;
+            if score > threshold {
+                heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
+                if heap.len() > limit {
+                    heap.pop();
+                }
+                if heap.len() == limit {
+                    threshold = heap
+                        .peek()
+                        .map(|Reverse(min)| min.score)
+                        .unwrap_or(threshold);
+                    while first_essential < term_count && prefix[first_essential] <= threshold {
+                        first_essential += 1;
+                    }
                 }
             }
         }
@@ -392,13 +502,17 @@ pub fn score_top_k<C: TermCursors>(
 mod tests {
     use std::collections::HashMap;
 
+    use common::bitvec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use rstest::rstest;
 
     use super::super::InvertedIndex;
+    use super::super::immutable_inverted_index::ImmutableInvertedIndex;
     use super::super::mutable_inverted_index::MutableInvertedIndex;
+    use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
     use super::*;
     use crate::data_types::query_context::fancy_idf;
 
@@ -514,6 +628,23 @@ mod tests {
         assert_eq!(ids.len(), actual.len(), "a document was returned twice");
     }
 
+    fn on_disk(
+        dir: &std::path::Path,
+        immutable: &ImmutableInvertedIndex,
+        deleted: &BitVec,
+    ) -> OnDiskInvertedIndex<MmapFile> {
+        OnDiskInvertedIndex::create(dir.to_path_buf(), immutable).unwrap();
+        OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            dir.to_path_buf(),
+            Populate::No,
+            true,
+            deleted,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
     fn run<I: InvertedIndex>(
         index: &I,
         query: &Bm25Query,
@@ -547,15 +678,25 @@ mod tests {
     }
 
     /// Every shape reproduces the definition, with and without pruning in
-    /// play, with deletions applied before and after the index is built.
+    /// play, with deletions applied before the conversion to the immutable
+    /// shapes and again after.
     #[rstest]
     fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
         let deleted_before = [4, 5, 6, 100, 250];
         let deleted_after = [7, 8, 300];
 
         let mut mutable = fixture(11, 400, &deleted_before);
+        let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let mut after_mask = BitVec::repeat(false, 400);
+        for &idx in &deleted_after {
+            after_mask.set(idx as usize, true);
+        }
+        let on_disk = on_disk(dir.path(), &immutable, &after_mask);
+        let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
         for &idx in &deleted_after {
             mutable.remove(idx);
+            immutable.remove(idx);
         }
 
         for terms in queries() {
@@ -564,6 +705,62 @@ mod tests {
 
             eprintln!("{terms:?} limit {limit}");
             assert_top_k(&run(&mutable, &query, |_| true, limit), &expected, limit);
+            assert_top_k(&run(&immutable, &query, |_| true, limit), &expected, limit);
+            assert_top_k(&run(&on_disk, &query, |_| true, limit), &expected, limit);
+            assert_top_k(&run(&from_disk, &query, |_| true, limit), &expected, limit);
+        }
+    }
+
+    /// Blocking changes when lengths are read, never the ranking: every block
+    /// size reproduces the definition, asks for each candidate's length once,
+    /// and asks in batches no larger than the block.
+    #[rstest]
+    fn block_size_does_not_change_the_ranking(#[values(1, 10, 1000)] limit: usize) {
+        rank_in_blocks::<1>(limit);
+        rank_in_blocks::<2>(limit);
+        rank_in_blocks::<7>(limit);
+        rank_in_blocks::<ON_DISK_BLOCK>(limit);
+        rank_in_blocks::<1000>(limit);
+    }
+
+    fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
+        let index = fixture(23, 500, &[3, 30, 300]);
+        let documents = index.point_to_doc.as_deref().unwrap();
+        let lengths = index.point_to_doc_len.as_deref().unwrap();
+        for terms in queries() {
+            let query = query(&index, &terms, Bm25Params::default());
+            let postings = query
+                .terms()
+                .iter()
+                .map(|term| index.postings.get(term.token_id as usize))
+                .collect();
+            let mut cursors = MutableCursors::new(postings, documents, query.terms());
+            let mut asked: Vec<PointOffsetType> = Vec::new();
+            let actual = score_top_k::<_, BLOCK>(
+                &query,
+                &mut cursors,
+                |point_ids, out| {
+                    assert!(point_ids.len() <= BLOCK);
+                    asked.extend_from_slice(point_ids);
+                    for (point_id, doc_len) in point_ids.iter().zip(out) {
+                        *doc_len = Some(lengths[*point_id as usize]);
+                    }
+                    Ok(())
+                },
+                |_| true,
+                limit,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert_top_k(&actual, &reference(&index, &query, |_| true), limit);
+            let asked_count = asked.len();
+            asked.sort_unstable();
+            asked.dedup();
+            assert_eq!(
+                asked.len(),
+                asked_count,
+                "block {BLOCK}: a length was read twice"
+            );
         }
     }
 
@@ -572,14 +769,22 @@ mod tests {
     #[test]
     fn accept_restricts_the_ranking() {
         let mutable = fixture(5, 300, &[]);
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
         let even = |idx: PointOffsetType| idx.is_multiple_of(2);
 
         for terms in queries() {
             let query = query(&mutable, &terms, Bm25Params::default());
             let expected = reference(&mutable, &query, even);
-            let actual = run(&mutable, &query, even, 7);
-            assert_top_k(&actual, &expected, 7);
-            assert!(actual.iter().all(|hit| even(hit.idx)));
+            for actual in [
+                run(&mutable, &query, even, 7),
+                run(&immutable, &query, even, 7),
+                run(&on_disk, &query, even, 7),
+            ] {
+                assert_top_k(&actual, &expected, 7);
+                assert!(actual.iter().all(|hit| even(hit.idx)));
+            }
         }
     }
 
@@ -645,6 +850,12 @@ mod tests {
         .unwrap();
         assert!(
             without_positions
+                .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
+                .is_err()
+        );
+        let immutable = ImmutableInvertedIndex::from(without_positions);
+        assert!(
+            immutable
                 .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
                 .is_err()
         );
@@ -738,6 +949,72 @@ mod tests {
         .unwrap();
         let ids: Vec<_> = query.terms().iter().map(|term| term.token_id).collect();
         assert_eq!(ids, [1, 3]);
+    }
+
+    /// `df` keeps deleted documents on the immutable shapes while `N` drops
+    /// them, so the statistics a gather reads there understate `IDF`. This
+    /// measures what that does to the ranking, against the definition over
+    /// live documents, and bounds it. The same index scored with exact
+    /// statistics reproduces the definition, so the gap is in the statistics
+    /// alone, not in the scorer.
+    #[test]
+    fn deleted_documents_inflate_df_on_immutable_shapes() {
+        let hw_counter = HardwareCounterCell::new();
+        let mutable = fixture(21, 500, &[]);
+        let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let mut live = mutable;
+        // One document in ten.
+        for idx in (0..500).filter(|idx| idx % 10 == 0) {
+            immutable.remove(idx);
+            live.remove(idx);
+        }
+        let terms = ["w0", "w3", "w17", "w30"];
+
+        let exact = query(&live, &terms, Bm25Params::default());
+        let expected = reference(&live, &exact, |_| true);
+        assert_top_k(&run(&immutable, &exact, |_| true, 20), &expected, 20);
+
+        // The statistics as a gather reads them off the immutable index:
+        // posting lengths still count the removed documents, the document
+        // count does not.
+        let n = immutable.points_count as ScoreType;
+        let avg = immutable.total_tokens as ScoreType / n;
+        let inflated = Bm25Query::new(
+            terms.iter().map(|term| {
+                let token_id = immutable.vocab[*term];
+                let df = immutable
+                    .get_posting_len(token_id, &hw_counter)
+                    .unwrap()
+                    .unwrap() as ScoreType;
+                Bm25Term {
+                    token_id,
+                    idf: fancy_idf(n, df).max(0.0),
+                }
+            }),
+            Bm25Params::default(),
+            Some(avg),
+        )
+        .unwrap();
+        let actual = run(&immutable, &inflated, |_| true, 20);
+
+        let by_id: HashMap<PointOffsetType, ScoreType> =
+            expected.iter().map(|hit| (hit.idx, hit.score)).collect();
+        let max_relative_deviation = actual
+            .iter()
+            .map(|hit| {
+                let reference = by_id[&hit.idx];
+                (hit.score - reference).abs() / reference
+            })
+            .fold(0.0, ScoreType::max);
+        eprintln!("max relative deviation with 10% deleted: {max_relative_deviation}");
+        assert!(
+            max_relative_deviation > 0.0,
+            "the inflation should be visible"
+        );
+        assert!(
+            max_relative_deviation < 0.25,
+            "deleted documents move scores by {max_relative_deviation}"
+        );
     }
 
     /// Parameters outside the domain the MaxScore bound holds in are refused
