@@ -18,24 +18,23 @@ pub mod on_disk_format;
 pub mod read_only;
 mod reader;
 pub mod update_only;
+mod versions_file;
 
 #[cfg(test)]
 mod tests;
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
-use common::universal_io::{SliceBufferedUpdateWrapper, UniversalWrite};
+use common::universal_io::UniversalWrite;
 
 pub use self::mappings::DiskMappingsSource;
 use self::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 pub use self::read_only::ReadOnlyDiskIdTracker;
 use self::reader::DiskMappingReader;
+use self::versions_file::{VersionsFile, VersionsFormat};
 use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
-use crate::types::SeqNumberType;
 
 /// Writable, deletion-only disk-resident id tracker: the mapping is immutable
 /// and served from disk; only the `deleted` bitvec and `versions` are resident
@@ -54,17 +53,6 @@ pub struct DiskIdTracker<S: UniversalWrite> {
     /// Resident per-point versions; persisted via `versions_file`.
     internal_to_version: CompressedVersions,
     versions_file: VersionsFile<S>,
-}
-
-/// Persistence of the resident versions.
-#[derive(Debug)]
-enum VersionsFile<S: UniversalWrite> {
-    /// Flat `id_tracker.versions`, one `u64` per point, updated in place.
-    Flat(SliceBufferedUpdateWrapper<S, SeqNumberType>),
-    /// [`compact_versions`] file, replaced whole on flush once `dirty`.
-    ///
-    /// `dirty` is shared with the flushers, so that a failed flush can mark it again.
-    Compact { fs: S::Fs, dirty: Arc<AtomicBool> },
 }
 
 impl<S: UniversalWrite> DiskIdTracker<S> {

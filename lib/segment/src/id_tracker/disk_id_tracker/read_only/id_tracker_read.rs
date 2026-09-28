@@ -1,17 +1,16 @@
 //! The read surface: [`DiskMappingsSource`] and [`IdTrackerRead`] impls.
 
 use common::bitvec::BitSlice;
-use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::IteratorExt as _;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::{ReadRange, UioResult, UniversalRead};
+use common::universal_io::UniversalRead;
 use itertools::Itertools as _;
 
-use super::{ReadOnlyDiskIdTracker, ReadOnlyVersions};
+use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
-use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum, default_internal_versions_batch};
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
@@ -57,23 +56,7 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
     }
 
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        let (file, len) = match &self.versions {
-            ReadOnlyVersions::Flat { file, len } => (file, *len),
-            ReadOnlyVersions::Compact(versions) => return versions.get(internal_id),
-        };
-        if u64::from(internal_id) >= len {
-            return None;
-        }
-        match file.read(
-            ReadRange::one(u64::from(internal_id) * size_of::<SeqNumberType>() as u64),
-            Random,
-        ) {
-            Ok(values) => values.first().copied(),
-            Err(err) => {
-                log::error!("disk id tracker version read failed: {err}");
-                None
-            }
-        }
+        self.versions.get(internal_id)
     }
 
     fn internal_id_with_behavior(
@@ -103,42 +86,12 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
             .process_results(|it| self.reader.external_ids_batch(it, callback))?
     }
 
-    /// One pipelined pass over the flat versions file instead of a read per
-    /// point, streaming each `(internal_id, version)` to `callback` as its read
-    /// completes. The input is walked once and nothing is buffered; out-of-range
-    /// offsets are skipped and a storage error propagates. Resident compact
-    /// versions need no IO.
     fn internal_versions_batch(
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
     ) -> OperationResult<()> {
-        let (file, len) = match &self.versions {
-            ReadOnlyVersions::Flat { file, len } => (file, *len),
-            ReadOnlyVersions::Compact(_) => {
-                return default_internal_versions_batch(self, internal_ids, callback);
-            }
-        };
-        // Each read is tagged with its `internal_id` so the callback can pair it
-        // with the version; the range iterator stays lazy (no collect).
-        let ranges = internal_ids
-            .into_iter()
-            .filter(|&internal_id| u64::from(internal_id) < len)
-            .map(|internal_id| {
-                let range = ReadRange {
-                    byte_offset: u64::from(internal_id) * size_of::<SeqNumberType>() as u64,
-                    length: 1,
-                };
-                (internal_id, range)
-            });
-        file.read_batch(ranges, Random, |internal_id, values| {
-            if let Some(&version) = values.first() {
-                callback(internal_id, version);
-            }
-            UioResult::Ok(())
-        })?;
-
-        Ok(())
+        self.versions.get_batch(internal_ids, callback)
     }
 
     /// Batched external→internal resolution; the behavior argument is ignored
@@ -176,18 +129,9 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         "read-only disk id tracker"
     }
 
-    /// Reads the whole flat versions file at once: this runs only on the
-    /// cleanup-on-open path, which drains the iteration anyway.
     fn iter_internal_versions(
         &self,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
-        let (file, len) = match &self.versions {
-            ReadOnlyVersions::Flat { file, len } => (file, *len),
-            ReadOnlyVersions::Compact(versions) => return Ok(Box::new(versions.iter())),
-        };
-        let versions = file.read(ReadRange::new(0, len), Sequential)?.into_owned();
-        Ok(Box::new(versions.into_iter().enumerate().map(
-            |(offset, version)| (offset as PointOffsetType, version),
-        )))
+        self.versions.iter()
     }
 }

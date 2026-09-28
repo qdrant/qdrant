@@ -5,7 +5,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use tempfile::Builder;
 
-use super::{DiskIdTracker, ReadOnlyDiskIdTracker, compact_versions};
+use super::{DiskIdTracker, ReadOnlyDiskIdTracker, VersionsFormat, compact_versions};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -569,7 +569,7 @@ fn compact_versions_roundtrip() {
         dir.path(),
         &versions,
         mappings,
-        true,
+        VersionsFormat::Compact,
     )
     .unwrap();
     assert!(!dir.path().join("id_tracker.versions").exists());

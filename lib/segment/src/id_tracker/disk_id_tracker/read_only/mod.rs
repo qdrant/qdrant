@@ -15,21 +15,20 @@
 mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
+mod versions;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
-use common::universal_io::{TypedStorage, UniversalRead};
+use common::universal_io::UniversalRead;
 
-use super::compact_versions::compact_versions_path;
+use self::versions::ReadOnlyVersions;
 use super::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::compressed::versions_store::CompressedVersions;
-use crate::id_tracker::immutable_id_tracker::{deleted_path, version_mapping_path};
-use crate::types::SeqNumberType;
+use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 /// Read-only id tracker backed by the on-disk format files, read lazily
 /// through a [`UniversalRead`] backend.
@@ -49,28 +48,13 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     deleted_full: OnceLock<BitVec>,
 }
 
-/// Per-point versions, as persisted.
-enum ReadOnlyVersions<S: UniversalRead> {
-    /// Flat `id_tracker.versions`, read per point.
-    Flat {
-        file: TypedStorage<S, SeqNumberType>,
-        len: u64,
-    },
-    /// [`compact_versions`](super::compact_versions) file, read into RAM whole on open.
-    Compact(CompressedVersions),
-}
-
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub fn files(&self) -> Vec<PathBuf> {
-        let versions_path = match &self.versions {
-            ReadOnlyVersions::Flat { file: _, len: _ } => version_mapping_path(&self.path),
-            ReadOnlyVersions::Compact(_) => compact_versions_path(&self.path),
-        };
         vec![
             i2e_path(&self.path),
             e2i_path(&self.path),
             is_uuid_path(&self.path),
-            versions_path,
+            self.versions.path(&self.path),
             deleted_path(&self.path),
         ]
     }
