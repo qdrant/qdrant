@@ -701,12 +701,10 @@ impl Collection {
                 .await?;
 
             let this_peer_id = replica_set.this_peer_id();
+            let replica_set = Arc::clone(replica_set);
 
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
-                // We can guarantee that replica_set is not None, cause we checked it before
-                // and `shards_holder` is holding the lock.
-                // This is a workaround for lifetime checker.
-                let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
+                // Wait for transfer targeting this replica
                 let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers
@@ -715,31 +713,31 @@ impl Collection {
                     },
                     Duration::from_secs(60),
                 );
+
+                // Reject request, if no transfer was registered within 60 seconds
                 if !shard_transfer_registered {
                     return Ok(false);
                 }
 
-                // Check the sender after waiting rather than as part of it. If a transfer from
-                // another peer is registered, one from a stale sender never will be, and waiting
-                // for it would hold the shard holder lock until the timeout. If this peer is
-                // behind instead, with the previous transfer still registered, the sender is
-                // refused as well and retries.
-                if let Some(from_peer_id) = from_peer_id
-                    && shards_holder_guard
-                        .get_transfers(|transfer| {
-                            transfer.is_target(this_peer_id, shard_id)
-                                && transfer.from == from_peer_id
-                        })
-                        .is_empty()
-                {
-                    return Err(CollectionError::bad_request(format!(
-                        "Refusing to initiate shard transfer into shard {shard_id}: \
-                         the registered shard transfer is not from peer {from_peer_id}",
-                    )));
+                // Check that request comes from expected sender
+                if let Some(from_peer_id) = from_peer_id {
+                    let transfers = shards_holder_guard
+                        .get_transfers(|transfer| transfer.is_target(this_peer_id, shard_id));
+
+                    let is_expected_sender = transfers
+                        .iter()
+                        .any(|transfer| transfer.from == from_peer_id);
+
+                    if !is_expected_sender {
+                        return Err(CollectionError::bad_request(format!(
+                            "Refusing to initiate shard transfer from peer {from_peer_id} into shard {shard_id}: \
+                             there is no registered transfer from peer {from_peer_id}",
+                        )));
+                    }
                 }
 
-                // It is not enough to check for shard_transfer_registered,
-                // because it is registered before the state of the shard is changed.
+                // Transfer is registered before the replica state is set.
+                // Wait until the local replica switches to a shard transfer state.
                 Ok(replica_set.wait_for_state_condition_sync(
                     |state| {
                         state

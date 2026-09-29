@@ -430,12 +430,16 @@ impl Collection {
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
 
-        let is_registered = !shard_holder
-            .get_transfers(|transfer| {
-                transfer.is_target(self.this_peer_id, shard_id)
-                    && from_peer_id.is_none_or(|from_peer_id| transfer.from == from_peer_id)
-            })
-            .is_empty();
+        let transfers =
+            shard_holder.get_transfers(|transfer| transfer.is_target(self.this_peer_id, shard_id));
+
+        let is_registered = if let Some(from_peer_id) = from_peer_id {
+            transfers
+                .iter()
+                .any(|transfer| transfer.from == from_peer_id)
+        } else {
+            !transfers.is_empty()
+        };
 
         if !is_registered {
             let from = match from_peer_id {
@@ -445,7 +449,7 @@ impl Collection {
 
             return Err(CollectionError::bad_request(format!(
                 "Refusing to clear shard {shard_id} for snapshot recovery: \
-                 no shard transfer {from} to this peer is registered",
+                 there is no registered transfer {from}",
             )));
         }
 
