@@ -34,7 +34,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 pub use self::resharding::AbortReshardingScope;
-use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
+pub use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;

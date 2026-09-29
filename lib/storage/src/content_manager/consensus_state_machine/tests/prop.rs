@@ -180,7 +180,7 @@ fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
         Just(ShardingMethod::Auto),
         Just(ShardingMethod::Custom),
     ]);
-    let replicas = proptest::collection::vec(arb_peer_id(), 1..3);
+    let replicas = proptest::collection::vec((arb_peer_id(), arb_replica_state()), 1..3);
     let shard_key = arb_shard_key();
     let shards = proptest::collection::vec((replicas, shard_key), 0..3);
 
@@ -221,11 +221,7 @@ fn arb_collection_state() -> impl Strategy<Value = collection_state::State> {
 
         for (shard_id, (replicas, shard_key)) in shards.into_iter().enumerate() {
             let shard_id = shard_id as ShardId;
-
-            let replicas = replicas
-                .into_iter()
-                .map(|peer_id| (peer_id, ReplicaState::Active))
-                .collect();
+            let replicas = replicas.into_iter().collect();
 
             state.shards.insert(shard_id, ShardInfo { replicas });
 
@@ -331,6 +327,22 @@ fn arb_peer_id() -> impl Strategy<Value = PeerId> {
     proptest::sample::select(PEER_IDS)
 }
 
+fn arb_replica_state() -> impl Strategy<Value = ReplicaState> {
+    proptest::sample::select(vec![
+        ReplicaState::Active,
+        ReplicaState::Dead,
+        ReplicaState::Partial,
+        ReplicaState::Initializing,
+        ReplicaState::Listener,
+        ReplicaState::PartialSnapshot,
+        ReplicaState::Recovery,
+        ReplicaState::Resharding,
+        ReplicaState::ReshardingScaleDown,
+        ReplicaState::ActiveRead,
+        ReplicaState::ManualRecovery,
+    ])
+}
+
 fn arb_peer_metadata() -> impl Strategy<Value = PeerMetadata> {
     proptest::sample::select(PEER_VERSIONS)
         .prop_map(|version| PeerMetadata::new(version.parse().expect("valid version")))
@@ -390,7 +402,7 @@ pub fn arb_consensus_operation(
 
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
-        13 => collection_meta,
+        14 => collection_meta,
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
@@ -413,11 +425,33 @@ fn arb_collection_meta_operation(
         arb_drop_shard_key(collection_names.clone()),
         arb_resharding(collection_names.clone()),
         arb_transfer(collection_names.clone()),
+        arb_set_shard_replica_state(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),
         arb_drop_payload_index(collection_names.clone()),
     ]
+}
+
+fn arb_set_shard_replica_state(
+    collections: Vec<String>,
+) -> impl Strategy<Value = CollectionMetaOperations> {
+    (
+        arb_collection_name(collections),
+        0..3_u32,
+        arb_peer_id(),
+        arb_replica_state(),
+        proptest::option::of(arb_replica_state()),
+    )
+        .prop_map(|(collection_name, shard_id, peer_id, state, from_state)| {
+            CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                collection_name,
+                shard_id,
+                peer_id,
+                state,
+                from_state,
+            })
+        })
 }
 
 fn arb_transfer(collections: Vec<String>) -> impl Strategy<Value = CollectionMetaOperations> {
