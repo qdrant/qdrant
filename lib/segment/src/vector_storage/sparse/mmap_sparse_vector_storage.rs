@@ -591,9 +591,16 @@ mod test {
         storage.flusher()().unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
+
+        // The tracker journal is no storage file, the storage doesn't report it
+        let journals = storage_files
+            .iter()
+            .filter_map(|file| blobstore::tracker_journal_path(file))
+            .collect::<HashSet<_>>();
         let found_files = find_storage_files(dir.path())
             .unwrap()
             .into_iter()
+            .filter(|file| !journals.contains(file))
             .collect::<HashSet<_>>();
 
         assert_eq!(

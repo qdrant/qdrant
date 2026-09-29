@@ -686,12 +686,13 @@ fn test_build_field_index_without_journal() {
         .set_full_payload(2, 0.into(), &payload, &hw_counter)
         .unwrap();
 
-    // The Gridstore of an index lists its journal as a file while it exists
+    // The journal of a Gridstore lives next to its tracker file
     let has_journal = |segment: &Segment, key: &JsonPath| {
         segment.payload_index.borrow().field_indexes[key]
             .iter()
             .flat_map(|index| index.files())
-            .any(|file| file.ends_with("tracker_journal.dat"))
+            .filter_map(|file| blobstore::tracker_journal_path(&file))
+            .any(|journal| journal.exists())
     };
 
     let first = JsonPath::from_str("first").unwrap();

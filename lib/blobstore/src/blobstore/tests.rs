@@ -2471,8 +2471,8 @@ fn test_journal_ignores_torn_entry(#[case] tear: fn(&[u8]) -> Vec<u8>) {
 }
 
 /// Flushes append their pointer writes to the journal until it holds about 1k of them. The flush
-/// that grows it past that removes it, the next flush creates it again. It is a storage file
-/// while it exists.
+/// that grows it past that removes it, the next flush creates it again. It is never listed as a
+/// storage file, so snapshots don't include it.
 #[test]
 fn test_journal_removed_when_large() {
     let (dir, mut storage) = empty_storage();
@@ -2498,11 +2498,10 @@ fn test_journal_removed_when_large() {
     // 1000 pointer writes are kept
     assert!(put_and_flush(&mut storage, 0..500));
     assert!(put_and_flush(&mut storage, 500..1000));
-    assert!(storage.files().contains(&journal_path));
+    assert!(!storage.files().contains(&journal_path));
 
     // Growing past 1024 pointer writes removes the journal
     assert!(!put_and_flush(&mut storage, 1000..1100));
-    assert!(!storage.files().contains(&journal_path));
 
     assert!(put_and_flush(&mut storage, 0..1));
 }
