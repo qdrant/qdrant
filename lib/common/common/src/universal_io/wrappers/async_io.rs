@@ -40,4 +40,13 @@ where
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.0.read_bytes_async(range, access_pattern, align)
     }
+
+    #[inline]
+    fn read_whole_into_async<F>(&self, sink: F) -> impl Future<Output = UioResult<u64>> + Send
+    where
+        F: FnMut(u64, &[u8]) -> UioResult<()> + Send + 'static,
+        Self: Sync,
+    {
+        self.0.read_whole_into_async(sink)
+    }
 }

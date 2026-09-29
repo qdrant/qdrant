@@ -11,7 +11,7 @@ use common::generic_consts::Sequential;
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
     Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFs,
+    UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -303,4 +303,41 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
     assert_eq!(&bytes[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn disk_cache_async_prefill_streams_whole_get() {
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), tmp.path().to_path_buf()).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: source.config(),
+    })
+    .unwrap();
+
+    let file = futures::executor::block_on(fs.open_async(
+        PathBuf::from("bucket/data.bin"),
+        OpenOptions {
+            writeable: false,
+            populate: Populate::Blocking,
+            ..OpenOptions::new_for_test()
+        },
+        Default::default(),
+    ))
+    .unwrap();
+
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
 }

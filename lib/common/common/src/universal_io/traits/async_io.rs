@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::{UniversalRead, UniversalReadFs};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
 /// Async-capable extension of [`UniversalRead`].
@@ -22,6 +22,26 @@ pub trait UniversalReadAsync: UniversalRead {
         access_pattern: P,
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
+
+    /// Read the whole file, handing it to `sink` as `(offset, bytes)` chunks as they
+    /// arrive, in any order, each byte exactly once. Yields the file length. `sink` is
+    /// dropped before the returned future resolves.
+    ///
+    /// The default reads the file with a single [`Self::read_bytes_async`].
+    fn read_whole_into_async<F>(&self, mut sink: F) -> impl Future<Output = UioResult<u64>> + Send
+    where
+        F: FnMut(u64, &[u8]) -> UioResult<()> + Send + 'static,
+        Self: Sync,
+    {
+        async move {
+            let len = self.len::<u8>()?;
+            if len > 0 {
+                let bytes = self.read_bytes_async(0..len, Sequential, 1).await?;
+                sink(0, &bytes)?;
+            }
+            Ok(len)
+        }
+    }
 }
 
 /// Async-capable extension of [`UniversalReadFs`]: filesystems whose opens

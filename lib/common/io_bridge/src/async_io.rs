@@ -16,7 +16,7 @@ use common::universal_io::{
 
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
-use crate::pipeline::read_into_byte_buffer;
+use crate::pipeline::{read_into_byte_buffer, read_whole_into_sink};
 use crate::read::AsyncRead;
 
 impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
@@ -69,5 +69,18 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
             started.elapsed().as_millis()
         );
         Ok(ACow::Owned(buf))
+    }
+
+    /// Streams [`AsyncRead::read_from`]'s concurrent chunked GETs, handing each chunk to
+    /// `sink` on the bridge runtime as it completes.
+    fn read_whole_into_async<F>(&self, sink: F) -> impl Future<Output = UioResult<u64>> + Send
+    where
+        F: FnMut(u64, &[u8]) -> UioResult<()> + Send + 'static,
+    {
+        let task = self
+            .runtime
+            .handle()
+            .spawn(uio_trace::Context::current().wrap(read_whole_into_sink::<A, F>(self, sink)));
+        async move { task.await? }
     }
 }

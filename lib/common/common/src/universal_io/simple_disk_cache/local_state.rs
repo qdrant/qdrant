@@ -116,6 +116,28 @@ impl LocalState {
         Ok(())
     }
 
+    /// Write `bytes` at byte `offset` of the mirror, without marking any block fetched.
+    ///
+    /// # Safety
+    /// Nothing else may access the mirror concurrently: only for filling a mirror that is
+    /// not readable yet.
+    pub(super) unsafe fn write_mmap_at(&self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
+        mmap.write(offset, bytes)
+    }
+
+    /// Mark every block as fetched, once the whole file was written to the mirror.
+    pub(super) fn mark_fully_fetched(&self) {
+        let len = self
+            .mmap()
+            .len::<u8>()
+            .expect("MmapFile::len is infallible");
+        let blocks = u32::try_from(len.div_ceil(BLOCK_SIZE as u64))
+            .expect("file too large for block cache (>70 TiB)");
+        self.fetched.lock().insert_range(0..blocks);
+        self.fully_populated.store(true, Ordering::Release);
+    }
+
     pub(super) fn mmap(&self) -> &MmapFile {
         // SAFETY: we have `&self` reference
         unsafe { self.mmap.get().as_ref_unchecked() }

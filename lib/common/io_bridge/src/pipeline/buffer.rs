@@ -45,16 +45,60 @@ pub fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
 /// `from` to the end of the object, sizing the buffer from the object's total
 /// length carried in the response — no separate `len`/HEAD round-trip on the
 /// happy path. `from == 0` reads the whole object.
-///
-/// An offset at or past the end has no tail to read. The backend reports that as
-/// an unsatisfiable-range error rather than an empty body, so the error path
-/// confirms with a single `len`: if `from >= eof` the tail is genuinely empty
-/// and we yield a zero-length buffer; otherwise the original read error stands.
 pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
+    read_from_with(
+        file,
+        from,
+        move || AVec::new(align),
+        move |stream, len| scatter_stream_into_buffer(stream, len, align),
+    )
+}
+
+/// Like [`read_from_into_byte_buffer`] from offset 0, but hands every chunk to `sink` as
+/// `(offset, bytes)` the moment it arrives instead of collecting a buffer. Yields the
+/// object length.
+pub fn read_whole_into_sink<A, F>(
+    file: &BlobFile<A>,
+    sink: F,
+) -> impl Future<Output = UioResult<u64>> + Send + 'static
+where
+    A: AsyncRead + Clone,
+    F: FnMut(u64, &[u8]) -> UioResult<()> + Send + 'static,
+{
+    read_from_with(
+        file,
+        0,
+        || 0,
+        move |stream, len| async move {
+            scatter_stream_into_sink(stream, len, sink).await?;
+            Ok(len as u64)
+        },
+    )
+}
+
+/// Open a [`AsyncRead::read_from`] stream from `from` and hand it to `consume` along with
+/// the tail length, tracing the request.
+///
+/// An offset at or past the end has no tail to read. The backend reports that as
+/// an unsatisfiable-range error rather than an empty body, so the error path
+/// confirms with a single `len`: if `from >= eof` the tail is genuinely empty
+/// and `empty` supplies the result; otherwise the original read error stands.
+fn read_from_with<A, T, E, C, Fut>(
+    file: &BlobFile<A>,
+    from: u64,
+    empty: E,
+    consume: C,
+) -> impl Future<Output = UioResult<T>> + Send + 'static
+where
+    A: AsyncRead + Clone,
+    E: FnOnce() -> T + Send + 'static,
+    C: FnOnce(OffsetByteStream, usize) -> Fut + Send + 'static,
+    Fut: Future<Output = UioResult<T>> + Send,
+{
     let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
     let read_fut = file.inner.read_from(&file.path, from);
     // Cloned for the cold disambiguation path only; building the `len` future is
@@ -82,7 +126,7 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
                     && from >= eof
                 {
                     request.set(Outcome::Ok);
-                    return Ok(AVec::new(align));
+                    return Ok(empty());
                 }
                 request.set_err(&err);
                 eof?;
@@ -91,7 +135,7 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
         };
         request.set_end(size);
         let len = size.saturating_sub(from) as usize;
-        let result = scatter_stream_into_buffer(stream, len, align).await;
+        let result = consume(stream, len).await;
         request.set_result(&result);
         result
     }
@@ -113,26 +157,87 @@ async fn scatter_stream_into_buffer(
     align: usize,
 ) -> UioResult<AVec<u8, RuntimeAlign>> {
     let mut buf = AVec::<u8, RuntimeAlign>::with_capacity(align, expected_len);
-    // Disjoint runs of already-written bytes, grown/merged as chunks land.
-    // There are few in practice — an in-order stream is a single run, an
-    // out-of-order one adds a run per concurrent "hole" — so a linear scan is fast.
-    // Revisit if the run bound (`READ_CHUNK_CONCURRENCY` in `io_bridge_object_store`) grows large.
-    let mut runs: Vec<Range<usize>> = Vec::new();
-    let mut bytes_written = 0usize;
+    let mut coverage = Coverage::new(expected_len);
     while let Some(chunk) = stream.next().await {
         let (offset, bytes) = chunk?;
         if bytes.is_empty() {
             continue;
         }
+        let range = coverage.claim(offset, bytes.len())?;
+        // SAFETY: `claim` guarantees `range.end <= expected_len <= capacity`, and that
+        // `range` is disjoint from every prior write.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                buf.as_mut_ptr().add(range.start),
+                bytes.len(),
+            );
+        }
+    }
+    coverage.finish()?;
+    // SAFETY: `finish` proves every byte in `0..expected_len` was written exactly once.
+    unsafe { buf.set_len(expected_len) };
+    Ok(buf)
+}
+
+/// Like [`scatter_stream_into_buffer`], but hands each chunk to `sink` instead of copying
+/// it into a buffer. Errors on the same malformed streams.
+async fn scatter_stream_into_sink<F>(
+    mut stream: OffsetByteStream,
+    expected_len: usize,
+    mut sink: F,
+) -> UioResult<()>
+where
+    F: FnMut(u64, &[u8]) -> UioResult<()>,
+{
+    let mut coverage = Coverage::new(expected_len);
+    while let Some(chunk) = stream.next().await {
+        let (offset, bytes) = chunk?;
+        if bytes.is_empty() {
+            continue;
+        }
+        coverage.claim(offset, bytes.len())?;
+        sink(offset, &bytes)?;
+    }
+    coverage.finish()
+}
+
+/// Tracks which bytes of `0..expected_len` the chunks of a stream have covered, rejecting
+/// out-of-bounds and overlapping chunks, and a short total.
+struct Coverage {
+    expected_len: usize,
+    /// Disjoint runs of already-covered bytes, grown/merged as chunks land.
+    /// There are few in practice — an in-order stream is a single run, an
+    /// out-of-order one adds a run per concurrent "hole" — so a linear scan is fast.
+    /// Revisit if the run bound (`READ_CHUNK_CONCURRENCY` in `io_bridge_object_store`) grows large.
+    runs: Vec<Range<usize>>,
+    covered: usize,
+}
+
+impl Coverage {
+    fn new(expected_len: usize) -> Self {
+        Self {
+            expected_len,
+            runs: Vec::new(),
+            covered: 0,
+        }
+    }
+
+    /// Record a chunk of `len` bytes at `offset`; returns its byte range.
+    fn claim(&mut self, offset: u64, len: usize) -> UioResult<Range<usize>> {
+        let Self {
+            expected_len,
+            runs,
+            covered,
+        } = self;
         let start = usize::try_from(offset).ok();
-        let end = start.and_then(|start| start.checked_add(bytes.len()));
-        let Some((start, end)) = start.zip(end).filter(|&(_, end)| end <= expected_len) else {
+        let end = start.and_then(|start| start.checked_add(len));
+        let Some((start, end)) = start.zip(end).filter(|&(_, end)| end <= *expected_len) else {
             return Err(UniversalIoError::S3 {
                 path: None,
                 source: Box::from(format!(
-                    "over-read: chunk at offset {offset} of {} bytes exceeds a buffer of size \
+                    "over-read: chunk at offset {offset} of {len} bytes exceeds a buffer of size \
                      {expected_len}",
-                    bytes.len(),
                 )),
             });
         };
@@ -144,12 +249,7 @@ async fn scatter_stream_into_buffer(
                 )),
             });
         }
-        // SAFETY: `end <= expected_len <= capacity`, and the check above
-        // guarantees `start..end` is disjoint from every prior write.
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.as_mut_ptr().add(start), bytes.len());
-        }
-        bytes_written += bytes.len();
+        *covered += len;
         // Grow an adjacent run or start a new one.
         // Runs are disjoint, so each side matches at most once.
         let before = runs.iter().position(|run| run.end == start);
@@ -163,20 +263,25 @@ async fn scatter_stream_into_buffer(
             (None, Some(after)) => runs[after].start = start,
             (None, None) => runs.push(start..end),
         }
+        Ok(start..end)
     }
-    // Every write was in-bounds and disjoint, so matching totals prove the
-    // chunks tiled `0..expected_len` exactly; anything less means a gap.
-    if bytes_written != expected_len {
-        return Err(UniversalIoError::S3 {
-            path: None,
-            source: format!("short read: expected {expected_len} bytes, got {bytes_written}")
-                .into(),
-        });
+
+    /// Every claim was in-bounds and disjoint, so matching totals prove the
+    /// chunks tiled `0..expected_len` exactly; anything less means a gap.
+    fn finish(self) -> UioResult<()> {
+        let Self {
+            expected_len,
+            runs: _,
+            covered,
+        } = self;
+        if covered != expected_len {
+            return Err(UniversalIoError::S3 {
+                path: None,
+                source: format!("short read: expected {expected_len} bytes, got {covered}").into(),
+            });
+        }
+        Ok(())
     }
-    // SAFETY: the coverage check above proves every byte in `0..expected_len`
-    // was written exactly once.
-    unsafe { buf.set_len(expected_len) };
-    Ok(buf)
 }
 
 #[cfg(test)]

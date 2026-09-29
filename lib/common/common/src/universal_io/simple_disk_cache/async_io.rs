@@ -6,16 +6,17 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
-use super::{DiskCacheRemote, block_aligned_fetch, to_block_range};
+use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
+    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError, UniversalReadAsync,
     UniversalReadFsAsync,
 };
 
@@ -53,17 +54,14 @@ where
                     Some(len) => len,
                     None => remote.len::<u8>()?,
                 };
-                let local = LocalState::new(&local_path, len, options)?;
                 // An empty object has nothing to populate, and a bounded `0..0`
                 // range is rejected by the backend rather than answered with an
                 // empty body (see `AsyncRead::read_range`), so skip the fetch.
-                if len > 0 {
-                    let byte_range = 0..len;
-                    let content = remote
-                        .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                        .await?;
-                    unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
-                }
+                let local = if len > 0 {
+                    prefill_whole(&remote, &local_path, len, options).await?
+                } else {
+                    LocalState::new(&local_path, len, options)?
+                };
                 State::ready(remote, local)
             }
             Populate::Partial(read_range) => {
@@ -100,6 +98,32 @@ where
     async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.list_files_async(prefix_path).await
     }
+}
+
+/// Build the mirror of a `len`-byte remote file, streaming the whole file into it: each
+/// chunk is written as it arrives, so copying overlaps the transfer.
+async fn prefill_whole<R: DiskCacheRemote>(
+    remote: &R,
+    local_path: &Path,
+    len: u64,
+    options: OpenOptions,
+) -> UioResult<LocalState> {
+    let local = Arc::new(LocalState::new(local_path, len, options)?);
+    let sink_local = Arc::clone(&local);
+    let fetched_len = remote
+        .read_whole_into_async(move |offset, bytes| {
+            // SAFETY: nothing else accesses the mirror until the open returns, and the sink
+            // is called sequentially.
+            unsafe { sink_local.write_mmap_at(offset, bytes) }
+        })
+        .await?;
+    if fetched_len != len {
+        return Err(UniversalIoError::Io(std::io::Error::other(format!(
+            "remote file changed size during prefill: expected {len} bytes, got {fetched_len}",
+        ))));
+    }
+    local.mark_fully_fetched();
+    Ok(Arc::into_inner(local).expect("the sink is dropped once the read resolves"))
 }
 
 impl<R> UniversalReadAsync for DiskCache<R>
