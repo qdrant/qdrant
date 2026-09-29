@@ -432,9 +432,10 @@ service:
   # Only `api_key` and `alt_api_key` are accepted there; the read-only key
   # and JWT tokens are rejected, since peers joining consensus and moving
   # shards must hold the read-write key.
-  # Peers forward `api_key` on internal requests, so every node must have the
-  # same `api_key`. To rotate it, first set the new key as `alt_api_key` on
-  # every node, then swap the two.
+  # Peers forward `api_key` (or `alt_api_key` if `api_key` is unset) on
+  # internal requests, so every node must accept the key the others send.
+  # To rotate it, first set the new key as `alt_api_key` on every node, then
+  # swap the two.
   # Enabled by default, has no effect without an API key.
   #
   # Uncomment to disable.

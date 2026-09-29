@@ -67,8 +67,9 @@ pub struct ServiceConfig {
 
     /// Enforce API key / JWT authentication on the internal (p2p) gRPC API.
     ///
-    /// Enabled by default. Only `api_key` is forwarded on internal gRPC
-    /// requests, and the receiving side accepts `api_key` or `alt_api_key`.
+    /// Enabled by default. Peers forward `api_key` (or `alt_api_key` if
+    /// `api_key` is unset) on internal gRPC requests, and the receiving side
+    /// accepts `api_key` or `alt_api_key`.
     /// Has no effect when no API key is configured.
     #[serde(default)]
     pub enforce_internal_auth: Option<bool>,
@@ -427,16 +428,10 @@ impl Settings {
         //
         // Internal (p2p) auth in distributed mode
         //
-        // Peers forward `api_key` on internal gRPC requests, and the receiving
-        // side accepts `api_key` or `alt_api_key` only. Warn about every
-        // configuration that leaves the internal API open, or that enforces
-        // auth without a key for peers to send.
-        let api_key_empty = self
-            .service
-            .api_key
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty();
+        // Peers forward `api_key` (or `alt_api_key` if unset) on internal gRPC
+        // requests, and the receiving side accepts `api_key` or `alt_api_key`
+        // only. Warn about every configuration that leaves the internal API
+        // open, or that enforces auth without a key for peers to send.
         let read_only_key_set = !self
             .service
             .read_only_api_key
@@ -467,13 +462,6 @@ impl Settings {
                      `service.enforce_internal_auth` is disabled. The internal \
                      (p2p) gRPC API is not authenticated. Enable \
                      `enforce_internal_auth`.",
-                );
-            } else if api_key_empty {
-                log::warn!(
-                    "`service.enforce_internal_auth` is enabled with only \
-                     `alt_api_key` configured. Peers forward `api_key` on internal \
-                     (p2p) gRPC requests, so they will not be able to reach each \
-                     other. Configure `api_key`, or disable `enforce_internal_auth`.",
                 );
             }
         }
