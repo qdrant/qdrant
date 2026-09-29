@@ -36,7 +36,7 @@ pub fn adjust_to_available_vectors(
             max: 0,
         };
     }
-    let estimation = bounded_by(estimation, available_points);
+    let estimation = estimation.bounded_by(available_points);
 
     let number_of_deleted_vectors = available_points.saturating_sub(available_vectors);
 
@@ -80,7 +80,7 @@ pub fn adjust_for_deferred_points(
             max: 0,
         };
     }
-    let estimation = bounded_by(estimation, total_points);
+    let estimation = estimation.bounded_by(total_points);
 
     let number_of_deferred_points = total_points.saturating_sub(visible_points);
 
@@ -107,26 +107,6 @@ pub fn adjust_for_deferred_points(
         min,
         exp,
         max,
-    }
-}
-
-/// Bound `estimation` by `population`: a filter selects no more points than
-/// exist. A payload index can count points the id tracker has already dropped:
-/// append-only deletion tombstones a point and leaves its payload and field
-/// indexes in place. Scaled down unbounded, such an `exp` would stay above the
-/// `max` the callers cap at the population.
-fn bounded_by(estimation: CardinalityEstimation, population: usize) -> CardinalityEstimation {
-    let CardinalityEstimation {
-        primary_clauses,
-        min,
-        exp,
-        max,
-    } = estimation;
-    CardinalityEstimation {
-        primary_clauses,
-        min: min.min(population),
-        exp: exp.min(population),
-        max: max.min(population),
     }
 }
 
