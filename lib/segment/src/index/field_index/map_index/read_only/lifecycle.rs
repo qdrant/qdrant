@@ -2,15 +2,17 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::MapIndexKey;
 use super::super::mutable_map_index::read_only::ReadOnlyAppendableMapIndex;
 use super::super::on_disk_map_index::OnDiskMapIndex;
 use super::ReadOnlyMapIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::immutable_index_open_mode;
 use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyMapIndex<N, S>
 where
@@ -44,16 +46,9 @@ where
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
-        is_on_disk: bool,
+        placement: Memory,
     ) -> OperationResult<bool> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
-        };
-
+        let (_is_on_disk, populate) = immutable_index_open_mode(placement);
         OnDiskMapIndex::<N, S>::preopen(fs, dir, populate)
     }
 
@@ -63,7 +58,7 @@ where
     ///
     /// The writable enum has two mmap variants (`Immutable` for in-RAM with
     /// mmap backing, `Mmap` for on-disk lazy); the read-only side collapses
-    /// to a single [`Self::Immutable`] arm because `is_on_disk` (→ populate)
+    /// to a single [`Self::Immutable`] arm because the placement (→ populate)
     /// already covers the lazy/eager distinction inside [`OnDiskMapIndex`].
     /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
     /// exist.
@@ -72,21 +67,15 @@ where
     pub fn open_immutable(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
-        };
+        let (is_on_disk, populate) = immutable_index_open_mode(placement);
         let Some(on_disk_index) = OnDiskMapIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        if effective_is_on_disk {
+        if is_on_disk {
             Ok(Some(Self::OnDisk(on_disk_index)))
         } else {
             Ok(Some(Self::Immutable(ImmutableMapIndex::load_from_on_disk(

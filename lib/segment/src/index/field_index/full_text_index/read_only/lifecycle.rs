@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
 use super::super::on_disk_text_index::OnDiskFullTextIndex;
@@ -10,7 +10,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::has_doc_len_sidecar;
+use crate::index::field_index::immutable_index_open_mode;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// Schedule background prefetch for the appendable (Gridstore) format.
@@ -49,16 +51,9 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
     ) -> OperationResult<bool> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
-        };
-
+        let (_is_on_disk, populate) = immutable_index_open_mode(placement);
         OnDiskFullTextIndex::preopen(fs, path, populate)
     }
 
@@ -69,7 +64,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// The writable enum splits the mmap path into two variants (`Immutable`
     /// for in-RAM with mmap backing, `Mmap` for on-disk lazy); the read-only
     /// side collapses to a single [`Self::Immutable`] arm because
-    /// `is_on_disk` (→ populate) already covers the lazy/eager distinction
+    /// the placement (→ populate) already covers the lazy/eager distinction
     /// inside [`MmapFullTextIndex`]. `Ok(None)` propagates from the leaf when
     /// the on-disk index doesn't exist.
     ///
@@ -78,13 +73,10 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        placement: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = Populate::from(!effective_is_on_disk);
+        let (is_on_disk, populate) = immutable_index_open_mode(placement);
         let scoring = config.scoring();
 
         // Same probe as `new_mmap`, same answer: an index that records no
@@ -113,7 +105,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             return Ok(None);
         }
 
-        let index = if effective_is_on_disk {
+        let index = if is_on_disk {
             Self::OnDisk(on_disk_index)
         } else {
             Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)

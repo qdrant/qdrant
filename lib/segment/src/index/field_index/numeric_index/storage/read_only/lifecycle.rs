@@ -2,17 +2,19 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::super::Encodable;
 use super::super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
 use super::ReadOnlyNumericIndexInner;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::immutable_index_open_mode;
 use crate::index::field_index::numeric_index::immutable_numeric_index::ImmutableNumericIndex;
 use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>
     ReadOnlyNumericIndexInner<T, S>
@@ -35,16 +37,9 @@ where
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
     ) -> OperationResult<bool> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
-        };
-
+        let (_is_on_disk, populate) = immutable_index_open_mode(placement);
         OnDiskNumericIndex::<T, S>::preopen(fs, path, populate)
     }
 
@@ -72,7 +67,7 @@ where
     /// The writable enum has three variants (`Mutable`, `Immutable`, `Mmap`);
     /// the read-only side collapses the latter two into [`Self::Immutable`]
     /// because [`UniversalNumericIndex`] reads on-demand from the mmap and
-    /// `is_on_disk` (→ populate) already covers the lazy/eager distinction.
+    /// the placement (→ populate) already covers the lazy/eager distinction.
     /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
     /// exist.
     ///
@@ -80,18 +75,15 @@ where
     pub fn open_immutable(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = Populate::from(!effective_is_on_disk);
+        let (is_on_disk, populate) = immutable_index_open_mode(placement);
         let Some(mmap_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
+        let index = if is_on_disk {
             Self::OnDisk(mmap_index)
         } else {
             Self::Immutable(ImmutableNumericIndex::load_from_on_disk(mmap_index))

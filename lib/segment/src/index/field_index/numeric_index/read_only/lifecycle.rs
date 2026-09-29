@@ -12,6 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: UniversalRead>
     ReadOnlyNumericIndex<T, P, S>
@@ -32,9 +33,9 @@ where
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
     ) -> OperationResult<bool> {
-        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, is_on_disk)
+        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, placement)
     }
 
     /// Read-only mirror of [`NumericIndex::new_gridstore`][1]: forwards to
@@ -63,11 +64,11 @@ where
     pub fn open_immutable(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_immutable(fs, path, is_on_disk, deleted_points)?.map(
+            ReadOnlyNumericIndexInner::open_immutable(fs, path, placement, deleted_points)?.map(
                 |inner| Self {
                     inner,
                     _phantom: PhantomData,

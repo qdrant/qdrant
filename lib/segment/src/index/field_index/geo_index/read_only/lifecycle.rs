@@ -1,13 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::ReadOnlyGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
+use crate::index::field_index::immutable_index_open_mode;
+use crate::types::Memory;
 
 impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// Schedule background prefetch for the appendable (Gridstore) format.
@@ -26,16 +28,9 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
     ) -> OperationResult<bool> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
-        };
-
+        let (_is_on_disk, populate) = immutable_index_open_mode(placement);
         OnDiskGeoIndex::preopen(fs, path, populate)
     }
 
@@ -60,7 +55,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     ///
     /// The writable enum has two mmap variants (`Storage` for on-disk lazy,
     /// `Immutable` for in-RAM with mmap backing); the read-only side collapses
-    /// to a single [`Self::Immutable`] arm because `is_on_disk` (→ populate)
+    /// to a single [`Self::Immutable`] arm because the placement (→ populate)
     /// already covers the lazy/eager distinction inside [`OnDiskGeoIndex`].
     /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
     /// exist.
@@ -76,13 +71,10 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn open_immutable(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        placement: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = Populate::from(!effective_is_on_disk);
+        let (is_on_disk, populate) = immutable_index_open_mode(placement);
 
         let Some(on_disk_index) = OnDiskGeoIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);

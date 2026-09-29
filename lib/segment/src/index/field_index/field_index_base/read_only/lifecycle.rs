@@ -19,38 +19,51 @@ use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType, StorageType};
 use crate::json_path::JsonPath;
 use crate::types::{
-    DateTimePayloadType, FloatPayloadType, IntPayloadType, PayloadFieldSchema, UuidIntType,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, Memory, PayloadFieldSchema, UuidIntType,
 };
 
 /// Which read-only open path a leaf index should take, derived from the stored
 /// [`StorageType`]. Phrased as a mutability distinction (matching the
 /// `open_appendable` / `open_immutable` leaf methods) rather than a concrete
 /// backend: the read-only stack is generic over [`UniversalRead`](common::universal_io::UniversalRead), so the
-/// on-disk-vs-in-memory choice is just the `is_on_disk` flag on the immutable
+/// on-disk-vs-in-memory choice is just the memory placement on the immutable
 /// variant, picked from the index type rather than passed in by the caller.
 #[derive(Clone, Copy)]
 enum ReadMode {
     /// Appendable on-disk format — opened via `open_appendable`.
     Appendable,
-    /// Immutable on-disk format — opened via `open_immutable`. `is_on_disk`
-    /// selects keeping the data on disk versus loading it into memory.
-    Immutable { is_on_disk: bool },
+    /// Immutable on-disk format — opened via `open_immutable`. `placement`
+    /// selects loading the data into memory, or keeping it on disk, primed or not
+    /// (see [`immutable_index_open_mode`](crate::index::field_index::immutable_index_open_mode)).
+    Immutable { placement: Memory },
+}
+
+impl ReadMode {
+    fn from_storage_type(storage_type: StorageType) -> Self {
+        match storage_type {
+            StorageType::Gridstore => Self::Appendable,
+            StorageType::Mmap { is_on_disk: true } => Self::Immutable {
+                placement: Memory::Cold,
+            },
+            StorageType::Mmap { is_on_disk: false } => Self::Immutable {
+                placement: Memory::Pinned,
+            },
+        }
+    }
 }
 
 /// Effective read mode under a `populate_override` (from a request-specific
 /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)): the override
-/// re-decides the immutable mode's `is_on_disk` — the flag is a placement
-/// choice over the same on-disk format, so a RAM-loaded index can be demoted to
-/// a lazily-read mmap one. The appendable (Gridstore) mode ignores the
-/// override: its open reconstructs in-memory state and cannot be demoted.
+/// demotes the immutable mode's placement (see [`Memory::with_populate_override`]) —
+/// every placement shares the on-disk format, so a RAM-loaded index can be served
+/// from its primed or lazily-read mmap files instead. The appendable (Gridstore)
+/// mode ignores the override: its open reconstructs in-memory state and cannot be
+/// demoted.
 fn effective_mode(mode: ReadMode, populate_override: Option<Populate>) -> ReadMode {
-    match (mode, populate_override) {
-        (ReadMode::Appendable, _) | (ReadMode::Immutable { .. }, None) => mode,
-        (ReadMode::Immutable { is_on_disk: _ }, Some(populate)) => ReadMode::Immutable {
-            is_on_disk: match populate {
-                Populate::No | Populate::Auto | Populate::Partial(_) => true,
-                Populate::Blocking | Populate::PreferBackground => false,
-            },
+    match mode {
+        ReadMode::Appendable => mode,
+        ReadMode::Immutable { placement } => ReadMode::Immutable {
+            placement: placement.with_populate_override(populate_override),
         },
     }
 }
@@ -64,22 +77,22 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         index_type: &FullPayloadIndexType,
         populate_override: Option<Populate>,
     ) -> OperationResult<bool> {
-        let mode = match index_type.storage_type {
-            StorageType::Gridstore => ReadMode::Appendable,
-            StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
-        };
-        let mode = effective_mode(mode, populate_override);
+        let mode = effective_mode(
+            ReadMode::from_storage_type(index_type.storage_type),
+            populate_override,
+        );
 
-        // Derive whether how to populate from the payload schema; a
-        // `populate_override` replaces the schema-derived decision.
+        // Derive how to populate from the payload schema's placement, demoted by a
+        // `populate_override`.
         let schema_populate = || {
-            populate_override.unwrap_or({
-                if payload_schema.memory_placement().populate_on_open() {
-                    Populate::PreferBackground
-                } else {
-                    Populate::No
-                }
-            })
+            let placement = payload_schema
+                .memory_placement()
+                .with_populate_override(populate_override);
+            if placement.populate_on_open() {
+                Populate::PreferBackground
+            } else {
+                Populate::No
+            }
         };
 
         let preopened = match index_type.index_type {
@@ -87,24 +100,22 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => {
                     ReadOnlyMapIndex::<str, S>::preopen_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
-                    ReadOnlyMapIndex::<str, S>::preopen_immutable(
-                        fs,
-                        &map_dir(dir, field),
-                        is_on_disk,
-                    )?
-                }
+                ReadMode::Immutable { placement } => ReadOnlyMapIndex::<str, S>::preopen_immutable(
+                    fs,
+                    &map_dir(dir, field),
+                    placement,
+                )?,
             },
             PayloadIndexType::IntMapIndex => match mode {
                 ReadMode::Appendable => ReadOnlyMapIndex::<IntPayloadType, S>::preopen_appendable(
                     fs,
                     map_dir(dir, field),
                 )?,
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::preopen_immutable(
                         fs,
                         &map_dir(dir, field),
-                        is_on_disk,
+                        placement,
                     )?
                 }
             },
@@ -112,11 +123,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => {
                     ReadOnlyMapIndex::<UuidIntType, S>::preopen_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyMapIndex::<UuidIntType, S>::preopen_immutable(
                         fs,
                         &map_dir(dir, field),
-                        is_on_disk,
+                        placement,
                     )?
                 }
             },
@@ -127,11 +138,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         numeric_dir(dir, field),
                     )?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::preopen_immutable(
                         fs,
                         &numeric_dir(dir, field),
-                        is_on_disk,
+                        placement,
                     )?
                 }
             },
@@ -143,12 +154,12 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 >::preopen_appendable(
                     fs, numeric_dir(dir, field)
                 )?,
-                ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
+                ReadMode::Immutable { placement } => ReadOnlyNumericIndex::<
                     IntPayloadType,
                     DateTimePayloadType,
                     S,
                 >::preopen_immutable(
-                    fs, &numeric_dir(dir, field), is_on_disk
+                    fs, &numeric_dir(dir, field), placement
                 )?,
             },
             PayloadIndexType::FloatIndex => match mode {
@@ -159,12 +170,12 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 >::preopen_appendable(
                     fs, numeric_dir(dir, field)
                 )?,
-                ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
+                ReadMode::Immutable { placement } => ReadOnlyNumericIndex::<
                     FloatPayloadType,
                     FloatPayloadType,
                     S,
                 >::preopen_immutable(
-                    fs, &numeric_dir(dir, field), is_on_disk
+                    fs, &numeric_dir(dir, field), placement
                 )?,
             },
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
@@ -172,21 +183,19 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => {
                     ReadOnlyGeoIndex::<S>::preopen_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
-                    ReadOnlyGeoIndex::<S>::preopen_immutable(fs, &map_dir(dir, field), is_on_disk)?
+                ReadMode::Immutable { placement } => {
+                    ReadOnlyGeoIndex::<S>::preopen_immutable(fs, &map_dir(dir, field), placement)?
                 }
             },
             PayloadIndexType::FullTextIndex => match mode {
                 ReadMode::Appendable => {
                     ReadOnlyFullTextIndex::<S>::preopen_appendable(fs, text_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
-                    ReadOnlyFullTextIndex::<S>::preopen_immutable(
-                        fs,
-                        &text_dir(dir, field),
-                        is_on_disk,
-                    )?
-                }
+                ReadMode::Immutable { placement } => ReadOnlyFullTextIndex::<S>::preopen_immutable(
+                    fs,
+                    &text_dir(dir, field),
+                    placement,
+                )?,
             },
             // Bool and null keep a single roaring-flag format, but we can choose populate
             // param based on schema placement.
@@ -208,7 +217,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// parent's open, wrapping the leaf in the matching variant.
     ///
     /// The open path (appendable vs immutable) is picked from the stored
-    /// [`FullPayloadIndexType::storage_type`]; `is_on_disk` rides on the
+    /// [`FullPayloadIndexType::storage_type`]; the memory placement rides on the
     /// immutable mode. Generic over `S`: every per-index open threads the
     /// [`UniversalRead`](common::universal_io::UniversalRead) handle `fs` (the map, numeric, geo and full-text leaves
     /// are all fs-generic), so the dispatcher needn't fix a concrete backend.
@@ -221,8 +230,8 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// and null leaves ignore it (a single `open` serves both modes).
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
-    /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
-    /// the immutable mode's `is_on_disk` placement.
+    /// `populate_override` mirrors [`preopen`](Self::preopen): it demotes
+    /// the immutable mode's placement.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
@@ -234,21 +243,20 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         deleted_points: &BitSlice,
         populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
-        let mode = match index_type.storage_type {
-            StorageType::Gridstore => ReadMode::Appendable,
-            StorageType::Mmap { is_on_disk } => ReadMode::Immutable { is_on_disk },
-        };
-        let mode = effective_mode(mode, populate_override);
+        let mode = effective_mode(
+            ReadMode::from_storage_type(index_type.storage_type),
+            populate_override,
+        );
 
         let index = match index_type.index_type {
             PayloadIndexType::KeywordIndex => match mode {
                 ReadMode::Appendable => {
                     ReadOnlyMapIndex::<str, S>::open_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => ReadOnlyMapIndex::<str, S>::open_immutable(
+                ReadMode::Immutable { placement } => ReadOnlyMapIndex::<str, S>::open_immutable(
                     fs,
                     &map_dir(dir, field),
-                    is_on_disk,
+                    placement,
                     deleted_points,
                 )?,
             }
@@ -257,11 +265,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::open_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::open_immutable(
                         fs,
                         &map_dir(dir, field),
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?
                 }
@@ -275,11 +283,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => {
                     ReadOnlyMapIndex::<UuidIntType, S>::open_appendable(fs, map_dir(dir, field))?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyMapIndex::<UuidIntType, S>::open_immutable(
                         fs,
                         &map_dir(dir, field),
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?
                 }
@@ -292,11 +300,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         numeric_dir(dir, field),
                     )?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::open_immutable(
                         fs,
                         &numeric_dir(dir, field),
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?
                 }
@@ -309,11 +317,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         numeric_dir(dir, field),
                     )?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyNumericIndex::<IntPayloadType, DateTimePayloadType, S>::open_immutable(
                         fs,
                         &numeric_dir(dir, field),
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?
                 }
@@ -326,11 +334,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         numeric_dir(dir, field),
                     )?
                 }
-                ReadMode::Immutable { is_on_disk } => {
+                ReadMode::Immutable { placement } => {
                     ReadOnlyNumericIndex::<FloatPayloadType, FloatPayloadType, S>::open_immutable(
                         fs,
                         &numeric_dir(dir, field),
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?
                 }
@@ -339,10 +347,10 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
                 ReadMode::Appendable => ReadOnlyGeoIndex::open_appendable(fs, map_dir(dir, field))?,
-                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::open_immutable(
+                ReadMode::Immutable { placement } => ReadOnlyGeoIndex::open_immutable(
                     fs,
                     &map_dir(dir, field),
-                    is_on_disk,
+                    placement,
                     deleted_points,
                 )?,
             }
@@ -353,11 +361,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     ReadMode::Appendable => {
                         ReadOnlyFullTextIndex::open_appendable(fs, text_dir(dir, field), config)?
                     }
-                    ReadMode::Immutable { is_on_disk } => ReadOnlyFullTextIndex::open_immutable(
+                    ReadMode::Immutable { placement } => ReadOnlyFullTextIndex::open_immutable(
                         fs,
                         text_dir(dir, field),
                         config,
-                        is_on_disk,
+                        placement,
                         deleted_points,
                     )?,
                 }
@@ -365,7 +373,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             }
             // Bool and null are roaring-flag backed: a single read-only `open`
             // serves both modes (neither consumes the immutable-only
-            // `is_on_disk` / `deleted_points`).
+            // placement / `deleted_points`).
             PayloadIndexType::BoolIndex => {
                 ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field))?.map(Self::BoolIndex)
             }

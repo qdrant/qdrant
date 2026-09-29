@@ -8,8 +8,8 @@
 //! [`LoadProfile`] captures that knowledge. It is derived from the request *before* the
 //! shard is opened and threaded down to the per-component `preopen`/`open` calls, where it
 //! overrides the config-derived [`Populate`] decision. The profile only ever demotes: a
-//! component it keeps "warm" loads exactly as the persisted config says, a component it
-//! excludes is parked cold and read lazily on first use. It never disables a component —
+//! component it keeps "warm" loads as the persisted config says (pinned payload indexes
+//! capped at cached), a component it excludes is parked cold and read lazily on first use. It never disables a component —
 //! every request the segment can serve still works, just colder.
 //!
 //! The per-component placement methods are all defined here, in one place, so the memory
@@ -162,6 +162,10 @@ impl LoadProfile {
     ///
     /// Matches the query path, which resolves a condition against the index of the
     /// condition's exact key: only exact-key matches stay warm.
+    ///
+    /// Warm indexes are capped at cached: a pinned open rebuilds the index on the heap from
+    /// the files the fetch already primed, a full extra pass that a request-scoped open never
+    /// amortizes.
     pub fn payload_index_placement(&self, field: &JsonPath) -> Option<Populate> {
         let Self {
             warm_vectors: _,
@@ -169,7 +173,7 @@ impl LoadProfile {
             warm_payload_storage: _,
         } = self;
         if warm_payload_fields.contains(field) {
-            None
+            Some(Populate::PreferBackground)
         } else {
             Some(Populate::No)
         }
@@ -264,8 +268,14 @@ mod tests {
             Some(Populate::No)
         );
 
-        assert_eq!(profile.payload_index_placement(&path("city")), None);
-        assert_eq!(profile.payload_index_placement(&path("price")), None);
+        assert_eq!(
+            profile.payload_index_placement(&path("city")),
+            Some(Populate::PreferBackground)
+        );
+        assert_eq!(
+            profile.payload_index_placement(&path("price")),
+            Some(Populate::PreferBackground)
+        );
         assert_eq!(
             profile.payload_index_placement(&path("country")),
             Some(Populate::No)
@@ -315,9 +325,12 @@ mod tests {
         // Nested keys resolve against the array prefix, like index selection at query time.
         assert_eq!(
             profile.payload_index_placement(&path("items[].color")),
-            None
+            Some(Populate::PreferBackground)
         );
-        assert_eq!(profile.payload_index_placement(&path("country")), None);
+        assert_eq!(
+            profile.payload_index_placement(&path("country")),
+            Some(Populate::PreferBackground)
+        );
         assert_eq!(
             profile.payload_index_placement(&path("color")),
             Some(Populate::No)
@@ -351,8 +364,14 @@ mod tests {
         );
 
         // Filter keys of both parts stay warm; an untouched field parks cold.
-        assert_eq!(profile.payload_index_placement(&path("city")), None);
-        assert_eq!(profile.payload_index_placement(&path("country")), None);
+        assert_eq!(
+            profile.payload_index_placement(&path("city")),
+            Some(Populate::PreferBackground)
+        );
+        assert_eq!(
+            profile.payload_index_placement(&path("country")),
+            Some(Populate::PreferBackground)
+        );
         assert_eq!(
             profile.payload_index_placement(&path("price")),
             Some(Populate::No)

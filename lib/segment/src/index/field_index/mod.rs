@@ -2,8 +2,9 @@ use std::ops::Deref;
 
 use ahash::AHashSet;
 use common::types::PointOffsetType;
+use common::universal_io::Populate;
 
-use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
+use crate::types::{Condition, FieldCondition, Memory, PointIdType, VectorNameBuf};
 
 pub mod bool_index;
 mod deleted_mask;
@@ -29,6 +30,19 @@ mod utils;
 
 pub use facet_index::FacetIndex;
 pub use field_index_base::*;
+
+/// Whether a read-only immutable field index with `placement` is served from its on-disk
+/// format (else loaded onto the heap), and how its files are populated on open.
+///
+/// Pinned loads onto the heap, cached stays on disk primed, cold stays on disk lazy.
+pub(crate) fn immutable_index_open_mode(placement: Memory) -> (bool, Populate) {
+    let prefer_disk = common::low_memory::low_memory_mode().prefer_disk();
+    match placement {
+        Memory::Pinned if !prefer_disk => (false, Populate::PreferBackground),
+        Memory::Cached => (true, Populate::PreferBackground),
+        Memory::Pinned | Memory::Cold => (true, Populate::No),
+    }
+}
 
 use crate::utils::maybe_arc::MaybeArc;
 
