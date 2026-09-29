@@ -60,12 +60,16 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
 
         let hw_counter = HardwareCounterCell::disposable();
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
+        let mut records_without_length = 0usize;
 
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,
                 |idx, value: Vec<u8>| {
                     let doc = FullTextIndex::deserialize_document(&value)?;
+                    if scoring && doc.doc_len.is_none() {
+                        records_without_length += 1;
+                    }
                     builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
@@ -76,6 +80,18 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
                     "Failed to load read-only appendable full text index from gridstore: {err}"
                 ))
             })?;
+
+        // Same rule as the writable open: an index that records no lengths
+        // under scoring is not an index. This side cannot rebuild, so `None`
+        // drops the field until the writer has, as for any other missing file.
+        // Serving it instead would answer a length of zero for every point.
+        if records_without_length > 0 {
+            log::info!(
+                "Read-only text index has {records_without_length} records without a document \
+                 length, not opened",
+            );
+            return Ok(None);
+        }
 
         Ok(Some(Self {
             inner: MutableFullTextIndexInner {

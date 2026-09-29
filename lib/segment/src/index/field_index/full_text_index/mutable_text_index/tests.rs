@@ -435,15 +435,13 @@ fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) 
         assert_eq!(inner.get_doc_len(0), None, "no length reached the record");
     }
 
-    // An index that does record lengths reads that record as absent, not as a
-    // zero-length document: that is what tells it from a stopword-only one.
-    let as_scoring = gridstore_index(path, length_config(phrase_matching), false, true)
-        .unwrap()
-        .unwrap();
-    let FullTextIndex::Mutable(inner) = &as_scoring else {
-        panic!("expected a mutable (gridstore) index");
-    };
-    assert_eq!(inner.inner.inverted_index.point_to_doc_len, Some(vec![0]));
-    assert_eq!(inner.inner.inverted_index.total_tokens, 0);
-    assert_eq!(inner.get_doc_len(0), None);
+    // An index that does record lengths cannot use that record, and must not
+    // read it as a zero-length document: that would be indistinguishable from
+    // a stopword-only one. It reports itself absent so the caller rebuilds
+    // from payload.
+    let as_scoring = gridstore_index(path, length_config(phrase_matching), false, true).unwrap();
+    assert!(
+        as_scoring.is_none(),
+        "records without lengths must not open under scoring",
+    );
 }
