@@ -1182,12 +1182,12 @@ fn test_open_rejects_truncated_page_file() {
     drop(file);
 
     assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
-    assert!(BlobstoreReader::<Vec<u8>, MmapFile>::open(
-        &MmapFs,
-        dir.path().to_path_buf(),
-        Populate::No,
-    )
-    .is_err());
+
+    // The reader skips the open check, the dangling mapping fails on read
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert!(reader.get_value::<Random>(2, &hw_counter).is_err());
 }
 
 #[test]
@@ -2138,12 +2138,12 @@ fn test_open_rejects_missing_page_file() {
     fs::remove_file(dir.path().join("log_page_1.dat")).unwrap();
 
     assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
-    assert!(BlobstoreReader::<Vec<u8>, MmapFile>::open(
-        &MmapFs,
-        dir.path().to_path_buf(),
-        Populate::No,
-    )
-    .is_err());
+
+    // The reader skips the open check, the dangling mapping fails on read
+    let reader =
+        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    assert!(reader.get_value::<Random>(4, &hw_counter).is_err());
 }
 
 /// A page rollover only creates the new, empty page file: the buffered values still land on
