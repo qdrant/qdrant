@@ -18,7 +18,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  select-packages:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # PRs check out the merge commit, whose first parent is the base branch
+        fetch-depth: 2
+    - name: Select affected packages
+      id: select
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          packages=$(python3 tools/ci/affected_packages.py HEAD^1)
+        else
+          packages=--workspace
+        fi
+        echo "Selected: ${packages:-<none>}"
+        echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
   rust-tests:
+    needs: select-packages
+    if: needs.select-packages.outputs.packages != ''
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -48,7 +70,7 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
-      run: cargo build --workspace --tests --locked
+      run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
     # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
     # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
     # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
@@ -58,7 +80,7 @@ jobs:
       shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci --locked
+      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked
     - name: Upload test report
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
