@@ -24,6 +24,7 @@ pub(crate) mod tests;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub use live_reload::LiveReloadOutcome;
 use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
