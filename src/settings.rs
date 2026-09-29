@@ -138,6 +138,13 @@ pub struct ClusterConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct P2pConfig {
+    /// Host or IP address to bind the internal (p2p) gRPC listener to.
+    /// Defaults to `service.host` when not set. Set this to an internal
+    /// interface to keep the internal port off the interface that serves
+    /// the public API.
+    #[validate(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
     #[serde(default)]
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
@@ -150,6 +157,7 @@ pub struct P2pConfig {
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
+            host: None,
             port: None,
             connection_pool_size: default_connection_pool_size(),
             enable_tls: false,
