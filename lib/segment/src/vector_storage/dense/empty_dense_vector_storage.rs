@@ -15,7 +15,7 @@ use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
     TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
-use crate::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
+use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, MultiVectorStorageRead, VectorStorage,
     VectorStorageEnum, VectorStorageRead, default_for_each_in_dense_batch,
@@ -135,7 +135,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         &self,
         _key: PointOffsetType,
     ) -> CowMultiVector<'_, VectorElementType> {
-        CowMultiVector::Owned(TypedMultiDenseVector::new(vec![0.0; self.dim], self.dim))
+        CowMultiVector::Owned(TypedMultiDenseVector::placeholder(self.dim))
     }
 
     fn get_multi_opt<P: AccessPattern>(
@@ -165,9 +165,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         self.multi_vector_config
             .as_ref()
-            .unwrap_or(&MultiVectorConfig {
-                comparator: MultiVectorComparator::MaxSim,
-            })
+            .expect("multivector view requires the placeholder to have a multivector config")
     }
 }
 
@@ -253,6 +251,9 @@ mod tests {
     use common::generic_consts::Random;
 
     use super::*;
+    use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorInternal};
+    use crate::types::MultiVectorComparator;
+    use crate::vector_storage::raw_scorer::new_raw_scorer;
 
     #[test]
     fn test_empty_dense_basic_contract() {
@@ -378,11 +379,8 @@ mod tests {
     /// placeholder) must not fail with a multi/regular conversion error.
     #[test]
     fn test_empty_dense_multi_vector_raw_scorer() {
-        use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorInternal};
-        use crate::vector_storage::raw_scorer::new_raw_scorer;
-
         let multi_cfg = MultiVectorConfig {
-            comparator: crate::types::MultiVectorComparator::MaxSim,
+            comparator: MultiVectorComparator::MaxSim,
         };
         let storage = new_empty_dense_vector_storage(
             4,
@@ -396,11 +394,12 @@ mod tests {
             MultiDenseVectorInternal::new(vec![1.0; 8], 4),
         ));
 
-        let result = new_raw_scorer(query, &storage, HardwareCounterCell::disposable());
-        assert!(
-            result.is_ok(),
-            "multivector query on an empty placeholder must not fail: {:?}",
-            result.err()
-        );
+        let scorer = new_raw_scorer(query, &storage, HardwareCounterCell::disposable())
+            .expect("multivector query on an empty placeholder must not fail");
+
+        // Slots are deleted zero placeholders: scoring them must not panic.
+        let mut scores = [0.0; 3];
+        scorer.score_points(&[0, 1, 2], &mut scores);
+        assert!(scores.iter().all(|score| score.is_finite()));
     }
 }
