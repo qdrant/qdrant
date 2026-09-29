@@ -52,7 +52,7 @@ hashring = "0.3.6"
 tinyvec = { workspace = true }
 siphasher = "1.0.3"
 smallvec = { workspace = true }
-count-min-sketch = "0.1.8"
+count-min-sketch = "0.2.0"
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -1608,11 +1608,11 @@ dependencies = [
 
 [[package]]
 name = "count-min-sketch"
-version = "0.1.8"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fef0a447ef2e9e6bd57e379f88702c58c4a4253ba82fb175bd7db012192311a"
+checksum = "1d215d2074777c29211d17a671daba8c6f223dc103a8ad739a5310e2375c4d76"
 dependencies = [
- "rand 0.8.5",
+ "getrandom 0.3.4",
  "siphasher 1.0.4",
 ]
 
@@ -8060,7 +8060,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
