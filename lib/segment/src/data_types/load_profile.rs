@@ -8,8 +8,8 @@
 //! [`LoadProfile`] captures that knowledge. It is derived from the request *before* the
 //! shard is opened and threaded down to the per-component `preopen`/`open` calls, where it
 //! overrides the config-derived [`Populate`] decision. The profile only ever demotes: a
-//! component it keeps "warm" loads exactly as the persisted config says, a component it
-//! excludes is parked cold and read lazily on first use. It never disables a component —
+//! component it keeps "warm" loads as the persisted config says (pinned quantized vectors
+//! capped at cached), a component it excludes is parked cold and read lazily on first use. It never disables a component —
 //! every request the segment can serve still works, just colder.
 //!
 //! The per-component placement methods are all defined here, in one place, so the memory
@@ -138,8 +138,13 @@ impl LoadProfile {
     /// Demotes even a pinned placement: within the immutable layout the RAM and mmap
     /// loaders share the on-disk format, so a demoted pinned config opens the lazy mmap
     /// loaders instead of reading the data in full.
+    ///
+    /// Warm quantized vectors are capped at cached: a pinned open copies the data onto the
+    /// heap on top of the fetch that already primed the page cache, a full extra pass that a
+    /// request-scoped open never amortizes.
     pub fn quantized_vectors_placement(&self, vector_name: &VectorName) -> Option<Populate> {
         self.vector_placement(vector_name)
+            .or(Some(Populate::PreferBackground))
     }
 
     /// Placement override for the (dense or sparse) vector index of `vector_name`.
@@ -236,7 +241,7 @@ fn collect_filter_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FieldCondition, Match, Nested, NestedCondition, ValueVariants};
+    use crate::types::{FieldCondition, Match, Memory, Nested, NestedCondition, ValueVariants};
 
     fn path(raw: &str) -> JsonPath {
         raw.parse().unwrap()
@@ -275,12 +280,27 @@ mod tests {
     }
 
     #[test]
+    fn warm_override_caps_pinned_at_cached() {
+        let profile = LoadProfile::for_search("dense", None, false);
+        let warm = profile.quantized_vectors_placement("dense");
+        let cold = profile.quantized_vectors_placement("other");
+
+        assert_eq!(Memory::Pinned.with_populate_override(warm), Memory::Cached);
+        assert_eq!(Memory::Cached.with_populate_override(warm), Memory::Cached);
+        assert_eq!(Memory::Cold.with_populate_override(warm), Memory::Cold);
+        assert_eq!(Memory::Pinned.with_populate_override(cold), Memory::Cold);
+    }
+
+    #[test]
     fn search_profile_keeps_only_queried_vector_warm() {
         let profile = LoadProfile::for_search("dense", None, false);
 
         assert_eq!(profile.vector_storage_placement("dense"), None);
         assert_eq!(profile.vector_index_placement("dense"), None);
-        assert_eq!(profile.quantized_vectors_placement("dense"), None);
+        assert_eq!(
+            profile.quantized_vectors_placement("dense"),
+            Some(Populate::PreferBackground)
+        );
 
         assert_eq!(
             profile.vector_storage_placement("other"),
