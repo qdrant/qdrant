@@ -1373,32 +1373,35 @@ fn test_deferred_flush_with_delete() {
     put_payload(&mut storage, "value 7", 4);
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
 
+    // Read the payload from disk. Read-only, a writable open would replay and remove the journal
+    // of the storage we keep open
+    let get_disk_payload = || {
+        let reader =
+            BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No)
+                .unwrap();
+        let payload = reader.get_value::<Random>(0, &hw_counter).unwrap()?;
+        Some(
+            payload.0["key"]
+                .as_str()
+                .expect("value is a string")
+                .to_owned(),
+        )
+    };
+
     // Not flushed, still expect to read value 4
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 4");
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 5");
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert!(get_payload(&tmp_storage).is_none());
-    }
+    assert!(get_disk_payload().is_none());
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 6");
 
     // Main storage still isn't flushed, but has value 7
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
@@ -2192,6 +2195,9 @@ const TRACKER_LENGTH_FIELD: usize = 12;
 /// Page size of the corrupt pointer tests: 1 MiB, exactly one region per page
 const CORRUPT_POINTER_PAGE_SIZE: usize = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
 
+/// Journal of the pointer writes to the tracker, next to it
+const TRACKER_JOURNAL_FILE: &str = "tracker_journal.dat";
+
 /// Store three small payloads at point offsets 0, 1 and 2, flush and close the storage
 fn stored_small_payloads(compression: Compression) -> (TempDir, Vec<Payload>) {
     let (dir, mut storage) = empty_storage_sized(CORRUPT_POINTER_PAGE_SIZE, compression);
@@ -2242,6 +2248,14 @@ fn overwrite_tracker_field(dir: &TempDir, point_offset: usize, field: usize, val
     old_value
 }
 
+/// Remove the tracker journal, as opening would repair the tracker from it
+///
+/// Simulates corruption the journal doesn't cover: a bit flip, or a torn write in a storage from
+/// before the journal existed.
+fn remove_tracker_journal(dir: &TempDir) {
+    fs::remove_file(dir.path().join(TRACKER_JOURNAL_FILE)).unwrap();
+}
+
 /// Reading the corrupt pointer at `corrupt_offset` must return an error, the other values must be
 /// unaffected. Iterating, as payload indices do when they are loaded, must return an error too.
 fn assert_corrupt_pointer_errors(
@@ -2287,6 +2301,7 @@ fn test_torn_pointer_with_zero_length_reads_as_none() {
     let torn_offset = 1;
     let old_length = overwrite_tracker_field(&dir, torn_offset, TRACKER_LENGTH_FIELD, 0);
     assert_eq!(old_length as usize, payloads[torn_offset].to_bytes().len());
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
@@ -2333,6 +2348,7 @@ fn test_pointer_length_beyond_pages_returns_error() {
     let corrupt_offset = 1;
     let length = (16 * CORRUPT_POINTER_PAGE_SIZE) as u32;
     overwrite_tracker_field(&dir, corrupt_offset, TRACKER_LENGTH_FIELD, length);
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
@@ -2357,6 +2373,7 @@ fn test_pointer_to_invalid_bytes_returns_error(
     let old_block_offset =
         overwrite_tracker_field(&dir, corrupt_offset, TRACKER_BLOCK_OFFSET_FIELD, 100);
     assert!(old_block_offset < payloads.len() as u32);
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();

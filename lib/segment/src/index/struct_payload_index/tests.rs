@@ -634,6 +634,10 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     tracker_bytes[block_offset_range.clone()].copy_from_slice(&corrupt_block_offset.to_le_bytes());
     fs_err::write(&tracker_path, &tracker_bytes).unwrap();
 
+    // Remove the tracker journal, loading would repair the tracker from it. Simulates corruption
+    // the journal doesn't cover, such as a bit flip
+    fs_err::remove_file(map_index_dir.join("tracker_journal.dat")).unwrap();
+
     let segment = load_segment(
         &segment_path,
         Uuid::nil(),
