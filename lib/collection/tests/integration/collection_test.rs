@@ -1237,11 +1237,63 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
         .await
         .unwrap();
 
+        const CANDIDATES_LIMIT: usize = 4;
+        let ids_by_shard = {
+            let shards_holder = collection.shards_holder();
+            let holder = shards_holder.read().await;
+            let router = holder
+                .hash_ring_router(0)
+                .expect("collection shard 0 hash ring");
+            let mut ids_by_shard: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
+            let mut next_id = 1u64;
+            while ids_by_shard.iter().any(|ids| ids.len() < CANDIDATES_LIMIT) {
+                let point_id = PointIdType::from(next_id);
+                let shard_ids = router.get(&point_id);
+                assert_eq!(
+                    shard_ids.len(),
+                    1,
+                    "point {next_id} should map to one shard"
+                );
+                let shard_id = usize::try_from(shard_ids[0]).unwrap();
+                if ids_by_shard[shard_id].len() < CANDIDATES_LIMIT {
+                    ids_by_shard[shard_id].push(next_id);
+                }
+                next_id += 1;
+                assert!(
+                    next_id < 10_000,
+                    "collection hash ring should place points on both shards"
+                );
+            }
+            ids_by_shard
+        };
+        let ranks_by_shard: [[usize; CANDIDATES_LIMIT]; 2] = [[0, 2, 4, 6], [1, 3, 5, 7]];
+        let mut ranked_ids = [0u64; CANDIDATES_LIMIT * 2];
+        for (shard_ids, ranks) in ids_by_shard.iter().zip(ranks_by_shard) {
+            for (id, rank) in shard_ids.iter().copied().zip(ranks) {
+                ranked_ids[rank] = id;
+            }
+        }
+        let expected = ranked_ids[..CANDIDATES_LIMIT]
+            .iter()
+            .copied()
+            .map(PointIdType::from)
+            .collect_vec();
+
+        let mut points = ranked_ids
+            .into_iter()
+            .enumerate()
+            .map(|(rank, id)| (id, rank))
+            .collect_vec();
+        points.sort_by_key(|(id, _)| *id);
         let batch = BatchPersisted {
-            ids: (1..=8).map(PointIdType::from).collect_vec(),
+            ids: points
+                .iter()
+                .map(|(id, _)| PointIdType::from(*id))
+                .collect_vec(),
             vectors: BatchVectorStructPersisted::Single(
-                (0..8)
-                    .map(|i| vec![1.0 - 0.2 * i as f32, 0.0, 0.0, 0.0])
+                points
+                    .iter()
+                    .map(|(_, rank)| vec![1.0 - 0.1 * *rank as f32, 0.0, 0.0, 0.0])
                     .collect(),
             ),
             payloads: None,
@@ -1259,58 +1311,37 @@ async fn test_multishard_mmr_keeps_globally_best_candidates() {
             .await
             .unwrap();
 
-        // Ensure both shards have points; shard placement is determined by the hash ring.
-        let mut extra_id = 9u64;
-        loop {
-            let mut occupied = [false; 2];
-            for shard_id in 0..2u32 {
-                let count = collection
-                    .count(
-                        CountRequestInternal {
-                            filter: None,
-                            exact: true,
-                        },
-                        None,
-                        None,
-                        &ShardSelectorInternal::ShardId(shard_id),
-                        None,
-                        HwMeasurementAcc::new(),
-                    )
-                    .await
-                    .unwrap()
-                    .count;
-                occupied[shard_id as usize] = count > 0;
-            }
-            if occupied == [true, true] {
-                break;
-            }
-            let extra = BatchPersisted {
-                ids: vec![PointIdType::from(extra_id)],
-                vectors: BatchVectorStructPersisted::Single(vec![vec![-2.0, 0.0, 0.0, 0.0]]),
-                payloads: None,
-            };
-            collection
-                .update_from_client_simple(
-                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                        PointInsertOperationsInternal::from(extra),
-                    )),
-                    true,
+        for (shard_id, shard_ids) in ids_by_shard.iter().enumerate() {
+            let page = collection
+                .scroll_by(
+                    ScrollRequestInternal {
+                        offset: None,
+                        limit: Some(10),
+                        filter: None,
+                        with_payload: Some(WithPayloadInterface::Bool(false)),
+                        with_vector: WithVector::Bool(false),
+                        order_by: None,
+                    },
                     None,
-                    WriteOrdering::default(),
+                    None,
+                    &ShardSelectorInternal::ShardId(u32::try_from(shard_id).unwrap()),
+                    None,
                     HwMeasurementAcc::new(),
                 )
                 .await
                 .unwrap();
-            extra_id += 1;
-            assert!(extra_id < 40, "both shards should receive a point");
+            let actual = page
+                .points
+                .iter()
+                .map(|point| point.id)
+                .collect::<HashSet<_>>();
+            let expected_on_shard = shard_ids
+                .iter()
+                .copied()
+                .map(PointIdType::from)
+                .collect::<HashSet<_>>();
+            assert_eq!(actual, expected_on_shard, "{distance:?} shard {shard_id}");
         }
-
-        let expected = vec![
-            PointIdType::from(1u64),
-            PointIdType::from(2u64),
-            PointIdType::from(3u64),
-            PointIdType::from(4u64),
-        ];
         let request = ShardQueryRequest {
             prefetches: vec![],
             query: Some(ScoringQuery::Mmr(MmrInternal {
