@@ -478,6 +478,43 @@ mod tests {
         assert_eq!(seen, 100);
     }
 
+    /// A scorer reads through `for_each_vector`, which the read-only dense
+    /// storage wraps in `.expect("read vectors")` — where an over-advertised
+    /// `len` surfaced as a panic.
+    #[test]
+    fn a_capped_reload_keeps_the_scorer_read_in_bounds() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_scorer").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        set_status_len(dir.path(), 150);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        let offsets = (0..reader.len() as PointOffsetType).map(|key| ((), key, 1u32));
+        let mut seen = 0;
+        reader
+            .for_each_vector::<Random, _>(offsets, |(), _| {
+                seen += 1;
+                Ok(())
+            })
+            .expect("every advertised vector is readable");
+        assert_eq!(seen, 100);
+    }
+
     /// `MmapFs` with etags, so `CachedFs` can recognise an unchanged file the
     /// way an object store does; local listings carry none.
     #[derive(Clone, Debug)]
