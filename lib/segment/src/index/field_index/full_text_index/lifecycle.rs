@@ -314,6 +314,14 @@ impl FullTextGridstoreIndexBuilder {
             index: None,
         }
     }
+
+    /// Don't journal the value mappings of the built index, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub(crate) fn disable_journal(&mut self) {
+        if let Some(FullTextIndex::Mutable(index)) = &mut self.index {
+            index.storage.disable_journal();
+        }
+    }
 }
 
 impl ValueIndexer for FullTextGridstoreIndexBuilder {

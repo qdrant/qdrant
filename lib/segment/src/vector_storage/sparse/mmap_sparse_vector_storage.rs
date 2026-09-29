@@ -134,6 +134,11 @@ impl MmapSparseVectorStorage {
         })
     }
 
+    /// Don't journal value mappings on flush, see [`Blobstore::disable_journal`].
+    pub fn disable_journal(&mut self) {
+        self.storage.disable_journal();
+    }
+
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if !deleted && key as usize >= self.next_point_offset {
