@@ -630,6 +630,11 @@ fn read_multi_f32(
     let vector = match source {
         VectorStorageEnum::MultiDenseVolatile(v) => v.get_multi::<Sequential>(key),
         VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_multi::<Sequential>(key),
+        // Named multivector added to an existing segment: all slots are deleted,
+        // but the destination still needs a placeholder per slot to stay aligned.
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            v.get_multi::<Sequential>(key)
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -872,5 +877,39 @@ mod tests {
             result.is_err(),
             "merging a sparse source into a dense target must error, got {result:?}"
         );
+    }
+
+    /// A named multivector added to an already-indexed segment is backed by an
+    /// `EmptyDense` placeholder configured with a multivector config. Merging it
+    /// into a multi-dense target must succeed and keep every point deleted.
+    #[test]
+    fn merge_empty_multivector_placeholder_into_multi_dense() {
+        use crate::types::{MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
+        use crate::vector_storage::VectorStorageRead;
+        use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
+        use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
+
+        const DIM: usize = 4;
+        const POINTS: PointOffsetType = 5;
+        let config = MultiVectorConfig {
+            comparator: MultiVectorComparator::MaxSim,
+        };
+
+        let source = new_empty_dense_vector_storage(
+            DIM,
+            Distance::Cosine,
+            VectorStorageDatatype::Float32,
+            false,
+            Some(config),
+            POINTS as usize,
+        );
+        let mut target = new_volatile_multi_dense_vector_storage(DIM, Distance::Cosine, config);
+
+        let range = merge_from_single_source(&mut target, &source, POINTS)
+            .expect("merging an empty multivector placeholder must succeed");
+
+        assert_eq!(range, 0..POINTS);
+        assert_eq!(target.total_vector_count(), POINTS as usize);
+        assert_eq!(target.deleted_vector_count(), POINTS as usize);
     }
 }

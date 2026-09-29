@@ -843,7 +843,9 @@ impl VectorStorageEnum {
             VectorStorageEnum::MultiDenseTurbo(v) => {
                 VectorInternal::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
-            VectorStorageEnum::EmptyDense(v) => VectorInternal::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::EmptyDense(v) => {
+                VectorInternal::from(vec![1.0; DenseVectorStorageRead::vector_dim(v)])
+            }
             VectorStorageEnum::EmptySparse(_) => VectorInternal::from(SparseVector::default()),
         }
     }

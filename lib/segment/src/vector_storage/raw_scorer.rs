@@ -19,7 +19,7 @@ use super::{
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVectorInternal, QueryVector, VectorInternal,
+    DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorInternal,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -114,7 +114,13 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseTurbo(vs) => {
             raw_turbo_multi_scorer_impl(query, vs.as_ref(), hc)
         }
-        VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
+        VectorStorageEnum::EmptyDense(vs) => {
+            if vs.multi_vector_config().is_some() {
+                raw_multi_scorer_impl::<VectorElementType, _>(query, vs, hc)
+            } else {
+                raw_scorer_impl(query, vs, hc)
+            }
+        }
         VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
     }
 }
