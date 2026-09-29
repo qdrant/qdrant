@@ -125,6 +125,15 @@ impl ValuePointer {
     }
 }
 
+/// Path of the journal next to the tracker file at `path`, `None` if `path` is no tracker file.
+///
+/// The journal is no storage file, it isn't part of snapshots. Where storage files are replaced
+/// in place, such as when merging a partial snapshot, it must be removed first: opening would
+/// replay it onto the replaced tracker.
+pub fn tracker_journal_path(path: &Path) -> Option<PathBuf> {
+    (path.file_name()? == Tracker::<()>::FILE_NAME).then(|| path.with_file_name(journal::FILE_NAME))
+}
+
 /// Decode a slot read from the tracker file.
 ///
 /// A pointer with length zero reads as `None`. We never write pointers with length zero, but it
@@ -361,15 +370,9 @@ impl<S> Tracker<S> {
         path.join(Self::FILE_NAME)
     }
 
+    /// The journal is no storage file, see [`tracker_journal_path`].
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![self.path.clone()];
-        // The journal only exists once a flush journaled pointer writes, until it is removed
-        if let Some(journal) = &self.journal
-            && journal.path().exists()
-        {
-            files.push(journal.path().to_path_buf());
-        }
-        files
+        vec![self.path.clone()]
     }
 
     /// Journal to append pointer writes to before writing them, `None` if disabled.

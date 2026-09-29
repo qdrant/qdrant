@@ -32,7 +32,7 @@ use super::{OptionalPointer, PointOffset, PointerUpdates};
 use crate::Result;
 use crate::error::BlobstoreError;
 
-const FILE_NAME: &str = "tracker_journal.dat";
+pub(super) const FILE_NAME: &str = "tracker_journal.dat";
 
 /// Size past which the journal is removed once the tracker is durable, about 1k pointer writes.
 const MAX_SIZE: u64 = 1024 * size_of::<Record>() as u64;

@@ -91,6 +91,14 @@ impl SnapshotUtils {
                     let path = segment_path.join(file);
                     delete_files.push(path);
                 }
+
+                // Snapshots don't include tracker journals, opening would replay the local one
+                // onto the tracker the snapshot replaces
+                if let Some(journal) = blobstore::tracker_journal_path(&segment_path.join(file))
+                    && journal.exists()
+                {
+                    delete_files.push(journal);
+                }
             }
         }
 
