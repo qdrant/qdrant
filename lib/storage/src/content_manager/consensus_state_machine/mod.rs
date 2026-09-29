@@ -176,7 +176,10 @@ impl ConsensusStateMachine {
                     .plan_transfer(&self.context, collection, operation),
             ),
 
-            CollectionMetaOperations::SetShardReplicaState(_) => ApplyOutcome::NotCovered,
+            CollectionMetaOperations::SetShardReplicaState(operation) => ApplyOutcome::new(
+                self.state
+                    .plan_set_shard_replica_state(&self.context, operation),
+            ),
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
