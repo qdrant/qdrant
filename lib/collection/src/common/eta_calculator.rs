@@ -25,6 +25,11 @@ impl EtaCalculator {
         self.estimate_raw(Instant::now(), target_progress)
     }
 
+    /// Calculate the current progress rate per second.
+    pub fn rate(&self) -> Option<f64> {
+        self.rate_raw(Instant::now())
+    }
+
     fn new_raw(now: Instant) -> Self {
         Self([(now, 0)].as_ref().into())
     }
@@ -73,6 +78,20 @@ impl EtaCalculator {
         let eta = (value_diff as f64 / rate - elapsed).max(0.0);
         Duration::try_from_secs_f64(eta).ok()
     }
+
+    fn rate_raw(&self, now: Instant) -> Option<f64> {
+        let &(_, last_progress) = self.0.back()?;
+
+        // Find the oldest measurement that is not too old.
+        let &(old_time, old_progress) = self
+            .0
+            .iter()
+            .find(|(time, _)| now - *time <= Self::DURATION * Self::SIZE as u32)?;
+
+        // Measure up to now, so the rate drops when progress stalls.
+        let elapsed = (now - old_time).as_secs_f64();
+        (elapsed > 0.0).then(|| (last_progress - old_progress) as f64 / elapsed)
+    }
 }
 
 #[cfg(test)]
@@ -96,11 +115,19 @@ mod tests {
             ((100 - 40) * delta).as_secs_f64(),
             max_relative = 0.02,
         );
+        assert_relative_eq!(eta.rate_raw(now).unwrap(), 2.0, max_relative = 0.02);
+        // Rate drops while progress stalls.
+        assert_relative_eq!(
+            eta.rate_raw(now + Duration::from_secs(5)).unwrap(),
+            1.0,
+            max_relative = 0.02,
+        );
         // Emulate a stall.
         assert!(
             eta.estimate_raw(now + Duration::from_secs(20), 100)
                 .is_none(),
         );
+        assert!(eta.rate_raw(now + Duration::from_secs(20)).is_none());
 
         // Change the speed.
         let delta = Duration::from_millis(5000);
@@ -113,6 +140,7 @@ mod tests {
             ((100 - 60) * delta).as_secs_f64(),
             max_relative = 0.02,
         );
+        assert_relative_eq!(eta.rate_raw(now).unwrap(), 0.2, max_relative = 0.02);
 
         // Should be 0 when the target progress is reached or overreached.
         assert_eq!(eta.estimate_raw(now, 60).unwrap(), Duration::from_secs(0));
