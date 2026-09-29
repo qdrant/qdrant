@@ -9,7 +9,6 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
 use super::page::AppendOnlyPages;
-use super::validate_consistency;
 use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
@@ -54,6 +53,10 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.
+    ///
+    /// Unlike the writable open, doesn't validate the most recent mappings against the page
+    /// files: that check reads the tracker tail, a blocking round trip on remote storage that no
+    /// prefetch covers. A dangling mapping surfaces as an error when its value is read instead.
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,
@@ -62,7 +65,6 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     ) -> Result<Self> {
         let tracker = TrackerEnum::open_read_only(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
-        validate_consistency(&tracker, &pages)?;
 
         Ok(Self {
             config,
