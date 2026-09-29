@@ -12,7 +12,7 @@ use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
 
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm};
+use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm, evenly_spaced};
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -395,7 +395,9 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             let (matches, _) = links.split_at(n);
 
             let quotas = arena.alloc_slice_fill_with(batch.len(), |_| member_limit);
-            admit_matches(matches, quotas, &mut visited_list, |id| points_ids.push(id));
+            admit_matches(matches.iter().copied(), quotas, &mut visited_list, |id| {
+                points_ids.push(id)
+            });
             uio_trace::mark!("round links done ({} to score)", points_ids.len());
 
             points_scorer
@@ -434,10 +436,13 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         debug_assert_ne!(hop1_limit, 0); // See `FilteredBytesScorer::score_points`
 
         let mut batch = Vec::with_capacity(links_batch_size);
+        // See `GraphLayers::search_on_level_acorn`.
+        let hop1_tail_limit = self.hnsw_m.m;
+
+        let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
         let mut bridges: Vec<PointOffsetType> = Vec::with_capacity(hop1_limit * links_batch_size);
-        let mut bridge_quotas: Vec<usize> = Vec::with_capacity(links_batch_size);
 
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
@@ -446,45 +451,72 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             round += 1;
 
             arena.reset();
-            unchecked_links.clear();
+            hop1_links.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
             self.links
                 .links(arena, &batch, level, |position, links_iter| {
                     let position = position as u32;
-                    for hop1 in links_iter {
+                    for (rank, hop1) in links_iter.enumerate() {
                         if !hop1_visited_list.check_and_update_visited(hop1) {
-                            unchecked_links.push(Link { id: hop1, position });
+                            hop1_links.push(RankedLink {
+                                link: Link { id: hop1, position },
+                                rank: rank as u32,
+                            });
                         }
                     }
                 })?;
 
             // Split 1-hop neighbors into matches and non-matches.
             let n = points_scorer.filters().check_batched(
-                &mut unchecked_links,
+                &mut hop1_links,
                 Select::Matches,
                 Rest::Keep,
             )?;
-            let (matches, non_matches) = unchecked_links.split_at(n);
+            let (matches, non_matches) = hop1_links.split_at_mut(n);
+            // The partition is unstable: restore adjacency list order, so the
+            // limits below keep the same links as the in-memory path.
+            matches.sort_unstable_by_key(RankedLink::order);
+            non_matches.sort_unstable_by_key(RankedLink::order);
 
             // Matches go to scoring.
             to_score.clear();
             let quotas = arena.alloc_slice_fill_with(batch.len(), |_| hop1_limit);
-            admit_matches(matches, quotas, &mut hop1_visited_list, |id| {
-                to_score.push(id)
-            });
+            admit_matches(
+                matches.iter().map(|l| l.link),
+                quotas,
+                &mut hop1_visited_list,
+                |id| to_score.push(id),
+            );
 
-            // Non-matches go to 2-hop exploration.
-            bridge_quotas.clear();
-            bridge_quotas.resize(batch.len(), hop1_limit);
+            // The in-memory path stops reading a list at its `hop1_limit`-th
+            // match: links past it are not bridges either.
+            let cutoffs = arena.alloc_slice_fill_with(batch.len(), |_| u32::MAX);
+            for group in matches.chunk_by(|a, b| a.link.position == b.link.position) {
+                if let Some(last) = group.get(hop1_limit - 1) {
+                    cutoffs[last.link.position as usize] = last.rank;
+                }
+            }
+
+            // Non-matches go to 2-hop exploration: all of the first
+            // `hop1_limit` links, and evenly spaced ones of the rest.
             bridges.clear();
-            for link in non_matches {
-                let quota = &mut bridge_quotas[link.position as usize];
-                if *quota > 0 {
-                    *quota -= 1;
-                    bridges.push(link.id);
-                } else {
-                    hop1_visited_list.unvisit(link.id);
+            for group in non_matches.chunk_by(|a, b| a.link.position == b.link.position) {
+                let cutoff = cutoffs[group[0].link.position as usize];
+                let (seen, unseen) = group.split_at(group.partition_point(|l| l.rank < cutoff));
+                let (head, tail) =
+                    seen.split_at(seen.partition_point(|l| (l.rank as usize) < hop1_limit));
+                bridges.extend(head.iter().map(|l| l.link.id));
+                let mut picks = evenly_spaced(tail.len(), hop1_tail_limit).peekable();
+                for (i, l) in tail.iter().enumerate() {
+                    if picks.next_if_eq(&i).is_some() {
+                        bridges.push(l.link.id);
+                    } else {
+                        hop1_visited_list.unvisit(l.link.id);
+                    }
+                }
+                for l in unseen {
+                    hop1_visited_list.unvisit(l.link.id);
                 }
             }
             let to_explore = arena.alloc_slice_fill_iter(bridges.iter().copied());
@@ -510,10 +542,15 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 let (matches, _) = unchecked_links.split_at(n);
 
                 let quotas = arena.alloc_slice_fill_with(to_explore.len(), |_| hop2_limit);
-                admit_matches(matches, quotas, &mut hop2_visited_list, |id| {
-                    hop1_visited_list.check_and_update_visited(id);
-                    to_score.push(id);
-                });
+                admit_matches(
+                    matches.iter().copied(),
+                    quotas,
+                    &mut hop2_visited_list,
+                    |id| {
+                        hop1_visited_list.check_and_update_visited(id);
+                        to_score.push(id);
+                    },
+                );
             }
 
             points_scorer
@@ -539,6 +576,25 @@ impl CheckItem for Link {
     }
 }
 
+/// A [`Link`] with its index in the adjacency list of `batch[link.position]`.
+#[derive(Clone, Copy, Debug)]
+struct RankedLink {
+    link: Link,
+    rank: u32,
+}
+
+impl RankedLink {
+    fn order(&self) -> (u32, u32) {
+        (self.link.position, self.rank)
+    }
+}
+
+impl CheckItem for RankedLink {
+    fn point_id(self) -> PointOffsetType {
+        self.link.id
+    }
+}
+
 /// Pop up to `batch_size` candidates to process in this round.
 /// Returns `true` if there is at least one candidate to process.
 fn pop_batch(ctx: &mut SearchContext, batch: &mut Vec<PointOffsetType>, batch_size: usize) -> bool {
@@ -554,12 +610,12 @@ fn pop_batch(ctx: &mut SearchContext, batch: &mut Vec<PointOffsetType>, batch_si
 
 /// Call `on_admit` for each link unless it's over the `quota`.
 fn admit_matches(
-    matches: &[Link],
+    matches: impl IntoIterator<Item = Link>,
     quotas: &mut [usize],
     visited_list: &mut VisitedListHandle,
     mut on_admit: impl FnMut(PointOffsetType),
 ) {
-    for &link in matches {
+    for link in matches {
         // How many outgoing links we can process from this source position.
         let quota = &mut quotas[link.position as usize];
         if *quota == 0 {
@@ -669,10 +725,11 @@ mod tests {
         let stop = &DEFAULT_STOPPED;
         let none_deleted = BitVec::repeat(false, batched.num_points());
         let some_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 3 == 0).collect();
+        let most_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 4 != 0).collect();
         for _ in 0..10 {
             let query = random_vector(&mut rng, DIM);
             let entry = graph.unfiltered_entry_point();
-            for deleted in [&none_deleted, &some_deleted] {
+            for deleted in [&none_deleted, &some_deleted, &most_deleted] {
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),
