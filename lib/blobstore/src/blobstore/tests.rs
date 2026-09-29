@@ -1,4 +1,5 @@
 use std::io::{BufReader, Write as _};
+use std::ops::Range;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -2289,6 +2290,9 @@ fn assert_corrupt_pointer_errors(
 /// empty before reads back as a `Some` pointer with a length of zero. No real write produces a
 /// zero length, so such a pointer must read as no value. WAL replay rewrites the slot afterwards.
 ///
+/// The tracker journal repairs such a write, see `test_journal_repairs_torn_pointer_write`, but a
+/// storage from before the journal existed doesn't have one.
+///
 /// This used to panic when deserializing the empty value, which blocks loading the segment.
 ///
 /// See: <github.com/qdrant/qdrant/issues/9857>
@@ -2379,4 +2383,144 @@ fn test_pointer_to_invalid_bytes_returns_error(
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
 
     assert_corrupt_pointer_errors(&storage, &payloads, corrupt_offset);
+}
+
+/// All values must read back as stored
+fn assert_payloads(storage: &Blobstore<Payload>, payloads: &[Payload]) {
+    let hw_cell = HardwareCounterCell::new();
+    for (offset, payload) in payloads.iter().enumerate() {
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, &hw_cell)
+            .unwrap();
+        assert_eq!(stored.as_ref(), Some(payload), "value {offset}");
+    }
+}
+
+/// A flush journals its pointer writes before writing them to the tracker. Opening repairs a
+/// torn pointer write from the journal, and removes the journal.
+///
+/// A torn write of an updated pointer can mix the fields of its old and new version, pointing at
+/// bytes that don't hold the value.
+#[test]
+fn test_journal_repairs_torn_pointer_write() {
+    let (dir, mut payloads) = stored_small_payloads(Compression::None);
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+    let hw_cell = HardwareCounterCell::new();
+
+    let mut storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+
+    // Update the value at offset 1, which stores it at a new block offset
+    let torn_offset = 1;
+    let old_pointer = storage.get_pointer(torn_offset as PointOffset).unwrap();
+    payloads[torn_offset]
+        .0
+        .insert("category".to_string(), "updated".into());
+    storage
+        .put_value(
+            torn_offset as PointOffset,
+            &payloads[torn_offset],
+            hw_cell.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    storage.flusher()().unwrap();
+    assert!(journal_path.exists(), "flush must journal pointer writes");
+    drop(storage);
+
+    // Simulate the torn write: the new length reached the disk, the new block offset did not
+    let new_block_offset = overwrite_tracker_field(
+        &dir,
+        torn_offset,
+        TRACKER_BLOCK_OFFSET_FIELD,
+        old_pointer.block_offset,
+    );
+    assert_ne!(new_block_offset, old_pointer.block_offset);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+    assert_payloads(&storage, &payloads);
+}
+
+/// A crash while appending to the journal leaves a torn entry at its end: incomplete, or with
+/// bytes that never reached the disk. Opening ignores it, and still replays the entries before
+/// it.
+#[rstest]
+#[case::incomplete(|entry: &[u8]| entry[..entry.len() / 2].to_vec())]
+#[case::zeroed(|entry: &[u8]| [&entry[..8], &vec![0; entry.len() - 8]].concat())]
+fn test_journal_ignores_torn_entry(#[case] tear: fn(&[u8]) -> Vec<u8>) {
+    let (dir, payloads) = stored_small_payloads(Compression::None);
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+
+    // Append a torn copy of the single entry, as if a crash interrupted the next flush
+    let journal = fs::read(&journal_path).unwrap();
+    fs::write(
+        &journal_path,
+        [journal.as_slice(), &tear(&journal)].concat(),
+    )
+    .unwrap();
+
+    // Tear a pointer the complete entry holds
+    overwrite_tracker_field(&dir, 1, TRACKER_LENGTH_FIELD, 0);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+    assert_payloads(&storage, &payloads);
+}
+
+/// Flushes append their pointer writes to the journal until it holds about 1k of them. The flush
+/// that grows it past that removes it, the next flush creates it again. It is a storage file
+/// while it exists.
+#[test]
+fn test_journal_removed_when_large() {
+    let (dir, mut storage) = empty_storage();
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+    let hw_cell = HardwareCounterCell::new();
+    let payload = minimal_payload();
+
+    // Put values at the given offsets and flush, return whether the journal exists afterwards
+    let put_and_flush = |storage: &mut Blobstore<Payload>, point_offsets: Range<PointOffset>| {
+        for point_offset in point_offsets {
+            storage
+                .put_value(
+                    point_offset,
+                    &payload,
+                    hw_cell.ref_payload_io_write_counter(),
+                )
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+        journal_path.exists()
+    };
+
+    // 1000 pointer writes are kept
+    assert!(put_and_flush(&mut storage, 0..500));
+    assert!(put_and_flush(&mut storage, 500..1000));
+    assert!(storage.files().contains(&journal_path));
+
+    // Growing past 1024 pointer writes removes the journal
+    assert!(!put_and_flush(&mut storage, 1000..1100));
+    assert!(!storage.files().contains(&journal_path));
+
+    assert!(put_and_flush(&mut storage, 0..1));
+}
+
+/// A storage with its journal disabled flushes without one
+#[test]
+fn test_disable_journal() {
+    let (dir, mut storage) = empty_storage();
+    storage.disable_journal();
+
+    let hw_cell = HardwareCounterCell::new();
+    storage
+        .put_value(
+            0,
+            &minimal_payload(),
+            hw_cell.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    storage.flusher()().unwrap();
+    assert!(!dir.path().join(TRACKER_JOURNAL_FILE).exists());
 }
