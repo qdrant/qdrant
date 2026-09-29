@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fmt;
 
 use edge::EdgeSparseVectorParams;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::types::VectorStorageDatatype;
@@ -9,6 +11,13 @@ use segment::types::VectorStorageDatatype;
 use super::vector_data::*;
 use crate::repr::*;
 
+/// Sparse vector parameters for EdgeConfig.
+///
+/// Args:
+///     full_scan_threshold: Threshold for full scan vs index search.
+///     on_disk: If True, sparse index on disk; otherwise in RAM.
+///     modifier: Optional modifier (e.g., IDF).
+///     datatype: Storage datatype.
 #[pyclass(name = "EdgeSparseVectorParams", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyEdgeSparseVectorParams(pub EdgeSparseVectorParams);
@@ -46,21 +55,25 @@ impl PyEdgeSparseVectorParams {
         })
     }
 
+    /// Full scan threshold.
     #[getter]
     pub fn full_scan_threshold(&self) -> Option<usize> {
         self.0.full_scan_threshold
     }
 
+    /// Whether sparse index is on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
 
+    /// Modifier.
     #[getter]
     pub fn modifier(&self) -> Option<PyModifier> {
         self.0.modifier.map(PyModifier::from)
     }
 
+    /// Storage datatype.
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
@@ -75,30 +88,26 @@ impl<'py> IntoPyObject<'py> for &PyEdgeSparseVectorParams {
     type Target = PyEdgeSparseVectorParams;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyEdgeSparseVectorParams::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
     }
 }
 
+/// Sparse vector modifiers.
 #[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {
+    #[pyo3(name = "None_")]
     None,
     Idf,
-}
-
-#[pymethods]
-impl PyModifier {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
 }
 
 impl Repr for PyModifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let repr = match self {
-            Self::None => "None",
+            Self::None => "None_",
             Self::Idf => "Idf",
         };
 

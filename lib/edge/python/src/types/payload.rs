@@ -2,18 +2,28 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use pyo3::{PyTypeInfo, type_hint_subscript};
 use segment::types::*;
 
 use super::value::*;
 use crate::repr::*;
+use crate::type_hint::Alias;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayload(pub Payload);
 
+pub const PAYLOAD: Alias = Alias {
+    name: "Payload",
+    definition: type_hint_subscript!(PyDict::TYPE_HINT, String::INPUT_TYPE, PyValue::INPUT_TYPE),
+};
+
 impl FromPyObject<'_, '_> for PyPayload {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = PAYLOAD.hint();
 
     fn extract(payload: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let payload = value_map_from_py(&payload)?;
@@ -25,6 +35,7 @@ impl<'py> IntoPyObject<'py> for PyPayload {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PAYLOAD.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(&self, py)
@@ -35,6 +46,7 @@ impl<'py> IntoPyObject<'py> for &PyPayload {
     type Target = PyAny; // PyDict
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PAYLOAD.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         value_map_into_py(&self.0.0, py)
