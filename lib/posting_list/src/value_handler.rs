@@ -145,6 +145,7 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
             Some(next_value) => next_value.get() as usize,
             None => var_data_len,
         };
-        end - sized_value.get() as usize
+        end.checked_sub(sized_value.get() as usize)
+            .expect("posting value offsets must be non-decreasing")
     }
 }
