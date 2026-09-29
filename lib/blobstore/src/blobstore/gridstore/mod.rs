@@ -140,7 +140,8 @@ where
         populate: Populate,
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let tracker = Tracker::open(fs, &base_path, populate, true)?;
+        let mut tracker = Tracker::open(fs, &base_path, populate, true)?;
+        tracker.replay_journal()?;
         let mut bitmask = Bitmask::open(fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
@@ -179,6 +180,14 @@ where
             is_alive_flush_lock: IsAliveLock::new(),
             gaps_rebuilt,
         })
+    }
+
+    /// Don't journal pointer writes on flush, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: super::Blobstore::disable_journal
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    pub(super) fn disable_journal(&mut self) {
+        self.tracker.write().disable_journal();
     }
 
     /// Create a new page and return its id.
@@ -643,6 +652,13 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
         tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
+        // Journal the pointer writes first, so opening can repair a torn write to the tracker.
+        // Not holding the tracker lock during the sync
+        let journal = tracker.read().journal();
+        if let Some(journal) = &journal {
+            journal.append(&pending_updates)?;
+        }
+
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
             let old_pointers = guard.write_pending(pending_updates)?;
@@ -650,6 +666,14 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             (old_pointers, flusher)
         };
         tracker_flusher()?;
+
+        // The tracker is durable, so the journal isn't needed anymore. Remove it once it grew large
+        if let Some(journal) = &journal
+            && let Err(err) = journal.remove_if_large()
+        {
+            log::warn!("Failed to remove Gridstore tracker journal: {err}");
+        }
+
         Ok(old_pointers)
     }
 

@@ -903,6 +903,7 @@ dependencies = [
  "bustle",
  "bytemuck",
  "common",
+ "crc32c",
  "criterion",
  "csv",
  "dataset",

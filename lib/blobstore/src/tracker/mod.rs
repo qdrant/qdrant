@@ -3,6 +3,7 @@ pub(crate) mod append_only;
 #[cfg_attr(not(test), expect(dead_code))]
 pub(crate) mod compacted;
 pub mod iter;
+mod journal;
 mod read;
 pub mod read_only;
 pub(crate) mod tracker_enum;
@@ -12,6 +13,7 @@ mod tests;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use common::generic_consts::{AccessPattern, Random};
@@ -23,6 +25,8 @@ use common::universal_io::{
 use smallvec::SmallVec;
 
 pub use self::iter::{Iter, PointerItem};
+pub(crate) use self::journal::Journal;
+use self::journal::Record;
 pub use self::read::TrackerRead;
 pub use self::read_only::ReadOnlyTracker;
 use crate::Result;
@@ -50,7 +54,7 @@ fn tracker_open_options(populate: Populate, writeable: bool) -> OpenOptions {
 /// gridstore files, but it is well-defined, unlike [`std::option::Option`].
 ///
 /// Please note that it uses 32-bit tag so that there's no padding before `ValuePointer`.
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub(crate) struct OptionalPointer {
     discriminant: u32,
@@ -151,6 +155,15 @@ fn read_slot<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offset: PointOffset,
 ) -> Result<Option<ValuePointer>> {
+    Ok(read_raw_slot::<P, _>(storage, point_offset)?.and_then(decode_slot))
+}
+
+/// Read the slot for `point_offset` directly from `storage` without decoding it, `None` if it
+/// is beyond the file.
+fn read_raw_slot<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offset: PointOffset,
+) -> Result<Option<OptionalPointer>> {
     let start_offset =
         size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
     let end_offset = start_offset + size_of::<OptionalPointer>();
@@ -158,9 +171,9 @@ fn read_slot<P: AccessPattern, S: UniversalRead>(
     if end_offset as u64 > storage_len {
         return Ok(None);
     }
-    let opt =
+    let slot =
         storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
-    Ok(decode_slot(opt))
+    Ok(Some(slot))
 }
 
 /// Read the slots for a contiguous range of point offsets directly from `storage`, with a
@@ -335,6 +348,9 @@ pub struct Tracker<S> {
 
     /// The maximum pointer offset in the tracker (updated in memory).
     next_pointer_offset: PointOffset,
+
+    /// Journal of pointer writes, to repair torn writes of the file. `None` if disabled.
+    journal: Option<Arc<Journal>>,
 }
 
 // Methods that do not use storage (no trait bound).
@@ -346,7 +362,31 @@ impl<S> Tracker<S> {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
+        let mut files = vec![self.path.clone()];
+        // The journal only exists once a flush journaled pointer writes, until it is removed
+        if let Some(journal) = &self.journal
+            && journal.path().exists()
+        {
+            files.push(journal.path().to_path_buf());
+        }
+        files
+    }
+
+    /// Journal to append pointer writes to before writing them, `None` if disabled.
+    pub(crate) fn journal(&self) -> Option<Arc<Journal>> {
+        self.journal.clone()
+    }
+
+    /// Don't journal pointer writes anymore, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: crate::Blobstore::disable_journal
+    pub fn disable_journal(&mut self) {
+        if let Some(journal) = self.journal.take() {
+            debug_assert!(
+                !journal.path().exists(),
+                "journal must not be disabled while it holds pointer writes",
+            );
+        }
     }
 
     pub fn pointer_count(&self) -> u32 {
@@ -386,6 +426,7 @@ impl<S: UniversalRead> Tracker<S> {
             header,
             storage,
             pending_updates,
+            journal: Some(Arc::new(Journal::new(dir))),
         })
     }
 
@@ -491,10 +532,10 @@ where
     /// The file is created with the default size if no size hint is given
     pub fn new(
         fs: &impl UniversalReadFs<File = S>,
-        path: &Path,
+        dir: &Path,
         size_hint: Option<usize>,
     ) -> Result<Self> {
-        let path = Self::tracker_file_name(path);
+        let path = Self::tracker_file_name(dir);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(
             size > std::mem::size_of::<TrackerHeader>(),
@@ -514,9 +555,37 @@ where
             storage,
             pending_updates,
             next_pointer_offset: 0,
+            journal: Some(Arc::new(Journal::new(dir))),
         };
         page_tracker.write_header()?;
         Ok(page_tracker)
+    }
+
+    /// Replay the pointer writes in the journal onto the file, which repairs writes a crash may
+    /// have torn during a flush. The file is then durably persisted and the journal removed.
+    ///
+    /// Must be called when opening, before anything else writes.
+    pub fn replay_journal(&mut self) -> Result<()> {
+        let Some(journal) = self.journal.clone() else {
+            return Ok(());
+        };
+        let Some(records) = journal.read()? else {
+            return Ok(());
+        };
+
+        for Record { point_offset, slot } in records {
+            // Only write slots that differ, replaying the journal left behind by a clean
+            // shutdown doesn't rewrite the file
+            let current = read_raw_slot::<Random, _>(&self.storage, point_offset)?;
+            if current.unwrap_or_else(OptionalPointer::none) != slot {
+                self.persist_pointer(point_offset, slot.to_option())?;
+            }
+            self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
+        }
+        self.write_pointer_count()?;
+        self.flusher()()?;
+
+        journal.remove()
     }
 
     /// Writes the accumulated pending updates to storage and flushes it
