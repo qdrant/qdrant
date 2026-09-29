@@ -433,3 +433,110 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
         "a WAL acknowledge pin must hold back the acknowledge only, not clock persistence",
     );
 }
+
+/// A point rewritten while its segment is being snapshotted must survive restoring that snapshot.
+/// The new version lives in the proxies' temporary write segment, which the snapshot does not
+/// include, so the snapshot has to keep the old version.
+#[test]
+fn test_snapshot_keeps_point_rewritten_during_snapshot() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::tar_unpack::tar_unpack_file;
+    use common::types::DeferredBehavior;
+    use segment::data_types::vectors::VectorStructInternal;
+    use segment::pending_changes::{PersistedProxyChanges, recover_pending_changes};
+    use segment::segment::Segment;
+    use segment::segment_constructor::load_segment;
+    use shard::operations::point_ops::PointStructPersisted;
+    use shard::segment_holder::FlushMode;
+    use shard::update::upsert_points;
+
+    use crate::shards::local_shard::snapshot::proxy_all_segments_and_apply;
+
+    init_test_feature_flags();
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment_1(dir.path());
+    let segment_uuid = segment.segment_uuid();
+    let point_id = 3.into();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(segment);
+    let holder = LockedSegmentHolder::new(holder);
+
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
+
+    let payload_schema_file = dir.path().join("payload.schema");
+    let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
+
+    let hw_counter = HardwareCounterCell::new();
+    let rewrite_op_num = 100;
+    let rewrite = PointStructPersisted {
+        id: point_id,
+        vector: VectorStructInternal::from(vec![0.0, 1.0, 0.0, 1.0]).into(),
+        payload: None,
+    };
+
+    proxy_all_segments_and_apply(
+        holder.clone(),
+        None,
+        segments_dir.path(),
+        None,
+        schema,
+        None,
+        |segment| {
+            // A write landing between the freeze and the copy of the segment files, made durable
+            // by a regular flush pass
+            let segments = holder.read();
+            upsert_points(&segments, rewrite_op_num, [&rewrite], None, &hw_counter)?;
+            segments.flush_all(FlushMode::Sync, true)?;
+            drop(segments);
+
+            segment
+                .read()
+                .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Regular, None)
+        },
+    )
+    .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let live_versions = holder
+        .read()
+        .iter()
+        .filter_map(|(_, segment)| segment.get().read().point_version(point_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        live_versions,
+        vec![rewrite_op_num],
+        "the rewrite must have replaced the old version in the live shard, or this proves nothing",
+    );
+
+    // Restore the segment the way a shard snapshot recovery loads it
+    let restore_dir = Builder::new().prefix("restore_dir").tempdir().unwrap();
+    tar_unpack_file(snapshot_file.path(), restore_dir.path()).unwrap();
+    let segment_tar = restore_dir.path().join(format!("{segment_uuid}.tar"));
+    Segment::restore_snapshot_in_place(&segment_tar).unwrap();
+    let segment_path = restore_dir.path().join(segment_uuid.to_string());
+
+    let mut restored = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    restored.check_consistency_and_repair().unwrap();
+    let _recovered = recover_pending_changes(&mut restored, PersistedProxyChanges::Replay).unwrap();
+
+    assert!(
+        restored.has_point(point_id, DeferredBehavior::WithDeferred),
+        "the snapshot lost point {point_id}: it carries the delete of the old version but not \
+         the rewrite that replaced it",
+    );
+}
