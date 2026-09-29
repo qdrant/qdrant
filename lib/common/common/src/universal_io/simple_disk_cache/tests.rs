@@ -1441,6 +1441,38 @@ mod tests_async {
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
     }
 
+    /// A populating async open fetches the file in prefill pieces, one remote read each, and
+    /// mirrors every byte — including the EOF-clamped partial tail block of the last piece.
+    #[tokio::test]
+    async fn populating_open_fetches_in_pieces() {
+        let piece = super::super::async_io::PREFILL_PIECE_SIZE as usize;
+        let scn = Scenario::new(piece * 2 + BLOCK_SIZE * 3 + 100);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::PreferBackground,
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 3);
+        let blocks = scn.data.len().div_ceil(BLOCK_SIZE) as u32;
+        assert!(state.local.contains(0..blocks));
+
+        let eof = scn.data.len() as u64;
+        let bytes = file.read_bytes_async(0..eof, Sequential, 1).await.unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 3);
+    }
+
     /// A zero-length object has nothing to populate: a populating async open
     /// must succeed without issuing a remote read, because a bounded `0..0`
     /// range is rejected by real backends rather than answered with an empty

@@ -7,15 +7,17 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use futures::{StreamExt as _, TryStreamExt as _};
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
-use super::{DiskCacheRemote, block_aligned_fetch, to_block_range};
+use super::{BLOCK_SIZE, DiskCacheRemote, block_aligned_fetch, to_block_range};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
+    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError, UniversalReadAsync,
     UniversalReadFsAsync,
 };
 
@@ -58,11 +60,7 @@ where
                 // range is rejected by the backend rather than answered with an
                 // empty body (see `AsyncRead::read_range`), so skip the fetch.
                 if len > 0 {
-                    let byte_range = 0..len;
-                    let content = remote
-                        .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                        .await?;
-                    unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
+                    fetch_into_local(&remote, &local, 0..len).await?;
                 }
                 State::ready(remote, local)
             }
@@ -100,6 +98,43 @@ where
     async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.list_files_async(prefix_path).await
     }
+}
+
+/// Size of the pieces a whole-file prefill is fetched in.
+pub(super) const PREFILL_PIECE_SIZE: u64 = 8 * 1024 * 1024;
+
+/// Number of prefill pieces of one file in flight at once.
+const PREFILL_PIECE_CONCURRENCY: usize = 8;
+
+const _: () = assert!(PREFILL_PIECE_SIZE.is_multiple_of(BLOCK_SIZE as u64));
+
+/// Fetch the block-aligned `byte_range` from `remote` into `local`, in pieces written to the
+/// mirror as each one arrives, so copying overlaps the transfer instead of following it.
+async fn fetch_into_local<R: DiskCacheRemote>(
+    remote: &R,
+    local: &LocalState,
+    byte_range: Range<u64>,
+) -> UioResult<()> {
+    debug_assert!(byte_range.start.is_multiple_of(BLOCK_SIZE as u64));
+    let pieces = (byte_range.start..byte_range.end)
+        .step_by(PREFILL_PIECE_SIZE as usize)
+        .map(|start| start..(start + PREFILL_PIECE_SIZE).min(byte_range.end));
+
+    futures::stream::iter(pieces)
+        .map(|piece| async move {
+            let content = remote
+                .read_bytes_async(piece.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                .await?;
+            Ok::<_, UniversalIoError>((piece, content))
+        })
+        .buffer_unordered(PREFILL_PIECE_CONCURRENCY)
+        .try_for_each(|(piece, content)| {
+            // SAFETY: `content` is the remote content of `piece`, which is block-aligned at the
+            // start and ends at a block boundary or at EOF.
+            unsafe { local.write_mmap_bytes(&content, to_block_range(piece)) };
+            futures::future::ready(Ok(()))
+        })
+        .await
 }
 
 impl<R> UniversalReadAsync for DiskCache<R>
