@@ -29,17 +29,15 @@ impl MutableFullTextIndex {
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
         // Only for the message below: the store takes the path by value.
-        let dir = path.clone();
         let store = if create_if_missing {
-            Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
-                |err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable full text index on gridstore: {err}"
-                    ))
-                },
-            )?
+            Blobstore::open_or_create(MmapFs, path.clone(), storage_options(), Populate::Blocking)
+                .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable full text index on gridstore: {err}"
+                ))
+            })?
         } else if path.exists() {
-            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path.clone(), Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable full text index on gridstore: {err}"
                 ))
@@ -83,9 +81,9 @@ impl MutableFullTextIndex {
         // sidecar.
         if records_without_length > 0 {
             log::info!(
-                "Text index at {dir} has {records_without_length} records without a document \
+                "Text index at {path} has {records_without_length} records without a document \
                  length, rebuilding it from payload",
-                dir = dir.display(),
+                path = path.display(),
             );
             return Ok(None);
         }
