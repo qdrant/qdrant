@@ -193,22 +193,25 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
 /// preallocation nor mmap exists.
 #[cfg(not(windows))]
 mod store {
+    use std::collections::HashMap;
     use std::path::Path;
 
     use common::universal_io::{MmapFile, MmapFs};
+    use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
-    use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
+    use segment::types::{Distance, Filter, Payload, WithPayloadInterface, WithVector};
     use shard::files::SEGMENTS_PATH;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
     use shard::operations::point_ops::{
-        ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode,
+        ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
 
     use super::*;
     use crate::RetrieveRequestBuilder;
-    use crate::read_only::tests::{assert_follower_vectors, point};
+    use crate::read_only::ReadOnlyEdgeShard;
+    use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
     use crate::read_view::EdgeShardRead as _;
 
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
@@ -560,6 +563,85 @@ mod store {
             results[0].payload,
             Some(payload_json! { "kind": "updated" })
         );
+    }
+
+    /// The writer appends through its own path, which has to normalize cosine
+    /// vectors just as the classic one does.
+    #[test]
+    fn appended_cosine_vectors_are_normalized() {
+        // [3, 4] has length 5, so a normalizing store holds [0.6, 0.8].
+        const RAW: [f32; 2] = [3.0, 4.0];
+        const UNIT: [f32; 2] = [0.6, 0.8];
+
+        let dir = cosine_leader("edge-update-cosine");
+        recreate_payload_storages_append_only(dir.path());
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(100, vec![cosine_point(2, RAW)]))
+            .unwrap();
+        assert_eq!(outcome.stored, 1);
+
+        let follower = open_follower(dir.path());
+        // Point 1 went in through the classic path: that is the bar.
+        assert_unit_vector(&follower, 1, UNIT);
+        assert_unit_vector(&follower, 2, UNIT);
+    }
+
+    fn cosine_leader(prefix: &str) -> TempDir {
+        let dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+
+        let mut config = test_config();
+        let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+        params.size = 2;
+        params.distance = Distance::Cosine;
+
+        let leader = EdgeShard::new(dir.path(), config).unwrap();
+        leader
+            .update(PointOperation(UpsertPoints(PointsList(vec![
+                cosine_point(1, [3.0, 4.0]),
+            ]))))
+            .unwrap();
+        leader.flush().unwrap();
+
+        dir
+    }
+
+    fn cosine_point(id: u64, vector: [f32; 2]) -> PointStructPersisted {
+        PointStructPersisted {
+            id: ExtendedPointId::NumId(id),
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
+                VECTOR_NAME.to_string(),
+                VectorInternal::from(vector.to_vec()),
+            )]))),
+            payload: None,
+        }
+    }
+
+    fn assert_unit_vector(follower: &ReadOnlyEdgeShard<MmapFile>, id: u64, expected: [f32; 2]) {
+        let results = follower
+            .retrieve(
+                RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(id)])
+                    .with_payload(WithPayloadInterface::Bool(false))
+                    .with_vector(WithVector::Bool(true))
+                    .build(),
+            )
+            .unwrap();
+        let vector = results[0].vector.as_ref().expect("vector present");
+        let VectorStructInternal::Named(vectors) = vector else {
+            panic!("expected Named vectors, got {vector:?}");
+        };
+        let named = vectors.get(VECTOR_NAME).expect("vector name exists");
+        let VectorInternal::Dense(stored) = named else {
+            panic!("expected Dense vector, got {named:?}");
+        };
+        assert_eq!(stored.len(), expected.len(), "point {id}: {stored:?}");
+        for (got, want) in stored.iter().zip(&expected) {
+            assert!(
+                (got - want).abs() < 1e-6,
+                "point {id}: stored {stored:?}, expected the unit vector {expected:?}",
+            );
+        }
     }
 }
 
