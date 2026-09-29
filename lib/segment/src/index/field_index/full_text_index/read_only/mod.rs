@@ -80,6 +80,58 @@ mod tests {
         }
     }
 
+    /// A record without a length cannot serve a scoring index. The read-only
+    /// side has no payload to rebuild from, so it reports the index absent
+    /// rather than answering a length of zero for every point.
+    #[test]
+    fn appendable_without_lengths_is_absent_under_scoring() {
+        use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
+
+        let dir = TempDir::with_prefix("ro_fulltext_no_lengths").unwrap();
+        let config = test_config();
+        let hw_counter = HardwareCounterCell::new();
+
+        // `new_gridstore` reads the scoring const, so nothing records a length.
+        {
+            let mut index =
+                FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
+                    .unwrap()
+                    .unwrap();
+            index
+                .add_point(0, &[&serde_json::json!("the quick brown fox")], &hw_counter)
+                .unwrap();
+            index.flusher()().unwrap();
+        }
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let without_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
+            &fs,
+            dir.path().to_path_buf(),
+            config.clone(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            without_scoring.is_some(),
+            "the same records open without scoring"
+        );
+        drop(without_scoring);
+
+        let with_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
+            &fs,
+            dir.path().to_path_buf(),
+            config,
+            true,
+        )
+        .unwrap();
+        assert!(
+            with_scoring.is_none(),
+            "records without lengths must not open under scoring",
+        );
+    }
+
     /// Build an appendable (Gridstore) full-text index on disk, then open it
     /// via the parent enum's [`ReadOnlyFullTextIndex::open_appendable`] over
     /// the write-enforced `ReadOnly<MmapFile>` backend. Verifies the
