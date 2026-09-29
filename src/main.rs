@@ -291,12 +291,18 @@ fn init_channel_service(
 ) -> anyhow::Result<ChannelService> {
     // Empty API keys are treated as unset (as in `AuthKeys::try_create`), so they
     // are not attached to outgoing internal requests as empty `api-key` headers.
-    let api_key = settings.service.api_key.clone().filter(|k| !k.is_empty());
+    // Peers accept either key, so `alt_api_key` is forwarded when `api_key` is unset.
     let alt_api_key = settings
         .service
         .alt_api_key
         .clone()
         .filter(|k| !k.is_empty());
+    let api_key = settings
+        .service
+        .api_key
+        .clone()
+        .filter(|k| !k.is_empty())
+        .or_else(|| alt_api_key.clone());
 
     let mut channel_service = ChannelService::new(
         settings.service.http_port,
@@ -856,5 +862,10 @@ mod tests {
         let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
         assert_eq!(channel_service.api_key.as_deref(), Some("x"));
         assert_eq!(channel_service.alt_api_key, None);
+
+        settings.service.api_key = Some(String::new());
+        settings.service.alt_api_key = Some("alt".to_string());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key.as_deref(), Some("alt"));
     }
 }
