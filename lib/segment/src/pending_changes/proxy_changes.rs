@@ -57,6 +57,24 @@ impl ProxyChanges {
         &mut self.vector_name_changes
     }
 
+    /// Re-insert a change loaded from a pending changes log file into the buffers.
+    pub(super) fn reconstruct_change(&mut self, change: PendingChange) {
+        match change {
+            PendingChange::DeletePoint { point_id, versions } => {
+                self.deleted_points.insert(point_id, versions);
+            }
+            PendingChange::IndexChange { field_name, change } => {
+                self.index_changes.insert(field_name, change);
+            }
+            PendingChange::VectorNameChange {
+                vector_name,
+                intent,
+            } => {
+                self.vector_name_changes.insert_intent(vector_name, intent);
+            }
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.deleted_points.is_empty()
             && self.index_changes.is_empty()

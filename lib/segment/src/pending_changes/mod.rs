@@ -152,7 +152,7 @@ impl PendingChanges {
                 .store(max_version, Ordering::Relaxed);
 
             for change in loaded.changes {
-                changes.reconstruct_change(change);
+                changes.changes.reconstruct_change(change);
             }
         }
 
@@ -169,26 +169,6 @@ impl PendingChanges {
             expected_file_len: Arc::new(AtomicU64::new(0)),
             persisted_version: Arc::new(AtomicU64::new(0)),
             is_alive_lock: IsAliveLock::new(),
-        }
-    }
-
-    /// Re-insert a change loaded from the log file into the in-memory buffers.
-    fn reconstruct_change(&mut self, change: PendingChange) {
-        match change {
-            PendingChange::DeletePoint { point_id, versions } => {
-                self.changes.deleted_points_mut().insert(point_id, versions);
-            }
-            PendingChange::IndexChange { field_name, change } => {
-                self.changes.index_changes_mut().insert(field_name, change);
-            }
-            PendingChange::VectorNameChange {
-                vector_name,
-                intent,
-            } => {
-                self.changes
-                    .vector_name_changes_mut()
-                    .insert_intent(vector_name, intent);
-            }
         }
     }
 
