@@ -690,12 +690,13 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                 let max_token_len = token_len("max_token_len", max_token_len)?;
                 // Same rule the server enforces on its API: an inverted length
                 // window drops every token and the index builds empty.
-                segment_index::validate_text_index_params(&min_token_len, &max_token_len)
-                    .map_err(|_| {
+                segment_index::validate_text_index_params(&min_token_len, &max_token_len).map_err(
+                    |_| {
                         EdgeError::invalid_argument(
                             "text index: 'min_token_len' can't be greater than 'max_token_len'",
                         )
-                    })?;
+                    },
+                )?;
                 Ok(PayloadSchemaParams::Text(segment_index::TextIndexParams {
                     r#type: segment_index::TextIndexType::Text,
                     tokenizer: tokenizer

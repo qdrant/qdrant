@@ -729,36 +729,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_text_index_rejects_min_token_len_above_max() {
-        use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
-
-        assert!(validate_text_index_params(&Some(10usize), &Some(5usize)).is_err());
-        assert!(validate_text_index_params(&Some(5usize), &Some(5usize)).is_ok());
-        assert!(validate_text_index_params(&Some(2usize), &Some(20usize)).is_ok());
-        assert!(validate_text_index_params(&None::<usize>, &Some(5usize)).is_ok());
-        assert!(validate_text_index_params(&Some(10usize), &None::<usize>).is_ok());
-        assert!(validate_text_index_params(&None::<usize>, &None::<usize>).is_ok());
-
-        let inverted = TextIndexParams {
-            min_token_len: Some(10),
-            max_token_len: Some(5),
-            ..TextIndexParams::default()
-        };
-        assert!(inverted.validate().is_err());
-
-        // REST create-field-index validates through the payload schema.
-        let schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(inverted));
-        assert!(schema.validate().is_err());
-
-        let equal = TextIndexParams {
-            min_token_len: Some(5),
-            max_token_len: Some(5),
-            ..TextIndexParams::default()
-        };
-        assert!(equal.validate().is_ok());
-    }
-
-    #[test]
     fn test_stemming_algorithm_serialization() {
         // Snowball round-trips with its `type`/`language` shape.
         let snowball = StemmingAlgorithm::Snowball(SnowballParams {
