@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
 use common::uio_trace::{Op, Outcome};
-use common::universal_io::{IsNotFound as _, UioResult, UniversalIoError};
+use common::universal_io::{ChunkSink, IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
 use crate::file::BlobFile;
@@ -95,6 +95,67 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
         request.set_result(&result);
         result
     }
+}
+
+/// Stream the whole object behind `file` into a sink with a single request (see
+/// [`AsyncRead::read_whole_single`]): `init` builds the sink from the object's length, then
+/// every chunk is handed to it the moment it arrives. Yields the sink.
+pub fn read_whole_into_sink<A, W, I>(
+    file: &BlobFile<A>,
+    init: I,
+) -> impl Future<Output = UioResult<W>> + Send + 'static
+where
+    A: AsyncRead,
+    I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+    W: ChunkSink + Send + 'static,
+{
+    let mut request = file.stats.request(Op::ReadFrom, &file.path, 0..0);
+    let read_fut = file.inner.read_whole_single(&file.path);
+    async move {
+        request.start();
+        let (size, stream) = match read_fut.await {
+            Ok(ok) => ok,
+            Err(err) => {
+                request.set_err(&err);
+                return Err(err);
+            }
+        };
+        request.set_end(size);
+        let result = stream_into_sink(stream, size, init).await;
+        request.set_result(&result);
+        result
+    }
+}
+
+/// Hand every chunk of the `size`-byte `stream` to the sink `init` builds, checking the
+/// chunks stay within `size` and add up to it.
+async fn stream_into_sink<W, I>(mut stream: OffsetByteStream, size: u64, init: I) -> UioResult<W>
+where
+    I: FnOnce(u64) -> UioResult<W>,
+    W: ChunkSink,
+{
+    let mut sink = init(size)?;
+    let mut written = 0;
+    while let Some(chunk) = stream.next().await {
+        let (offset, bytes) = chunk?;
+        let end = offset + bytes.len() as u64;
+        if end > size {
+            return Err(UniversalIoError::S3 {
+                path: None,
+                source: format!("over-read: chunk ends at {end}, past the {size}-byte object")
+                    .into(),
+            });
+        }
+        sink.write_chunk(offset, &bytes)?;
+        written += bytes.len() as u64;
+    }
+    if written != size {
+        return Err(UniversalIoError::S3 {
+            path: None,
+            source: format!("short read: expected {size} bytes, got {written}").into(),
+        });
+    }
+    Ok(sink)
 }
 
 /// Scatter every `(offset, bytes)` chunk of `stream` into a fresh

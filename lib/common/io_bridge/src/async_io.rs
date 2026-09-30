@@ -11,12 +11,13 @@ use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::uio_trace;
 use common::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
+    ChunkSink, ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs,
+    UniversalReadFsAsync,
 };
 
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
-use crate::pipeline::read_into_byte_buffer;
+use crate::pipeline::{read_into_byte_buffer, read_whole_into_sink};
 use crate::read::AsyncRead;
 
 impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
@@ -69,5 +70,19 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
             started.elapsed().as_millis()
         );
         Ok(ACow::Owned(buf))
+    }
+
+    /// Streams the whole object with a single request, handing each chunk to the sink on the
+    /// bridge runtime as it arrives.
+    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        let task = self
+            .runtime
+            .handle()
+            .spawn(uio_trace::Context::current().wrap(read_whole_into_sink::<A, W, I>(self, init)));
+        async move { task.await? }
     }
 }
