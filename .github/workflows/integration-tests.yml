@@ -268,8 +268,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to ghcr.io
         # Only dev pushes export the build cache; other runs read the public cache anonymously
-        # TEMP (drop before merge): also log in on the ci/cache-churn PR to test the export
-        if: (github.event_name == 'push' && github.ref_name == 'dev') || github.head_ref == 'ci/cache-churn'
+        if: github.event_name == 'push' && github.ref_name == 'dev'
         run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -278,11 +277,8 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          # TEMP (drop before merge): the ci/cache-churn PR reads and writes a separate test tag
-          cache-from: |
-            type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests
-            type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests-pr-test
-          cache-to: ${{ (github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests,mode=max') || (github.head_ref == 'ci/cache-churn' && 'type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests-pr-test,mode=max') || '' }}
+          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests,mode=max' || '' }}
           outputs: type=docker,dest=/tmp/e2e-image.tar
           build-args: |
             PROFILE=ci
