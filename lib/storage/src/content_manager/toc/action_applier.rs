@@ -151,6 +151,18 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::SetShardNumber {
+                collection,
+                shard_number,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .set_shard_number(*shard_number)
+                    .await?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -172,7 +184,6 @@ impl TableOfContent {
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
-            | Action::SetShardNumber { .. }
             | Action::SetReplicaState { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
