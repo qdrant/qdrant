@@ -163,6 +163,20 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::SetReplicaState {
+                collection,
+                shard_id,
+                peer_id,
+                state,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .apply_replica_state(*shard_id, *peer_id, *state)
+                    .await?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -184,7 +198,6 @@ impl TableOfContent {
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
-            | Action::SetReplicaState { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
             | Action::RegisterTransfer { .. }
