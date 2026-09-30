@@ -92,10 +92,7 @@ impl ClusterState {
                 state.payload_index_schema.schema.remove(field_name);
             }
 
-            // Builds a shard directory. Shards join collection state through `RegisterShards`.
-            Action::CreateShard { .. } => {}
-
-            Action::RegisterShards {
+            Action::CreateAndRegisterShards {
                 collection,
                 shard_key,
                 shards,
