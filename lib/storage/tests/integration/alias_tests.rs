@@ -30,7 +30,7 @@ use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
 
-const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
+pub(super) const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 
 #[test]
 fn test_alias_operation() {
@@ -165,7 +165,7 @@ fn update_aliases_action_persists_mapping() {
     assert_eq!(aliases.get("new_alias"), None);
 }
 
-fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
+pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let config = StorageConfig {
@@ -236,7 +236,7 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     (storage_dir, handle, Dispatcher::new(toc))
 }
 
-fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+pub(super) fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
     handle
         .block_on(
             dispatcher.submit_collection_meta_op(

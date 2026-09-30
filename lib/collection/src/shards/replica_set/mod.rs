@@ -393,9 +393,9 @@ impl ShardReplicaSet {
         }
     }
 
-    /// The local shard's segments, for the model tester to inspect their layout.
+    /// The local shard's segments, for tests to inspect their layout and schema
     #[cfg(feature = "testing")]
-    pub(crate) async fn local_segments_for_test(
+    pub async fn local_segments_for_test(
         &self,
     ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
         use crate::shards::shard::Shard;
