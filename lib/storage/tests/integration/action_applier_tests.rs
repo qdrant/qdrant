@@ -4,6 +4,7 @@ use std::time::Duration;
 use collection::operations::config_diff::HnswConfigDiff;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard_trait::WaitUntil;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
@@ -378,6 +379,27 @@ fn set_shard_number_action_replay() {
 
     let state = toc.collection_state("test").unwrap();
     assert_eq!(state.config.params.shard_number.get(), 2);
+}
+
+#[test]
+fn set_replica_state_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let action = Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    let state = toc.collection_state("test").unwrap();
+    assert_eq!(state.shards[&0].replicas[&0], ReplicaState::Active);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
