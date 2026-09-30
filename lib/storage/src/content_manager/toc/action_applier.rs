@@ -12,6 +12,23 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: Action) -> StorageResult<()> {
         match &action {
+            Action::AddNamedVector {
+                collection,
+                vector_name,
+                config,
+            } => {
+                let collection_ctx =
+                    AmbientContext::request(self.get_collection_hw_metrics(collection.clone()));
+
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .create_named_vector(vector_name.clone(), (**config).clone())
+                    .measured(collection_ctx)
+                    .await?;
+
+                Ok(())
+            }
+
             Action::SetPayloadIndex {
                 collection,
                 field_name,
@@ -65,7 +82,6 @@ impl TableOfContent {
             Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::UpdateCollectionConfig { .. }
-            | Action::AddNamedVector { .. }
             | Action::DropNamedVector { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
