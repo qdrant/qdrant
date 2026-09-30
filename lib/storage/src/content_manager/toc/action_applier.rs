@@ -125,6 +125,21 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RemoveShardFromKeyMapping {
+                collection,
+                shard_id,
+                shard_key,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder
+                    .write()
+                    .await
+                    .remove_shard_from_key_mapping(*shard_id, shard_key)?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -148,7 +163,6 @@ impl TableOfContent {
             | Action::RemoveShardKey { .. }
             | Action::DropShard { .. }
             | Action::SetShardNumber { .. }
-            | Action::RemoveShardFromKeyMapping { .. }
             | Action::SetReplicaState { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
