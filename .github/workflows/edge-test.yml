@@ -103,8 +103,9 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: edge
-          # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          # Only save the cache on dev, and only on Linux: PRs run this job on Linux only, so macOS and
+          # Windows caches would serve dev pushes alone while taking ~1.3 GB per copy
+          save-if: ${{ github.ref == 'refs/heads/dev' && runner.os == 'Linux' }}
 
       - name: Prepare data files
         id: rs-prepare-data
