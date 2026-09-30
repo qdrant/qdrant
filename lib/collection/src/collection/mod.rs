@@ -602,7 +602,9 @@ impl Collection {
             .cloned()
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        replica_set.ensure_replica_with_state(peer_id, state).await?;
+        replica_set
+            .ensure_replica_with_state(peer_id, state)
+            .await?;
 
         if !self.is_initialized.check_ready() {
             let is_ready = self
