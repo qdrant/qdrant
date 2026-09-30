@@ -18,10 +18,9 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::Distance;
+use crate::types::{Distance, VectorStorageDatatype};
 
-// TurboQuant DataType (TQDT) always uses 4 bits without shift+scale error correction.
-pub(crate) const TQDT_BITS: TQBits = TQBits::Bits4;
+// TurboQuant DataType (TQDT) storages run without shift+scale error correction.
 pub(crate) const TQDT_MODE: TQMode = TQMode::Normal;
 pub(crate) const TQDT_ROTATION: TQRotation = TQRotation::Unpadded;
 
@@ -31,12 +30,42 @@ pub(crate) const VECTORS_PATH: &str = "tq_vectors.dat";
 pub(crate) const VECTORS_DIR_PATH: &str = "tq_vectors";
 pub(crate) const DELETED_DIR_PATH: &str = "deleted";
 
-/// Build the quantizer for a dense `Turbo4` storage; fully determined by
-/// `(dim, distance)` and the fixed TQDT constants.
-pub(super) fn build_quantizer(dim: usize, distance: Distance) -> TurboQuantizer {
+/// Bit width of a TurboQuant datatype, `None` for the other datatypes.
+pub fn datatype_bits(datatype: VectorStorageDatatype) -> Option<TQBits> {
+    match datatype {
+        VectorStorageDatatype::Turbo4 => Some(TQBits::Bits4),
+        VectorStorageDatatype::Turbo8 => Some(TQBits::Bits8),
+        VectorStorageDatatype::Float32
+        | VectorStorageDatatype::Float16
+        | VectorStorageDatatype::Uint8 => None,
+    }
+}
+
+/// Bit width of a TurboQuant datatype.
+///
+/// # Panics
+/// Panics for a non-TurboQuant datatype.
+pub fn tq_bits(datatype: VectorStorageDatatype) -> TQBits {
+    datatype_bits(datatype).unwrap_or_else(|| panic!("{datatype:?} is not a TurboQuant datatype"))
+}
+
+/// The datatype of a storage encoded with `quantizer`.
+pub(crate) fn storage_datatype(quantizer: &TurboQuantizer) -> VectorStorageDatatype {
+    match quantizer.bits() {
+        TQBits::Bits8 => VectorStorageDatatype::Turbo8,
+        TQBits::Bits4 => VectorStorageDatatype::Turbo4,
+        bits @ (TQBits::Bits2 | TQBits::Bits1_5 | TQBits::Bits1) => {
+            unreachable!("no TurboQuant datatype stores {bits:?}")
+        }
+    }
+}
+
+/// Build the quantizer for a dense TurboQuant datatype storage; fully
+/// determined by `(dim, distance, bits)` and the fixed TQDT constants.
+pub(crate) fn build_quantizer(dim: usize, distance: Distance, bits: TQBits) -> TurboQuantizer {
     TurboQuantizer::new(
         dim,
-        TQDT_BITS,
+        bits,
         TQDT_MODE,
         quantization::DistanceType::from(distance),
         TQDT_ROTATION,
@@ -46,13 +75,13 @@ pub(super) fn build_quantizer(dim: usize, distance: Distance) -> TurboQuantizer 
 
 /// Quantize then dequantize `vector` exactly as a dense TQ storage with this
 /// `distance` does across `insert_vector` + `get_vector`. Pure function of its inputs:
-/// the quantizer is fully determined by `(dim, distance)` (the rotation derives from
-/// fixed seeds), so the result is identical across storage instances, segment rebuilds,
-/// and reloads. Lets model-based tests predict the read-back value of a Turbo4-backed
-/// vector without opening a storage.
-pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance) -> Vec<f32> {
+/// the quantizer is fully determined by `(dim, distance, bits)` (the rotation derives
+/// from fixed seeds), so the result is identical across storage instances, segment
+/// rebuilds, and reloads. Lets model-based tests predict the read-back value of a
+/// TurboQuant-backed vector without opening a storage.
+pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance, bits: TQBits) -> Vec<f32> {
     let dim = vector.len();
-    let quantizer = build_quantizer(dim, distance);
+    let quantizer = build_quantizer(dim, distance, bits);
     let mut buf = vec![0.0; quantizer.get_padded_dim()];
     let encoded = quantizer.quantize(vector, &mut buf);
     // Mirror of `dequantize_vector`: dequantize, rotate back, drop the padding

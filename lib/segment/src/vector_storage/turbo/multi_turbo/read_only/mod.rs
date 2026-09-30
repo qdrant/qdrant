@@ -59,6 +59,7 @@ mod tests {
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
+    use quantization::turboquant::TQBits;
     use tempfile::Builder;
 
     use super::*;
@@ -87,6 +88,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             false,
         )
@@ -101,6 +103,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             Populate::No,

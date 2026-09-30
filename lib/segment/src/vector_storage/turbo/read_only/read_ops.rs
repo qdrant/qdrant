@@ -26,7 +26,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
     fn is_on_disk(&self) -> bool {

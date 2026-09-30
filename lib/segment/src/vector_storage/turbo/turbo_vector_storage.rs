@@ -21,8 +21,8 @@ use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
-use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::turboquant::{EncodedQueryTQ, TQBits};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
 use super::turbo_vectors::TurboVectorBlob;
@@ -74,12 +74,20 @@ pub fn open_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
     // Like the immutable dense storages: no feature flag of its own, and predates the setting.
     let with_uring = use_io_uring(IoUringFallback::AsyncScorer, memory, true);
 
-    open_turbo_vector_storage_with_uring(path, dim, distance, memory.populate_on_open(), with_uring)
+    open_turbo_vector_storage_with_uring(
+        path,
+        dim,
+        distance,
+        bits,
+        memory.populate_on_open(),
+        with_uring,
+    )
 }
 
 /// [`open_turbo_vector_storage`] with an explicit backend choice instead of the
@@ -89,6 +97,7 @@ pub fn open_turbo_vector_storage_with_uring(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     populate: bool,
     with_uring: bool,
 ) -> OperationResult<VectorStorageEnum> {
@@ -98,7 +107,7 @@ pub fn open_turbo_vector_storage_with_uring(
     #[cfg(target_os = "linux")]
     if with_uring {
         match TurboVectorStorageImpl::<QuantizedStorage<IoUringFile>>::open_uring(
-            path, dim, distance, populate,
+            path, dim, distance, bits, populate,
         ) {
             Ok(storage) => return Ok(VectorStorageEnum::DenseTurboUring(Box::new(storage))),
             Err(err) => {
@@ -108,7 +117,7 @@ pub fn open_turbo_vector_storage_with_uring(
     }
 
     let storage = TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
-        path, dim, distance, populate,
+        path, dim, distance, bits, populate,
     )?;
     Ok(VectorStorageEnum::DenseTurboMemmap(Box::new(storage)))
 }
@@ -119,9 +128,10 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         populate: bool,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedStorage::<MmapFile>::open(
             &MmapFs,
             &path.join(VECTORS_PATH),
@@ -139,9 +149,10 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         populate: bool,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedStorage::<IoUringFile>::open(
             &IoUringFs,
             &path.join(VECTORS_PATH),
@@ -158,9 +169,10 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
     ) -> OperationResult<Self> {
         let on_disk = graph.is_on_disk();
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
         Self::finalize(storage, quantizer, path, dim, distance, !on_disk, on_disk)
     }
@@ -296,7 +308,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
     fn is_on_disk(&self) -> bool {

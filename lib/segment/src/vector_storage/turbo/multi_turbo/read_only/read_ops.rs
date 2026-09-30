@@ -19,6 +19,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
+use crate::vector_storage::turbo::shared;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
 use crate::vector_storage::{MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType};
 
@@ -111,7 +112,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
     fn is_on_disk(&self) -> bool {

@@ -8,8 +8,8 @@ use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::HnswGraph;
 use crate::types::{VectorDataConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::graph_inline_dense_vector_storage::GraphInlineDenseVectorStorage;
-use crate::vector_storage::turbo::TurboVectorStorageImpl;
 use crate::vector_storage::turbo::shared::DELETED_DIR_PATH;
+use crate::vector_storage::turbo::{TurboVectorStorageImpl, tq_bits};
 use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 pub(crate) fn open_graph_inline_vector_storage(
@@ -17,12 +17,13 @@ pub(crate) fn open_graph_inline_vector_storage(
     index_path: &Path,
     vector_config: &VectorDataConfig,
 ) -> OperationResult<VectorStorageEnum> {
-    use VectorStorageDatatype::{Float16, Float32, Turbo4, Uint8};
+    use VectorStorageDatatype::{Float16, Float32, Turbo4, Turbo8, Uint8};
 
     let graph = HnswGraph::open(index_path, vector_config.storage_memory())?;
     let dim = vector_config.size;
     let distance = vector_config.distance;
-    Ok(match vector_config.datatype.unwrap_or_default() {
+    let datatype = vector_config.datatype.unwrap_or_default();
+    Ok(match datatype {
         Float32 => VectorStorageEnum::DenseGraphInline(
             GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
         ),
@@ -32,8 +33,9 @@ pub(crate) fn open_graph_inline_vector_storage(
         Uint8 => VectorStorageEnum::DenseGraphInlineByte(
             GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
         ),
-        Turbo4 => VectorStorageEnum::DenseTurboGraphInline(
-            TurboVectorStorageImpl::open_graph(graph, path, dim, distance).map(Box::new)?,
+        Turbo4 | Turbo8 => VectorStorageEnum::DenseTurboGraphInline(
+            TurboVectorStorageImpl::open_graph(graph, path, dim, distance, tq_bits(datatype))
+                .map(Box::new)?,
         ),
     })
 }

@@ -5,6 +5,7 @@
 #![allow(deprecated)]
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use quantization::turboquant::TQBits;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
@@ -628,7 +629,9 @@ fn test_gpu_vector_storage_turbo_dense(
         .try_init();
 
     let dir = tempfile::Builder::new().prefix("tq_dir").tempdir().unwrap();
-    let mut turbo = open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+    let mut turbo =
+        open_appendable_turbo_vector_storage(dir.path(), dim, distance, TQBits::Bits4, true)
+            .unwrap();
 
     let mut rnd = StdRng::seed_from_u64(42);
     for i in 0..num_vectors {
@@ -713,9 +716,15 @@ fn test_gpu_vector_storage_turbo_multi(
 
     let multi_config = Default::default();
     let dir = tempfile::Builder::new().prefix("tq_dir").tempdir().unwrap();
-    let mut turbo =
-        open_appendable_turbo_multi_vector_storage(dir.path(), dim, distance, multi_config, true)
-            .unwrap();
+    let mut turbo = open_appendable_turbo_multi_vector_storage(
+        dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        multi_config,
+        true,
+    )
+    .unwrap();
 
     let mut rnd = StdRng::seed_from_u64(42);
     for i in 0..num_points {
