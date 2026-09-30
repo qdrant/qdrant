@@ -48,13 +48,13 @@ impl Collection {
         wait: bool,
         hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
+        field_schema.validate()?;
+
         self.payload_index_schema.write(|schema| {
             schema
                 .schema
                 .insert(field_name.clone(), field_schema.clone());
         })?;
-
-        field_schema.validate()?;
 
         // This operation might be redundant, if we also create index as a regular collection op,
         // but it looks better in long term to also have it here, so
