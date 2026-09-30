@@ -34,6 +34,18 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::DropPayloadIndex {
+                collection,
+                field_name,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .drop_payload_index(field_name.clone())
+                    .await?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -55,7 +67,6 @@ impl TableOfContent {
             | Action::UpdateCollectionConfig { .. }
             | Action::AddNamedVector { .. }
             | Action::DropNamedVector { .. }
-            | Action::DropPayloadIndex { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
