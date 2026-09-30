@@ -6,6 +6,7 @@ use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema};
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 pub use shard::payload_index_schema::PayloadIndexSchema;
+use validator::Validate;
 
 use crate::collection::Collection;
 use crate::operations::types::{CollectionResult, UpdateResult};
@@ -52,6 +53,8 @@ impl Collection {
                 .schema
                 .insert(field_name.clone(), field_schema.clone());
         })?;
+
+        field_schema.validate()?;
 
         // This operation might be redundant, if we also create index as a regular collection op,
         // but it looks better in long term to also have it here, so

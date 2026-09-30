@@ -2782,6 +2782,7 @@ pub enum PayloadFieldSchema {
     // For https://github.com/qdrant/qdrant/issues/10372
     // This option should come first, so that when using a JSON array with one element,
     // this option is selected by serde
+    #[schemars(skip)]
     FieldArray(Vec<Value>),
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),

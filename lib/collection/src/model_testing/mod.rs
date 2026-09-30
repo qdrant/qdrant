@@ -964,6 +964,7 @@ const SEED_ENV: &str = "MODEL_TESTING_SEED";
 
 // Harness knobs used by both `smoke` (which hands them to `run`) and the replay command it
 // prints, so a run and its printed reproduction cannot disagree about them.
+#[cfg(target_os = "linux")]
 #[cfg(test)]
 const HARNESS_ID_POOL: u64 = 500;
 #[cfg(test)]
