@@ -204,6 +204,10 @@ impl ClusterState {
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
         let mut validated = Vec::with_capacity(changes.len());
 
+        // TODO: Validate each removal against earlier removals in the same batch.
+        //
+        // Checking each removal against the initial replica set lets a batch remove
+        // the last source of truth even though every removal passes validation.
         for change in changes {
             let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
             let Some(shard) = state.shards.get(&shard_id) else {
