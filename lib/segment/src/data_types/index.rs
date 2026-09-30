@@ -397,6 +397,7 @@ impl Validate for TextIndexParams {
             memory: _,
             stemmer: _,
             enable_hnsw: _,
+            scoring: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }
