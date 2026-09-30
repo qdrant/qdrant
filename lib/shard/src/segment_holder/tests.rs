@@ -2553,6 +2553,138 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
     );
 }
 
+/// The flush topology must stay acyclic when a segment id changes its copy-on-write role.
+///
+/// A segment id keeps its identity while the optimizer swaps an appendable segment for a proxy
+/// (`ProxySegment::is_appendable()` is hard-coded `false`, so `optimize_segment`'s
+/// `replace(idx, proxy)` moves the id out of `appendable_segments`) and, when that optimization
+/// is cancelled, unwraps it again (`unproxy_segments`'s `replace(proxy_id, wrapped)` moves it
+/// back). The same id is therefore a copy-on-write *destination* in one epoch and a copy-on-write
+/// *source* in the next.
+///
+/// Edges are keyed by id alone and are only ever retired by version (`retain` in `flush_all`), so
+/// an edge recorded while an id was a destination outlives the role flip. Two ids that each played
+/// destination-then-source in opposite orders end up recorded as depending on each other, and the
+/// flush ordering — a topological sort — has no valid order for a cycle.
+///
+/// This test drives that role flip deterministically through `SegmentHolder::replace`, the same
+/// entry point the optimizer uses, and then flushes.
+#[test]
+fn test_flush_topology_stays_acyclic_across_copy_on_write_role_swaps() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // A point sitting in a non-appendable segment, so applying it has to move it out.
+    let mut non_appendable = empty_segment(dir.path());
+    non_appendable
+        .upsert_point(
+            1,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    non_appendable.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    // Id 0 starts as the non-appendable source, id 1 as the appendable destination.
+    let source_id = holder.add_new(non_appendable);
+    let destination_id = holder.add_new(empty_segment(dir.path()));
+    assert_eq!((source_id, destination_id), (0, 1));
+
+    // Move the point out of the non-appendable segment: records `0 depends on 1`.
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            None,
+            &hw_counter,
+        )
+        .unwrap();
+    assert_eq!(
+        holder
+            .flush_dependency
+            .lock()
+            .dependencies_of(&source_id)
+            .count(),
+        1,
+        "the move should record a copy-on-write dependency",
+    );
+
+    // Swap the two ids' appendable roles in place, keeping the same segments under the same ids —
+    // what proxying id 0 and unwrapping id 1 looks like to the holder. The moved point now lives
+    // in id 1, which has become the non-appendable source, while id 0 has become the destination.
+    let swap_appendable_role = |holder: &mut SegmentHolder, id: SegmentId| {
+        let segment = holder.get(id).unwrap().clone();
+        let crate::locked_segment::LockedSegment::Original(inner) = &segment else {
+            panic!("expected an original segment");
+        };
+        let was_appendable = inner.read().is_appendable();
+        inner.write().appendable_flag = !was_appendable;
+        holder.replace(id, segment).unwrap();
+    };
+    swap_appendable_role(&mut holder, source_id);
+    swap_appendable_role(&mut holder, destination_id);
+    assert!(holder.get(source_id).unwrap().get().read().is_appendable());
+    assert!(
+        !holder
+            .get(destination_id)
+            .unwrap()
+            .get()
+            .read()
+            .is_appendable()
+    );
+
+    // Moving the point back out of id 1 would record the opposite edge, closing the cycle.
+    holder
+        .apply_points_with_conditional_move(
+            21,
+            &[100.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            None,
+            &hw_counter,
+        )
+        .unwrap();
+
+    // The cycle-closing edge must have been refused rather than recorded: the first edge
+    // (`0 depends on 1`) survives and its reverse is absent, so the graph is still a DAG.
+    // Without the refusal this topology holds both edges and the flush below panics.
+    {
+        let topology = holder.flush_dependency.lock();
+        let mut of_source: Vec<_> = topology
+            .dependencies_of(&source_id)
+            .map(|(depends_on, _)| *depends_on)
+            .collect();
+        of_source.sort_unstable();
+        assert_eq!(
+            of_source,
+            vec![destination_id],
+            "the original edge must survive, and no other",
+        );
+        assert_eq!(
+            topology.dependencies_of(&destination_id).count(),
+            0,
+            "the edge that would close the cycle must be refused",
+        );
+    }
+
+    // The topology must still admit a flush order. Ordering it used to panic here with
+    // "circular dependencies detected in flush topology: [0, 1]".
+    let flushed = holder
+        .flush_all(FlushMode::Sync, false)
+        .expect("flushing must not panic on a cyclic flush topology");
+    assert!(flushed >= 21);
+
+    // And the order the flush actually used is a valid one for the edges that survived.
+    let topology = holder.flush_dependency.lock().clone();
+    let ids = [source_id, destination_id];
+    let ordered: Vec<_> = topology.sort_elements(&ids).collect();
+    assert_eq!(ordered.len(), ids.len());
+}
+
 /// A proxy segment must not hold back acknowledging the WAL. Flushing persists its buffered
 /// changes into the pending changes log, so the version returned by `flush_all` — which is what
 /// gets acknowledged in the WAL — advances past operations that only live in the proxy.
