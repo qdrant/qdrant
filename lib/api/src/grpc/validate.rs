@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use common::validation::{validate_range_generic, validate_shard_different_peers};
-use segment::data_types::index::validate_integer_index_params;
+use segment::data_types::index::{validate_integer_index_params, validate_text_index_params};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
@@ -557,7 +557,9 @@ impl Validate for super::qdrant::payload_index_params::IndexParams {
             }
             grpc::payload_index_params::IndexParams::FloatIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::GeoIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::TextIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::TextIndexParams(text_index_params) => {
+                text_index_params.validate()
+            }
             grpc::payload_index_params::IndexParams::BoolIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::DatetimeIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::UuidIndexParams(_) => Ok(()),
@@ -576,6 +578,25 @@ impl Validate for super::qdrant::IntegerIndexParams {
             memory: _,
         } = &self;
         validate_integer_index_params(lookup, range)
+    }
+}
+
+impl Validate for super::qdrant::TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let super::qdrant::TextIndexParams {
+            tokenizer: _,
+            lowercase: _,
+            min_token_len,
+            max_token_len,
+            on_disk: _,
+            stopwords: _,
+            phrase_matching: _,
+            stemmer: _,
+            ascii_folding: _,
+            enable_hnsw: _,
+            memory: _,
+        } = &self;
+        validate_text_index_params(min_token_len, max_token_len)
     }
 }
 
@@ -607,7 +628,8 @@ mod tests {
     use crate::grpc::qdrant::{
         CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
-        GeoPolygon, GeoRadius, SearchPoints, UpdateCollection, create_vector_name_request, vector,
+        GeoPolygon, GeoRadius, PayloadIndexParams, SearchPoints, TextIndexParams, UpdateCollection,
+        create_vector_name_request, payload_index_params, vector,
     };
 
     #[test]
@@ -777,6 +799,30 @@ mod tests {
             bad_request.validate().is_err(),
             "bad collection request should error on validation"
         );
+    }
+
+    #[test]
+    fn test_text_index_rejects_min_token_len_above_max() {
+        let request = |min_token_len, max_token_len| CreateFieldIndexCollection {
+            collection_name: "test".into(),
+            field_name: "description".into(),
+            field_index_params: Some(PayloadIndexParams {
+                index_params: Some(payload_index_params::IndexParams::TextIndexParams(
+                    TextIndexParams {
+                        min_token_len,
+                        max_token_len,
+                        ..Default::default()
+                    },
+                )),
+            }),
+            ..Default::default()
+        };
+
+        assert!(request(Some(10), Some(5)).validate().is_err());
+        assert!(request(Some(5), Some(5)).validate().is_ok());
+        assert!(request(Some(2), Some(20)).validate().is_ok());
+        assert!(request(None, Some(5)).validate().is_ok());
+        assert!(request(Some(10), None).validate().is_ok());
     }
 
     #[test]
