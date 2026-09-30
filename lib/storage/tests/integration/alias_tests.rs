@@ -2,6 +2,7 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -13,12 +14,14 @@ use common::budget::ResourceBudget;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use segment::types::Distance;
+use storage::content_manager::CollectionContainer;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateCollection, CreateCollectionOperation, DeleteAlias, RenameAlias,
 };
 use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::{ALIASES_PATH, TableOfContent};
 use storage::dispatcher::Dispatcher;
@@ -131,6 +134,34 @@ fn change_aliases_reject_mid_list() {
     let aliases = AliasPersistence::open(&storage_dir.path().join(ALIASES_PATH)).unwrap();
 
     assert_eq!(aliases.get("test_alias").as_deref(), Some("test"));
+    assert_eq!(aliases.get("new_alias"), None);
+}
+
+#[test]
+fn update_aliases_action_persists_mapping() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let action = Action::UpdateAliases {
+        set: BTreeMap::from([("new_alias".to_string(), "test".to_string())]),
+        remove: BTreeSet::new(),
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    let aliases = AliasPersistence::open(&storage_dir.path().join(ALIASES_PATH)).unwrap();
+    assert_eq!(aliases.get("new_alias").as_deref(), Some("test"));
+
+    let action = Action::UpdateAliases {
+        set: BTreeMap::new(),
+        remove: BTreeSet::from(["new_alias".to_string()]),
+    };
+    toc.apply_action(action).unwrap();
+
+    let aliases = AliasPersistence::open(&storage_dir.path().join(ALIASES_PATH)).unwrap();
     assert_eq!(aliases.get("new_alias"), None);
 }
 

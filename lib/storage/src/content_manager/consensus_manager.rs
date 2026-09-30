@@ -1598,6 +1598,13 @@ mod tests {
     struct NoCollections;
 
     impl CollectionContainer for NoCollections {
+        fn apply_action(
+            &self,
+            _action: crate::content_manager::consensus_state_machine::Action,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            unimplemented!()
+        }
+
         fn perform_collection_meta_op(
             &self,
             _operation: crate::content_manager::collection_meta_ops::CollectionMetaOperations,
