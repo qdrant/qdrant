@@ -389,6 +389,8 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
         segments_path,
     )?;
 
+    check_process_stopped(stopped)?;
+
     // Propagate the bulk of the changes buffered by the proxies while updates keep flowing. The
     // proxies keep serving these changes until they are swapped out, so this snapshot is handed to
     // `finish_optimization` for it to exclude: only what arrives after it is left for the
