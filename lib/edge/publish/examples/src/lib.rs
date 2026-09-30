@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 // Common helper items for the examples.
 // See lib/edge/python/examples/common.py for the equivalent Python helpers.
 

@@ -48,7 +48,7 @@ mod qdrant_edge {
     use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
     #[pymodule_export]
     use super::config::vector_data::{
-        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMultiVectorComparator,
+        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMemory, PyMultiVectorComparator,
         PyMultiVectorConfig, PyPlainIndexConfig, PyVectorStorageDatatype,
     };
     #[pymodule_export]

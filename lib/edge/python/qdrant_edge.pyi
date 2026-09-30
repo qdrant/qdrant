@@ -53,6 +53,17 @@ ExpressionType = "Expression"
 # Main EdgeShard Class
 # ============================================================================
 
+class Memory(Enum):
+    """Memory placement of a component (vectors, HNSW, indexes, payload, …).
+
+    Prefer this over the deprecated ``on_disk`` / ``always_ram`` /
+    ``on_disk_payload`` flags.
+    """
+
+    Cold = ...
+    Cached = ...
+    Pinned = ...
+
 class EdgeShard:
     """
     The main class representing a Qdrant Edge shard.
@@ -523,6 +534,7 @@ class HnswIndexConfig:
         full_scan_threshold: int,
         max_indexing_threads: int = 0,
         on_disk: Optional[bool] = None,
+        memory: Optional[Memory] = None,
         payload_m: Optional[int] = None,
         inline_storage: Optional[bool] = None,
     ) -> None:

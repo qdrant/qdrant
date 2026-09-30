@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Reloading an existing shard with a partially specified config: unspecified (`None`)
 //! parameters keep their persisted values, explicitly provided ones overwrite them.
 
@@ -30,6 +31,7 @@ fn vector_params() -> EdgeVectorParams {
         multivector_config: None,
         datatype: None,
         on_disk: None,
+        memory: None,
         hnsw_config: None,
     }
 }
@@ -179,6 +181,7 @@ fn reload_with_incompatible_vectors_fails() {
                 multivector_config: None,
                 datatype: None,
                 on_disk: None,
+                memory: None,
                 hnsw_config: None,
             },
         )

@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::collections::HashSet;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -32,6 +33,7 @@ pub fn run(args: CreateArgs) -> Result<()> {
                 size: *size,
                 distance,
                 on_disk: None,
+                memory: None,
                 multivector_config: None,
                 datatype: None,
                 quantization_config: None,

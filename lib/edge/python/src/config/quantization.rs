@@ -98,13 +98,18 @@ pub struct PyScalarQuantizationConfig(ScalarQuantizationConfig);
 #[pymethods]
 impl PyScalarQuantizationConfig {
     #[new]
-    #[pyo3(signature = (r#type, quantile = None, always_ram = None))]
-    pub fn new(r#type: PyScalarType, quantile: Option<f32>, always_ram: Option<bool>) -> Self {
+    #[pyo3(signature = (r#type, quantile = None, always_ram = None, memory = None))]
+    pub fn new(
+        r#type: PyScalarType,
+        quantile: Option<f32>,
+        always_ram: Option<bool>,
+        memory: Option<super::vector_data::PyMemory>,
+    ) -> Self {
         Self(ScalarQuantizationConfig {
             r#type: ScalarType::from(r#type),
             quantile,
             always_ram,
-            memory: None,
+            memory: memory.map(Memory::from),
         })
     }
 
@@ -120,7 +125,15 @@ impl PyScalarQuantizationConfig {
 
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
-        self.0.always_ram
+        #[allow(deprecated)]
+        {
+            self.0.always_ram
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
+        self.0.memory.map(super::vector_data::PyMemory::from)
     }
 
     pub fn __repr__(&self) -> String {
@@ -188,12 +201,16 @@ pub struct PyProductQuantizationConfig(ProductQuantizationConfig);
 #[pymethods]
 impl PyProductQuantizationConfig {
     #[new]
-    #[pyo3(signature = (compression, always_ram = None))]
-    pub fn new(compression: PyCompressionRatio, always_ram: Option<bool>) -> Self {
+    #[pyo3(signature = (compression, always_ram = None, memory = None))]
+    pub fn new(
+        compression: PyCompressionRatio,
+        always_ram: Option<bool>,
+        memory: Option<super::vector_data::PyMemory>,
+    ) -> Self {
         Self(ProductQuantizationConfig {
             compression: CompressionRatio::from(compression),
             always_ram,
-            memory: None,
+            memory: memory.map(Memory::from),
         })
     }
 
@@ -204,7 +221,15 @@ impl PyProductQuantizationConfig {
 
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
-        self.0.always_ram
+        #[allow(deprecated)]
+        {
+            self.0.always_ram
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
+        self.0.memory.map(super::vector_data::PyMemory::from)
     }
 
     pub fn __repr__(&self) -> String {
@@ -287,15 +312,16 @@ pub struct PyBinaryQuantizationConfig(BinaryQuantizationConfig);
 #[pymethods]
 impl PyBinaryQuantizationConfig {
     #[new]
-    #[pyo3(signature = (always_ram = None, encoding = None, query_encoding = None))]
+    #[pyo3(signature = (always_ram = None, memory = None, encoding = None, query_encoding = None))]
     pub fn new(
         always_ram: Option<bool>,
+        memory: Option<super::vector_data::PyMemory>,
         encoding: Option<PyBinaryQuantizationEncoding>,
         query_encoding: Option<PyBinaryQuantizationQueryEncoding>,
     ) -> Self {
         Self(BinaryQuantizationConfig {
             always_ram,
-            memory: None,
+            memory: memory.map(Memory::from),
             encoding: encoding.map(BinaryQuantizationEncoding::from),
             query_encoding: query_encoding.map(BinaryQuantizationQueryEncoding::from),
         })
@@ -303,7 +329,15 @@ impl PyBinaryQuantizationConfig {
 
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
-        self.0.always_ram
+        #[allow(deprecated)]
+        {
+            self.0.always_ram
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
+        self.0.memory.map(super::vector_data::PyMemory::from)
     }
 
     #[getter]
@@ -454,18 +488,30 @@ pub struct PyTurboQuantQuantizationConfig(TurboQuantQuantizationConfig);
 #[pymethods]
 impl PyTurboQuantQuantizationConfig {
     #[new]
-    #[pyo3(signature = (always_ram = None, bits = None))]
-    pub fn new(always_ram: Option<bool>, bits: Option<PyTurboQuantBitSize>) -> Self {
+    #[pyo3(signature = (always_ram = None, memory = None, bits = None))]
+    pub fn new(
+        always_ram: Option<bool>,
+        memory: Option<super::vector_data::PyMemory>,
+        bits: Option<PyTurboQuantBitSize>,
+    ) -> Self {
         Self(TurboQuantQuantizationConfig {
             always_ram,
-            memory: None,
+            memory: memory.map(Memory::from),
             bits: bits.map(TurboQuantBitSize::from),
         })
     }
 
     #[getter]
     pub fn always_ram(&self) -> Option<bool> {
-        self.0.always_ram
+        #[allow(deprecated)]
+        {
+            self.0.always_ram
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
+        self.0.memory.map(super::vector_data::PyMemory::from)
     }
 
     #[getter]

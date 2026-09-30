@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use segment::types::{HnswConfig, QuantizationConfig, VectorNameBuf};
+use segment::types::{HnswConfig, Memory, QuantizationConfig, VectorNameBuf};
 use wal::WalOptions;
 
 use crate::config::optimizers::EdgeOptimizersConfig;
@@ -22,6 +22,8 @@ use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 #[derive(Debug, Default)]
 pub struct EdgeConfigBuilder {
     on_disk_payload: Option<bool>,
+    payload_memory: Option<Memory>,
+    id_tracker_memory: Option<Memory>,
     vectors: HashMap<VectorNameBuf, EdgeVectorParams>,
     sparse_vectors: HashMap<VectorNameBuf, EdgeSparseVectorParams>,
     hnsw_config: Option<HnswConfig>,
@@ -70,8 +72,23 @@ impl EdgeConfigBuilder {
         self
     }
 
+    /// Deprecated: use [`Self::payload_memory`] instead.
+    #[deprecated(since = "1.19.0", note = "Use `payload_memory` instead")]
     pub fn on_disk_payload(mut self, on_disk_payload: bool) -> Self {
         self.on_disk_payload = Some(on_disk_payload);
+        self
+    }
+
+    /// Memory placement of the payload storage. Overrides the deprecated
+    /// `on_disk_payload` flag if both are set.
+    pub fn payload_memory(mut self, memory: Memory) -> Self {
+        self.payload_memory = Some(memory);
+        self
+    }
+
+    /// Memory placement of the point id tracker in non-appendable segments.
+    pub fn id_tracker_memory(mut self, memory: Memory) -> Self {
+        self.id_tracker_memory = Some(memory);
         self
     }
 
@@ -109,11 +126,14 @@ impl EdgeConfigBuilder {
         self
     }
 
+    #[allow(deprecated)]
     pub fn build(self) -> EdgeConfig {
         // Exhaustively destructure Self and construct EdgeConfig: adding a
         // field to either type forces a compile error here.
         let Self {
             on_disk_payload,
+            payload_memory,
+            id_tracker_memory,
             vectors,
             sparse_vectors,
             hnsw_config,
@@ -125,6 +145,8 @@ impl EdgeConfigBuilder {
         } = self;
         EdgeConfig {
             on_disk_payload,
+            payload_memory,
+            id_tracker_memory,
             vectors,
             sparse_vectors,
             hnsw_config,

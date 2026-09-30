@@ -4,7 +4,7 @@
 //! to the target struct forces a compile error here.
 
 use segment::types::{
-    Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, VectorStorageDatatype,
+    Distance, HnswConfig, Memory, MultiVectorConfig, QuantizationConfig, VectorStorageDatatype,
 };
 
 use crate::config::vectors::EdgeVectorParams;
@@ -18,6 +18,7 @@ pub struct EdgeVectorParamsBuilder {
     size: usize,
     distance: Distance,
     on_disk: Option<bool>,
+    memory: Option<Memory>,
     multivector_config: Option<MultiVectorConfig>,
     datatype: Option<VectorStorageDatatype>,
     quantization_config: Option<QuantizationConfig>,
@@ -30,6 +31,7 @@ impl EdgeVectorParamsBuilder {
             size,
             distance,
             on_disk: None,
+            memory: None,
             multivector_config: None,
             datatype: None,
             quantization_config: None,
@@ -37,9 +39,18 @@ impl EdgeVectorParamsBuilder {
         }
     }
 
+    /// Deprecated: use [`Self::memory`] instead.
     /// If `true`, vector storage is on disk (mmap); otherwise in RAM.
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub fn on_disk(mut self, on_disk: bool) -> Self {
         self.on_disk = Some(on_disk);
+        self
+    }
+
+    /// Memory placement of the original vector storage. Overrides the deprecated
+    /// `on_disk` flag if both are set.
+    pub fn memory(mut self, memory: Memory) -> Self {
+        self.memory = Some(memory);
         self
     }
 
@@ -68,6 +79,7 @@ impl EdgeVectorParamsBuilder {
         self
     }
 
+    #[allow(deprecated)]
     pub fn build(self) -> EdgeVectorParams {
         // Exhaustively destructure Self and construct EdgeVectorParams:
         // adding a field to either type forces a compile error here.
@@ -75,6 +87,7 @@ impl EdgeVectorParamsBuilder {
             size,
             distance,
             on_disk,
+            memory,
             multivector_config,
             datatype,
             quantization_config,
@@ -84,6 +97,7 @@ impl EdgeVectorParamsBuilder {
             size,
             distance,
             on_disk,
+            memory,
             multivector_config,
             datatype,
             quantization_config,

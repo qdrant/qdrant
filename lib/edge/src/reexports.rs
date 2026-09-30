@@ -34,7 +34,7 @@ mod reexports_from_qdrant_crates {
         QuantizationSearchParams, Range, RangeInterface, ScalarQuantizationConfig, ScalarType,
         ScoredPoint, SearchParams, SegmentConfig, SegmentState, Slice, SliceCondition,
         SparseVectorDataConfig, ValueVariants, ValuesCount, VectorDataConfig,
-        VectorStorageDatatype, WithPayloadInterface, WithVector,
+        VectorStorageDatatype, WithPayloadInterface, WithVector, Memory,
     };
     pub use segment::vector_storage::query::{
         ContextPair, ContextQuery, DiscoverQuery, FeedbackItem,

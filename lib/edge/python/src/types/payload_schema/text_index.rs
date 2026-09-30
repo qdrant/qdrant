@@ -11,6 +11,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use segment::data_types::index::*;
 
+use crate::config::vector_data::PyMemory;
 use crate::repr::*;
 
 #[pyclass(name = "TextIndexParams", from_py_object)]
@@ -23,7 +24,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 impl PyTextIndexParams {
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None))]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, memory = None, stemmer = None, enable_hnsw = None))]
     pub fn new(
         tokenizer: Option<PyTokenizerType>,
         min_token_len: Option<usize>,
@@ -33,6 +34,7 @@ impl PyTextIndexParams {
         phrase_matching: Option<bool>,
         stopwords: Option<PyStopwords>,
         on_disk: Option<bool>,
+        memory: Option<PyMemory>,
         stemmer: Option<PyStemmingAlgorithm>,
         enable_hnsw: Option<bool>,
     ) -> Self {
@@ -46,7 +48,7 @@ impl PyTextIndexParams {
             phrase_matching,
             stopwords: stopwords.map(StopwordsInterface::from),
             on_disk,
-            memory: None,
+            memory: memory.map(segment::types::Memory::from),
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
         })
@@ -89,7 +91,15 @@ impl PyTextIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
