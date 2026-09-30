@@ -47,8 +47,8 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
-    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the build output
-    # and temp files; toolchain and cargo home stay on C:, so installed tools remain on PATH.
+    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
+    # tests write. The target directory stays in the workspace, where rust-cache can cache it.
     - name: Set up Dev Drive
       if: matrix.os == 'windows-latest'
       uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
@@ -56,7 +56,6 @@ jobs:
         drive-size: 50GB
         trusted-dev-drive: true
         env-mapping: |
-          CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
           TMP,{{ DEV_DRIVE }}/tmp
           TEMP,{{ DEV_DRIVE }}/tmp
     - name: Create temp directory on Dev Drive
@@ -70,8 +69,6 @@ jobs:
       with:
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
         save-if: ${{ github.ref == 'refs/heads/dev' }}
-        # Follow the target directory to the Dev Drive on Windows
-        workspaces: ". -> ${{ env.CARGO_TARGET_DIR || 'target' }}"
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
@@ -110,7 +107,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: junit-${{ matrix.os }}.xml
-        path: ${{ env.CARGO_TARGET_DIR || 'target' }}/nextest/ci/junit.xml
+        path: target/nextest/ci/junit.xml
 
   # After tests are run, this hacky script will process the JUnit output of nextest
   # and will create a GH Issue if there is a test marked as flaky,
