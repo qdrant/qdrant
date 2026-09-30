@@ -40,6 +40,7 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
             unfiltered_hnsw: OperationDurationStatistics::default(),
             filtered_small_cardinality: OperationDurationStatistics::default(),
             filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_acorn: OperationDurationStatistics::default(),
             filtered_exact: OperationDurationStatistics::default(),
             filtered_sparse: Default::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
