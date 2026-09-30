@@ -77,6 +77,7 @@ mod tests {
             stemmer: None,
             ascii_folding: None,
             enable_hnsw: None,
+            scoring: None,
         }
     }
 
@@ -91,7 +92,7 @@ mod tests {
         let config = test_config();
         let hw_counter = HardwareCounterCell::new();
 
-        // `new_gridstore` reads the scoring const, so nothing records a length.
+        // `test_config` sets no `scoring`, so nothing records a length.
         {
             let mut index =
                 FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
@@ -130,6 +131,64 @@ mod tests {
             with_scoring.is_none(),
             "records without lengths must not open under scoring",
         );
+    }
+
+    /// The immutable read-only open under scoring reports an index without a
+    /// length sidecar absent: the read-only side cannot rebuild, so the field is
+    /// dropped until the writer has, rather than served without lengths.
+    /// Without scoring the same files open, and with the sidecar both do.
+    #[rstest]
+    fn immutable_without_lengths_is_absent_under_scoring(#[values(false, true)] is_on_disk: bool) {
+        use common::bitvec::BitVec;
+
+        use crate::data_types::index::TextScoringParams;
+        use crate::index::field_index::FieldIndexBuilderTrait as _;
+
+        let config = |scoring: bool| TextIndexParams {
+            scoring: scoring.then(TextScoringParams::default),
+            ..test_config()
+        };
+        let deleted = BitVec::new();
+        let hw_counter = HardwareCounterCell::new();
+        let build = |dir: &TempDir, scoring: bool| {
+            let mut builder = FullTextIndex::builder_mmap(
+                dir.path().to_path_buf(),
+                test_config(),
+                true,
+                &deleted,
+                scoring,
+            );
+            builder.init().unwrap();
+            builder
+                .add_many(0, vec!["the quick brown fox".to_string()], &hw_counter)
+                .unwrap();
+            drop(builder.finalize().unwrap());
+        };
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let open = |dir: &TempDir, scoring: bool| {
+            ReadOnlyFullTextIndex::<ReadOnly<MmapFile>>::open_immutable(
+                &fs,
+                dir.path().to_path_buf(),
+                config(scoring),
+                is_on_disk,
+                &deleted,
+            )
+            .unwrap()
+        };
+
+        let without = TempDir::with_prefix("ro_fulltext_imm_no_lengths").unwrap();
+        build(&without, false);
+        assert!(open(&without, false).is_some(), "opens without scoring");
+        assert!(
+            open(&without, true).is_none(),
+            "no sidecar under scoring must read as absent",
+        );
+
+        let with = TempDir::with_prefix("ro_fulltext_imm_lengths").unwrap();
+        build(&with, true);
+        assert!(open(&with, true).is_some(), "the sidecar serves scoring");
     }
 
     /// Build an appendable (Gridstore) full-text index on disk, then open it
