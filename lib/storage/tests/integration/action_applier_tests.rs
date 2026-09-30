@@ -4,8 +4,10 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard_trait::WaitUntil;
 use common::ambient::{AmbientContext, AmbientFutureExt};
+use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use shard::operations::{DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
@@ -142,6 +144,77 @@ fn drop_payload_index_action_replay() {
             .schema
             .contains_key(&"city".parse().unwrap())
     );
+}
+
+#[test]
+fn add_named_vector_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let config = VectorNameConfig::dense(DenseVectorConfig {
+        size: 4,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    });
+    let action = Action::AddNamedVector {
+        collection: "test".into(),
+        vector_name: "text".into(),
+        config: Box::new(config),
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let segments = local_segments(&handle, &dispatcher);
+
+    toc.apply_action(action.clone()).unwrap();
+    wait_for_local_segments(&handle, &segments, |holder| {
+        holder.iter().all(|(_, segment)| {
+            let segment = segment.get();
+            let segment = segment.read();
+            segment
+                .config()
+                .vector_data
+                .get("text")
+                .is_some_and(|config| config.size == 4 && config.distance == Distance::Dot)
+        })
+    });
+
+    // Remove only the local vector to model a persisted config with unfinished shard work
+    let delete = DeleteVectorName {
+        vector_name: "text".into(),
+    };
+    let operation = CollectionUpdateOperations::VectorNameOperation(
+        VectorNameOperations::DeleteVectorName(delete),
+    );
+    update_local_schema(&handle, &dispatcher, operation);
+    assert!(segments.read().iter().all(|(_, segment)| {
+        !segment
+            .get()
+            .read()
+            .config()
+            .vector_data
+            .contains_key("text")
+    }));
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                let segment = segment.get();
+                let segment = segment.read();
+                segment
+                    .config()
+                    .vector_data
+                    .get("text")
+                    .is_some_and(|config| config.size == 4 && config.distance == Distance::Dot)
+            })
+        });
+    }
+
+    let state = toc.collection_state("test").unwrap();
+    let params = state.config.params.vectors.get_params("text").unwrap();
+    assert_eq!(params.size.get(), 4);
+    assert_eq!(params.distance, Distance::Dot);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
