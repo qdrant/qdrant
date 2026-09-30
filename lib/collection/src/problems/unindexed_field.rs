@@ -570,6 +570,7 @@ enum FieldIndexType {
 fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
     let mut index_types = HashSet::new();
     match value {
+        PayloadFieldSchema::FieldArray(_) => unreachable!(),
         PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
             PayloadSchemaType::Keyword => index_types.insert(FieldIndexType::KeywordMatch),
             PayloadSchemaType::Integer => {

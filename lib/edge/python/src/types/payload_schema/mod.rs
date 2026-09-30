@@ -31,6 +31,7 @@ impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
 
         fn _variants(schema: PayloadFieldSchema) {
             match schema {
+                PayloadFieldSchema::FieldArray(_) => unreachable!(),
                 PayloadFieldSchema::FieldType(_) => {}
                 PayloadFieldSchema::FieldParams(_) => {}
             }

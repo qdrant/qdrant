@@ -798,6 +798,7 @@ fn assert_every_update_operation_is_mapped(op: CollectionUpdateOperations) {
             }) => match field_schema {
                 // The engine can infer the schema; the FFI always supplies one.
                 None => {}
+                Some(PayloadFieldSchema::FieldArray(_)) => unreachable!(),
                 // [`PayloadSchemaType`], all simple schema types
                 Some(PayloadFieldSchema::FieldType(t)) => match t {
                     SegmentPayloadSchemaType::Keyword => {}

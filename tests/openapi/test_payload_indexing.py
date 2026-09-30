@@ -428,3 +428,18 @@ def test_payload_schemas(collection_name):
                     "field_name": f"field_{field_no:02d}",
                 },
             )
+
+
+def test_field_schema_cannot_be_json_array(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "test_payload",
+            "field_schema": ["keyword"]
+        }
+    )
+    assert response.status_code == 422
+    assert "Validation error: `field_schema` cannot be JSON array" in response.json()["status"]["error"]

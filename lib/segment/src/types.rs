@@ -463,6 +463,7 @@ pub struct PayloadIndexInfo {
 impl PayloadIndexInfo {
     pub fn new(field_type: PayloadFieldSchema, points_count: usize) -> Self {
         match field_type {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
                 data_type,
                 params: None,
@@ -2778,6 +2779,10 @@ impl Validate for PayloadSchemaParams {
 #[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
+    // For https://github.com/qdrant/qdrant/issues/10372
+    // This option should come first, so that when using a JSON array with one element,
+    // this option is selected by serde
+    FieldArray(Vec<Value>),
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
 }
@@ -2785,6 +2790,8 @@ pub enum PayloadFieldSchema {
 impl PartialEq for PayloadFieldSchema {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::FieldArray(_), _) => unreachable!(),
+            (_, Self::FieldArray(_)) => unreachable!(),
             (Self::FieldType(this), Self::FieldType(other)) => this == other,
             (Self::FieldParams(this), Self::FieldParams(other)) => this == other,
             (Self::FieldType(this), Self::FieldParams(other)) => &this.expand() == other,
@@ -2796,6 +2803,7 @@ impl PartialEq for PayloadFieldSchema {
 impl hash::Hash for PayloadFieldSchema {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(default) => default.expand().hash(state),
             PayloadFieldSchema::FieldParams(params) => params.hash(state),
         }
@@ -2805,6 +2813,12 @@ impl hash::Hash for PayloadFieldSchema {
 impl Validate for PayloadFieldSchema {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
+            PayloadFieldSchema::FieldArray(_) => {
+                let mut errors = ValidationErrors::new();
+                let error = ValidationError::new("`field_schema` cannot be JSON array");
+                errors.add("field_schema", error);
+                Err(errors)
+            }
             PayloadFieldSchema::FieldType(_) => Ok(()), // nothing to validate
             PayloadFieldSchema::FieldParams(payload_schema_params) => {
                 payload_schema_params.validate()
@@ -2816,6 +2830,7 @@ impl Validate for PayloadFieldSchema {
 impl Display for PayloadFieldSchema {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(t) => write!(f, "{}", t.name()),
             PayloadFieldSchema::FieldParams(params) => match params {
                 PayloadSchemaParams::Float(_)
@@ -2872,6 +2887,7 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 impl PayloadFieldSchema {
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
             PayloadFieldSchema::FieldParams(p) => Cow::Borrowed(p),
         }
@@ -2880,6 +2896,7 @@ impl PayloadFieldSchema {
     /// Human-readable type name
     pub fn name(&self) -> &'static str {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(field_type) => field_type.name(),
             PayloadFieldSchema::FieldParams(field_params) => field_params.name(),
         }
@@ -2887,6 +2904,7 @@ impl PayloadFieldSchema {
 
     pub fn is_tenant(&self) -> bool {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(_) => false,
             PayloadFieldSchema::FieldParams(params) => params.tenant_optimization(),
         }
@@ -2894,6 +2912,7 @@ impl PayloadFieldSchema {
 
     pub fn is_on_disk(&self) -> bool {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(_) => false,
             PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
         }
@@ -2903,6 +2922,7 @@ impl PayloadFieldSchema {
     /// against the deprecated `on_disk` flag. Defaults to [`Memory::Pinned`].
     pub fn memory_placement(&self) -> Memory {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(_) => Memory::Pinned,
             PayloadFieldSchema::FieldParams(params) => params.memory_placement(),
         }
@@ -2910,6 +2930,7 @@ impl PayloadFieldSchema {
 
     pub fn kind(&self) -> PayloadSchemaType {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(t) => *t,
             PayloadFieldSchema::FieldParams(p) => p.kind(),
         }
@@ -2918,6 +2939,7 @@ impl PayloadFieldSchema {
     /// Check if this type supports a `match` condition
     pub fn supports_match(&self) -> bool {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
                 PayloadSchemaType::Keyword => true,
                 PayloadSchemaType::Integer => true,
@@ -2945,6 +2967,7 @@ impl PayloadFieldSchema {
 
     pub fn enable_hnsw(&self) -> bool {
         match self {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(_) => true,
             PayloadFieldSchema::FieldParams(p) => p.enable_hnsw(),
         }

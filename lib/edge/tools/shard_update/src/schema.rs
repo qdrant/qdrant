@@ -103,6 +103,7 @@ pub fn read_schema<Fs: UniversalAppendFs, F: UniversalReadFs>(
 /// params.
 fn base_schema_type(schema: &PayloadFieldSchema) -> PayloadSchemaType {
     match schema {
+        PayloadFieldSchema::FieldArray(_) => unreachable!(),
         PayloadFieldSchema::FieldType(schema_type) => *schema_type,
         PayloadFieldSchema::FieldParams(params) => match params {
             PayloadSchemaParams::Keyword(_) => PayloadSchemaType::Keyword,

@@ -515,6 +515,7 @@ pub fn internal_create_index(
     let (field_type, field_index_params) = create_index
         .field_schema
         .map(|field_schema| match field_schema {
+            PayloadFieldSchema::FieldArray(_) => unreachable!(),
             PayloadFieldSchema::FieldType(field_type) => {
                 (api::grpc::qdrant::FieldType::from(field_type) as i32, None)
             }
