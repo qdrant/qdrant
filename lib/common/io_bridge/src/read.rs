@@ -92,6 +92,14 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
         self.read_from(path, 0)
     }
 
+    /// Fetch the whole object at `path` in a single request: one response, so the bytes all
+    /// come from one version of the object. Yields the object's size and its bytes, shaped
+    /// like [`read_from`](Self::read_from)'s.
+    fn read_whole_single(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static;
+
     fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static;
 
     fn is_empty(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {

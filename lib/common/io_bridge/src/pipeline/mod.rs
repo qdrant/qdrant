@@ -20,6 +20,7 @@ use common::universal_io::{ReadPipeline, UioResult, UserData};
 
 pub(crate) use self::buffer::{
     read_from_into_byte_buffer, read_into_byte_buffer, read_whole_into_byte_buffer,
+    read_whole_into_sink,
 };
 use self::inner::PipelineInner;
 use crate::file::BlobFile;

@@ -8,7 +8,7 @@ use super::read_only::{ReadOnly, ReadOnlyFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+    ChunkSink, ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
 };
 
 impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
@@ -39,5 +39,14 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.0.read_bytes_async(range, access_pattern, align)
+    }
+
+    #[inline]
+    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        self.0.read_whole_into_async(init)
     }
 }

@@ -194,6 +194,25 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
+    /// One unbounded GET. Unlike a bounded range, it is answered with an empty body on an
+    /// empty object.
+    fn read_whole_single(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        async move {
+            let result = store
+                .get_opts(&key, GetOptions::default())
+                .await
+                .map_err(|err| map_get_err(err, &key))?;
+            let size = result.meta.size;
+            let stream = result.into_stream().map_err(UniversalIoError::s3);
+            Ok((size, io_bridge::with_running_offsets(stream)))
+        }
+    }
+
     fn read_from(
         &self,
         path: &Path,
@@ -668,6 +687,23 @@ mod tests {
         );
         let cow = file.read_whole::<u8>().expect("read_whole");
         assert_eq!(&cow[..], b"hello world");
+    }
+
+    /// A whole read is one unbounded GET, which an empty object answers with an empty body.
+    #[test]
+    fn read_whole_single_reads_whole_and_empty_objects() {
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(&runtime, &[("obj", b"0123456789"), ("empty", b"")]);
+        let source = ObjectStoreSource::new(store).with_chunk_size(4);
+        runtime.block_on(async {
+            for (key, expected) in [("obj", &b"0123456789"[..]), ("empty", &b""[..])] {
+                let (size, stream) = source.read_whole_single(Path::new(key)).await.unwrap();
+                let chunks: Vec<_> = stream.try_collect().await.unwrap();
+                let bytes: Vec<u8> = chunks.iter().flat_map(|(_, b)| b.to_vec()).collect();
+                assert_eq!(size, expected.len() as u64);
+                assert_eq!(bytes, expected);
+            }
+        });
     }
 
     #[test]

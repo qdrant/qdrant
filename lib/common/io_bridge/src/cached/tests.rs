@@ -92,6 +92,14 @@ impl AsyncRead for ThresholdMockSource {
         }
     }
 
+    fn read_whole_single(
+        &self,
+
+        path: &Path,
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+        self.read_from(path, 0)
+    }
+
     fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let result = match &*self.store.lock().unwrap() {
             Some(data) => Ok(data.len() as u64),
