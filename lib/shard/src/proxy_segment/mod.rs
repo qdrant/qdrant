@@ -5,8 +5,8 @@ pub mod snapshot_entry;
 mod tests;
 
 use std::borrow::Cow;
-use std::cmp::max;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -14,8 +14,8 @@ use common::types::PointOffsetType;
 use segment::common::operation_error::OperationResult;
 use segment::pending_changes::PendingChanges;
 pub use segment::pending_changes::{
-    DeletedPoints, IntendedVector, ProxyDeletedPoint, ProxyIndexChange, ProxyIndexChanges,
-    ProxyVectorNameChanges,
+    DeletedPoints, IntendedVector, ProxyChanges, ProxyDeletedPoint, ProxyIndexChange,
+    ProxyIndexChanges, ProxyVectorNameChanges,
 };
 use segment::types::*;
 
@@ -256,126 +256,41 @@ impl ProxySegment {
     /// - delete (or moved) points
     /// - deleted payload indexes
     /// - created payload indexes
+    /// - vector name changes
     ///
     /// Required before making the wrapped segment available in the shard holder. If the wrapped
     /// segment is thrown away, propagating is not needed.
     ///
+    /// The buffered changes are cleared once they have all been applied, so reads fall through to
+    /// the wrapped segment for them and a second call only propagates what was registered since.
+    /// If propagating fails nothing is cleared, and a retry applies everything again; that is
+    /// safe because all operations are version gated.
+    ///
     /// The pending changes log file is left in place here. `unwarp_proxy` is responsible for
     /// removing it.
     pub fn propagate_to_wrapped(&mut self) -> OperationResult<()> {
-        // Important: we must not keep a write lock on the wrapped segment for the duration of this
-        // function to prevent a deadlock. The search functions conflict with it trying to take a
-        // read lock on the wrapped segment as well while already holding the deleted points lock
-        // (or others). Careful locking management is very important here. Instead we just take an
-        // upgradable read lock, upgrading to a write lock on demand.
-        // See: <https://github.com/qdrant/qdrant/pull/4206>
-        let wrapped_segment = self.wrapped_segment.get();
-        let mut wrapped_segment = wrapped_segment.upgradable_read();
-
-        // Propagate index changes before point deletions
-        // Point deletions bump the segment version, can cause index changes to be ignored
-        // Lock ordering is important here and must match the flush function to prevent a deadlock
-        {
-            if !self.pending_changes.index_changes().is_empty() {
-                wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (field_name, change) in self.pending_changes.index_changes().iter_ordered()
-                    {
-                        debug_assert!(
-                            change.version() >= wrapped_segment.version(),
-                            "proxied index change should have newer version than segment",
-                        );
-                        match change {
-                            ProxyIndexChange::Create(schema, version) => {
-                                wrapped_segment.create_field_index(
-                                    *version,
-                                    field_name,
-                                    Some(schema),
-                                    &HardwareCounterCell::disposable(), // Internal operation
-                                )?;
-                            }
-                            ProxyIndexChange::Delete(version) => {
-                                wrapped_segment.delete_field_index(*version, field_name)?;
-                            }
-                            ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                                wrapped_segment.delete_field_index_if_incompatible(
-                                    *version, field_name, schema,
-                                )?;
-                            }
-                        }
-                    }
-                    OperationResult::Ok(())
-                })?;
-                self.pending_changes.clear_index_changes();
-            }
+        let changes = self.pending_changes.changes();
+        if changes.is_empty() {
+            return Ok(());
         }
 
-        // Propagate vector name changes (between index changes and point deletions)
-        //
-        // This artificially bumps the operation version to be at least as high as the current
-        // segment version. This way we make sure the segment does not ignore the operation.
-        // Alternatively we can interleave index, vector name and deletion changes and apply them
-        // in exactly the same order they arrive, but that requires more complex changes.
+        // Lock ordering is important here and must match the flush function to prevent a
+        // deadlock: the caller holds this proxy's write lock, the wrapped segment is locked
+        // second. The write lock on the wrapped segment is only taken for the duration of the
+        // propagation itself.
         {
-            if !self.pending_changes.vector_name_changes().is_empty() {
-                wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (vector_name, intent) in
-                        self.pending_changes.vector_name_changes().iter_ordered()
-                    {
-                        match intent {
-                            IntendedVector::Absent { version } => {
-                                let op_num = max(*version, wrapped_segment.version());
-                                wrapped_segment.delete_vector_name(op_num, vector_name)?;
-                            }
-                            IntendedVector::Present {
-                                config,
-                                version,
-                                supersedes_wrapped,
-                            } => {
-                                let op_num = max(*version, wrapped_segment.version());
-                                if *supersedes_wrapped {
-                                    // `create_vector_name_impl` is idempotent and would
-                                    // silently keep the wrapped's stale storage. Clear it
-                                    // first so the new schema actually takes effect.
-                                    wrapped_segment.delete_vector_name(op_num, vector_name)?;
-                                }
-                                wrapped_segment.create_vector_name(op_num, vector_name, config)?;
-                            }
-                        }
-                    }
-                    OperationResult::Ok(())
-                })?;
-                self.pending_changes.clear_vector_name_changes();
-            }
+            let wrapped_segment = self.wrapped_segment.get();
+            let mut wrapped_segment = wrapped_segment.write();
+            // Propagation into the wrapped segment must always run to completion
+            changes.propagate(&mut *wrapped_segment, &AtomicBool::new(false))?;
         }
 
-        // Propagate deleted points
-        // Lock ordering is important here and must match the flush function to prevent a deadlock
-        {
-            if !self.pending_changes.deleted_points().is_empty() {
-                wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (point_id, versions) in self.pending_changes.deleted_points().iter() {
-                        // Note:
-                        // Queued deletes may have an older version than what is currently in the
-                        // wrapped segment. Such deletes are ignored because the point in the
-                        // wrapped segment is considered to be newer. This is possible because
-                        // different proxy segments can share state through a common write segment.
-                        // See: <https://github.com/qdrant/qdrant/pull/7208>
-                        wrapped_segment.delete_point(
-                            versions.operation_version,
-                            *point_id,
-                            &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
-                        )?;
-                    }
-                    OperationResult::Ok(())
-                })?;
-                self.pending_changes.clear_deleted_points();
-                self.deleted_deferred_count = 0;
+        self.pending_changes.clear_changes();
+        self.deleted_deferred_count = 0;
 
-                // Note: We do not clear the deleted mask here, as it provides
-                // no performance advantage and does not affect the correctness of search.
-                // Points are still marked as deleted in two places, which is fine
-            }
-        }
+        // Note: We do not clear the deleted mask here, as it provides
+        // no performance advantage and does not affect the correctness of search.
+        // Points are still marked as deleted in two places, which is fine
 
         Ok(())
     }
@@ -384,15 +299,8 @@ impl ProxySegment {
         self.pending_changes.log_path()
     }
 
-    pub fn get_deleted_points(&self) -> &DeletedPoints {
-        self.pending_changes.deleted_points()
-    }
-
-    pub fn get_index_changes(&self) -> &ProxyIndexChanges {
-        self.pending_changes.index_changes()
-    }
-
-    pub fn get_vector_name_changes(&self) -> &ProxyVectorNameChanges {
-        self.pending_changes.vector_name_changes()
+    /// All changes buffered by this proxy, not yet propagated to the wrapped segment.
+    pub fn changes(&self) -> &ProxyChanges {
+        self.pending_changes.changes()
     }
 }
