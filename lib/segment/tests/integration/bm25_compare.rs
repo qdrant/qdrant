@@ -190,6 +190,7 @@ fn text_search(
     query_context.init_text_stats(field, terms.iter().cloned());
     fill_text_statistics(
         index,
+        &BitVec::new(),
         query_context.mut_text_stats().get_mut(field).unwrap(),
         &is_stopped,
         &hw_counter,
