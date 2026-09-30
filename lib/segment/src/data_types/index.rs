@@ -129,6 +129,27 @@ pub fn validate_integer_index_params(
     Ok(())
 }
 
+/// Reject a full-text index whose token-length window cannot match any token.
+///
+/// Indexing drops every token shorter than `min_token_len` or longer than
+/// `max_token_len`. When the minimum is greater than the maximum, that filter
+/// rejects every token and the index builds empty. Equal bounds are valid:
+/// tokens of that exact length are kept. Either bound may be unset.
+pub fn validate_text_index_params<T: PartialOrd>(
+    min_token_len: &Option<T>,
+    max_token_len: &Option<T>,
+) -> Result<(), ValidationErrors> {
+    if let (Some(min_len), Some(max_len)) = (min_token_len, max_token_len)
+        && min_len > max_len
+    {
+        let mut errors = ValidationErrors::new();
+        let error = ValidationError::new("min_token_len can't be greater than max_token_len");
+        errors.add("min_token_len", error);
+        return Err(errors);
+    }
+    Ok(())
+}
+
 // UUID
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -308,6 +329,26 @@ pub struct TextIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+}
+
+impl Validate for TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let TextIndexParams {
+            r#type: _,
+            tokenizer: _,
+            min_token_len,
+            max_token_len,
+            lowercase: _,
+            ascii_folding: _,
+            phrase_matching: _,
+            stopwords: _,
+            on_disk: _,
+            memory: _,
+            stemmer: _,
+            enable_hnsw: _,
+        } = &self;
+        validate_text_index_params(min_token_len, max_token_len)
+    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -686,6 +727,36 @@ pub struct DatetimeIndexParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_text_index_rejects_min_token_len_above_max() {
+        use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
+
+        assert!(validate_text_index_params(&Some(10usize), &Some(5usize)).is_err());
+        assert!(validate_text_index_params(&Some(5usize), &Some(5usize)).is_ok());
+        assert!(validate_text_index_params(&Some(2usize), &Some(20usize)).is_ok());
+        assert!(validate_text_index_params(&None::<usize>, &Some(5usize)).is_ok());
+        assert!(validate_text_index_params(&Some(10usize), &None::<usize>).is_ok());
+        assert!(validate_text_index_params(&None::<usize>, &None::<usize>).is_ok());
+
+        let inverted = TextIndexParams {
+            min_token_len: Some(10),
+            max_token_len: Some(5),
+            ..TextIndexParams::default()
+        };
+        assert!(inverted.validate().is_err());
+
+        // REST create-field-index validates through the payload schema.
+        let schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(inverted));
+        assert!(schema.validate().is_err());
+
+        let equal = TextIndexParams {
+            min_token_len: Some(5),
+            max_token_len: Some(5),
+            ..TextIndexParams::default()
+        };
+        assert!(equal.validate().is_ok());
+    }
 
     #[test]
     fn test_stemming_algorithm_serialization() {

@@ -1067,6 +1067,49 @@ fn integer_index_params_both_capabilities_disabled_rejected() {
 }
 
 #[test]
+fn text_index_params_inverted_token_len_rejected() {
+    use qdrant_edge_ffi::update::UpdateOperation;
+    use qdrant_edge_ffi::{PayloadIndexParams, TextIndexParams};
+
+    let text_params = |min_token_len, max_token_len| TextIndexParams {
+        tokenizer: None,
+        min_token_len,
+        max_token_len,
+        lowercase: None,
+        ascii_folding: None,
+        phrase_matching: None,
+        stopwords: None,
+        memory: None,
+        stemmer: None,
+        enable_hnsw: None,
+    };
+
+    let r = UpdateOperation::create_field_index_with_params(
+        "description".to_string(),
+        PayloadIndexParams::Text {
+            config: text_params(Some(10), Some(5)),
+        },
+    );
+    assert!(matches!(r, Err(EdgeError::InvalidArgument { .. })));
+
+    let r = UpdateOperation::create_field_index_with_params(
+        "description".to_string(),
+        PayloadIndexParams::Text {
+            config: text_params(Some(5), Some(5)),
+        },
+    );
+    assert!(r.is_ok(), "equal token lengths must convert");
+
+    let r = UpdateOperation::create_field_index_with_params(
+        "description".to_string(),
+        PayloadIndexParams::Text {
+            config: text_params(Some(2), Some(20)),
+        },
+    );
+    assert!(r.is_ok(), "min below max must convert");
+}
+
+#[test]
 fn payload_index_params_bad_field_name_rejected() {
     use qdrant_edge_ffi::update::UpdateOperation;
     use qdrant_edge_ffi::{KeywordIndexParams, PayloadIndexParams};
