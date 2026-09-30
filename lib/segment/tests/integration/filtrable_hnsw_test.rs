@@ -369,8 +369,8 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         .unwrap();
 }
 
-/// The path counters cannot tell an ACORN search from an ordinary filtered one, so ACORN gets
-/// its own. It counts a subset of the graph searches, and only while ACORN is allowed to run.
+/// A filtered graph search is counted under the algorithm it ran: ACORN searches under
+/// `filtered_acorn`, HNSW ones under `filtered_large_cardinality`, never both.
 #[test]
 fn acorn_searches_are_counted_separately() {
     let stopped = AtomicBool::new(false);
@@ -494,7 +494,11 @@ fn acorn_searches_are_counted_separately() {
 
     // Half the points match, so the search takes the graph and ACORN is within its threshold.
     let allowed = search(&[&query], allow_acorn);
-    assert_eq!(allowed, (1, 1), "an allowed ACORN search counts in both");
+    assert_eq!(
+        allowed,
+        (0, 1),
+        "an allowed ACORN search counts only as ACORN"
+    );
 
     // Same search, but no selectivity is low enough to let ACORN run.
     let refused = search(
@@ -506,25 +510,25 @@ fn acorn_searches_are_counted_separately() {
     );
     assert_eq!(
         refused,
-        (2, 1),
-        "a refused ACORN search counts only as a graph search"
+        (1, 1),
+        "a refused ACORN search counts only as HNSW"
     );
 
     let without = search(&[&query], None);
     assert_eq!(
         without,
-        (3, 1),
+        (2, 1),
         "a search that never asked for ACORN leaves it alone"
     );
 
-    // The path counters count one search per batch, and so must this one.
+    // The HNSW counter counts one search per batch, and so must the ACORN one.
     let batch: Vec<_> = (0..4)
         .map(|_| random_query(&QueryVariant::Nearest, &mut rng, dim))
         .collect();
     let batched = search(&batch.iter().collect::<Vec<_>>(), allow_acorn);
     assert_eq!(
         batched,
-        (4, 2),
+        (2, 2),
         "a batch of four vectors is one search, not four"
     );
 
@@ -533,7 +537,7 @@ fn acorn_searches_are_counted_separately() {
     let discovered = search(&[&discover], allow_acorn);
     assert_eq!(
         discovered,
-        (5, 3),
+        (2, 3),
         "discover's two graph passes are one search"
     );
 }

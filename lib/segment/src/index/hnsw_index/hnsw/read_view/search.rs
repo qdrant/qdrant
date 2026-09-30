@@ -6,7 +6,6 @@ use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
 use crate::common::operation_error::OperationResult;
-use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -16,12 +15,11 @@ use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
-use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, SearchParams};
+use crate::types::{Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
@@ -159,67 +157,15 @@ where
         }
     }
 
-    /// Whether this filtered graph search runs ACORN. Depends on the filter's selectivity, so it
-    /// is settled once per batch rather than per vector.
-    fn graph_algorithm(
-        &self,
-        filter: Option<&Filter>,
-        params: Option<&SearchParams>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<SearchAlgorithm> {
-        let acorn = params.and_then(|params| params.acorn);
-        if !acorn.is_some_and(|acorn| acorn.enable) || self.config.m0 == 0 {
-            return Ok(SearchAlgorithm::Hnsw);
-        }
-        // NOTE: technically we also might want to use ACORN for unfiltered
-        // searches for segments with a lot of deleted points. But in
-        // practice, such segments most likely to be picked by an optimizer
-        // soon.
-        let Some(filter) = filter else {
-            return Ok(SearchAlgorithm::Hnsw);
-        };
-
-        let available_vector_count = self.vector_storage.available_vector_count();
-        let selectivity = if available_vector_count == 0 {
-            1.0
-        } else {
-            let query_point_cardinality = self
-                .payload_index
-                .estimate_cardinality(filter, hw_counter)?;
-            let query_cardinality = adjust_to_available_vectors(
-                query_point_cardinality,
-                available_vector_count,
-                self.id_tracker.available_point_count(),
-            );
-            query_cardinality.exp as f64 / available_vector_count as f64
-        };
-
-        let max_selectivity = acorn
-            .and_then(|acorn| acorn.max_selectivity)
-            .map_or(ACORN_MAX_SELECTIVITY_DEFAULT, |v| *v);
-        Ok(if selectivity <= max_selectivity {
-            SearchAlgorithm::Acorn
-        } else {
-            SearchAlgorithm::Hnsw
-        })
-    }
-
     pub(super) fn search_vectors_with_graph(
         &self,
         vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        algorithm: SearchAlgorithm,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        // The choice is the same for every vector of the batch: it turns on the filter, the
-        // params and the segment, never the vector. The path timer at dispatch counts one search
-        // per batch, so this one does too.
-        let algorithm =
-            self.graph_algorithm(filter, params, &vector_query_context.hardware_counter())?;
-        let _acorn_timer = matches!(algorithm, SearchAlgorithm::Acorn)
-            .then(|| ScopeDurationMeasurer::new(&self.searches_telemetry.acorn));
-
         vectors
             .iter()
             .map(|&vector| match vector {
