@@ -61,6 +61,74 @@ fn test_var_sized_against_vec() {
     })
 }
 
+/// The length cursor yields the same ids as the value iterator, and a length
+/// equal to what the value would serialize to, for both value kinds and for
+/// lists that span chunks and remainders. Seeking lands on the same element as
+/// the value iterator's seek.
+#[test]
+fn test_len_iter_matches_values() {
+    fn check<V, G>(gen_value: G, expected_len: impl Fn(&V) -> usize)
+    where
+        V: PostingValue + PartialEq + std::fmt::Debug,
+        G: Fn(&mut StdRng, PointOffsetType) -> V,
+    {
+        check_various_lengths(|len| {
+            let rng = &mut StdRng::seed_from_u64(7);
+            let mut model = generate_data(len, rng, &gen_value);
+            model.sort_unstable_by_key(|(id, _)| *id);
+            // Duplicate ids carry different values, and which one the builder
+            // keeps is not the point here.
+            model.dedup_by_key(|(id, _)| *id);
+
+            let mut builder = PostingBuilder::new();
+            for (id, value) in model.iter().cloned() {
+                builder.add(id, value);
+            }
+            let posting_list = builder.build();
+
+            let lens: Vec<_> = posting_list.view().len_iter().collect();
+            assert_eq!(lens.len(), model.len());
+            for (elem, (id, value)) in lens.iter().zip(&model) {
+                assert_eq!(elem.id, *id);
+                assert_eq!(elem.value_len, expected_len(value));
+            }
+
+            // Seeking: every model id, an id between two model ids, and one past the end.
+            let mut len_cursor = posting_list.view().len_iter();
+            let mut value_cursor = posting_list.iter();
+            let targets = model
+                .iter()
+                .map(|(id, _)| *id)
+                .flat_map(|id| [id, id + 1])
+                .chain(std::iter::once(u32::MAX));
+            for target in targets {
+                let expected = value_cursor.advance_until_greater_or_equal(target);
+                let actual = len_cursor.advance_until_greater_or_equal(target);
+                assert_eq!(actual.map(|e| e.id), expected.as_ref().map(|e| e.id));
+                assert_eq!(
+                    actual.map(|e| e.value_len),
+                    expected.as_ref().map(|e| expected_len(&e.value)),
+                );
+                assert_eq!(len_cursor.current(), actual);
+            }
+        });
+    }
+
+    let alphanumeric = Alphanumeric;
+    check(
+        |rng, id| {
+            let len = rng.random_range(0..=20);
+            TestString(format!("{id}{}", alphanumeric.sample_string(rng, len)))
+        },
+        |value: &TestString| value.write_len(),
+    );
+    check(
+        |_rng, id| u64::from(id) * 3,
+        |_value: &u64| size_of::<u64>(),
+    );
+    check(|_rng, _id| (), |_value: &()| 0);
+}
+
 #[test]
 fn test_fixed_sized_against_vec() {
     check_various_lengths(|len| {
@@ -172,4 +240,23 @@ where
     }
 
     posting_list
+}
+
+/// Pins the contract documented on `advance_until_greater_or_equal`: after a
+/// seek, `next` yields the element the seek returned, for both iterators.
+#[test]
+fn next_after_seek_yields_the_seeked_element_again() {
+    let mut builder = PostingBuilder::new();
+    for id in [1, 4, 9, 16] {
+        builder.add(id, TestString(format!("value {id}")));
+    }
+    let posting_list = builder.build();
+
+    let mut values = posting_list.iter();
+    assert_eq!(values.advance_until_greater_or_equal(5).unwrap().id, 9);
+    assert_eq!(values.next().unwrap().id, 9);
+
+    let mut lens = posting_list.view().len_iter();
+    assert_eq!(lens.advance_until_greater_or_equal(5).unwrap().id, 9);
+    assert_eq!(lens.next().unwrap().id, 9);
 }
