@@ -234,7 +234,14 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<bool, StorageError> {
         let _collection_create_guard = self.collection_create_lock.lock().await;
+        self.delete_collection_locked(collection_name).await
+    }
 
+    /// 调用方必须持有创建锁，避免删除与并发创建写入同一路径。
+    pub(super) async fn delete_collection_locked(
+        &self,
+        collection_name: &str,
+    ) -> Result<bool, StorageError> {
         self.alias_persistence
             .write()
             .await
