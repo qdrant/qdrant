@@ -78,8 +78,9 @@ impl Bm25Params {
 }
 
 impl Bm25Query {
-    /// Fails when `params` leave the domain the MaxScore bound holds in, or
-    /// when the average length is not a finite positive number.
+    /// Fails when `params` leave the domain the MaxScore bound holds in, when
+    /// a term's `idf` is not finite and non-negative, or when the average
+    /// length is not a finite positive number.
     pub fn new(
         terms: impl IntoIterator<Item = Bm25Term>,
         params: Bm25Params,
@@ -94,6 +95,17 @@ impl Bm25Query {
             )));
         }
         let mut terms: Vec<Bm25Term> = terms.into_iter().collect();
+        // Pruning needs every bound non-negative, so that summing more terms
+        // never lowers it.
+        if let Some(term) = terms
+            .iter()
+            .find(|term| !(term.idf.is_finite() && term.idf >= 0.0))
+        {
+            return Err(OperationError::validation_error(format!(
+                "BM25 idf must be finite and non-negative, got {} for token {}",
+                term.idf, term.token_id
+            )));
+        }
         // A repeated query term counts once. BM25 has a query-frequency factor
         // in some formulations; this one, like the sparse route, does not.
         terms.sort_by_key(|term| term.token_id);
@@ -117,7 +129,7 @@ impl Bm25Query {
 
     /// Whether document lengths take part in the score at all. When they do
     /// not, the driver never asks for one.
-    fn normalizes_length(&self) -> bool {
+    pub(super) fn normalizes_length(&self) -> bool {
         self.params.b > 0.0 && self.avg_doc_len.is_some_and(|avg| avg > 0.0)
     }
 
@@ -638,6 +650,36 @@ mod tests {
         );
     }
 
+    /// A query that normalizes by length is refused by an index that records
+    /// no lengths, rather than silently scored as `b = 0`.
+    #[test]
+    fn length_normalization_requires_lengths() {
+        let hw_counter = HardwareCounterCell::new();
+        let is_stopped = AtomicBool::new(false);
+        let mut without_lengths = MutableInvertedIndex::new(true, false);
+        without_lengths
+            .index_str_tokens(0, ["alpha", "beta"], None, &hw_counter)
+            .unwrap();
+        let term = [Bm25Term {
+            token_id: 0,
+            idf: 1.0,
+        }];
+        let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
+        assert!(
+            without_lengths
+                .score_bm25(&normalized, &|_| true, 10, &is_stopped, &hw_counter)
+                .is_err()
+        );
+        let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
+        assert_eq!(
+            without_lengths
+                .score_bm25(&unnormalized, &|_| true, 10, &is_stopped, &hw_counter)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
     #[test]
     fn empty_query_and_zero_limit_return_nothing() {
         let hw_counter = HardwareCounterCell::new();
@@ -726,6 +768,13 @@ mod tests {
         }
         assert!(Bm25Query::new(term, Bm25Params::default(), Some(0.0)).is_err());
         assert!(Bm25Query::new(term, Bm25Params::default(), Some(ScoreType::NAN)).is_err());
+        for idf in [-1.0, ScoreType::NAN, ScoreType::INFINITY] {
+            let term = [Bm25Term { token_id: 0, idf }];
+            assert!(
+                Bm25Query::new(term, Bm25Params::default(), None).is_err(),
+                "idf {idf} must be rejected"
+            );
+        }
         // The edges of the domain are inside it.
         assert!(Bm25Query::new(term, Bm25Params { k1: 0.0, b: 0.0 }, None).is_ok());
         assert!(Bm25Query::new(term, Bm25Params { k1: 1.2, b: 1.0 }, Some(1.0)).is_ok());

@@ -323,6 +323,11 @@ impl InvertedIndex for MutableInvertedIndex {
             .collect();
         let mut cursors = MutableCursors::new(postings, documents, query.terms());
         let lengths = self.point_to_doc_len.as_deref();
+        if query.normalizes_length() && lengths.is_none() {
+            return Err(OperationError::service_error(
+                "text index stores no document lengths, BM25 cannot normalize by length",
+            ));
+        }
         // Deleted points are removed from these postings, so only the caller's
         // filter applies.
         score_top_k(
