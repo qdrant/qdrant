@@ -21,6 +21,7 @@ use segment::types::*;
 use serde::Serialize;
 
 use self::query_enum::*;
+use self::text::TextScoringQuery;
 use crate::search::CoreSearchRequest;
 
 /// Internal response type for a universal query request.
@@ -135,6 +136,12 @@ pub enum ScoringQuery {
     ///   1. Performs search all the way down to segments.
     ///   2. MMR gets calculated once results reach collection level.
     Mmr(MmrInternal),
+
+    /// BM25 over the text index of a payload field
+    ///
+    /// A leaf only: it scores the points of each shard against statistics
+    /// gathered over that shard, and cannot rescore prefetched points yet.
+    Text(TextScoringQuery),
 }
 
 impl ScoringQuery {
@@ -146,7 +153,8 @@ impl ScoringQuery {
             ScoringQuery::Fusion(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_) => None,
+            | ScoringQuery::Sample(_)
+            | ScoringQuery::Text(_) => None,
         }
     }
 }
@@ -181,6 +189,7 @@ pub fn query_result_order<E>(
             ScoringQuery::Sample(SampleInternal::Random) => None,
             // MMR cannot be reordered
             ScoringQuery::Mmr(_) => None,
+            ScoringQuery::Text(_) => Some(Order::LargeBetter),
         },
         None => {
             // Order by ID

@@ -845,5 +845,7 @@ fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
             // [`Sample::Random`]
             SampleInternal::Random => {}
         },
+        // Not exposed: edge does not run BM25 over a text index yet.
+        shard::query::ScoringQuery::Text(_) => {}
     }
 }
