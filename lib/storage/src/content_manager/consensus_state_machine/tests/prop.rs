@@ -683,32 +683,47 @@ fn arb_update_collection(
         proptest::option::of(arb_metadata_diff()),
     );
 
-    (arb_collection_name(collections), diffs).prop_map(|(collection_name, diffs)| {
-        let (
-            vectors,
-            hnsw_config,
-            quantization_config,
-            sparse_vectors,
-            strict_mode_config,
-            metadata,
-        ) = diffs;
+    let config_update =
+        (arb_collection_name(collections.clone()), diffs).prop_map(|(collection_name, diffs)| {
+            let (
+                vectors,
+                hnsw_config,
+                quantization_config,
+                sparse_vectors,
+                strict_mode_config,
+                metadata,
+            ) = diffs;
 
-        let update_collection = UpdateCollection {
-            vectors,
-            optimizers_config: None,
-            params: None,
-            hnsw_config,
-            quantization_config,
-            sparse_vectors,
-            strict_mode_config,
-            metadata,
-        };
+            let update_collection = UpdateCollection {
+                vectors,
+                optimizers_config: None,
+                params: None,
+                hnsw_config,
+                quantization_config,
+                sparse_vectors,
+                strict_mode_config,
+                metadata,
+            };
+            let operation = UpdateCollectionOperation::new(collection_name, update_collection)
+                .expect("valid operation");
 
-        let operation = UpdateCollectionOperation::new(collection_name, update_collection)
-            .expect("valid operation");
+            CollectionMetaOperations::UpdateCollection(operation)
+        });
 
-        CollectionMetaOperations::UpdateCollection(operation)
-    })
+    // Consensus constructs replica updates without config diffs. Combined updates retain a known
+    // legacy replay divergence when removal lands before a trailing diff.
+    let replica_update = (arb_collection_name(collections), 0..3_u32, arb_peer_id()).prop_map(
+        |(collection_name, shard_id, peer_id)| {
+            let mut operation = UpdateCollectionOperation::new_empty(collection_name);
+            operation.set_shard_replica_changes(vec![
+                collection::shards::replica_set::Change::Remove(shard_id, peer_id),
+            ]);
+
+            CollectionMetaOperations::UpdateCollection(operation)
+        },
+    );
+
+    prop_oneof![config_update, replica_update]
 }
 
 /// Name may be missing from the collection, or name a sparse vector, both of which are rejected

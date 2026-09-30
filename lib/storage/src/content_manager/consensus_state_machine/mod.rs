@@ -38,7 +38,7 @@ use collection::shards::CollectionId;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
-use segment::types::{HnswConfig, ShardKey};
+use segment::types::HnswConfig;
 
 pub use self::action::{
     Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
@@ -134,12 +134,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                // TODO: Removing replica may abort transfers and resharding, which are not implemented yet
-                if operation.has_shard_replica_changes() {
-                    ApplyOutcome::NotCovered
-                } else {
-                    ApplyOutcome::new(self.state.plan_update_collection(operation))
-                }
+                ApplyOutcome::new(self.state.plan_update_collection(&self.context, operation))
             }
 
             CollectionMetaOperations::DeleteCollection(operation) => {
@@ -155,12 +150,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::DropShardKey(operation) => {
-                // TODO: Dropping shard key may abort resharding, which are not implemented yet
-                if self.is_reshardng(&operation.collection_name, Some(&operation.shard_key)) {
-                    ApplyOutcome::NotCovered
-                } else {
-                    ApplyOutcome::new(self.state.plan_drop_shard_key(operation))
-                }
+                ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
             }
 
             CollectionMetaOperations::Resharding(collection, operation) => {
@@ -206,22 +196,6 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])
             }
         }
-    }
-
-    fn is_reshardng(&self, collection: &str, shard_key: Option<&ShardKey>) -> bool {
-        let Ok(collection_name) = self.state.resolve_collection(collection) else {
-            return false;
-        };
-
-        let Some(collection) = self.state.collection(&collection_name) else {
-            return false;
-        };
-
-        let Some(resharding) = collection.resharding.as_ref() else {
-            return false;
-        };
-
-        resharding.shard_key.as_ref() == shard_key
     }
 }
 

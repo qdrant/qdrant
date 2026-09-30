@@ -19,7 +19,8 @@ use semver::Version;
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_state_machine::{
-    Action, LocalShardInitMode, NodeContext, TransferOutcome, apply_collection_config_diffs,
+    Action, CollectionConfigDiff, LocalShardInitMode, NodeContext, TransferOutcome,
+    apply_collection_config_diffs,
 };
 use crate::content_manager::toc::apply_alias_actions;
 
@@ -128,19 +129,15 @@ impl ClusterState {
         actions
     }
 
-    pub fn plan_update_collection(&self, op: &UpdateCollectionOperation) -> StorageResult<Actions> {
-        // TODO:
-        //
-        // `shard_replica_changes` is unimplemented, because it depends on
-        // `Transfer::Abort`/`Resharding::Abort`.
-        //
-        // If `shard_replica_changes` is set, `plan_collection_meta` returns `NotCovered`
-        // instead of calling `plan_update_collection`.
-
+    pub fn plan_update_collection(
+        &self,
+        context: &NodeContext,
+        op: &UpdateCollectionOperation,
+    ) -> StorageResult<Actions> {
         let UpdateCollectionOperation {
             collection_name,
             update_collection,
-            shard_replica_changes: _,
+            shard_replica_changes,
         } = op;
 
         let collection = self.resolve_collection(collection_name)?;
@@ -171,15 +168,112 @@ impl ClusterState {
         //
         // `replay_may_diverge` in `tests/replay.rs` exempts it.
 
-        let planned = apply_collection_config_diffs(&mut config, update_collection)?
-            .into_iter()
-            .map(|diff| Action::UpdateCollectionConfig {
-                collection: collection.clone(),
-                diff: Box::new(diff),
+        let diffs = apply_collection_config_diffs(&mut config, update_collection)?;
+        let split = diffs
+            .iter()
+            .position(|diff| {
+                matches!(
+                    diff,
+                    CollectionConfigDiff::StrictMode(_) | CollectionConfigDiff::Metadata(_)
+                )
             })
-            .collect();
+            .unwrap_or(diffs.len());
+        let config_action = |diff: &CollectionConfigDiff| Action::UpdateCollectionConfig {
+            collection: collection.clone(),
+            diff: Box::new(diff.clone()),
+        };
+        let mut planned: Actions = diffs[..split].iter().map(&config_action).collect();
+
+        if let Some(changes) = shard_replica_changes {
+            planned.extend(self.plan_replica_changes(context, &collection, changes)?);
+        }
+
+        planned.extend(diffs[split..].iter().map(config_action));
 
         Ok(planned)
+    }
+
+    fn plan_replica_changes(
+        &self,
+        context: &NodeContext,
+        collection: &str,
+        changes: &[collection::shards::replica_set::Change],
+    ) -> StorageResult<Actions> {
+        let state = self.collection(collection).expect("collection exists");
+        let fixed_cancellation =
+            self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+        let mut validated = Vec::with_capacity(changes.len());
+
+        // TODO: Validate each removal against earlier removals in the same batch.
+        //
+        // Checking each removal against the initial replica set lets a batch remove
+        // the last source of truth even though every removal passes validation.
+        for change in changes {
+            let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
+            let Some(shard) = state.shards.get(&shard_id) else {
+                return Err(StorageError::bad_request(format!(
+                    "Shard {shard_id} of {collection} not found"
+                )));
+            };
+
+            if !shard.replicas.contains_key(&peer_id) {
+                return Err(StorageError::bad_request(format!(
+                    "Peer {peer_id} has no replica of shard {shard_id}"
+                )));
+            }
+
+            if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
+                return Err(StorageError::bad_request(format!(
+                    "Shard {shard_id} must have at least one active replica after removing \
+                     {peer_id}",
+                )));
+            }
+
+            let mut transfers: Vec<_> = state
+                .transfers
+                .iter()
+                .filter(|transfer| {
+                    if fixed_cancellation {
+                        transfer.is_source_or_target(peer_id, shard_id)
+                    } else {
+                        transfer.from == peer_id || transfer.to == peer_id
+                    }
+                })
+                .map(ShardTransfer::key)
+                .collect();
+            transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
+            validated.push((shard_id, peer_id, transfers));
+        }
+
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+
+        for (shard_id, peer_id, transfers) in validated {
+            for key in transfers {
+                if transfer_by_key(
+                    planned.collection(collection).expect("collection exists"),
+                    key,
+                )
+                .is_none()
+                {
+                    continue;
+                }
+
+                let abort = planned.plan_abort_transfer(context, collection.into(), key)?;
+                apply_actions(&mut planned, &abort);
+                actions.extend(abort);
+            }
+
+            let remove = Action::RemoveReplica {
+                collection: collection.into(),
+                shard_id,
+                peer_id,
+            };
+            planned.apply_action(&remove);
+            actions.push(remove);
+        }
+
+        Ok(actions)
     }
 
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {
@@ -394,7 +488,11 @@ impl ClusterState {
         Ok(actions)
     }
 
-    pub fn plan_drop_shard_key(&self, op: &DropShardKey) -> StorageResult<Actions> {
+    pub fn plan_drop_shard_key(
+        &self,
+        context: &NodeContext,
+        op: &DropShardKey,
+    ) -> StorageResult<Actions> {
         let DropShardKey {
             collection_name,
             shard_key,
@@ -415,14 +513,34 @@ impl ClusterState {
             )));
         }
 
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+
+        if let Some(resharding) = collection_state
+            .resharding
+            .as_ref()
+            .filter(|resharding| resharding.shard_key.as_ref() == Some(shard_key))
+        {
+            let abort = self.plan_abort_resharding(
+                context,
+                collection.clone(),
+                &resharding.key(),
+                true,
+                AbortReshardingScope::default(),
+            )?;
+            apply_actions(&mut planned, &abort);
+            actions.extend(abort);
+        }
+
+        let collection_state = planned.collection(&collection).expect("collection exists");
         let Some(shard_ids) = collection_state.shards_key_mapping.get(shard_key) else {
-            return Ok(Actions::new());
+            return Ok(actions);
         };
 
         let mut shard_ids: Vec<_> = shard_ids.iter().copied().collect();
         shard_ids.sort_unstable();
 
-        let mut actions = vec![
+        actions.extend([
             Action::InvalidateCleanLocalShards {
                 collection: collection.clone(),
                 shard_ids: shard_ids.clone(),
@@ -431,7 +549,7 @@ impl ClusterState {
                 collection: collection.clone(),
                 shard_key: shard_key.clone(),
             },
-        ];
+        ]);
 
         actions.extend(shard_ids.into_iter().map(|shard_id| Action::DropShard {
             collection: collection.clone(),
@@ -796,6 +914,17 @@ impl ClusterState {
                         shard_number,
                     });
                 }
+            } else if let Some(shard_key) = &key.shard_key
+                && state
+                    .shards_key_mapping
+                    .get(shard_key)
+                    .is_some_and(|shard_ids| shard_ids.contains(&key.shard_id))
+            {
+                actions.push(Action::RemoveShardFromKeyMapping {
+                    collection: collection.clone(),
+                    shard_id: key.shard_id,
+                    shard_key: shard_key.clone(),
+                });
             }
 
             if state.shards.contains_key(&key.shard_id) {
