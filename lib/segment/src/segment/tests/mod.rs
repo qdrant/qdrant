@@ -249,7 +249,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, None)
+        .take_snapshot(temp_dir.path(), &tar, format, None, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 
@@ -376,7 +376,13 @@ fn test_snapshot_streamable_without_files_wrapper() {
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
+        .take_snapshot(
+            temp_dir.path(),
+            &tar,
+            SnapshotFormat::Streamable,
+            None,
+            None,
+        )
         .unwrap();
     tar.blocking_finish().unwrap();
 

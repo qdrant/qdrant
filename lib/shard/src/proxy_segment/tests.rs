@@ -510,10 +510,10 @@ fn test_take_snapshot() {
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
     proxy_segment
-        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Regular, None)
+        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Regular, None, None)
         .unwrap();
     proxy_segment2
-        .take_snapshot(temp_dir2.path(), &tar, SnapshotFormat::Regular, None)
+        .take_snapshot(temp_dir2.path(), &tar, SnapshotFormat::Regular, None, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 
@@ -570,7 +570,13 @@ fn test_take_snapshot_includes_pending_changes_log() {
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     proxy_segment
-        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
+        .take_snapshot(
+            temp_dir.path(),
+            &tar,
+            SnapshotFormat::Streamable,
+            None,
+            None,
+        )
         .unwrap();
     tar.blocking_finish().unwrap();
 

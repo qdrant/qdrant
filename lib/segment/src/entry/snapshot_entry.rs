@@ -14,12 +14,14 @@ pub trait SnapshotEntry {
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
     /// Uses `temp_path` to prepare files to archive.
+    /// `exclude_pending_log` is a pending changes log file not to pack, if any.
     fn take_snapshot(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
+        exclude_pending_log: Option<&Path>,
     ) -> OperationResult<()>;
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest>;

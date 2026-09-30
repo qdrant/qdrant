@@ -380,7 +380,7 @@ pub fn snapshot_all_segments(
         segment_config,
         payload_index_schema,
         deferred_internal_id,
-        |segment| {
+        |segment, exclude_pending_log| {
             let read_segment = segment.read();
             let request_segment_manifest = if let Some(manifest) = manifest {
                 let segment_id = read_segment.segment_id()?;
@@ -394,7 +394,13 @@ pub fn snapshot_all_segments(
                 None
             };
             let segment_manifest_ref = request_segment_manifest.as_deref();
-            read_segment.take_snapshot(temp_dir, tar, format, segment_manifest_ref)?;
+            read_segment.take_snapshot(
+                temp_dir,
+                tar,
+                format,
+                segment_manifest_ref,
+                exclude_pending_log,
+            )?;
             Ok(())
         },
     )
@@ -407,7 +413,8 @@ pub fn snapshot_all_segments(
 /// significant amount of time.
 ///
 /// This calls function `f` on all segments, but each segment is temporarily proxified while
-/// the function is called.
+/// the function is called. `f` also receives the pending changes log path of the proxy wrapping
+/// the segment, which must not be treated as part of the frozen wrapped state.
 ///
 /// All segments are proxified at the same time on start. That ensures each wrapped (proxied)
 /// segment is kept at the same point in time. Each segment is unproxied one by one, right
@@ -435,7 +442,7 @@ pub fn proxy_all_segments_and_apply<F>(
     mut operation: F,
 ) -> OperationResult<()>
 where
-    F: FnMut(&RwLock<dyn StorageSegmentEntry>) -> OperationResult<()>,
+    F: FnMut(&RwLock<dyn StorageSegmentEntry>, Option<&Path>) -> OperationResult<()>,
 {
     let segments_lock = segments.upgradable_read();
 
@@ -464,9 +471,17 @@ where
         // Get segment to snapshot
         let op_result = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => {
-                let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                let segment = wrapped_segment.get();
-                operation(segment)
+                let (wrapped_segment, pending_changes_log) = {
+                    let proxy_segment = proxy_segment.read();
+                    (
+                        proxy_segment.wrapped_segment.clone(),
+                        proxy_segment.pending_changes_log_path().to_path_buf(),
+                    )
+                };
+                // The snapshot proxy log only holds changes made after the wrapped segment was
+                // frozen, which the WAL covers. Packing it would replay them onto the snapshot
+                // without the shared write segment holding their other half (e.g. CoW upserts).
+                operation(wrapped_segment.get(), Some(&pending_changes_log))
             }
             // All segments to snapshot should be proxy, warn if this is not the case
             LockedSegment::Original(segment) => {
@@ -475,7 +490,7 @@ where
                     "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
                 );
                 // Call provided function on segment
-                operation(segment.as_ref())
+                operation(segment.as_ref(), None)
             }
         };
 

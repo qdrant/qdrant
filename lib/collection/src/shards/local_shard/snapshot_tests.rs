@@ -433,3 +433,86 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
         "a WAL acknowledge pin must hold back the acknowledge only, not clock persistence",
     );
 }
+
+/// Changes made through a snapshot proxy are persisted to its pending changes log, inside the
+/// wrapped segment directory. That log is newer than the frozen wrapped state and must not be
+/// packed, otherwise restoring replays e.g. CoW deletes whose upserts only live in the shared
+/// write segment.
+#[test]
+fn test_snapshot_excludes_active_proxy_pending_log() {
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::pending_changes::list_pending_changes_log_files;
+    use shard::locked_segment::LockedSegment;
+    use shard::segment_holder::FlushMode;
+
+    use crate::shards::local_shard::snapshot::proxy_all_segments_and_apply;
+
+    init_test_feature_flags();
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment_1(dir.path());
+    let segment_path = segment.segment_path.clone();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(segment);
+    let holder = LockedSegmentHolder::new(holder);
+
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(snapshot_file.path()).unwrap());
+
+    let payload_schema_file = dir.path().join("payload.schema");
+    let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
+
+    proxy_all_segments_and_apply(
+        holder.clone(),
+        None,
+        segments_dir.path(),
+        None,
+        schema,
+        None,
+        |segment, exclude_pending_log| {
+            // Concurrent update while the segment is proxied, persisted to the proxy log
+            let segments = holder.read();
+            for (_, locked) in segments.iter() {
+                if let LockedSegment::Proxy(proxy) = locked {
+                    proxy
+                        .write()
+                        .delete_point(100, 1.into(), &HardwareCounterCell::new())
+                        .unwrap();
+                }
+            }
+            segments.flush_all(FlushMode::Sync, true).unwrap();
+            assert_eq!(
+                list_pending_changes_log_files(&segment_path),
+                exclude_pending_log
+                    .into_iter()
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>(),
+            );
+
+            segment.read().take_snapshot(
+                temp_dir.path(),
+                &tar,
+                SnapshotFormat::Streamable,
+                None,
+                exclude_pending_log,
+            )
+        },
+    )
+    .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let mut tar = tar::Archive::new(File::open(snapshot_file.path()).unwrap());
+    for entry in tar.entries().unwrap() {
+        let path = entry.unwrap().path().unwrap().into_owned();
+        assert!(
+            !path.to_string_lossy().contains("proxy_changes"),
+            "active proxy pending log must not be packed: {}",
+            path.display(),
+        );
+    }
+}

@@ -201,7 +201,7 @@ fn test_on_disk_segment_snapshot(
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, None)
+        .take_snapshot(temp_dir.path(), &tar, format, None, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 

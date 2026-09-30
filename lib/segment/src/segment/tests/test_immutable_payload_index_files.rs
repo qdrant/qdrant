@@ -548,7 +548,7 @@ fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types
     let tar =
         tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
     segment
-        .take_snapshot(snapshot_temp.path(), &tar, format, None)
+        .take_snapshot(snapshot_temp.path(), &tar, format, None, None)
         .unwrap();
     tar.blocking_finish().unwrap();
 

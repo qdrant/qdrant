@@ -54,6 +54,7 @@ impl SnapshotEntry for Segment {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
+        exclude_pending_log: Option<&Path>,
     ) -> OperationResult<()> {
         let segment_id = self.segment_uuid();
 
@@ -101,12 +102,12 @@ impl SnapshotEntry for Segment {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
                     let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, include_if)
+                    snapshot_files(self, temp_path, &tar, include_if, exclude_pending_log)
                 })??;
             }
             SnapshotFormat::Streamable => {
                 let tar = tar.descend(Path::new(&segment_id.to_string()))?;
-                snapshot_files(self, temp_path, &tar, include_if)?;
+                snapshot_files(self, temp_path, &tar, include_if, exclude_pending_log)?;
             }
         }
 
@@ -263,6 +264,7 @@ pub fn snapshot_files(
     temp_path: &Path,
     tar: &tar_ext::BuilderExt<impl Write + Seek>,
     include_if: impl Fn(&Path) -> bool,
+    exclude_pending_log: Option<&Path>,
 ) -> OperationResult<()> {
     // use temp_path for intermediary files
     let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
@@ -359,6 +361,9 @@ pub fn snapshot_files(
     // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
     // segment; replayed onto the segment when it is loaded on recovery
     for file in list_pending_changes_log_files(&segment.segment_path) {
+        if Some(file.as_path()) == exclude_pending_log {
+            continue;
+        }
         let stripped_path = strip_prefix(&file, &segment.segment_path)?;
         tar.blocking_append_file(&file, stripped_path)
             .map_err(|err| failed_to_add("pending changes log file", &file, err))?;
