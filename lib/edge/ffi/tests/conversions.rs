@@ -365,6 +365,7 @@ fn closed_shard_returns_shard_closed() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
@@ -372,6 +373,8 @@ fn closed_shard_returns_shard_closed() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard: Arc<EdgeShard> =

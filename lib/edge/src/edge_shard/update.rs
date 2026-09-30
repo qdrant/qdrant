@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::fmt;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -191,6 +192,7 @@ fn requested_vector_params(config: &VectorNameConfig) -> RequestedVectorParams {
             size: wrapper.dense.size,
             distance: wrapper.dense.distance,
             on_disk: None,
+            memory: None,
             multivector_config: wrapper.dense.multivector_config,
             datatype: wrapper.dense.datatype,
             quantization_config: None,
@@ -200,6 +202,7 @@ fn requested_vector_params(config: &VectorNameConfig) -> RequestedVectorParams {
             RequestedVectorParams::Sparse(EdgeSparseVectorParams {
                 full_scan_threshold: None,
                 on_disk: None,
+                memory: None,
                 modifier: wrapper.sparse.modifier,
                 datatype: wrapper.sparse.datatype,
             })

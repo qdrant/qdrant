@@ -26,6 +26,7 @@ fn make_config() -> EdgeConfig {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
@@ -33,6 +34,8 @@ fn make_config() -> EdgeConfig {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     }
 }
 
@@ -360,6 +363,7 @@ fn scalar_quantization_accepted_at_load() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: Some(QuantizationConfig::Scalar {
                     config: ScalarQuantizationParams {
                         r#type: ScalarType::Int8,
@@ -373,6 +377,8 @@ fn scalar_quantization_accepted_at_load() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Scalar quantization must be accepted");
@@ -628,6 +634,7 @@ fn product_quantization_accepted_at_load() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: Some(QuantizationConfig::Product {
                     config: ProductQuantizationParams {
                         compression: CompressionRatio::X16,
@@ -640,6 +647,8 @@ fn product_quantization_accepted_at_load() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard = EdgeShard::load(path, Some(config));
@@ -670,6 +679,7 @@ fn turbo_quantization_accepted_at_load() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: Some(QuantizationConfig::Turbo {
                     config: TurboQuantizationParams {
                         memory: Some(Memory::Pinned),
@@ -682,6 +692,8 @@ fn turbo_quantization_accepted_at_load() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard = EdgeShard::load(path, Some(config));
@@ -710,6 +722,7 @@ fn binary_quantization_accepted_at_load() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: Some(QuantizationConfig::Binary {
                     config: BinaryQuantizationParams {
                         memory: Some(Memory::Pinned),
@@ -723,6 +736,8 @@ fn binary_quantization_accepted_at_load() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Binary quantization must be accepted");
@@ -854,6 +869,7 @@ fn hnsw_config_optimize_and_search() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
@@ -868,6 +884,8 @@ fn hnsw_config_optimize_and_search() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
 
     let shard: Arc<EdgeShard> =
@@ -941,6 +959,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
             VectorDataConfig {
                 size: 4,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
@@ -948,6 +967,8 @@ fn oversized_hnsw_params_rejected_not_allocated() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
     let sane = HnswIndexConfig {
         m: 16,
@@ -1099,6 +1120,7 @@ fn config_with_distance(distance: Distance) -> EdgeConfig {
             VectorDataConfig {
                 size: 4,
                 distance,
+                memory: None,
                 quantization_config: None,
                 multivector_config: None,
                 datatype: None,
@@ -1106,6 +1128,8 @@ fn config_with_distance(distance: Distance) -> EdgeConfig {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     }
 }
 
@@ -1115,6 +1139,7 @@ fn two_field_config() -> EdgeConfig {
     let field = || VectorDataConfig {
         size: 4,
         distance: Distance::Dot,
+        memory: None,
         quantization_config: None,
         multivector_config: None,
         datatype: None,
@@ -1123,6 +1148,8 @@ fn two_field_config() -> EdgeConfig {
     EdgeConfig {
         vector_data: HashMap::from([("vec".to_string(), field()), ("vec2".to_string(), field())]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     }
 }
 
@@ -2181,6 +2208,7 @@ fn multivector_round_trips() {
             VectorDataConfig {
                 size: 2,
                 distance: Distance::Dot,
+                memory: None,
                 quantization_config: None,
                 multivector_config: Some(MultiVectorConfig {
                     comparator: MultiVectorComparator::MaxSim,
@@ -2190,6 +2218,8 @@ fn multivector_round_trips() {
             },
         )]),
         sparse_vector_data: HashMap::new(),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with multivector config failed");
@@ -2339,11 +2369,14 @@ fn sparse_vector_round_trips() {
         sparse_vector_data: HashMap::from([(
             "sp".to_string(),
             SparseVectorDataConfig {
+                memory: None,
                 full_scan_threshold: None,
                 datatype: None,
                 modifier: None,
             },
         )]),
+        payload_memory: None,
+        id_tracker_memory: None,
     };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with sparse config failed");
