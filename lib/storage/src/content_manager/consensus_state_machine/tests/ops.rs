@@ -384,18 +384,116 @@ fn update_collection_metadata_null_without_metadata() {
 #[test]
 fn update_collection_replica_changes() {
     let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
-    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, PEER_ID)]);
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
 
-    let state = cluster_state(Vec::new());
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
 
-    let mut machine = state_machine(state.clone());
+    let mut machine = state_machine(state);
     let outcome = machine.apply(&collection_meta_op(
         CollectionMetaOperations::UpdateCollection(operation),
     ));
 
-    assert!(matches!(outcome, ApplyOutcome::NotCovered));
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a replica should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::RemoveReplica {
+            peer_id: OTHER_PEER_ID,
+            ..
+        }]
+    ));
+    assert!(
+        !machine
+            .state()
+            .collection(COLLECTION)
+            .expect("collection")
+            .shards[&0]
+            .replicas
+            .contains_key(&OTHER_PEER_ID)
+    );
+}
 
-    assert_eq!(machine.state(), &state);
+#[test]
+fn update_collection_replica_change_order() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.update_collection.hnsw_config = Some(hnsw_diff(8));
+    operation.update_collection.strict_mode_config = Some(strict_mode_diff(true));
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("updating config and replicas should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::UpdateCollectionConfig {
+                diff,
+                ..
+            },
+            Action::RemoveReplica { .. },
+            Action::UpdateCollectionConfig {
+                diff: strict,
+                ..
+            },
+        ] if matches!(**diff, CollectionConfigDiff::Hnsw(_))
+            && matches!(**strict, CollectionConfigDiff::StrictMode(_))
+    ));
+}
+
+#[test]
+fn update_collection_replica_change_replay_rejects_complete() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let op = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+    let mut machine = state_machine(state);
+    machine.apply(&op);
+    let goal = machine.state().clone();
+
+    let outcome = machine.apply(&op);
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+    ));
+    assert_eq!(machine.state(), &goal);
 }
 
 #[test]
@@ -847,8 +945,23 @@ fn drop_shard_key_resharding_same_key() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_shard_key_op(shard_key));
 
-    assert!(matches!(outcome, ApplyOutcome::NotCovered));
-    assert_eq!(machine.state(), &state);
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("dropping a resharding shard key should be accepted, got {outcome:?}");
+    };
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::RemoveShardKey { .. }))
+    );
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert!(collection.resharding.is_none());
+    assert!(collection.shards_key_mapping.is_empty());
 }
 
 fn set_resharding(state: &mut ClusterState, shard_key: ShardKey, shard_id: ShardId) {
@@ -1047,6 +1160,37 @@ fn resharding_abort_up() {
     assert_eq!(collection.config.params.shard_number.get(), 1);
     assert!(!collection.shards.contains_key(&1));
     assert!(collection.resharding.is_none());
+}
+
+#[test]
+fn resharding_abort_up_removes_custom_mapping() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[0, 1]);
+    set_resharding(&mut state, shard_key.clone(), 1);
+    let key = state
+        .collection(COLLECTION)
+        .and_then(|collection| collection.resharding.as_ref())
+        .map(ReshardState::key)
+        .expect("resharding");
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("aborting custom scale-up should be accepted, got {outcome:?}");
+    };
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        Action::RemoveShardFromKeyMapping { shard_id: 1, .. }
+    )));
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.shards_key_mapping[&shard_key],
+        HashSet::from([0]),
+    );
+    assert!(!collection.shards.contains_key(&1));
 }
 
 #[test]
