@@ -1,4 +1,5 @@
 use std::cmp;
+use std::num::NonZeroU32;
 use std::sync::{Arc, LazyLock};
 
 use common::ambient::AmbientFutureExt;
@@ -30,6 +31,17 @@ pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
     LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
 impl Collection {
+    /// Persist the shard count used to load auto shards after restart
+    pub async fn set_shard_number(&self, shard_number: NonZeroU32) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        if config.params.shard_number != shard_number {
+            config.params.shard_number = shard_number;
+            config.save(&self.path)?;
+        }
+
+        Ok(())
+    }
+
     /// Updates collection params:
     /// Saves new params on disk
     ///
