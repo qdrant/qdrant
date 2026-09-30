@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use collection::operations::config_diff::HnswConfigDiff;
@@ -358,6 +359,25 @@ fn update_collection_config_action_replay() {
 
     let state = toc.collection_state("test").unwrap();
     assert_eq!(state.config.hnsw_config.m, old_m + 1);
+}
+
+#[test]
+fn set_shard_number_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let action = Action::SetShardNumber {
+        collection: "test".into(),
+        shard_number: NonZeroU32::new(2).unwrap(),
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    let state = toc.collection_state("test").unwrap();
+    assert_eq!(state.config.params.shard_number.get(), 2);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
