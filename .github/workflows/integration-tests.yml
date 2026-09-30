@@ -272,6 +272,7 @@ jobs:
           retention-days: 1
 
   e2e-tests:
+    name: e2e-tests (${{ matrix.group }})
     needs: build-e2e-image
     runs-on: ubuntu-latest
     strategy:
