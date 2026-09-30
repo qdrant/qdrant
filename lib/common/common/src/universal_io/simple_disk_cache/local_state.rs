@@ -117,13 +117,8 @@ impl LocalState {
     }
 
     /// Write `bytes` at byte `offset` of the mirror, without marking any block fetched.
-    ///
-    /// # Safety
-    /// Nothing else may access the mirror concurrently: only for filling a mirror that is
-    /// not readable yet.
-    pub(super) unsafe fn write_mmap_at(&self, offset: u64, bytes: &[u8]) -> UioResult<()> {
-        let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
-        mmap.write(offset, bytes)
+    pub(super) fn write_at(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.mmap.get_mut().write(offset, bytes)
     }
 
     /// Mark every block as fetched, once the whole file was written to the mirror.

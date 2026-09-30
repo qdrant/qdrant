@@ -6,7 +6,6 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
@@ -15,8 +14,9 @@ use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::universal_io::traits::read_whole_via_read_bytes;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError, UniversalReadAsync,
+    ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
     UniversalReadFsAsync,
 };
 
@@ -50,18 +50,20 @@ where
             },
             Populate::PreferBackground | Populate::Blocking => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
-                let len = match extra.known_len {
-                    Some(len) => len,
-                    None => remote.len::<u8>()?,
-                };
-                // An empty object has nothing to populate, and a bounded `0..0`
-                // range is rejected by the backend rather than answered with an
-                // empty body (see `AsyncRead::read_range`), so skip the fetch.
-                let local = if len > 0 {
-                    prefill_whole(&remote, &local_path, len, options).await?
+                let local = if extra.known_len == Some(0) {
+                    LocalState::new(&local_path, 0, options)?
                 } else {
-                    LocalState::new(&local_path, len, options)?
+                    // The mirror is created at the length of the file as read, which differs
+                    // from `known_len` when the file was replaced since it was observed.
+                    let mirror_path = local_path.clone();
+                    let MirrorWriter(local) = remote
+                        .read_whole_into_async(move |len| {
+                            Ok(MirrorWriter(LocalState::new(&mirror_path, len, options)?))
+                        })
+                        .await?;
+                    local
                 };
+                local.mark_fully_fetched();
                 State::ready(remote, local)
             }
             Populate::Partial(read_range) => {
@@ -100,30 +102,13 @@ where
     }
 }
 
-/// Build the mirror of a `len`-byte remote file, streaming the whole file into it: each
-/// chunk is written as it arrives, so copying overlaps the transfer.
-async fn prefill_whole<R: DiskCacheRemote>(
-    remote: &R,
-    local_path: &Path,
-    len: u64,
-    options: OpenOptions,
-) -> UioResult<LocalState> {
-    let local = Arc::new(LocalState::new(local_path, len, options)?);
-    let sink_local = Arc::clone(&local);
-    let fetched_len = remote
-        .read_whole_into_async(move |offset, bytes| {
-            // SAFETY: nothing else accesses the mirror until the open returns, and the sink
-            // is called sequentially.
-            unsafe { sink_local.write_mmap_at(offset, bytes) }
-        })
-        .await?;
-    if fetched_len != len {
-        return Err(UniversalIoError::Io(std::io::Error::other(format!(
-            "remote file changed size during prefill: expected {len} bytes, got {fetched_len}",
-        ))));
+/// Fills a fresh mirror from a whole-file read, owning it until the read completes.
+struct MirrorWriter(LocalState);
+
+impl ChunkSink for MirrorWriter {
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.0.write_at(offset, bytes)
     }
-    local.mark_fully_fetched();
-    Ok(Arc::into_inner(local).expect("the sink is dropped once the read resolves"))
 }
 
 impl<R> UniversalReadAsync for DiskCache<R>
@@ -169,5 +154,13 @@ where
                 }
             }
         }
+    }
+
+    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        read_whole_via_read_bytes(self, init)
     }
 }

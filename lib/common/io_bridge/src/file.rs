@@ -328,6 +328,14 @@ mod tests {
             }
         }
 
+        fn read_whole_single(
+            &self,
+
+            path: &Path,
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+            self.read_from(path, 0)
+        }
+
         fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
             let len = self.data.len() as u64;
             async move { Ok(len) }
@@ -480,6 +488,14 @@ mod tests {
                     futures::stream::once(async move { Ok((0, tail)) }).boxed(),
                 ))
             }
+        }
+
+        fn read_whole_single(
+            &self,
+
+            path: &Path,
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+            self.read_from(path, 0)
         }
 
         fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {

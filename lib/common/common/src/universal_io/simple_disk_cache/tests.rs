@@ -1194,9 +1194,10 @@ mod tests_async {
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
+    use crate::universal_io::traits::read_whole_via_read_bytes;
     use crate::universal_io::{
-        ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync, UniversalReadFsAsync,
-        UserData,
+        ChunkSink, ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync,
+        UniversalReadFsAsync, UserData,
     };
 
     fn sync_read_error() -> UniversalIoError {
@@ -1353,6 +1354,14 @@ mod tests_async {
             tokio::task::yield_now().await;
             self.async_reads.fetch_add(1, Ordering::Relaxed);
             self.inner.read_bytes(range, access_pattern, align)
+        }
+
+        fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+        where
+            I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+            W: ChunkSink + Send + 'static,
+        {
+            read_whole_via_read_bytes(self, init)
         }
     }
 

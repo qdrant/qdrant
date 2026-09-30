@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
-    Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
+    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenExtra as _, OpenOptions,
+    OwnedPipeline, Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
     UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::stream::{BoxStream, StreamExt};
@@ -119,6 +119,14 @@ impl AsyncRead for CountingSource {
                 futures::stream::once(async move { Ok((0, tail)) }).boxed(),
             ))
         }
+    }
+
+    fn read_whole_single(
+        &self,
+
+        path: &Path,
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+        self.read_from(path, 0)
     }
 
     fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
@@ -305,39 +313,66 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
 }
 
-#[test]
-fn disk_cache_async_prefill_streams_whole_get() {
-    let tmp = tempfile::Builder::new()
-        .prefix("uio_whole_read")
-        .tempdir()
-        .unwrap();
-
-    let source = CountingSource::new(DATA);
-    let counters = source.counters.clone();
-
-    let config = DiskCacheConfig::new(PathBuf::from("bucket"), tmp.path().to_path_buf()).unwrap();
+fn async_prefill_open(
+    source: &CountingSource,
+    local_dir: &Path,
+    known_len: Option<u64>,
+) -> impl UniversalRead {
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir.to_path_buf()).unwrap();
     let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
         config: Arc::new(config),
         remote: source.config(),
     })
     .unwrap();
-
-    let file = futures::executor::block_on(fs.open_async(
+    let mut extra =
+        <DiskCacheFs<BlobFile<CountingSource>> as UniversalReadFs>::OpenExtra::default();
+    if let Some(len) = known_len {
+        extra = extra.with_known_len(len);
+    }
+    futures::executor::block_on(fs.open_async(
         PathBuf::from("bucket/data.bin"),
         OpenOptions {
             writeable: false,
             populate: Populate::Blocking,
             ..OpenOptions::new_for_test()
         },
-        Default::default(),
+        extra,
     ))
-    .unwrap();
+    .unwrap()
+}
+
+#[test]
+fn disk_cache_async_prefill_streams_whole_get() {
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = async_prefill_open(&source, tmp.path(), None);
 
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
 
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+/// The mirror takes the length of the file as read, not the stale one the open was given.
+#[test]
+fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
+    for stale_len in [3, DATA.len() as u64 * 2] {
+        let tmp = tempfile::Builder::new()
+            .prefix("uio_whole_read")
+            .tempdir()
+            .unwrap();
+        let source = CountingSource::new(DATA);
+        let file = async_prefill_open(&source, tmp.path(), Some(stale_len));
+
+        assert_eq!(file.len::<u8>().unwrap(), DATA.len() as u64);
+        assert_eq!(&file.read_whole::<u8>().unwrap()[..], DATA);
+    }
 }
