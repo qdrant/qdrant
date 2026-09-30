@@ -31,6 +31,18 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::DropNamedVector {
+                collection,
+                vector_name,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .delete_named_vector(vector_name.clone())
+                    .await?;
+
+                Ok(())
+            }
+
             Action::SetPayloadIndex {
                 collection,
                 field_name,
@@ -88,7 +100,6 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::UpdateCollectionConfig { .. }
-            | Action::DropNamedVector { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
