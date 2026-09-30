@@ -20,6 +20,15 @@ impl ProxyIndexChanges {
         self.changes.remove(key);
     }
 
+    pub fn get(&self, key: &PayloadKeyType) -> Option<&ProxyIndexChange> {
+        self.changes.get(key)
+    }
+
+    /// Keep only the changes for which `keep` returns true.
+    pub fn retain(&mut self, mut keep: impl FnMut(&PayloadKeyType, &ProxyIndexChange) -> bool) {
+        self.changes.retain(|key, change| keep(key, change));
+    }
+
     pub fn len(&self) -> usize {
         self.changes.len()
     }
