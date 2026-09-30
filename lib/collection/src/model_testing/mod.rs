@@ -997,9 +997,7 @@ const HARNESS_UUID_ID_FRACTION: f64 = 0.5;
 #[cfg(test)]
 const HARNESS_MAX_SEGMENT_SIZE_KB: usize = 10;
 #[cfg(test)]
-// See the soak binary's `--indexing-threshold-kb`: above this, no segment of the harness ever
-// becomes non-appendable, and the immutable and on-disk payload indexes never run.
-const HARNESS_INDEXING_THRESHOLD_KB: usize = 1;
+const HARNESS_INDEXING_THRESHOLD_KB: usize = 5;
 #[cfg(test)]
 const HARNESS_SWARM_INTERVAL: usize = 2500;
 
@@ -1437,7 +1435,7 @@ mod seed_support_tests {
                 "--max-segment-size-kb",
                 "10",
                 "--indexing-threshold-kb",
-                "1",
+                "5",
                 "--restart-probability",
                 "0.002",
                 "--swarm-interval",
