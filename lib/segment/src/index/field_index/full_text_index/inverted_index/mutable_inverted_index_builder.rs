@@ -2,6 +2,7 @@ use common::types::PointOffsetType;
 
 use super::InvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
+use super::posting_list::{Posting, PostingList};
 use crate::index::field_index::full_text_index::inverted_index::{Document, TokenSet};
 
 pub struct MutableInvertedIndexBuilder {
@@ -56,19 +57,37 @@ impl MutableInvertedIndexBuilder {
     pub fn build(mut self) -> MutableInvertedIndex {
         // build postings from point_to_tokens
         // build in order to increase point id
+        let with_frequencies = self.index.stores_frequencies();
         for (idx, tokenset) in self.index.point_to_tokens.iter().enumerate() {
             if let Some(tokenset) = tokenset {
-                for token_idx in tokenset.tokens() {
+                let frequencies = with_frequencies.then(|| {
+                    let document = self
+                        .index
+                        .point_to_doc
+                        .as_ref()
+                        .and_then(|docs| docs.get(idx))
+                        .and_then(Option::as_ref);
+                    MutableInvertedIndex::term_frequencies(document, tokenset)
+                });
+                for (at, token_idx) in tokenset.tokens().iter().enumerate() {
                     if self.index.postings.len() <= *token_idx as usize {
                         self.index
                             .postings
-                            .resize_with(*token_idx as usize + 1, Default::default);
+                            .resize_with(*token_idx as usize + 1, || {
+                                PostingList::new(with_frequencies)
+                            });
                     }
+                    let tf = frequencies
+                        .as_ref()
+                        .map_or(1, |frequencies| frequencies[at]);
                     self.index
                         .postings
                         .get_mut(*token_idx as usize)
                         .expect("posting must exist")
-                        .insert(idx as PointOffsetType);
+                        .insert(Posting {
+                            id: idx as PointOffsetType,
+                            tf,
+                        });
                 }
             }
         }

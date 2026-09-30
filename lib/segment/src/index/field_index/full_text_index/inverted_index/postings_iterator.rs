@@ -180,27 +180,28 @@ mod tests {
 
     use posting_list::IdsPostingList;
 
+    use super::super::posting_list::Posting;
     use super::*;
 
     #[test]
     fn test_postings_iterator() {
         let mut p1 = PostingList::default();
-        p1.insert(1);
-        p1.insert(2);
-        p1.insert(3);
-        p1.insert(4);
-        p1.insert(5);
+        p1.insert(Posting { id: 1, tf: 1 });
+        p1.insert(Posting { id: 2, tf: 1 });
+        p1.insert(Posting { id: 3, tf: 1 });
+        p1.insert(Posting { id: 4, tf: 1 });
+        p1.insert(Posting { id: 5, tf: 1 });
         let mut p2 = PostingList::default();
-        p2.insert(2);
-        p2.insert(4);
-        p2.insert(5);
-        p2.insert(5);
+        p2.insert(Posting { id: 2, tf: 1 });
+        p2.insert(Posting { id: 4, tf: 1 });
+        p2.insert(Posting { id: 5, tf: 1 });
+        p2.insert(Posting { id: 5, tf: 1 });
         let mut p3 = PostingList::default();
-        p3.insert(1);
-        p3.insert(2);
-        p3.insert(5);
-        p3.insert(6);
-        p3.insert(7);
+        p3.insert(Posting { id: 1, tf: 1 });
+        p3.insert(Posting { id: 2, tf: 1 });
+        p3.insert(Posting { id: 5, tf: 1 });
+        p3.insert(Posting { id: 6, tf: 1 });
+        p3.insert(Posting { id: 7, tf: 1 });
 
         let postings = vec![&p1, &p2, &p3];
         let merged = intersect_postings_iterator(postings);
