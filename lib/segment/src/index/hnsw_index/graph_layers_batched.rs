@@ -440,7 +440,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
-        let mut bridges: Vec<PointOffsetType> = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut to_explore = Vec::with_capacity(hop1_limit * links_batch_size);
         let mut tail_bridges = Vec::new();
 
         let mut round = 0;
@@ -482,7 +482,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             // Same selection as in-memory: matches go to scoring, non-matches
             // go to 2-hop exploration.
             to_score.clear();
-            bridges.clear();
+            to_explore.clear();
             for links in hop1_links.chunk_by(|a, b| a.position == b.position) {
                 let mut matches = 0;
                 tail_bridges.clear();
@@ -493,25 +493,23 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                         matches += 1;
                         to_score.push(l.id);
                     } else if (l.rank as usize) < hop1_limit {
-                        bridges.push(l.id);
+                        to_explore.push(l.id);
                     } else {
                         tail_bridges.push(l.id);
                     }
                 }
-                let mut picks = evenly_spaced(&tail_bridges, hop1_tail_limit).peekable();
                 for &id in &tail_bridges {
-                    if picks.next_if_eq(&id).is_some() {
-                        bridges.push(id);
-                    } else {
-                        hop1_visited_list.unvisit(id);
-                    }
+                    hop1_visited_list.unvisit(id);
+                }
+                for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                    hop1_visited_list.check_and_update_visited(hop1);
+                    to_explore.push(hop1);
                 }
             }
-            let to_explore = arena.alloc_slice_fill_iter(bridges.iter().copied());
             if !to_explore.is_empty() {
                 unchecked_links.clear();
                 self.links
-                    .links(arena, to_explore, level, |position, links_iter| {
+                    .links(arena, &to_explore, level, |position, links_iter| {
                         let position = position as u32;
                         for hop2 in links_iter {
                             if !hop1_visited_list.check(hop2)
