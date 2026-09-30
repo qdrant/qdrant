@@ -394,6 +394,18 @@ impl ShardReplicaSet {
         }
     }
 
+    /// The local shard's segments, for the model tester to inspect their layout.
+    #[cfg(feature = "testing")]
+    pub(crate) async fn local_segments_for_test(
+        &self,
+    ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
+        use crate::shards::shard::Shard;
+        match &*self.local.read().await {
+            Some(Shard::Local(local)) => Some(local.segments()),
+            _ => None,
+        }
+    }
+
     pub fn shard_key(&self) -> Option<ShardKey> {
         self.shard_key.read().clone()
     }

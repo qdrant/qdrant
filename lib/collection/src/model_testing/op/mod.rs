@@ -7,12 +7,12 @@ use std::num::NonZeroU32;
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
 use generators::{
-    random_direction, random_distinct_ids, random_distinct_points, random_existing_ids,
-    random_flush_interval_sec, random_num, random_partial_named_vectors, random_payload,
-    random_payload_key, random_payload_keys, random_point, random_prefetch, random_query_for_name,
-    random_recommend_strategy, random_scroll_filter, random_slice, random_tag, random_update_mode,
-    random_url_prefix_probe, random_vector_name, random_vector_name_subset, random_with_payload,
-    random_with_vector, upsert_fallback,
+    random_bm25_params, random_direction, random_distinct_ids, random_distinct_points,
+    random_existing_ids, random_flush_interval_sec, random_num, random_partial_named_vectors,
+    random_payload, random_payload_key, random_payload_keys, random_point, random_prefetch,
+    random_query_for_name, random_recommend_strategy, random_scroll_filter, random_slice,
+    random_tag, random_text_query, random_update_mode, random_url_prefix_probe, random_vector_name,
+    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -252,7 +252,31 @@ pub(super) enum Op {
     /// when a restart hits, plus the worker stop/start race in `on_optimizer_config_update`.
     /// The new value is persisted to `config.json`, so it survives the run's restarts.
     SetFlushInterval(u64),
+    /// Verification op: BM25 over the text index of `t` via `ScoringQuery::Text`, the path a
+    /// text query takes through the planner, the shards and the per-source merge. Scores come
+    /// from shard-wide statistics the model does not reproduce (deleted documents stay in the
+    /// postings of immutable segments, a proxy counts twice during an optimization), so, like
+    /// the vector queries, we check invariants rather than scores: every result is live, passes
+    /// the filter and holds a query term; no id repeats; scores never increase; the size is
+    /// bounded by the limit and, when the matches fit in a limit the collection does not
+    /// undersample, is exactly the matches. Then each shard alone, where one gather serves every
+    /// segment: points with the same text score the same, whichever segment holds them, and the
+    /// shards together return every match.
+    QueryText {
+        text: String,
+        limit: usize,
+        /// Per-shard limit of the top-k check, a small cut the scorer's pruning has to get right.
+        top_k: usize,
+        k1: f32,
+        b: f32,
+        filter_num: Option<i64>,
+        filter_url_prefix: Option<String>,
+    },
 }
+
+/// `QueryText` limit meaning "every match": above any id pool the tester is normally run with.
+/// When a run's pool is larger, the exact-size check just applies less often.
+pub(super) const QUERY_TEXT_ALL: usize = 10_000;
 
 /// A single prefetch source for `QueryFusion`: a Nearest sub-query over one vector name, with its
 /// own limit and optional `num` filter.
@@ -321,7 +345,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 40;
+    const N: usize = 41;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -365,6 +389,7 @@ impl Swarm {
         "CreateSnapshot",
         "CountBySlice",
         "SetFlushInterval",
+        "QueryText",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -423,6 +448,7 @@ impl Swarm {
         // Config change: cheap in itself, but it restarts every shard's update workers, so keep
         // it rare enough that the workload isn't dominated by worker churn.
         1, // SetFlushInterval
+        4, // QueryText
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -785,6 +811,26 @@ impl Op {
                 Op::CountBySlice { total, index }
             }
             39 => Op::SetFlushInterval(random_flush_interval_sec(rng)),
+            40 => {
+                let (k1, b) = random_bm25_params(rng);
+                Op::QueryText {
+                    text: random_text_query(rng),
+                    top_k: rng.random_range(1..=10),
+                    k1,
+                    b,
+                    // Half the time a limit above the id pool, so every match comes back and the
+                    // exact-size check applies; otherwise a small one, so the top-k cut is exercised.
+                    limit: if rng.random_bool(0.5) {
+                        rng.random_range(1..=20)
+                    } else {
+                        QUERY_TEXT_ALL
+                    },
+                    filter_num: rng.random_bool(0.5).then(|| random_num(rng)),
+                    filter_url_prefix: rng
+                        .random_bool(0.5)
+                        .then(|| random_url_prefix_probe(rng).to_string()),
+                }
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -833,6 +879,7 @@ impl Op {
             Op::QueryFusion { .. } => "QueryFusion",
             Op::CreateSnapshot => "CreateSnapshot",
             Op::SetFlushInterval(_) => "SetFlushInterval",
+            Op::QueryText { .. } => "QueryText",
         }
     }
 }
