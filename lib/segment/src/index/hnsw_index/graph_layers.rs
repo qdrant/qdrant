@@ -181,8 +181,8 @@ pub trait GraphLayersBase {
         debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
 
         // Non-matches past the first `hop1_limit` links (the payload-block
-        // tail) share this budget, evenly spaced. `get_m(1)` is `m`.
-        let hop1_tail_limit = self.get_m(1);
+        // tail) share this budget, evenly spaced.
+        let hop1_tail_limit = hop1_limit;
 
         let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
         let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));

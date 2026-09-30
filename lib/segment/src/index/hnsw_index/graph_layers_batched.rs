@@ -435,7 +435,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
         let mut batch = Vec::with_capacity(links_batch_size);
         // See `GraphLayers::search_on_level_acorn`.
-        let hop1_tail_limit = self.hnsw_m.m;
+        let hop1_tail_limit = hop1_limit;
 
         let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
