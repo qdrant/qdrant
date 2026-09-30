@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use collection::operations::config_diff::HnswConfigDiff;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard_trait::WaitUntil;
@@ -11,7 +12,7 @@ use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
-use storage::content_manager::consensus_state_machine::Action;
+use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
@@ -295,6 +296,68 @@ fn drop_named_vector_action_replay() {
 
     let state = toc.collection_state("test").unwrap();
     assert!(state.config.params.vectors.get_params("text").is_none());
+}
+
+#[test]
+fn update_collection_config_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let old_m = toc.collection_state("test").unwrap().config.hnsw_config.m;
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let replica_set = handle.block_on(async {
+        let collection = toc.get_collection(&collection_pass).await.unwrap();
+        let holder = collection.shards_holder();
+        holder.read().await.get_shard(0).unwrap().clone()
+    });
+    let initial_configs = handle
+        .block_on(replica_set.local_optimizer_configs_for_test())
+        .unwrap();
+    assert!(!initial_configs.is_empty());
+    assert!(
+        initial_configs
+            .iter()
+            .all(|config| { config.dense_vectors[""].hnsw_config.m == old_m })
+    );
+    let action = Action::UpdateCollectionConfig {
+        collection: "test".into(),
+        diff: Box::new(CollectionConfigDiff::Hnsw(HnswConfigDiff {
+            m: Some(old_m + 1),
+            ..Default::default()
+        })),
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        handle.block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let configs = replica_set
+                        .local_optimizer_configs_for_test()
+                        .await
+                        .unwrap();
+                    assert_eq!(configs.len(), initial_configs.len());
+                    if configs
+                        .iter()
+                        .all(|config| config.dense_vectors[""].hnsw_config.m == old_m + 1)
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("local optimizers did not receive the updated HNSW config");
+        });
+    }
+
+    let state = toc.collection_state("test").unwrap();
+    assert_eq!(state.config.hnsw_config.m, old_m + 1);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {

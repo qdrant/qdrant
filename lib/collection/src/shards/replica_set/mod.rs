@@ -405,6 +405,25 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Config cached by each optimizer on the local shard
+    #[cfg(feature = "testing")]
+    pub async fn local_optimizer_configs_for_test(
+        &self,
+    ) -> Option<Vec<shard::optimizers::config::SegmentOptimizerConfig>> {
+        let local = self.local.read().await;
+        let Some(Shard::Local(local)) = local.as_ref() else {
+            return None;
+        };
+
+        let configs = local
+            .optimizers
+            .load()
+            .iter()
+            .map(|optimizer| optimizer.segment_optimizer_config().clone())
+            .collect();
+        Some(configs)
+    }
+
     pub fn shard_key(&self) -> Option<ShardKey> {
         self.shard_key.read().clone()
     }
