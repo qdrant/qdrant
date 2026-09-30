@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collection::operations::verification::new_unchecked_verification_pass;
-use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::shard_trait::WaitUntil;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::json_path::JsonPath;
@@ -69,6 +69,78 @@ fn set_payload_index_action_replay() {
             .schema
             .get(&"city".parse().unwrap()),
         Some(&field_schema),
+    );
+}
+
+#[test]
+fn drop_payload_index_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let field_name: JsonPath = "city".parse().unwrap();
+    let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    let segments = local_segments(&handle, &dispatcher);
+
+    toc.apply_action(Action::SetPayloadIndex {
+        collection: "test".into(),
+        field_name: field_name.clone(),
+        field_schema: field_schema.clone(),
+    })
+    .unwrap();
+    wait_for_local_segments(&handle, &segments, |holder| {
+        holder.iter().all(|(_, segment)| {
+            segment.get().read().get_indexed_fields().get(&field_name) == Some(&field_schema)
+        })
+    });
+
+    let action = Action::DropPayloadIndex {
+        collection: "test".into(),
+        field_name: "city".parse().unwrap(),
+    };
+    toc.apply_action(action.clone()).unwrap();
+    wait_for_local_segments(&handle, &segments, |holder| {
+        holder.iter().all(|(_, segment)| {
+            !segment
+                .get()
+                .read()
+                .get_indexed_fields()
+                .contains_key(&field_name)
+        })
+    });
+
+    // Restore only the local index to model metadata removal before shard cleanup
+    let index = CreateIndex {
+        field_name: field_name.clone(),
+        field_schema: Some(field_schema.clone()),
+    };
+    let operation =
+        CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(index));
+    update_local_schema(&handle, &dispatcher, operation);
+    assert!(segments.read().iter().all(|(_, segment)| {
+        segment.get().read().get_indexed_fields().get(&field_name) == Some(&field_schema)
+    }));
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                !segment
+                    .get()
+                    .read()
+                    .get_indexed_fields()
+                    .contains_key(&field_name)
+            })
+        });
+    }
+
+    let state = toc.collection_state("test").unwrap();
+    assert!(
+        !state
+            .payload_index_schema
+            .schema
+            .contains_key(&"city".parse().unwrap())
     );
 }
 
