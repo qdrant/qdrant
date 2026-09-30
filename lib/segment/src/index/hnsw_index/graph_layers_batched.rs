@@ -491,6 +491,18 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             }
 
             // Select 1-hop neighbors per candidate
+            //
+            // - first `hop1_limit` matches → `to_score`, rest matches → unvisit
+            // - head non-matches → `to_explore`
+            // - tail non-matches → `to_explore` evenly spaced, the rest → unvisit
+            //
+            //            ┌─head──┬─tail────────────────┐┌─head──┬─tail────────┐
+            //            │○ × ● ○│◌ ◌ ● ◌ ◌ ◌ ◌ ◌ ◌ ◌ ◌││● ○ ● ●│◌ ◌ ◌ ● ◌ ● ◌│
+            // to_score        ●       ●                  ●   ● ●       ●
+            // to_explore  ○     ○ ◌     ◌     ◌   ◌        ○     ◌ ◌ ◌
+            // unvisit               ◌     ◌ ◌   ◌   ◌ ◌                  ◌ ● ◌
+            //
+            // ● match  ○ head non-match  ◌ tail non-match  × visited earlier
             to_score.clear();
             to_explore.clear();
             for links in hop1_links.chunk_by(|a, b| a.source_idx == b.source_idx) {
