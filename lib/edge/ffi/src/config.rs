@@ -738,11 +738,6 @@ pub struct VectorDataConfig {
     pub size: u64,
     /// Similarity metric used for scoring.
     pub distance: Distance,
-    /// Memory placement of the original vector storage. `None`/`null` defaults
-    /// to `Cached`. `Pinned` is not supported for dense vector storage
-    /// (defensively mapped to `Cached`).
-    #[uniffi(default = None)]
-    pub memory: Option<Memory>,
     /// Optional quantization strategy. `None` keeps raw vectors.
     #[uniffi(default = None)]
     pub quantization_config: Option<QuantizationConfig>,
@@ -758,6 +753,11 @@ pub struct VectorDataConfig {
     /// recall/memory/speed trade-off. Built by [`crate::EdgeShard::optimize`].
     #[uniffi(default = None)]
     pub hnsw_config: Option<HnswIndexConfig>,
+    /// Memory placement of the original vector storage. `None`/`null` defaults
+    /// to `Cached`. `Pinned` is not supported for dense vector storage
+    /// (defensively mapped to `Cached`).
+    #[uniffi(default = None)]
+    pub memory: Option<Memory>,
 }
 
 impl From<VectorDataConfig> for SegmentVectorDataConfig {
@@ -891,17 +891,17 @@ pub struct SparseVectorDataConfig {
     /// where ANN adds overhead without recall benefit.
     #[uniffi(default = None)]
     pub full_scan_threshold: Option<u64>,
-    /// Memory placement of the sparse index. `None`/`null` defaults to
-    /// `Pinned` (in-RAM mutable index). Use `Cold` or `Cached` for an
-    /// mmap-backed index.
-    #[uniffi(default = None)]
-    pub memory: Option<Memory>,
     /// Optional storage datatype for sparse values; defaults to `Float32`.
     #[uniffi(default = None)]
     pub datatype: Option<VectorStorageDatatype>,
     /// Optional score modifier (e.g. IDF weighting).
     #[uniffi(default = None)]
     pub modifier: Option<Modifier>,
+    /// Memory placement of the sparse index. `None`/`null` defaults to
+    /// `Pinned` (in-RAM mutable index). Use `Cold` or `Cached` for an
+    /// mmap-backed index.
+    #[uniffi(default = None)]
+    pub memory: Option<Memory>,
 }
 
 impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
@@ -1230,8 +1230,9 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             // surface.
             quantization_config: global_quantization_config,
             hnsw_config: _,
-            on_disk_payload,
-            payload_memory,
+            // Resolved together via `requested_payload_memory` below.
+            on_disk_payload: _,
+            payload_memory: _,
             id_tracker_memory,
             optimizers: _,
             wal_options: _,
@@ -1244,8 +1245,9 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                 let edge::EdgeVectorParams {
                     size,
                     distance,
-                    on_disk,
-                    memory,
+                    // Resolved together via `memory_placement` below.
+                    on_disk: _,
+                    memory: _,
                     multivector_config,
                     datatype,
                     quantization_config,
@@ -1274,16 +1276,12 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                 // are fixing. The per-vector field is `None` exactly when the
                 // host requested no HNSW.
                 let hnsw = hnsw_config.map(HnswIndexConfig::from);
-                // None-preserving legacy resolution for dense vector memory.
-                let resolved_memory =
-                    SegmentMemory::resolve(*memory, on_disk.map(SegmentMemory::from_on_disk))
-                        .map(Memory::from);
                 (
                     name.clone(),
                     VectorDataConfig {
                         size: *size as u64,
                         distance: Distance::from(*distance),
-                        memory: resolved_memory,
+                        memory: p.memory_placement().map(Memory::from),
                         quantization_config: quant,
                         multivector_config: multivector_config.map(MultiVectorConfig::from),
                         datatype: datatype.map(VectorStorageDatatype::from),
@@ -1297,37 +1295,29 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             .map(|(name, p)| {
                 let edge::EdgeSparseVectorParams {
                     full_scan_threshold,
-                    on_disk,
-                    memory,
+                    // Resolved together via `memory_placement` below.
+                    on_disk: _,
+                    memory: _,
                     modifier,
                     datatype,
                 } = p;
-                let resolved_memory =
-                    SegmentMemory::resolve(*memory, on_disk.map(SegmentMemory::from_on_disk_heap))
-                        .map(Memory::from);
                 (
                     name.clone(),
                     SparseVectorDataConfig {
                         full_scan_threshold: full_scan_threshold.map(|v| v as u64),
-                        memory: resolved_memory,
+                        memory: p.memory_placement().map(Memory::from),
                         datatype: datatype.map(VectorStorageDatatype::from),
                         modifier: modifier.map(Modifier::from),
                     },
                 )
             })
             .collect();
-        // Prefer explicit payload_memory; fall back to resolving the deprecated
-        // on_disk_payload flag. Leave None when neither was set so read-back
-        // does not invent a Cold default.
-        let resolved_payload_memory = SegmentMemory::resolve(
-            *payload_memory,
-            on_disk_payload.map(SegmentMemory::from_on_disk),
-        )
-        .map(Memory::from);
         EdgeConfig {
             vector_data,
             sparse_vector_data,
-            payload_memory: resolved_payload_memory,
+            // Left unset when neither parameter was set, so read-back does not invent a
+            // `Cold` default.
+            payload_memory: c.requested_payload_memory().map(Memory::from),
             id_tracker_memory: (*id_tracker_memory).map(Memory::from),
         }
     }

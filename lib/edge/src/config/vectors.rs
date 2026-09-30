@@ -53,6 +53,13 @@ impl EdgeVectorParams {
         crate::builders::EdgeVectorParamsBuilder::new(size, distance)
     }
 
+    /// Requested memory placement of the original vector storage, resolving `memory` against
+    /// the deprecated `on_disk` flag. `None` if neither is set.
+    #[allow(deprecated)]
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk))
+    }
+
     #[allow(deprecated)]
     pub fn to_dense_vector_optimizer_config(
         &self,
@@ -140,6 +147,13 @@ impl EdgeSparseVectorParams {
     /// Start building [`EdgeSparseVectorParams`] with a fluent API.
     pub fn builder() -> crate::builders::EdgeSparseVectorParamsBuilder {
         crate::builders::EdgeSparseVectorParamsBuilder::new()
+    }
+
+    /// Requested memory placement of the sparse index, resolving `memory` against the
+    /// deprecated `on_disk` flag. `None` if neither is set.
+    #[allow(deprecated)]
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk_heap))
     }
 
     #[allow(deprecated)]

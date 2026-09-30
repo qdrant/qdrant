@@ -213,13 +213,13 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pymethods]
 impl PyKeywordIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, memory = None, enable_hnsw = None, prefix = None))]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None))]
     pub fn new(
         is_tenant: Option<bool>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         enable_hnsw: Option<bool>,
         prefix: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(KeywordIndexParams {
             r#type: Default::default(),
@@ -283,14 +283,14 @@ pub struct PyIntegerIndexParams(IntegerIndexParams);
 #[pymethods]
 impl PyIntegerIndexParams {
     #[new]
-    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, memory = None, enable_hnsw = None))]
+    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
     pub fn new(
         lookup: Option<bool>,
         range: Option<bool>,
         is_principal: Option<bool>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(IntegerIndexParams {
             r#type: Default::default(),
@@ -361,12 +361,12 @@ pub struct PyFloatIndexParams(FloatIndexParams);
 #[pymethods]
 impl PyFloatIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, memory = None, enable_hnsw = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(FloatIndexParams {
             r#type: Default::default(),
@@ -423,8 +423,8 @@ pub struct PyGeoIndexParams(GeoIndexParams);
 #[pymethods]
 impl PyGeoIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, memory = None, enable_hnsw = None))]
-    pub fn new(on_disk: Option<bool>, memory: Option<PyMemory>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None))]
+    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>, memory: Option<PyMemory>) -> Self {
         Self(GeoIndexParams {
             r#type: Default::default(),
             on_disk,
@@ -473,8 +473,8 @@ pub struct PyBoolIndexParams(BoolIndexParams);
 #[pymethods]
 impl PyBoolIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, memory = None, enable_hnsw = None))]
-    pub fn new(on_disk: Option<bool>, memory: Option<PyMemory>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None))]
+    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>, memory: Option<PyMemory>) -> Self {
         Self(BoolIndexParams {
             r#type: Default::default(),
             on_disk,
@@ -523,12 +523,12 @@ pub struct PyDatetimeIndexParams(DatetimeIndexParams);
 #[pymethods]
 impl PyDatetimeIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, memory = None, enable_hnsw = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(DatetimeIndexParams {
             r#type: Default::default(),
@@ -585,12 +585,12 @@ pub struct PyUuidIndexParams(UuidIndexParams);
 #[pymethods]
 impl PyUuidIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, memory = None, enable_hnsw = None))]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, memory = None))]
     pub fn new(
         is_tenant: Option<bool>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(UuidIndexParams {
             r#type: Default::default(),

@@ -95,21 +95,24 @@ impl EdgeConfig {
 
     /// Effective payload storage location: on-disk unless explicitly set to `false`
     /// via `on_disk_payload`, or overridden by `payload_memory`.
-    #[allow(deprecated)]
     pub fn on_disk_payload(&self) -> bool {
         self.payload_memory_placement().is_on_disk()
     }
 
-    /// Effective memory placement of the payload storage, resolving the new
-    /// `payload_memory` parameter against the deprecated `on_disk_payload` flag.
-    /// Defaults to `cold` (on-disk) when neither is set.
-    #[allow(deprecated)]
+    /// Effective memory placement of the payload storage: [`Self::requested_payload_memory`],
+    /// defaulting to `cold` (on-disk) when neither parameter is set.
     pub fn payload_memory_placement(&self) -> Memory {
+        self.requested_payload_memory().unwrap_or(Memory::Cold)
+    }
+
+    /// Requested memory placement of the payload storage, resolving `payload_memory` against
+    /// the deprecated `on_disk_payload` flag. `None` if neither is set.
+    #[allow(deprecated)]
+    pub fn requested_payload_memory(&self) -> Option<Memory> {
         Memory::resolve(
             self.payload_memory,
             self.on_disk_payload.map(Memory::from_on_disk),
         )
-        .unwrap_or(Memory::Cold)
     }
 
     /// Effective global HNSW config: [`HnswConfig::default`] unless explicitly set.
@@ -146,9 +149,18 @@ impl EdgeConfig {
             max_search_threads,
             search_pool_core,
         } = self;
+        // The legacy flag and its replacement describe one setting: take both from whichever
+        // layer specifies either, so a base `payload_memory` never overrides a provided
+        // `on_disk_payload`.
+        let (on_disk_payload, payload_memory) =
+            if on_disk_payload.is_some() || payload_memory.is_some() {
+                (on_disk_payload, payload_memory)
+            } else {
+                (base.on_disk_payload, base.payload_memory)
+            };
         Self {
-            on_disk_payload: on_disk_payload.or(base.on_disk_payload),
-            payload_memory: payload_memory.or(base.payload_memory),
+            on_disk_payload,
+            payload_memory,
             id_tracker_memory: id_tracker_memory.or(base.id_tracker_memory),
             vectors: if vectors.is_empty() {
                 base.vectors.clone()

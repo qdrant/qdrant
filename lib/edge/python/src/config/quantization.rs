@@ -10,6 +10,7 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 
+use super::vector_data::PyMemory;
 use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -103,7 +104,7 @@ impl PyScalarQuantizationConfig {
         r#type: PyScalarType,
         quantile: Option<f32>,
         always_ram: Option<bool>,
-        memory: Option<super::vector_data::PyMemory>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(ScalarQuantizationConfig {
             r#type: ScalarType::from(r#type),
@@ -132,8 +133,8 @@ impl PyScalarQuantizationConfig {
     }
 
     #[getter]
-    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
-        self.0.memory.map(super::vector_data::PyMemory::from)
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     pub fn __repr__(&self) -> String {
@@ -205,7 +206,7 @@ impl PyProductQuantizationConfig {
     pub fn new(
         compression: PyCompressionRatio,
         always_ram: Option<bool>,
-        memory: Option<super::vector_data::PyMemory>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(ProductQuantizationConfig {
             compression: CompressionRatio::from(compression),
@@ -228,8 +229,8 @@ impl PyProductQuantizationConfig {
     }
 
     #[getter]
-    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
-        self.0.memory.map(super::vector_data::PyMemory::from)
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     pub fn __repr__(&self) -> String {
@@ -312,12 +313,12 @@ pub struct PyBinaryQuantizationConfig(BinaryQuantizationConfig);
 #[pymethods]
 impl PyBinaryQuantizationConfig {
     #[new]
-    #[pyo3(signature = (always_ram = None, memory = None, encoding = None, query_encoding = None))]
+    #[pyo3(signature = (always_ram = None, encoding = None, query_encoding = None, memory = None))]
     pub fn new(
         always_ram: Option<bool>,
-        memory: Option<super::vector_data::PyMemory>,
         encoding: Option<PyBinaryQuantizationEncoding>,
         query_encoding: Option<PyBinaryQuantizationQueryEncoding>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(BinaryQuantizationConfig {
             always_ram,
@@ -336,8 +337,8 @@ impl PyBinaryQuantizationConfig {
     }
 
     #[getter]
-    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
-        self.0.memory.map(super::vector_data::PyMemory::from)
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
@@ -488,11 +489,11 @@ pub struct PyTurboQuantQuantizationConfig(TurboQuantQuantizationConfig);
 #[pymethods]
 impl PyTurboQuantQuantizationConfig {
     #[new]
-    #[pyo3(signature = (always_ram = None, memory = None, bits = None))]
+    #[pyo3(signature = (always_ram = None, bits = None, memory = None))]
     pub fn new(
         always_ram: Option<bool>,
-        memory: Option<super::vector_data::PyMemory>,
         bits: Option<PyTurboQuantBitSize>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(TurboQuantQuantizationConfig {
             always_ram,
@@ -510,8 +511,8 @@ impl PyTurboQuantQuantizationConfig {
     }
 
     #[getter]
-    pub fn memory(&self) -> Option<super::vector_data::PyMemory> {
-        self.0.memory.map(super::vector_data::PyMemory::from)
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]

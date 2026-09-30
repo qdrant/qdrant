@@ -197,16 +197,17 @@ pub struct PyHnswIndexConfig(pub HnswConfig);
 #[pymethods]
 impl PyHnswIndexConfig {
     #[new]
-    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, memory=None, payload_m=None, inline_storage=None))]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None, memory=None))]
     pub fn new(
         m: usize,
         ef_construct: usize,
         full_scan_threshold: usize,
         max_indexing_threads: usize,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         payload_m: Option<usize>,
         inline_storage: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(HnswConfig {
             m,
@@ -432,16 +433,17 @@ impl PyEdgeVectorParams {
 #[pymethods]
 impl PyEdgeVectorParams {
     #[new]
-    #[pyo3(signature = (size, distance, on_disk=None, memory=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None))]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (size, distance, on_disk=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None, memory=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         multivector_config: Option<PyMultiVectorConfig>,
         datatype: Option<PyVectorStorageDatatype>,
         quantization_config: Option<PyQuantizationConfig>,
         hnsw_config: Option<PyHnswIndexConfig>,
+        memory: Option<PyMemory>,
     ) -> Self {
         #[allow(deprecated)]
         Self(EdgeVectorParams {

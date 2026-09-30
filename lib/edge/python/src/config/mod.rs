@@ -25,7 +25,7 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, payload_memory=None, id_tracker_memory=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None, payload_memory=None, id_tracker_memory=None))]
     // Python-facing keyword arguments mirror EdgeConfig's fields one-to-one.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -34,13 +34,13 @@ impl PyEdgeConfig {
         >,
         sparse_vectors: Option<HashMap<String, PyEdgeSparseVectorParams>>,
         on_disk_payload: Option<bool>,
-        payload_memory: Option<PyMemory>,
-        id_tracker_memory: Option<PyMemory>,
         hnsw_config: Option<PyHnswIndexConfig>,
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
         max_search_threads: Option<usize>,
         search_pool_core: Option<usize>,
+        payload_memory: Option<PyMemory>,
+        id_tracker_memory: Option<PyMemory>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();

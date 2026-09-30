@@ -31,13 +31,13 @@ impl PyEdgeSparseVectorParams {
 #[pymethods]
 impl PyEdgeSparseVectorParams {
     #[new]
-    #[pyo3(signature = (full_scan_threshold=None, on_disk=None, memory=None, modifier=None, datatype=None))]
+    #[pyo3(signature = (full_scan_threshold=None, on_disk=None, modifier=None, datatype=None, memory=None))]
     pub fn new(
         full_scan_threshold: Option<usize>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         modifier: Option<PyModifier>,
         datatype: Option<PyVectorStorageDatatype>,
+        memory: Option<PyMemory>,
     ) -> Self {
         #[allow(deprecated)]
         Self(EdgeSparseVectorParams {

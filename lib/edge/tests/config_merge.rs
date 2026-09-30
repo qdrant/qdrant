@@ -5,7 +5,7 @@
 use std::num::NonZero;
 
 use edge::{Distance, EdgeConfig, EdgeOptimizersConfig, EdgeShard, EdgeVectorParams, WalOptions};
-use segment::types::HnswConfig;
+use segment::types::{HnswConfig, Memory};
 
 const VECTOR_NAME: &str = "edge-config-merge-test-vector";
 
@@ -203,4 +203,50 @@ fn unspecified_params_resolve_to_defaults_on_new_shard() {
     assert!(config.on_disk_payload());
     assert_eq!(config.hnsw_config(), HnswConfig::default());
     assert_eq!(config.optimizers(), EdgeOptimizersConfig::default());
+}
+
+/// The legacy `on_disk_payload` flag still takes effect on reload, even though the persisted and
+/// derived configs carry the `payload_memory` replacement.
+#[test]
+fn reload_with_legacy_on_disk_payload_overrides_persisted_payload_memory() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-config-merge-legacy-payload")
+        .tempdir()
+        .unwrap();
+
+    drop(EdgeShard::new(dir.path(), full_config()).unwrap());
+    // Re-deriving the config from the segments persists `payload_memory` alongside the flag.
+    fs_err::remove_file(dir.path().join("edge_config.json")).unwrap();
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.config().payload_memory, Some(Memory::Cached));
+    drop(shard);
+
+    let provided = EdgeConfig::builder()
+        .vector(VECTOR_NAME, vector_params())
+        .on_disk_payload(true)
+        .build();
+    let shard = EdgeShard::load(dir.path(), Some(provided)).unwrap();
+    let config = shard.config().clone();
+    assert_eq!(config.on_disk_payload, Some(true));
+    assert_eq!(config.payload_memory, None);
+    assert!(config.on_disk_payload());
+}
+
+#[test]
+fn reload_with_payload_memory_overrides_persisted_on_disk_payload() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-config-merge-payload-memory")
+        .tempdir()
+        .unwrap();
+
+    drop(EdgeShard::new(dir.path(), full_config()).unwrap());
+
+    let provided = EdgeConfig::builder()
+        .vector(VECTOR_NAME, vector_params())
+        .payload_memory(Memory::Cold)
+        .build();
+    let shard = EdgeShard::load(dir.path(), Some(provided)).unwrap();
+    let config = shard.config().clone();
+    assert_eq!(config.on_disk_payload, None);
+    assert_eq!(config.payload_memory_placement(), Memory::Cold);
 }

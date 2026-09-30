@@ -24,7 +24,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 impl PyTextIndexParams {
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, memory = None, stemmer = None, enable_hnsw = None))]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None))]
     pub fn new(
         tokenizer: Option<PyTokenizerType>,
         min_token_len: Option<usize>,
@@ -34,9 +34,9 @@ impl PyTextIndexParams {
         phrase_matching: Option<bool>,
         stopwords: Option<PyStopwords>,
         on_disk: Option<bool>,
-        memory: Option<PyMemory>,
         stemmer: Option<PyStemmingAlgorithm>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(TextIndexParams {
             r#type: Default::default(),
