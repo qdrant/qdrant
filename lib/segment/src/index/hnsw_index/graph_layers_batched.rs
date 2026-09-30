@@ -437,6 +437,14 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         // See `GraphLayers::search_on_level_acorn`.
         let hop1_tail_limit = hop1_limit;
 
+        #[derive(Clone, Copy)]
+        struct Hop1Link {
+            id: PointOffsetType,
+            source_idx: u32,
+            dest_idx: u32,
+            is_match: bool,
+        }
+
         let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
@@ -451,17 +459,21 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
             arena.reset();
             hop1_links.clear();
+            unchecked_links.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
             self.links
-                .links(arena, &batch, level, |position, links_iter| {
-                    let position = position as u32;
-                    for (rank, hop1) in links_iter.enumerate() {
+                .links(arena, &batch, level, |source_idx, links_iter| {
+                    for (dest_idx, hop1) in links_iter.enumerate() {
                         if !hop1_visited_list.check_and_update_visited(hop1) {
+                            unchecked_links.push(Link {
+                                id: hop1,
+                                position: hop1_links.len() as u32,
+                            });
                             hop1_links.push(Hop1Link {
                                 id: hop1,
-                                position,
-                                rank: rank as u32,
+                                source_idx: source_idx as u32,
+                                dest_idx: dest_idx as u32,
                                 is_match: false,
                             });
                         }
@@ -470,20 +482,18 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
             // Split 1-hop neighbors into matches and non-matches.
             let n = points_scorer.filters().check_batched(
-                &mut hop1_links,
+                &mut unchecked_links,
                 Select::Matches,
-                Rest::Keep,
+                Rest::Discard,
             )?;
-            hop1_links[..n].iter_mut().for_each(|l| l.is_match = true);
-            // The partition is unstable: restore adjacency list order, so the
-            // limits below keep the same links as the in-memory path.
-            hop1_links.sort_unstable_by_key(|l| (l.position, l.rank));
+            for link in &unchecked_links[..n] {
+                hop1_links[link.position as usize].is_match = true;
+            }
 
-            // Same selection as in-memory: matches go to scoring, non-matches
-            // go to 2-hop exploration.
+            // Select 1-hop neighbors per candidate
             to_score.clear();
             to_explore.clear();
-            for links in hop1_links.chunk_by(|a, b| a.position == b.position) {
+            for links in hop1_links.chunk_by(|a, b| a.source_idx == b.source_idx) {
                 let mut matches = 0;
                 tail_bridges.clear();
                 for l in links {
@@ -492,7 +502,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     } else if l.is_match {
                         matches += 1;
                         to_score.push(l.id);
-                    } else if (l.rank as usize) < hop1_limit {
+                    } else if (l.dest_idx as usize) < hop1_limit {
                         to_explore.push(l.id);
                     } else {
                         tail_bridges.push(l.id);
@@ -506,6 +516,8 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     to_explore.push(hop1);
                 }
             }
+
+            // Collect 2-hop neighbors (neighbors of neighbors)
             if !to_explore.is_empty() {
                 unchecked_links.clear();
                 self.links
@@ -552,21 +564,6 @@ struct Link {
 }
 
 impl CheckItem for Link {
-    fn point_id(self) -> PointOffsetType {
-        self.id
-    }
-}
-
-/// A 1-hop link of `batch[position]`, `rank`-th in its adjacency list.
-#[derive(Clone, Copy, Debug)]
-struct Hop1Link {
-    id: PointOffsetType,
-    position: u32,
-    rank: u32,
-    is_match: bool,
-}
-
-impl CheckItem for Hop1Link {
     fn point_id(self) -> PointOffsetType {
         self.id
     }
