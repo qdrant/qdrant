@@ -632,30 +632,14 @@ fn create_shard_key() {
 
     assert_eq!(
         actions,
-        vec![
-            Action::CreateShard {
-                collection: COLLECTION.into(),
-                shard_id: 5,
-                shard_key: Some(shard_key.clone()),
-                replicas: placement[0].clone(),
-                init_state: ReplicaState::Partial,
-            },
-            Action::CreateShard {
-                collection: COLLECTION.into(),
-                shard_id: 6,
-                shard_key: Some(shard_key.clone()),
-                replicas: placement[1].clone(),
-                init_state: ReplicaState::Partial,
-            },
-            Action::RegisterShards {
-                collection: COLLECTION.into(),
-                shard_key: Some(shard_key.clone()),
-                shards: vec![
-                    (5, placement[0].clone(), ReplicaState::Partial),
-                    (6, placement[1].clone(), ReplicaState::Partial),
-                ],
-            },
-        ],
+        vec![Action::CreateAndRegisterShards {
+            collection: COLLECTION.into(),
+            shard_key: Some(shard_key.clone()),
+            shards: vec![
+                (5, placement[0].clone(), ReplicaState::Partial),
+                (6, placement[1].clone(), ReplicaState::Partial),
+            ],
+        },],
     );
 
     let collection = machine
@@ -711,12 +695,8 @@ fn create_shard_key_default_initial_state() {
             matches!(
                 actions.as_slice(),
                 [
-                    Action::CreateShard {
-                        init_state,
-                        ..
-                    },
-                    Action::RegisterShards { .. },
-                ] if *init_state == expected
+                    Action::CreateAndRegisterShards { shards, .. },
+                ] if shards.as_slice() == [(1, vec![PEER_ID], expected)]
             ),
             "wrong initial state for distributed={is_distributed}, version={version}: {actions:?}"
         );
@@ -995,8 +975,7 @@ fn resharding_start_up() {
     assert!(matches!(
         actions.as_slice(),
         [
-            Action::CreateShard { .. },
-            Action::RegisterShards { .. },
+            Action::CreateAndRegisterShards { .. },
             Action::SetReshardingState { .. },
             Action::SetShardNumber { .. },
         ]
