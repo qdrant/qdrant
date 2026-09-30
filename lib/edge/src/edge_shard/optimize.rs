@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -952,6 +953,8 @@ mod tests {
     fn test_config() -> EdgeConfig {
         EdgeConfig {
             on_disk_payload: Some(false),
+            payload_memory: None,
+            id_tracker_memory: None,
             vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),
                 EdgeVectorParams {
@@ -961,6 +964,7 @@ mod tests {
                     multivector_config: None,
                     datatype: None,
                     on_disk: None,
+                    memory: None,
                     hnsw_config: None,
                 },
             )]),
@@ -986,6 +990,7 @@ mod tests {
             multivector_config: None,
             datatype: None,
             on_disk: None,
+            memory: None,
             hnsw_config: None,
         };
         EdgeConfig {

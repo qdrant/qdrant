@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use derive_more::Into;
 use edge::EdgeConfig;
 use pyo3::prelude::*;
-use segment::types::{QuantizationConfig, VectorNameBuf};
+use segment::types::{Memory, QuantizationConfig, VectorNameBuf};
 
 pub use self::optimizers::*;
 pub use self::quantization::*;
@@ -25,7 +25,7 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None, payload_memory=None, id_tracker_memory=None))]
     // Python-facing keyword arguments mirror EdgeConfig's fields one-to-one.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -39,6 +39,8 @@ impl PyEdgeConfig {
         optimizers: Option<PyEdgeOptimizersConfig>,
         max_search_threads: Option<usize>,
         search_pool_core: Option<usize>,
+        payload_memory: Option<PyMemory>,
+        id_tracker_memory: Option<PyMemory>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();
@@ -51,8 +53,11 @@ impl PyEdgeConfig {
         let sparse_vectors = PyEdgeSparseVectorParams::peel_map(sparse_vectors);
         let vectors: HashMap<VectorNameBuf, _> = vectors.into_iter().collect();
         let sparse_vectors: HashMap<VectorNameBuf, _> = sparse_vectors.into_iter().collect();
+        #[allow(deprecated)]
         Ok(Self(EdgeConfig {
             on_disk_payload,
+            payload_memory: payload_memory.map(Memory::from),
+            id_tracker_memory: id_tracker_memory.map(Memory::from),
             vectors,
             sparse_vectors,
             hnsw_config: hnsw_config.map(|h| h.0),
@@ -76,7 +81,20 @@ impl PyEdgeConfig {
 
     #[getter]
     pub fn on_disk_payload(&self) -> Option<bool> {
-        self.0.on_disk_payload
+        #[allow(deprecated)]
+        {
+            self.0.on_disk_payload
+        }
+    }
+
+    #[getter]
+    pub fn payload_memory(&self) -> Option<PyMemory> {
+        self.0.payload_memory.map(PyMemory::from)
+    }
+
+    #[getter]
+    pub fn id_tracker_memory(&self) -> Option<PyMemory> {
+        self.0.id_tracker_memory.map(PyMemory::from)
     }
 
     #[getter]
@@ -111,8 +129,11 @@ impl PyEdgeConfig {
 
 impl PyEdgeConfig {
     fn _getters(self) {
+        #[allow(deprecated)]
         let EdgeConfig {
             on_disk_payload: _,
+            payload_memory: _,
+            id_tracker_memory: _,
             vectors: _,
             sparse_vectors: _,
             hnsw_config: _,

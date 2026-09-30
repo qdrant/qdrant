@@ -11,9 +11,9 @@ use examples::TMP_DIR;
 use qdrant_edge::bm25_embed::{EdgeBm25, EdgeBm25Config};
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
-    EdgeConfig, EdgeShard, EdgeSparseVectorParams, Modifier, NamedQuery, PointInsertOperations,
-    PointOperations, PointStruct, QueryEnum, QueryRequestBuilder, ScoringQuery, UpdateOperation,
-    VectorInternal, Vectors, WithPayloadInterface,
+    EdgeConfig, EdgeShard, EdgeSparseVectorParams, Memory, Modifier, NamedQuery,
+    PointInsertOperations, PointOperations, PointStruct, QueryEnum, QueryRequestBuilder,
+    ScoringQuery, UpdateOperation, VectorInternal, Vectors, WithPayloadInterface,
 };
 
 const SPARSE_VECTOR_NAME: &str = "text";
@@ -30,6 +30,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             SPARSE_VECTOR_NAME.to_string(),
             EdgeSparseVectorParams {
                 modifier: Some(Modifier::Idf),
+                // Keep the sparse index on the heap for fast lookups.
+                memory: Some(Memory::Pinned),
                 ..Default::default()
             },
         )]),

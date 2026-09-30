@@ -4,7 +4,7 @@ use std::fmt;
 use edge::EdgeSparseVectorParams;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
-use segment::types::VectorStorageDatatype;
+use segment::types::{Memory, VectorStorageDatatype};
 
 use super::vector_data::*;
 use crate::repr::*;
@@ -31,16 +31,19 @@ impl PyEdgeSparseVectorParams {
 #[pymethods]
 impl PyEdgeSparseVectorParams {
     #[new]
-    #[pyo3(signature = (full_scan_threshold=None, on_disk=None, modifier=None, datatype=None))]
+    #[pyo3(signature = (full_scan_threshold=None, on_disk=None, modifier=None, datatype=None, memory=None))]
     pub fn new(
         full_scan_threshold: Option<usize>,
         on_disk: Option<bool>,
         modifier: Option<PyModifier>,
         datatype: Option<PyVectorStorageDatatype>,
+        memory: Option<PyMemory>,
     ) -> Self {
+        #[allow(deprecated)]
         Self(EdgeSparseVectorParams {
             full_scan_threshold,
             on_disk,
+            memory: memory.map(Memory::from),
             modifier: modifier.map(Modifier::from),
             datatype: datatype.map(VectorStorageDatatype::from),
         })
@@ -53,7 +56,15 @@ impl PyEdgeSparseVectorParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]

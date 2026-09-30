@@ -6,7 +6,7 @@ import os, shutil
 from pathlib import Path
 
 from qdrant_edge import (
-    EdgeShard, EdgeConfig, EdgeSparseVectorParams, Modifier,
+    EdgeShard, EdgeConfig, EdgeSparseVectorParams, Memory, Modifier,
     Bm25, Bm25Config,
     Point, Query, QueryRequest, UpdateOperation,
 )
@@ -20,7 +20,8 @@ shutil.rmtree(path, ignore_errors=True)
 os.makedirs(path)
 
 config = EdgeConfig(
-    sparse_vectors={"text": EdgeSparseVectorParams(modifier=Modifier.Idf)},
+    # Keep the sparse index on the heap for fast lookups.
+    sparse_vectors={"text": EdgeSparseVectorParams(modifier=Modifier.Idf, memory=Memory.Pinned)},
 )
 shard = EdgeShard.create(str(path), config)
 

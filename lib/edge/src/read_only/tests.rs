@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Leader + follower tests: a read-write [`EdgeShard`] (leader) writes to a directory and a
 //! [`ReadOnlyEdgeShard`] (follower) opened over the same directory serves reads, converging on the
 //! leader's flushed state after a [`live_reload`](ReadOnlyEdgeShard::live_reload).
@@ -47,6 +48,8 @@ pub(crate) fn test_config() -> EdgeConfig {
     init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::from([(
             VECTOR_NAME.to_string(),
             EdgeVectorParams {
@@ -56,6 +59,7 @@ pub(crate) fn test_config() -> EdgeConfig {
                 multivector_config: None,
                 datatype: None,
                 on_disk: None,
+                memory: None,
                 hnsw_config: None,
             },
         )]),
@@ -377,6 +381,8 @@ fn provided_config_overrides_tunables_at_open() {
     // Tunables only — no vector params. Those must come from the segments.
     let provided = EdgeConfig {
         on_disk_payload: None,
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::new(),
         sparse_vectors: HashMap::new(),
         hnsw_config: None,

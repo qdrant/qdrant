@@ -11,6 +11,7 @@ from qdrant_edge import (
     EdgeConfig,
     EdgeShard,
     EdgeVectorParams,
+    Memory,
     Point,
     UpdateOperation,
 )
@@ -29,8 +30,12 @@ def load_new_shard() -> EdgeShard:
 
     os.makedirs(TMP_DIR)
 
+    # `memory` controls how each component is held in RAM; data is always persisted on disk.
+    # `Cold` pages data in on demand, `Cached` preloads it into the page cache, `Pinned` keeps
+    # it on the heap.
     config = EdgeConfig(
-        vectors=EdgeVectorParams(size=4, distance=Distance.Dot),
+        vectors=EdgeVectorParams(size=4, distance=Distance.Dot, memory=Memory.Cached),
+        payload_memory=Memory.Cached,
     )
 
     return EdgeShard.create(TMP_DIR, config)
