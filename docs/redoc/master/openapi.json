@@ -13044,6 +13044,9 @@
           "filtered_large_cardinality": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
+          "filtered_acorn": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
           "filtered_exact": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
