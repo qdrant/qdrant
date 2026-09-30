@@ -60,6 +60,7 @@ where
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
     }
+
     fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
