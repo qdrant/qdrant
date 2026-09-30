@@ -50,6 +50,7 @@ pub fn deferred_point_offset(
         // Placeholder: Turbo4 is ~0.5 byte/dim + per-row scale.
         // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
         Some(VectorStorageDatatype::Turbo4) => 1,
+        Some(VectorStorageDatatype::Turbo8) => 1,
         Some(VectorStorageDatatype::Float32) | None => 4,
     };
 

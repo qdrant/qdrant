@@ -2,6 +2,7 @@ use std::path::Path;
 
 use common::mmap::AdviceSetting;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use quantization::turboquant::TQBits;
 
 use super::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -35,19 +36,21 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         Ok(())
     }
 
-    /// Open the read-only counterpart of a `Turbo4` multivector storage at
+    /// Open the read-only counterpart of a TurboQuant multivector storage at
     /// `path`, threading every file open through `fs`; reads the existing layout
     /// but creates and writes nothing.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         multi_vector_config: MultiVectorConfig,
         advice: AdviceSetting,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
 
         let storage = QuantizedChunkedStorageRead::open(
             fs,

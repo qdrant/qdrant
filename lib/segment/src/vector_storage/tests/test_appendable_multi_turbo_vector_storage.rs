@@ -11,6 +11,7 @@ use common::bitvec::BitSliceExt;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
+use quantization::turboquant::TQBits;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
@@ -70,11 +71,14 @@ fn open_both_appendable(
     AppendableMmapTurboVectorStorage,
     AppendableMmapMultiTurboVectorStorage,
 ) {
-    let dense = open_appendable_turbo_vector_storage(dense_dir, dim, distance, in_ram).unwrap();
+    let dense =
+        open_appendable_turbo_vector_storage(dense_dir, dim, distance, TQBits::Bits4, in_ram)
+            .unwrap();
     let multi = open_appendable_turbo_multi_vector_storage(
         multi_dir,
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         in_ram,
     )
@@ -334,12 +338,19 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
 
     // Optimizer-style copy: byte-identical encoded streams plus deleted flags.
     let total = dense.total_vector_count() as PointOffsetType;
-    let mut dense_dst =
-        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, false).unwrap();
+    let mut dense_dst = open_appendable_turbo_vector_storage(
+        dense_dst_dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        false,
+    )
+    .unwrap();
     let mut multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         false,
     )
@@ -368,12 +379,19 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     multi_dst.flusher()().unwrap();
     drop(dense_dst);
     drop(multi_dst);
-    let dense_dst =
-        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, true).unwrap();
+    let dense_dst = open_appendable_turbo_vector_storage(
+        dense_dst_dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        true,
+    )
+    .unwrap();
     let multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         true,
     )

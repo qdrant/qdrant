@@ -6833,7 +6833,7 @@
             ]
           },
           "datatype": {
-            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm.",
+            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm. - For `turbo8` datatype - vectors are quantized to 8 bits per element using the TurboQuant algorithm.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Datatype"
@@ -7183,7 +7183,8 @@
           "float32",
           "uint8",
           "float16",
-          "turbo4"
+          "turbo4",
+          "turbo8"
         ]
       },
       "MultiVectorConfig": {
@@ -12909,7 +12910,8 @@
           "float32",
           "float16",
           "uint8",
-          "turbo4"
+          "turbo4",
+          "turbo8"
         ]
       },
       "SparseVectorDataConfig": {
@@ -17130,7 +17132,7 @@
             ]
           },
           "datatype": {
-            "description": "Element storage type (Float32, Float16, Uint8, Turbo4)",
+            "description": "Element storage type (Float32, Float16, Uint8, Turbo4, Turbo8)",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"

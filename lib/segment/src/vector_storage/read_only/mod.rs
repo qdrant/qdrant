@@ -150,6 +150,7 @@ mod tests {
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
+    use quantization::turboquant::TQBits;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -681,9 +682,14 @@ mod tests {
         let mut deleted_ids = Vec::new();
 
         let ref_dir = Builder::new().prefix("ro_turbo_ref").tempdir().unwrap();
-        let mut reference =
-            open_appendable_turbo_vector_storage(ref_dir.path(), DIM, Distance::Dot, false)
-                .unwrap();
+        let mut reference = open_appendable_turbo_vector_storage(
+            ref_dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         for (id, vector) in vectors.iter().enumerate() {
             reference
                 .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
@@ -719,15 +725,21 @@ mod tests {
                             dir.path(),
                             DIM,
                             Distance::Dot,
+                            TQBits::Bits4,
                             false,
                         )
                         .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {
-                    let mut target =
-                        open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false)
-                            .unwrap();
+                    let mut target = open_appendable_turbo_vector_storage(
+                        dir.path(),
+                        DIM,
+                        Distance::Dot,
+                        TQBits::Bits4,
+                        false,
+                    )
+                    .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::InRamMmap
@@ -835,6 +847,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             multivector_config,
             false,
         )

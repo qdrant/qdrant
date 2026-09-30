@@ -2237,6 +2237,7 @@ pub enum Datatype {
     Uint8 = 2,
     Float16 = 3,
     Turbo4 = 4,
+    Turbo8 = 5,
 }
 impl Datatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2250,6 +2251,7 @@ impl Datatype {
             Self::Uint8 => "Uint8",
             Self::Float16 => "Float16",
             Self::Turbo4 => "Turbo4",
+            Self::Turbo8 => "Turbo8",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2260,6 +2262,7 @@ impl Datatype {
             "Uint8" => Some(Self::Uint8),
             "Float16" => Some(Self::Float16),
             "Turbo4" => Some(Self::Turbo4),
+            "Turbo8" => Some(Self::Turbo8),
             _ => None,
         }
     }
@@ -5671,7 +5674,7 @@ pub struct DenseVectorCreationConfig {
     /// Configuration for multi-vector search (e.g., ColBERT)
     #[prost(message, optional, tag = "3")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
-    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4)
+    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4, Turbo8)
     #[prost(enumeration = "Datatype", optional, tag = "4")]
     pub datatype: ::core::option::Option<i32>,
 }
