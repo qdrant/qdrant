@@ -7,11 +7,19 @@ use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl TableOfContent {
     pub(super) fn apply_action_sync(&self, action: Action) -> StorageResult<()> {
-        self.general_runtime.block_on(self.apply_action(action))
+        self.general_runtime
+            .block_on(self.apply_action(&action))
+            .map_err(|error| {
+                if let StorageError::ServiceError { .. } = error {
+                    error
+                } else {
+                    StorageError::service_error(format!("Failed to apply {action:?}: {error}"))
+                }
+            })
     }
 
-    async fn apply_action(&self, action: Action) -> StorageResult<()> {
-        match &action {
+    async fn apply_action(&self, action: &Action) -> StorageResult<()> {
+        match action {
             Action::UpdateCollectionConfig { collection, diff } => {
                 let collection = self.get_collection_unchecked(collection).await?;
 

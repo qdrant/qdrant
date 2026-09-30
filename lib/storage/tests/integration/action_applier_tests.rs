@@ -16,6 +16,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
 use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
+use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
@@ -470,6 +471,22 @@ fn remove_shard_from_key_mapping_action_replay() {
     let state = toc.collection_state("test").unwrap();
     assert!(state.shards_key_mapping[&"tenant".into()].is_empty());
     assert!(state.shards.contains_key(&shard_id));
+}
+
+#[test]
+fn missing_collection_is_service_error() {
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    let error = toc
+        .apply_action(Action::DropPayloadIndex {
+            collection: "missing".into(),
+            field_name: "city".parse().unwrap(),
+        })
+        .unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
