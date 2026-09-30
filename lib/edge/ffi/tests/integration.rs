@@ -379,7 +379,7 @@ fn scalar_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Scalar quantization must be accepted");
 
@@ -649,7 +649,7 @@ fn product_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
 
     let shard = EdgeShard::load(path, Some(config));
     assert!(
@@ -694,7 +694,7 @@ fn turbo_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
 
     let shard = EdgeShard::load(path, Some(config));
     assert!(
@@ -738,7 +738,7 @@ fn binary_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Binary quantization must be accepted");
 
@@ -886,7 +886,7 @@ fn hnsw_config_optimize_and_search() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
 
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with HNSW config failed");
@@ -969,7 +969,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
     let sane = HnswIndexConfig {
         m: 16,
         ef_construct: 100,
@@ -2220,7 +2220,7 @@ fn multivector_round_trips() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with multivector config failed");
 
@@ -2377,7 +2377,7 @@ fn sparse_vector_round_trips() {
         )]),
         payload_memory: None,
         id_tracker_memory: None,
-};
+    };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with sparse config failed");
 

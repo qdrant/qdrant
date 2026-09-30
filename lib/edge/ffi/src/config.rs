@@ -917,9 +917,7 @@ impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
         // placements stay MutableRam; cold/cached use Mmap. Persist only the
         // explicit `memory` so cold vs cached is recoverable.
         let index_type = match memory {
-            Some(SegmentMemory::Cold) | Some(SegmentMemory::Cached) => {
-                SegmentSparseIndexType::Mmap
-            }
+            Some(SegmentMemory::Cold) | Some(SegmentMemory::Cached) => SegmentSparseIndexType::Mmap,
             Some(SegmentMemory::Pinned) | None => SegmentSparseIndexType::MutableRam,
         };
         SegmentSparseVectorDataConfig {
