@@ -47,6 +47,22 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
+    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the build output
+    # and temp files; toolchain and cargo home stay on C:, so installed tools remain on PATH.
+    - name: Set up Dev Drive
+      if: matrix.os == 'windows-latest'
+      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      with:
+        drive-size: 50GB
+        trusted-dev-drive: true
+        env-mapping: |
+          CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
+          TMP,{{ DEV_DRIVE }}/tmp
+          TEMP,{{ DEV_DRIVE }}/tmp
+    - name: Create temp directory on Dev Drive
+      if: matrix.os == 'windows-latest'
+      run: mkdir -p "$TMP"
+      shell: bash
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,17 +70,26 @@ jobs:
       with:
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
         save-if: ${{ github.ref == 'refs/heads/dev' }}
+        # Follow the target directory to the Dev Drive on Windows
+        workspaces: ". -> ${{ env.CARGO_TARGET_DIR || 'target' }}"
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
       uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-    - name: Enable mold on Linux
+    - name: Configure linker (mold on Linux, rust-lld on Windows)
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           mkdir .cargo
           echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
           echo "linker = \"clang\"" >> .cargo/config.toml
           echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-pc-windows-msvc]" >> .cargo/config.toml
+          echo "linker = \"rust-lld.exe\"" >> .cargo/config.toml
+          # No debug info: MSVC writes a PDB per test binary, which slows linking. Panic messages
+          # keep their file:line; only backtraces lose line numbers.
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
       shell: bash
     - name: Install nextest
@@ -85,7 +110,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: junit-${{ matrix.os }}.xml
-        path: target/nextest/ci/junit.xml
+        path: ${{ env.CARGO_TARGET_DIR || 'target' }}/nextest/ci/junit.xml
 
   # After tests are run, this hacky script will process the JUnit output of nextest
   # and will create a GH Issue if there is a test marked as flaky,
