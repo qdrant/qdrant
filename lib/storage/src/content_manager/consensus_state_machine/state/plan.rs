@@ -465,27 +465,11 @@ impl ClusterState {
             .map(|(idx, replicas)| (base_id + idx as ShardId, replicas.clone(), init_state))
             .collect();
 
-        let mut actions: Actions = shards
-            .iter()
-            .map(|&(shard_id, ref replicas, init_state)| {
-                // inhibit rustfmt
-                Action::CreateShard {
-                    collection: collection.clone(),
-                    shard_id,
-                    shard_key: Some(shard_key.clone()),
-                    replicas: replicas.clone(),
-                    init_state,
-                }
-            })
-            .collect();
-
-        actions.push(Action::RegisterShards {
+        Ok(vec![Action::CreateAndRegisterShards {
             collection,
             shard_key: Some(shard_key.clone()),
             shards,
-        });
-
-        Ok(actions)
+        }])
     }
 
     pub fn plan_drop_shard_key(
@@ -653,15 +637,7 @@ impl ClusterState {
         let mut actions = Actions::new();
 
         if key.direction == ReshardingDirection::Up && !state.shards.contains_key(&key.shard_id) {
-            actions.push(Action::CreateShard {
-                collection: collection.clone(),
-                shard_id: key.shard_id,
-                shard_key: key.shard_key.clone(),
-                replicas: vec![key.peer_id],
-                init_state: ReplicaState::Resharding,
-            });
-
-            actions.push(Action::RegisterShards {
+            actions.push(Action::CreateAndRegisterShards {
                 collection: collection.clone(),
                 shard_key: key.shard_key.clone(),
                 shards: vec![(key.shard_id, vec![key.peer_id], ReplicaState::Resharding)],
