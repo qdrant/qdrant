@@ -7,6 +7,8 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use tempfile::TempPath;
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
@@ -56,11 +58,14 @@ where
                     // The mirror is created at the length of the file as read, which differs
                     // from `known_len` when the file was replaced since it was observed.
                     let mirror_path = local_path.clone();
-                    let MirrorWriter(local) = remote
+                    let MirrorWriter(local, mut file) = remote
                         .read_whole_into_async(move |len| {
-                            Ok(MirrorWriter(LocalState::new(&mirror_path, len, options)?))
+                            let file = TempPath::try_from_path(mirror_path)?;
+                            Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
                         })
                         .await?;
+                    // The `DiskCache` removes the mirror from here on.
+                    file.disable_cleanup(true);
                     local
                 };
                 local.mark_fully_fetched();
@@ -102,8 +107,10 @@ where
     }
 }
 
-/// Fills a fresh mirror from a whole-file read, owning it until the read completes.
-struct MirrorWriter(LocalState);
+/// Fills a fresh mirror from a whole-file read, owning it until the read completes. Dropped
+/// before that, on a failed or abandoned read, it removes the mirror file. The fields drop in
+/// order, so the mirror is unmapped before its file is removed, as Windows requires.
+struct MirrorWriter(LocalState, TempPath);
 
 impl ChunkSink for MirrorWriter {
     fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
