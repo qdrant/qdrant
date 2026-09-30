@@ -223,9 +223,9 @@ pub trait GraphLayersBase {
                 }
                 ControlFlow::Continue(())
             });
-            for i in evenly_spaced(tail_bridges.len(), hop1_tail_limit) {
-                hop1_visited_list.check_and_update_visited(tail_bridges[i]);
-                to_explore.push(tail_bridges[i]);
+            for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                hop1_visited_list.check_and_update_visited(hop1);
+                to_explore.push(hop1);
             }
 
             // Collect 2-hop neighbors (neighbors of neighbors)
@@ -468,11 +468,10 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
     }
 }
 
-/// Up to `limit` indices into a list of `len` items, evenly spaced and
-/// strictly increasing, starting at 0. All indices if `len <= limit`.
-pub(super) fn evenly_spaced(len: usize, limit: usize) -> impl Iterator<Item = usize> {
-    let picks = len.min(limit);
-    (0..picks).map(move |j| j * len / picks)
+/// Up to `limit` evenly spaced elements of `items`.
+pub(super) fn evenly_spaced<T: Copy>(items: &[T], limit: usize) -> impl Iterator<Item = T> {
+    let picks = items.len().min(limit);
+    (0..picks).map(move |j| items[j * items.len() / picks])
 }
 
 impl GraphLayersBase for GraphLayers {
@@ -777,11 +776,11 @@ mod tests {
 
     #[test]
     fn test_evenly_spaced() {
-        assert_eq!(evenly_spaced(0, 4).collect_vec(), Vec::<usize>::new());
-        assert_eq!(evenly_spaced(3, 0).collect_vec(), Vec::<usize>::new());
-        assert_eq!(evenly_spaced(3, 4).collect_vec(), vec![0, 1, 2]);
-        assert_eq!(evenly_spaced(8, 4).collect_vec(), vec![0, 2, 4, 6]);
-        assert_eq!(evenly_spaced(10, 4).collect_vec(), vec![0, 2, 5, 7]);
+        assert_eq!(evenly_spaced(b"", 4).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 0).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 4).collect_vec(), b"012");
+        assert_eq!(evenly_spaced(b"01234567", 4).collect_vec(), b"0246");
+        assert_eq!(evenly_spaced(b"0123456789", 4).collect_vec(), b"0257");
     }
 
     /// `preopen_universal` must schedule exactly the files `load_universal`

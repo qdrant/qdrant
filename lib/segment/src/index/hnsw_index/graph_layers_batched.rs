@@ -498,9 +498,9 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                         tail_bridges.push(l.id);
                     }
                 }
-                let mut picks = evenly_spaced(tail_bridges.len(), hop1_tail_limit).peekable();
-                for (i, &id) in tail_bridges.iter().enumerate() {
-                    if picks.next_if_eq(&i).is_some() {
+                let mut picks = evenly_spaced(&tail_bridges, hop1_tail_limit).peekable();
+                for &id in &tail_bridges {
+                    if picks.next_if_eq(&id).is_some() {
                         bridges.push(id);
                     } else {
                         hop1_visited_list.unvisit(id);
