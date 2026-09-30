@@ -1,3 +1,6 @@
+use collection::events::IndexCreatedEvent;
+use common::ambient::{AmbientContext, AmbientFutureExt};
+
 use super::TableOfContent;
 use crate::content_manager::consensus_state_machine::Action;
 use crate::content_manager::errors::{StorageError, StorageResult};
@@ -9,6 +12,28 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: Action) -> StorageResult<()> {
         match &action {
+            Action::SetPayloadIndex {
+                collection,
+                field_name,
+                field_schema,
+            } => {
+                let collection_ctx =
+                    AmbientContext::request(self.get_collection_hw_metrics(collection.clone()));
+
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .create_payload_index(field_name.clone(), field_schema.clone())
+                    .measured(collection_ctx)
+                    .await?;
+
+                issues::publish(IndexCreatedEvent {
+                    collection_id: collection.clone(),
+                    field_name: field_name.clone(),
+                });
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -30,7 +55,6 @@ impl TableOfContent {
             | Action::UpdateCollectionConfig { .. }
             | Action::AddNamedVector { .. }
             | Action::DropNamedVector { .. }
-            | Action::SetPayloadIndex { .. }
             | Action::DropPayloadIndex { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
