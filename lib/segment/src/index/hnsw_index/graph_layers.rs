@@ -180,8 +180,13 @@ pub trait GraphLayersBase {
         let hop2_limit = self.get_m(level);
         debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
 
+        // Non-matches past the first `hop1_limit` links (the payload-block
+        // tail) share this budget, evenly spaced.
+        let hop1_tail_limit = hop1_limit;
+
         let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
         let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+        let mut tail_bridges = Vec::new();
 
         while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
@@ -192,23 +197,36 @@ pub trait GraphLayersBase {
 
             to_explore.clear();
             to_score.clear();
+            tail_bridges.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
+            let mut rank = 0;
             _ = self.try_for_each_link(candidate.idx, level, |hop1| {
-                if hop1_visited_list.check_and_update_visited(hop1) {
+                let is_head = rank < hop1_limit;
+                rank += 1;
+
+                if hop1_visited_list.check(hop1) {
                     return ControlFlow::Continue(());
                 }
 
                 if points_scorer.filters().check_vector(hop1) {
+                    hop1_visited_list.check_and_update_visited(hop1);
                     to_score.push(hop1);
                     if to_score.len() >= hop1_limit {
                         return ControlFlow::Break(());
                     }
-                } else {
+                } else if is_head {
+                    hop1_visited_list.check_and_update_visited(hop1);
                     to_explore.push(hop1);
+                } else {
+                    tail_bridges.push(hop1);
                 }
                 ControlFlow::Continue(())
             });
+            for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                hop1_visited_list.check_and_update_visited(hop1);
+                to_explore.push(hop1);
+            }
 
             // Collect 2-hop neighbors (neighbors of neighbors)
             for &hop1 in &to_explore {
@@ -448,6 +466,12 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         }
         current_point
     }
+}
+
+/// Up to `limit` evenly spaced elements of `items`.
+pub(super) fn evenly_spaced<T: Copy>(items: &[T], limit: usize) -> impl Iterator<Item = T> {
+    let picks = items.len().min(limit);
+    (0..picks).map(move |j| items[j * items.len() / picks])
 }
 
 impl GraphLayersBase for GraphLayers {
@@ -749,6 +773,15 @@ mod tests {
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead};
+
+    #[test]
+    fn test_evenly_spaced() {
+        assert_eq!(evenly_spaced(b"", 4).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 0).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 4).collect_vec(), b"012");
+        assert_eq!(evenly_spaced(b"01234567", 4).collect_vec(), b"0246");
+        assert_eq!(evenly_spaced(b"0123456789", 4).collect_vec(), b"0257");
+    }
 
     /// `preopen_universal` must schedule exactly the files `load_universal`
     /// goes on to consume.

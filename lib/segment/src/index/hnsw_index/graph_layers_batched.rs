@@ -12,7 +12,7 @@ use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
 
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm};
+use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm, evenly_spaced};
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -434,8 +434,22 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         debug_assert_ne!(hop1_limit, 0); // See `FilteredBytesScorer::score_points`
 
         let mut batch = Vec::with_capacity(links_batch_size);
+        // See `GraphLayers::search_on_level_acorn`.
+        let hop1_tail_limit = hop1_limit;
+
+        #[derive(Clone, Copy)]
+        struct Hop1Link {
+            id: PointOffsetType,
+            source_idx: u32,
+            dest_idx: u32,
+            is_match: bool,
+        }
+
+        let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut to_explore = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut tail_bridges = Vec::new();
 
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
@@ -444,15 +458,24 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             round += 1;
 
             arena.reset();
+            hop1_links.clear();
             unchecked_links.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
             self.links
-                .links(arena, &batch, level, |position, links_iter| {
-                    let position = position as u32;
-                    for hop1 in links_iter {
+                .links(arena, &batch, level, |source_idx, links_iter| {
+                    for (dest_idx, hop1) in links_iter.enumerate() {
                         if !hop1_visited_list.check_and_update_visited(hop1) {
-                            unchecked_links.push(Link { id: hop1, position });
+                            unchecked_links.push(Link {
+                                id: hop1,
+                                position: hop1_links.len() as u32,
+                            });
+                            hop1_links.push(Hop1Link {
+                                id: hop1,
+                                source_idx: source_idx as u32,
+                                dest_idx: dest_idx as u32,
+                                is_match: false,
+                            });
                         }
                     }
                 })?;
@@ -461,23 +484,56 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             let n = points_scorer.filters().check_batched(
                 &mut unchecked_links,
                 Select::Matches,
-                Rest::Keep,
+                Rest::Discard,
             )?;
-            let (matches, non_matches) = unchecked_links.split_at(n);
+            for link in &unchecked_links[..n] {
+                hop1_links[link.position as usize].is_match = true;
+            }
 
-            // Matches go to scoring.
+            // Select 1-hop neighbors per candidate
+            //
+            // - first `hop1_limit` matches → `to_score`, rest matches → unvisit
+            // - head non-matches → `to_explore`
+            // - tail non-matches → `to_explore` evenly spaced, the rest → unvisit
+            //
+            //            ┌─head──┬─tail────────────────┐┌─head──┬─tail────────┐
+            //            │○ × ● ○│◌ ◌ ● ◌ ◌ ◌ ◌ ◌ ◌ ◌ ◌││● ○ ● ●│◌ ◌ ◌ ● ◌ ● ◌│
+            // to_score        ●       ●                  ●   ● ●       ●
+            // to_explore  ○     ○ ◌     ◌     ◌   ◌        ○     ◌ ◌ ◌
+            // unvisit               ◌     ◌ ◌   ◌   ◌ ◌                  ◌ ● ◌
+            //
+            // ● match  ○ head non-match  ◌ tail non-match  × visited earlier
             to_score.clear();
-            let quotas = arena.alloc_slice_fill_with(batch.len(), |_| hop1_limit);
-            admit_matches(matches, quotas, &mut hop1_visited_list, |id| {
-                to_score.push(id)
-            });
+            to_explore.clear();
+            for links in hop1_links.chunk_by(|a, b| a.source_idx == b.source_idx) {
+                let mut matches = 0;
+                tail_bridges.clear();
+                for l in links {
+                    if matches == hop1_limit {
+                        hop1_visited_list.unvisit(l.id);
+                    } else if l.is_match {
+                        matches += 1;
+                        to_score.push(l.id);
+                    } else if (l.dest_idx as usize) < hop1_limit {
+                        to_explore.push(l.id);
+                    } else {
+                        tail_bridges.push(l.id);
+                    }
+                }
+                for &id in &tail_bridges {
+                    hop1_visited_list.unvisit(id);
+                }
+                for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                    hop1_visited_list.check_and_update_visited(hop1);
+                    to_explore.push(hop1);
+                }
+            }
 
-            // Non-matches go to 2-hop exploration.
-            let to_explore = arena.alloc_slice_fill_iter(non_matches.iter().map(|link| link.id));
+            // Collect 2-hop neighbors (neighbors of neighbors)
             if !to_explore.is_empty() {
                 unchecked_links.clear();
                 self.links
-                    .links(arena, to_explore, level, |position, links_iter| {
+                    .links(arena, &to_explore, level, |position, links_iter| {
                         let position = position as u32;
                         for hop2 in links_iter {
                             if !hop1_visited_list.check(hop2)
@@ -655,10 +711,11 @@ mod tests {
         let stop = &DEFAULT_STOPPED;
         let none_deleted = BitVec::repeat(false, batched.num_points());
         let some_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 3 == 0).collect();
+        let most_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 4 != 0).collect();
         for _ in 0..10 {
             let query = random_vector(&mut rng, DIM);
             let entry = graph.unfiltered_entry_point();
-            for deleted in [&none_deleted, &some_deleted] {
+            for deleted in [&none_deleted, &some_deleted, &most_deleted] {
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),
