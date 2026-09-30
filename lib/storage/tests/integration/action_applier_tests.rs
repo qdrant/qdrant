@@ -9,17 +9,20 @@ use collection::shards::shard_trait::WaitUntil;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType, ShardKey};
 use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
+use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
 use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
 
-use super::alias_tests::{FULL_ACCESS, create_collection, new_dispatcher};
+use super::alias_tests::{
+    FULL_ACCESS, create_collection, create_custom_collection, new_dispatcher,
+};
 
 #[test]
 fn set_payload_index_action_replay() {
@@ -429,6 +432,44 @@ fn drop_shard_action_replay() {
             .shards
             .contains_key(&0)
     );
+}
+
+#[test]
+fn remove_shard_from_key_mapping_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_custom_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.get_channel_service()
+        .id_to_address
+        .write()
+        .insert(0, "http://localhost:6335".parse().unwrap());
+
+    let shard_key = ShardKey::from("tenant");
+    CollectionContainer::perform_collection_meta_op(
+        toc.as_ref(),
+        CollectionMetaOperations::CreateShardKey(CreateShardKey {
+            collection_name: "test".into(),
+            shard_key: shard_key.clone(),
+            placement: vec![vec![0]],
+            initial_state: Some(ReplicaState::Active),
+        }),
+    )
+    .unwrap();
+
+    let shard_id = 1;
+    let action = Action::RemoveShardFromKeyMapping {
+        collection: "test".into(),
+        shard_id,
+        shard_key,
+    };
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    let state = toc.collection_state("test").unwrap();
+    assert!(state.shards_key_mapping[&"tenant".into()].is_empty());
+    assert!(state.shards.contains_key(&shard_id));
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
