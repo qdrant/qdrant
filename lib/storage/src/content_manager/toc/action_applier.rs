@@ -140,6 +140,17 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::DropShard {
+                collection,
+                shard_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder.write().await.drop_and_remove_shard(*shard_id).await?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -161,7 +172,6 @@ impl TableOfContent {
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
-            | Action::DropShard { .. }
             | Action::SetShardNumber { .. }
             | Action::SetReplicaState { .. }
             | Action::RemoveReplica { .. }
