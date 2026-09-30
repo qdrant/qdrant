@@ -375,8 +375,6 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
 ) -> OperationResult<(Segment, ProxyChanges)> {
     check_process_stopped(stopped)?;
 
-    // ---- SLOW PART -----
-
     let mut optimized_segment = build_new_segment(
         factory,
         &optimizing_segments,
@@ -397,8 +395,6 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     // critical section.
     let applied_changes = proxy_changes(proxies);
     applied_changes.propagate(&mut optimized_segment, stopped)?;
-
-    // ---- SLOW PART ENDS HERE -----
 
     check_process_stopped(stopped)?;
 
