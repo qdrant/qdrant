@@ -27,7 +27,7 @@ impl TableOfContent {
                         true
                     }
                     CollectionConfigDiff::Hnsw(diff) => {
-                        collection.update_hnsw_config_from_diff(diff.clone()).await?;
+                        collection.update_hnsw_config_from_diff(*diff).await?;
                         true
                     }
                     CollectionConfigDiff::Vectors(diff) => {
@@ -146,7 +146,11 @@ impl TableOfContent {
             } => {
                 let collection = self.get_collection_unchecked(collection).await?;
                 let shard_holder = collection.shards_holder();
-                shard_holder.write().await.drop_and_remove_shard(*shard_id).await?;
+                shard_holder
+                    .write()
+                    .await
+                    .drop_and_remove_shard(*shard_id)
+                    .await?;
 
                 Ok(())
             }
