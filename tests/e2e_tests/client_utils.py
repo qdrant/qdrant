@@ -155,11 +155,11 @@ class ClientUtils:
         return payload
 
     @staticmethod
-    def generate_points(amount: int, vector_size: int = VECTOR_SIZE, batch_size: int = 100) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
-        """Generate `amount` batches of `batch_size` points for insertion."""
+    def generate_points(amount: int, vector_size: int = VECTOR_SIZE) -> Generator[Dict[str, List[models.PointStruct]], None, None]:
+        """Generate batches of points for insertion."""
         for _ in range(amount):
             points = []
-            for _ in range(batch_size):
+            for _ in range(100):
                 points.append(
                     models.PointStruct(
                         id=str(uuid.uuid4()),
