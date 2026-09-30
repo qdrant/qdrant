@@ -402,6 +402,35 @@ fn set_replica_state_action_replay() {
     assert_eq!(state.shards[&0].replicas[&0], ReplicaState::Active);
 }
 
+#[test]
+fn drop_shard_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let action = Action::DropShard {
+        collection: "test".into(),
+        shard_id: 0,
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    assert!(
+        toc.collection_state("test")
+            .unwrap()
+            .shards
+            .contains_key(&0)
+    );
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert!(
+        !toc.collection_state("test")
+            .unwrap()
+            .shards
+            .contains_key(&0)
+    );
+}
+
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&FULL_ACCESS, &pass);
