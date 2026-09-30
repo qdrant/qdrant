@@ -136,7 +136,11 @@ fn decode_slot(slot: OptionalPointer) -> Option<ValuePointer> {
         "ValuePointer with length 0 must not exist"
     );
 
-    (pointer.length != 0).then_some(pointer)
+    if pointer.length > 0 {
+        Some(pointer)
+    } else {
+        None
+    }
 }
 
 /// Read the slot for `point_offset` directly from `storage`.
