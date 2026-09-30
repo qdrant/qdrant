@@ -587,6 +587,39 @@ impl Collection {
         Ok(())
     }
 
+    /// Apply a replica state already checked by the consensus state machine
+    pub async fn apply_replica_state(
+        &self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        replica_set.ensure_replica_with_state(peer_id, state).await?;
+
+        if !self.is_initialized.check_ready() {
+            let is_ready = self
+                .shards_holder
+                .read()
+                .await
+                .all_shards()
+                .all(|replica_set| replica_set.check_peers_state_all(ReplicaState::is_active));
+
+            if is_ready {
+                self.is_initialized.make_ready();
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<RecoveryPoint> {
         let shard_holder_read = self.shards_holder.read().await;
 
