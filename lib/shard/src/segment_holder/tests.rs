@@ -2792,7 +2792,9 @@ fn delete_through_proxies(
 }
 
 /// Snapshotting proxies every segment, and a proxy persists the changes buffered meanwhile into
-/// its pending changes log. Once unproxied and flushed, that log must be removed, as
+/// its pending changes log. That log must not be visible from the wrapped segment, otherwise it is
+/// packed and restoring replays e.g. CoW deletes whose upserts only live in the temp segment.
+/// Once unproxied the wrapped segment owns the log, and once flushed it must be removed, as
 /// `unwrap_proxy` does for optimizer proxies; otherwise every snapshot leaves a log behind until
 /// the next restart.
 #[test]
@@ -2815,23 +2817,34 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
     let schema =
         Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
 
-    snapshot_all_segments_with(
-        &holder,
-        segments_dir.path(),
-        schema,
-        |segments, _wrapped| {
-            delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
-            segments.flush_all(FlushMode::Sync, true)?;
-            Ok(())
-        },
-    )
+    snapshot_all_segments_with(&holder, segments_dir.path(), schema, |segments, wrapped| {
+        delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
+        segments.flush_all(FlushMode::Sync, true)?;
+        assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
+        assert!(wrapped.read().pending_changes_log_files()?.is_empty());
+        Ok(())
+    })
     .unwrap();
-    assert!(!list_pending_changes_log_files(&segment_path).is_empty());
+    let log_files = list_pending_changes_log_files(&segment_path);
+    assert_eq!(log_files.len(), 1);
+    let segment = holder.read().iter().next().unwrap().1.clone();
+    assert_eq!(
+        segment.get().read().pending_changes_log_files().unwrap(),
+        log_files
+    );
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
     assert!(
         list_pending_changes_log_files(&segment_path).is_empty(),
         "pending changes logs of snapshot proxies must be removed once the wrapped segment flushed",
+    );
+    assert!(
+        segment
+            .get()
+            .read()
+            .pending_changes_log_files()
+            .unwrap()
+            .is_empty()
     );
 }
 

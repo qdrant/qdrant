@@ -436,17 +436,11 @@ pub struct RecoveredPendingChanges {
     pub logs: PendingChangesLogs,
 }
 
-/// Pending changes log files that are part of a segment's state.
+/// Pending changes log files that are part of a segment's state, packed into its snapshots.
 ///
-/// A log file outlives the proxy that wrote it: it is kept until the segment durably persists the
-/// changes it holds, either after recovering it on load or after unwrapping the proxy. Until then
-/// the segment takes ownership of it, so it is packed into snapshots of the segment.
-///
-/// Logs of proxies currently wrapping the segment are deliberately not listed here, they belong to
-/// the proxy instead. A snapshot proxy's log for example only holds changes made after the
-/// segment was frozen for the snapshot, which must not end up in the snapshot.
-///
-/// Shared by clones, so the segment can release a log without holding a segment lock.
+/// A log outlives its proxy until the segment durably persists its changes, after recovering it on
+/// load or unwrapping the proxy; the segment owns it meanwhile. Logs of proxies still wrapping the
+/// segment are not listed: a snapshot proxy's log only holds changes made after the freeze.
 #[derive(Clone, Debug, Default)]
 pub struct PendingChangesLogs {
     files: Arc<Mutex<Vec<PathBuf>>>,
@@ -455,16 +449,13 @@ pub struct PendingChangesLogs {
 impl PendingChangesLogs {
     /// Take ownership of the log file at `path`, which may not exist on disk (yet).
     pub fn adopt(&self, path: PathBuf) {
-        let mut files = self.files.lock();
-        if !files.contains(&path) {
-            files.push(path);
-        }
+        self.files.lock().push(path);
     }
 
     /// Owned log files that exist on disk.
     pub fn files(&self) -> OperationResult<Vec<PathBuf>> {
         let files = self.files.lock().clone();
-        let mut existing = Vec::with_capacity(files.len());
+        let mut existing = Vec::new();
         for path in files {
             if log_file_exists(&path)? {
                 existing.push(path);

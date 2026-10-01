@@ -115,9 +115,7 @@ impl SegmentHolder {
                 ));
             }
 
-            // The wrapped segment owns the proxy log until it durably persists the propagated
-            // changes, so snapshots of it keep packing the log. Delete it after the next flush
-            // cycle.
+            // The wrapped segment owns the proxy log until a flush persists the propagated changes
             let (ready_at, pending_changes_logs) = {
                 let wrapped_segment = wrapped_segment.get().read();
                 (
