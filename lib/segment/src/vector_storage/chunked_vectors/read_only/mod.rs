@@ -42,6 +42,10 @@ pub struct ReadOnlyChunkedVectors<T: bytemuck::Pod + Send, S: UniversalRead> {
     /// Open-time chunk settings, reused by live-reload to open new chunks.
     pub(super) advice: AdviceSetting,
     pub(super) populate: Populate,
+    /// Vectors reads can reach, counted from the first; chunks past them open
+    /// cold (see [`VisiblePrefix`](super::chunks::VisiblePrefix)). `None` when
+    /// every vector is readable.
+    pub(super) visible_len: Option<usize>,
 }
 
 #[cfg(test)]
@@ -74,6 +78,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 100);
@@ -110,6 +115,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 100);
@@ -155,6 +161,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 4096);
@@ -210,6 +217,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 100);
@@ -279,6 +287,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 100);
@@ -326,6 +335,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 4000);
@@ -373,6 +383,7 @@ mod tests {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.len(), 100);
