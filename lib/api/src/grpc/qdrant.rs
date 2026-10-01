@@ -14702,6 +14702,472 @@ pub mod qdrant_internal_server {
     }
 }
 #[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetQuotasRequest {}
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetQuotasResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<QuotaStatus>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateQuotasRequest {
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub config: ::core::option::Option<QuotaConfig>,
+    /// Wait until the new quota config is confirmed by consensus on this peer
+    #[prost(bool, tag = "2")]
+    pub wait: bool,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct UpdateQuotasResponse {
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+/// Cluster-wide limits on node resources.
+///
+/// An unset limit means the corresponding resource is not capped. Limits are
+/// only enforced while `enabled` is true.
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuotaConfig {
+    /// Whether the limits below are enforced
+    #[prost(bool, tag = "1")]
+    pub enabled: bool,
+    /// Reject memory-consuming updates once process resident memory reaches this
+    /// percentage of total system memory (or of the cgroup limit, if one applies)
+    #[prost(uint32, optional, tag = "2")]
+    #[validate(range(min = 1, max = 100))]
+    pub max_resident_memory_percent: ::core::option::Option<u32>,
+    /// Reject disk-consuming updates once the filesystem hosting the storage
+    /// directory is filled to this percentage of its capacity
+    #[prost(uint32, optional, tag = "3")]
+    #[validate(range(min = 1, max = 100))]
+    pub max_disk_usage_percent: ::core::option::Option<u32>,
+    /// How many percentage points below its limit a resource has to fall before
+    /// this node starts accepting work again. Unset leaves the built-in default
+    /// in force.
+    #[prost(uint32, optional, tag = "4")]
+    #[validate(range(max = 100))]
+    pub release_margin_percent: ::core::option::Option<u32>,
+}
+/// Quota configuration in effect, and how close each peer is to it.
+///
+/// The configuration is cluster-wide; the utilization is not: memory and disk
+/// are node-local, so one peer being under its limit says nothing about the
+/// others.
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuotaStatus {
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<QuotaConfig>,
+    /// Utilization of the node that served this request
+    #[prost(message, optional, tag = "2")]
+    pub usage: ::core::option::Option<QuotaResourceUsage>,
+    /// Utilization reported by each peer that answered, keyed by peer ID,
+    /// including the one that served the request. A peer missing from the map
+    /// could not be reached. Empty entirely outside distributed mode, where
+    /// there are no peers to ask.
+    #[prost(map = "uint64, message", tag = "3")]
+    pub peers: ::std::collections::HashMap<u64, QuotaUsage>,
+}
+/// Utilization of the quota-managed resources on a single node.
+///
+/// A field is unset when the platform does not expose the underlying stat.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuotaResourceUsage {
+    /// Resident memory of this node's process, as a percentage of the memory
+    /// available to it (cgroup limit if one applies, else total system memory)
+    #[prost(uint32, optional, tag = "1")]
+    pub resident_memory_percent: ::core::option::Option<u32>,
+    /// Used space of this node's storage filesystem, as a percentage of its
+    /// capacity
+    #[prost(uint32, optional, tag = "2")]
+    pub disk_usage_percent: ::core::option::Option<u32>,
+}
+/// Generated client implementations.
+pub mod quotas_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct QuotasClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl QuotasClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> QuotasClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> QuotasClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            QuotasClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// Get the cluster-wide quota configuration and how close each known peer is to it
+        pub async fn get(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetQuotasRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotasResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Quotas/Get");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Quotas", "Get"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Set the cluster-wide quota configuration
+        pub async fn update(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateQuotasRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateQuotasResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Quotas/Update");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Quotas", "Update"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod quotas_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with QuotasServer.
+    #[async_trait]
+    pub trait Quotas: std::marker::Send + std::marker::Sync + 'static {
+        /// Get the cluster-wide quota configuration and how close each known peer is to it
+        async fn get(
+            &self,
+            request: tonic::Request<super::GetQuotasRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotasResponse>,
+            tonic::Status,
+        >;
+        /// Set the cluster-wide quota configuration
+        async fn update(
+            &self,
+            request: tonic::Request<super::UpdateQuotasRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateQuotasResponse>,
+            tonic::Status,
+        >;
+    }
+    #[derive(Debug)]
+    pub struct QuotasServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> QuotasServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for QuotasServer<T>
+    where
+        T: Quotas,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/qdrant.Quotas/Get" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSvc<T: Quotas>(pub Arc<T>);
+                    impl<T: Quotas> tonic::server::UnaryService<super::GetQuotasRequest>
+                    for GetSvc<T> {
+                        type Response = super::GetQuotasResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetQuotasRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Quotas>::get(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Quotas/Update" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateSvc<T: Quotas>(pub Arc<T>);
+                    impl<
+                        T: Quotas,
+                    > tonic::server::UnaryService<super::UpdateQuotasRequest>
+                    for UpdateSvc<T> {
+                        type Response = super::UpdateQuotasResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateQuotasRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Quotas>::update(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for QuotasServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "qdrant.Quotas";
+    impl<T> tonic::server::NamedService for QuotasServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RaftMessage {
     #[prost(bytes = "vec", tag = "1")]

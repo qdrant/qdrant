@@ -450,6 +450,13 @@ fn configure_validation(builder: Builder) -> Builder {
             ("AddPeerToKnownMessage.uri", "custom(function = \"common::validation::validate_not_empty\")"),
             ("AddPeerToKnownMessage.port", "range(min = 1)"),
         ], &[])
+        // Service: quota_service.proto
+        .validates(&[
+            ("QuotaConfig.max_resident_memory_percent", "range(min = 1, max = 100)"),
+            ("QuotaConfig.max_disk_usage_percent", "range(min = 1, max = 100)"),
+            ("QuotaConfig.release_margin_percent", "range(max = 100)"),
+            ("UpdateQuotasRequest.config", ""),
+        ], &[])
         // Service: snapshot_service.proto
         .validates(&[
             ("CreateSnapshotRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
