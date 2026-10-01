@@ -33,18 +33,6 @@ pub trait QueryScorer {
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
 }
 
-pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
-    this: &Q,
-    ids: &[u32],
-    scores: &mut [f32],
-) {
-    debug_assert_eq!(ids.len(), scores.len());
-
-    for (idx, id) in ids.iter().enumerate() {
-        scores[idx] = this.score_stored(*id);
-    }
-}
-
 pub trait QueryScorerBytes {
     fn score_bytes(&self, bytes: &[u8]) -> ScoreType;
 }

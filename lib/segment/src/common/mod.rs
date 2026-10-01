@@ -13,7 +13,6 @@ pub mod reciprocal_rank_fusion;
 pub mod score_fusion;
 pub mod update_only_blobstore;
 pub mod utils;
-pub mod validate_snapshot_archive;
 pub mod vector_utils;
 
 use std::sync::atomic::AtomicBool;
