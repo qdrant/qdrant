@@ -47,6 +47,21 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
+    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
+    # tests write. The target directory stays in the workspace, where rust-cache can cache it.
+    - name: Set up Dev Drive
+      if: matrix.os == 'windows-latest'
+      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      with:
+        drive-size: 50GB
+        trusted-dev-drive: true
+        env-mapping: |
+          TMP,{{ DEV_DRIVE }}/tmp
+          TEMP,{{ DEV_DRIVE }}/tmp
+    - name: Create temp directory on Dev Drive
+      if: matrix.os == 'windows-latest'
+      run: mkdir -p "$TMP"
+      shell: bash
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,13 +73,20 @@ jobs:
       uses: ./.github/actions/setup-protoc
     - name: Install mold
       uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-    - name: Enable mold on Linux
+    - name: Configure linker (mold on Linux, rust-lld on Windows)
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           mkdir .cargo
           echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
           echo "linker = \"clang\"" >> .cargo/config.toml
           echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-pc-windows-msvc]" >> .cargo/config.toml
+          echo "linker = \"rust-lld.exe\"" >> .cargo/config.toml
+          # No debug info: MSVC writes a PDB per test binary, which slows linking. Panic messages
+          # keep their file:line; only backtraces lose line numbers.
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
       shell: bash
     - name: Install nextest
