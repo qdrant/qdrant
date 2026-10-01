@@ -21,4 +21,5 @@ log = { workspace = true }
 [dev-dependencies]
 common = { path = "../common", features = ["testing"] }
 ahash = { workspace = true }
+roaring = { workspace = true }
 tempfile = { workspace = true }
