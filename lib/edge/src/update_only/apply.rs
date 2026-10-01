@@ -10,6 +10,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
 use rayon::prelude::*;
+use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
 use segment::segment::update_only::UpdateOnlySegmentEnum;
@@ -60,6 +61,11 @@ pub struct PointApplyRecord {
     /// The write-target slot a stored point left behind without a tombstone:
     /// appending the point records a mapping that supersedes it.
     pub superseded: Option<(Uuid, PointOffsetType)>,
+    /// Other segments' copies of a stored point left in place because the
+    /// point landed past the deferred-points threshold: the new copy stays
+    /// invisible until a rebuild indexes it, so these keep serving readers
+    /// until the rebuild's deduplication retires them.
+    pub shadowed: Vec<(Uuid, PointOffsetType)>,
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -164,8 +170,20 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
+        // Index into `outcome.points` of each point in `to_store`.
+        let mut stored_records: Vec<usize> = Vec::new();
         let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        // Other segments' copies of stored points, per record: retired only
+        // once the store tells whether the new copy is deferred.
+        let mut stored_retirements: Vec<(usize, Uuid, PointOffsetType)> = Vec::new();
         let write_target_uuid = segments.write_target_uuid();
+        let deferred_cutoff = match (write_target_uuid, self.deferred_threshold_kb) {
+            (Some(uuid), Some(threshold_kb)) => segment_deferred_internal_id(
+                &segments.get(uuid)?.read().segment_config,
+                threshold_kb,
+            ),
+            (None, _) | (_, None) => None,
+        };
 
         for point in resolved {
             let PointPreview {
@@ -190,6 +208,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 }
                 PointAction::Store(point) => {
                     to_store.push(*point);
+                    stored_records.push(outcome.points.len());
                     outcome.stored += 1;
                     PointApplyKind::Stored
                 }
@@ -204,6 +223,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 kind,
                 tombstoned: Vec::new(),
                 superseded: None,
+                shadowed: Vec::new(),
             };
 
             if kind.retires_slots() {
@@ -215,8 +235,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     // copy does have to stop resolving — an older duplicate left
                     // by an interrupted move included — and a delete retires the
                     // point everywhere it sits.
-                    if kind == PointApplyKind::Stored && Some(segment) == write_target_uuid {
-                        record.superseded = Some((segment, internal_id));
+                    if kind == PointApplyKind::Stored {
+                        if Some(segment) == write_target_uuid {
+                            record.superseded = Some((segment, internal_id));
+                        } else {
+                            stored_retirements.push((outcome.points.len(), segment, internal_id));
+                        }
                         continue;
                     }
                     to_tombstone
@@ -249,7 +273,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             let writer = get_writer(&mut self.writers, uuid)?;
 
             let instant = std::time::Instant::now();
-            writer
+            let new_slots = writer
                 .as_appendable_mut()
                 .ok_or_else(|| {
                     OperationError::service_error(format!(
@@ -258,6 +282,27 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 })?
                 .store_points(&self.pool, &mut to_store, &hw_counter)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
+
+            // A copy stored past the cutoff is deferred: retiring the point's
+            // other copies would leave readers that hide deferred points with
+            // none, so they stay until a rebuild deduplicates them, as the
+            // server keeps the source of a copy-on-write move.
+            let mut deferred_records = vec![false; outcome.points.len()];
+            for (&record, &slot) in stored_records.iter().zip(&new_slots) {
+                deferred_records[record] = deferred_cutoff.is_some_and(|cutoff| slot >= cutoff);
+            }
+            for (record_index, segment, internal_id) in stored_retirements.drain(..) {
+                let record = &mut outcome.points[record_index];
+                if deferred_records[record_index] {
+                    record.shadowed.push((segment, internal_id));
+                } else {
+                    to_tombstone
+                        .entry(segment)
+                        .or_default()
+                        .push((record.id, internal_id));
+                    record.tombstoned.push((segment, internal_id));
+                }
+            }
 
             // The write target's retirements happen after the store, since
             // every write is durable when it returns and the reverse order

@@ -238,14 +238,16 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
     /// Append `points` to fresh slots in this segment and update the id tracker.
     /// Writes component data in parallel before making points visible by publishing versions.
+    ///
+    /// Returns the slot each point landed in, in the order of `points`.
     pub fn store_points(
         &mut self,
         pool: &ThreadPool,
         points: &mut [FullyQualifiedPoint],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<Vec<PointOffsetType>> {
         if points.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         // Cosine scores with a plain dot product, so a stored vector has to be
@@ -331,7 +333,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             .set_internal_versions(&self.fs, &slots, &versions)?;
 
         self.fs.rotate_cache_file_info();
-        Ok(())
+        Ok(slots)
     }
 
     /// Retire the given points, addressed by their external ids — the slots
