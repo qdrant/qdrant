@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
 use std::ops::Deref;
+use std::sync::Arc;
 
+pub type ArcCow<'a, T> = BorrowCow<'a, T, Arc<T>>;
 pub type SimpleCow<'a, T> = BorrowCow<'a, T, T>;
 
 /// [`std::borrow::Cow`]-like enum, but based on [`Borrow`] instead of [`ToOwned`].
