@@ -10,6 +10,7 @@ use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
+use rstest::rstest;
 use segment::data_types::index::{KeywordIndexParams, KeywordIndexType};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
@@ -21,13 +22,15 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Match,
-    PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
+    AcornSearchParams, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    Match, PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
-#[test]
-fn test_tenant_graph_with_second_condition() {
+#[rstest]
+#[case::graph(false, Route::Graph)]
+#[case::acorn(true, Route::Acorn)]
+fn test_tenant_graph_with_second_condition(#[case] acorn: bool, #[case] route: Route) {
     let stopped = AtomicBool::new(false);
     let dim = 8;
     let num_vectors = 4_000;
@@ -120,6 +123,10 @@ fn test_tenant_graph_with_second_condition() {
     };
     let params = SearchParams {
         hnsw_ef: Some(64),
+        acorn: Some(AcornSearchParams {
+            enable: acorn,
+            max_selectivity: None,
+        }),
         ..Default::default()
     };
     for _ in 0..attempts {
@@ -137,5 +144,20 @@ fn test_tenant_graph_with_second_condition() {
     }
 
     let telemetry = hnsw_index.get_telemetry_data(TelemetryDetail::default());
-    assert_eq!(telemetry.filtered_large_cardinality.count, attempts);
+    let routes = (
+        telemetry.filtered_large_cardinality.count,
+        telemetry.filtered_acorn.count,
+    );
+    let expected = match route {
+        Route::Graph => (attempts, 0),
+        Route::Acorn => (0, attempts),
+    };
+    assert_eq!(routes, expected);
+}
+
+/// 🤖 Which search path the planner picks.
+#[derive(Clone, Copy, PartialEq)]
+enum Route {
+    Graph,
+    Acorn,
 }
