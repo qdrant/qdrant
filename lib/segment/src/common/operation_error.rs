@@ -385,8 +385,10 @@ impl From<BlobstoreError> for OperationError {
                     Self::service_error(format!("Gridstore IO error: {err}"))
                 }
             },
-            BlobstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
-            BlobstoreError::ValueNotFound { .. } => Self::service_error(err.to_string()),
+            BlobstoreError::PageNotFound { .. }
+            | BlobstoreError::PageRangeNotFound { .. }
+            | BlobstoreError::ValueNotFound { .. }
+            | BlobstoreError::DecodeError { .. } => Self::service_error(err.to_string()),
         }
     }
 }

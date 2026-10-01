@@ -14,7 +14,7 @@ use rand::prelude::Distribution;
 use rand::seq::SliceRandom;
 use rand::{Rng, RngExt};
 use rstest::rstest;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::blob::Blob;
@@ -1069,8 +1069,8 @@ fn test_payload_compression() {
     let payload = random_payload(&mut rand::make_rng::<rand::rngs::SmallRng>(), 2);
     let payload_bytes = payload.to_bytes();
     let compressed = compress_lz4(&payload_bytes);
-    let decompressed = decompress_lz4(&compressed);
-    let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed);
+    let decompressed = decompress_lz4(&compressed).unwrap();
+    let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed).unwrap();
     assert_eq!(payload, decompressed_payload);
 }
 
@@ -2180,4 +2180,186 @@ fn test_open_repairs_gaps_length_mismatch() {
     // The repaired gaps are persisted with the right length: one entry per region.
     let gaps_bytes = fs::read(dir.path().join("gaps.dat")).unwrap();
     assert_eq!(gaps_bytes.len(), 2 * 6, "one 6-byte entry per region");
+}
+
+/// Tracker file layout: a 4-byte header, then one 16-byte record per point offset holding
+/// `[discriminant][page_id][block_offset][length]` as little-endian `u32`s.
+const TRACKER_HEADER_BYTES: usize = 4;
+const TRACKER_RECORD_BYTES: usize = 16;
+const TRACKER_BLOCK_OFFSET_FIELD: usize = 8;
+const TRACKER_LENGTH_FIELD: usize = 12;
+
+/// Page size of the corrupt pointer tests: 1 MiB, exactly one region per page
+const CORRUPT_POINTER_PAGE_SIZE: usize = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+
+/// Store three small payloads at point offsets 0, 1 and 2, flush and close the storage
+fn stored_small_payloads(compression: Compression) -> (TempDir, Vec<Payload>) {
+    let (dir, mut storage) = empty_storage_sized(CORRUPT_POINTER_PAGE_SIZE, compression);
+
+    let hw_cell = HardwareCounterCell::new();
+    let hw_counter = hw_cell.ref_payload_io_write_counter();
+
+    let payloads: Vec<Payload> = (0..3)
+        .map(|i| {
+            let mut map = serde_json::Map::new();
+            map.insert("category".to_string(), format!("cat_{i}").into());
+            Payload(map)
+        })
+        .collect();
+    for (offset, payload) in payloads.iter().enumerate() {
+        storage
+            .put_value(offset as PointOffset, payload, hw_counter)
+            .unwrap();
+    }
+
+    storage.flusher()().unwrap();
+    (dir, payloads)
+}
+
+/// Overwrite one field of the tracker record at `point_offset` on disk, returning its old value
+///
+/// The record must hold a `Some` pointer.
+fn overwrite_tracker_field(dir: &TempDir, point_offset: usize, field: usize, value: u32) -> u32 {
+    let tracker_path = dir.path().join("tracker.dat");
+    let mut tracker_bytes = fs::read(&tracker_path).unwrap();
+
+    let record_start = TRACKER_HEADER_BYTES + point_offset * TRACKER_RECORD_BYTES;
+    let read_field = |bytes: &[u8], field: usize| {
+        let start = record_start + field;
+        u32::from_le_bytes(bytes[start..start + 4].try_into().unwrap())
+    };
+    assert_eq!(
+        read_field(&tracker_bytes, 0),
+        1,
+        "record must hold a Some pointer"
+    );
+
+    let old_value = read_field(&tracker_bytes, field);
+    let start = record_start + field;
+    tracker_bytes[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    fs::write(&tracker_path, &tracker_bytes).unwrap();
+
+    old_value
+}
+
+/// Reading the corrupt pointer at `corrupt_offset` must return an error, the other values must be
+/// unaffected. Iterating, as payload indices do when they are loaded, must return an error too.
+fn assert_corrupt_pointer_errors(
+    storage: &Blobstore<Payload>,
+    payloads: &[Payload],
+    corrupt_offset: usize,
+) {
+    let hw_cell = HardwareCounterCell::new();
+
+    for (offset, payload) in payloads.iter().enumerate() {
+        let stored = storage.get_value::<Random>(offset as PointOffset, &hw_cell);
+        if offset == corrupt_offset {
+            assert!(
+                stored.is_err(),
+                "value {offset} must fail to read, got {stored:?}"
+            );
+        } else {
+            assert_eq!(stored.unwrap().as_ref(), Some(payload), "value {offset}");
+        }
+    }
+
+    let iterated =
+        storage.iter::<_, BlobstoreError>(|_, _| Ok(true), hw_cell.ref_payload_io_write_counter());
+    assert!(iterated.is_err(), "iterating must fail");
+}
+
+/// Reproduces a torn write of a pointer in the tracker, as left by a hard crash (power loss /
+/// kernel crash) during a flush.
+///
+/// If the crash persists the first 12 bytes of a new pointer but not its length, a slot that was
+/// empty before reads back as a `Some` pointer with a length of zero. No real write produces a
+/// zero length, so such a pointer must read as no value. WAL replay rewrites the slot afterwards.
+///
+/// This used to panic when deserializing the empty value, which blocks loading the segment.
+///
+/// See: <github.com/qdrant/qdrant/issues/9857>
+#[test]
+fn test_torn_pointer_with_zero_length_reads_as_none() {
+    // Payload indices store their values uncompressed
+    let (dir, payloads) = stored_small_payloads(Compression::None);
+
+    // Simulate the torn write: the length of the pointer at offset 1 never reached the disk
+    let torn_offset = 1;
+    let old_length = overwrite_tracker_field(&dir, torn_offset, TRACKER_LENGTH_FIELD, 0);
+    assert_eq!(old_length as usize, payloads[torn_offset].to_bytes().len());
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    let hw_cell = HardwareCounterCell::new();
+
+    // The torn pointer reads as no value, the other values are unaffected
+    for (offset, payload) in payloads.iter().enumerate() {
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, &hw_cell)
+            .unwrap();
+        let expected = (offset != torn_offset).then_some(payload);
+        assert_eq!(stored.as_ref(), expected, "value {offset}");
+    }
+
+    // Iterating, as payload indices do when they are loaded, skips the torn pointer
+    let mut iterated = Vec::new();
+    storage
+        .iter::<_, BlobstoreError>(
+            |offset, payload| {
+                iterated.push((offset, payload));
+                Ok(true)
+            },
+            hw_cell.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    assert_eq!(
+        iterated,
+        [(0, payloads[0].clone()), (2, payloads[2].clone())],
+    );
+}
+
+/// A pointer whose length reaches far beyond the bytes that exist in the pages, for example
+/// because of a bit flip in the length.
+///
+/// Unlike a zero length this cannot be told apart from real corruption, so it must not read as no
+/// value. Reading it must return an error instead: this used to panic on indexing past the last
+/// page.
+#[test]
+fn test_pointer_length_beyond_pages_returns_error() {
+    let (dir, payloads) = stored_small_payloads(Compression::None);
+
+    // All values fit in the first page, let the pointer at offset 1 claim 16 pages of bytes
+    let corrupt_offset = 1;
+    let length = (16 * CORRUPT_POINTER_PAGE_SIZE) as u32;
+    overwrite_tracker_field(&dir, corrupt_offset, TRACKER_LENGTH_FIELD, length);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
+
+    assert_corrupt_pointer_errors(&storage, &payloads, corrupt_offset);
+}
+
+/// A pointer to bytes in the pages that do not hold a value, for example because the storage
+/// lost page writes the tracker already refers to, or because of a bit flip in the block offset.
+///
+/// Reading it must return an error instead: this used to panic on decompressing or deserializing
+/// the bytes.
+#[rstest]
+fn test_pointer_to_invalid_bytes_returns_error(
+    #[values(Compression::None, Compression::LZ4)] compression: Compression,
+) {
+    let (dir, payloads) = stored_small_payloads(compression);
+
+    // The values occupy the first blocks of the page, point offset 1 at zeroed blocks far behind
+    let corrupt_offset = 1;
+    let old_block_offset =
+        overwrite_tracker_field(&dir, corrupt_offset, TRACKER_BLOCK_OFFSET_FIELD, 100);
+    assert!(old_block_offset < payloads.len() as u32);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+
+    assert_corrupt_pointer_errors(&storage, &payloads, corrupt_offset);
 }

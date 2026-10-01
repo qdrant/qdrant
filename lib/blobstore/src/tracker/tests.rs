@@ -173,7 +173,10 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
     for i in 0..value_count {
         // save only half of the values
         if i % 2 == 0 {
-            tracker.set(i as u32, ValuePointer::new(i as u32, i as u32, i as u32));
+            tracker.set(
+                i as u32,
+                ValuePointer::new(i as u32, i as u32, i as u32 + 1),
+            );
         }
     }
     tracker.write_pending_and_flush_internal().unwrap();
@@ -194,7 +197,7 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
         if i % 2 == 0 {
             assert_eq!(
                 tracker.get::<Random>(i as u32).unwrap(),
-                Some(ValuePointer::new(i as u32, i as u32, i as u32))
+                Some(ValuePointer::new(i as u32, i as u32, i as u32 + 1))
             );
         } else {
             assert_eq!(tracker.get::<Random>(i as u32).unwrap(), None);
@@ -219,7 +222,7 @@ fn test_page_tracker_resize(
     assert_eq!(tracker.mmap_file_size().unwrap(), actual_tracker_size);
 
     for i in 0..100_000 {
-        tracker.set(i, ValuePointer::new(i, i, i));
+        tracker.set(i, ValuePointer::new(i, i, i + 1));
     }
 
     tracker.write_pending_and_flush_internal().unwrap();
@@ -439,7 +442,7 @@ fn test_get_range() {
     assert_eq!(tracker.mmap_file_size().unwrap(), 64);
 
     for offset in 0..3 {
-        tracker.set(offset, ValuePointer::new(offset, offset, offset));
+        tracker.set(offset, ValuePointer::new(offset, offset, offset + 1));
     }
     tracker.write_pending_and_flush_internal().unwrap();
 
@@ -458,9 +461,9 @@ fn test_get_range() {
     assert_eq!(
         expected_writable,
         [
-            Some(ValuePointer::new(0, 0, 0)),
+            Some(ValuePointer::new(0, 0, 1)),
             None,
-            Some(ValuePointer::new(2, 2, 2)),
+            Some(ValuePointer::new(2, 2, 3)),
             Some(ValuePointer::new(3, 3, 3)),
             None,
             None,
@@ -485,9 +488,9 @@ fn test_get_range() {
     assert_eq!(
         expected_read_only,
         [
-            Some(ValuePointer::new(0, 0, 0)),
-            Some(ValuePointer::new(1, 1, 1)),
-            Some(ValuePointer::new(2, 2, 2)),
+            Some(ValuePointer::new(0, 0, 1)),
+            Some(ValuePointer::new(1, 1, 2)),
+            Some(ValuePointer::new(2, 2, 3)),
             None,
             None,
             None,
