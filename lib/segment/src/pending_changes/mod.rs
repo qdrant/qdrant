@@ -453,15 +453,9 @@ impl PendingChangesLogs {
     }
 
     /// Owned log files that exist on disk.
-    pub fn files(&self) -> OperationResult<Vec<PathBuf>> {
+    pub fn files(&self) -> Vec<PathBuf> {
         let files = self.files.lock().clone();
-        let mut existing = Vec::new();
-        for path in files {
-            if log_file_exists(&path)? {
-                existing.push(path);
-            }
-        }
-        Ok(existing)
+        files.into_iter().filter(|path| path.is_file()).collect()
     }
 
     /// Remove the log files at `paths` from disk and release them.
@@ -477,13 +471,6 @@ impl PendingChangesLogs {
 
         Ok(())
     }
-}
-
-/// Whether a pending changes log file exists at `path`. Errors other than not found are returned,
-/// not to silently leave an existing log out of a snapshot.
-pub fn log_file_exists(path: &Path) -> OperationResult<bool> {
-    let metadata = fs_err::metadata(path).ok_not_found()?;
-    Ok(metadata.is_some_and(|metadata| metadata.is_file()))
 }
 
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay

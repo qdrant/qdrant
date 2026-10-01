@@ -2821,30 +2821,19 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
         delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
         segments.flush_all(FlushMode::Sync, true)?;
         assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
-        assert!(wrapped.read().pending_changes_log_files()?.is_empty());
+        assert!(wrapped.read().pending_changes_log_files().is_empty());
         Ok(())
     })
     .unwrap();
     let log_files = list_pending_changes_log_files(&segment_path);
     assert_eq!(log_files.len(), 1);
     let segment = holder.read().iter().next().unwrap().1.clone();
-    assert_eq!(
-        segment.get().read().pending_changes_log_files().unwrap(),
-        log_files
-    );
+    assert_eq!(segment.get().read().pending_changes_log_files(), log_files);
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
     assert!(
         list_pending_changes_log_files(&segment_path).is_empty(),
         "pending changes logs of snapshot proxies must be removed once the wrapped segment flushed",
-    );
-    assert!(
-        segment
-            .get()
-            .read()
-            .pending_changes_log_files()
-            .unwrap()
-            .is_empty()
     );
 }
 

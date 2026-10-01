@@ -116,10 +116,10 @@ impl SnapshotEntry for Segment {
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        self._get_segment_manifest(&self.pending_changes_log_files()?)
+        self._get_segment_manifest(&self.pending_changes_log_files())
     }
 
-    fn pending_changes_log_files(&self) -> OperationResult<Vec<PathBuf>> {
+    fn pending_changes_log_files(&self) -> Vec<PathBuf> {
         self.pending_changes_logs.files()
     }
 
@@ -188,8 +188,8 @@ impl Segment {
                 (file, FileVersion::from(version))
             });
 
-        // Pending proxy changes logs, carried in snapshots so recovery replays them onto the
-        // segment
+        // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
+        // segment. Carried in snapshots so recovery replays them onto the segment.
         let pending_changes_files = pending_changes_logs
             .iter()
             .map(|file| (file.clone(), FileVersion::Unversioned));
@@ -370,11 +370,11 @@ pub fn snapshot_files(
     tar.blocking_append_file(&version_file_path, Path::new(VERSION_FILE))
         .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
 
-    // Pending proxy changes logs, replayed onto the segment when it is loaded on recovery
+    // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
+    // segment; replayed onto the segment when it is loaded on recovery. Skipped if removed since
+    // listed: logs are only removed once their changes are durable in other packed files.
     for file in pending_changes_logs {
         let stripped_path = strip_prefix(file, &segment.segment_path)?;
-        // Skip if removed by a concurrent flush since it was listed. Logs are only removed once
-        // their changes are durable, in the packed segment files or the packed log of a lower proxy.
         tar.blocking_append_file(file, stripped_path)
             .ok_not_found()
             .map_err(|err| failed_to_add("pending changes log file", file, err))?;

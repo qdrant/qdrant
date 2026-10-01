@@ -532,9 +532,8 @@ fn test_take_snapshot() {
     }
 }
 
-/// A persisted pending changes log is part of the snapshot and manifest of its own proxy segment,
-/// so full, partial and streamed snapshots all carry it and recovery can replay it. Snapshots of
-/// the wrapped segment do not carry it.
+/// A persisted pending changes log is part of the segment snapshot and manifest, so full,
+/// partial and streamed snapshots all carry it and recovery can replay it.
 #[test]
 fn test_take_snapshot_includes_pending_changes_log() {
     init_feature_flags(FeatureFlags {
@@ -1278,11 +1277,6 @@ fn test_pending_changes_log_is_compacted_after_propagation() {
 /// not the frozen version of the wrapped segment.
 #[test]
 fn test_pending_changes_log_manifest_version_tracks_content() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hw_cell = HardwareCounterCell::new();
 

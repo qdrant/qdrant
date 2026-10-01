@@ -27,7 +27,7 @@ pub trait SnapshotEntry {
             tar,
             format,
             manifest,
-            &self.pending_changes_log_files()?,
+            &self.pending_changes_log_files(),
         )
     }
 
@@ -48,7 +48,7 @@ pub trait SnapshotEntry {
     /// Pending changes log files visible from this segment, which are packed into its snapshots.
     ///
     /// Includes the logs of proxy layers below this one, never of the ones wrapping it.
-    fn pending_changes_log_files(&self) -> OperationResult<Vec<PathBuf>>;
+    fn pending_changes_log_files(&self) -> Vec<PathBuf>;
 
     /// Pending changes logs owned by the underlying segment, see [`PendingChangesLogs`].
     fn pending_changes_logs(&self) -> PendingChangesLogs;

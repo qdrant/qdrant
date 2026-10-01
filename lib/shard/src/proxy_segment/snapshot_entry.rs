@@ -5,7 +5,7 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::{FileVersion, SegmentManifest};
 use segment::entry::StorageSegmentEntry;
 use segment::entry::snapshot_entry::SnapshotEntry;
-use segment::pending_changes::{PendingChangesLogs, log_file_exists};
+use segment::pending_changes::PendingChangesLogs;
 use segment::types::*;
 
 use super::ProxySegment;
@@ -43,33 +43,32 @@ impl SnapshotEntry for ProxySegment {
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
         let mut manifest = self.wrapped_segment.get().read().get_segment_manifest()?;
 
-        // Add persisted pending changes log file, if any change was persisted
+        // Add persisted pending changes log file
         manifest.segment_version = self.version();
-        let log_path = self.pending_changes.log_path();
-        if log_file_exists(log_path)? {
-            let log_file_name = log_path
-                .file_name()
-                .expect("pending changes log path must have a file name");
-            manifest.file_versions.insert(
-                PathBuf::from(log_file_name),
-                FileVersion::Version(manifest.segment_version),
-            );
-        }
+        let log_file_name = self
+            .pending_changes
+            .log_path()
+            .file_name()
+            .expect("pending changes log path must have a file name");
+        manifest.file_versions.insert(
+            PathBuf::from(log_file_name),
+            FileVersion::Version(manifest.segment_version),
+        );
 
         Ok(manifest)
     }
 
-    fn pending_changes_log_files(&self) -> OperationResult<Vec<PathBuf>> {
+    fn pending_changes_log_files(&self) -> Vec<PathBuf> {
         let mut files = self
             .wrapped_segment
             .get()
             .read()
-            .pending_changes_log_files()?;
+            .pending_changes_log_files();
         let log_path = self.pending_changes.log_path();
-        if log_file_exists(log_path)? {
+        if log_path.is_file() {
             files.push(log_path.to_path_buf());
         }
-        Ok(files)
+        files
     }
 
     fn pending_changes_logs(&self) -> PendingChangesLogs {

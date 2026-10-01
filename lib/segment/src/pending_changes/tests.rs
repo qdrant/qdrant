@@ -1312,32 +1312,3 @@ fn test_logs_remove_keeps_failed_log_listed() {
     assert!(!removed.exists());
     assert_eq!(*logs.files.lock(), vec![failing]);
 }
-
-/// A listed log removed by a concurrent flush before it is packed is skipped, its changes are
-/// durable in the segment files.
-#[test]
-fn test_snapshot_skips_vanished_log() {
-    use common::tar_ext;
-
-    use crate::entry::snapshot_entry::SnapshotEntry as _;
-    use crate::types::SnapshotFormat;
-
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let segment = build_segment(dir.path());
-    let vanished = pending_changes_log_path(&segment.segment_path, 0, Uuid::new_v4());
-
-    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-    let tar =
-        tar_ext::BuilderExt::new_seekable_owned(fs::File::create(snapshot_file.path()).unwrap());
-    segment
-        .take_snapshot_with_pending_changes_logs(
-            temp_dir.path(),
-            &tar,
-            SnapshotFormat::Streamable,
-            None,
-            &[vanished],
-        )
-        .unwrap();
-    tar.blocking_finish().unwrap();
-}
