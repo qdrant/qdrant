@@ -1,6 +1,7 @@
 pub mod anonymize;
 pub mod blobstore_config;
 pub mod buffered_update_bitslice;
+pub mod deferred_points;
 pub mod error_logging;
 pub mod flags;
 pub mod io_uring;
