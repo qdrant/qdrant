@@ -336,6 +336,28 @@ pub fn will_need_multiple_pages(region: &[u8]) {
         return;
     }
 
+    will_need_aligned(addr, length);
+}
+
+#[cfg(not(unix))]
+pub fn will_need_multiple_pages(_region: &[u8]) {}
+
+/// 🤖 Like [`will_need_multiple_pages`], but also for a region within a single page.
+#[cfg(unix)]
+pub fn will_need(region: &[u8]) {
+    let Some(page_mask) = page_size().map(|s| s - 1) else {
+        return;
+    };
+    // 🤖 `madvise()` requires the address to be page-aligned.
+    let addr = region.as_ptr().map_addr(|addr| addr & !page_mask);
+    will_need_aligned(addr, region.len() + (region.as_ptr().addr() & page_mask));
+}
+
+#[cfg(not(unix))]
+pub fn will_need(_region: &[u8]) {}
+
+#[cfg(unix)]
+fn will_need_aligned(addr: *const u8, length: usize) {
     // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
     // (not file-baked mmap or even if it is an arbitrary invalid address), it
     // will return an error, but it won't crash or cause an undefined behavior.
@@ -348,9 +370,6 @@ pub fn will_need_multiple_pages(region: &[u8]) {
         }
     }
 }
-
-#[cfg(not(unix))]
-pub fn will_need_multiple_pages(_region: &[u8]) {}
 
 /// Returns the system page size in bytes, or `None` if it could not be determined.
 ///

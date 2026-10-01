@@ -218,6 +218,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Whether the backend chooses to populate when using `Populate::Auto`
     fn populate_auto() -> bool;
 
+    /// 🤖 Hint that these byte ranges are about to be read, so the backend may fetch them
+    /// 🤖 concurrently.
+    fn will_need(&self, _byte_ranges: impl Iterator<Item = Range<u64>>) {}
+
     /// Ask to evict related data from RAM cache, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
