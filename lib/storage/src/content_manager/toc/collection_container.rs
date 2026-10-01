@@ -8,6 +8,7 @@ use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
+use common::fs::safe_delete_in_tmp;
 
 use super::TableOfContent;
 use crate::content_manager::alias_mapping::AliasMapping;
@@ -261,30 +262,9 @@ impl TableOfContent {
                     Arc::new(collection)
                 };
 
-                // Update collection state
-                if &existing_collection.state().await != state {
-                    if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
-                        // In some cases on state application it might be needed to abort the transfer
-                        let abort_transfer = |transfer| {
-                            if let Err(error) =
-                                proposal_sender.send(ConsensusOperations::abort_transfer(
-                                    id.clone(),
-                                    transfer,
-                                    "sender was not up to date",
-                                ))
-                            {
-                                log::error!(
-                                    "Can't report transfer progress to consensus: {error}"
-                                )
-                            };
-                        };
-                        existing_collection
-                            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-                            .await?;
-                    } else {
-                        log::error!("Can't apply state: single node mode");
-                    }
-                }
+                let existing_collection = self
+                    .apply_collection_snapshot_state(id, existing_collection, state, !collection_exists)
+                    .await?;
 
                 // Mark local shards as dead (to initiate shard transfer),
                 // if collection has been created during snapshot application
@@ -334,6 +314,73 @@ impl TableOfContent {
 
             Ok(())
         })
+    }
+
+    /// Apply snapshot state, removing a new collection if reconciliation fails before publication.
+    /// The caller must hold `collection_create_lock` for a new collection so cleanup finishes
+    /// before another creation or deletion can use its directory.
+    async fn apply_collection_snapshot_state(
+        &self,
+        id: &str,
+        collection: Arc<Collection>,
+        state: &collection_state::State,
+        new_collection: bool,
+    ) -> Result<Arc<Collection>, StorageError> {
+        if &collection.state().await == state {
+            return Ok(collection);
+        }
+
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
+            log::error!("Can't apply state: single node mode");
+            return Ok(collection);
+        };
+
+        // State application may discover a transfer that the sender needs to abort.
+        let abort_transfer = |transfer| {
+            let abort_transfer = ConsensusOperations::abort_transfer(
+                id.to_string(),
+                transfer,
+                "sender was not up to date",
+            );
+
+            if let Err(err) = proposal_sender.send(abort_transfer) {
+                log::error!("Can't report transfer progress to consensus: {err}");
+            }
+        };
+
+        let result = collection
+            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
+            .await;
+
+        if let Err(error) = result {
+            if new_collection {
+                // Construction has already persisted a valid config. Leaving this directory
+                // without a registry entry would make the next creation attempt reject it.
+                collection.stop_gracefully().await;
+                drop(collection);
+
+                let path = self.get_collection_path(id);
+                let deleted_dir = self.storage_config.storage_path.join(".deleted");
+
+                let to_delete =
+                    safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
+                        StorageError::service_error(format!(
+                            "Failed to apply snapshot state for collection {id}: {error}; \
+                             failed to remove unpublished collection: {cleanup_error}",
+                        ))
+                    })?;
+
+                tokio::task::spawn_blocking(move || {
+                    if let Err(error) = to_delete.close() {
+                        log::error!("Can't delete unpublished collection from disk: {error}");
+                    }
+                });
+            }
+
+            return Err(error.into());
+        }
+
+        Ok(collection)
     }
 
     async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {

@@ -172,6 +172,66 @@ fn snapshot_recreates_collection_with_incompatible_config() {
     assert_eq!(toc.general_runtime.block_on(collection.state()), expected);
 }
 
+#[test]
+fn snapshot_state_failure_removes_unpublished_collection_and_allows_retry() {
+    let (_storage_dir, toc) = new_toc();
+    create_collection(&toc, "new");
+    let mut snapshot = toc.collections_snapshot_sync();
+    let state = snapshot.collections.get_mut("new").unwrap();
+    state.config.uuid = Some(uuid::Uuid::new_v4());
+    let expected = state.clone();
+    let path = toc.get_collection_path("new");
+
+    // Reproduce the state after construction but before publication, with a valid config
+    // on disk. A UUID mismatch forces apply_state to fail without filesystem timing races.
+    let error = toc.general_runtime.block_on(async {
+        let _create_guard = toc.collection_create_lock.lock().await;
+        let collection = toc.collections.write().await.remove("new").unwrap();
+        toc.apply_collection_snapshot_state("new", collection, &expected, true)
+            .await
+            .err()
+            .expect("state application must fail")
+    });
+
+    assert!(error.to_string().contains("UUID mismatch"), "{error}");
+    assert!(toc.all_collections_sync().is_empty());
+    assert!(
+        !path.exists(),
+        "failed unpublished collection must be removed"
+    );
+
+    toc.apply_collections_snapshot(snapshot).unwrap();
+
+    let collection = get_collection(&toc, "new");
+    assert_eq!(toc.general_runtime.block_on(collection.state()), expected);
+}
+
+#[test]
+fn snapshot_state_failure_keeps_published_collection() {
+    let (_storage_dir, toc) = new_toc();
+    create_collection(&toc, "existing");
+    let mut snapshot = toc.collections_snapshot_sync();
+    let state = snapshot.collections.get_mut("existing").unwrap();
+    state.config.uuid = Some(uuid::Uuid::new_v4());
+    let collection = get_collection(&toc, "existing");
+    let original_state = toc.general_runtime.block_on(collection.state());
+
+    let error = toc.general_runtime.block_on(async {
+        toc.apply_collection_snapshot_state("existing", collection, state, false)
+            .await
+            .err()
+            .expect("state application must fail")
+    });
+
+    assert!(error.to_string().contains("UUID mismatch"), "{error}");
+    let collection = get_collection(&toc, "existing");
+    assert_eq!(
+        toc.general_runtime.block_on(collection.state()),
+        original_state
+    );
+    assert!(toc.get_collection_path("existing").exists());
+}
+
 fn create_collection(toc: &TableOfContent, name: &str) {
     let config: CreateCollection = serde_json::from_value(serde_json::json!({
         "vectors": {"size": 4, "distance": "Dot"},
