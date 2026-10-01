@@ -381,3 +381,6 @@ impl TableOfContent {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
