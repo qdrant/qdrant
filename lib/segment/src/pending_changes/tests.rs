@@ -1291,3 +1291,53 @@ fn test_proxy_changes_propagate_in_two_passes() {
     assert!(!segment.has_point(2.into(), DeferredBehavior::WithDeferred));
     assert!(segment.has_point(3.into(), DeferredBehavior::WithDeferred));
 }
+
+/// A log is only released once its file is gone, so one failing to be removed stays listed and
+/// keeps being packed into snapshots.
+#[test]
+fn test_logs_remove_keeps_failed_log_listed() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let removed = pending_changes_log_path(dir.path(), 0, Uuid::new_v4());
+    let failing = pending_changes_log_path(dir.path(), 1, Uuid::new_v4());
+    fs::write(&removed, b"").unwrap();
+    // Removing a directory as a file fails
+    fs::create_dir(&failing).unwrap();
+
+    let logs = PendingChangesLogs::default();
+    logs.adopt(removed.clone());
+    logs.adopt(failing.clone());
+
+    logs.remove(&[removed.clone(), failing.clone()])
+        .unwrap_err();
+    assert!(!removed.exists());
+    assert_eq!(*logs.files.lock(), vec![failing]);
+}
+
+/// A listed log removed by a concurrent flush before it is packed is skipped, its changes are
+/// durable in the segment files.
+#[test]
+fn test_snapshot_skips_vanished_log() {
+    use common::tar_ext;
+
+    use crate::entry::snapshot_entry::SnapshotEntry as _;
+    use crate::types::SnapshotFormat;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment(dir.path());
+    let vanished = pending_changes_log_path(&segment.segment_path, 0, Uuid::new_v4());
+
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(fs::File::create(snapshot_file.path()).unwrap());
+    segment
+        .take_snapshot_with_pending_changes_logs(
+            temp_dir.path(),
+            &tar,
+            SnapshotFormat::Streamable,
+            None,
+            &[vanished],
+        )
+        .unwrap();
+    tar.blocking_finish().unwrap();
+}

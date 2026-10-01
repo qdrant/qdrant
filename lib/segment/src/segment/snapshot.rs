@@ -372,8 +372,13 @@ pub fn snapshot_files(
     // Pending proxy changes logs, replayed onto the segment when it is loaded on recovery
     for file in pending_changes_logs {
         let stripped_path = strip_prefix(file, &segment.segment_path)?;
-        tar.blocking_append_file(file, stripped_path)
-            .map_err(|err| failed_to_add("pending changes log file", file, err))?;
+        match tar.blocking_append_file(file, stripped_path) {
+            Ok(()) => {}
+            // Removed by a concurrent flush since it was listed. Logs are only removed once their
+            // changes are durable, in the packed segment files or the packed log of a lower proxy.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(failed_to_add("pending changes log file", file, err)),
+        }
     }
 
     Ok(())

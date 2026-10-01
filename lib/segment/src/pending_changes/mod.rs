@@ -477,12 +477,11 @@ impl PendingChangesLogs {
             .collect()
     }
 
-    /// Release the log files at `paths` and remove them from disk.
+    /// Remove the log files at `paths` from disk and release them.
     ///
-    /// Only safe once the segment durably persists the changes they hold.
+    /// Only safe once the segment durably persists the changes they hold. A log is only released
+    /// once its file is gone, so one that fails to be removed stays listed.
     pub fn remove(&self, paths: &[PathBuf]) -> OperationResult<()> {
-        self.files.lock().retain(|path| !paths.contains(path));
-
         for path in paths {
             match fs_err::remove_file(path) {
                 Ok(()) => {}
@@ -495,6 +494,7 @@ impl PendingChangesLogs {
                     )));
                 }
             }
+            self.files.lock().retain(|file| file != path);
         }
 
         Ok(())
