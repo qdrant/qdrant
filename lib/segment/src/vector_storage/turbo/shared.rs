@@ -215,3 +215,29 @@ pub(super) fn dequantize_for_requantization(
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cheap size helper must match the record size of the quantizer every
+    /// TQ storage builds, or merged placeholders would misalign records.
+    #[test]
+    fn quantized_vector_size_matches_quantizer() {
+        let distances = [
+            Distance::Cosine,
+            Distance::Euclid,
+            Distance::Dot,
+            Distance::Manhattan,
+        ];
+        for distance in distances {
+            for dim in [1, 4, 5, 127, 256, 1023] {
+                assert_eq!(
+                    quantized_vector_size(dim, distance),
+                    build_quantizer(dim, distance).quantized_size(),
+                    "dim {dim}, distance {distance:?}",
+                );
+            }
+        }
+    }
+}

@@ -894,8 +894,12 @@ fn read_sparse(
 
 #[cfg(test)]
 mod tests {
+    use tempfile::Builder;
+
     use super::*;
-    use crate::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
+    use crate::types::{
+        Distance, Memory, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype,
+    };
     use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
     use crate::vector_storage::dense::volatile_dense_vector_storage::{
         new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
@@ -906,6 +910,10 @@ mod tests {
         new_volatile_multi_dense_vector_storage_half,
     };
     use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
+    use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
+    use crate::vector_storage::turbo::{
+        open_appendable_turbo_vector_storage, open_turbo_vector_storage,
+    };
 
     const DIM: usize = 4;
     const POINTS: PointOffsetType = 5;
@@ -990,6 +998,52 @@ mod tests {
         assert_placeholder_merges(
             new_volatile_dense_half_vector_storage(DIM, Distance::Cosine),
             empty_placeholder(VectorStorageDatatype::Float16, false),
+        );
+    }
+
+    /// Single-file target, as built for an indexed segment. It writes records
+    /// back to back without checking their size; the appendable target below
+    /// does check it, and both read through `read_dense_tq`.
+    #[test]
+    fn merge_empty_placeholder_into_dense_turbo() {
+        let dir = Builder::new().prefix("merge_turbo").tempdir().unwrap();
+        assert_placeholder_merges(
+            open_turbo_vector_storage(dir.path(), DIM, Distance::Cosine, Memory::Cached).unwrap(),
+            empty_placeholder(VectorStorageDatatype::Turbo4, false),
+        );
+    }
+
+    #[test]
+    fn merge_empty_placeholder_into_appendable_dense_turbo() {
+        let dir = Builder::new()
+            .prefix("merge_appendable_turbo")
+            .tempdir()
+            .unwrap();
+        let target =
+            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Cosine, false).unwrap();
+        assert_placeholder_merges(
+            VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(target)),
+            empty_placeholder(VectorStorageDatatype::Turbo4, false),
+        );
+    }
+
+    #[test]
+    fn merge_empty_multivector_placeholder_into_multi_dense_turbo() {
+        let dir = Builder::new()
+            .prefix("merge_multi_turbo")
+            .tempdir()
+            .unwrap();
+        let target = open_appendable_turbo_multi_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Cosine,
+            MULTI_CONFIG,
+            false,
+        )
+        .unwrap();
+        assert_placeholder_merges(
+            VectorStorageEnum::MultiDenseTurbo(Box::new(target)),
+            empty_placeholder(VectorStorageDatatype::Turbo4, true),
         );
     }
 }
