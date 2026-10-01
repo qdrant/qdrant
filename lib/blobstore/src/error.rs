@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use common::mmap;
 use common::universal_io::{IsNotFound, UniversalIoError};
 
@@ -23,6 +25,11 @@ pub enum BlobstoreError {
     UnsupportedOperation { operation: String },
     #[error("Page {page_id} not found")]
     PageNotFound { page_id: PageId },
+    #[error("Requested pages {page_ids:?}, but we only have {available_pages} pages")]
+    PageRangeNotFound {
+        page_ids: Range<PageId>,
+        available_pages: usize,
+    },
     #[error("value {point_offset} not found")]
     ValueNotFound { point_offset: PointOffset },
     /// Stored bytes don't decode into a value, the storage is corrupt
@@ -68,6 +75,7 @@ impl IsNotFound for BlobstoreError {
             | BlobstoreError::ValidationError { .. }
             | BlobstoreError::UnsupportedOperation { .. }
             | BlobstoreError::PageNotFound { .. }
+            | BlobstoreError::PageRangeNotFound { .. }
             | BlobstoreError::ValueNotFound { .. }
             | BlobstoreError::DecodeError { .. } => false,
         }

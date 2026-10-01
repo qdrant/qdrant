@@ -253,13 +253,14 @@ impl<S: UniversalRead> Pages<S> {
     /// exist. Reading it must return an error rather than index out of bounds.
     fn check_pages_exist(&self, pointer: ValuePointer, config: &GridstoreConfig) -> Result<()> {
         // A pointer always covers its first page, even with a zero length
-        let pages = cmp::max(Self::value_len_pages(pointer, config), 1) as u64;
-        let num_pages = self.pages.len() as u64;
+        let need_pages = cmp::max(Self::value_len_pages(pointer, config), 1) as u64;
+        let available_pages = self.pages.len();
 
-        if u64::from(pointer.page_id).saturating_add(pages) > num_pages {
-            // Report the first page that doesn't exist
-            let page_id = u64::from(pointer.page_id).max(num_pages) as PageId;
-            return Err(BlobstoreError::PageNotFound { page_id });
+        if u64::from(pointer.page_id).saturating_add(need_pages) > available_pages as u64 {
+            return Err(BlobstoreError::PageRangeNotFound {
+                page_ids: pointer.page_id..pointer.page_id + need_pages as u32,
+                available_pages,
+            });
         }
 
         Ok(())
