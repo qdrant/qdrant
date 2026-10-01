@@ -137,7 +137,7 @@ where
 
     let enumerator = ManifestSegmentEnumerator::new(cached_fs.clone(), &prefix);
     let shard = meter.measure("open", || {
-        UpdateOnlyEdgeShard::<CachedBlobFs<A>>::open(cached_fs.clone(), &prefix, enumerator)
+        UpdateOnlyEdgeShard::<CachedBlobFs<A>>::open(cached_fs.clone(), &prefix, enumerator, None)
             .context("failed to open update-only edge shard over object storage")
     })?;
     log::info!(

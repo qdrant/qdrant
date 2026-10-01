@@ -68,6 +68,11 @@ pub struct UpdateOnlyEdgeShard<Fs: UniversalAppendFs> {
     /// backend each segment's reads block on the network, so segments are
     /// visited in parallel.
     pool: Arc<ThreadPool>,
+    /// Deferred-points threshold in KB, like the indexing threshold: an
+    /// appendable segment's slots past it hold deferred points, invisible to
+    /// readers until a rebuild indexes them. `None` writes as if every point
+    /// were visible.
+    deferred_threshold_kb: Option<usize>,
 }
 
 /// One segment's schema, as reported by

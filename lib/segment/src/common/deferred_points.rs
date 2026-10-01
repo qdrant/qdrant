@@ -1,6 +1,36 @@
 use common::types::PointOffsetType;
 
-use crate::types::VectorStorageDatatype;
+use crate::common::BYTES_IN_KB;
+use crate::types::{SegmentConfig, VectorStorageDatatype};
+
+/// Internal id from which points of a segment with `config` are deferred, for a deferred-points
+/// threshold of `threshold_kb` (in KB, like the indexing threshold); `None` for a zero threshold
+/// or a segment without dense vectors.
+///
+/// Mirrors the leader's conversion over the segment's dense vectors. The leader counts only
+/// vectors with HNSW enabled, which a segment config doesn't record, so a large vector with HNSW
+/// disabled makes the cutoff stricter here than on the leader.
+pub fn segment_deferred_internal_id(
+    config: &SegmentConfig,
+    threshold_kb: usize,
+) -> Option<PointOffsetType> {
+    let threshold_bytes = threshold_kb.saturating_mul(BYTES_IN_KB);
+    if threshold_bytes == 0 {
+        return None;
+    }
+    config
+        .vector_data
+        .values()
+        .map(|vector_config| {
+            deferred_point_offset(
+                threshold_bytes,
+                vector_config.size,
+                vector_config.datatype,
+                vector_config.multivector_config.is_some(),
+            )
+        })
+        .min()
+}
 
 /// First internal id from which an appendable segment defers points, for a deferred-points
 /// threshold of `threshold_bytes` and a per-point vector of `dim` elements of `datatype`.

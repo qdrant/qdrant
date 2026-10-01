@@ -32,7 +32,11 @@ pub struct PointPreview {
     /// The newest stored copy of the point; `None` when no segment holds it.
     pub current: Option<PointCopy>,
     /// Every slot the point occupies across segments, the newest's included —
-    /// all of them are tombstoned when the action stores or deletes the point.
+    /// all of them are tombstoned when the action stores or deletes the point,
+    /// except the other segments' copies of a point stored past the
+    /// deferred-points threshold (see [`PointApplyRecord::shadowed`]).
+    ///
+    /// [`PointApplyRecord::shadowed`]: crate::PointApplyRecord::shadowed
     pub slots: Vec<(Uuid, PointOffsetType)>,
     pub action: PointAction,
 }
