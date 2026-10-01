@@ -4,10 +4,15 @@ use segment::json_path::JsonPath;
 /// The error type returned from fallible `EdgeShard` operations and
 /// `UpdateOperation` constructors.
 ///
-/// Three branchable variants let Swift/Kotlin hosts pattern-match on the error
+/// Five branchable variants let Swift/Kotlin hosts pattern-match on the error
 /// category:
 ///
 /// - `ShardClosed` — the shard has been unloaded; reopen it via `load`.
+/// - `ShardLocked` — another live handle already holds the shard; recoverable,
+///   distinct from corruption (close the other handle or retry).
+/// - `Unreadable` — existing on-disk data is present but will not open (corrupt
+///   or inaccessible config, segments, or WAL); do **not** recreate over it —
+///   that destroys it.
 /// - `InvalidArgument` — host-supplied input was invalid; fix it and retry.
 /// - `OperationError` — any other engine failure (I/O, missing index, etc.).
 ///
@@ -24,6 +29,10 @@ use segment::json_path::JsonPath;
 ///     let shard = try EdgeShard.load(path: dataDir, config: nil)
 /// } catch EdgeError.shardClosed {
 ///     print("Shard is closed — reopen it first")
+/// } catch EdgeError.shardLocked {
+///     print("Another handle has this shard open — retry or close it first")
+/// } catch let EdgeError.unreadable(reason) {
+///     print("Store present but unreadable — do NOT overwrite: \(reason)")
 /// } catch let EdgeError.invalidArgument(reason) {
 ///     print("Bad input: \(reason)")
 /// } catch let error as EdgeError {
@@ -36,6 +45,10 @@ use segment::json_path::JsonPath;
 ///     val shard = EdgeShard.load(path = dataDir, config = null)
 /// } catch (e: EdgeException.ShardClosed) {
 ///     println("Shard is closed — reopen it first")
+/// } catch (e: EdgeException.ShardLocked) {
+///     println("Another handle has this shard open — retry or close it first")
+/// } catch (e: EdgeException.Unreadable) {
+///     println("Store present but unreadable — do NOT overwrite: ${e.reason}")
 /// } catch (e: EdgeException.InvalidArgument) {
 ///     println("Bad input: ${e.reason}")
 /// } catch (e: EdgeException.OperationException) {
@@ -47,6 +60,24 @@ pub enum EdgeError {
     /// The shard has been unloaded/disposed; reopen it via `load` to continue.
     #[error("shard is closed")]
     ShardClosed,
+
+    /// Another live handle already holds this shard (its write-ahead log is
+    /// locked). This is an ordinary, recoverable condition — a second isolate,
+    /// a store the app forgot to close, a provider rebuilt — and is explicitly
+    /// *not* corruption: close the other handle (or retry) and the shard opens.
+    /// Only [`EdgeShard::load`](crate::EdgeShard::load) returns it.
+    #[error("shard is already open by another handle")]
+    ShardLocked,
+
+    /// Existing on-disk shard data is present at the path but cannot be read —
+    /// a corrupt/unparseable or inaccessible `edge_config.json`, segments that
+    /// will not load, or a corrupt WAL (a *held* WAL lock is `ShardLocked`, not
+    /// this). The reaction differs from a fresh start: the caller must **not** recreate
+    /// over it (that would destroy recoverable data), so it is surfaced as its
+    /// own branchable category rather than a generic `OperationError`. Only
+    /// [`EdgeShard::load`](crate::EdgeShard::load) returns it.
+    #[error("{reason}")]
+    Unreadable { reason: String },
 
     /// Host-supplied input was invalid (bad UUID, out-of-range coordinate,
     /// malformed payload key/JSON, contradictory match filter, …). Fix the
