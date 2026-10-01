@@ -175,11 +175,13 @@ impl TableOfContent {
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            let mut existing_collections = self.collections.write().await;
-
             for (id, state) in &data.collections {
-                if let Some(existing_collection) = existing_collections.get(id) {
-                    let collection_uuid = existing_collection.uuid().await;
+                // Collection construction and state application can take a long time. Clone the
+                // handle so unrelated collection lookups do not wait for this work.
+                let mut existing_collection = self.collections.read().await.get(id).cloned();
+
+                if let Some(collection) = &existing_collection {
+                    let collection_uuid = collection.uuid().await;
 
                     let recreate_collection = if collection_uuid != state.config.uuid {
                         log::warn!(
@@ -190,7 +192,7 @@ impl TableOfContent {
                         );
 
                         true
-                    } else if let Err(err) = existing_collection.check_config_compatible(&state.config).await {
+                    } else if let Err(err) = collection.check_config_compatible(&state.config).await {
                         log::warn!(
                             "Recreating collection {id}, because collection config is incompatible: \
                              {err}",
@@ -202,21 +204,25 @@ impl TableOfContent {
                     };
 
                     if recreate_collection {
-                        // Drop `collections` lock
-                        drop(existing_collections);
-
-                        // Delete collection
+                        // Deletion waits for outstanding handles before removing the files.
+                        drop(existing_collection.take());
                         self.delete_collection(id).await?;
-
-                        // Re-acquire `collections` lock 🙄
-                        existing_collections = self.collections.write().await;
                     }
                 }
 
-                let collection_exists = existing_collections.contains_key(id);
+                let collection_exists = existing_collection.is_some();
 
-                // Create collection if not present locally
-                if !collection_exists {
+                // Serialize filesystem changes with regular collection creation and deletion.
+                let collection_create_guard = if !collection_exists {
+                    Some(self.collection_create_lock.lock().await)
+                } else {
+                    None
+                };
+
+                let existing_collection = if let Some(collection) = existing_collection {
+                    collection
+                } else {
+                    self.collections.read().await.validate_collection_not_exists(id)?;
                     let collection_path = self.create_collection_path(id).await?;
                     let snapshots_path = self.create_snapshots_path(id).await?;
                     let shard_distribution =
@@ -252,12 +258,7 @@ impl TableOfContent {
                         self.storage_config.optimizers_overwrite.clone(),
                     )
                     .await?;
-                    existing_collections.validate_collection_not_exists(id)?;
-                    existing_collections.insert(id.clone(), Arc::new(collection));
-                }
-
-                let Some(existing_collection) = existing_collections.get(id) else {
-                    unreachable!()
+                    Arc::new(collection)
                 };
 
                 // Update collection state
@@ -299,14 +300,19 @@ impl TableOfContent {
                             replica_set.add_locally_disabled(None, self.this_peer_id, None);
                         }
                     }
+
+                    // Keep new collections hidden while applying replica states and local
+                    // disabling, so requests cannot reach them between these steps.
+                    let mut collections = self.collections.write().await;
+                    collections.validate_collection_not_exists(id)?;
+                    collections.insert(id.clone(), existing_collection);
                 }
+
+                drop(collection_create_guard);
             }
 
-            // Collect names of collections that are present locally
-            let collection_names: Vec<_> = existing_collections.keys().cloned().collect();
-
-            // Drop `collections` lock
-            drop(existing_collections);
+            // Collect names without retaining collection handles that would delay deletion.
+            let collection_names: Vec<_> = self.collections.read().await.keys().cloned().collect();
 
             // Remove collections that are present locally, but are not in the snapshot state
             for collection_name in &collection_names {
