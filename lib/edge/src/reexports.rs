@@ -1,4 +1,5 @@
 mod reexports_from_qdrant_crates {
+    pub use common::budget::ResourceBudget;
     pub use segment::common::operation_error::{OperationError, OperationResult};
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};
     pub use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
