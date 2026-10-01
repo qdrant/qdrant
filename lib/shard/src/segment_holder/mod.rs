@@ -11,7 +11,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
@@ -31,6 +31,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
+use segment::pending_changes::PendingChangesLogs;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
@@ -569,6 +570,24 @@ impl SegmentHolder {
                 }
                 Err(DropDataOutcome::Failed(err)) => Err(err),
             }
+        });
+    }
+
+    /// Register a [post-flush action](Self::register_post_flush_action) that removes the pending
+    /// changes log files at `paths` from `logs` and disk, once the segment durably persists
+    /// `ready_at`.
+    pub fn register_pending_changes_logs_removal(
+        &self,
+        ready_at: SeqNumberType,
+        logs: PendingChangesLogs,
+        paths: Vec<PathBuf>,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+        self.register_post_flush_action(ready_at, ready_at, move || {
+            logs.remove(&paths)?;
+            Ok(PostFlushOutcome::Done)
         });
     }
 

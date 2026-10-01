@@ -266,8 +266,9 @@ impl ProxySegment {
     /// If propagating fails nothing is cleared, and a retry applies everything again; that is
     /// safe because all operations are version gated.
     ///
-    /// The pending changes log file is left in place here. `unwarp_proxy` is responsible for
-    /// removing it.
+    /// The pending changes log file is left in place here. `SegmentHolder::unproxy_segments` hands
+    /// it over to the wrapped segment, which removes it once durable, see
+    /// [`segment::pending_changes::PendingChangesLogs`].
     pub fn propagate_to_wrapped(&mut self) -> OperationResult<()> {
         let changes = self.pending_changes.changes();
         if changes.is_empty() {

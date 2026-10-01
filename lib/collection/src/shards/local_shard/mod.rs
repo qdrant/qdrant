@@ -72,9 +72,7 @@ use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, PostFlushOutcome, SegmentHolder,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -504,16 +502,11 @@ impl LocalShard {
 
             // Defer removing the pending changes log files until a future flush proves the
             // replayed operations durable; see `RecoveredPendingChanges::log_files`.
-            if !recovered.log_files.is_empty() {
-                segment_holder.register_post_flush_action(
-                    recovered.ready_at,
-                    recovered.ready_at,
-                    move || {
-                        recovered.remove_log_files()?;
-                        Ok(PostFlushOutcome::Done)
-                    },
-                );
-            }
+            segment_holder.register_pending_changes_logs_removal(
+                recovered.ready_at,
+                recovered.logs,
+                recovered.log_files,
+            );
         }
         drop(segment_stream); // release `payload_index_schema` from borrow checker
 

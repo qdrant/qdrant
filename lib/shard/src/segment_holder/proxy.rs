@@ -3,7 +3,7 @@ use segment::common::operation_error::OperationError;
 
 use crate::locked_segment::LockedSegment;
 use crate::segment_holder::locked::{LockedSegmentHolder, UpdatesGuard};
-use crate::segment_holder::{PostFlushOutcome, SegmentHolder, SegmentId};
+use crate::segment_holder::{SegmentHolder, SegmentId};
 
 /// The segment holder lock handed back when unproxying fails, with the error that caused it.
 pub type UnproxyError<'a> = (RwLockUpgradableReadGuard<'a, SegmentHolder>, OperationError);
@@ -126,10 +126,11 @@ impl SegmentHolder {
                 )
             };
             pending_changes_logs.adopt(log_path.clone());
-            write_segments.register_post_flush_action(ready_at, ready_at, move || {
-                pending_changes_logs.remove(std::slice::from_ref(&log_path))?;
-                Ok(PostFlushOutcome::Done)
-            });
+            write_segments.register_pending_changes_logs_removal(
+                ready_at,
+                pending_changes_logs,
+                vec![log_path],
+            );
         }
 
         Ok((write_segments, updates_guard))

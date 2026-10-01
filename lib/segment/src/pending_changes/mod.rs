@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
+use common::universal_io::OkNotFound as _;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -435,13 +436,6 @@ pub struct RecoveredPendingChanges {
     pub logs: PendingChangesLogs,
 }
 
-impl RecoveredPendingChanges {
-    /// Remove the recovered log files, see [`PendingChangesLogs::remove`].
-    pub fn remove_log_files(&self) -> OperationResult<()> {
-        self.logs.remove(&self.log_files)
-    }
-}
-
 /// Pending changes log files that are part of a segment's state.
 ///
 /// A log file outlives the proxy that wrote it: it is kept until the segment durably persists the
@@ -468,13 +462,15 @@ impl PendingChangesLogs {
     }
 
     /// Owned log files that exist on disk.
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.files
-            .lock()
-            .iter()
-            .filter(|path| path.is_file())
-            .cloned()
-            .collect()
+    pub fn files(&self) -> OperationResult<Vec<PathBuf>> {
+        let files = self.files.lock().clone();
+        let mut existing = Vec::with_capacity(files.len());
+        for path in files {
+            if log_file_exists(&path)? {
+                existing.push(path);
+            }
+        }
+        Ok(existing)
     }
 
     /// Remove the log files at `paths` from disk and release them.
@@ -483,22 +479,20 @@ impl PendingChangesLogs {
     /// once its file is gone, so one that fails to be removed stays listed.
     pub fn remove(&self, paths: &[PathBuf]) -> OperationResult<()> {
         for path in paths {
-            match fs_err::remove_file(path) {
-                Ok(()) => {}
-                // A log never flushed before its proxy was unwrapped has no file
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => {
-                    return Err(OperationError::service_error(format!(
-                        "Failed to remove pending changes log {}: {err}",
-                        path.display(),
-                    )));
-                }
-            }
+            // A log never flushed before its proxy was unwrapped has no file
+            fs_err::remove_file(path).ok_not_found()?;
             self.files.lock().retain(|file| file != path);
         }
 
         Ok(())
     }
+}
+
+/// Whether a pending changes log file exists at `path`. Errors other than not found are returned,
+/// not to silently leave an existing log out of a snapshot.
+pub fn log_file_exists(path: &Path) -> OperationResult<bool> {
+    let metadata = fs_err::metadata(path).ok_not_found()?;
+    Ok(metadata.is_some_and(|metadata| metadata.is_file()))
 }
 
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay

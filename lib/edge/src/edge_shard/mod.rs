@@ -19,7 +19,7 @@ use segment::segment_constructor::{build_segment, load_segment, normalize_segmen
 use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
-use shard::segment_holder::{FlushMode, PostFlushOutcome, SegmentHolder};
+use shard::segment_holder::{FlushMode, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use uuid::Uuid;
@@ -479,16 +479,11 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
 
         segments.add_new(segment);
 
-        if !recovered.log_files.is_empty() {
-            segments.register_post_flush_action(
-                recovered.ready_at,
-                recovered.ready_at,
-                move || {
-                    recovered.remove_log_files()?;
-                    Ok(PostFlushOutcome::Done)
-                },
-            );
-        }
+        segments.register_pending_changes_logs_removal(
+            recovered.ready_at,
+            recovered.logs,
+            recovered.log_files,
+        );
     }
 
     Ok((segments, derived))

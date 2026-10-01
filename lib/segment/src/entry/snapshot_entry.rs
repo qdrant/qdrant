@@ -13,8 +13,8 @@ pub trait SnapshotEntry {
 
     /// Take a snapshot of the segment.
     ///
-    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    /// Uses `temp_path` to prepare files to archive.
+    /// Packs the segment files and [`Self::pending_changes_log_files`] into `tar`, not every file
+    /// in the segment directory. Uses `temp_path` to prepare files to archive.
     fn take_snapshot(
         &self,
         temp_path: &Path,
@@ -27,7 +27,7 @@ pub trait SnapshotEntry {
             tar,
             format,
             manifest,
-            &self.pending_changes_log_files(),
+            &self.pending_changes_log_files()?,
         )
     }
 
@@ -48,7 +48,7 @@ pub trait SnapshotEntry {
     /// Pending changes log files visible from this segment, which are packed into its snapshots.
     ///
     /// Includes the logs of proxy layers below this one, never of the ones wrapping it.
-    fn pending_changes_log_files(&self) -> Vec<PathBuf>;
+    fn pending_changes_log_files(&self) -> OperationResult<Vec<PathBuf>>;
 
     /// Pending changes logs owned by the underlying segment, see [`PendingChangesLogs`].
     fn pending_changes_logs(&self) -> PendingChangesLogs;

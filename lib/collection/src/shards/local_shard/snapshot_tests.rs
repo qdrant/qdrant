@@ -443,7 +443,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
 fn test_snapshot_excludes_active_proxy_pending_log() {
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::entry::NonAppendableSegmentEntry as _;
-    use segment::pending_changes::list_pending_changes_log_files;
+    use segment::pending_changes::{LOG_FILE_PREFIX, list_pending_changes_log_files};
     use shard::locked_segment::LockedSegment;
     use shard::segment_holder::FlushMode;
 
@@ -500,7 +500,7 @@ fn test_snapshot_excludes_active_proxy_pending_log() {
     for entry in tar.entries().unwrap() {
         let path = entry.unwrap().path().unwrap().into_owned();
         assert!(
-            !path.to_string_lossy().contains("proxy_changes"),
+            !path.to_string_lossy().contains(LOG_FILE_PREFIX),
             "active proxy pending log must not be packed: {}",
             path.display(),
         );
@@ -509,11 +509,19 @@ fn test_snapshot_excludes_active_proxy_pending_log() {
     // Unwrapped, the segment owns the log until a flush persists the propagated delete
     let segments = holder.read();
     let segment = segments.get(segment_id).unwrap().get();
+    let log_files = list_pending_changes_log_files(&segment_path);
+    assert_eq!(log_files.len(), 1);
     assert_eq!(
-        segment.read().pending_changes_log_files(),
-        list_pending_changes_log_files(&segment_path),
+        segment.read().pending_changes_log_files().unwrap(),
+        log_files
     );
     segments.flush_all(FlushMode::Sync, true).unwrap();
-    assert!(segment.read().pending_changes_log_files().is_empty());
+    assert!(
+        segment
+            .read()
+            .pending_changes_log_files()
+            .unwrap()
+            .is_empty()
+    );
     assert!(list_pending_changes_log_files(&segment_path).is_empty());
 }

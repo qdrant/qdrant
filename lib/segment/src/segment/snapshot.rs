@@ -6,6 +6,7 @@ use std::{fmt, thread};
 
 use common::storage_version::VERSION_FILE;
 use common::tar_ext;
+use common::universal_io::OkNotFound as _;
 use fs_err as fs;
 use uuid::Uuid;
 
@@ -115,10 +116,10 @@ impl SnapshotEntry for Segment {
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        self._get_segment_manifest(&self.pending_changes_log_files())
+        self._get_segment_manifest(&self.pending_changes_log_files()?)
     }
 
-    fn pending_changes_log_files(&self) -> Vec<PathBuf> {
+    fn pending_changes_log_files(&self) -> OperationResult<Vec<PathBuf>> {
         self.pending_changes_logs.files()
     }
 
@@ -372,13 +373,11 @@ pub fn snapshot_files(
     // Pending proxy changes logs, replayed onto the segment when it is loaded on recovery
     for file in pending_changes_logs {
         let stripped_path = strip_prefix(file, &segment.segment_path)?;
-        match tar.blocking_append_file(file, stripped_path) {
-            Ok(()) => {}
-            // Removed by a concurrent flush since it was listed. Logs are only removed once their
-            // changes are durable, in the packed segment files or the packed log of a lower proxy.
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(failed_to_add("pending changes log file", file, err)),
-        }
+        // Skip if removed by a concurrent flush since it was listed. Logs are only removed once
+        // their changes are durable, in the packed segment files or the packed log of a lower proxy.
+        tar.blocking_append_file(file, stripped_path)
+            .ok_not_found()
+            .map_err(|err| failed_to_add("pending changes log file", file, err))?;
     }
 
     Ok(())
