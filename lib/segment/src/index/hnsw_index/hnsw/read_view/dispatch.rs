@@ -1,5 +1,5 @@
 use common::condition_checker::ConditionChecker;
-use common::types::{DeferredBehavior, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
@@ -87,6 +87,7 @@ where
                         top,
                         params,
                         SearchAlgorithm::Hnsw,
+                        &[],
                         query_context,
                     )
                 }
@@ -154,6 +155,7 @@ where
                         &query_cardinality,
                         top,
                         params,
+                        &[],
                         query_context,
                     );
                 }
@@ -198,6 +200,7 @@ where
                         &query_cardinality,
                         top,
                         params,
+                        &[],
                         query_context,
                     )
                 } else {
@@ -247,6 +250,7 @@ where
                 query_cardinality,
                 top,
                 params,
+                &matches,
                 query_context,
             );
         }
@@ -255,6 +259,7 @@ where
     }
 
     /// Filtered graph search, timed under the counter of the algorithm it runs.
+    #[expect(clippy::too_many_arguments)]
     fn search_vectors_with_graph_filtered(
         &self,
         vectors: &[&QueryVector],
@@ -262,6 +267,7 @@ where
         query_cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
+        known_matches: &[PointOffsetType],
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
@@ -269,7 +275,15 @@ where
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
         });
-        self.search_vectors_with_graph(vectors, Some(filter), top, params, algorithm, query_context)
+        self.search_vectors_with_graph(
+            vectors,
+            Some(filter),
+            top,
+            params,
+            algorithm,
+            known_matches,
+            query_context,
+        )
     }
 
     /// ACORN runs when it is enabled and the filter is selective enough.
