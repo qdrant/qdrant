@@ -464,12 +464,11 @@ cluster:
 
   # Configuration of the inter-cluster communication
   p2p:
-    # Host or IP address to bind the internal (p2p) gRPC listener to.
-    # Defaults to `service.host` when unset. Set this to an internal
-    # interface to keep the internal port off the interface that serves
-    # the public API.
-    #
-    # host: <internal IP of this node>
+    # IP address to bind the internal (p2p) gRPC listener to. Must be an IP
+    # literal, not a hostname. Defaults to `service.host` when unset. Set this
+    # to an internal IP to keep the internal port off the interface that serves
+    # the public API. When set, the node's peer URI (`--uri`) must point to the
+    # same address.
     # Port for internal communication between peers
     port: 6335
 
