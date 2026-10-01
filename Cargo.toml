@@ -252,7 +252,7 @@ memchr = "2.8.0"
 memmap2 = "0.9.10"
 mockito = "1.7"
 murmur3_32 = "0.1"
-nix = { version = "0.31", features = ["fs", "feature"] }
+nix = { version = "0.31", features = ["feature", "fs", "resource"] }
 num-traits = "0.2.19"
 num_cpus = "1.17"
 object_store = { version = "0.14.0", features = ["aws", "gcp", "azure"] }
