@@ -86,7 +86,7 @@ pub struct ShardHolder {
     /// every `core_search` await would block writers (e.g. shard creation)
     /// for the duration of the search.
     shards: BTreeMap<ShardId, Arc<ShardReplicaSet>>,
-    pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
+    pub(crate) shard_transfers: Arc<SaveOnDisk<HashSet<ShardTransfer>>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     /// Hash rings per shard key
@@ -112,8 +112,9 @@ impl ShardHolder {
     }
 
     pub fn new(collection_path: &Path, sharding_method: ShardingMethod) -> CollectionResult<Self> {
-        let shard_transfers =
-            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        let shard_transfers = Arc::new(SaveOnDisk::load_or_init_default(
+            collection_path.join(SHARD_TRANSFERS_FILE),
+        )?);
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 

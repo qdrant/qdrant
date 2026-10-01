@@ -686,12 +686,20 @@ impl Collection {
         let collection_path = self.path.clone();
 
         async move {
-            let shards_holder_guard = shards_holder.clone().read_owned().await;
-
-            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist, repartition is not supported yet"
-                )));
+            // Acquire the read lock briefly to extract the `replica_set` and a
+            // clone of `shard_transfers` (an `Arc<SaveOnDisk<...>>`), then drop
+            // the guard. Holding the read lock across the blocking wait below
+            // would stall every writer that queues behind it for up to 60+
+            // seconds, because `tokio::sync::RwLock` is write-preferring.
+            let (replica_set, shard_transfers) = {
+                let shards_holder_guard = shards_holder.read().await;
+                let Some(replica_set) = shards_holder_guard.get_shard(shard_id).cloned() else {
+                    return Err(CollectionError::service_error(format!(
+                        "Shard {shard_id} doesn't exist, repartition is not supported yet"
+                    )));
+                };
+                let shard_transfers = Arc::clone(&shards_holder_guard.shard_transfers);
+                (replica_set, shard_transfers)
             };
 
             // Wait for the replica set to have the local shard initialized
@@ -702,12 +710,16 @@ impl Collection {
 
             let this_peer_id = replica_set.this_peer_id();
 
+            // Clone the `Arc`s so the spawn_blocking task can consume its own
+            // handles while the outer future still owns `replica_set` for the
+            // post-transfer safety-net checks below. `shard_transfers` is not
+            // needed after the spawn_blocking returns, so we move the original
+            // into the closure.
+            let replica_set_for_blocking = Arc::clone(&replica_set);
+
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
-                // We can guarantee that replica_set is not None, cause we checked it before
-                // and `shards_holder` is holding the lock.
-                // This is a workaround for lifetime checker.
-                let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
-                let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
+                let replica_set = replica_set_for_blocking;
+                let shard_transfer_registered = shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers
                             .iter()
@@ -724,13 +736,16 @@ impl Collection {
                 // for it would hold the shard holder lock until the timeout. If this peer is
                 // behind instead, with the previous transfer still registered, the sender is
                 // refused as well and retries.
+                //
+                // `get_transfers` is called without the `shards_holder` read lock because
+                // `shard_transfers` carries its own internal synchronization (parking_lot
+                // `RwLock`); see `SaveOnDisk`.
                 if let Some(from_peer_id) = from_peer_id
-                    && shards_holder_guard
-                        .get_transfers(|transfer| {
-                            transfer.is_target(this_peer_id, shard_id)
-                                && transfer.from == from_peer_id
-                        })
-                        .is_empty()
+                    && shard_transfers
+                        .read()
+                        .iter()
+                        .filter(|transfer| transfer.is_target(this_peer_id, shard_id))
+                        .all(|transfer| transfer.from != from_peer_id)
                 {
                     return Err(CollectionError::bad_request(format!(
                         "Refusing to initiate shard transfer into shard {shard_id}: \
@@ -775,14 +790,15 @@ impl Collection {
             // At this point we made sure that receiver replica is synced and expecting incoming
             // shard transfer.
             // Further checks are an extra safety net, in normal situation they should not fail.
-
-            let shards_holder_guard = shards_holder.read_owned().await;
-
-            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
+            // Re-acquire the read lock briefly to verify the shard is still the current
+            // lifecycle instance. The cloned `Arc` keeps the old replica alive, but if the
+            // shard was removed or replaced during the 60s wait, we must not run
+            // `un_proxify_local` / `init_empty_local_shard` on the now-orphan handle.
+            if !shards_holder.read().await.contains_shard(shard_id) {
                 return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist, repartition is not supported yet"
+                    "Shard {shard_id} was removed during transfer initiation"
                 )));
-            };
+            }
 
             if replica_set.is_proxy().await {
                 debug_assert!(false, "We should not have proxy shard here");
