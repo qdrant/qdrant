@@ -139,7 +139,7 @@ jobs:
   test-consensus-compose:
 
     runs-on: ubuntu-latest
-    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant package (`ci-cache-*` tags),
+    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant-ci-cache package (only cache data),
     # not in the size-limited Actions cache
     permissions:
       contents: read
@@ -169,8 +169,8 @@ jobs:
         with:
           context: .
           tags: qdrant_consensus
-          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-integration-tests
-          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-integration-tests,mode=max' || '' }}
+          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:integration-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:integration-tests,mode=max' || '' }}
           load: true
           build-args: |
             PROFILE=ci
@@ -253,7 +253,7 @@ jobs:
   # Builds the e2e image once; the e2e test jobs download it.
   build-e2e-image:
     runs-on: ubuntu-latest
-    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant package (`ci-cache-*` tags),
+    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant-ci-cache package (only cache data),
     # not in the size-limited Actions cache
     permissions:
       contents: read
@@ -277,8 +277,8 @@ jobs:
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests
-          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant:ci-cache-e2e-tests,mode=max' || '' }}
+          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:e2e-tests,mode=max' || '' }}
           outputs: type=docker,dest=/tmp/e2e-image.tar
           build-args: |
             PROFILE=ci
