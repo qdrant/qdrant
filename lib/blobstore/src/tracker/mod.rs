@@ -389,8 +389,14 @@ impl<S> Tracker<S> {
         };
 
         if journal.path().exists() {
-            debug_assert!(false, "journal must not be disabled while it holds pointer writes");
-            log::warn!("Disabled GridStore journalling while a journal file exists: {}", journal.path().display());
+            debug_assert!(
+                false,
+                "journal must not be disabled while it holds pointer writes"
+            );
+            log::warn!(
+                "Disabled GridStore journalling while a journal file exists: {}",
+                journal.path().display()
+            );
         }
     }
 
@@ -554,13 +560,25 @@ where
         )?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
+
+        // An existing journal belongs to an earlier tracker, opening would replay it onto this one
+        let journal = Journal::new(dir);
+        if journal.path().exists() {
+            debug_assert!(false, "new tracker must not have an existing journal");
+            log::warn!(
+                "Removing existing Gridstore tracker journal when creating new tracker: {}",
+                journal.path().display(),
+            );
+            journal.remove()?;
+        }
+
         let mut page_tracker = Self {
             path,
             header,
             storage,
             pending_updates,
             next_pointer_offset: 0,
-            journal: Some(Arc::new(Journal::new(dir))),
+            journal: Some(Arc::new(journal)),
         };
         page_tracker.write_header()?;
         Ok(page_tracker)
