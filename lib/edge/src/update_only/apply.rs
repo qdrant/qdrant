@@ -173,8 +173,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         // Index into `outcome.points` of each point in `to_store`.
         let mut stored_records: Vec<usize> = Vec::new();
         let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
-        // Other segments' copies of stored points, per record: retired only
-        // once the store tells whether the new copy is deferred.
+        // Other segments' copies of stored points, keyed by the point's index
+        // in `to_store`: retired only once the store tells whether the new
+        // copy is deferred.
         let mut stored_retirements: Vec<(usize, Uuid, PointOffsetType)> = Vec::new();
         let write_target_uuid = segments.write_target_uuid();
         let deferred_cutoff = match (write_target_uuid, self.deferred_threshold_kb) {
@@ -239,7 +240,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                         if Some(segment) == write_target_uuid {
                             record.superseded = Some((segment, internal_id));
                         } else {
-                            stored_retirements.push((outcome.points.len(), segment, internal_id));
+                            stored_retirements.push((to_store.len() - 1, segment, internal_id));
                         }
                         continue;
                     }
@@ -287,13 +288,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // other copies would leave readers that hide deferred points with
             // none, so they stay until a rebuild deduplicates them, as the
             // server keeps the source of a copy-on-write move.
-            let mut deferred_records = vec![false; outcome.points.len()];
-            for (&record, &slot) in stored_records.iter().zip(&new_slots) {
-                deferred_records[record] = deferred_cutoff.is_some_and(|cutoff| slot >= cutoff);
-            }
-            for (record_index, segment, internal_id) in stored_retirements.drain(..) {
-                let record = &mut outcome.points[record_index];
-                if deferred_records[record_index] {
+            for (store_index, segment, internal_id) in stored_retirements.drain(..) {
+                let record = &mut outcome.points[stored_records[store_index]];
+                let is_deferred =
+                    deferred_cutoff.is_some_and(|cutoff| new_slots[store_index] >= cutoff);
+                if is_deferred {
                     record.shadowed.push((segment, internal_id));
                 } else {
                     to_tombstone
