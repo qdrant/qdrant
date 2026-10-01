@@ -305,6 +305,80 @@ mod tests {
         }
     }
 
+    /// Regression test: when using `CachedFs` over `DiskCache`, an initial LIST snapshot
+    /// captures chunk sizes at $t_0$. If writer appends more vectors and updates status
+    /// after $t_0$, `live_preload` must fetch status first and do an unbounded read for
+    /// chunks on the inner filesystem rather than locking to the $t_0$ LIST length.
+    #[test]
+    fn live_preload_over_cached_disk_cache_sees_appends_after_initial_list() {
+        use std::sync::Arc;
+
+        use common::universal_io::{
+            CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+            UniversalReadFs,
+        };
+
+        const DIM: usize = 32;
+        let tmp = Builder::new().prefix("chunked_race").tempdir().unwrap();
+        let remote_root = tmp.path().join("remote");
+        let local_root = tmp.path().join("local");
+        let dir = remote_root.join("vectors");
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
+
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+            config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+            remote: Default::default(),
+        })
+        .unwrap();
+
+        let mut cached_fs = CachedFs::new(cache_fs, &dir).unwrap();
+        cached_fs.cache_file_info().unwrap();
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, DiskCache<MmapFile>>::open(
+            &cached_fs,
+            &dir,
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        // Take snapshot: at this point, chunk has 100 vectors, status has 100
+        cached_fs.cache_file_info().unwrap();
+
+        // Writer appends 50 more vectors after the snapshot was taken
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
+
+        // Preload and reload through cached_fs
+        let preload_futs = LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        futures::executor::block_on(futures::future::join(
+            futures::future::join_all(preload_futs),
+            cached_fs.wait_all(),
+        ));
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(reader.len(), 150);
+        for offset in [0, 99, 100, 149] {
+            assert_eq!(
+                reader
+                    .get::<Random>(offset)
+                    .unwrap_or_else(|| panic!("vector should exist at offset {offset}"))
+                    .as_ref(),
+                make_vec(offset, DIM).as_slice(),
+                "vector {offset} mismatch after reload",
+            );
+        }
+    }
+
     /// `live_reload` re-opens the last held chunk (the only one that can have
     /// gained vectors) and adopts chunk files created since the last load;
     /// fully-loaded earlier chunks are kept as-is.
