@@ -10,6 +10,7 @@ use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
+use rstest::rstest;
 use segment::data_types::index::{KeywordIndexParams, KeywordIndexType};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
@@ -26,12 +27,13 @@ use segment::types::{
 };
 use tempfile::Builder;
 
-#[test]
-fn test_tenant_graph_with_second_condition() {
+#[rstest]
+#[case::graph(0)]
+#[case::count(4)]
+fn test_tenant_graph_with_second_condition(#[case] full_scan_threshold: usize) {
     let stopped = AtomicBool::new(false);
     let dim = 8;
     let num_vectors = 4_000;
-    let rare_every = 50;
     let top = 10;
     let attempts = 20;
 
@@ -42,7 +44,8 @@ fn test_tenant_graph_with_second_condition() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
     for n in 0..num_vectors {
-        let product = if n % rare_every == 1 {
+        let tenant = if n % 2 == 0 { "A" } else { "B" };
+        let product = if (2..8).contains(&(n % 100)) {
             "rare"
         } else {
             "common"
@@ -51,7 +54,7 @@ fn test_tenant_graph_with_second_condition() {
         segment
             .upsert_point(n, n.into(), only_default_vector(&vector), &hw_counter)
             .unwrap();
-        let payload = payload_json! {"tenant": "A", "product": product};
+        let payload = payload_json! {"tenant": tenant, "product": product};
         segment
             .set_full_payload(n, n.into(), &payload, &hw_counter)
             .unwrap();
@@ -91,7 +94,7 @@ fn test_tenant_graph_with_second_condition() {
                 memory: None,
                 m: 0,
                 ef_construct: 32,
-                full_scan_threshold: 0,
+                full_scan_threshold,
                 max_indexing_threads: 1,
                 on_disk: Some(false),
                 payload_m: Some(8),
@@ -129,20 +132,36 @@ fn test_tenant_graph_with_second_condition() {
         hnsw_ef: Some(64),
         ..Default::default()
     };
+    let exact_params = SearchParams {
+        exact: true,
+        ..Default::default()
+    };
     for _ in 0..attempts {
         let query = QueryVector::from(random_vector(&mut rng, dim));
-        let result = hnsw_index
-            .search(
-                &[&query],
-                Some(&filter),
-                top,
-                Some(&params),
-                &Default::default(),
-            )
-            .unwrap();
+        let search = |params| {
+            hnsw_index
+                .search(
+                    &[&query],
+                    Some(&filter),
+                    top,
+                    Some(params),
+                    &Default::default(),
+                )
+                .unwrap()
+        };
+        let result = search(&params);
         assert_eq!(result[0].len(), top);
+        if full_scan_threshold > 0 {
+            assert_eq!(result, search(&exact_params));
+        }
     }
 
     let telemetry = hnsw_index.get_telemetry_data(TelemetryDetail::default());
-    assert_eq!(telemetry.filtered_large_cardinality.count, attempts);
+    let (graph, plain) = if full_scan_threshold > 0 {
+        (0, attempts)
+    } else {
+        (attempts, 0)
+    };
+    assert_eq!(telemetry.filtered_large_cardinality.count, graph);
+    assert_eq!(telemetry.filtered_small_cardinality.count, plain);
 }
