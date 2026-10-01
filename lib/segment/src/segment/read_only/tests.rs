@@ -357,7 +357,8 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
 }
 
 /// A profile's deferred-points threshold hides the tail of an appendable segment: 1 KB of
-/// `DIM` f32 vectors is 32 points, so only the first 32 inserted points stay visible.
+/// `DIM` f32 vectors is 32 points, so only the first 32 inserted points stay visible. The tail's
+/// vectors are left unfetched, and a search over the visible prefix still answers in full.
 #[test]
 fn read_only_segment_load_profile_defers_points() {
     let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
@@ -408,6 +409,27 @@ fn read_only_segment_load_profile_defers_points() {
     assert_eq!(read_only.available_point_count_without_deferred(), 32);
     assert!(read_only.has_point(32.into(), DeferredBehavior::VisibleOnly));
     assert!(!read_only.has_point(33.into(), DeferredBehavior::VisibleOnly));
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(vec![1.0; DIM]));
+    let query_context = QueryContext::default();
+    let hits = read_only
+        .search_batch(
+            DEFAULT_VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            NUM_POINTS,
+            None,
+            &query_context.get_segment_query_context(),
+        )
+        .unwrap();
+    let mut hit_ids: Vec<PointIdType> = hits[0].iter().map(|hit| hit.id).collect();
+    hit_ids.sort_unstable();
+    assert_eq!(
+        hit_ids,
+        (1..=32u64).map(PointIdType::from).collect::<Vec<_>>()
+    );
 
     let unfiltered =
         ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)

@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkUnchanged, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkUnchanged, Populate, TypedStorage, UniversalRead, UniversalReadFs,
 };
 use futures::future::BoxFuture;
 
@@ -11,6 +11,15 @@ use super::super::config::{read_status_len, status_file};
 use super::ReadOnlyChunkedVectors;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
+
+impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
+    /// Populate for opening chunk `chunk_id`: the open-time populate, demoted
+    /// past the visible prefix.
+    fn chunk_populate(&self, chunk_id: usize) -> Populate {
+        self.config
+            .chunk_populate(self.populate, chunk_id, size_of::<T>(), self.visible_len)
+    }
+}
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVectors<T, S> {
     type File = S;
@@ -31,7 +40,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         let fresh_from = if last_chunk < self.chunks.len().min(num_files) {
             fs.reschedule_open(
                 &chunk_name(&self.directory, last_chunk),
-                Some(chunk_open_options(self.advice, self.populate, false)),
+                Some(chunk_open_options(
+                    self.advice,
+                    self.chunk_populate(last_chunk),
+                    false,
+                )),
                 None,
             );
             last_chunk + 1
@@ -43,7 +56,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         for chunk_id in fresh_from..num_files {
             fs.schedule_open(
                 &chunk_name(&self.directory, chunk_id),
-                Some(chunk_open_options(self.advice, self.populate, false)),
+                Some(chunk_open_options(
+                    self.advice,
+                    self.chunk_populate(chunk_id),
+                    false,
+                )),
                 None,
             );
         }
@@ -84,7 +101,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
             if let Some(fresh_chunk) = TypedStorage::open(
                 fs,
                 &chunk_name(&self.directory, last_chunk),
-                chunk_open_options(self.advice, self.populate, false),
+                chunk_open_options(self.advice, self.chunk_populate(last_chunk), false),
                 Default::default(),
             )
             .ok_unchanged()?
@@ -102,7 +119,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
             &self.directory,
             fresh_from,
             self.advice,
-            self.populate,
+            |chunk_id| self.chunk_populate(chunk_id),
             false,
         )?;
 

@@ -97,6 +97,7 @@ fn directory_reads_congruently() {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap()
     };
@@ -163,6 +164,7 @@ fn repairs_preallocated_chunks() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        None,
     )
     .unwrap();
     assert_eq!(reader.len(), 3);
@@ -198,6 +200,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        None,
     )
     .unwrap();
     // Not doubled: the watermark lands back at 100, not 150.
@@ -244,6 +247,7 @@ fn extends_across_a_gap_with_zeroes() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        None,
     )
     .unwrap();
     assert_eq!(reader.len(), 20);
