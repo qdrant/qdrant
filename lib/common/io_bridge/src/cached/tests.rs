@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::universal_io::{
-    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFs as _,
+    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalRead as _, UniversalReadFs as _,
+    UniversalWriteFs as _,
 };
 use futures::stream::{BoxStream, StreamExt as _};
 
@@ -237,4 +238,55 @@ fn rewrite_append_at_nonzero_offset_on_a_missing_object_conflicts() {
         UniversalIoError::AppendOffsetConflict { offset: 3, .. }
     );
     assert!(source.content().is_none());
+}
+
+/// A reader takes its length from the per-open mirror and its bytes from the
+/// live remote, with nothing pinning the two to one version. After a save the
+/// handle answers with the old object's length and the new object's bytes.
+#[test]
+#[ignore = "reproduces an open defect: the mirror's length outlives the object it describes"]
+fn a_save_over_an_open_handle_updates_its_length() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+
+    fs.atomic_save(Path::new("bucket/obj"), b"0123").unwrap();
+    let file = fs
+        .open("bucket/obj", open_options(), Default::default())
+        .unwrap();
+    assert_eq!(file.len::<u8>().unwrap(), 4, "the object as first opened");
+
+    // `save_bitmask` writes a whole new image over the same key.
+    fs.atomic_save(Path::new("bucket/obj"), b"0123456789")
+        .unwrap();
+
+    assert_eq!(
+        file.len::<u8>().unwrap(),
+        10,
+        "the length must describe the object the reader now reads",
+    );
+}
+
+/// End to end, in the shape the search engine reported: a bitmask that grows
+/// behind an open handle is read with the old length and the new header.
+#[test]
+fn a_grown_bitmask_is_not_read_as_a_truncated_one() {
+    use common::stored_bitmask::{StoredBitmask, save_bitmask};
+    use roaring::RoaringBitmap;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+    let path = Path::new("bucket/obj");
+
+    // An is_null index with nothing set yet: header only.
+    save_bitmask(&fs, path, 0, RoaringBitmap::new()).unwrap();
+    let opened = StoredBitmask::open(&fs, path, open_options(), Default::default()).unwrap();
+    drop(opened);
+
+    // The first null arrives and the writer rewrites the whole image.
+    save_bitmask(&fs, path, 64, RoaringBitmap::from_iter([3u32])).unwrap();
+
+    StoredBitmask::open(&fs, path, open_options(), Default::default())
+        .expect("the grown bitmask must open against its own length");
 }
