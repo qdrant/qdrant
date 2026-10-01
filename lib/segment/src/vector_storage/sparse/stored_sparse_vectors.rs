@@ -1,4 +1,5 @@
 use blobstore::Blob;
+use blobstore::error::BlobstoreError;
 use common::delta_pack::{delta_pack, delta_unpack};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{SparseVector, double_sort};
@@ -87,7 +88,11 @@ impl Blob for StoredSparseVector {
         bincode::serialize(&self).expect("Sparse vector serialization should not fail")
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        bincode::deserialize(data).expect("Sparse vector deserialization should not fail")
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        bincode::deserialize(data).map_err(|err| {
+            BlobstoreError::service_error(format!(
+                "Failed to deserialize StoredSparseVector: {err}"
+            ))
+        })
     }
 }
