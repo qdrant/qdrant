@@ -11,8 +11,11 @@ use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowMultiVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::data_types::vectors::{
+    TypedMultiDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+};
 use crate::types::CompactExtendedPointId;
+use crate::vector_storage::turbo::shared::quantized_vector_size;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, DenseVectorStorage, DenseVectorStorageRead,
     MultiTQVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage, MultiVectorStorageRead,
@@ -414,6 +417,11 @@ fn read_dense_byte(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringByte(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_dense::<Sequential>(key),
+        // Placeholder for a vector added to an existing segment: every slot is
+        // deleted, but the destination still needs one zero vector per slot.
+        VectorStorageEnum::EmptyDense(v) => {
+            Cow::Owned(vec![0; DenseVectorStorageRead::vector_dim(v)])
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseGraphInline(_)
@@ -430,7 +438,6 @@ fn read_dense_byte(
         | VectorStorageEnum::DenseTurboMemmap(_)
         | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
-        | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
             return Err(OperationError::service_error(
@@ -470,6 +477,12 @@ fn read_dense_half(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringHalf(v) => v.get_dense::<Sequential>(key),
         VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_dense::<Sequential>(key),
+        // Placeholder for a vector added to an existing segment: every slot is
+        // deleted, but the destination still needs one zero vector per slot.
+        VectorStorageEnum::EmptyDense(v) => Cow::Owned(vec![
+            VectorElementTypeHalf::ZERO;
+            DenseVectorStorageRead::vector_dim(v)
+        ]),
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseGraphInline(_)
@@ -486,7 +499,6 @@ fn read_dense_half(
         | VectorStorageEnum::DenseTurboMemmap(_)
         | VectorStorageEnum::DenseTurboGraphInline(_)
         | VectorStorageEnum::DenseTurboAppendableMemmap(_)
-        | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
             return Err(OperationError::service_error(
@@ -524,6 +536,14 @@ fn read_dense_tq(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key),
         VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
+        // Placeholder for a vector added to an existing segment: every slot is
+        // deleted, but the destination still needs one zero record per slot.
+        // The record size depends only on dim and distance, which the
+        // placeholder shares with the destination.
+        VectorStorageEnum::EmptyDense(v) => {
+            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            Cow::Owned(vec![0; size])
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -540,7 +560,6 @@ fn read_dense_tq(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
             return Err(OperationError::service_error(
@@ -575,6 +594,12 @@ fn read_multi_tq(
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         VectorStorageEnum::MultiDenseTurbo(v) => v.get_multi_tq::<Sequential>(key),
+        // Named multivector added to an existing segment: all slots are deleted,
+        // but the destination still needs one zero inner record per slot.
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            Cow::Owned(vec![0; size])
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -630,6 +655,11 @@ fn read_multi_f32(
     let vector = match source {
         VectorStorageEnum::MultiDenseVolatile(v) => v.get_multi::<Sequential>(key),
         VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_multi::<Sequential>(key),
+        // Named multivector added to an existing segment: all slots are deleted,
+        // but the destination still needs a placeholder per slot to stay aligned.
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            v.get_multi::<Sequential>(key)
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -685,6 +715,11 @@ fn read_multi_byte(
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_multi::<Sequential>(key),
         VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_multi::<Sequential>(key),
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            CowMultiVector::Owned(TypedMultiDenseVector::placeholder(
+                DenseVectorStorageRead::vector_dim(v),
+            ))
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -740,6 +775,11 @@ fn read_multi_half(
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_multi::<Sequential>(key),
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_multi::<Sequential>(key),
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            CowMultiVector::Owned(TypedMultiDenseVector::placeholder(
+                DenseVectorStorageRead::vector_dim(v),
+            ))
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -854,8 +894,16 @@ fn read_sparse(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+    use tempfile::Builder;
+
     use super::*;
-    use crate::types::Distance;
+    use crate::segment_constructor::open_vector_storage;
+    use crate::types::{
+        Distance, Indexes, MultiVectorComparator, MultiVectorConfig, VectorDataConfig,
+        VectorStorageDatatype, VectorStorageType,
+    };
+    use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
 
@@ -872,5 +920,65 @@ mod tests {
             result.is_err(),
             "merging a sparse source into a dense target must error, got {result:?}"
         );
+    }
+
+    /// A vector added to an existing segment is backed by an `EmptyDense`
+    /// placeholder. Merging it into the target the segment builder opens for
+    /// the same config must succeed and keep every point deleted. Appendable
+    /// targets check the size of each record, so they also pin the placeholder
+    /// record size.
+    #[rstest]
+    fn merge_empty_placeholder(
+        #[values(
+            VectorStorageDatatype::Float32,
+            VectorStorageDatatype::Float16,
+            VectorStorageDatatype::Uint8,
+            VectorStorageDatatype::Turbo4
+        )]
+        datatype: VectorStorageDatatype,
+        #[values(false, true)] multi: bool,
+        #[values(VectorStorageType::InRamMmap, VectorStorageType::ChunkedMmap)]
+        storage_type: VectorStorageType,
+    ) {
+        const DIM: usize = 4;
+        const POINTS: PointOffsetType = 5;
+
+        let multivector_config = multi.then_some(MultiVectorConfig {
+            comparator: MultiVectorComparator::MaxSim,
+        });
+        let config = VectorDataConfig {
+            size: DIM,
+            distance: Distance::Cosine,
+            storage_type,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config,
+            datatype: Some(datatype),
+        };
+        let dir = Builder::new()
+            .prefix("merge_placeholder")
+            .tempdir()
+            .unwrap();
+        let mut target = open_vector_storage(
+            &config,
+            &dir.path().join("storage"),
+            &dir.path().join("index"),
+        )
+        .unwrap();
+        let source = new_empty_dense_vector_storage(
+            DIM,
+            Distance::Cosine,
+            datatype,
+            false,
+            multivector_config,
+            POINTS as usize,
+        );
+
+        let range = merge_from_single_source(&mut target, &source, POINTS)
+            .expect("merging an empty placeholder must succeed");
+
+        assert_eq!(range, 0..POINTS);
+        assert_eq!(target.total_vector_count(), POINTS as usize);
+        assert_eq!(target.deleted_vector_count(), POINTS as usize);
     }
 }
