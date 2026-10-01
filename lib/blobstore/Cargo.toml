@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 ahash = { workspace = true }
 bytemuck = { workspace = true }
+crc32c = "0.6.8"
 ecow = { workspace = true }
 fs-err = { workspace = true }
 serde_cbor = { workspace = true }

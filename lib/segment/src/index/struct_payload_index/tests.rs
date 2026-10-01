@@ -16,6 +16,7 @@ use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadConfig, PayloadIndexType,
 };
 use crate::json_path::JsonPath;
+use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
@@ -634,6 +635,10 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     tracker_bytes[block_offset_range.clone()].copy_from_slice(&corrupt_block_offset.to_le_bytes());
     fs_err::write(&tracker_path, &tracker_bytes).unwrap();
 
+    // Remove the tracker journal, loading would repair the tracker from it. Simulates corruption
+    // the journal doesn't cover, such as a bit flip
+    fs_err::remove_file(map_index_dir.join("tracker_journal.dat")).unwrap();
+
     let segment = load_segment(
         &segment_path,
         Uuid::nil(),
@@ -662,4 +667,44 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     // The rebuilt index is persisted, the corrupt pointer is gone from disk
     let tracker_bytes = fs_err::read(&tracker_path).unwrap();
     assert_ne!(read_block_offset(&tracker_bytes), corrupt_block_offset);
+}
+
+/// Field indices built after `disable_journal`, as by the segment builder, flush their Gridstore
+/// without a tracker journal. Other builds journal their flush.
+#[test]
+fn test_build_field_index_without_journal() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    segment
+        .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{ "first": "a", "second": "b" }"#).unwrap();
+    segment
+        .set_full_payload(2, 0.into(), &payload, &hw_counter)
+        .unwrap();
+
+    // The journal of a Gridstore lives next to its tracker file
+    let has_journal = |segment: &Segment, key: &JsonPath| {
+        segment.payload_index.borrow().field_indexes[key]
+            .iter()
+            .flat_map(|index| index.files())
+            .filter_map(|file| blobstore::tracker_journal_path(&file))
+            .any(|journal| journal.exists())
+    };
+
+    let first = JsonPath::from_str("first").unwrap();
+    segment
+        .create_field_index(3, &first, Some(&schema), &hw_counter)
+        .unwrap();
+    assert!(has_journal(&segment, &first));
+
+    segment.payload_index.borrow_mut().disable_journal();
+    let second = JsonPath::from_str("second").unwrap();
+    segment
+        .create_field_index(4, &second, Some(&schema), &hw_counter)
+        .unwrap();
+    assert!(!has_journal(&segment, &second));
 }

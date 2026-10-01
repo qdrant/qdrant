@@ -72,6 +72,36 @@ pub enum FieldIndexBuilder {
     ImmutableNullIndex(ImmutableNullIndexBuilder),
 }
 
+impl FieldIndexBuilder {
+    /// Don't journal the value mappings of an index stored in a Gridstore, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub fn disable_journal(&mut self) {
+        match self {
+            Self::IntGridstoreIndex(builder) => builder.disable_journal(),
+            Self::DatetimeGridstoreIndex(builder) => builder.disable_journal(),
+            Self::IntMapGridstoreIndex(builder) => builder.disable_journal(),
+            Self::KeywordGridstoreIndex(builder) => builder.disable_journal(),
+            Self::FloatGridstoreIndex(builder) => builder.disable_journal(),
+            Self::GeoGridstoreIndex(builder) => builder.disable_journal(),
+            Self::FullTextGridstoreIndex(builder) => builder.disable_journal(),
+            Self::UuidGridstoreIndex(builder) => builder.disable_journal(),
+            // Not stored in a Gridstore, the mutable bool index uses flags despite its name
+            Self::IntMmapIndex(_)
+            | Self::DatetimeMmapIndex(_)
+            | Self::IntMapMmapIndex(_)
+            | Self::KeywordMmapIndex(_)
+            | Self::FloatMmapIndex(_)
+            | Self::GeoMmapIndex(_)
+            | Self::FullTextMmapIndex(_)
+            | Self::BoolMmapIndex(_)
+            | Self::BoolGridstoreIndex(_)
+            | Self::UuidMmapIndex(_)
+            | Self::MutableNullIndex(_)
+            | Self::ImmutableNullIndex(_) => {}
+        }
+    }
+}
+
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
     type FieldIndexType = FieldIndex;
 

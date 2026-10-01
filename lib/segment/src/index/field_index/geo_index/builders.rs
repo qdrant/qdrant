@@ -69,6 +69,14 @@ impl GeoIndexGridstoreBuilder {
     pub(super) fn new(dir: PathBuf) -> Self {
         Self { dir, index: None }
     }
+
+    /// Don't journal the value mappings of the built index, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub(crate) fn disable_journal(&mut self) {
+        if let Some(GeoIndex::Mutable(index)) = &mut self.index {
+            index.storage.disable_journal();
+        }
+    }
 }
 
 impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {

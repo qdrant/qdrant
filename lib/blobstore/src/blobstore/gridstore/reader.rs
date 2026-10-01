@@ -82,6 +82,10 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// Open an existing read-only storage at the given path, with the already read config.
     ///
     /// Infers page count by scanning for page files on disk.
+    ///
+    /// Does not replay the tracker journal, a reader must not write. Only open a storage that is
+    /// durably flushed or was repaired by a writable open, otherwise torn tracker writes are read
+    /// as is.
     pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
         fs: &Fs,
         base_path: PathBuf,

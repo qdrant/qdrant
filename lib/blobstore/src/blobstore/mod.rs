@@ -221,6 +221,20 @@ where
         }
     }
 
+    /// Don't journal the value mappings on flush.
+    ///
+    /// In the mutable mode a flush first journals its mapping writes, so a mapping write a crash
+    /// tears is repaired when opening. Only disable this for a new storage that is thrown away on
+    /// a crash, and is durably flushed before it is used. Such as one of a segment being built.
+    ///
+    /// The append-only mode has no journal, appends cannot tear existing mappings.
+    pub fn disable_journal(&mut self) {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.disable_journal(),
+            BlobstoreInner::Logstore(_) => {}
+        }
+    }
+
     /// Wipe the storage, drop all pages and delete the base directory.
     ///
     /// Takes ownership because this function leaves Blobstore in an inconsistent state which does

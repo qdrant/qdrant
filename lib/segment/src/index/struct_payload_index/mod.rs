@@ -76,11 +76,20 @@ pub struct StructPayloadIndex {
     pub(super) visited_pool: VisitedPool,
     /// Desired storage type for payload indices, used in builder to pick correct type
     storage_type: StorageType,
+    /// Whether the value mappings of field indices built from now on are journaled, see
+    /// [`Self::disable_journal`]
+    journaled: bool,
 }
 
 impl StructPayloadIndex {
     fn config_path(&self) -> PathBuf {
         PayloadConfig::get_config_path(&self.path)
+    }
+
+    /// Don't journal the value mappings of field indices built from now on, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal).
+    pub fn disable_journal(&mut self) {
+        self.journaled = false;
     }
 
     pub(super) fn save_config(&self) -> OperationResult<()> {
@@ -254,6 +263,7 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             storage_type,
+            journaled: true,
         };
 
         if !index.config_path().exists() {
