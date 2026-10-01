@@ -321,6 +321,19 @@ impl PayloadStorageEnum {
         Ok(())
     }
 
+    /// Don't journal value mappings on flush, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: blobstore::Blobstore::disable_journal
+    pub fn disable_journal(&mut self) {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(_) => {}
+            PayloadStorageEnum::Mmap(s) => s.disable_journal(),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.disable_journal(),
+        }
+    }
+
     /// Switch to a layout for a storage that is only read from now on, for storages that have
     /// one. Persisted by the next flush, the storage stays writable.
     pub fn make_immutable(&self) -> OperationResult<()> {

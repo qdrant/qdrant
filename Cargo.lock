@@ -903,6 +903,7 @@ dependencies = [
  "bustle",
  "bytemuck",
  "common",
+ "crc32c",
  "criterion",
  "csv",
  "dataset",
@@ -7505,6 +7506,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "api",
+ "blobstore",
  "chrono",
  "common",
  "criterion",

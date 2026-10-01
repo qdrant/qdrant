@@ -1,4 +1,5 @@
 use std::io::{BufReader, Write as _};
+use std::ops::Range;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -1373,32 +1374,35 @@ fn test_deferred_flush_with_delete() {
     put_payload(&mut storage, "value 7", 4);
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
 
+    // Read the payload from disk. Read-only, a writable open would replay and remove the journal
+    // of the storage we keep open
+    let get_disk_payload = || {
+        let reader =
+            BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No)
+                .unwrap();
+        let payload = reader.get_value::<Random>(0, &hw_counter).unwrap()?;
+        Some(
+            payload.0["key"]
+                .as_str()
+                .expect("value is a string")
+                .to_owned(),
+        )
+    };
+
     // Not flushed, still expect to read value 4
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 4");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 4");
 
     // First flusher flushed, expect to read value 5 if we load from disk
     flusher_1_value_5().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 5");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 5");
 
     // Second flusher flushed, expect point to be missing if we load from disk
     flusher_2_delete().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
-        assert!(get_payload(&tmp_storage).is_none());
-    }
+    assert!(get_disk_payload().is_none());
 
     // Third flusher flushed, expect to read value 6 if we load from disk
     flusher_3_value_6().unwrap();
-    {
-        let tmp_storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
-        assert_eq!(get_payload(&tmp_storage).unwrap(), "value 6");
-    }
+    assert_eq!(get_disk_payload().unwrap(), "value 6");
 
     // Main storage still isn't flushed, but has value 7
     assert_eq!(get_payload(&storage).unwrap(), "value 7");
@@ -2192,6 +2196,9 @@ const TRACKER_LENGTH_FIELD: usize = 12;
 /// Page size of the corrupt pointer tests: 1 MiB, exactly one region per page
 const CORRUPT_POINTER_PAGE_SIZE: usize = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
 
+/// Journal of the pointer writes to the tracker, next to it
+const TRACKER_JOURNAL_FILE: &str = "tracker_journal.dat";
+
 /// Store three small payloads at point offsets 0, 1 and 2, flush and close the storage
 fn stored_small_payloads(compression: Compression) -> (TempDir, Vec<Payload>) {
     let (dir, mut storage) = empty_storage_sized(CORRUPT_POINTER_PAGE_SIZE, compression);
@@ -2242,6 +2249,14 @@ fn overwrite_tracker_field(dir: &TempDir, point_offset: usize, field: usize, val
     old_value
 }
 
+/// Remove the tracker journal, as opening would repair the tracker from it
+///
+/// Simulates corruption the journal doesn't cover: a bit flip, or a torn write in a storage from
+/// before the journal existed.
+fn remove_tracker_journal(dir: &TempDir) {
+    fs::remove_file(dir.path().join(TRACKER_JOURNAL_FILE)).unwrap();
+}
+
 /// Reading the corrupt pointer at `corrupt_offset` must return an error, the other values must be
 /// unaffected. Iterating, as payload indices do when they are loaded, must return an error too.
 fn assert_corrupt_pointer_errors(
@@ -2275,6 +2290,9 @@ fn assert_corrupt_pointer_errors(
 /// empty before reads back as a `Some` pointer with a length of zero. No real write produces a
 /// zero length, so such a pointer must read as no value. WAL replay rewrites the slot afterwards.
 ///
+/// The tracker journal repairs such a write, see `test_journal_repairs_torn_pointer_write`, but a
+/// storage from before the journal existed doesn't have one.
+///
 /// This used to panic when deserializing the empty value, which blocks loading the segment.
 ///
 /// See: <github.com/qdrant/qdrant/issues/9857>
@@ -2287,6 +2305,7 @@ fn test_torn_pointer_with_zero_length_reads_as_none() {
     let torn_offset = 1;
     let old_length = overwrite_tracker_field(&dir, torn_offset, TRACKER_LENGTH_FIELD, 0);
     assert_eq!(old_length as usize, payloads[torn_offset].to_bytes().len());
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
@@ -2333,6 +2352,7 @@ fn test_pointer_length_beyond_pages_returns_error() {
     let corrupt_offset = 1;
     let length = (16 * CORRUPT_POINTER_PAGE_SIZE) as u32;
     overwrite_tracker_field(&dir, corrupt_offset, TRACKER_LENGTH_FIELD, length);
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
@@ -2357,9 +2377,149 @@ fn test_pointer_to_invalid_bytes_returns_error(
     let old_block_offset =
         overwrite_tracker_field(&dir, corrupt_offset, TRACKER_BLOCK_OFFSET_FIELD, 100);
     assert!(old_block_offset < payloads.len() as u32);
+    remove_tracker_journal(&dir);
 
     let storage: Blobstore<Payload> =
         Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
 
     assert_corrupt_pointer_errors(&storage, &payloads, corrupt_offset);
+}
+
+/// All values must read back as stored
+fn assert_payloads(storage: &Blobstore<Payload>, payloads: &[Payload]) {
+    let hw_cell = HardwareCounterCell::new();
+    for (offset, payload) in payloads.iter().enumerate() {
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, &hw_cell)
+            .unwrap();
+        assert_eq!(stored.as_ref(), Some(payload), "value {offset}");
+    }
+}
+
+/// A flush journals its pointer writes before writing them to the tracker. Opening repairs a
+/// torn pointer write from the journal, and removes the journal.
+///
+/// A torn write of an updated pointer can mix the fields of its old and new version, pointing at
+/// bytes that don't hold the value.
+#[test]
+fn test_journal_repairs_torn_pointer_write() {
+    let (dir, mut payloads) = stored_small_payloads(Compression::None);
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+    let hw_cell = HardwareCounterCell::new();
+
+    let mut storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+
+    // Update the value at offset 1, which stores it at a new block offset
+    let torn_offset = 1;
+    let old_pointer = storage.get_pointer(torn_offset as PointOffset).unwrap();
+    payloads[torn_offset]
+        .0
+        .insert("category".to_string(), "updated".into());
+    storage
+        .put_value(
+            torn_offset as PointOffset,
+            &payloads[torn_offset],
+            hw_cell.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    storage.flusher()().unwrap();
+    assert!(journal_path.exists(), "flush must journal pointer writes");
+    drop(storage);
+
+    // Simulate the torn write: the new length reached the disk, the new block offset did not
+    let new_block_offset = overwrite_tracker_field(
+        &dir,
+        torn_offset,
+        TRACKER_BLOCK_OFFSET_FIELD,
+        old_pointer.block_offset,
+    );
+    assert_ne!(new_block_offset, old_pointer.block_offset);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+    assert_payloads(&storage, &payloads);
+}
+
+/// A crash while appending to the journal leaves a torn entry at its end: incomplete, or with
+/// bytes that never reached the disk. Opening ignores it, and still replays the entries before
+/// it.
+#[rstest]
+#[case::incomplete(|entry: &[u8]| entry[..entry.len() / 2].to_vec())]
+#[case::zeroed(|entry: &[u8]| [&entry[..8], &vec![0; entry.len() - 8]].concat())]
+fn test_journal_ignores_torn_entry(#[case] tear: fn(&[u8]) -> Vec<u8>) {
+    let (dir, payloads) = stored_small_payloads(Compression::None);
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+
+    // Append a torn copy of the single entry, as if a crash interrupted the next flush
+    let journal = fs::read(&journal_path).unwrap();
+    fs::write(
+        &journal_path,
+        [journal.as_slice(), &tear(&journal)].concat(),
+    )
+    .unwrap();
+
+    // Tear a pointer the complete entry holds
+    overwrite_tracker_field(&dir, 1, TRACKER_LENGTH_FIELD, 0);
+
+    let storage: Blobstore<Payload> =
+        Blobstore::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+    assert!(!journal_path.exists(), "opening must remove the journal");
+    assert_payloads(&storage, &payloads);
+}
+
+/// Flushes append their pointer writes to the journal until it holds about 1k of them. The flush
+/// that grows it past that removes it, the next flush creates it again. It is never listed as a
+/// storage file, so snapshots don't include it.
+#[test]
+fn test_journal_removed_when_large() {
+    let (dir, mut storage) = empty_storage();
+    let journal_path = dir.path().join(TRACKER_JOURNAL_FILE);
+    let hw_cell = HardwareCounterCell::new();
+    let payload = minimal_payload();
+
+    // Put values at the given offsets and flush, return whether the journal exists afterwards
+    let put_and_flush = |storage: &mut Blobstore<Payload>, point_offsets: Range<PointOffset>| {
+        for point_offset in point_offsets {
+            storage
+                .put_value(
+                    point_offset,
+                    &payload,
+                    hw_cell.ref_payload_io_write_counter(),
+                )
+                .unwrap();
+        }
+        storage.flusher()().unwrap();
+        journal_path.exists()
+    };
+
+    // 1000 pointer writes are kept
+    assert!(put_and_flush(&mut storage, 0..500));
+    assert!(put_and_flush(&mut storage, 500..1000));
+    assert!(!storage.files().contains(&journal_path));
+
+    // Growing past 1024 pointer writes removes the journal
+    assert!(!put_and_flush(&mut storage, 1000..1100));
+
+    assert!(put_and_flush(&mut storage, 0..1));
+}
+
+/// A storage with its journal disabled flushes without one
+#[test]
+fn test_disable_journal() {
+    let (dir, mut storage) = empty_storage();
+    storage.disable_journal();
+
+    let hw_cell = HardwareCounterCell::new();
+    storage
+        .put_value(
+            0,
+            &minimal_payload(),
+            hw_cell.ref_payload_io_write_counter(),
+        )
+        .unwrap();
+    storage.flusher()().unwrap();
+    assert!(!dir.path().join(TRACKER_JOURNAL_FILE).exists());
 }

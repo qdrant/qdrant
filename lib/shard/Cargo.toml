@@ -19,6 +19,7 @@ staging = []
 
 [dependencies]
 api = { path = "../api", optional = true }
+blobstore = { path = "../blobstore" }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }

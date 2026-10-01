@@ -16,7 +16,9 @@ use rand::rngs::StdRng;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _,
+};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
@@ -957,4 +959,58 @@ fn test_building_new_segment_with_mmap_payload() {
     let new_segment_count = fs::read_dir(segment_dir.path()).unwrap().count();
 
     assert_eq!(new_segment_count, 2);
+}
+
+/// A built segment holds no tracker journals: it is durably flushed while building, so its
+/// Gridstores don't need to repair torn writes. Once loaded, it journals its writes again.
+#[test]
+fn test_building_new_segment_leaves_no_tracker_journal() {
+    const TRACKER_JOURNAL_FILE: &str = "tracker_journal.dat";
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+    let stopped = AtomicBool::new(false);
+    let hw_counter = HardwareCounterCell::new();
+
+    // Payloads, sparse vectors and a keyword index, all stored in a Gridstore
+    let mut segment = build_segment_sparse_1(dir.path());
+    let key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    segment
+        .create_field_index(100, &key, Some(&schema), &hw_counter)
+        .unwrap();
+
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &segment.segment_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&segment], &stopped, &hw_counter).unwrap();
+    let mut built_segment = builder.build_for_test(dir.path());
+
+    let files_named = |name: &str| {
+        walkdir::WalkDir::new(&built_segment.segment_path)
+            .into_iter()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_name() == name)
+            .count()
+    };
+    assert!(files_named("tracker.dat") >= 3, "expect Gridstore storages");
+    assert_eq!(files_named(TRACKER_JOURNAL_FILE), 0);
+
+    // The loaded segment journals its writes
+    let payload = serde_json::from_str(r#"{ "color": "blue" }"#).unwrap();
+    built_segment
+        .set_full_payload(101, 1.into(), &payload, &hw_counter)
+        .unwrap();
+    built_segment.flush(true).unwrap();
+    assert!(
+        built_segment
+            .segment_path
+            .join("payload_storage")
+            .join(TRACKER_JOURNAL_FILE)
+            .exists()
+    );
 }
