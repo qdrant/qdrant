@@ -894,32 +894,18 @@ fn read_sparse(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
+    use crate::segment_constructor::open_vector_storage;
     use crate::types::{
-        Distance, Memory, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype,
+        Distance, Indexes, MultiVectorComparator, MultiVectorConfig, VectorDataConfig,
+        VectorStorageDatatype, VectorStorageType,
     };
     use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
-    use crate::vector_storage::dense::volatile_dense_vector_storage::{
-        new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
-        new_volatile_dense_vector_storage,
-    };
-    use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::{
-        new_volatile_multi_dense_vector_storage, new_volatile_multi_dense_vector_storage_byte,
-        new_volatile_multi_dense_vector_storage_half,
-    };
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
-    use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
-    use crate::vector_storage::turbo::{
-        open_appendable_turbo_vector_storage, open_turbo_vector_storage,
-    };
-
-    const DIM: usize = 4;
-    const POINTS: PointOffsetType = 5;
-    const MULTI_CONFIG: MultiVectorConfig = MultiVectorConfig {
-        comparator: MultiVectorComparator::MaxSim,
-    };
 
     /// Merging storages of different kinds (here sparse into dense) is rejected
     /// with a service error rather than panicking.
@@ -936,114 +922,63 @@ mod tests {
         );
     }
 
-    fn empty_placeholder(datatype: VectorStorageDatatype, multi: bool) -> VectorStorageEnum {
-        new_empty_dense_vector_storage(
+    /// A vector added to an existing segment is backed by an `EmptyDense`
+    /// placeholder. Merging it into the target the segment builder opens for
+    /// the same config must succeed and keep every point deleted. Appendable
+    /// targets check the size of each record, so they also pin the placeholder
+    /// record size.
+    #[rstest]
+    fn merge_empty_placeholder(
+        #[values(
+            VectorStorageDatatype::Float32,
+            VectorStorageDatatype::Float16,
+            VectorStorageDatatype::Uint8,
+            VectorStorageDatatype::Turbo4
+        )]
+        datatype: VectorStorageDatatype,
+        #[values(false, true)] multi: bool,
+        #[values(VectorStorageType::InRamMmap, VectorStorageType::ChunkedMmap)]
+        storage_type: VectorStorageType,
+    ) {
+        const DIM: usize = 4;
+        const POINTS: PointOffsetType = 5;
+
+        let multivector_config = multi.then_some(MultiVectorConfig {
+            comparator: MultiVectorComparator::MaxSim,
+        });
+        let config = VectorDataConfig {
+            size: DIM,
+            distance: Distance::Cosine,
+            storage_type,
+            index: Indexes::Plain {},
+            quantization_config: None,
+            multivector_config,
+            datatype: Some(datatype),
+        };
+        let dir = Builder::new()
+            .prefix("merge_placeholder")
+            .tempdir()
+            .unwrap();
+        let mut target = open_vector_storage(
+            &config,
+            &dir.path().join("storage"),
+            &dir.path().join("index"),
+        )
+        .unwrap();
+        let source = new_empty_dense_vector_storage(
             DIM,
             Distance::Cosine,
             datatype,
             false,
-            multi.then_some(MULTI_CONFIG),
+            multivector_config,
             POINTS as usize,
-        )
-    }
+        );
 
-    /// Merging an `EmptyDense` placeholder into `target` must succeed and keep
-    /// every point deleted.
-    fn assert_placeholder_merges(mut target: VectorStorageEnum, source: VectorStorageEnum) {
         let range = merge_from_single_source(&mut target, &source, POINTS)
             .expect("merging an empty placeholder must succeed");
 
         assert_eq!(range, 0..POINTS);
         assert_eq!(target.total_vector_count(), POINTS as usize);
         assert_eq!(target.deleted_vector_count(), POINTS as usize);
-    }
-
-    /// A named multivector added to an already-indexed segment is backed by an
-    /// `EmptyDense` placeholder configured with a multivector config. Merging it
-    /// into a multi-dense target must succeed and keep every point deleted.
-    #[test]
-    fn merge_empty_multivector_placeholder_into_multi_dense() {
-        assert_placeholder_merges(
-            new_volatile_multi_dense_vector_storage(DIM, Distance::Cosine, MULTI_CONFIG),
-            empty_placeholder(VectorStorageDatatype::Float32, true),
-        );
-    }
-
-    #[test]
-    fn merge_empty_multivector_placeholder_into_multi_dense_byte() {
-        assert_placeholder_merges(
-            new_volatile_multi_dense_vector_storage_byte(DIM, Distance::Cosine, MULTI_CONFIG),
-            empty_placeholder(VectorStorageDatatype::Uint8, true),
-        );
-    }
-
-    #[test]
-    fn merge_empty_multivector_placeholder_into_multi_dense_half() {
-        assert_placeholder_merges(
-            new_volatile_multi_dense_vector_storage_half(DIM, Distance::Cosine, MULTI_CONFIG),
-            empty_placeholder(VectorStorageDatatype::Float16, true),
-        );
-    }
-
-    #[test]
-    fn merge_empty_placeholder_into_dense_byte() {
-        assert_placeholder_merges(
-            new_volatile_dense_byte_vector_storage(DIM, Distance::Cosine),
-            empty_placeholder(VectorStorageDatatype::Uint8, false),
-        );
-    }
-
-    #[test]
-    fn merge_empty_placeholder_into_dense_half() {
-        assert_placeholder_merges(
-            new_volatile_dense_half_vector_storage(DIM, Distance::Cosine),
-            empty_placeholder(VectorStorageDatatype::Float16, false),
-        );
-    }
-
-    /// Single-file target, as built for an indexed segment. It writes records
-    /// back to back without checking their size; the appendable target below
-    /// does check it, and both read through `read_dense_tq`.
-    #[test]
-    fn merge_empty_placeholder_into_dense_turbo() {
-        let dir = Builder::new().prefix("merge_turbo").tempdir().unwrap();
-        assert_placeholder_merges(
-            open_turbo_vector_storage(dir.path(), DIM, Distance::Cosine, Memory::Cached).unwrap(),
-            empty_placeholder(VectorStorageDatatype::Turbo4, false),
-        );
-    }
-
-    #[test]
-    fn merge_empty_placeholder_into_appendable_dense_turbo() {
-        let dir = Builder::new()
-            .prefix("merge_appendable_turbo")
-            .tempdir()
-            .unwrap();
-        let target =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Cosine, false).unwrap();
-        assert_placeholder_merges(
-            VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(target)),
-            empty_placeholder(VectorStorageDatatype::Turbo4, false),
-        );
-    }
-
-    #[test]
-    fn merge_empty_multivector_placeholder_into_multi_dense_turbo() {
-        let dir = Builder::new()
-            .prefix("merge_multi_turbo")
-            .tempdir()
-            .unwrap();
-        let target = open_appendable_turbo_multi_vector_storage(
-            dir.path(),
-            DIM,
-            Distance::Cosine,
-            MULTI_CONFIG,
-            false,
-        )
-        .unwrap();
-        assert_placeholder_merges(
-            VectorStorageEnum::MultiDenseTurbo(Box::new(target)),
-            empty_placeholder(VectorStorageDatatype::Turbo4, true),
-        );
     }
 }
