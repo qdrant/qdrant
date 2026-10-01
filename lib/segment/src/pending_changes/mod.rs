@@ -431,6 +431,74 @@ pub struct RecoveredPendingChanges {
     pub log_files: Vec<PathBuf>,
     /// Flush version after which log files can be safely removed.
     pub ready_at: SeqNumberType,
+    /// Logs of the recovered segment, to stop listing `log_files` on removal.
+    pub logs: PendingChangesLogs,
+}
+
+impl RecoveredPendingChanges {
+    /// Remove the recovered log files, see [`PendingChangesLogs::remove`].
+    pub fn remove_log_files(&self) -> OperationResult<()> {
+        self.logs.remove(&self.log_files)
+    }
+}
+
+/// Pending changes log files that are part of a segment's state.
+///
+/// A log file outlives the proxy that wrote it: it is kept until the segment durably persists the
+/// changes it holds, either after recovering it on load or after unwrapping the proxy. Until then
+/// the segment takes ownership of it, so it is packed into snapshots of the segment.
+///
+/// Logs of proxies currently wrapping the segment are deliberately not listed here, they belong to
+/// the proxy instead. A snapshot proxy's log for example only holds changes made after the
+/// segment was frozen for the snapshot, which must not end up in the snapshot.
+///
+/// Shared by clones, so the segment can release a log without holding a segment lock.
+#[derive(Clone, Debug, Default)]
+pub struct PendingChangesLogs {
+    files: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+impl PendingChangesLogs {
+    /// Take ownership of the log file at `path`, which may not exist on disk (yet).
+    pub fn adopt(&self, path: PathBuf) {
+        let mut files = self.files.lock();
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+
+    /// Owned log files that exist on disk.
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.files
+            .lock()
+            .iter()
+            .filter(|path| path.is_file())
+            .cloned()
+            .collect()
+    }
+
+    /// Release the log files at `paths` and remove them from disk.
+    ///
+    /// Only safe once the segment durably persists the changes they hold.
+    pub fn remove(&self, paths: &[PathBuf]) -> OperationResult<()> {
+        self.files.lock().retain(|path| !paths.contains(path));
+
+        for path in paths {
+            match fs_err::remove_file(path) {
+                Ok(()) => {}
+                // A log never flushed before its proxy was unwrapped has no file
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    return Err(OperationError::service_error(format!(
+                        "Failed to remove pending changes log {}: {err}",
+                        path.display(),
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay
@@ -468,6 +536,12 @@ pub fn recover_pending_changes(
     let log_files = list_pending_changes_log_files(&segment.segment_path);
     if log_files.is_empty() {
         return Ok(RecoveredPendingChanges::default());
+    }
+
+    // The logs are part of the segment state until removed, also when ignored: then they mirror
+    // the files of another writer's segment
+    for path in &log_files {
+        segment.pending_changes_logs.adopt(path.clone());
     }
 
     match persisted_proxy_changes {
@@ -531,5 +605,6 @@ pub fn recover_pending_changes(
         replayed,
         ready_at: segment.version(),
         log_files,
+        logs: segment.pending_changes_logs.clone(),
     })
 }

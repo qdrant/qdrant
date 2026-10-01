@@ -509,9 +509,7 @@ impl LocalShard {
                     recovered.ready_at,
                     recovered.ready_at,
                     move || {
-                        for path in &recovered.log_files {
-                            fs::remove_file(path)?;
-                        }
+                        recovered.remove_log_files()?;
                         Ok(PostFlushOutcome::Done)
                     },
                 );

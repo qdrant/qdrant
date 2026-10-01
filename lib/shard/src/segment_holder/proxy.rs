@@ -1,4 +1,3 @@
-use fs_err as fs;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationError;
 
@@ -116,20 +115,19 @@ impl SegmentHolder {
                 ));
             }
 
-            // Schedule proxy log file to delete after next flush cycle
-            let ready_at = wrapped_segment.get().read().version();
+            // The wrapped segment owns the proxy log until it durably persists the propagated
+            // changes, so snapshots of it keep packing the log. Delete it after the next flush
+            // cycle.
+            let (ready_at, pending_changes_logs) = {
+                let wrapped_segment = wrapped_segment.get().read();
+                (
+                    wrapped_segment.version(),
+                    wrapped_segment.pending_changes_logs(),
+                )
+            };
+            pending_changes_logs.adopt(log_path.clone());
             write_segments.register_post_flush_action(ready_at, ready_at, move || {
-                match fs::remove_file(&log_path) {
-                    Ok(()) => {}
-                    // File may never have existed on disk at all if never flushed before unwrap
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => {
-                        return Err(OperationError::service_error(format!(
-                            "Failed to remove pending changes log {}: {err}",
-                            log_path.display(),
-                        )));
-                    }
-                }
+                pending_changes_logs.remove(std::slice::from_ref(&log_path))?;
                 Ok(PostFlushOutcome::Done)
             });
         }
