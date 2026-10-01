@@ -295,7 +295,8 @@ where
         let Some(acorn) = params.and_then(|params| params.acorn) else {
             return SearchAlgorithm::Hnsw;
         };
-        if !acorn.enable || self.config.m0 == 0 {
+        let has_level0_links = self.config.m0 > 0 || self.config.payload_m0.unwrap_or(0) > 0;
+        if !acorn.enable || !has_level0_links {
             return SearchAlgorithm::Hnsw;
         }
         // NOTE: technically we also might want to use ACORN for unfiltered
