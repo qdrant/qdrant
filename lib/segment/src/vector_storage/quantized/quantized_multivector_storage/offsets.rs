@@ -424,6 +424,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
             path,
             AdviceSetting::Global,
             populate,
+            None,
         )
     }
 
@@ -434,6 +435,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
             1,
             AdviceSetting::Global,
             Populate::No, // TODO(uio): consider `in_ram`?
+            None,
         )?;
         Ok(Self { data })
     }

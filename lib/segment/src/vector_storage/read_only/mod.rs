@@ -209,6 +209,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            None,
         )
         .unwrap();
         assert!(opened.is_none(), "{storage_type:?} should be a no-op");
@@ -244,6 +245,7 @@ mod tests {
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
             dir.path(),
+            None,
             None,
         )
         .unwrap()
@@ -287,6 +289,7 @@ mod tests {
             &dense_config(VectorStorageType::Mmap, None),
             dir.path(),
             dir.path(),
+            None,
             None,
         )
         .unwrap()
@@ -345,6 +348,7 @@ mod tests {
             ),
             dir.path(),
             dir.path(),
+            None,
             None,
         )
         .unwrap()
@@ -411,6 +415,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            None,
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -424,7 +429,7 @@ mod tests {
         }
 
         let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None, None)
                 .unwrap()
                 .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
@@ -468,6 +473,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            None,
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -481,7 +487,7 @@ mod tests {
         }
 
         let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None, None)
                 .unwrap()
                 .unwrap();
         assert_eq!(storage.total_vector_count(), vectors.len());
@@ -540,6 +546,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            None,
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -554,7 +561,7 @@ mod tests {
         }
 
         let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
+            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None, None)
                 .unwrap()
                 .unwrap();
         assert_eq!(storage.total_vector_count(), multis.len());
@@ -593,6 +600,7 @@ mod tests {
             &dense_config(VectorStorageType::ChunkedMmap, None),
             dir.path(),
             dir.path(),
+            None,
             None,
         )
         .unwrap()
@@ -756,6 +764,7 @@ mod tests {
                 dir.path(),
                 dir.path(),
                 None,
+                None,
             )
             .unwrap()
             .unwrap();
@@ -874,6 +883,7 @@ mod tests {
             &turbo_config(VectorStorageType::ChunkedMmap, Some(multivector_config)),
             dir.path(),
             dir.path(),
+            None,
             None,
         )
         .unwrap()

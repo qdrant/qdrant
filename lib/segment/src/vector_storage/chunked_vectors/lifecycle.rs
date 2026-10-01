@@ -56,6 +56,7 @@ where
             directory: directory.to_owned(),
             advice,
             populate,
+            visible_len: None,
         };
         Ok(Self { inner, status, fs })
     }

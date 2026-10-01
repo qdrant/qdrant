@@ -308,6 +308,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             directory: _,
             advice: _,
             populate: _,
+            visible_len: _,
         } = self;
 
         0

@@ -88,6 +88,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
 
@@ -159,6 +160,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
         assert_eq!(reader.total_vector_count(), first.len());
@@ -245,6 +247,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
 
@@ -300,6 +303,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            None,
         )
         .unwrap();
 
