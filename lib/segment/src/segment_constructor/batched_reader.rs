@@ -15,6 +15,7 @@ use crate::data_types::vectors::{
     TypedMultiDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
 use crate::types::CompactExtendedPointId;
+use crate::vector_storage::turbo::shared::quantized_vector_size;
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, DenseVectorStorage, DenseVectorStorageRead,
     MultiTQVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage, MultiVectorStorageRead,
@@ -535,6 +536,14 @@ fn read_dense_tq(
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key),
         VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
+        // Placeholder for a vector added to an existing segment: every slot is
+        // deleted, but the destination still needs one zero record per slot.
+        // The record size depends only on dim and distance, which the
+        // placeholder shares with the destination.
+        VectorStorageEnum::EmptyDense(v) => {
+            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            Cow::Owned(vec![0; size])
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)
@@ -551,7 +560,6 @@ fn read_dense_tq(
         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
         | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
-        | VectorStorageEnum::EmptyDense(_)
         | VectorStorageEnum::MultiDenseTurbo(_)
         | VectorStorageEnum::EmptySparse(_) => {
             return Err(OperationError::service_error(
@@ -586,6 +594,12 @@ fn read_multi_tq(
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         VectorStorageEnum::MultiDenseTurbo(v) => v.get_multi_tq::<Sequential>(key),
+        // Named multivector added to an existing segment: all slots are deleted,
+        // but the destination still needs one zero inner record per slot.
+        VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
+            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            Cow::Owned(vec![0; size])
+        }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
         | VectorStorageEnum::DenseMemmapByte(_)

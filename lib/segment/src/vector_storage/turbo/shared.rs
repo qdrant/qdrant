@@ -44,6 +44,24 @@ pub(super) fn build_quantizer(dim: usize, distance: Distance) -> TurboQuantizer 
     )
 }
 
+/// Size in bytes of one encoded vector of a dense `Turbo4` storage, or of one
+/// inner vector of a multivector one. Equal to
+/// `build_quantizer(dim, distance).quantized_size()`, without building the
+/// rotation tables, so it is cheap enough to call per point.
+pub(crate) fn quantized_vector_size(dim: usize, distance: Distance) -> usize {
+    let vector_parameters = quantization::VectorParameters {
+        dim,
+        distance_type: quantization::DistanceType::from(distance),
+        invert: false,
+        deprecated_count: None,
+    };
+    quantization::encoded_vectors_tq::get_quantized_vector_size(
+        &vector_parameters,
+        TQDT_BITS,
+        TQDT_MODE,
+    )
+}
+
 /// Quantize then dequantize `vector` exactly as a dense TQ storage with this
 /// `distance` does across `insert_vector` + `get_vector`. Pure function of its inputs:
 /// the quantizer is fully determined by `(dim, distance)` (the rotation derives from
