@@ -67,7 +67,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         self.config.compression.compress(value)
     }
 
-    pub(super) fn decompress<'val>(&self, value: Cow<'val, [u8]>) -> Cow<'val, [u8]> {
+    pub(super) fn decompress<'val>(&self, value: Cow<'val, [u8]>) -> Result<Cow<'val, [u8]>> {
         self.config.compression.decompress(value)
     }
 
@@ -78,7 +78,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
         let bytes = self.get_value_bytes::<P>(point_offset, hw_counter)?;
-        Ok(bytes.map(|bytes| V::from_bytes(&bytes)))
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
     /// Get the serialized value for a given point offset.
@@ -96,7 +96,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         let raw = self.read_from_pages::<P>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
-        Ok(Some(self.decompress(raw)))
+        Ok(Some(self.decompress(raw)?))
     }
 
     pub fn read_values<P, U, E>(
@@ -113,7 +113,8 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         self.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, point_offset, bytes| {
-                callback(user_data, point_offset, bytes.map(V::from_bytes))
+                let value = bytes.map(V::from_bytes).transpose()?;
+                callback(user_data, point_offset, value)
             },
             hw_counter_cell,
         )
@@ -157,7 +158,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
             |(user_data, point_offset), bytes| {
                 hw_counter_cell.incr_delta(bytes.len());
 
-                let decompressed = self.decompress(bytes);
+                let decompressed = self.decompress(bytes)?;
                 callback(user_data, point_offset, Some(&decompressed))
             },
         )

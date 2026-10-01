@@ -121,6 +121,28 @@ impl ValuePointer {
     }
 }
 
+/// Decode a slot read from the tracker file.
+///
+/// A pointer with length zero reads as `None`. We never write pointers with length zero, but it
+/// may appear on a torn mapping write. Unlike the tracker file, the append-only tracker stores
+/// empty values with length zero, so it must not use this.
+fn decode_slot(slot: OptionalPointer) -> Option<ValuePointer> {
+    let pointer = slot.to_option()?;
+
+    // Disallow in debug builds, disregard in release builds to avoid panics on startup
+    #[cfg(not(test))]
+    debug_assert_ne!(
+        pointer.length, 0,
+        "ValuePointer with length 0 must not exist"
+    );
+
+    if pointer.length > 0 {
+        Some(pointer)
+    } else {
+        None
+    }
+}
+
 /// Read the slot for `point_offset` directly from `storage`.
 ///
 /// Offsets beyond the file read as `None`; so do allocated-but-never-written
@@ -138,7 +160,7 @@ fn read_slot<P: AccessPattern, S: UniversalRead>(
     }
     let opt =
         storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
-    Ok(opt.to_option())
+    Ok(decode_slot(opt))
 }
 
 /// Read the slots for a contiguous range of point offsets directly from `storage`, with a
@@ -162,7 +184,7 @@ fn read_slots<P: AccessPattern, S: UniversalRead>(
             length,
         };
         let slots = storage.read::<_, OptionalPointer>(range, P::default())?;
-        pointers.extend(slots.iter().map(|slot| slot.to_option()));
+        pointers.extend(slots.iter().copied().map(decode_slot));
     }
     pointers.resize(point_offsets.len(), None);
 

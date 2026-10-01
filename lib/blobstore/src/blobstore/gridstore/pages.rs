@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::cmp;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
@@ -246,11 +247,32 @@ impl<S: UniversalRead> Pages<S> {
         pages as usize
     }
 
+    /// Check that the value at `pointer` does not reach past the last page.
+    ///
+    /// A corrupt pointer, for example with a bit flip in its length, may span pages that don't
+    /// exist. Reading it must return an error rather than index out of bounds.
+    fn check_pages_exist(&self, pointer: ValuePointer, config: &GridstoreConfig) -> Result<()> {
+        // A pointer always covers its first page, even with a zero length
+        let need_pages = cmp::max(Self::value_len_pages(pointer, config), 1) as u64;
+        let available_pages = self.pages.len();
+
+        if u64::from(pointer.page_id).saturating_add(need_pages) > available_pages as u64 {
+            return Err(BlobstoreError::PageRangeNotFound {
+                page_ids: pointer.page_id..pointer.page_id + need_pages as u32,
+                available_pages,
+            });
+        }
+
+        Ok(())
+    }
+
     pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
         config: &GridstoreConfig,
     ) -> Result<Cow<'_, [u8]>> {
+        self.check_pages_exist(pointer, config)?;
+
         let mut reads = Self::get_page_value_ranges(pointer, config)
             .map(|(buf_offset, page, range)| (buf_offset, &self.pages[page as usize], range));
 
@@ -326,6 +348,10 @@ impl<S: UniversalRead> Pages<S> {
         let mut reads = pointers
             .enumerate()
             .flat_map(|(value_idx, (user_data, pointer))| {
+                if let Err(err) = self.check_pages_exist(pointer, config) {
+                    return Either::Left(std::iter::once(Err(err)));
+                }
+
                 let ranges = Self::get_page_value_ranges(pointer, config);
 
                 let bytes_len = pointer.length as usize;
@@ -347,7 +373,7 @@ impl<S: UniversalRead> Pages<S> {
                     None
                 };
 
-                ranges.map(move |(buffer_offset, page_idx, range)| {
+                Either::Right(ranges.map(move |(buffer_offset, page_idx, range)| {
                     let meta = ReadMeta {
                         value_idx,
                         buffer_offset,
@@ -355,8 +381,8 @@ impl<S: UniversalRead> Pages<S> {
                     };
 
                     let page = &self.pages[page_idx as usize];
-                    (meta, page, range)
-                })
+                    Ok((meta, page, range))
+                }))
             });
 
         // Drive the read pipeline directly: refill it from `reads` whenever it can
@@ -367,8 +393,9 @@ impl<S: UniversalRead> Pages<S> {
 
         loop {
             while pipeline.can_schedule()
-                && let Some((meta, page, range)) = reads.next()
+                && let Some(read) = reads.next()
             {
+                let (meta, page, range) = read?;
                 let range = range.into_byte_range::<u8>();
                 pipeline
                     .schedule::<P>(meta, page, range, align_of::<u8>())

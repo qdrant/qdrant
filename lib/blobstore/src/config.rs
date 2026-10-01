@@ -4,6 +4,9 @@ use lz4_flex::compress_prepend_size;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
+use crate::Result;
+use crate::error::BlobstoreError;
+
 /// Expect JSON values to have roughly 3–5 fields with mostly small values.
 /// For 1M values, this would require 128MB of memory.
 pub const DEFAULT_BLOCK_SIZE_BYTES: usize = 128;
@@ -29,10 +32,10 @@ impl Compression {
         }
     }
 
-    pub(crate) fn decompress(self, value: Cow<'_, [u8]>) -> Cow<'_, [u8]> {
+    pub(crate) fn decompress(self, value: Cow<'_, [u8]>) -> Result<Cow<'_, [u8]>> {
         match self {
-            Compression::None => value,
-            Compression::LZ4 => decompress_lz4(&value).into(),
+            Compression::None => Ok(value),
+            Compression::LZ4 => decompress_lz4(&value).map(Cow::Owned),
         }
     }
 }
@@ -43,8 +46,10 @@ pub(crate) fn compress_lz4(value: &[u8]) -> Vec<u8> {
 }
 
 #[inline]
-pub(crate) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
-    lz4_flex::decompress_size_prepended(value).unwrap()
+pub(crate) fn decompress_lz4(value: &[u8]) -> Result<Vec<u8>> {
+    lz4_flex::decompress_size_prepended(value).map_err(|err| {
+        BlobstoreError::decode_error(format!("Failed to decompress LZ4 value: {err}"))
+    })
 }
 
 /// Mode-neutral options a storage can be created with.
