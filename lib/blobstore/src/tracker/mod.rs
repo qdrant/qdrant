@@ -384,11 +384,13 @@ impl<S> Tracker<S> {
     ///
     /// [`Blobstore::disable_journal`]: crate::Blobstore::disable_journal
     pub fn disable_journal(&mut self) {
-        if let Some(journal) = self.journal.take() {
-            debug_assert!(
-                !journal.path().exists(),
-                "journal must not be disabled while it holds pointer writes",
-            );
+        let Some(journal) = self.journal.take() else {
+            return;
+        };
+
+        if journal.path().exists() {
+            debug_assert!(false, "journal must not be disabled while it holds pointer writes");
+            log::warn!("Disabled GridStore journalling while a journal file exists: {}", journal.path().display());
         }
     }
 
