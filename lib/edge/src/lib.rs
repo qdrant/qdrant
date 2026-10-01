@@ -1,6 +1,7 @@
 pub mod bm25_embed;
 mod builders;
 pub mod config;
+mod delete_only;
 mod edge_shard;
 mod read_only;
 mod read_view;
@@ -21,6 +22,7 @@ pub use builders::{
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
 pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
+pub use delete_only::DeleteOnlyEdgeShard;
 pub use edge_shard::EdgeShard;
 pub use read_only::{
     LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,

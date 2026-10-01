@@ -20,6 +20,7 @@ use uuid::Uuid;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::LookupSegmentHolder;
+use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
@@ -90,37 +91,6 @@ impl PointApplyKind {
             Self::Skipped | Self::Rejected | Self::Missing => false,
         }
     }
-}
-
-/// One copy of a point: where it lives, and at what version.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct PointLocation {
-    pub(super) segment: Uuid,
-    pub(super) internal_id: PointOffsetType,
-    pub(super) version: SeqNumberType,
-    /// Whether the holding segment accepts appends; breaks a version tie.
-    appendable: bool,
-}
-
-impl PointLocation {
-    /// Whether this copy of the point supersedes `other`: the higher version
-    /// wins, and on a tie the appendable copy is the live one (a point being
-    /// moved between segments exists in both at the same version).
-    fn supersedes(&self, other: &Self) -> bool {
-        (self.version, self.appendable) > (other.version, other.appendable)
-    }
-}
-
-/// Every copy of one point across the shard's segments.
-pub(super) struct PointLocations {
-    /// The live copy: its version decides whether the batch is already
-    /// applied, and its slot is the one a resolve reads from.
-    pub(super) newest: PointLocation,
-    /// Every slot the point occupies, `newest`'s included. A rewrite or a
-    /// delete retires them all — tombstoning only the newest slot would let
-    /// an older duplicate (left by an interrupted move) outlive the point
-    /// and, on a delete, resurrect it.
-    pub(super) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
 impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
@@ -321,62 +291,15 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-
-    let per_segment: Vec<Vec<(PointIdType, PointLocation)>> = pool.install(|| {
+    let per_segment = pool.install(|| {
         segments
             .iter()
             .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|(uuid, segment)| {
-                let segment = segment.read();
-                let appendable = segment.appendable;
-
-                let mut found_ids = Vec::new();
-                let mut internal_ids = Vec::new();
-                segment.locate_points(ids.iter().copied(), |id, internal_id| {
-                    found_ids.push(id);
-                    internal_ids.push(internal_id);
-                })?;
-                let versions = segment.point_versions(&internal_ids)?;
-
-                let located = found_ids
-                    .into_iter()
-                    .zip(internal_ids)
-                    .map(|(id, internal_id)| {
-                        let location = PointLocation {
-                            segment: uuid,
-                            internal_id,
-                            // A slot without a stored version is unwritten,
-                            // which compares as version 0.
-                            version: versions.get(&internal_id).copied().unwrap_or(0),
-                            appendable,
-                        };
-                        (id, location)
-                    })
-                    .collect();
-                Ok(located)
-            })
+            .map(|(uuid, segment)| locate_in(uuid, &*segment.read(), &ids))
             .collect::<OperationResult<Vec<_>>>()
     })?;
-
-    let mut locations: AHashMap<PointIdType, PointLocations> = AHashMap::new();
-    for (id, location) in per_segment.into_iter().flatten() {
-        let slot = (location.segment, location.internal_id);
-        locations
-            .entry(id)
-            .and_modify(|current| {
-                current.slots.push(slot);
-                if location.supersedes(&current.newest) {
-                    current.newest = location;
-                }
-            })
-            .or_insert_with(|| PointLocations {
-                newest: location,
-                slots: vec![slot],
-            });
-    }
-
-    Ok(locations)
+    Ok(merge_locations(per_segment))
 }
 
 /// Read the stored form of the points whose mutations need it, one batched
