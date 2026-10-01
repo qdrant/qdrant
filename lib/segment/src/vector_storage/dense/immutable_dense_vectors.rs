@@ -146,6 +146,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
             return self.for_each_in_batch_async(keys, f);
         }
 
+        if keys.len() > 1 {
+            self.storage.will_need(keys.iter().filter_map(|&key| {
+                let byte_offset = self.data_offset(key)? as u64;
+                Some(ReadRange {
+                    byte_offset,
+                    length: self.dim as u64,
+                })
+            }));
+        }
+
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
         // them is more cache friendly, than fetching and scoring in a single loop.
 
