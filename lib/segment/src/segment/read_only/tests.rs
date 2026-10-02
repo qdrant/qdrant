@@ -586,8 +586,9 @@ fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
     hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
-    let preload = futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
-    segment.live_reload(preload, hw_counter)
+    let max_committed_id =
+        futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
+    segment.live_reload(max_committed_id, hw_counter)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -907,8 +908,9 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
 
     // Staged preload takes the CachedFs snapshot (t0).
-    let preload = futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
-        .expect("live preload");
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+            .expect("live preload");
 
     // After the listing snapshot was taken, writer appends more points and flushes.
     // 5000 points will cross chunk 0 capacity (4096) and create chunk 1!
@@ -929,7 +931,9 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // Now reload.
     // Under the safe read sequence, this reload commits at most the state probed
     // before the LIST (i.e. NUM_POINTS), keeping all components consistent!
-    read_only.live_reload(preload, &hw).expect("first live reload");
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("first live reload");
     assert_eq!(
         read_only.available_point_count(),
         NUM_POINTS,
@@ -1094,9 +1098,10 @@ fn test_live_preload_skips_list_when_unchanged() {
     );
 
     // Call live_preload again without any writer changes
-    let preload = futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
-        .expect("second preload");
-    assert_eq!(preload.as_ref().map(|p| p.max_committed_id), Some(10));
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+            .expect("second preload");
+    assert_eq!(max_committed_id, Some(10));
 
     // Since nothing changed, live_preload skipped cache_file_info_async(), so cached_file_info remains None!
     assert!(
@@ -1109,6 +1114,8 @@ fn test_live_preload_skips_list_when_unchanged() {
     );
 
     // live_reload is an instantaneous no-op
-    read_only.live_reload(preload, &hw).expect("second reload");
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("second reload");
     assert_eq!(read_only.available_point_count(), 10);
 }

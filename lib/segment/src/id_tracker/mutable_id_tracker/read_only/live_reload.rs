@@ -5,7 +5,6 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
-use futures::FutureExt;
 use futures::future::BoxFuture;
 
 use super::ReadOnlyAppendableIdTracker;
@@ -27,15 +26,6 @@ pub struct LiveReloadResult {
     pub inserted: Vec<PointOffsetType>,
     /// Offsets that were previously reported as available and are now deleted.
     pub deleted: Vec<PointOffsetType>,
-}
-
-/// Preloaded state and opened file handles from [`ReadOnlyAppendableIdTracker::live_preload_inner`].
-#[derive(Debug)]
-pub struct IdTrackerPreload<S: UniversalRead> {
-    /// Upper bound (exclusive) for internal IDs whose versions can be committed during this reload.
-    pub max_committed_id: PointOffsetType,
-    pub versions_file: S,
-    pub mappings_file: S,
 }
 
 impl LiveReloadResult {
@@ -75,76 +65,64 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Preload `versions.dat` and `mappings.dat` directly on the inner filesystem
     /// before taking the directory listing snapshot.
     ///
-    /// This anchors `max_committed_id` to the versions length observed before the
-    /// snapshot, ensuring `reload_versions` never commits beyond what was flushed
-    /// at preload time. Returns the opened file handles so `live_reload` can reuse
-    /// them directly without opening them again.
-    pub async fn live_preload_inner<Fs: UniversalReadFsAsync<File = S>>(
-        &self,
+    /// If the files are already open, they are live-reloaded in place rather than reopened.
+    /// Anchors `max_committed_id` to the versions length observed at preload time.
+    pub async fn live_preload<Fs: UniversalReadFsAsync<File = S>>(
+        &mut self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, Option<IdTrackerPreload<S>>)> {
-        let v_path = versions_path(&self.segment_path);
-        let m_path = mappings_path(&self.segment_path);
-
-        let options = Self::open_options();
-
-        let v_file = inner_fs
-            .open_async(v_path, options, Default::default())
-            .await
-            .ok_not_found()?;
-        let m_file = inner_fs
-            .open_async(m_path, options, Default::default())
-            .await
-            .ok_not_found()?;
-
-        let Some((v_file, m_file)) = v_file.zip(m_file) else {
-            return Ok((false, None));
+    ) -> OperationResult<(bool, Option<PointOffsetType>)> {
+        match self.versions_file.as_mut() {
+            Some(versions_file) => {
+                versions_file.live_reload().ok_not_found()?;
+            }
+            None => {
+                let v_path = versions_path(&self.segment_path);
+                self.versions_file = inner_fs
+                    .open_async(v_path, Self::open_options(), Default::default())
+                    .await
+                    .ok_not_found()?;
+            }
+        }
+        let v_len = match self.versions_file.as_ref() {
+            Some(file) => {
+                let bytes = file.len::<u8>()?;
+                (bytes / VERSION_ELEMENT_SIZE) as usize
+            }
+            None => 0,
         };
 
-        let bytes = v_file.len::<u8>()?;
-        let v_len = (bytes / VERSION_ELEMENT_SIZE) as usize;
-        let m_bytes = m_file.len::<u8>()?;
+        match self.mappings_file.as_mut() {
+            Some(mappings_file) => {
+                mappings_file.live_reload().ok_not_found()?;
+            }
+            None => {
+                let m_path = mappings_path(&self.segment_path);
+                self.mappings_file = inner_fs
+                    .open_async(m_path, Self::open_options(), Default::default())
+                    .await
+                    .ok_not_found()?;
+            }
+        }
+        let m_bytes = match self.mappings_file.as_ref() {
+            Some(file) => file.len::<u8>()?,
+            None => 0,
+        };
 
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
         let changed = versions_changed || mappings_changed;
 
-        let preload = IdTrackerPreload {
-            max_committed_id: v_len as PointOffsetType,
-            versions_file: v_file,
-            mappings_file: m_file,
-        };
-
-        Ok((changed, Some(preload)))
+        let max_committed_id = Some(v_len as PointOffsetType);
+        Ok((changed, max_committed_id))
     }
 
-    /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
-    /// reopen for held handles, a prefetch for files it opens lazily. Absence
-    /// is tolerated the same way the reload tolerates it.
-    pub fn live_preload(
+    /// Post-LIST cached preloading. Appendable tracker reloads its handles during
+    /// `live_preload` on the inner filesystem, so this is a no-op.
+    pub fn live_preload_cached(
         &self,
-        fs: &impl CachedReadFs<File = S>,
+        _fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        let options = Self::open_options();
-        let mut futs: Vec<BoxFuture<'static, ()>> = Vec::new();
-        for (file, path) in [
-            (&self.versions_file, versions_path(&self.segment_path)),
-            (&self.mappings_file, mappings_path(&self.segment_path)),
-        ] {
-            match file {
-                Some(file) => {
-                    futs.extend(
-                        file.live_preload(|p| fs.cached_file_info(p))
-                            .ok_not_found()?
-                            .map(FutureExt::boxed),
-                    );
-                }
-                None => {
-                    fs.schedule_open(&path, Some(options), None);
-                }
-            };
-        }
-        Ok(futs)
+        Ok(Vec::new())
     }
 
     /// Consume mapping and version changes appended to storage since the last reload.
@@ -163,23 +141,18 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
-        preload: Option<IdTrackerPreload<S>>,
+        max_committed_id: Option<PointOffsetType>,
     ) -> OperationResult<LiveReloadResult> {
-        let max_committed_id = preload.as_ref().map(|p| p.max_committed_id);
-        let had_preloaded = preload.is_some();
-        if let Some(preload) = preload {
-            self.versions_file = Some(preload.versions_file);
-            self.mappings_file = Some(preload.mappings_file);
-        }
+        let preloaded = max_committed_id.is_some();
 
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
         let committed =
-            self.reload_versions(fs, max_committed_id, had_preloaded)? as PointOffsetType;
+            self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
-        let changes = self.read_new_mapping_changes(fs, had_preloaded)?;
+        let changes = self.read_new_mapping_changes(fs, preloaded)?;
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
