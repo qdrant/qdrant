@@ -452,3 +452,58 @@ fn test_merge_empty_is_noop() {
     empty.merge(LiveReloadResult::default());
     assert!(empty.is_empty());
 }
+
+#[test]
+fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // 1. Probe when nothing changed returns false
+    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(!changed, "probe must report unchanged when no writes occurred");
+
+    // 2. Insert point 200, flush mappings and versions
+    insert(&mut mutable, 200.into(), 1, 11);
+    flush(&mutable);
+
+    // Probe now detects changes and anchors watermark to 2 points
+    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(changed, "probe must report changed after inserts");
+
+    // Before reload, writer adds point 300
+    insert(&mut mutable, 300.into(), 2, 12);
+    flush(&mutable);
+
+    // Reload is clamped to the probed watermark (2 points, internal_id 1), so point 300 (offset 2)
+    // is NOT committed yet!
+    let result = read_only.live_reload(&MmapFs).unwrap();
+    assert_eq!(result.inserted, vec![1]);
+    assert_eq!(read_only.available_point_count(), 2);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(300.into(), common::types::DeferredBehavior::VisibleOnly),
+        None,
+    );
+
+    // Subsequent probe now sees point 300 and commits it
+    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(changed);
+    let result = read_only.live_reload(&MmapFs).unwrap();
+    assert_eq!(result.inserted, vec![2]);
+    assert_eq!(read_only.available_point_count(), 3);
+
+    // 3. Pure delete without inserts: versions.dat does not grow, but mappings.dat changed
+    mutable.drop(200.into()).unwrap();
+    flush(&mutable);
+
+    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(changed, "probe must detect pure delete via mappings change");
+    let result = read_only.live_reload(&MmapFs).unwrap();
+    assert_eq!(result.deleted, vec![1]);
+    assert_eq!(read_only.available_point_count(), 2);
+}

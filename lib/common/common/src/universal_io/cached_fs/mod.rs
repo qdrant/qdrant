@@ -242,6 +242,12 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
 /// (including consuming parked futures in `open`) works over a plain
 /// `UniversalReadFs`.
 impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
+    type Inner = Fs;
+
+    fn inner(&self) -> &Self::Inner {
+        &self.fs
+    }
+
     /// Take a LIST snapshot of the filesystem and drop prefetched files.
     fn cache_file_info(&mut self) -> UioResult<()> {
         let list = self.fs.list_files(&self.prefix_path)?;
@@ -250,8 +256,10 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     }
 
     fn rotate_cache_file_info(&mut self) {
-        self.previous_files_info = self.files_info.take();
-        self.files_prefetched.lock().clear();
+        if self.files_info.is_some() {
+            self.previous_files_info = self.files_info.take();
+            self.files_prefetched.lock().clear();
+        }
     }
 
     fn schedule_open(
@@ -359,6 +367,12 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
         self.files_info.as_ref()?.get(path).cloned()
+    }
+
+    fn is_file_unchanged(&self, path: &Path) -> bool {
+        self.previous_file_info(path)
+            .zip(self.file_info(path))
+            .is_some_and(|(previous, current)| previous.full_eq(current))
     }
 }
 

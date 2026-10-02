@@ -2,7 +2,9 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
@@ -64,6 +66,18 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             segment_path,
             deferred_internal_id,
         )?))
+    }
+
+    /// Probe for changes on the inner filesystem before taking the directory listing snapshot.
+    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        inner_fs: &Fs,
+    ) -> OperationResult<bool> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
+            Self::Immutable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
+            Self::DiskResident(id_tracker) => id_tracker.probe_changes(inner_fs).await,
+        }
     }
 
     /// Stage everything the next [`Self::live_reload`] needs. Shared access.

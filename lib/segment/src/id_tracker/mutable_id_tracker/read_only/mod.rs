@@ -7,6 +7,7 @@ mod tests;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
@@ -71,4 +72,8 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// Backing handle for the random-access versions array. `None` until the file exists; opened
     /// lazily and refreshed on live-reload.
     versions_file: Option<S>,
+
+    /// Anchored watermark for versions len probed before directory listing.
+    /// Clamps `reload_versions` to this length. `usize::MAX` means unconstrained.
+    target_version_len: AtomicUsize,
 }
