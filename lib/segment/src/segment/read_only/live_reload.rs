@@ -25,15 +25,25 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             vector_data,
             payload_index,
             payload_storage,
-            pending_reload: _,
+            pending_reload,
             reload_fs,
             segment_type: _,
             segment_config: _,
         } = self;
 
         let mut reload_fs = reload_fs.borrow_mut();
-        // perf: one LIST per segment per refresh; could be a single shard-prefix
-        // LIST partitioned into the per-segment snapshots.
+
+        // 1. Probe tracker files on inner fs before taking the directory listing snapshot,
+        // anchoring the commit watermark.
+        let tracker_changed = id_tracker.borrow().probe_changes(reload_fs.inner()).await?;
+
+        // 2. If nothing changed and there are no unapplied pending changes from a previous
+        // failed reload, skip the expensive directory LIST and preloading entirely.
+        if !tracker_changed && pending_reload.borrow().is_empty() {
+            return Ok(());
+        }
+
+        // 3. Take directory listing snapshot now that watermark is anchored.
         reload_fs.cache_file_info_async().await?;
 
         check_process_stopped(is_stopped)?;
@@ -86,6 +96,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         pending.merge(fresh);
 
         log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
+
+        if pending.is_empty() {
+            fs.rotate_cache_file_info();
+            return Ok(());
+        }
 
         // Replay the full accumulated delta to every component. Bail on the first
         // error without clearing `pending`, so the next reload retries the union.

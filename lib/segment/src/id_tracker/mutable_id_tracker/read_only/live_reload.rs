@@ -1,8 +1,13 @@
 use std::io::Cursor;
+use std::sync::atomic::Ordering;
 
 use common::generic_consts::Sequential;
+use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, IsNotFound, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
+    UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::FutureExt;
 use futures::future::BoxFuture;
 
@@ -61,6 +66,55 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    /// Probe `versions.dat` and `mappings.dat` directly on the inner filesystem
+    /// before taking the directory listing snapshot.
+    ///
+    /// This anchors `target_version_len` to the versions length observed before the
+    /// snapshot, ensuring `reload_versions` never commits beyond what was flushed
+    /// at probe time. Returns true if either file changed compared to our currently
+    /// loaded state.
+    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        inner_fs: &Fs,
+    ) -> OperationResult<bool> {
+        let v_path = versions_path(&self.segment_path);
+        let m_path = mappings_path(&self.segment_path);
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Advice(Advice::Normal),
+        };
+
+        let v_file = inner_fs
+            .open_async(v_path, options, Default::default())
+            .await;
+        let v_len = match v_file {
+            Ok(file) => {
+                let bytes = file.len::<u8>()?;
+                (bytes / VERSION_ELEMENT_SIZE) as usize
+            }
+            Err(err) if err.is_not_found() => 0,
+            Err(err) => return Err(err.into()),
+        };
+
+        let m_file = inner_fs
+            .open_async(m_path, options, Default::default())
+            .await;
+        let m_bytes = match m_file {
+            Ok(file) => file.len::<u8>()?,
+            Err(err) if err.is_not_found() => 0,
+            Err(err) => return Err(err.into()),
+        };
+
+        self.target_version_len.store(v_len, Ordering::Relaxed);
+
+        let versions_changed = v_len != self.internal_to_version.len();
+        let mappings_changed = m_bytes != self.mappings_read_to;
+        Ok(versions_changed || mappings_changed)
+    }
+
     /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
     /// reopen for held handles, a prefetch for files it opens lazily. Absence
     /// is tolerated the same way the reload tolerates it.
@@ -248,8 +302,6 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // Disjoint field borrow so the read (from `versions_file`) can extend `internal_to_version`.
         let internal_to_version = &mut self.internal_to_version;
 
-        let loaded_len = internal_to_version.len() as u64;
-
         // Floor the raw byte length to whole elements: a partially-written trailing version (a torn
         // flush) is ignored, only fully-written versions are loaded. We read the byte length rather
         // than `len::<SeqNumberType>()` on purpose, some backends debug-assert the file length is a
@@ -257,13 +309,23 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
             return Ok(internal_to_version.len());
         };
-        let versions_len = versions_bytes / VERSION_ELEMENT_SIZE;
+        let mut versions_len = (versions_bytes / VERSION_ELEMENT_SIZE) as usize;
+
+        let target = self.target_version_len.swap(usize::MAX, Ordering::Relaxed);
+        if target != usize::MAX {
+            versions_len = versions_len.min(target);
+        }
+
+        let loaded_len = internal_to_version.len();
 
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and
         // stays absent until a later reload (the mapped-but-versionless case).
         if versions_len > loaded_len {
             let tail = versions_file.read::<_, SeqNumberType>(
-                ReadRange::new(loaded_len * VERSION_ELEMENT_SIZE, versions_len - loaded_len),
+                ReadRange::new(
+                    (loaded_len as u64) * VERSION_ELEMENT_SIZE,
+                    (versions_len - loaded_len) as u64,
+                ),
                 Sequential,
             )?;
             internal_to_version.extend_from_slice(&tail);

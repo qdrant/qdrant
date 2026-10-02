@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
 
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
@@ -74,6 +75,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
             mappings_file: None,
             versions_file: None,
+            target_version_len: AtomicUsize::new(usize::MAX),
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported

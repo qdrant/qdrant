@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
 use rstest::rstest;
 use tempfile::Builder;
 
@@ -1092,5 +1092,78 @@ fn test_live_reload_pure_delete_without_inserts() {
         !read_only.has_point(5.into(), DeferredBehavior::VisibleOnly),
         "deleted point must no longer be present"
     );
+}
+
+/// Verify that `live_preload` short-circuits and skips the directory LIST
+/// when the tracker files are unchanged.
+#[test]
+fn test_live_preload_skips_list_when_unchanged() {
+    let segments_dir = Builder::new().prefix("appendable_seg_skip").tempdir().unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    for i in 0..10 {
+        let vector: Vec<f32> = (0..DIM).map(|j| (i + j) as f32).collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        mutable
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+    )
+    .expect("read-only open");
+
+    // First preload + reload
+    preload_then_reload(&mut read_only, &hw).expect("first reload");
+    assert_eq!(read_only.available_point_count(), 10);
+
+    // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
+    let config_path = mutable.data_path().join("config.json");
+    assert!(read_only.reload_fs.borrow().cached_file_info(&config_path).is_none());
+
+    // Call live_preload again without any writer changes
+    futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+        .expect("second preload");
+
+    // Since nothing changed, live_preload skipped cache_file_info_async(), so cached_file_info remains None!
+    assert!(
+        read_only.reload_fs.borrow().cached_file_info(&config_path).is_none(),
+        "live_preload must skip directory listing when tracker files are unchanged",
+    );
+
+    // live_reload is an instantaneous no-op
+    read_only.live_reload(&hw).expect("second reload");
+    assert_eq!(read_only.available_point_count(), 10);
 }
 

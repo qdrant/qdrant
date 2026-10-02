@@ -3,7 +3,9 @@
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
 
 use super::ReadOnlyDiskIdTracker;
@@ -12,6 +14,13 @@ use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
+    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        _inner_fs: &Fs,
+    ) -> OperationResult<bool> {
+        Ok(true)
+    }
+
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
     pub fn live_preload(
         &self,
