@@ -34,7 +34,6 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
-use semver::Version;
 use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 use shard::retrieve::record_internal::RecordInternal;
@@ -112,14 +111,6 @@ impl RemoteShard {
             telemetry_search_durations: OperationDurationsAggregator::new(),
             telemetry_update_durations: OperationDurationsAggregator::new(),
         }
-    }
-
-    /// Checks that remote shard is at least at the given version
-    /// - Returns `true` if we know that the peer is at least at the given version
-    /// - Returns `false` if we know that the peer not at the given version or version is unknown
-    pub fn check_version(&self, version: &Version) -> bool {
-        self.channel_service
-            .peer_is_at_version(self.peer_id, version)
     }
 
     pub fn restore_snapshot(_snapshot_path: &Path) {

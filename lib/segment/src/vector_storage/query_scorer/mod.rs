@@ -33,6 +33,10 @@ pub trait QueryScorer {
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
 }
 
+/// Reference implementation of [`QueryScorer::score_stored_batch`].
+///
+/// Kept as a free function instead of a default trait method so every scorer has to opt in
+/// explicitly. Currently unused, as all scorers provide their own batch implementation.
 pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
     this: &Q,
     ids: &[u32],
