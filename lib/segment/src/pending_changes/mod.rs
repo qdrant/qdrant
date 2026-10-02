@@ -470,6 +470,10 @@ pub fn recover_pending_changes(
         return Ok(RecoveredPendingChanges::default());
     }
 
+    // The logs are part of the segment state until removed, also when ignored: then they mirror
+    // the files of another writer's segment
+    segment.pending_changes_logs = log_files.clone();
+
     match persisted_proxy_changes {
         PersistedProxyChanges::Replay => {}
         PersistedProxyChanges::Ignore => {

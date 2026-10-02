@@ -11,8 +11,8 @@ use super::*;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vector_name_config::DenseVectorConfig;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use crate::entry::ReadSegmentEntry as _;
 use crate::entry::entry_point::SegmentEntry as _;
+use crate::entry::{ReadSegmentEntry as _, SnapshotEntry as _};
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 
@@ -550,6 +550,12 @@ fn test_recover_ignore_leaves_log_untouched() {
     assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
     assert_eq!(segment.version(), segment_version);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), log_len);
+    // The ignored log still holds changes missing in the segment files, so it is packed into
+    // snapshots and listed in the segment manifest, which partial snapshot merges rely on
+    assert_eq!(
+        segment.visible_pending_changes_log_files(),
+        vec![log_path.clone()],
+    );
 
     // A later replaying load still recovers the change
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -562,6 +568,7 @@ fn test_recover_ignore_leaves_log_untouched() {
     segment.flush(true).unwrap();
     fs::remove_file(&log_path).unwrap();
     assert!(!log_path.is_file());
+    assert!(segment.visible_pending_changes_log_files().is_empty());
 }
 
 #[test]

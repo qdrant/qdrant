@@ -54,6 +54,7 @@ impl Segment {
             segment_type: _,
             segment_config,
             error_status: _,
+            pending_changes_logs: _,
         } = self;
 
         let sparse_names = &segment_config.sparse_vector_data;
