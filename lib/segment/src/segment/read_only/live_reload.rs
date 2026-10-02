@@ -9,7 +9,9 @@ use futures::future::{BoxFuture, join_all};
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
+use crate::id_tracker::mutable_id_tracker::read_only::{
+    IdTrackerPreload, LiveReloadResult,
+};
 use crate::index::UniversalReadExt;
 
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
@@ -17,7 +19,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
-    pub async fn live_preload(&self, is_stopped: &AtomicBool) -> OperationResult<Option<usize>> {
+    pub async fn live_preload(
+        &self,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<IdTrackerPreload<S>>> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -33,14 +38,15 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         let mut reload_fs = reload_fs.borrow_mut();
 
-        // 1. Probe tracker files on inner fs before taking the directory listing snapshot,
-        // anchoring the commit watermark.
-        let (tracker_changed, watermark) = id_tracker.borrow().probe_changes(reload_fs.inner()).await?;
+        // 1. Preload tracker files on inner fs before taking the directory listing snapshot,
+        // anchoring max_committed_id and reusing opened file handles.
+        let (tracker_changed, tracker_preload) =
+            id_tracker.borrow().live_preload_inner(reload_fs.inner()).await?;
 
         // 2. If nothing changed and there are no unapplied pending changes from a previous
         // failed reload, skip the expensive directory LIST and preloading entirely.
         if !tracker_changed && pending_reload.borrow().is_empty() {
-            return Ok(Some(watermark));
+            return Ok(tracker_preload);
         }
 
         // 3. Take directory listing snapshot now that watermark is anchored.
@@ -50,7 +56,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         let fs = &*reload_fs;
 
-        let mut preloads = id_tracker.borrow().live_preload(fs)?;
+        let mut preloads = Vec::new();
         preloads.extend(payload_storage.borrow().live_preload(fs)?);
         preloads.extend(payload_index.borrow().live_preload(fs)?);
         for vector_data in vector_data.values() {
@@ -58,7 +64,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         futures::join!(fs.wait_all(), join_all(preloads));
-        Ok(Some(watermark))
+        Ok(tracker_preload)
     }
 
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
@@ -74,7 +80,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// replays the union — no component is left drifting on a partial reload.
     pub fn live_reload(
         &mut self,
-        watermark: Option<usize>,
+        tracker_preload: Option<IdTrackerPreload<S>>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
@@ -95,7 +101,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
         // accumulated delta survives an error and is replayed on the next call.
-        let fresh = id_tracker.borrow_mut().live_reload(fs, watermark)?;
+        let fresh = id_tracker.borrow_mut().live_reload(fs, tracker_preload)?;
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
 

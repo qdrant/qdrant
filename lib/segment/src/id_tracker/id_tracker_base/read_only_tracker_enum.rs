@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    LiveReloadResult, ReadOnlyAppendableIdTracker,
+    IdTrackerPreload, LiveReloadResult, ReadOnlyAppendableIdTracker,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -68,15 +68,15 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         )?))
     }
 
-    /// Probe for changes on the inner filesystem before taking the directory listing snapshot.
-    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+    /// Preload files on the inner filesystem before taking the directory listing snapshot.
+    pub async fn live_preload_inner<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, usize)> {
+    ) -> OperationResult<(bool, Option<IdTrackerPreload<S>>)> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
-            Self::Immutable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
-            Self::DiskResident(id_tracker) => id_tracker.probe_changes(inner_fs).await,
+            Self::Appendable(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
+            Self::Immutable(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
+            Self::DiskResident(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
         }
     }
 
@@ -100,10 +100,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
-        watermark: Option<usize>,
+        preload: Option<IdTrackerPreload<S>>,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, watermark),
+            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, preload),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }

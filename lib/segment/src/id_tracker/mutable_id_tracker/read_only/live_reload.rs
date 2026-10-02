@@ -1,11 +1,9 @@
 use std::io::Cursor;
 
 use common::generic_consts::Sequential;
-use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
-    UniversalReadFsAsync,
+    CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -29,6 +27,15 @@ pub struct LiveReloadResult {
     pub inserted: Vec<PointOffsetType>,
     /// Offsets that were previously reported as available and are now deleted.
     pub deleted: Vec<PointOffsetType>,
+}
+
+/// Preloaded state and opened file handles from [`ReadOnlyAppendableIdTracker::live_preload_inner`].
+#[derive(Debug)]
+pub struct IdTrackerPreload<S: UniversalRead> {
+    /// Upper bound (exclusive) for internal IDs whose versions can be committed during this reload.
+    pub max_committed_id: PointOffsetType,
+    pub versions_file: S,
+    pub mappings_file: S,
 }
 
 impl LiveReloadResult {
@@ -65,51 +72,50 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    /// Probe `versions.dat` and `mappings.dat` directly on the inner filesystem
+    /// Preload `versions.dat` and `mappings.dat` directly on the inner filesystem
     /// before taking the directory listing snapshot.
     ///
-    /// Returns `(changed, watermark)`, where `changed` indicates if either file
-    /// changed compared to our currently loaded state, and `watermark` is the
-    /// committed versions count observed at probe time.
-    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+    /// This anchors `max_committed_id` to the versions length observed before the
+    /// snapshot, ensuring `reload_versions` never commits beyond what was flushed
+    /// at preload time. Returns the opened file handles so `live_reload` can reuse
+    /// them directly without opening them again.
+    pub async fn live_preload_inner<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, usize)> {
+    ) -> OperationResult<(bool, Option<IdTrackerPreload<S>>)> {
         let v_path = versions_path(&self.segment_path);
         let m_path = mappings_path(&self.segment_path);
 
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
+        let options = Self::open_options();
 
         let v_file = inner_fs
             .open_async(v_path, options, Default::default())
             .await
             .ok_not_found()?;
-        let v_len = match v_file {
-            Some(file) => {
-                let bytes = file.len::<u8>()?;
-                (bytes / VERSION_ELEMENT_SIZE) as usize
-            }
-            None => 0,
-        };
-
         let m_file = inner_fs
             .open_async(m_path, options, Default::default())
             .await
             .ok_not_found()?;
-        let m_bytes = match m_file {
-            Some(file) => file.len::<u8>()?,
-            None => 0,
+
+        let Some((v_file, m_file)) = v_file.zip(m_file) else {
+            return Ok((false, None));
         };
+
+        let bytes = v_file.len::<u8>()?;
+        let v_len = (bytes / VERSION_ELEMENT_SIZE) as usize;
+        let m_bytes = m_file.len::<u8>()?;
 
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
         let changed = versions_changed || mappings_changed;
-        Ok((changed, v_len))
+
+        let preload = IdTrackerPreload {
+            max_committed_id: v_len as PointOffsetType,
+            versions_file: v_file,
+            mappings_file: m_file,
+        };
+
+        Ok((changed, Some(preload)))
     }
 
     /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
@@ -157,15 +163,23 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
-        watermark: Option<usize>,
+        preload: Option<IdTrackerPreload<S>>,
     ) -> OperationResult<LiveReloadResult> {
+        let max_committed_id = preload.as_ref().map(|p| p.max_committed_id);
+        let had_preloaded = preload.is_some();
+        if let Some(preload) = preload {
+            self.versions_file = Some(preload.versions_file);
+            self.mappings_file = Some(preload.mappings_file);
+        }
+
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed = self.reload_versions(fs, watermark)? as PointOffsetType;
+        let committed =
+            self.reload_versions(fs, max_committed_id, had_preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
-        let changes = self.read_new_mapping_changes(fs)?;
+        let changes = self.read_new_mapping_changes(fs, had_preloaded)?;
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
@@ -221,18 +235,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     fn read_new_mapping_changes(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        preloaded: bool,
     ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
-        match self.mappings_file.as_mut() {
-            Some(file) => {
-                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-                // an empty file.
-                file.live_reload().ok_not_found()?;
-            }
-            None => {
-                self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+        if !preloaded {
+            match self.mappings_file.as_mut() {
+                Some(file) => {
+                    // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                    // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                    // an empty file.
+                    file.live_reload().ok_not_found()?;
+                }
+                None => {
+                    self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+                }
             }
         }
         let Some(file) = self.mappings_file.as_mut() else {
@@ -282,19 +299,22 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     fn reload_versions(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
-        watermark: Option<usize>,
+        max_committed_id: Option<PointOffsetType>,
+        preloaded: bool,
     ) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
-        match self.versions_file.as_mut() {
-            Some(versions_file) => {
-                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-                // an empty file (no committed versions).
-                versions_file.live_reload().ok_not_found()?;
-            }
-            None => {
-                self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+        if !preloaded {
+            match self.versions_file.as_mut() {
+                Some(versions_file) => {
+                    // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                    // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                    // an empty file (no committed versions).
+                    versions_file.live_reload().ok_not_found()?;
+                }
+                None => {
+                    self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+                }
             }
         }
         let Some(versions_file) = self.versions_file.as_mut() else {
@@ -313,8 +333,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         };
         let mut versions_len = (versions_bytes / VERSION_ELEMENT_SIZE) as usize;
 
-        if let Some(target) = watermark {
-            versions_len = versions_len.min(target);
+        if let Some(target) = max_committed_id {
+            versions_len = versions_len.min(target as usize);
         }
 
         let loaded_len = internal_to_version.len();
