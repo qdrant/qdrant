@@ -17,7 +17,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
-    pub async fn live_preload(&self, is_stopped: &AtomicBool) -> OperationResult<()> {
+    pub async fn live_preload(&self, is_stopped: &AtomicBool) -> OperationResult<Option<usize>> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -35,12 +35,12 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // 1. Probe tracker files on inner fs before taking the directory listing snapshot,
         // anchoring the commit watermark.
-        let tracker_changed = id_tracker.borrow().probe_changes(reload_fs.inner()).await?;
+        let (tracker_changed, watermark) = id_tracker.borrow().probe_changes(reload_fs.inner()).await?;
 
         // 2. If nothing changed and there are no unapplied pending changes from a previous
         // failed reload, skip the expensive directory LIST and preloading entirely.
         if !tracker_changed && pending_reload.borrow().is_empty() {
-            return Ok(());
+            return Ok(Some(watermark));
         }
 
         // 3. Take directory listing snapshot now that watermark is anchored.
@@ -58,7 +58,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         futures::join!(fs.wait_all(), join_all(preloads));
-        Ok(())
+        Ok(Some(watermark))
     }
 
     /// Refresh every component to the current on-disk state (id-tracker delta → all components).
@@ -72,7 +72,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// every component has reloaded successfully. If a component fails mid-way the
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
-    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn live_reload(
+        &mut self,
+        watermark: Option<usize>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let Self {
             uuid: _,
             segment_path: _,
@@ -91,7 +95,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
         // accumulated delta survives an error and is replayed on the next call.
-        let fresh = id_tracker.borrow_mut().live_reload(fs)?;
+        let fresh = id_tracker.borrow_mut().live_reload(fs, watermark)?;
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
 

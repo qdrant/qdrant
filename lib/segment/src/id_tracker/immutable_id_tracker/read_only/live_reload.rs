@@ -14,8 +14,8 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         _inner_fs: &Fs,
-    ) -> OperationResult<bool> {
-        Ok(true)
+    ) -> OperationResult<(bool, usize)> {
+        Ok((true, usize::MAX))
     }
 
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.

@@ -135,7 +135,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
 
     // A reload with no new changes reports nothing
     assert_eq!(
-        read_only.live_reload(&MmapFs).unwrap(),
+        read_only.live_reload(&MmapFs, None).unwrap(),
         LiveReloadResult::default(),
     );
 
@@ -145,7 +145,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result.inserted, vec![3, 4]);
     assert_eq!(result.deleted, vec![1]);
     assert_in_sync(&read_only, &mutable);
@@ -173,7 +173,7 @@ fn test_live_reload_insert_then_delete_within_batch() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_in_sync(&read_only, &mutable);
@@ -210,7 +210,7 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     mutable.set_internal_version(1, 20).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, vec![0]);
     assert_eq!(
@@ -244,7 +244,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
 
     // The version is not flushed yet, so the point is withheld from the result and, crucially, is
     // not present in the mapping at all (its data may be partially written).
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only
@@ -257,7 +257,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
     // the insert, links it into the mapping, and reconciles the version.
     mutable.versions_flusher()().unwrap();
 
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_eq!(
@@ -300,7 +300,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     }
 
     // The partial entry is ignored and we don't advance past it.
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only.mappings_read_to, complete_len,
@@ -316,7 +316,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
         insert(&mut mutable, 300.into(), 2, 12);
         flush(&mutable);
 
-        let result = read_only.live_reload(&MmapFs).unwrap();
+        let result = read_only.live_reload(&MmapFs, None).unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
         assert_in_sync(&read_only, &mutable);
@@ -377,7 +377,7 @@ fn test_live_reload_withholds_partially_written_version() {
     }
 
     // Only part of the version is written, so the point is withheld.
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let result = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(read_only.internal_version(2), None);
 
@@ -389,7 +389,7 @@ fn test_live_reload_withholds_partially_written_version() {
     {
         mutable.versions_flusher()().unwrap();
 
-        let result = read_only.live_reload(&MmapFs).unwrap();
+        let result = read_only.live_reload(&MmapFs, None).unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(
             read_only.internal_id_with_behavior(
@@ -463,25 +463,32 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
-    // 1. Probe when nothing changed returns false
-    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
-    assert!(!changed, "probe must report unchanged when no writes occurred");
+    // 1. Probe when nothing changed returns changed = false
+    let (changed, watermark) =
+        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(
+        !changed,
+        "probe must report unchanged when no writes occurred"
+    );
+    assert_eq!(watermark, 1);
 
     // 2. Insert point 200, flush mappings and versions
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
     // Probe now detects changes and anchors watermark to 2 points
-    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, watermark) =
+        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
     assert!(changed, "probe must report changed after inserts");
+    assert_eq!(watermark, 2, "probe must report watermark 2 after inserts");
 
     // Before reload, writer adds point 300
     insert(&mut mutable, 300.into(), 2, 12);
     flush(&mutable);
 
-    // Reload is clamped to the probed watermark (2 points, internal_id 1), so point 300 (offset 2)
-    // is NOT committed yet!
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    // Reload is clamped to the probed watermark passed as argument (2 points, internal_id 1),
+    // so point 300 (offset 2) is NOT committed yet!
+    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
     assert_eq!(
@@ -491,9 +498,11 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     );
 
     // Subsequent probe now sees point 300 and commits it
-    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, watermark) =
+        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
     assert!(changed);
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    assert_eq!(watermark, 3);
+    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
     assert_eq!(result.inserted, vec![2]);
     assert_eq!(read_only.available_point_count(), 3);
 
@@ -501,9 +510,14 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let changed = futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
-    assert!(changed, "probe must detect pure delete via mappings change");
-    let result = read_only.live_reload(&MmapFs).unwrap();
+    let (changed, watermark) =
+        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    assert!(
+        changed,
+        "probe must detect pure delete via mappings change"
+    );
+    assert_eq!(watermark, 3);
+    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
     assert_eq!(result.deleted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
 }
