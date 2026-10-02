@@ -8,14 +8,16 @@ use futures::future::BoxFuture;
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
-use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
+use crate::id_tracker::mutable_id_tracker::read_only::{
+    IdTrackerPreload, LiveReloadResult,
+};
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
-    pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
+    pub async fn live_preload_inner<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         _inner_fs: &Fs,
-    ) -> OperationResult<(bool, usize)> {
-        Ok((true, usize::MAX))
+    ) -> OperationResult<(bool, Option<IdTrackerPreload<S>>)> {
+        Ok((true, None))
     }
 
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.

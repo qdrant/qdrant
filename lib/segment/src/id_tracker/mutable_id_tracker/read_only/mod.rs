@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-pub use self::live_reload::LiveReloadResult;
+pub use self::live_reload::{IdTrackerPreload, LiveReloadResult};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 

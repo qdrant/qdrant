@@ -464,23 +464,27 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // 1. Probe when nothing changed returns changed = false
-    let (changed, watermark) =
-        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, preload) =
+        futures::executor::block_on(read_only.live_preload_inner(&MmapFs)).unwrap();
     assert!(
         !changed,
         "probe must report unchanged when no writes occurred"
     );
-    assert_eq!(watermark, 1);
+    assert_eq!(preload.as_ref().map(|p| p.max_committed_id), Some(1));
 
     // 2. Insert point 200, flush mappings and versions
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
     // Probe now detects changes and anchors watermark to 2 points
-    let (changed, watermark) =
-        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, preload) =
+        futures::executor::block_on(read_only.live_preload_inner(&MmapFs)).unwrap();
     assert!(changed, "probe must report changed after inserts");
-    assert_eq!(watermark, 2, "probe must report watermark 2 after inserts");
+    assert_eq!(
+        preload.as_ref().map(|p| p.max_committed_id),
+        Some(2),
+        "probe must report max_committed_id 2 after inserts"
+    );
 
     // Before reload, writer adds point 300
     insert(&mut mutable, 300.into(), 2, 12);
@@ -488,7 +492,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     // Reload is clamped to the probed watermark passed as argument (2 points, internal_id 1),
     // so point 300 (offset 2) is NOT committed yet!
-    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
+    let result = read_only.live_reload(&MmapFs, preload).unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
     assert_eq!(
@@ -498,11 +502,11 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     );
 
     // Subsequent probe now sees point 300 and commits it
-    let (changed, watermark) =
-        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, preload) =
+        futures::executor::block_on(read_only.live_preload_inner(&MmapFs)).unwrap();
     assert!(changed);
-    assert_eq!(watermark, 3);
-    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
+    assert_eq!(preload.as_ref().map(|p| p.max_committed_id), Some(3));
+    let result = read_only.live_reload(&MmapFs, preload).unwrap();
     assert_eq!(result.inserted, vec![2]);
     assert_eq!(read_only.available_point_count(), 3);
 
@@ -510,14 +514,14 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let (changed, watermark) =
-        futures::executor::block_on(read_only.probe_changes(&MmapFs)).unwrap();
+    let (changed, preload) =
+        futures::executor::block_on(read_only.live_preload_inner(&MmapFs)).unwrap();
     assert!(
         changed,
         "probe must detect pure delete via mappings change"
     );
-    assert_eq!(watermark, 3);
-    let result = read_only.live_reload(&MmapFs, Some(watermark)).unwrap();
+    assert_eq!(preload.as_ref().map(|p| p.max_committed_id), Some(3));
+    let result = read_only.live_reload(&MmapFs, preload).unwrap();
     assert_eq!(result.deleted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
 }
