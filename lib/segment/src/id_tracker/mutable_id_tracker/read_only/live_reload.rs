@@ -1,12 +1,11 @@
 use std::io::Cursor;
-use std::sync::atomic::Ordering;
 
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
-    UniversalReadFs, UniversalReadFsAsync,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    UniversalReadFsAsync,
 };
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -69,14 +68,13 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Probe `versions.dat` and `mappings.dat` directly on the inner filesystem
     /// before taking the directory listing snapshot.
     ///
-    /// This anchors `target_version_len` to the versions length observed before the
-    /// snapshot, ensuring `reload_versions` never commits beyond what was flushed
-    /// at probe time. Returns true if either file changed compared to our currently
-    /// loaded state.
+    /// Returns `(changed, watermark)`, where `changed` indicates if either file
+    /// changed compared to our currently loaded state, and `watermark` is the
+    /// committed versions count observed at probe time.
     pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
-    ) -> OperationResult<bool> {
+    ) -> OperationResult<(bool, usize)> {
         let v_path = versions_path(&self.segment_path);
         let m_path = mappings_path(&self.segment_path);
 
@@ -89,30 +87,29 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         let v_file = inner_fs
             .open_async(v_path, options, Default::default())
-            .await;
+            .await
+            .ok_not_found()?;
         let v_len = match v_file {
-            Ok(file) => {
+            Some(file) => {
                 let bytes = file.len::<u8>()?;
                 (bytes / VERSION_ELEMENT_SIZE) as usize
             }
-            Err(err) if err.is_not_found() => 0,
-            Err(err) => return Err(err.into()),
+            None => 0,
         };
 
         let m_file = inner_fs
             .open_async(m_path, options, Default::default())
-            .await;
+            .await
+            .ok_not_found()?;
         let m_bytes = match m_file {
-            Ok(file) => file.len::<u8>()?,
-            Err(err) if err.is_not_found() => 0,
-            Err(err) => return Err(err.into()),
+            Some(file) => file.len::<u8>()?,
+            None => 0,
         };
-
-        self.target_version_len.store(v_len, Ordering::Relaxed);
 
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
-        Ok(versions_changed || mappings_changed)
+        let changed = versions_changed || mappings_changed;
+        Ok((changed, v_len))
     }
 
     /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
@@ -160,10 +157,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        watermark: Option<usize>,
     ) -> OperationResult<LiveReloadResult> {
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed = self.reload_versions(fs)? as PointOffsetType;
+        let committed = self.reload_versions(fs, watermark)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
@@ -281,7 +279,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// slot, so [`internal_version`](crate::id_tracker::IdTrackerRead::internal_version) returns
     /// `None` for it (it is never given a fake version) until its version is appended here. We do
     /// not read versions for deleted points, a deleted point's version is considered gone.
-    fn reload_versions(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<usize> {
+    fn reload_versions(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        watermark: Option<usize>,
+    ) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
         match self.versions_file.as_mut() {
@@ -311,8 +313,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         };
         let mut versions_len = (versions_bytes / VERSION_ELEMENT_SIZE) as usize;
 
-        let target = self.target_version_len.swap(usize::MAX, Ordering::Relaxed);
-        if target != usize::MAX {
+        if let Some(target) = watermark {
             versions_len = versions_len.min(target);
         }
 

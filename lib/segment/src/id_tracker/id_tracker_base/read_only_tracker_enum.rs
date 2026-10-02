@@ -72,7 +72,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub async fn probe_changes<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
-    ) -> OperationResult<bool> {
+    ) -> OperationResult<(bool, usize)> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
             Self::Immutable(id_tracker) => id_tracker.probe_changes(inner_fs).await,
@@ -100,9 +100,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
+        watermark: Option<usize>,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs),
+            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, watermark),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }

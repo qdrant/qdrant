@@ -586,8 +586,8 @@ fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
     hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
-    futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
-    segment.live_reload(hw_counter)
+    let watermark = futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
+    segment.live_reload(watermark, hw_counter)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -895,22 +895,19 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
     }
     mutable.flush(true).unwrap();
 
-    let mut read_only = ReadOnlySegment::<MmapFile>::open(
-        &MmapFs,
-        &mutable.data_path(),
-        mutable.uuid,
-        None,
-        None,
-    )
-    .expect("read-only open");
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
 
     // Staged preload takes the CachedFs snapshot (t0).
-    futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+    let watermark = futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
         .expect("live preload");
 
     // After the listing snapshot was taken, writer appends more points and flushes.
@@ -922,7 +919,9 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
             .collect();
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
-        mutable.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
         op_num += 1;
     }
     mutable.flush(true).unwrap();
@@ -930,7 +929,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // Now reload.
     // Under the safe read sequence, this reload commits at most the state probed
     // before the LIST (i.e. NUM_POINTS), keeping all components consistent!
-    read_only.live_reload(&hw).expect("first live reload");
+    read_only.live_reload(watermark, &hw).expect("first live reload");
     assert_eq!(
         read_only.available_point_count(),
         NUM_POINTS,
@@ -966,7 +965,10 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
 /// but must still be detected via `mappings.dat` changes and reloaded.
 #[test]
 fn test_live_reload_pure_delete_without_inserts() {
-    let segments_dir = Builder::new().prefix("appendable_seg_del").tempdir().unwrap();
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_del")
+        .tempdir()
+        .unwrap();
     let hw = HardwareCounterCell::new();
 
     let (mut mutable, _) = build_segment(
@@ -1001,18 +1003,15 @@ fn test_live_reload_pure_delete_without_inserts() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
     }
     mutable.flush(true).unwrap();
 
-    let mut read_only = ReadOnlySegment::<MmapFile>::open(
-        &MmapFs,
-        &mutable.data_path(),
-        mutable.uuid,
-        None,
-        None,
-    )
-    .expect("read-only open");
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
 
     // Delete a point without adding any new points (versions.dat length does not change)
@@ -1036,7 +1035,10 @@ fn test_live_reload_pure_delete_without_inserts() {
 /// when the tracker files are unchanged.
 #[test]
 fn test_live_preload_skips_list_when_unchanged() {
-    let segments_dir = Builder::new().prefix("appendable_seg_skip").tempdir().unwrap();
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_skip")
+        .tempdir()
+        .unwrap();
     let hw = HardwareCounterCell::new();
 
     let (mut mutable, _) = build_segment(
@@ -1073,14 +1075,9 @@ fn test_live_preload_skips_list_when_unchanged() {
     }
     mutable.flush(true).unwrap();
 
-    let mut read_only = ReadOnlySegment::<MmapFile>::open(
-        &MmapFs,
-        &mutable.data_path(),
-        mutable.uuid,
-        None,
-        None,
-    )
-    .expect("read-only open");
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
 
     // First preload + reload
     preload_then_reload(&mut read_only, &hw).expect("first reload");
@@ -1088,20 +1085,30 @@ fn test_live_preload_skips_list_when_unchanged() {
 
     // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
     let config_path = mutable.data_path().join("config.json");
-    assert!(read_only.reload_fs.borrow().cached_file_info(&config_path).is_none());
+    assert!(
+        read_only
+            .reload_fs
+            .borrow()
+            .cached_file_info(&config_path)
+            .is_none()
+    );
 
     // Call live_preload again without any writer changes
-    futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+    let watermark = futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
         .expect("second preload");
+    assert_eq!(watermark, Some(10));
 
     // Since nothing changed, live_preload skipped cache_file_info_async(), so cached_file_info remains None!
     assert!(
-        read_only.reload_fs.borrow().cached_file_info(&config_path).is_none(),
+        read_only
+            .reload_fs
+            .borrow()
+            .cached_file_info(&config_path)
+            .is_none(),
         "live_preload must skip directory listing when tracker files are unchanged",
     );
 
     // live_reload is an instantaneous no-op
-    read_only.live_reload(&hw).expect("second reload");
+    read_only.live_reload(watermark, &hw).expect("second reload");
     assert_eq!(read_only.available_point_count(), 10);
 }
-

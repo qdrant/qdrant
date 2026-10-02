@@ -45,7 +45,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs)?;
+        let delta = id_tracker.borrow_mut().live_reload(fs, None)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };

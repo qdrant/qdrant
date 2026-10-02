@@ -154,32 +154,37 @@ where
 {
     // Preload every segment concurrently on this thread; only the apply rides the pool.
     check_process_stopped(is_stopped)?;
-    futures::executor::block_on(join_all(segments.iter().map(
+    let preloads = futures::executor::block_on(join_all(segments.iter().map(
         |(uuid, segment)| async move {
-            match segment.read().live_preload(is_stopped).await {
-                Ok(()) => {}
-                Err(OperationError::Cancelled { .. }) => {}
-                Err(err) => {
+            let res = segment.read().live_preload(is_stopped).await;
+            if let Err(ref err) = res {
+                if !matches!(err, OperationError::Cancelled { .. }) {
                     log::warn!("live_preload of segment {uuid} failed: {err}");
                 }
             }
+            (*uuid, res)
         },
     )));
     check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments
         .into_iter()
-        // The counter cell is not `Sync`, so fork one per reload outside the
-        // pool; forks drain into the shared accumulator on drop.
-        .map(|(uuid, segment)| (uuid, segment, hw_counter.fork()))
+        .zip(preloads)
+        .map(|((uuid, segment), (_, watermark_res))| {
+            (uuid, segment, watermark_res, hw_counter.fork())
+        })
         .collect();
     let ctx = uio_trace::Context::current();
     let results = pool.install(|| {
         reloads
             .into_par_iter()
-            .map(|(uuid, segment, hw)| {
+            .map(|(uuid, segment, watermark_res, hw)| {
                 check_process_stopped(is_stopped)?;
-                Ok((uuid, ctx.in_scope(|| segment.write().live_reload(&hw))))
+                let res = match watermark_res {
+                    Ok(watermark) => segment.write().live_reload(watermark, &hw),
+                    Err(err) => Err(err),
+                };
+                Ok((uuid, ctx.in_scope(|| res)))
             })
             .collect::<OperationResult<Vec<_>>>()
     })?;
