@@ -259,6 +259,10 @@ impl UniversalRead for MmapFile {
         if self.populate {
             return;
         }
+        // 🤖 Hints cost ~130 ns per vector even for cached pages: skip them until reads fault.
+        if !crate::mmap::advice::thread_faulted() {
+            return;
+        }
         let bytes = self.as_bytes::<Random>();
         for range in byte_ranges {
             if let Ok(region) = read_bytes(bytes, range) {
