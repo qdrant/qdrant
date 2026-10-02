@@ -610,6 +610,13 @@ impl Container {
 }
 
 impl CollectionContainer for Container {
+    fn apply_action(
+        &self,
+        _action: crate::content_manager::consensus_state_machine::Action,
+    ) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
     fn collections_snapshot(&self) -> CollectionsSnapshot {
         self.snapshots.fetch_add(1, Ordering::Relaxed);
 

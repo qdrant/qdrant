@@ -15,12 +15,16 @@ use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
-use crate::content_manager::consensus_state_machine::NodeContext;
+use crate::content_manager::consensus_state_machine::{Action, NodeContext};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::{CollectionContainer, consensus_manager};
 use crate::quota::QuotaConfig;
 
 impl CollectionContainer for TableOfContent {
+    fn apply_action(&self, action: Action) -> Result<(), StorageError> {
+        self.apply_action_sync(action)
+    }
+
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
