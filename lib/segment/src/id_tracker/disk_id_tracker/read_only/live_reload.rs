@@ -14,7 +14,7 @@ use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
-    pub async fn live_preload<Fs: UniversalReadFsAsync<File = S>>(
+    pub async fn stage_preload<Fs: UniversalReadFsAsync<File = S>>(
         &mut self,
         _inner_fs: &Fs,
     ) -> OperationResult<(bool, Option<PointOffsetType>)> {
@@ -22,7 +22,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
-    pub fn live_preload_cached(
+    pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
