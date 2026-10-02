@@ -27,6 +27,7 @@ use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
+use crate::pending_changes::PendingChangesLogs;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
@@ -599,6 +600,10 @@ impl StorageSegmentEntry for Segment {
 
     fn data_path(&self) -> PathBuf {
         self.segment_path.clone()
+    }
+
+    fn owned_pending_changes_logs(&self) -> PendingChangesLogs {
+        self.pending_changes_logs.clone()
     }
 }
 

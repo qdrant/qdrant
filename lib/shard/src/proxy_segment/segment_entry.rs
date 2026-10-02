@@ -22,6 +22,7 @@ use segment::entry::StorageSegmentEntry;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
+use segment::pending_changes::PendingChangesLogs;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::*;
 use uuid::Uuid;
@@ -884,6 +885,13 @@ impl StorageSegmentEntry for ProxySegment {
 
     fn data_path(&self) -> PathBuf {
         self.wrapped_segment.get().read().data_path()
+    }
+
+    fn owned_pending_changes_logs(&self) -> PendingChangesLogs {
+        self.wrapped_segment
+            .get()
+            .read()
+            .owned_pending_changes_logs()
     }
 }
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -1310,5 +1311,5 @@ fn test_logs_remove_keeps_failed_log_listed() {
     logs.remove(&[removed.clone(), failing.clone()])
         .unwrap_err();
     assert!(!removed.exists());
-    assert_eq!(*logs.files.lock(), vec![failing]);
+    assert_eq!(*logs.files.lock(), BTreeSet::from([failing]));
 }

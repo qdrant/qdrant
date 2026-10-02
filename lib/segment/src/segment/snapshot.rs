@@ -18,7 +18,6 @@ use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
-use crate::pending_changes::PendingChangesLogs;
 use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
@@ -116,15 +115,11 @@ impl SnapshotEntry for Segment {
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        self._get_segment_manifest(&self.pending_changes_log_files())
+        self._get_segment_manifest(&self.visible_pending_changes_log_files())
     }
 
-    fn pending_changes_log_files(&self) -> Vec<PathBuf> {
+    fn visible_pending_changes_log_files(&self) -> Vec<PathBuf> {
         self.pending_changes_logs.files()
-    }
-
-    fn pending_changes_logs(&self) -> PendingChangesLogs {
-        self.pending_changes_logs.clone()
     }
 }
 

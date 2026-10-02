@@ -120,7 +120,7 @@ impl SegmentHolder {
                 let wrapped_segment = wrapped_segment.get().read();
                 (
                     wrapped_segment.version(),
-                    wrapped_segment.pending_changes_logs(),
+                    wrapped_segment.owned_pending_changes_logs(),
                 )
             };
             pending_changes_logs.adopt(log_path.clone());

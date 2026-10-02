@@ -2821,14 +2821,22 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
         delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
         segments.flush_all(FlushMode::Sync, true)?;
         assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
-        assert!(wrapped.read().pending_changes_log_files().is_empty());
+        assert!(
+            wrapped
+                .read()
+                .visible_pending_changes_log_files()
+                .is_empty()
+        );
         Ok(())
     })
     .unwrap();
     let log_files = list_pending_changes_log_files(&segment_path);
     assert_eq!(log_files.len(), 1);
     let segment = holder.read().iter().next().unwrap().1.clone();
-    assert_eq!(segment.get().read().pending_changes_log_files(), log_files);
+    assert_eq!(
+        segment.get().read().visible_pending_changes_log_files(),
+        log_files
+    );
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
     assert!(
@@ -2892,17 +2900,17 @@ fn test_nested_proxies_pending_changes_logs() {
 
     // Each layer lists its own log and the ones below, not the ones above
     assert_eq!(
-        inner.read().pending_changes_log_files(),
+        inner.read().visible_pending_changes_log_files(),
         vec![inner_log.clone()],
     );
     assert_eq!(
-        outer.read().pending_changes_log_files(),
+        outer.read().visible_pending_changes_log_files(),
         vec![inner_log.clone(), outer_log.clone()],
     );
 
     // Neither proxy's live log is owned by the innermost segment, from either layer
-    assert!(inner.read().pending_changes_logs().files().is_empty());
-    assert!(outer.read().pending_changes_logs().files().is_empty());
+    assert!(inner.read().owned_pending_changes_logs().files().is_empty());
+    assert!(outer.read().owned_pending_changes_logs().files().is_empty());
 
     // Unwrapping the outer layer hands its log over to the innermost segment, which the inner
     // proxy still wrapping it now lists below its own log
@@ -2912,11 +2920,11 @@ fn test_nested_proxies_pending_changes_logs() {
     let segments_lock = holder.upgradable_read();
     assert!(Arc::ptr_eq(&proxy_at(&segments_lock), &inner));
     assert_eq!(
-        inner.read().pending_changes_logs().files(),
+        inner.read().owned_pending_changes_logs().files(),
         vec![outer_log.clone()],
     );
     assert_eq!(
-        inner.read().pending_changes_log_files(),
+        inner.read().visible_pending_changes_log_files(),
         vec![outer_log.clone(), inner_log.clone()],
     );
 
@@ -2929,14 +2937,19 @@ fn test_nested_proxies_pending_changes_logs() {
     SegmentHolder::unproxy_all_segments(&holder, segments_lock, &inner_ids, inner_tmp_id).unwrap();
     let segment = holder.read().get(segment_id).unwrap().clone();
     assert!(matches!(segment, LockedSegment::Original(_)));
-    let mut owned = segment.get().read().pending_changes_log_files();
-    owned.sort();
+    let owned = segment.get().read().owned_pending_changes_logs().files();
     let mut expected = vec![inner_log.clone(), outer_log.clone()];
     expected.sort();
     assert_eq!(owned, expected);
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
-    assert!(segment.get().read().pending_changes_log_files().is_empty());
+    assert!(
+        segment
+            .get()
+            .read()
+            .visible_pending_changes_log_files()
+            .is_empty()
+    );
     assert!(!inner_log.exists() && !outer_log.exists());
 }
 

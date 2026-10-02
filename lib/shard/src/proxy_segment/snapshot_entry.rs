@@ -5,7 +5,6 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::{FileVersion, SegmentManifest};
 use segment::entry::StorageSegmentEntry;
 use segment::entry::snapshot_entry::SnapshotEntry;
-use segment::pending_changes::PendingChangesLogs;
 use segment::types::*;
 
 use super::ProxySegment;
@@ -58,20 +57,16 @@ impl SnapshotEntry for ProxySegment {
         Ok(manifest)
     }
 
-    fn pending_changes_log_files(&self) -> Vec<PathBuf> {
+    fn visible_pending_changes_log_files(&self) -> Vec<PathBuf> {
         let mut files = self
             .wrapped_segment
             .get()
             .read()
-            .pending_changes_log_files();
+            .visible_pending_changes_log_files();
         let log_path = self.pending_changes.log_path();
         if log_path.is_file() {
             files.push(log_path.to_path_buf());
         }
         files
-    }
-
-    fn pending_changes_logs(&self) -> PendingChangesLogs {
-        self.wrapped_segment.get().read().pending_changes_logs()
     }
 }

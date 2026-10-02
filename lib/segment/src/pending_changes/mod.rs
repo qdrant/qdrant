@@ -29,6 +29,7 @@ mod vector_name_changes;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -443,13 +444,13 @@ pub struct RecoveredPendingChanges {
 /// segment are not listed: a snapshot proxy's log only holds changes made after the freeze.
 #[derive(Clone, Debug, Default)]
 pub struct PendingChangesLogs {
-    files: Arc<Mutex<Vec<PathBuf>>>,
+    files: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
 
 impl PendingChangesLogs {
     /// Take ownership of the log file at `path`, which may not exist on disk (yet).
     pub fn adopt(&self, path: PathBuf) {
-        self.files.lock().push(path);
+        self.files.lock().insert(path);
     }
 
     /// Owned log files that exist on disk.
@@ -466,7 +467,7 @@ impl PendingChangesLogs {
         for path in paths {
             // A log never flushed before its proxy was unwrapped has no file
             fs_err::remove_file(path).ok_not_found()?;
-            self.files.lock().retain(|file| file != path);
+            self.files.lock().remove(path);
         }
 
         Ok(())
