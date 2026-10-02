@@ -100,6 +100,9 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
+    /// Pending changes log files found in the segment directory on load, part of this segment's
+    /// state until removed, see [`crate::pending_changes::recover_pending_changes`]
+    pub pending_changes_logs: Vec<PathBuf>,
 }
 
 pub struct VectorData {
