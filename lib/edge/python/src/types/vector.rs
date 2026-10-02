@@ -10,6 +10,7 @@ use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
+use super::ndarray::{DenseArray, Ndarray};
 use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -33,6 +34,13 @@ impl FromPyObject<'_, '_> for PyVector {
                 VectorStructPersisted::MultiDense(_) => {}
                 VectorStructPersisted::Named(_) => {}
             }
+        }
+
+        if let Some(array) = Ndarray::extract(&vector)? {
+            return Ok(Self(match array.into_dense()? {
+                DenseArray::Vector(dense) => VectorStructPersisted::Single(dense),
+                DenseArray::Matrix(multi) => VectorStructPersisted::MultiDense(multi),
+            }));
         }
 
         let vector = match vector.extract()? {
@@ -118,6 +126,13 @@ impl FromPyObject<'_, '_> for PyNamedVector {
                 VectorPersisted::Sparse(_) => {}
                 VectorPersisted::MultiDense(_) => {}
             }
+        }
+
+        if let Some(array) = Ndarray::extract(&vector)? {
+            return Ok(Self(match array.into_dense()? {
+                DenseArray::Vector(dense) => VectorPersisted::Dense(dense),
+                DenseArray::Matrix(multi) => VectorPersisted::MultiDense(multi),
+            }));
         }
 
         let vector = match vector.extract()? {
