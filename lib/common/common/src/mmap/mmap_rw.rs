@@ -288,7 +288,7 @@ impl<T> MmapSlice<T> {
         self.mmap.flusher()
     }
 
-    pub fn create(path: &Path, mut iter: impl ExactSizeIterator<Item = T>) -> Result<()> {
+    pub fn create(path: &Path, mut iter: impl ExactSizeIterator<Item = T>) -> Result<Self> {
         let file_len = iter.len() * mem::size_of::<T>();
 
         let _file = ops::create_and_ensure_length(path, file_len)?;
@@ -305,7 +305,7 @@ impl<T> MmapSlice<T> {
 
         mmap_slice.flusher()()?;
 
-        Ok(())
+        Ok(mmap_slice)
     }
 
     /// Populate all pages in the mmap.
