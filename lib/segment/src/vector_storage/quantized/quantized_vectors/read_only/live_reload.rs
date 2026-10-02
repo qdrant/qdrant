@@ -111,24 +111,18 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
                     .live_reload(fs, deleted_points, new_points, hw_counter)?
             }
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                q.storage_mut().storage_mut().live_reload(
-                    fs,
-                    deleted_points,
-                    new_points,
-                    hw_counter,
-                )?;
                 q.offsets_storage_mut()
                     .live_reload(fs, deleted_points, new_points, hw_counter)?;
+                if let Some(rows) = q.offsets_storage().published_rows_end(new_points)? {
+                    q.storage_mut().storage_mut().live_reload_to(fs, rows)?;
+                }
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                q.storage_mut().storage_mut().live_reload(
-                    fs,
-                    deleted_points,
-                    new_points,
-                    hw_counter,
-                )?;
                 q.offsets_storage_mut()
                     .live_reload(fs, deleted_points, new_points, hw_counter)?;
+                if let Some(rows) = q.offsets_storage().published_rows_end(new_points)? {
+                    q.storage_mut().storage_mut().live_reload_to(fs, rows)?;
+                }
             }
         }
         Ok(())

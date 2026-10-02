@@ -31,10 +31,15 @@ impl<S: UniversalRead> LiveReload for ReadOnlyChunkedMultiTurboVectorStorage<S> 
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        // Offsets first: they say how many inner records the new points use.
         self.offsets
             .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        if let Some(rows) = self
+            .offsets
+            .published_rows_end(new_points, |offset| (offset.offset + offset.count) as usize)?
+        {
+            self.storage.live_reload_to(fs, rows)?;
+        }
         self.deleted.insert_all(deleted_points);
         self.deleted.reload_appended::<S>(fs, new_points)?;
 
