@@ -55,7 +55,7 @@ pub struct GraphSearchArgs<'a> {
     pub algorithm: SearchAlgorithm,
     pub scorers: SearchScorers<'a>,
     pub custom_entry_points: Option<&'a [PointOffsetType]>,
-    pub filtered_points: Option<&'a FilteredPoints<'a>>,
+    pub filtered_points_reader: Option<&'a FilteredPoints<'a>>,
     pub is_stopped: &'a AtomicBool,
 }
 
@@ -63,7 +63,7 @@ pub struct GraphSearchArgs<'a> {
 /// Used when the graph has no entry point matching the filter.
 pub type FilteredPoints<'a> = dyn Fn(usize) -> OperationResult<Vec<PointOffsetType>> + 'a;
 
-/// How many [`GraphSearchArgs::filtered_points`] to start from, per `ef`.
+/// How many [`GraphSearchArgs::filtered_points_reader`] to start from, per `ef`.
 const SEEDS_PER_EF: usize = 2;
 
 pub enum SearchScorers<'a> {
@@ -167,7 +167,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             algorithm,
             mut scorers,
             custom_entry_points,
-            filtered_points,
+            filtered_points_reader,
             is_stopped,
         } = args;
 
@@ -176,8 +176,12 @@ impl<S: UniversalRead> HnswGraph<S> {
             SearchScorers::WithVectors(scorers) => scorers.links,
         };
         let seeds_num = SEEDS_PER_EF * ef.max(top);
-        let Some(entry) =
-            self.get_entry_point(scorer, custom_entry_points, filtered_points, seeds_num)?
+        let Some(entry) = self.get_entry_point(
+            scorer,
+            custom_entry_points,
+            filtered_points_reader,
+            seeds_num,
+        )?
         else {
             return Ok(Vec::new());
         };

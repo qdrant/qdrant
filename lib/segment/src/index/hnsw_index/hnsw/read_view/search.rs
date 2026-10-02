@@ -61,7 +61,7 @@ where
             let (hw_counter, is_stopped) = (&hw_counter, &is_stopped);
             move |n| self.first_filtered_points(filter, n, hw_counter, is_stopped)
         });
-        let filtered_points = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
+        let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
@@ -112,7 +112,7 @@ where
                     base: base_scorer_bytes,
                 }),
                 custom_entry_points,
-                filtered_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
             Ok(Some(result))
@@ -141,7 +141,7 @@ where
                 algorithm,
                 scorers: SearchScorers::Regular(points_scorer),
                 custom_entry_points,
-                filtered_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
 
@@ -353,6 +353,7 @@ where
             &cardinality,
             hw_counter,
             is_stopped,
+            // HNSW is built on non-appendable segments, which have no deferred points.
             DeferredBehavior::WithDeferred,
         )?;
         Ok(points.take(n).collect())
