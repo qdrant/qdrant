@@ -1372,9 +1372,16 @@ impl ShardHolder {
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
+    ///
+    /// `replica_set` and `all_shards` are cloned `Arc`s taken out from under the
+    /// `Collection` shards-holder read lock by the caller. Passing them in lets
+    /// the long-running unpack + restore work run without the read lock, which
+    /// would otherwise fence every collection reader for the entire restore
+    /// (the lock is write-preferring — see #10850).
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
-        &self,
+        replica_set: Arc<ShardReplicaSet>,
+        all_shards: Vec<Arc<ShardReplicaSet>>,
         snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         collection_path: &Path,
@@ -1386,10 +1393,6 @@ impl ShardHolder {
         recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<()> {
-        if !self.contains_shard(shard_id) {
-            return Err(shard_not_found_error(shard_id));
-        }
-
         if !temp_dir.exists() {
             fs::create_dir_all(temp_dir)?;
         }
@@ -1445,14 +1448,14 @@ impl ShardHolder {
             recovery_progress.lock().set_stage(RecoveryStage::Restoring);
         }
 
-        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
-        // (see `ShardReplicaSet::restore_local_replica_from`)
-        let recovered = self
-            .recover_local_shard_from(
+        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe.
+        // The caller already validated the shard exists and gave us the cloned
+        // `Arc`, so we don't need to re-acquire the holder lock here.
+        let recovered = replica_set
+            .restore_local_replica_from(
                 snapshot_temp_dir.path(),
                 recovery_type,
                 collection_path,
-                shard_id,
                 cancel,
             )
             .await?;
@@ -1462,11 +1465,17 @@ impl ShardHolder {
         }
 
         if recovery_type.is_partial() {
-            self.update_payload_index_schema().await.map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to update payload index schema after recovering partial snapshot: {err}"
-                ))
-            })?;
+            // Compute the common payload index schema and write it to the first
+            // shard's `payload_index_schema` `Arc`. The `Arc` carries its own
+            // internal `parking_lot` synchronization, so this never touches the
+            // outer shards-holder lock.
+            let payload_index_schema = all_shards.first().map(|shard| shard.payload_index_schema());
+            if let Some(payload_index_schema) = payload_index_schema {
+                let schema = Self::common_payload_index_schema_for(&all_shards).await?;
+                payload_index_schema.write(|payload_index_schema| {
+                    *payload_index_schema = PayloadIndexSchema { schema };
+                })?;
+            }
         }
 
         Ok(())
@@ -1522,9 +1531,18 @@ impl ShardHolder {
     async fn common_payload_index_schema(
         &self,
     ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
+        Self::common_payload_index_schema_for(&self.all_shards().cloned().collect::<Vec<_>>()).await
+    }
+
+    /// Same logic as [`Self::common_payload_index_schema`], but iterates a caller
+    /// supplied slice of cloned `Arc`s so it can run without holding the
+    /// `ShardHolder` lock. Used from [`Self::restore_shard_snapshot`].
+    async fn common_payload_index_schema_for(
+        all_shards: &[Arc<ShardReplicaSet>],
+    ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
         let mut schema = HashMap::new();
 
-        for (shard_idx, shard) in self.all_shards().enumerate() {
+        for (shard_idx, shard) in all_shards.iter().enumerate() {
             let shard_schema: HashMap<_, _> = shard
                 .info(true)
                 .await?

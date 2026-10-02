@@ -340,9 +340,25 @@ impl Collection {
         recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
-        // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
-        // when token is triggered
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        // Validate the shard exists and extract the cloned `Arc`s the restore
+        // needs, then drop the read lock. The restore can run for minutes on a
+        // large shard, and the shards-holder `tokio::sync::RwLock` is
+        // write-preferring — holding the read lock across the spawned restore
+        // would fence every collection reader for the whole restore once a
+        // consensus-driven writer (e.g. `UpdateCollection` through
+        // `update_strict_mode_config`) queued behind it. See #10850.
+        let (replica_set, all_shards) = {
+            let shard_holder = self.shards_holder.read().await;
+            if !shard_holder.contains_shard(shard_id) {
+                return Err(shard_not_found_error(shard_id));
+            }
+            let replica_set = shard_holder
+                .get_shard(shard_id)
+                .cloned()
+                .ok_or_else(|| shard_not_found_error(shard_id))?;
+            let all_shards = shard_holder.all_shards().cloned().collect::<Vec<_>>();
+            (replica_set, all_shards)
+        };
 
         let collection_path = self.path.clone();
         let collection_name = self.name().to_string();
@@ -352,20 +368,21 @@ impl Collection {
         // `ShardHolder::restore_shard_snapshot` is *not* cancel safe, so we spawn it onto runtime,
         // so that it won't be cancelled if current future is dropped
         let restore = self.update_runtime.spawn(async move {
-            shard_holder
-                .restore_shard_snapshot(
-                    snapshot_data,
-                    recovery_type,
-                    &collection_path,
-                    &collection_name,
-                    shard_id,
-                    this_peer_id,
-                    is_distributed,
-                    &temp_dir,
-                    recovery_progress,
-                    cancel,
-                )
-                .await?;
+            ShardHolder::restore_shard_snapshot(
+                replica_set,
+                all_shards,
+                snapshot_data,
+                recovery_type,
+                &collection_path,
+                &collection_name,
+                shard_id,
+                this_peer_id,
+                is_distributed,
+                &temp_dir,
+                recovery_progress,
+                cancel,
+            )
+            .await?;
 
             CollectionResult::Ok(())
         });
