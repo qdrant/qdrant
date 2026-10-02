@@ -755,7 +755,7 @@ mod tests {
             };
             let search_result = test
                 .graph_layers_builder
-                .search_on_level(entry, 0, ef, &mut scorer, &DEFAULT_STOPPED)
+                .search_on_level(&[entry], 0, ef, &mut scorer, &DEFAULT_STOPPED)
                 .unwrap()
                 .into_sorted_vec();
             for (cpu, (gpu_1, gpu_2)) in search_result
@@ -975,7 +975,7 @@ mod tests {
             };
             let search_result = test
                 .graph_layers_builder
-                .search_on_level(entry, 0, ef, &mut scorer, &DEFAULT_STOPPED)
+                .search_on_level(&[entry], 0, ef, &mut scorer, &DEFAULT_STOPPED)
                 .unwrap();
 
             let scorer_fn = |a, b| scorer.score_internal(a, b);

@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
@@ -12,7 +14,7 @@ use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
-use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
+use crate::index::hnsw_index::graph::{FilteredPoints, GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
@@ -54,6 +56,12 @@ where
 
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
+
+        let first_filtered_points = filter.map(|filter| {
+            let (hw_counter, is_stopped) = (&hw_counter, &is_stopped);
+            move |n| self.first_filtered_points(filter, n, hw_counter, is_stopped)
+        });
+        let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
@@ -104,6 +112,7 @@ where
                     base: base_scorer_bytes,
                 }),
                 custom_entry_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
             Ok(Some(result))
@@ -132,6 +141,7 @@ where
                 algorithm,
                 scorers: SearchScorers::Regular(points_scorer),
                 custom_entry_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
 
@@ -325,6 +335,28 @@ where
             params,
             vector_query_context,
         )
+    }
+
+    /// The first `n` points matching `filter`, in payload index order.
+    fn first_filtered_points(
+        &self,
+        filter: &Filter,
+        n: usize,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let cardinality = self
+            .payload_index
+            .estimate_cardinality(filter, hw_counter)?;
+        let points = self.payload_index.iter_filtered_points(
+            filter,
+            &cardinality,
+            hw_counter,
+            is_stopped,
+            // HNSW is built on non-appendable segments, which have no deferred points.
+            DeferredBehavior::WithDeferred,
+        )?;
+        Ok(points.take(n).collect())
     }
 
     fn discover_search_with_graph(

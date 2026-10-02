@@ -12,7 +12,9 @@ use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
 
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm, evenly_spaced};
+use super::graph_layers::{
+    GraphLayerData, GraphLayers, SearchAlgorithm, SearchEntry, evenly_spaced,
+};
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -78,14 +80,19 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         ef: usize,
         algorithm: SearchAlgorithm,
         scorer: &mut FilteredScorer,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         batch_size: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let mut arena = stumpalo::Arena::new();
 
-        uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
-        let entry = self.search_entry(entry_point, 0, scorer, is_stopped, &mut arena)?;
+        let entry: &[_] = match entry {
+            SearchEntry::Point(entry_point) => {
+                uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
+                &[self.search_entry(*entry_point, 0, scorer, is_stopped, &mut arena)?]
+            }
+            SearchEntry::Seeds(seeds) => seeds,
+        };
         let ef = max(ef, top);
         uio_trace::mark!("level0 begin (bs={batch_size})");
         let nearest = match algorithm {
@@ -104,23 +111,28 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         top: usize,
         ef: usize,
         scorers: GraphWithVectorsScorers,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         links_batch_size: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let mut arena = stumpalo::Arena::new();
-        uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
-        let zero_level_entry = self.search_entry_with_vectors(
-            entry_point,
-            0,
-            scorers.links.raw_scorer(),
-            scorers.links_bytes,
-            is_stopped,
-            &mut arena,
-        )?;
+        let level_entries: &[_] = match entry {
+            SearchEntry::Point(entry_point) => {
+                uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
+                &[self.search_entry_with_vectors(
+                    *entry_point,
+                    0,
+                    scorers.links.raw_scorer(),
+                    scorers.links_bytes,
+                    is_stopped,
+                    &mut arena,
+                )?]
+            }
+            SearchEntry::Seeds(seeds) => seeds,
+        };
         uio_trace::mark!("level0 begin (bs={links_batch_size}, inline vectors)");
         let nearest = self.search_on_level_with_vectors(
-            zero_level_entry,
+            level_entries,
             0,
             max(top, ef),
             scorers.links_bytes,
@@ -245,7 +257,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level_with_vectors(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         links_scorer: &FilteredBytesScorer,
@@ -255,11 +267,9 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         arena: &mut stumpalo::Arena,
     ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.num_points());
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut links_search_context = SearchContext::new(ef);
+        let mut links_search_context =
+            SearchContext::with_entries(ef, level_entries, &mut visited_list);
         let mut base_search_context = SearchContext::new(ef);
-        links_search_context.process_candidate(level_entry);
 
         let limit = self.hnsw_m.level_m(level);
         let member_limit = if limit == 0 { usize::MAX } else { limit };
@@ -344,7 +354,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
@@ -353,10 +363,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         arena: &mut stumpalo::Arena,
     ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.num_points());
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context = SearchContext::with_entries(ef, level_entries, &mut visited_list);
 
         let limit = self.hnsw_m.level_m(level);
         let member_limit = if limit == 0 { usize::MAX } else { limit };
@@ -411,7 +418,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level_acorn(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
@@ -422,11 +429,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         // See `GraphLayers::search_on_level_acorn` for the invariants of the
         // two visited lists.
         let mut hop1_visited_list = self.visited_pool.get(self.num_points());
-        hop1_visited_list.check_and_update_visited(level_entry.idx);
         let mut hop2_visited_list = self.visited_pool.get(self.num_points());
 
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context =
+            SearchContext::with_entries(ef, level_entries, &mut hop1_visited_list);
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
         let hop1_limit = self.hnsw_m.level_m(level);
@@ -727,15 +733,15 @@ mod tests {
                 .unwrap();
                 for algorithm in [SearchAlgorithm::Hnsw, SearchAlgorithm::Acorn] {
                     let reference = graph
-                        .search(TOP, EF, algorithm, &mut scorer, entry, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, stop)
                         .unwrap();
                     let result = batched
-                        .search(TOP, EF, algorithm, &mut scorer, entry, 1, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, 1, stop)
                         .unwrap();
                     assert_eq!(result, reference, "{algorithm:?}");
                     for batch_size in [2, 16, 128] {
                         let result = batched
-                            .search(TOP, EF, algorithm, &mut scorer, entry, batch_size, stop)
+                            .search(TOP, EF, algorithm, &mut scorer, &entry, batch_size, stop)
                             .unwrap();
                         assert_eq!(result.len(), reference.len(), "{algorithm:?}");
                     }
@@ -804,7 +810,7 @@ mod tests {
                 links_bytes: &links_scorer_bytes,
                 base: base_scorer.scorer_bytes().unwrap(),
             };
-            let entry_point = batched.entry_points.get_entry_point(|_| true).unwrap();
+            let entry = SearchEntry::Point(batched.entry_points.get_entry_point(|_| true).unwrap());
 
             let mut reference_top = FixedLengthPriorityQueue::new(TOP);
             for idx in 0..batched.num_points() as PointOffsetType {
@@ -816,13 +822,13 @@ mod tests {
             let reference = reference_top.into_sorted_vec();
 
             let in_ram = graph
-                .search_with_vectors(TOP, ef, scorers, entry_point, stop)
+                .search_with_vectors(TOP, ef, scorers, &entry, stop)
                 .unwrap();
             assert_eq!(in_ram, reference, "in-RAM");
 
             for batch_size in [1, 2, 16, 128, 512, 4096] {
                 let result = batched
-                    .search_with_vectors(TOP, ef, scorers, entry_point, batch_size, stop)
+                    .search_with_vectors(TOP, ef, scorers, &entry, batch_size, stop)
                     .unwrap();
                 assert_eq!(result, reference, "batch_size={batch_size}");
             }
@@ -854,11 +860,11 @@ mod tests {
                 let deleted_count = deleted.count_ones();
                 for algorithm in [SearchAlgorithm::Hnsw, SearchAlgorithm::Acorn] {
                     let reference = graph
-                        .search(TOP, EF, algorithm, &mut scorer, entry, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, stop)
                         .unwrap();
                     for batch_size in [1, 2, 16, 128] {
                         let result = batched
-                            .search(TOP, EF, algorithm, &mut scorer, entry, batch_size, stop)
+                            .search(TOP, EF, algorithm, &mut scorer, &entry, batch_size, stop)
                             .unwrap();
                         assert_eq!(
                             result, reference,

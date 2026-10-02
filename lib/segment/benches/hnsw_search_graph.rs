@@ -44,7 +44,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         EF,
                         SearchAlgorithm::Hnsw,
                         &mut scorer,
-                        graph_layers.unfiltered_entry_point(),
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
@@ -67,7 +67,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         EF,
                         SearchAlgorithm::Hnsw,
                         &mut scorer,
-                        graph_layers.unfiltered_entry_point(),
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
