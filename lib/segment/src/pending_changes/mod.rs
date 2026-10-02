@@ -439,9 +439,9 @@ pub struct RecoveredPendingChanges {
 
 /// Pending changes log files that are part of a segment's state, packed into its snapshots.
 ///
-/// A log outlives its proxy until the segment durably persists its changes, after recovering it on
-/// load or unwrapping the proxy; the segment adopts it meanwhile. Logs of proxies still wrapping the
-/// segment are not listed: a snapshot proxy's log only holds changes made after the freeze.
+/// A log recovered on load outlives its proxy until the segment durably persists its changes; the
+/// segment adopts it meanwhile. Logs of proxies still wrapping the segment are not listed: a
+/// snapshot proxy's log only holds changes made after the freeze.
 #[derive(Clone, Debug, Default)]
 pub struct PendingChangesLogs {
     files: Arc<Mutex<BTreeSet<PathBuf>>>,

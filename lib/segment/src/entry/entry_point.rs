@@ -21,7 +21,6 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
-use crate::pending_changes::PendingChangesLogs;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
@@ -326,18 +325,6 @@ pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
 
     /// Path to data, owned by segment
     fn data_path(&self) -> PathBuf;
-
-    /// Pending changes logs the underlying segment adopted from proxies that are gone, see
-    /// [`PendingChangesLogs`].
-    ///
-    /// A log is adopted when its proxy is unwrapped, or when it is recovered on load, and is
-    /// removed once the segment durably persists the changes it holds. A live proxy's own log is
-    /// never included, the proxy still writes to it. A proxy forwards to the segment it wraps.
-    ///
-    /// Only meant to hand a log over at unproxy. A snapshot packs
-    /// [`SnapshotEntry::visible_pending_changes_log_files`] instead, which also includes the logs
-    /// of live proxies.
-    fn adopted_pending_changes_logs(&self) -> PendingChangesLogs;
 }
 
 /// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
