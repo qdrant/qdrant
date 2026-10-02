@@ -2,16 +2,15 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
-};
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync};
+
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    IdTrackerPreload, LiveReloadResult, ReadOnlyAppendableIdTracker,
+    LiveReloadResult, ReadOnlyAppendableIdTracker,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -69,26 +68,26 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     }
 
     /// Preload files on the inner filesystem before taking the directory listing snapshot.
-    pub async fn live_preload_inner<Fs: UniversalReadFsAsync<File = S>>(
-        &self,
+    pub async fn live_preload<Fs: UniversalReadFsAsync<File = S>>(
+        &mut self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, Option<IdTrackerPreload<S>>)> {
+    ) -> OperationResult<(bool, Option<PointOffsetType>)> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
-            Self::Immutable(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
-            Self::DiskResident(id_tracker) => id_tracker.live_preload_inner(inner_fs).await,
+            Self::Appendable(id_tracker) => id_tracker.live_preload(inner_fs).await,
+            Self::Immutable(id_tracker) => id_tracker.live_preload(inner_fs).await,
+            Self::DiskResident(id_tracker) => id_tracker.live_preload(inner_fs).await,
         }
     }
 
-    /// Stage everything the next [`Self::live_reload`] needs. Shared access.
-    pub fn live_preload(
+    /// Stage post-LIST preloading on CachedFs (e.g. reschedule_open for deleted.dat).
+    pub fn live_preload_cached(
         &self,
         fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_preload(fs),
-            Self::Immutable(id_tracker) => id_tracker.live_preload(fs),
-            Self::DiskResident(id_tracker) => id_tracker.live_preload(fs),
+            Self::Appendable(id_tracker) => id_tracker.live_preload_cached(fs),
+            Self::Immutable(id_tracker) => id_tracker.live_preload_cached(fs),
+            Self::DiskResident(id_tracker) => id_tracker.live_preload_cached(fs),
         }
     }
 
@@ -100,10 +99,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
-        preload: Option<IdTrackerPreload<S>>,
+        max_committed_id: Option<PointOffsetType>,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, preload),
+            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }

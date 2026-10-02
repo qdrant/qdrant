@@ -29,11 +29,14 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
+        let (_changed, max_committed_id) =
+            futures::executor::block_on(id_tracker.borrow_mut().live_preload(fs.inner()))?;
+
         // Prepare new LIST snapshot
         fs.cache_file_info()?;
 
         // Live preload: schedule everything
-        let mut futs = id_tracker.borrow().live_preload(fs)?;
+        let mut futs = id_tracker.borrow().live_preload_cached(fs)?;
         futs.extend(payload_storage.borrow_mut().live_preload(fs)?);
         for vector_storage in vector_data.values() {
             futs.extend(vector_storage.borrow_mut().live_preload(fs)?);
@@ -45,7 +48,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs, None)?;
+        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };
