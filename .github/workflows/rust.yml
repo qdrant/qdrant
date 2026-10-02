@@ -86,7 +86,7 @@ jobs:
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-        save-if: ${{ github.ref == 'refs/heads/dev' }}
+        save-if: true
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
