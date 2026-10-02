@@ -52,30 +52,6 @@ pub async fn retrieve_points(
         .await
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn retrieve_points_with_locked_collection(
-    collection: ArcCow<'_, Collection>,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<VectorNameBuf>,
-    read_consistency: Option<ReadConsistency>,
-    routing_token: Option<RoutingToken>,
-    shard_selector: &ShardSelectorInternal,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<RecordInternal>> {
-    retrieve_points(
-        &collection,
-        ids,
-        vector_names,
-        read_consistency,
-        routing_token,
-        shard_selector,
-        timeout,
-        hw_measurement_acc,
-    )
-    .await
-}
-
 pub type CollectionName = String;
 
 /// This is a temporary structure, which holds resolved references to vectors,
@@ -233,16 +209,21 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                         .ok_or_else(|| CollectionError::not_found(format!("Collection {name}")))?,
                 ),
             };
-            vector_retrieves.push(retrieve_points_with_locked_collection(
-                referenced_collection,
-                points,
-                vector_names,
-                read_consistency,
-                routing_token,
-                &shard_selector,
-                timeout,
-                hw_measurement_acc.clone(),
-            ));
+            let shard_selector = &shard_selector;
+            let hw_measurement_acc = hw_measurement_acc.clone();
+            vector_retrieves.push(async move {
+                retrieve_points(
+                    &referenced_collection,
+                    points,
+                    vector_names,
+                    read_consistency,
+                    routing_token,
+                    shard_selector,
+                    timeout,
+                    hw_measurement_acc,
+                )
+                .await
+            });
         }
         let all_reference_vectors: Vec<Vec<RecordInternal>> =
             try_join_all(vector_retrieves).await?;
