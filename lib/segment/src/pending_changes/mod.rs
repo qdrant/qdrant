@@ -29,14 +29,12 @@ mod vector_name_changes;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::OkNotFound as _;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -433,45 +431,6 @@ pub struct RecoveredPendingChanges {
     pub log_files: Vec<PathBuf>,
     /// Flush version after which log files can be safely removed.
     pub ready_at: SeqNumberType,
-    /// Logs of the recovered segment, to stop listing `log_files` on removal.
-    pub logs: PendingChangesLogs,
-}
-
-/// Pending changes log files that are part of a segment's state, packed into its snapshots.
-///
-/// A log recovered on load outlives its proxy until the segment durably persists its changes; the
-/// segment adopts it meanwhile. Logs of proxies still wrapping the segment are not listed: a
-/// snapshot proxy's log only holds changes made after the freeze.
-#[derive(Clone, Debug, Default)]
-pub struct PendingChangesLogs {
-    files: Arc<Mutex<BTreeSet<PathBuf>>>,
-}
-
-impl PendingChangesLogs {
-    /// Take ownership of the log file at `path`, which may not exist on disk (yet).
-    pub fn adopt(&self, path: PathBuf) {
-        self.files.lock().insert(path);
-    }
-
-    /// Adopted log files that exist on disk.
-    pub fn files(&self) -> Vec<PathBuf> {
-        let files = self.files.lock().clone();
-        files.into_iter().filter(|path| path.is_file()).collect()
-    }
-
-    /// Remove the log files at `paths` from disk and release them.
-    ///
-    /// Only safe once the segment durably persists the changes they hold. A log is only released
-    /// once its file is gone, so one that fails to be removed stays listed.
-    pub fn remove(&self, paths: &[PathBuf]) -> OperationResult<()> {
-        for path in paths {
-            // A log never flushed before its proxy was unwrapped has no file
-            fs_err::remove_file(path).ok_not_found()?;
-            self.files.lock().remove(path);
-        }
-
-        Ok(())
-    }
 }
 
 /// Recover pending changes left on disk by proxy segments, before regular WAL replay
@@ -513,9 +472,7 @@ pub fn recover_pending_changes(
 
     // The logs are part of the segment state until removed, also when ignored: then they mirror
     // the files of another writer's segment
-    for path in &log_files {
-        segment.pending_changes_logs.adopt(path.clone());
-    }
+    segment.pending_changes_logs = log_files.clone();
 
     match persisted_proxy_changes {
         PersistedProxyChanges::Replay => {}
@@ -578,6 +535,5 @@ pub fn recover_pending_changes(
         replayed,
         ready_at: segment.version(),
         log_files,
-        logs: segment.pending_changes_logs.clone(),
     })
 }
