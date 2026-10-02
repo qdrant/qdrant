@@ -49,7 +49,8 @@ pub struct EdgeShard {
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
-    /// Fails if the shard already exists (i.e. the segments directory contains any segment).
+    /// Creates `path` (and any missing parents) if it does not exist yet. Fails if the shard
+    /// already exists (i.e. the segments directory contains any segment).
     /// Configuration is required and is persisted to `edge_config.json`. WAL
     /// behavior follows `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
@@ -59,6 +60,10 @@ impl EdgeShard {
                 "cannot create edge shard: path already contains segment data",
             ));
         }
+
+        fs::create_dir_all(path).map_err(|err| {
+            OperationError::service_error(format!("failed to create edge shard directory: {err}"))
+        })?;
 
         let wal_options = config.wal_options.clone().unwrap_or_default();
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
@@ -103,12 +108,20 @@ impl EdgeShard {
     /// provided (non-empty), they are validated for compatibility against the loaded segments;
     /// if not, they are taken from the persisted config or the segments themselves.
     ///
-    /// Fails if no segments exist and no config can be loaded or inferred.
+    /// Fails if `path` is not an existing directory, or if no segments exist and no config can be
+    /// loaded or inferred.
     ///
     /// To override WAL options (e.g. for embedded/mobile deployments where
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
+        if !path.is_dir() {
+            return Err(OperationError::service_error(format!(
+                "cannot load edge shard: directory {} does not exist",
+                path.display(),
+            )));
+        }
+
         let resolved = resolve_initial_config(path, config)?;
 
         let wal_options = resolved
