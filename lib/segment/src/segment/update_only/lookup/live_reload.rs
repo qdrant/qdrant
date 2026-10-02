@@ -29,14 +29,18 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
-        let (_changed, max_committed_id) =
-            futures::executor::block_on(id_tracker.borrow_mut().live_preload(fs.inner()))?;
+        let (changed, max_committed_id) =
+            futures::executor::block_on(id_tracker.borrow_mut().stage_preload(fs.inner()))?;
+
+        if !changed {
+            return Ok(());
+        }
 
         // Prepare new LIST snapshot
         fs.cache_file_info()?;
 
         // Live preload: schedule everything
-        let mut futs = id_tracker.borrow().live_preload_cached(fs)?;
+        let mut futs = id_tracker.borrow().live_preload(fs)?;
         futs.extend(payload_storage.borrow_mut().live_preload(fs)?);
         for vector_storage in vector_data.values() {
             futs.extend(vector_storage.borrow_mut().live_preload(fs)?);

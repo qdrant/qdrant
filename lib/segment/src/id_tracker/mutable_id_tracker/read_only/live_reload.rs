@@ -62,12 +62,12 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    /// Preload `versions.dat` and `mappings.dat` directly on the inner filesystem
+    /// Stage preloading for `versions.dat` and `mappings.dat` directly on the inner filesystem
     /// before taking the directory listing snapshot.
     ///
     /// If the files are already open, they are live-reloaded in place rather than reopened.
     /// Anchors `max_committed_id` to the versions length observed at preload time.
-    pub async fn live_preload<Fs: UniversalReadFsAsync<File = S>>(
+    pub async fn stage_preload<Fs: UniversalReadFsAsync<File = S>>(
         &mut self,
         inner_fs: &Fs,
     ) -> OperationResult<(bool, Option<PointOffsetType>)> {
@@ -116,9 +116,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         Ok((changed, max_committed_id))
     }
 
-    /// Post-LIST cached preloading. Appendable tracker reloads its handles during
-    /// `live_preload` on the inner filesystem, so this is a no-op.
-    pub fn live_preload_cached(
+    /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
+    /// [`Self::stage_preload`] on the inner filesystem, so this is a no-op.
+    pub fn live_preload(
         &self,
         _fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {

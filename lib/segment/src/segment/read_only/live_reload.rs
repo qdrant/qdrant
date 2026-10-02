@@ -36,10 +36,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         let mut reload_fs = reload_fs.borrow_mut();
 
-        // 1. Preload tracker files on inner fs before taking the directory listing snapshot,
+        // 1. Stage preloading for tracker files on inner fs before taking the directory listing snapshot,
         // anchoring max_committed_id and live-reloading held handles in place.
         let (tracker_changed, max_committed_id) =
-            id_tracker.borrow_mut().live_preload(reload_fs.inner()).await?;
+            id_tracker.borrow_mut().stage_preload(reload_fs.inner()).await?;
 
         // 2. If nothing changed and there are no unapplied pending changes from a previous
         // failed reload, skip the expensive directory LIST and preloading entirely.
@@ -54,7 +54,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         let fs = &*reload_fs;
 
-        let mut preloads = id_tracker.borrow().live_preload_cached(fs)?;
+        let mut preloads = id_tracker.borrow().live_preload(fs)?;
         preloads.extend(payload_storage.borrow().live_preload(fs)?);
         preloads.extend(payload_index.borrow().live_preload(fs)?);
         for vector_data in vector_data.values() {

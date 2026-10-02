@@ -465,7 +465,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     // 1. Probe when nothing changed returns changed = false
     let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.live_preload(&MmapFs)).unwrap();
+        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
     assert!(
         !changed,
         "probe must report unchanged when no writes occurred"
@@ -478,7 +478,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     // Probe now detects changes and anchors watermark to 2 points
     let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.live_preload(&MmapFs)).unwrap();
+        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
     assert!(changed, "probe must report changed after inserts");
     assert_eq!(
         max_committed_id,
@@ -503,7 +503,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     // Subsequent probe now sees point 300 and commits it
     let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.live_preload(&MmapFs)).unwrap();
+        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
     assert!(changed);
     assert_eq!(max_committed_id, Some(3));
     let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
@@ -515,7 +515,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     flush(&mutable);
 
     let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.live_preload(&MmapFs)).unwrap();
+        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
     assert!(
         changed,
         "probe must detect pure delete via mappings change"
