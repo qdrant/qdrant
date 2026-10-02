@@ -2794,12 +2794,18 @@ fn delete_through_proxies(
 /// Snapshotting proxies every segment, and a proxy persists the changes buffered meanwhile into
 /// its pending changes log. That log must not be visible from the wrapped segment, otherwise it is
 /// packed and restoring replays e.g. CoW deletes whose upserts only live in the temp segment.
-/// Once unproxied the wrapped segment adopts the log, and once flushed it must be removed, as
-/// `unwrap_proxy` does for optimizer proxies; otherwise every snapshot leaves a log behind until
-/// the next restart.
+/// Once unproxied and flushed, that log must be removed, as `unwrap_proxy` does for optimizer
+/// proxies; otherwise every snapshot leaves a log behind until the next restart. Until then it is
+/// not listed either: a snapshot gets its changes from the wrapped segment, which it flushes first.
 #[test]
 fn test_snapshot_proxies_clean_up_pending_changes_logs() {
-    use segment::pending_changes::list_pending_changes_log_files;
+    use common::tar_ext;
+    use common::tar_unpack::tar_unpack_file;
+    use segment::pending_changes::{
+        PersistedProxyChanges, list_pending_changes_log_files, recover_pending_changes,
+    };
+    use segment::segment_constructor::load_segment;
+    use segment::types::SnapshotFormat;
 
     init_feature_flags(FeatureFlags {
         persist_proxy_segments: true,
@@ -2810,6 +2816,7 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
     let hw_counter = HardwareCounterCell::new();
     let segment = build_segment_1(dir.path());
     let segment_path = segment.segment_path.clone();
+    let segment_uuid = segment.segment_uuid();
     let mut holder = SegmentHolder::default();
     holder.add_new(segment);
     let holder = LockedSegmentHolder::new(holder);
@@ -2817,26 +2824,63 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
     let schema =
         Arc::new(SaveOnDisk::load_or_init_default(dir.path().join("payload.schema")).unwrap());
 
-    snapshot_all_segments_with(&holder, segments_dir.path(), schema, |segments, wrapped| {
-        delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
-        segments.flush_all(FlushMode::Sync, true)?;
-        assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
-        assert!(
-            wrapped
-                .read()
-                .visible_pending_changes_log_files()
-                .is_empty()
-        );
-        Ok(())
+    snapshot_all_segments_with(
+        &holder,
+        segments_dir.path(),
+        schema.clone(),
+        |segments, wrapped| {
+            delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
+            segments.flush_all(FlushMode::Sync, true)?;
+            assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
+            assert!(
+                wrapped
+                    .read()
+                    .visible_pending_changes_log_files()
+                    .is_empty()
+            );
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
+    let segment = holder.read().iter().next().unwrap().1.clone();
+    assert!(
+        segment
+            .get()
+            .read()
+            .visible_pending_changes_log_files()
+            .is_empty()
+    );
+
+    // Snapshot again while the log awaits removal, the delete it holds must survive a restore
+    let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+    let tar = tar_ext::BuilderExt::new_seekable_owned(
+        fs_err::File::create(snapshot_file.path()).unwrap(),
+    );
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    snapshot_all_segments_with(&holder, segments_dir.path(), schema, |_, wrapped| {
+        wrapped
+            .read()
+            .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
     })
     .unwrap();
-    let log_files = list_pending_changes_log_files(&segment_path);
-    assert_eq!(log_files.len(), 1);
-    let segment = holder.read().iter().next().unwrap().1.clone();
-    assert_eq!(
-        segment.get().read().visible_pending_changes_log_files(),
-        log_files
-    );
+    tar.blocking_finish().unwrap();
+
+    let unpacked = Builder::new().prefix("unpacked").tempdir().unwrap();
+    tar_unpack_file(snapshot_file.path(), unpacked.path()).unwrap();
+    let restored_path = unpacked.path().join(segment_uuid.to_string());
+    Segment::restore_snapshot_in_place(&restored_path).unwrap();
+    let mut restored = load_segment(
+        &restored_path,
+        uuid::Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    recover_pending_changes(&mut restored, PersistedProxyChanges::Replay).unwrap();
+    assert!(!restored.has_point(1.into(), DeferredBehavior::VisibleOnly));
+    assert!(restored.has_point(2.into(), DeferredBehavior::VisibleOnly));
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
     assert!(
@@ -2846,9 +2890,7 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
 }
 
 /// With nested proxies, a proxy lists its own log and the logs of the layers below it, never the
-/// logs of the layers wrapping it. The logs handle is the innermost segment's ownership registry,
-/// so it never holds the log of a proxy still wrapping it: only unwrapping a proxy hands its log
-/// over, to the innermost segment, even if the proxy wraps another proxy.
+/// logs of the layers wrapping it.
 #[test]
 fn test_nested_proxies_pending_changes_logs() {
     use segment::entry::SnapshotEntry as _;
@@ -2874,7 +2916,7 @@ fn test_nested_proxies_pending_changes_logs() {
     };
 
     // Inner proxy layer, persisting a delete into its log
-    let (_, inner_tmp_id, segments_lock) = SegmentHolder::proxy_all_segments(
+    let (_, _, segments_lock) = SegmentHolder::proxy_all_segments(
         holder.upgradable_read(),
         segments_dir.path(),
         None,
@@ -2888,7 +2930,7 @@ fn test_nested_proxies_pending_changes_logs() {
     let inner_log = inner.read().pending_changes_log_path().to_path_buf();
 
     // Outer proxy layer wrapping the inner one, persisting another delete into its own log
-    let (outer_proxies, outer_tmp_id, segments_lock) =
+    let (_, _, segments_lock) =
         SegmentHolder::proxy_all_segments(segments_lock, segments_dir.path(), None, schema, None)
             .unwrap();
     delete_through_proxies(&segments_lock, 101, 2.into(), &hw_counter).unwrap();
@@ -2907,62 +2949,6 @@ fn test_nested_proxies_pending_changes_logs() {
         outer.read().visible_pending_changes_log_files(),
         vec![inner_log.clone(), outer_log.clone()],
     );
-
-    // Neither proxy's live log is adopted by the innermost segment, from either layer
-    assert!(
-        inner
-            .read()
-            .adopted_pending_changes_logs()
-            .files()
-            .is_empty()
-    );
-    assert!(
-        outer
-            .read()
-            .adopted_pending_changes_logs()
-            .files()
-            .is_empty()
-    );
-
-    // Unwrapping the outer layer hands its log over to the innermost segment, which the inner
-    // proxy still wrapping it now lists below its own log
-    // Release the outer proxies, which keep the inner temp segment alive and block dropping it
-    let outer_ids: Vec<_> = outer_proxies.into_iter().map(|(id, _)| id).collect();
-    SegmentHolder::unproxy_all_segments(&holder, segments_lock, &outer_ids, outer_tmp_id).unwrap();
-    let segments_lock = holder.upgradable_read();
-    assert!(Arc::ptr_eq(&proxy_at(&segments_lock), &inner));
-    assert_eq!(
-        inner.read().adopted_pending_changes_logs().files(),
-        vec![outer_log.clone()],
-    );
-    assert_eq!(
-        inner.read().visible_pending_changes_log_files(),
-        vec![outer_log.clone(), inner_log.clone()],
-    );
-
-    // Unwrapping the inner layer hands its log over too, and a flush removes both
-    let inner_ids: Vec<_> = segments_lock
-        .iter()
-        .filter(|(_, segment)| matches!(segment, LockedSegment::Proxy(_)))
-        .map(|(id, _)| id)
-        .collect();
-    SegmentHolder::unproxy_all_segments(&holder, segments_lock, &inner_ids, inner_tmp_id).unwrap();
-    let segment = holder.read().get(segment_id).unwrap().clone();
-    assert!(matches!(segment, LockedSegment::Original(_)));
-    let adopted = segment.get().read().adopted_pending_changes_logs().files();
-    let mut expected = vec![inner_log.clone(), outer_log.clone()];
-    expected.sort();
-    assert_eq!(adopted, expected);
-
-    holder.read().flush_all(FlushMode::Sync, true).unwrap();
-    assert!(
-        segment
-            .get()
-            .read()
-            .visible_pending_changes_log_files()
-            .is_empty()
-    );
-    assert!(!inner_log.exists() && !outer_log.exists());
 }
 
 thread_local! {

@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -12,8 +11,8 @@ use super::*;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vector_name_config::DenseVectorConfig;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use crate::entry::ReadSegmentEntry as _;
 use crate::entry::entry_point::SegmentEntry as _;
+use crate::entry::{ReadSegmentEntry as _, SnapshotEntry as _};
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 
@@ -551,6 +550,12 @@ fn test_recover_ignore_leaves_log_untouched() {
     assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
     assert_eq!(segment.version(), segment_version);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), log_len);
+    // The ignored log still holds changes missing in the segment files, so it is packed into
+    // snapshots and listed in the segment manifest, which partial snapshot merges rely on
+    assert_eq!(
+        segment.visible_pending_changes_log_files(),
+        vec![log_path.clone()],
+    );
 
     // A later replaying load still recovers the change
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -563,6 +568,7 @@ fn test_recover_ignore_leaves_log_untouched() {
     segment.flush(true).unwrap();
     fs::remove_file(&log_path).unwrap();
     assert!(!log_path.is_file());
+    assert!(segment.visible_pending_changes_log_files().is_empty());
 }
 
 #[test]
@@ -1291,25 +1297,4 @@ fn test_proxy_changes_propagate_in_two_passes() {
     assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
     assert!(!segment.has_point(2.into(), DeferredBehavior::WithDeferred));
     assert!(segment.has_point(3.into(), DeferredBehavior::WithDeferred));
-}
-
-/// A log is only released once its file is gone, so one failing to be removed stays listed and
-/// keeps being packed into snapshots.
-#[test]
-fn test_logs_remove_keeps_failed_log_listed() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let removed = pending_changes_log_path(dir.path(), 0, Uuid::new_v4());
-    let failing = pending_changes_log_path(dir.path(), 1, Uuid::new_v4());
-    fs::write(&removed, b"").unwrap();
-    // Removing a directory as a file fails
-    fs::create_dir(&failing).unwrap();
-
-    let logs = PendingChangesLogs::default();
-    logs.adopt(removed.clone());
-    logs.adopt(failing.clone());
-
-    logs.remove(&[removed.clone(), failing.clone()])
-        .unwrap_err();
-    assert!(!removed.exists());
-    assert_eq!(*logs.files.lock(), BTreeSet::from([failing]));
 }

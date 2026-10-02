@@ -34,7 +34,6 @@ use crate::id_tracker::IdTrackerEnum;
 use crate::index::VectorIndexEnum;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::pending_changes::PendingChangesLogs;
 use crate::types::{SegmentConfig, SegmentType, SeqNumberType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -101,8 +100,9 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    /// Pending changes log files that are part of this segment's state
-    pub pending_changes_logs: PendingChangesLogs,
+    /// Pending changes log files found in the segment directory on load, part of this segment's
+    /// state until removed, see [`crate::pending_changes::recover_pending_changes`]
+    pub pending_changes_logs: Vec<PathBuf>,
 }
 
 pub struct VectorData {

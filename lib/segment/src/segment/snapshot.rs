@@ -119,7 +119,11 @@ impl SnapshotEntry for Segment {
     }
 
     fn visible_pending_changes_log_files(&self) -> Vec<PathBuf> {
-        self.pending_changes_logs.files()
+        self.pending_changes_logs
+            .iter()
+            .filter(|path| path.is_file())
+            .cloned()
+            .collect()
     }
 }
 
