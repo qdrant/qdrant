@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -19,19 +18,13 @@ where
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool> {
-        self.in_memory_index
-            .check_values_any(idx, hw_counter, check_fn)
+        self.in_memory_index.check_values_any(idx, check_fn)
     }
 
-    fn get_values(
-        &'a self,
-        idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
-        self.in_memory_index.get_values(idx, hw_counter)
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
+        self.in_memory_index.get_values(idx)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
@@ -50,12 +43,12 @@ where
         self.in_memory_index.get_unique_values_count()
     }
 
-    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
-        self.in_memory_index.get_count_for_value(value, hw_counter)
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
+        self.in_memory_index.get_count_for_value(value)
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        self.in_memory_index.get_iterator(value, hw_counter)
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
+        self.in_memory_index.get_iterator(value)
     }
 
     fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
@@ -73,10 +66,9 @@ where
 
     fn for_each_value_map(
         &self,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.in_memory_index.for_each_value_map(hw_counter, f)
+        self.in_memory_index.for_each_value_map(f)
     }
 
     fn storage_type(&self) -> StorageType {

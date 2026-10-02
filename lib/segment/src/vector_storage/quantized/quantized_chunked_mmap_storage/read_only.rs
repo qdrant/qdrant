@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{AdviceSetting, Flusher};
 use common::types::PointOffsetType;
@@ -81,12 +80,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
 }
 
 impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedStorageRead<S> {
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[u8]) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "Cannot upsert vector in read-only chunked storage",

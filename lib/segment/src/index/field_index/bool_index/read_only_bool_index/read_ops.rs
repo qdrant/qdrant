@@ -1,5 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::read_ops::{self, BoolIndexRead};
@@ -19,11 +17,8 @@ use crate::types::{FieldCondition, PayloadKeyType};
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `ReadOnlyFieldIndex::value_retriever`.
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<VariableRetrieverFn<'a>> {
-        read_ops::value_retriever(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> OperationResult<VariableRetrieverFn<'a>> {
+        read_ops::value_retriever(self)
     }
 }
 
@@ -63,17 +58,15 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition, hw_counter)
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition, hw_counter)
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -88,9 +81,8 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc)
+        Ok(read_ops::condition_checker(self, condition)
             .map(|x| UniversalReadExt::condition_checker_bool(x)))
     }
 }
@@ -107,7 +99,6 @@ impl<S: UniversalReadExt> FacetIndex for ReadOnlyBoolIndex<S> {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
     ) -> OperationResult<()> {
         for point_id in points {
@@ -126,30 +117,24 @@ impl<S: UniversalReadExt> FacetIndex for ReadOnlyBoolIndex<S> {
 
     fn for_each_value_map(
         &self,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(
             FacetValueRef<'_>,
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
-            f(FacetValueRef::Bool(value), iter)
-        })
+        BoolIndexRead::for_each_value_map(self, |value, iter| f(FacetValueRef::Bool(value), iter))
     }
 
     fn for_values_map(
         &self,
         values: impl Iterator<Item = FacetValue>,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let bools = values.filter_map(|value| match value {
             FacetValue::Bool(b) => Some(b),
             FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => None,
         });
-        BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
-            f(FacetValue::Bool(b), iter)
-        })
+        BoolIndexRead::for_values_map(self, bools, |b, iter| f(FacetValue::Bool(b), iter))
     }
 
     fn for_each_count_per_value(

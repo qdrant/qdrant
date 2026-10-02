@@ -3,8 +3,7 @@
 use std::ops::Range;
 use std::path::Path;
 
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::universal_io::{
@@ -217,11 +216,8 @@ impl<S: UniversalRead> PrefixIndex<S> {
     pub fn for_each_key_with_prefix(
         &self,
         prefix: &[u8],
-        hw_counter: &HardwareCounterCell,
         f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         let range = self.block_range_for_prefix(prefix);
         let Some((first_block, last_block)) = self.blocks[range.clone()]
             .first()
@@ -231,9 +227,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         };
 
         let bytes_start = first_block.bytes.start;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta((last_block.bytes.end - bytes_start) as usize);
+        HwMetric::PayloadIndexIoRead.bump((last_block.bytes.end - bytes_start) as usize);
 
         let bytes = self.storage.read::<_, u8>(
             ReadRange::new(bytes_start, last_block.bytes.end - bytes_start),
@@ -268,13 +262,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
     /// Interior blocks of the candidate range are guaranteed to lie fully
     /// within the prefix range and contribute through the precomputed
     /// per-block counts; only the two boundary blocks are decoded.
-    pub fn prefix_stats(
-        &self,
-        prefix: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<PrefixIndexStats> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
+    pub fn prefix_stats(&self, prefix: &[u8]) -> OperationResult<PrefixIndexStats> {
         let range = self.block_range_for_prefix(prefix);
         let mut stats = PrefixIndexStats::default();
 
@@ -299,7 +287,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         let mut boundary = |block_index: usize| -> OperationResult<()> {
             let mut keys = 0;
             let mut postings = 0;
-            self.read_and_decode_block(block_index, &hw_counter, &mut |key, count| {
+            self.read_and_decode_block(block_index, &mut |key, count| {
                 if key.starts_with(prefix) {
                     keys += 1;
                     postings += count;
@@ -330,11 +318,8 @@ impl<S: UniversalRead> PrefixIndex<S> {
     /// how large the dictionary is.
     pub fn for_each_key(
         &self,
-        hw_counter: &HardwareCounterCell,
         f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         let mut chunk_start = 0;
         while chunk_start < self.blocks.len() {
             let bytes_start = self.blocks[chunk_start].bytes.start;
@@ -346,9 +331,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             }
             let bytes_end = self.blocks[chunk_end - 1].bytes.end;
 
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta((bytes_end - bytes_start) as usize);
+            HwMetric::PayloadIndexIoRead.bump((bytes_end - bytes_start) as usize);
 
             let bytes = self.storage.read::<_, u8>(
                 ReadRange::new(bytes_start, bytes_end - bytes_start),
@@ -372,14 +355,11 @@ impl<S: UniversalRead> PrefixIndex<S> {
     fn read_and_decode_block(
         &self,
         block_index: usize,
-        hw_counter: &ConditionedCounter<'_>,
         f: &mut dyn FnMut(&[u8], usize) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let block = &self.blocks[block_index];
 
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta((block.bytes.end - block.bytes.start) as usize);
+        HwMetric::PayloadIndexIoRead.bump((block.bytes.end - block.bytes.start) as usize);
 
         let bytes = self.storage.read::<_, u8>(
             ReadRange::new(block.bytes.start, block.bytes.end - block.bytes.start),

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -35,7 +35,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment
@@ -43,7 +43,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
             op_num,
             &field(),
             Some(&PayloadFieldSchema::from(PayloadSchemaType::Text)),
-            &hw_counter,
         )
         .unwrap();
 
@@ -54,7 +53,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
                 op_num,
                 PointIdType::from(point_id as u64),
                 NamedVectors::default(),
-                &hw_counter,
             )
             .unwrap();
         segment
@@ -63,7 +61,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
                 PointIdType::from(point_id as u64),
                 &payload_json! { "text": *document },
                 &None,
-                &hw_counter,
             )
             .unwrap();
     }

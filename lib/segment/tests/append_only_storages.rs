@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{VectorRef, only_default_vector};
@@ -48,7 +48,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         .prefix("append_only_storages")
         .tempdir()
         .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // The segment lives in a uuid subdirectory of `dir`.
     let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
@@ -65,33 +65,23 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     for id in 1..=5u64 {
         let vector: Vec<f32> = vec![id as f32; DIM];
         segment
-            .upsert_point(1, id.into(), only_default_vector(&vector), &hw_counter)
+            .upsert_point(1, id.into(), only_default_vector(&vector))
             .unwrap();
     }
     segment
-        .set_full_payload(
-            2,
-            3.into(),
-            &payload_json! { "kind": "updated" },
-            &hw_counter,
-        )
+        .set_full_payload(2, 3.into(), &payload_json! { "kind": "updated" })
         .unwrap();
 
     // A multi-step write within one operation: a slot per step.
     segment
-        .upsert_point(3, 6.into(), only_default_vector(&[6.0; DIM]), &hw_counter)
+        .upsert_point(3, 6.into(), only_default_vector(&[6.0; DIM]))
         .unwrap();
     segment
-        .set_full_payload(
-            3,
-            6.into(),
-            &payload_json! { "kind": "multi-step" },
-            &hw_counter,
-        )
+        .set_full_payload(3, 6.into(), &payload_json! { "kind": "multi-step" })
         .unwrap();
 
     // A delete is a tombstone.
-    segment.delete_point(4, 5.into(), &hw_counter).unwrap();
+    segment.delete_point(4, 5.into()).unwrap();
 
     // The index storage comes out append-only too.
     let key = "kind".parse().unwrap();
@@ -100,7 +90,6 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
             5,
             &key,
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-            &hw_counter,
         )
         .unwrap();
     // The index directory name carries a hash prefix, locate it by suffix.
@@ -123,11 +112,10 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
             6,
             &num_key,
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
-            &hw_counter,
         )
         .unwrap();
     segment
-        .set_payload(7, 4.into(), &payload_json! { "num": 7 }, &None, &hw_counter)
+        .set_payload(7, 4.into(), &payload_json! { "num": 7 }, &None)
         .unwrap();
 
     segment.flush(true).unwrap();
@@ -151,9 +139,9 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         .expect("append-only leftovers must not be reported as inconsistencies");
 
     assert_eq!(segment.available_point_count(), 5);
-    let payload = segment.payload(3.into(), &hw_counter).unwrap();
+    let payload = segment.payload(3.into()).unwrap();
     assert_eq!(payload, payload_json! { "kind": "updated" });
-    let payload = segment.payload(6.into(), &hw_counter).unwrap();
+    let payload = segment.payload(6.into()).unwrap();
     assert_eq!(payload, payload_json! { "kind": "multi-step" });
     assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred));
 }
@@ -169,15 +157,13 @@ fn sparse_storage_is_append_only() {
         .prefix("append_only_sparse")
         .tempdir()
         .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
     assert_eq!(storage_mode(&dir.path().join("store")), "append_only");
 
     let vector = SparseVector::new(vec![1, 3], vec![1.0, 2.0]).unwrap();
-    storage
-        .insert_vector(0, VectorRef::from(&vector), &hw_counter)
-        .unwrap();
+    storage.insert_vector(0, VectorRef::from(&vector)).unwrap();
 
     // Nothing was ever stored at key 5.
     storage.delete_vector(5).unwrap();
@@ -228,7 +214,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         .prefix("make_immutable_temp")
         .tempdir()
         .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let stopped = AtomicBool::new(false);
 
     let config = |storage_type, sparse_index_type| SegmentConfig {
@@ -266,11 +252,9 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         let sparse = SparseVector::new(vec![id as u32], vec![id as f32]).unwrap();
         let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&dense));
         vectors.insert_ref("sparse", VectorRef::Sparse(&sparse));
+        source.upsert_point(1, id.into(), vectors).unwrap();
         source
-            .upsert_point(1, id.into(), vectors, &hw_counter)
-            .unwrap();
-        source
-            .set_full_payload(2, id.into(), &payload_json! { "id": id }, &hw_counter)
+            .set_full_payload(2, id.into(), &payload_json! { "id": id })
             .unwrap();
     }
 
@@ -282,7 +266,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
             common::flags::feature_flags(),
         )
         .unwrap();
-        builder.update(&[&source], &stopped, &hw_counter).unwrap();
+        builder.update(&[&source], &stopped).unwrap();
         builder.build_for_test(dir.path())
     };
 
@@ -317,10 +301,10 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
     assert_eq!(reloaded.available_point_count(), 5);
     for id in 1..=5u64 {
         assert_eq!(
-            reloaded.payload(id.into(), &hw_counter).unwrap(),
+            reloaded.payload(id.into()).unwrap(),
             payload_json! { "id": id },
         );
-        let sparse = reloaded.vector("sparse", id.into(), &hw_counter).unwrap();
+        let sparse = reloaded.vector("sparse", id.into()).unwrap();
         assert!(sparse.is_some(), "sparse vector of point {id}");
         assert_eq!(reloaded.point_version(id.into()), Some(2));
     }

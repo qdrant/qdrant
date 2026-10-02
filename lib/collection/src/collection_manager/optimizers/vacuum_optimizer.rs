@@ -17,7 +17,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use itertools::Itertools;
     use segment::entry::NonAppendableSegmentEntry as _;
     use segment::id_tracker::IdTrackerRead;
@@ -105,7 +105,7 @@ mod tests {
 
         let segment = holder.get(segment_id).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let original_segment = match segment {
             LockedSegment::Original(s) => s,
@@ -121,11 +121,7 @@ mod tests {
             .collect_vec();
 
         for &point_id in &segment_points_to_delete {
-            segment
-                .get()
-                .write()
-                .delete_point(101, point_id, &hw_counter)
-                .unwrap();
+            segment.get().write().delete_point(101, point_id).unwrap();
         }
 
         let segment_points_to_assign1 = original_segment
@@ -146,13 +142,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(
-                    102,
-                    point_id,
-                    &payload_json! {"color": "red"},
-                    &None,
-                    &hw_counter,
-                )
+                .set_payload(102, point_id, &payload_json! {"color": "red"}, &None)
                 .unwrap();
         }
 
@@ -160,13 +150,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(
-                    102,
-                    point_id,
-                    &payload_json! {"size": 0.42},
-                    &None,
-                    &hw_counter,
-                )
+                .set_payload(102, point_id, &payload_json! {"size": 0.42}, &None)
                 .unwrap();
         }
 
@@ -223,7 +207,7 @@ mod tests {
             assert!(
                 segment_guard.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
             );
-            let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
+            let payload = segment_guard.payload(point_id).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
                 .into_iter()
@@ -302,14 +286,13 @@ mod tests {
             vector2_dim as usize,
         );
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         segment
             .create_field_index(
                 101,
                 &"keyword".parse().unwrap(),
                 Some(&PayloadSchemaType::Keyword.into()),
-                &hw_counter,
             )
             .unwrap();
 
@@ -387,7 +370,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment.delete_point(201, point_id, &hw_counter).unwrap();
+                segment.delete_point(201, point_id).unwrap();
             }
 
             // Delete 25% of vectors named vector1

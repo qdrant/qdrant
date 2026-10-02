@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use cancel::{CancellationToken, DropGuard};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::RwLock;
 use segment::types::ExtendedPointId;
@@ -290,13 +291,8 @@ async fn drain_update_queue(
         PointOperations::DeletePoints { ids: vec![] },
     ));
     shard
-        .update_local(
-            barrier,
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::disposable(),
-            false,
-        )
+        .update_local(barrier, WaitUntil::Visible, None, false)
+        .unmeasured(reason("🤖 Collection cleanup is an internal operation"))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -357,9 +353,9 @@ async fn clean_task(
                 None,
                 None,
                 None,
-                HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
                 DeferredBehavior::WithDeferred, // Include also deferred points in the cleanup task.
             )
+            .unmeasured(reason("Internal operation, no measurement needed!"))
             .await
         {
             Ok(batch) => batch.into_iter().map(|entry| entry.id).collect::<Vec<_>>(),
@@ -399,13 +395,8 @@ async fn clean_task(
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }),
         );
         if let Err(err) = shard
-            .update_local(
-                delete_operation,
-                WaitUntil::from(last_batch),
-                None,
-                HwMeasurementAcc::disposable(),
-                false,
-            )
+            .update_local(delete_operation, WaitUntil::from(last_batch), None, false)
+            .unmeasured(reason("🤖 Collection cleanup is an internal operation"))
             .await
         {
             return Err(CollectionError::service_error(format!(

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -44,21 +44,16 @@ enum IndexBuilder {
 }
 
 impl IndexBuilder {
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
             IndexBuilder::Mutable(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
             }
             IndexBuilder::OnDisk(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
             }
             IndexBuilder::Immutable(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
             }
         }
     }
@@ -197,11 +192,7 @@ fn build_random_index(
         );
         let array_payload = Value::Array(keywords);
         builder
-            .add_point(
-                idx as PointOffsetType,
-                &[&array_payload],
-                &HardwareCounterCell::new(),
-            )
+            .add_point(idx as PointOffsetType, &[&array_payload])
             .unwrap();
     }
 
@@ -237,26 +228,20 @@ fn build_random_index(
 }
 
 pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> ParsedQuery {
-    let hw_counter = HardwareCounterCell::disposable();
-    let tokens = resolve_tokens(index, query, &hw_counter).into_iter();
+    let _hw = hw::test_guard();
+    let tokens = resolve_tokens(index, query).into_iter();
     match is_phrase {
         false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>().unwrap()),
         true => ParsedQuery::Phrase(tokens.collect::<Option<Document>>().unwrap()),
     }
 }
 
-fn resolve_tokens<S: AsRef<str>>(
-    index: &FullTextIndex,
-    tokens: &[S],
-    hw_counter: &HardwareCounterCell,
-) -> Vec<Option<TokenId>> {
+fn resolve_tokens<S: AsRef<str>>(index: &FullTextIndex, tokens: &[S]) -> Vec<Option<TokenId>> {
     let mut ids = vec![None; tokens.len()];
     index
-        .for_each_token_id(
-            tokens.iter().map(|s| s.as_ref()).enumerate(),
-            hw_counter,
-            |i, id| ids[i] = id,
-        )
+        .for_each_token_id(tokens.iter().map(|s| s.as_ref()).enumerate(), |i, id| {
+            ids[i] = id
+        })
         .unwrap();
     ids
 }
@@ -271,7 +256,7 @@ fn test_congruence(
     const KEYWORD_COUNT: usize = 20;
     const KEYWORD_LEN: usize = 2;
 
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
 
     let (mut indices, _data): (Vec<_>, Vec<_>) = TYPES
         .iter()
@@ -348,7 +333,7 @@ fn test_congruence(
             let doc_lens = |index: &FullTextIndex| {
                 let mut out = vec![None; point_ids.len()];
                 index
-                    .doc_len_batch(&point_ids, &hw_counter, |at, doc_len| out[at] = doc_len)
+                    .doc_len_batch(&point_ids, |at, doc_len| out[at] = doc_len)
                     .unwrap();
                 out
             };
@@ -360,8 +345,8 @@ fn test_congruence(
         }
 
         let probe_tokens = ["doesnotexist", keywords[0].as_str()];
-        let probe_a = resolve_tokens(index_a, &probe_tokens, &hw_counter);
-        let probe_b = resolve_tokens(index_b, &probe_tokens, &hw_counter);
+        let probe_a = resolve_tokens(index_a, &probe_tokens);
+        let probe_b = resolve_tokens(index_b, &probe_tokens);
         assert_eq!(probe_a[0], probe_b[0]);
         assert_eq!(probe_a[1].is_some(), probe_b[1].is_some());
 
@@ -378,16 +363,10 @@ fn test_congruence(
                     JsonPath::new(FIELD_NAME),
                     ValuesCount::from(0..10),
                 );
-                let cardinality_a = index_a.estimate_query_cardinality(
-                    &parsed_query_a,
-                    &field_condition,
-                    &hw_counter,
-                );
-                let cardinality_b = index_b.estimate_query_cardinality(
-                    &parsed_query_b,
-                    &field_condition,
-                    &hw_counter,
-                );
+                let cardinality_a =
+                    index_a.estimate_query_cardinality(&parsed_query_a, &field_condition);
+                let cardinality_b =
+                    index_b.estimate_query_cardinality(&parsed_query_b, &field_condition);
                 assert_eq!(cardinality_a, cardinality_b);
             }
 
@@ -400,11 +379,11 @@ fn test_congruence(
 
             assert_eq!(
                 index_a
-                    .filter_query(parsed_query_a, &hw_counter)
+                    .filter_query(parsed_query_a)
                     .unwrap()
                     .collect::<HashSet<_>>(),
                 index_b
-                    .filter_query(parsed_query_b, &hw_counter)
+                    .filter_query(parsed_query_b)
                     .unwrap()
                     .collect::<HashSet<_>>(),
             );
@@ -425,16 +404,8 @@ fn test_congruence(
                         ValuesCount::from(0..10),
                     );
                     assert_eq!(
-                        index_a.estimate_query_cardinality(
-                            &parsed_query_a,
-                            &field_condition,
-                            &hw_counter
-                        ),
-                        index_b.estimate_query_cardinality(
-                            &parsed_query_b,
-                            &field_condition,
-                            &hw_counter
-                        ),
+                        index_a.estimate_query_cardinality(&parsed_query_a, &field_condition),
+                        index_b.estimate_query_cardinality(&parsed_query_b, &field_condition),
                     );
                 }
 
@@ -448,11 +419,11 @@ fn test_congruence(
                 // Assert that both indices return the same results
                 assert_eq!(
                     index_a
-                        .filter_query(parsed_query_a, &hw_counter)
+                        .filter_query(parsed_query_a)
                         .unwrap()
                         .collect::<HashSet<_>>(),
                     index_b
-                        .filter_query(parsed_query_b, &hw_counter)
+                        .filter_query(parsed_query_b)
                         .unwrap()
                         .collect::<HashSet<_>>(),
                 );
@@ -524,7 +495,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
         phrases.push(phrase);
     }
 
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
 
     for (index, index_type) in check_indexes {
         eprintln!("Checking index type: {index_type:?}");
@@ -536,7 +507,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
             assert!(index.check_match(&parsed_query, *exp_id).unwrap());
 
             let result = index
-                .filter_query(parsed_query, &hw_counter)
+                .filter_query(parsed_query)
                 .unwrap()
                 .collect::<HashSet<_>>();
 
@@ -558,7 +529,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 fn test_phrase_matching_respects_array_boundaries(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     // ID 1: ["quick", "brown"] — words in separate elements
@@ -572,20 +543,20 @@ fn test_phrase_matching_respects_array_boundaries(
     // ID 5: ["quick blue"]    — phrase in a single element
     let p5 = serde_json::json!(["quick blue"]);
 
-    builder.add_point(1, &[&p1], &hw).unwrap();
-    builder.add_point(2, &[&p2], &hw).unwrap();
-    builder.add_point(3, &[&p3], &hw).unwrap();
-    builder.add_point(4, &[&p4], &hw).unwrap();
-    builder.add_point(5, &[&p5], &hw).unwrap();
+    builder.add_point(1, &[&p1]).unwrap();
+    builder.add_point(2, &[&p2]).unwrap();
+    builder.add_point(3, &[&p3]).unwrap();
+    builder.add_point(4, &[&p4]).unwrap();
+    builder.add_point(5, &[&p5]).unwrap();
 
     let index = builder.finalize().unwrap();
 
     // "quick brown" should match only IDs 2 and 4 (phrase within one element)
-    let qb = index.parse_phrase_query("quick brown", &hw).unwrap();
+    let qb = index.parse_phrase_query("quick brown").unwrap();
     assert!(qb.is_some(), "query tokens must exist");
     let qb = qb.unwrap();
 
-    let mut results: Vec<_> = index.filter_query(qb.clone(), &hw).unwrap().collect();
+    let mut results: Vec<_> = index.filter_query(qb.clone()).unwrap().collect();
     results.sort();
     assert_eq!(
         results,
@@ -601,11 +572,11 @@ fn test_phrase_matching_respects_array_boundaries(
     assert!(!index.check_match(&qb, 5).unwrap());
 
     // "quick blue" should match only ID 5 (phrase within one element)
-    let qbl = index.parse_phrase_query("quick blue", &hw).unwrap();
+    let qbl = index.parse_phrase_query("quick blue").unwrap();
     assert!(qbl.is_some(), "query tokens must exist");
     let qbl = qbl.unwrap();
 
-    let mut results: Vec<_> = index.filter_query(qbl.clone(), &hw).unwrap().collect();
+    let mut results: Vec<_> = index.filter_query(qbl.clone()).unwrap().collect();
     results.sort();
     assert_eq!(
         results,
@@ -625,25 +596,22 @@ fn test_phrase_matching_respects_array_boundaries(
 fn test_phrase_matching_single_element_array(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     let p1 = serde_json::json!(["the quick brown fox"]);
     let p2 = serde_json::json!("the quick brown fox");
     let p3 = serde_json::json!(["the", "quick brown fox"]);
 
-    builder.add_point(1, &[&p1], &hw).unwrap();
-    builder.add_point(2, &[&p2], &hw).unwrap();
-    builder.add_point(3, &[&p3], &hw).unwrap();
+    builder.add_point(1, &[&p1]).unwrap();
+    builder.add_point(2, &[&p2]).unwrap();
+    builder.add_point(3, &[&p3]).unwrap();
 
     let index = builder.finalize().unwrap();
 
-    let q = index
-        .parse_phrase_query("quick brown", &hw)
-        .unwrap()
-        .unwrap();
+    let q = index.parse_phrase_query("quick brown").unwrap().unwrap();
 
-    let mut results: Vec<_> = index.filter_query(q, &hw).unwrap().collect();
+    let mut results: Vec<_> = index.filter_query(q).unwrap().collect();
     results.sort();
     assert_eq!(results, vec![1, 2, 3]);
 }
@@ -655,7 +623,7 @@ fn test_phrase_matching_single_element_array(
 /// segment had been optimized yet.
 #[rstest]
 fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matching: bool) {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let payloads = [
         Value::String("alpha beta".to_string()),
         // Punctuation only: indexed, but no tokens survive.
@@ -668,7 +636,7 @@ fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matchi
         let (mut builder, temp_dir, _db) = create_builder(*index_type, phrase_matching);
         for (idx, payload) in payloads.iter().enumerate() {
             builder
-                .add_point(idx as PointOffsetType, &[payload], &hw_counter)
+                .add_point(idx as PointOffsetType, &[payload])
                 .unwrap();
         }
         built.push((builder.finalize().unwrap(), temp_dir, *index_type));
@@ -692,7 +660,7 @@ fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matchi
 /// decrement for every point it found.
 #[rstest]
 fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase_matching: bool) {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(IndexType::Mutable, phrase_matching);
     for (idx, payload) in [
         Value::String("alpha beta".to_string()),
@@ -702,7 +670,7 @@ fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase
     .enumerate()
     {
         builder
-            .add_point(idx as PointOffsetType, &[payload], &hw_counter)
+            .add_point(idx as PointOffsetType, &[payload])
             .unwrap();
     }
     let mut index = builder.finalize().unwrap();

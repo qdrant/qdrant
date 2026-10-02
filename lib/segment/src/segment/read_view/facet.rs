@@ -2,7 +2,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
@@ -104,7 +103,6 @@ where
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         // Shortcut if this segment has no points.
         let available_points = self.id_tracker.available_point_count();
@@ -126,7 +124,7 @@ where
                     // Expected number of draws from random id stream to reach `sample_target` values
                     let expected_draws =
                         sample_target.saturating_mul(available_points / unique_values_count.max(1));
-                    !self.should_pre_filter(filter, Some(expected_draws), hw_counter)?
+                    !self.should_pre_filter(filter, Some(expected_draws))?
                 }
                 None => true,
             }
@@ -135,15 +133,9 @@ where
         };
 
         if use_sampling {
-            self.sampled_approximate_facet(
-                &facet_index,
-                request,
-                sample_target,
-                is_stopped,
-                hw_counter,
-            )
+            self.sampled_approximate_facet(&facet_index, request, sample_target, is_stopped)
         } else {
-            self.full_approximate_facet(&facet_index, request, is_stopped, hw_counter)
+            self.full_approximate_facet(&facet_index, request, is_stopped)
         }
     }
 
@@ -153,16 +145,13 @@ where
         facet_index: &impl FacetIndex,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let Some(filter) = &request.filter else {
             // No filter: count how many visible points each value has.
-            return self.get_facet_counts(facet_index, None, hw_counter);
+            return self.get_facet_counts(facet_index, None);
         };
 
-        let cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
 
         let available_points = self.id_tracker.available_point_count();
 
@@ -173,7 +162,7 @@ where
 
         if prefer_filter_iter {
             // Iterate the filter, then hash each value to get counts
-            self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped, hw_counter)
+            self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped)
         } else {
             // Every posting element will be checked, so materializing the entire filter
             // is cheaper than that many per-point evaluations.
@@ -182,7 +171,6 @@ where
                 .iter_filtered_points(
                     filter,
                     &cardinality,
-                    hw_counter,
                     is_stopped,
                     DeferredBehavior::VisibleOnly,
                 )?
@@ -190,7 +178,7 @@ where
             let probe = FilterProbe::Precomputed(bitmap);
 
             // Check each values' points against the filter, count total per value.
-            self.visit_facet_iter(facet_index, &probe, None, is_stopped, hw_counter)
+            self.visit_facet_iter(facet_index, &probe, None, is_stopped)
         }
     }
 
@@ -203,46 +191,31 @@ where
         request: &FacetParams,
         sample_target: usize,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let Some(filter) = &request.filter else {
             // No filter: extract each values' count from the index, but sample candidates first
-            let candidates = self.collect_candidate_values(
-                sample_target,
-                facet_index,
-                None,
-                is_stopped,
-                hw_counter,
-            )?;
+            let candidates =
+                self.collect_candidate_values(sample_target, facet_index, None, is_stopped)?;
 
-            return self.get_facet_counts(facet_index, Some(candidates), hw_counter);
+            return self.get_facet_counts(facet_index, Some(candidates));
         };
 
         let probe = FilterProbe::Lazy {
-            context: self.payload_index.filter_context(filter, hw_counter)?,
+            context: self.payload_index.filter_context(filter)?,
         };
 
         // Phase 1: sample candidate values that match the filter.
-        let candidates = self.collect_candidate_values(
-            sample_target,
-            facet_index,
-            Some(&probe),
-            is_stopped,
-            hw_counter,
-        )?;
+        let candidates =
+            self.collect_candidate_values(sample_target, facet_index, Some(&probe), is_stopped)?;
         if candidates.is_empty() {
             return Ok(HashMap::new());
         }
 
         let candidate_filter = candidate_match_filter(&request.key, &candidates);
-        let candidate_cardinality = self
-            .payload_index
-            .estimate_cardinality(&candidate_filter, hw_counter)?;
+        let candidate_cardinality = self.payload_index.estimate_cardinality(&candidate_filter)?;
 
         let new_filter = candidate_filter.merge_owned(filter.clone());
-        let new_cardinality = self
-            .payload_index
-            .estimate_cardinality(&new_filter, hw_counter)?;
+        let new_cardinality = self.payload_index.estimate_cardinality(&new_filter)?;
 
         let available_points = self.id_tracker.available_point_count();
 
@@ -254,22 +227,10 @@ where
             < ITER_FILTER_INDEX_SELECTIVITY * candidate_cardinality.exp as f64;
         if prefer_filter_iter {
             // Visit the filtered points once, and hash candidate values out of the yielded points.
-            self.visit_filter_iter(
-                facet_index,
-                &new_filter,
-                &new_cardinality,
-                is_stopped,
-                hw_counter,
-            )
+            self.visit_filter_iter(facet_index, &new_filter, &new_cardinality, is_stopped)
         } else {
             // Walk each values' posting and check the probe.
-            self.visit_facet_iter(
-                facet_index,
-                &probe,
-                Some(candidates),
-                is_stopped,
-                hw_counter,
-            )
+            self.visit_facet_iter(facet_index, &probe, Some(candidates), is_stopped)
         }
     }
 
@@ -285,17 +246,15 @@ where
         filter: &Filter,
         cardinality: &CardinalityEstimation,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let mut hits = HashMap::new();
         let points = self.payload_index.iter_filtered_points(
             filter,
             cardinality,
-            hw_counter,
             is_stopped,
             DeferredBehavior::VisibleOnly,
         )?;
-        facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
+        facet_index.for_points_values(points, |_point_id, iter| {
             iter.for_each(|value| {
                 let value = value.to_owned();
                 *hits.entry(value).or_insert(0) += 1;
@@ -311,7 +270,6 @@ where
         probe: &FilterProbe<'_>,
         candidates: Option<HashSet<FacetValue>>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let mut hits = HashMap::new();
 
@@ -338,7 +296,7 @@ where
         match candidates {
             // Sampling: visit only the candidate values' postings.
             Some(candidates) => {
-                facet_index.for_values_map(candidates.into_iter(), hw_counter, |value, iter| {
+                facet_index.for_values_map(candidates.into_iter(), |value, iter| {
                     check_process_stopped(is_stopped)?;
                     let count = count_matching(iter);
                     if count > 0 {
@@ -349,7 +307,7 @@ where
             }
             // Full scan: visit every value's posting.
             None => {
-                facet_index.for_each_value_map(hw_counter, |value, iter| {
+                facet_index.for_each_value_map(|value, iter| {
                     check_process_stopped(is_stopped)?;
                     let count = count_matching(iter);
                     if count > 0 {
@@ -367,7 +325,6 @@ where
         &self,
         facet_index: &impl FacetIndex,
         candidates: Option<HashSet<FacetValue>>,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<HashMap<FacetValue, usize>, OperationError> {
         let mut hits = HashMap::new();
         let deferred_internal_id = self.deferred_internal_id();
@@ -377,7 +334,6 @@ where
                 facet_index.for_counts_per_value(
                     candidates.into_iter(),
                     deferred_internal_id,
-                    hw_counter,
                     |hit| {
                         if hit.count > 0 {
                             hits.insert(hit.value, hit.count);
@@ -406,7 +362,6 @@ where
         facet_index: &F,
         probe: Option<&FilterProbe<'_>>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashSet<FacetValue>> {
         let mut seen: HashSet<FacetValue> = HashSet::with_capacity(sample_target);
 
@@ -422,7 +377,6 @@ where
         let is_finished = AtomicBool::new(false);
         facet_index.for_points_values(
             id_stream.stop_if(is_stopped).stop_if(&is_finished),
-            hw_counter,
             |_point_id, vals_iter: &mut dyn Iterator<Item = FacetValueRef<'_>>| {
                 for v in vals_iter {
                     if seen_streak >= MAX_NO_NEW_POINTS || seen.len() >= sample_target {
@@ -456,39 +410,31 @@ where
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
         let facet_index = self.facet_index_for(key)?;
         let mut values = BTreeSet::new();
 
         if let Some(filter) = filter {
-            let filter_cardinality = self
-                .payload_index
-                .estimate_cardinality(filter, hw_counter)?;
+            let filter_cardinality = self.payload_index.estimate_cardinality(filter)?;
 
             let points = self
                 .payload_index
                 .iter_filtered_points(
                     filter,
                     &filter_cardinality,
-                    hw_counter,
                     is_stopped,
                     DeferredBehavior::VisibleOnly,
                 )?
                 .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
-            facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
+            facet_index.for_points_values(points, |_point_id, iter| {
                 values.extend(iter.map(|v| v.to_owned()));
             })?;
         } else {
-            facet_index.for_each_visible_value(
-                hw_counter,
-                self.deferred_internal_id(),
-                |value_ref| {
-                    check_process_stopped(is_stopped)?;
-                    values.insert(value_ref.to_owned());
-                    Ok(())
-                },
-            )?;
+            facet_index.for_each_visible_value(self.deferred_internal_id(), |value_ref| {
+                check_process_stopped(is_stopped)?;
+                values.insert(value_ref.to_owned());
+                Ok(())
+            })?;
         };
 
         Ok(values)

@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use blobstore::fixtures::{Payload, empty_storage};
 use bustle::Collection;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::counter::hw::HwMetric;
 use common::generic_consts::Random;
+use common::reason::reason;
 use parking_lot::RwLock;
 
 use crate::PayloadStorage;
@@ -32,18 +34,14 @@ impl Collection for ArcStorage<PayloadStorage> {
 
 impl SequentialCollectionHandle for PayloadStorage {
     fn get(&self, key: &u32) -> bool {
-        self.get_value::<Random>(*key, &HardwareCounterCell::new()) // No measurements needed in benches
-            .unwrap()
-            .is_some()
+        let _hw = hw::unmeasured_guard(reason("No measurements needed in benches"));
+        self.get_value::<Random>(*key).unwrap().is_some()
     }
 
     fn insert(&mut self, key: u32, payload: &Payload) -> bool {
+        let _hw = hw::test_guard();
         !self
-            .put_value(
-                key,
-                payload,
-                HardwareCounterCell::new().ref_payload_io_write_counter(),
-            )
+            .put_value(key, payload, HwMetric::PayloadIoWrite)
             .unwrap()
     }
 
@@ -52,12 +50,9 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn update(&mut self, key: &u32, payload: &Payload) -> bool {
-        self.put_value(
-            *key,
-            payload,
-            HardwareCounterCell::new().ref_payload_io_write_counter(),
-        )
-        .unwrap()
+        let _hw = hw::test_guard();
+        self.put_value(*key, payload, HwMetric::PayloadIoWrite)
+            .unwrap()
     }
 
     fn flush(&self) -> bool {

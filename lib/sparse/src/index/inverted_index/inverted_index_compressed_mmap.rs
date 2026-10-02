@@ -6,13 +6,14 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
 use common::ext::aligned_vec::ACow;
 use common::fs::atomic_save_json;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
+use common::reason::reason;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -104,9 +105,8 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         if index.file_header.total_sparse_size.is_none() {
             // legacy header: compute in memory, never write back
-            let hw_counter = HardwareCounterCell::disposable();
-            index.file_header.total_sparse_size =
-                Some(index.calculate_total_sparse_size(&hw_counter)?);
+            let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+            index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
         }
 
         Ok(index)
@@ -141,11 +141,10 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             _phantom: PhantomData,
         };
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
 
         if index.file_header.total_sparse_size.is_none() {
-            index.file_header.total_sparse_size =
-                Some(index.calculate_total_sparse_size(&hw_counter)?);
+            index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
             atomic_save_json(&config_file_path, &index.file_header)?;
         }
 
@@ -240,10 +239,9 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
         mut callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
     ) -> UioResult<()> {
-        for record in self.views_iter(ids, arena, hw_counter)? {
+        for record in self.views_iter(ids, arena)? {
             let (user_data, view) = record?;
             callback(user_data, view.iter())?;
         }
@@ -257,10 +255,9 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, usize) -> UioResult<()>,
     ) -> UioResult<()> {
-        self.for_each_header(ids, hw_counter, |user_data, header, remainders_end| {
+        self.for_each_header(ids, |user_data, header, remainders_end| {
             let count = header
                 .postings_count(remainders_end)
                 .ok_or_else(corrupted_index)?;
@@ -329,10 +326,9 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         &'a self,
         id: DimId,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
     ) -> UioResult<CompressedPostingListView<'a, W>> {
         let ((), view) = self
-            .views_iter(std::iter::once(((), id)), arena, hw_counter)?
+            .views_iter(std::iter::once(((), id)), arena)?
             .next()
             .expect("one id yields one view")?;
         Ok(view)
@@ -344,7 +340,6 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     /// Similar to [`Self::for_each_header`].
     pub fn for_each_view(
         &self,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(DimOffset, CompressedPostingListView<'_, W>) -> UioResult<()>,
     ) -> UioResult<()> {
         // Phase 1: read all headers as one contiguous range.
@@ -354,7 +349,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             Sequential,
             align_of::<PostingListFileHeader<W>>(),
         )?;
-        hw_counter.vector_io_read().incr_delta(headers.len());
+        HwMetric::VectorIoRead.bump(headers.len());
         let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
             .map_err(|_| corrupted_index())?;
 
@@ -372,8 +367,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // Phase 2: read each posting's data via batched reads.
         for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((id, header), data) = record?;
-            let view = CompressedPostingListView::new(header, &data, hw_counter)
-                .ok_or_else(corrupted_index)?;
+            let view = CompressedPostingListView::new(header, &data).ok_or_else(corrupted_index)?;
             callback(id, view)?;
         }
 
@@ -388,11 +382,10 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, CompressedPostingListView<'a, W>)>>> {
         // Phase 1: read headers via batched reads.
         let mut ranges = Vec::with_capacity(ids.size_hint().0);
-        self.for_each_header(ids, hw_counter, |user_data, header, remainders_end| {
+        self.for_each_header(ids, |user_data, header, remainders_end| {
             ranges.push(ReadBytesItem {
                 user_data: (user_data, header),
                 range: header.ids_start..remainders_end,
@@ -411,8 +404,8 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
                     ACow::Borrowed(b) => b,
                     ACow::Owned(avec) => arena.put(avec),
                 };
-                let view = CompressedPostingListView::new(header, data, hw_counter)
-                    .ok_or_else(corrupted_index)?;
+                let view =
+                    CompressedPostingListView::new(header, data).ok_or_else(corrupted_index)?;
                 Ok((user_data, view))
             });
 
@@ -423,7 +416,6 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     fn for_each_header<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, PostingListFileHeader<W>, u64) -> UioResult<()>,
     ) -> UioResult<()> {
         let storage_len = self.storage.len::<u8>()?;
@@ -451,7 +443,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
         for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((user_data, has_next), header_bytes) = record?;
-            hw_counter.vector_io_read().incr_delta(header_bytes.len());
+            HwMetric::VectorIoRead.bump(header_bytes.len());
             let (&header, rest) = PostingListFileHeader::<W>::ref_from_prefix(&header_bytes)
                 .map_err(|_| corrupted_index())?;
             let remainders_end = if has_next {
@@ -473,15 +465,14 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         let total_posting_headers_size =
             index.postings.as_slice().len() * size_of::<PostingListFileHeader<W>>();
 
-        // Ignore HW on load
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("Ignore HW on load"));
 
         let file_length = total_posting_headers_size
             + index
                 .postings
                 .as_slice()
                 .iter()
-                .map(|p| p.view(&hw_counter).store_size().total)
+                .map(|p| p.view().store_size().total)
                 .sum::<usize>();
         let file_path = Self::index_file_path(path.as_ref());
         // TODO(uio): use UIO for writing as well.
@@ -492,13 +483,13 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // Save posting headers
         let mut offset: usize = total_posting_headers_size;
         for posting in index.postings.as_slice() {
-            let store_size = posting.view(&hw_counter).store_size();
+            let store_size = posting.view().store_size();
             let posting_header = PostingListFileHeader::<W> {
                 ids_start: offset as u64,
                 ids_len: store_size.id_data_bytes as u32,
                 chunks_count: store_size.chunks_count as u32,
-                last_id: posting.view(&hw_counter).last_id().map_or(0, |id| id + 1),
-                quantization_params: posting.view(&hw_counter).multiplier(),
+                last_id: posting.view().last_id().map_or(0, |id| id + 1),
+                quantization_params: posting.view().multiplier(),
             };
             // TODO Safety
             #[expect(deprecated, reason = "legacy code")]
@@ -508,7 +499,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
         // Save posting elements
         for posting in index.postings.as_slice() {
-            let posting_view = posting.view(&hw_counter);
+            let posting_view = posting.view();
             let (id_data, chunks, remainders) = posting_view.parts();
             buf.write_all(id_data)?;
             // TODO Safety
@@ -552,9 +543,9 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         })
     }
 
-    fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> UioResult<usize> {
+    fn calculate_total_sparse_size(&self) -> UioResult<usize> {
         let mut total = 0;
-        self.for_each_view(hw_counter, |_id, view| {
+        self.for_each_view(|_id, view| {
             total += view.store_size().total;
             Ok(())
         })?;
@@ -585,15 +576,11 @@ mod tests {
         inverted_index_ram: &InvertedIndexCompressedImmutableRam<W>,
         inverted_index_mmap: &InvertedIndexCompressedMmap<W, S>,
     ) {
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let arena = Blink::new();
         for id in 0..inverted_index_ram.postings.len() as DimId {
-            let posting_list_ram = inverted_index_ram
-                .postings
-                .get(id as usize)
-                .unwrap()
-                .view(&hw_counter);
-            let posting_list_mmap = inverted_index_mmap.get(id, &arena, &hw_counter).unwrap();
+            let posting_list_ram = inverted_index_ram.postings.get(id as usize).unwrap().view();
+            let posting_list_mmap = inverted_index_mmap.get(id, &arena).unwrap();
 
             let mmap_parts = posting_list_mmap.parts();
             let ram_parts = posting_list_ram.parts();
@@ -623,7 +610,7 @@ mod tests {
     where
         S::Fs: Default,
     {
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         // skip 4th dimension
         let mut builder = InvertedIndexBuilder::new();
@@ -666,16 +653,16 @@ mod tests {
         compare_indexes(&inverted_index_ram, &index);
 
         let arena = Blink::new();
-        assert!(index.get(0, &arena, &hw_counter).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
-        assert_eq!(index.get(1, &arena, &hw_counter).unwrap().len(), 9);
-        assert_eq!(index.get(2, &arena, &hw_counter).unwrap().len(), 4);
-        assert_eq!(index.get(3, &arena, &hw_counter).unwrap().len(), 3);
-        assert!(index.get(4, &arena, &hw_counter).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
-        assert_eq!(index.get(5, &arena, &hw_counter).unwrap().len(), 2);
+        assert!(index.get(0, &arena).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
+        assert_eq!(index.get(1, &arena).unwrap().len(), 9);
+        assert_eq!(index.get(2, &arena).unwrap().len(), 4);
+        assert_eq!(index.get(3, &arena).unwrap().len(), 3);
+        assert!(index.get(4, &arena).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
+        assert_eq!(index.get(5, &arena).unwrap().len(), 2);
         // index after the last values are errors (out of bounds)
-        assert!(index.get(6, &arena, &hw_counter).is_err());
-        assert!(index.get(7, &arena, &hw_counter).is_err());
-        assert!(index.get(100, &arena, &hw_counter).is_err());
+        assert!(index.get(6, &arena).is_err());
+        assert!(index.get(7, &arena).is_err());
+        assert!(index.get(100, &arena).is_err());
     }
 
     /// `preopen` must schedule exactly the files `open_ro` goes on to
@@ -689,8 +676,6 @@ mod tests {
     #[tokio::test]
     async fn preopen_then_open_ro_through_cached_fs() {
         use common::universal_io::{CachedFs, CachedReadFs};
-
-        let hw_counter = HardwareCounterCell::new();
 
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
@@ -735,9 +720,10 @@ mod tests {
             InvertedIndexCompressedMmap::<f32, MmapFile>::open_ro(&cached_fs, dir.path()).unwrap();
         compare_indexes(&inverted_index_ram, &index);
 
+        let _hw = hw::test_guard();
         let arena = Blink::new();
-        assert_eq!(index.get(1, &arena, &hw_counter).unwrap().len(), 2);
-        assert_eq!(index.get(2, &arena, &hw_counter).unwrap().len(), 2);
-        assert_eq!(index.get(3, &arena, &hw_counter).unwrap().len(), 2);
+        assert_eq!(index.get(1, &arena).unwrap().len(), 2);
+        assert_eq!(index.get(2, &arena).unwrap().len(), 2);
+        assert_eq!(index.get(3, &arena).unwrap().len(), 2);
     }
 }

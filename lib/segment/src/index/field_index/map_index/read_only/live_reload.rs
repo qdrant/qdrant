@@ -1,5 +1,4 @@
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -33,18 +32,13 @@ where
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyMapIndex::Appendable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
-            ReadOnlyMapIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
-            ReadOnlyMapIndex::OnDisk(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            ReadOnlyMapIndex::Immutable(index) => index.live_reload(fs, deleted_points, new_points),
+            ReadOnlyMapIndex::OnDisk(index) => index.live_reload(fs, deleted_points, new_points),
         }
     }
 }

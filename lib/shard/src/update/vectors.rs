@@ -3,7 +3,6 @@
 use std::num::NonZeroUsize;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::types::{Filter, PointIdType, SeqNumberType, VectorNameBuf};
@@ -20,7 +19,6 @@ pub fn update_vectors_conditional(
     op_num: SeqNumberType,
     points: UpdateVectorsOp,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let UpdateVectorsOp {
         mut points,
@@ -28,16 +26,15 @@ pub fn update_vectors_conditional(
     } = points;
 
     let Some(filter_condition) = update_filter else {
-        return update_vectors(segments, op_num, points, max_segment_size_bytes, hw_counter);
+        return update_vectors(segments, op_num, points, max_segment_size_bytes);
     };
 
     let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
 
-    let points_to_exclude =
-        select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
+    let points_to_exclude = select_excluded_by_filter_ids(segments, point_ids, filter_condition)?;
 
     points.retain(|p| !points_to_exclude.contains(&p.id));
-    update_vectors(segments, op_num, points, max_segment_size_bytes, hw_counter)
+    update_vectors(segments, op_num, points, max_segment_size_bytes)
 }
 
 /// Update the specified named vectors of a point, keeping unspecified vectors intact.
@@ -46,7 +43,6 @@ fn update_vectors(
     op_num: SeqNumberType,
     points: Vec<PointVectorsPersisted>,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
     let mut points_map: AHashMap<PointIdType, NamedVectors> = AHashMap::new();
@@ -67,7 +63,7 @@ fn update_vectors(
             batch,
             |id, write_segment| {
                 let vectors = points_map[&id].clone();
-                write_segment.update_vectors(op_num, id, vectors, hw_counter)
+                write_segment.update_vectors(op_num, id, vectors)
             },
             |id, _raw_vectors, updated_vectors, _| {
                 for (vector_name, vector_ref) in points_map[&id].iter() {
@@ -75,7 +71,6 @@ fn update_vectors(
                 }
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
@@ -97,7 +92,6 @@ pub fn delete_vectors(
     points: &[PointIdType],
     vector_names: &[VectorNameBuf],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -116,7 +110,6 @@ pub fn delete_vectors(
                 raw_vectors.retain(|(name, _)| !vector_names.contains(name));
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
         check_unprocessed_points(batch, &modified_points)?;
         total_deleted_points += modified_points.len();
@@ -138,16 +131,14 @@ pub fn delete_vectors_by_filter(
     filter: &Filter,
     vector_names: &[VectorNameBuf],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let affected_points = points_by_filter(segments, filter, hw_counter)?;
+    let affected_points = points_by_filter(segments, filter)?;
     let vectors_deleted = delete_vectors(
         segments,
         op_num,
         &affected_points,
         vector_names,
         max_segment_size_bytes,
-        hw_counter,
     )?;
 
     if vectors_deleted == 0 {

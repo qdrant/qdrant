@@ -1,7 +1,8 @@
 use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 use sparse::common::sparse_vector::SparseVector;
@@ -23,10 +24,11 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        self.storage
-            .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
-            .map(SparseVector::try_from)
-            .transpose()
+        hw::unmeasured(reason("Vector storage read IO not measured"), || {
+            self.storage.get_value::<P>(key)
+        })?
+        .map(SparseVector::try_from)
+        .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(
@@ -47,11 +49,8 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
             Ok(())
         };
 
-        self.storage.read_values::<Random, _, _>(
-            point_offsets,
-            callback,
-            HardwareCounterCell::disposable().vector_io_read(),
-        )
+        self.storage
+            .read_values::<Random, _, _>(point_offsets, callback, None)
     }
 }
 
@@ -97,19 +96,14 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         };
 
         self.storage
-            .read_values::<P, _, _>(
-                keys.into_iter(),
-                callback,
-                HardwareCounterCell::disposable().vector_io_read(),
-            )
+            .read_values::<P, _, _>(keys.into_iter(), callback, None)
             .expect("sparse vectors read")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self
-            .storage
-            .get_value::<P>(key, &HardwareCounterCell::disposable())
-        {
+        match hw::unmeasured(reason("🤖 Vector storage read IO not measured"), || {
+            self.storage.get_value::<P>(key)
+        }) {
             Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),
             _ => None,
         }
@@ -145,7 +139,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
                 callback(user_data, point_offset, Blob::to_bytes(&stored));
                 Ok(())
             },
-            HardwareCounterCell::disposable().vector_io_read(),
+            None,
         )
     }
 }

@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::panic;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -539,15 +540,16 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    CollectionUpdater::update(
-                        &segments,
-                        op_num,
-                        operation.operation,
-                        update_operation_lock.clone(),
-                        update_tracker.clone(),
-                        max_segment_size_bytes,
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                    hw::unmeasured(reason("Internal operation, no measurement needed"), || {
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation.operation,
+                            update_operation_lock.clone(),
+                            update_tracker.clone(),
+                            max_segment_size_bytes,
+                        )
+                    })?;
                 }
             }
         };

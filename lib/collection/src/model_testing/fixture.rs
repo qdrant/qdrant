@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::data_types::index::{
     Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface,
     TextIndexParams, TextScoringParams, TokenizerType,
@@ -280,12 +281,8 @@ pub(super) async fn fixture(
         .chain([("t", text_schema)]);
     for (field, schema) in eager_schemas {
         collection
-            .create_payload_index_with_wait(
-                field.parse().unwrap(),
-                schema,
-                true,
-                HwMeasurementAcc::new(),
-            )
+            .create_payload_index_with_wait(field.parse().unwrap(), schema, true)
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("failed to create eager `{field}` index: {e:?}"));
     }

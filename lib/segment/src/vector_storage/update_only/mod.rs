@@ -12,7 +12,6 @@
 
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 
@@ -162,18 +161,17 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Dense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::DenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::DenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::MultiDense(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::MultiDenseByte(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::MultiDenseHalf(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::Turbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::MultiTurbo(s) => s.append_many(fs, start_slot, vectors, hw_counter),
-            Self::Sparse(s) => s.append_many(fs, start_slot, vectors, hw_counter),
+            Self::Dense(s) => s.append_many(fs, start_slot, vectors),
+            Self::DenseByte(s) => s.append_many(fs, start_slot, vectors),
+            Self::DenseHalf(s) => s.append_many(fs, start_slot, vectors),
+            Self::MultiDense(s) => s.append_many(fs, start_slot, vectors),
+            Self::MultiDenseByte(s) => s.append_many(fs, start_slot, vectors),
+            Self::MultiDenseHalf(s) => s.append_many(fs, start_slot, vectors),
+            Self::Turbo(s) => s.append_many(fs, start_slot, vectors),
+            Self::MultiTurbo(s) => s.append_many(fs, start_slot, vectors),
+            Self::Sparse(s) => s.append_many(fs, start_slot, vectors),
         }
     }
 }

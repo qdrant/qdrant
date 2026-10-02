@@ -17,7 +17,8 @@ use api::grpc::qdrant::{
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
@@ -50,7 +51,7 @@ impl PointsService {
         collection_name: String,
         wait: Option<bool>,
     ) -> RequestHwCounter {
-        let counter = HwMeasurementAcc::new_with_metrics_drain(
+        let counter = AmbientContext::new_with_metrics_drain(
             self.dispatcher.get_collection_hw_metrics(collection_name),
         );
 
@@ -774,8 +775,8 @@ impl Points for PointsService {
             request.into_inner(),
             auth,
             routing_token,
-            hw_metrics.get_counter(),
         )
+        .measured(hw_metrics.get_counter())
         .await?;
 
         let pairs_response = SearchMatrixPairsResponse {
@@ -802,8 +803,8 @@ impl Points for PointsService {
             request.into_inner(),
             auth,
             routing_token,
-            hw_metrics.get_counter(),
         )
+        .measured(hw_metrics.get_counter())
         .await?;
 
         let offsets_response = SearchMatrixOffsetsResponse {

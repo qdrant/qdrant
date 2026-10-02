@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwScale};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
@@ -22,9 +22,9 @@ where
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
+    hw: HwScale,
     query: TQuery,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, QuantizedStorage, OffsetStorage, TQuery>
@@ -41,7 +41,6 @@ where
             OffsetStorage,
         >,
         quantization_config: &QuantizationConfig,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
         TElement: PrimitiveVectorElement,
@@ -80,15 +79,13 @@ where
             })
             .unwrap();
 
-        hardware_counter.set_cpu_multiplier(size_of::<TElement>());
-
-        hardware_counter
-            .set_vector_io_read_multiplier(usize::from(quantized_multivector_storage.is_on_disk()));
-
         Self {
+            hw: HwScale {
+                cpu: size_of::<TElement>(),
+                vector_io_read: usize::from(quantized_multivector_storage.is_on_disk()),
+            },
             query,
             quantized_multivector_storage,
-            hardware_counter,
         }
     }
 }
@@ -103,30 +100,31 @@ where
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert_eq!(ids.len(), scores.len());
 
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(size_of::<MultivectorOffset>() * ids.len());
+        self.hw
+            .vector_io_read(size_of::<MultivectorOffset>() * ids.len());
 
-        self.quantized_multivector_storage.score_points_batch(
-            ids,
-            |score_fn| self.query.score_by(score_fn),
-            scores,
-            &self.hardware_counter,
-        );
+        hw::scale_cpu(self.hw.cpu, || {
+            self.quantized_multivector_storage.score_points_batch(
+                ids,
+                |score_fn| self.query.score_by(score_fn),
+                scores,
+            )
+        });
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
         let sub_vectors_count = multi_vector_offset.count as usize;
         // compute vector IO read once for all examples
-        self.hardware_counter.vector_io_read().incr_delta(
+        self.hw.vector_io_read(
             size_of::<MultivectorOffset>()
                 + self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
         );
         self.query.score_by(|this| {
             // quantized multivector storage handles hardware counter to batch vector IO
-            self.quantized_multivector_storage
-                .score_point(this, idx, &self.hardware_counter)
+            hw::scale_cpu(self.hw.cpu, || {
+                self.quantized_multivector_storage.score_point(this, idx)
+            })
         })
     }
 

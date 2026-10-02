@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
@@ -440,12 +439,7 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
 
@@ -485,7 +479,7 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::generic_consts::Random;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
@@ -529,19 +523,19 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
-                    .insert_vector(0, points[0].as_slice().into(), &hw_counter)
+                    .insert_vector(0, points[0].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(1, points[1].as_slice().into(), &hw_counter)
+                    .insert_vector(1, points[1].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(2, points[2].as_slice().into(), &hw_counter)
+                    .insert_vector(2, points[2].as_slice().into())
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &storage2, 3).unwrap();
@@ -560,10 +554,10 @@ mod tests {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
-                    .insert_vector(3, points[3].as_slice().into(), &hw_counter)
+                    .insert_vector(3, points[3].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(4, points[4].as_slice().into(), &hw_counter)
+                    .insert_vector(4, points[4].as_slice().into())
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &storage2, 2).unwrap();
@@ -626,14 +620,14 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 });
             }
@@ -752,14 +746,14 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                     if delete_mask[i] {
                         storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -822,14 +816,14 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }
@@ -890,14 +884,14 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }
@@ -914,7 +908,6 @@ mod tests {
         .into();
 
         let stopped = Arc::new(AtomicBool::new(false));
-        let hardware_counter = HardwareCounterCell::new();
         let quantized_vectors = QuantizedVectors::create(
             &storage,
             &config,
@@ -927,12 +920,9 @@ mod tests {
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
-        let scorer_quant = quantized_vectors
-            .raw_scorer(query.clone(), hardware_counter)
-            .unwrap();
+        let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
 
-        let scorer_orig =
-            new_raw_scorer(query.clone(), &storage, HardwareCounterCell::new()).unwrap();
+        let scorer_orig = new_raw_scorer(query.clone(), &storage).unwrap();
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);
@@ -953,11 +943,8 @@ mod tests {
             .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
-        let hardware_counter = HardwareCounterCell::new();
-        let scorer_quant = quantized_vectors
-            .raw_scorer(query.clone(), hardware_counter)
-            .unwrap();
-        let scorer_orig = new_raw_scorer(query, &storage, HardwareCounterCell::new()).unwrap();
+        let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
+        let scorer_orig = new_raw_scorer(query, &storage).unwrap();
 
         for i in 0..5 {
             let quant = scorer_quant.score_point(i);

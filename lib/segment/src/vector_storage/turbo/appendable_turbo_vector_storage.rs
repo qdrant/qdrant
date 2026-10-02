@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::AccessPattern;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -130,7 +131,6 @@ impl AppendableMmapTurboVectorStorage {
         &mut self,
         key: PointOffsetType,
         bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let expected_size = self.quantizer.quantized_size();
         if bytes.len() != expected_size {
@@ -139,7 +139,7 @@ impl AppendableMmapTurboVectorStorage {
                 bytes.len(),
             )));
         }
-        self.storage.upsert_vector(key, bytes, hw_counter)?;
+        self.storage.upsert_vector(key, bytes)?;
         self.set_deleted(key, false);
         Ok(())
     }
@@ -266,17 +266,12 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
 }
 
 impl VectorStorage for AppendableMmapTurboVectorStorage {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let dense: &[VectorElementType] = vector.try_into()?;
         let quantized = self
             .quantizer
             .quantize(dense, &mut self.quantization_buffer);
-        self.storage.upsert_vector(key, &quantized, hw_counter)?;
+        self.storage.upsert_vector(key, &quantized)?;
         self.set_deleted(key, false);
         Ok(())
     }
@@ -402,13 +397,15 @@ impl DenseTQVectorStorage for AppendableMmapTurboVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let disposed_hw = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason(
+            "🤖 This function is only used for internal operations.",
+        ));
         let start_index = self.storage.vectors_count() as PointOffsetType;
         let mut key = start_index;
 
         for (vector, deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            self.storage.upsert_vector(key, &vector, &disposed_hw)?;
+            self.storage.upsert_vector(key, &vector)?;
             if deleted {
                 self.set_deleted(key, true);
             }

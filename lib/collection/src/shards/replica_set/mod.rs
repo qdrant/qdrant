@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -1065,7 +1064,6 @@ impl ShardReplicaSet {
     pub async fn delete_local_points(
         &self,
         filter: Filter,
-        hw_measurement_acc: HwMeasurementAcc,
         force: bool,
         deferred_behavior: DeferredBehavior,
         wait: WaitUntil,
@@ -1095,7 +1093,6 @@ impl ShardReplicaSet {
                     Some(&filter),
                     &self.search_runtime,
                     None,
-                    hw_measurement_acc.clone(),
                     deferred_behavior,
                 )
                 .await?;
@@ -1126,7 +1123,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), wait, None, hw_measurement_acc, force)
+            .update_local(op.into(), wait, None, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use fs_err as fs;
@@ -102,12 +103,7 @@ impl MutableNullIndex {
         })
     }
 
-    pub fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let (has_values, is_null) = classify_payload(payload);
 
         self.storage.has_values_flags.set(id, has_values);
@@ -117,7 +113,7 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        hw_counter.payload_index_io_write_counter().incr_delta(2);
+        HwMetric::PayloadIndexIoWrite.bump(2);
 
         Ok(())
     }
@@ -135,8 +131,8 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        let hw_counter = HardwareCounterCell::disposable();
-        hw_counter.payload_index_io_write_counter().incr_delta(2);
+        let _hw = hw::unmeasured_guard(reason("🤖 TODO: attribute to the caller's operation"));
+        HwMetric::PayloadIndexIoWrite.bump(2);
 
         Ok(())
     }
@@ -202,9 +198,8 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

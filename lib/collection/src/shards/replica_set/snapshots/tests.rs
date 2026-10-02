@@ -3,7 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::types::Distance;
@@ -272,13 +273,8 @@ async fn upsert_point(replica_set: &ShardReplicaSet, id: u64) {
     ));
 
     replica_set
-        .update_local(
-            operation,
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-            false,
-        )
+        .update_local(operation, WaitUntil::Visible, None, false)
+        .measured(AmbientContext::new())
         .await
         .expect("failed to upsert point")
         .expect("local shard must be present");
@@ -292,9 +288,9 @@ async fn count_points(replica_set: &ShardReplicaSet) -> usize {
                 exact: true,
             }),
             None,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to count points")
         .expect("local shard must be present")

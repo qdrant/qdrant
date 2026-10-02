@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::universal_io::UniversalWrite;
 use num_traits::AsPrimitive;
 
@@ -26,13 +26,8 @@ where
         Ok(())
     }
 
-    pub fn insert(
-        &mut self,
-        key: VectorOffsetType,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.insert_many(key, vector, 1, hw_counter)
+    pub fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()> {
+        self.insert_many(key, vector, 1)
     }
 
     #[inline]
@@ -41,7 +36,6 @@ where
         start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(
             vectors.len(),
@@ -66,9 +60,7 @@ where
             rest = tail;
         }
 
-        hw_counter
-            .vector_io_write_counter()
-            .incr_delta(size_of_val(vectors));
+        HwMetric::VectorIoWrite.bump(size_of_val(vectors));
 
         let new_len = max(self.status.len, start_key + count);
 
@@ -79,13 +71,9 @@ where
         Ok(())
     }
 
-    pub fn push(
-        &mut self,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<VectorOffsetType> {
+    pub fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType> {
         let new_id = self.status.len;
-        self.insert(new_id, vector, hw_counter)?;
+        self.insert(new_id, vector)?;
         Ok(new_id)
     }
 }

@@ -475,7 +475,6 @@ impl<'a> GpuInsertContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
@@ -529,9 +528,7 @@ mod tests {
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
         for idx in 0..(num_vectors + groups_count) as PointOffsetType {
             let v = vector_holder.storage().get_vector::<Random>(idx);
-            storage
-                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
-                .unwrap();
+            storage.insert_vector(idx, v.as_vec_ref()).unwrap();
         }
 
         // Build HNSW index

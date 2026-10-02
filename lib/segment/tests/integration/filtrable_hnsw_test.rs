@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, TelemetryDetail};
@@ -73,7 +73,7 @@ fn _test_filterable_hnsw(
 
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
@@ -83,15 +83,10 @@ fn _test_filterable_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
@@ -113,11 +108,7 @@ fn _test_filterable_hnsw(
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let mut blocks = Vec::new();
@@ -140,9 +131,7 @@ fn _test_filterable_hnsw(
     let px = payload_index_ptr.borrow();
     for block in &blocks {
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px
-            .with_view(|v| v.query_points(&filter, &hw_counter, &stopped))
-            .unwrap();
+        let points = px.with_view(|v| v.query_points(&filter, &stopped)).unwrap();
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
         }
@@ -267,7 +256,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
 
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
@@ -277,15 +266,10 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
@@ -307,11 +291,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let mut blocks = Vec::new();
@@ -385,26 +365,20 @@ fn acorn_searches_are_counted_separately() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let int_key = "int";
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
     for n in 0..num_vectors {
         let vector = random_vector(&mut rng, dim);
         // The payload is the point's own id, so a range filter keeps a known share of them.
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                n.into(),
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, n.into(), only_default_vector(&vector))
             .unwrap();
         segment
             .set_full_payload(
                 n as SeqNumberType,
                 n.into(),
                 &payload_json! {int_key: n as i64},
-                &hw_counter,
             )
             .unwrap();
     }
@@ -412,11 +386,7 @@ fn acorn_searches_are_counted_separately() {
     let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let hnsw_index = HNSWIndex::build(

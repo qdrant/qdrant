@@ -19,7 +19,6 @@ use std::cmp::{max, min};
 use std::path::PathBuf;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
@@ -49,22 +48,13 @@ pub trait GeoIndexRead {
     /// Maximum number of values per point. Zero if the index is empty.
     fn max_values_per_point(&self) -> usize;
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize>;
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize>;
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize>;
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize>;
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool>;
 
@@ -72,7 +62,6 @@ pub trait GeoIndexRead {
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         mut on_match: M,
     ) -> OperationResult<()>
@@ -83,7 +72,7 @@ pub trait GeoIndexRead {
         M: FnMut(U, bool),
     {
         for (tag, idx) in items {
-            on_match(tag, self.check_values_any(idx, hw_counter, &check_fn)?);
+            on_match(tag, self.check_values_any(idx, &check_fn)?);
         }
         Ok(())
     }
@@ -132,11 +121,7 @@ pub trait GeoIndexRead {
     /// Cardinality estimation for a set of geo-hash regions. Mirrors the
     /// previous inherent method on `GeoIndex`; depends only on the trait's
     /// required accessors so every variant gets the same estimation logic.
-    fn match_cardinality(
-        &self,
-        values: &[GeoHash],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn match_cardinality(&self, values: &[GeoHash]) -> OperationResult<CardinalityEstimation> {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return Ok(CardinalityEstimation::exact(0));
@@ -146,12 +131,12 @@ pub trait GeoIndexRead {
             return Ok(CardinalityEstimation::exact(0));
         };
 
-        let total_points = self.points_of_hash(common_hash, hw_counter)?;
-        let total_values = self.values_of_hash(common_hash, hw_counter)?;
+        let total_points = self.points_of_hash(common_hash)?;
+        let total_values = self.values_of_hash(common_hash)?;
 
         let (sum, maximum_per_hash) = values
             .iter()
-            .map(|&region| self.points_of_hash(region, hw_counter))
+            .map(|&region| self.points_of_hash(region))
             .try_fold((0, 0), |(sum, maximum), count| {
                 let count = count?;
                 OperationResult::Ok((sum + count, max(maximum, count)))
@@ -222,14 +207,13 @@ pub trait GeoIndexRead {
 pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_bounding_box;
         return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
             move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
+                geo.check_values_any(point, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
@@ -242,7 +226,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
         let geo_condition_copy = *geo_radius;
         return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
             move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
+                geo.check_values_any(point, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
@@ -255,7 +239,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
         let geo_condition_copy = geo_polygon.convert();
         return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
             move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
+                geo.check_values_any(point, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
@@ -269,13 +253,12 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
 pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
     geo: &G,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let Some(geo_hashes) = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok() else {
             return Ok(None);
         };
-        let mut estimation = geo.match_cardinality(&geo_hashes, hw_counter)?;
+        let mut estimation = geo.match_cardinality(&geo_hashes)?;
         estimation
             .primary_clauses
             .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -286,7 +269,7 @@ pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
         let Some(geo_hashes) = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok() else {
             return Ok(None);
         };
-        let mut estimation = geo.match_cardinality(&geo_hashes, hw_counter)?;
+        let mut estimation = geo.match_cardinality(&geo_hashes)?;
         estimation
             .primary_clauses
             .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -296,10 +279,10 @@ pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
     if let Some(geo_polygon) = &condition.geo_polygon {
         let (exterior_hashes, interior_hashes) =
             polygon_hashes_estimation(geo_polygon, GEO_QUERY_MAX_REGION);
-        let mut exterior_estimation = geo.match_cardinality(&exterior_hashes, hw_counter)?;
+        let mut exterior_estimation = geo.match_cardinality(&exterior_hashes)?;
 
         for interior in &interior_hashes {
-            let interior_estimation = geo.match_cardinality(interior, hw_counter)?;
+            let interior_estimation = geo.match_cardinality(interior)?;
             exterior_estimation.min = exterior_estimation
                 .min
                 .saturating_sub(interior_estimation.max);
@@ -346,17 +329,12 @@ pub(super) fn for_each_payload_block<G: GeoIndexRead + ?Sized>(
 
 pub struct GeoConditionChecker<'a, G: ?Sized, F> {
     geo: &'a G,
-    hw_counter: HardwareCounterCell,
     filter: F,
 }
 
 impl<'a, G: ?Sized, F> GeoConditionChecker<'a, G, F> {
-    pub(super) fn new(geo: &'a G, hw_counter: HardwareCounterCell, filter: F) -> Self {
-        Self {
-            geo,
-            hw_counter,
-            filter,
-        }
+    pub(super) fn new(geo: &'a G, filter: F) -> Self {
+        Self { geo, filter }
     }
 }
 
@@ -369,9 +347,7 @@ where
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         self.geo
-            .check_values_any(point_id, &self.hw_counter, &|value| {
-                self.filter.check_point(value)
-            })
+            .check_values_any(point_id, &|value| self.filter.check_point(value))
     }
 
     fn check_batched<K: CheckItem>(
@@ -383,7 +359,6 @@ where
         let p = Partitioner::new(ids);
         self.geo.for_each_matching_value(
             p.iter().map(|item| (item, item.point_id())),
-            &self.hw_counter,
             |value| self.filter.check_point(value),
             |item, matched| p.write(item, matched == select.is_match()),
         )?;

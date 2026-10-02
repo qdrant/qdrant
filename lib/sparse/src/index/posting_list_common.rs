@@ -63,6 +63,9 @@ pub trait PostingListIter {
     /// Size of the weight element
     fn element_size(&self) -> usize;
 
+    /// 🤖 Multiply `VectorIoRead` bumps of this iterator by `unit`, e.g. 0 for reads from RAM.
+    fn set_vector_io_read_unit(&mut self, _unit: usize) {}
+
     /// Tries to find the element with ID == id and returns it.
     /// If the element is not found, the iterator is advanced to the next element with ID > id
     /// and None is returned.

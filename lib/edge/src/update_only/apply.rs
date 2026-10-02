@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
@@ -129,7 +130,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             return Ok((self, UpdateBatchOutcome::default()));
         }
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -251,7 +252,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                         "Write target {uuid} was opened as delete-only, it cannot store points",
                     ))
                 })?
-                .store_points(&self.pool, &mut to_store, &hw_counter)?;
+                .store_points(&self.pool, &mut to_store)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
 
             // A copy stored past the cutoff is deferred: retiring the point's
@@ -306,10 +307,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let segments = self.segments.read();
         self.pool.install(|| {
             written.par_iter().try_for_each(|&uuid| {
-                // Not shared across segments: `HardwareCounterCell` is not
-                // `Sync`, and the writer's accounting is disposable.
-                let hw_counter = HardwareCounterCell::disposable();
-                segments.get(uuid)?.write().live_reload(&hw_counter)
+                let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+                segments.get(uuid)?.write().live_reload()
             })
         })
     }
@@ -379,10 +378,8 @@ pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
                     .iter()
                     .map(|(_, internal_id)| *internal_id)
                     .collect();
-                // Not shared with the caller's counter: `HardwareCounterCell`
-                // is not `Sync`, and the writer's accounting is disposable.
-                let hw_counter = HardwareCounterCell::disposable();
-                let points = segment.read_stored_points(&internal_ids, &hw_counter)?;
+                let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+                let points = segment.read_stored_points(&internal_ids)?;
 
                 Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())
             })

@@ -1,8 +1,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::RwLock;
 use rayon::ThreadPool;
@@ -229,16 +230,16 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    // Internal operation. No measurements needed.
-                    let internal_hardware_counter = HardwareCounterCell::disposable();
+                    let _hw =
+                        hw::unmeasured_guard(reason("Internal operation. No measurements needed."));
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()
                         .into();
                     let scorer = if let Some(quantized_vectors) = quantized_vectors {
-                        quantized_vectors.raw_scorer(query, internal_hardware_counter)?
+                        quantized_vectors.raw_scorer(query)?
                     } else {
-                        new_raw_scorer(query, vector_storage, internal_hardware_counter)?
+                        new_raw_scorer(query, vector_storage)?
                     };
                     self.heal_point_on_level(offset, level, scorer.as_ref());
                     counter.fetch_add(1, Ordering::Relaxed);

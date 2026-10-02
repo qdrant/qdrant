@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -547,51 +547,38 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(
-        &self,
-        query: &EncodedQueryPQ,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_point(&self, query: &EncodedQueryPQ, i: PointOffsetType) -> f32 {
         let centroids = self.encoded_vectors.get_vector_data(i);
 
-        self.score_bytes(True, query, &centroids, hw_counter)
+        self.score_bytes(True, query, &centroids)
     }
 
     /// Score two points inside endoded data by their indexes
     /// To find score, this method decode both encoded vectors.
     /// Decocing in PQ is a replacing centroid index by centroid position
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let centroids_i = self.encoded_vectors.get_vector_data(i);
         let centroids_j = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(self.metadata.vector_division.len() * 2);
+        // 🤖 Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(
+            (self.metadata.vector_division.len() * 2)
+                * usize::from(self.encoded_vectors.is_on_disk()),
+        );
 
-        hw_counter.cpu_counter().incr_delta(
+        HwMetric::Cpu.bump(
             centroids_i.as_ref().len()
-            // Chunk size
-                * self
-                    .metadata
-                    .vector_division
-                    .first()
-                    .map(|i| i.len())
-                    .unwrap_or(1),
+        // Chunk size
+            * self
+                .metadata
+                .vector_division
+                .first()
+                .map(|i| i.len())
+                .unwrap_or(1),
         );
 
         let distance: f32 = centroids_i
@@ -625,12 +612,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         None
     }
 
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[f32],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[f32]) -> std::io::Result<()> {
         debug_assert!(false, "PQ does not support upsert_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
@@ -681,16 +663,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     }
 
     type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_division.len());
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
+        HwMetric::Cpu.bump(self.metadata.vector_division.len());
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {

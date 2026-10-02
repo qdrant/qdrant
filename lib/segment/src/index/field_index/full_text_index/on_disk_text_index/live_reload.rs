@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -23,7 +22,6 @@ impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Immutable on-disk state: only the in-memory deletion bitmap is
         // patched (mirrors the other immutable leaves). `fs` / `new_points`

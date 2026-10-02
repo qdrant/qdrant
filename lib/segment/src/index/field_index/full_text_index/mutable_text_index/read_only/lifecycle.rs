@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -58,7 +59,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
 
@@ -73,7 +74,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
                     builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
-                hw_counter.ref_payload_index_io_read_counter(),
+                HwMetric::PayloadIndexIoRead,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(

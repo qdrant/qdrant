@@ -11,7 +11,6 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use mutable_geo_index::InMemoryGeoIndex;
@@ -121,44 +120,31 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::OnDisk(index) => index.points_of_hash(hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::points_of_hash(index, hash),
+            GeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash),
+            GeoIndex::OnDisk(index) => index.points_of_hash(hash),
         }
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::OnDisk(index) => index.values_of_hash(hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::values_of_hash(index, hash),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash),
+            GeoIndex::OnDisk(index) => index.values_of_hash(hash),
         }
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         match self {
-            GeoIndex::Mutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
-            }
-            GeoIndex::Immutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
-            }
-            GeoIndex::OnDisk(index) => index.check_values_any(idx, hw_counter, check_fn),
+            GeoIndex::Mutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
+            GeoIndex::Immutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
+            GeoIndex::OnDisk(index) => index.check_values_any(idx, check_fn),
         }
     }
 

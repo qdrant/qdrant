@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
@@ -242,7 +241,6 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
         &self,
         _key: PointOffsetType,
         _bytes: &[u8],
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
@@ -369,12 +367,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
 }
 
 impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
 

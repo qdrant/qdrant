@@ -1,5 +1,4 @@
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 
@@ -53,7 +52,6 @@ pub fn postprocess_search_result<V, Q>(
     vector: &QueryVector,
     params: Option<&SearchParams>,
     top: usize,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Vec<ScoredPointOffset>>
 where
     V: VectorStorageRead + RawScorerBuilder,
@@ -77,7 +75,6 @@ where
             None::<&Q>,
             None,
             point_deleted,
-            hardware_counter,
         )?;
 
         search_result = scorer

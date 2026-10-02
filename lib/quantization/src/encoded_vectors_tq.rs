@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -418,23 +418,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(
-        &self,
-        query: &EncodedQueryTQ,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_point(&self, query: &EncodedQueryTQ, i: PointOffsetType) -> f32 {
         let encoded_vector = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &encoded_vector, hw_counter)
+        self.score_bytes(True, query, &encoded_vector)
     }
 
     fn score_points(
@@ -442,20 +432,17 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         query: &EncodedQueryTQ,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-        hw_counter: &HardwareCounterCell,
     ) {
         debug_assert_eq!(offsets.len(), scores.len());
 
         if !TStorage::prefers_run_scoring(offsets) {
             self.for_each_batch(offsets, |i, vector| {
-                scores[i] = self.score_bytes(True, query, &vector, hw_counter);
+                scores[i] = self.score_bytes(True, query, &vector);
             });
             return;
         }
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(offsets.len() * self.quantized_vector_size());
+        HwMetric::Cpu.bump(offsets.len() * self.quantized_vector_size());
 
         let stride = self.quantized_vector_size();
         self.encoded_vectors
@@ -476,16 +463,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     /// Score two points inside endoded data by their indexes
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let v1 = self.encoded_vectors.get_vector_data(i);
         let v2 = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
+        // 🤖 Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead
+            .bump((v1.len() + v2.len()) * usize::from(self.encoded_vectors.is_on_disk()));
 
         let score = self.quantizer.score_symmetric(&v1, &v2);
         if self.metadata.vector_parameters.invert {
@@ -527,19 +511,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         None
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let encoded_vector =
             Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
-        self.encoded_vectors.upsert_vector(
-            id,
-            bytemuck::cast_slice(encoded_vector.as_slice()),
-            hw_counter,
-        )
+        self.encoded_vectors
+            .upsert_vector(id, bytemuck::cast_slice(encoded_vector.as_slice()))
     }
 
     fn vectors_count(&self) -> usize {
@@ -567,14 +543,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter.cpu_counter().incr_delta(bytes.len());
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
+        HwMetric::Cpu.bump(bytes.len());
         let score = self.quantizer.score_precomputed(query, bytes);
         if self.metadata.vector_parameters.invert {
             -score

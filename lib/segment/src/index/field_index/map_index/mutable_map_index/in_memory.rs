@@ -4,7 +4,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::iter;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
@@ -124,7 +123,6 @@ where
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool> {
         Ok(self
@@ -134,11 +132,7 @@ where
             .unwrap_or(false))
     }
 
-    fn get_values(
-        &'a self,
-        idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get(idx as usize)?
@@ -163,11 +157,11 @@ where
         self.map.len()
     }
 
-    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
         self.map
             .get(value)
             .map(|ids| Box::new(ids.iter()) as IdIter)
@@ -194,7 +188,6 @@ where
 
     fn for_each_value_map(
         &self,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.map

@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::InMemoryNumericIndex;
@@ -54,7 +55,7 @@ where
         };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,
@@ -62,7 +63,7 @@ where
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },
-                hw_counter.ref_payload_index_io_read_counter(),
+                HwMetric::PayloadIndexIoRead,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(

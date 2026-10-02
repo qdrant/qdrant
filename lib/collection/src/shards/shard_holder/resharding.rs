@@ -3,7 +3,8 @@ use std::fmt;
 use std::ops::Deref as _;
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};
 use shard::operations::point_ops::UpdateMode;
@@ -449,14 +450,8 @@ impl ShardHolder {
             let filter = self.hash_ring_filter(id).expect("hash ring filter");
             let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
             shard
-                .delete_local_points(
-                    filter,
-                    // Internal operation, no performance tracking needed
-                    HwMeasurementAcc::disposable(),
-                    true,
-                    DeferredBehavior::WithDeferred,
-                    WaitUntil::Wal,
-                )
+                .delete_local_points(filter, true, DeferredBehavior::WithDeferred, WaitUntil::Wal)
+                .unmeasured(reason("Internal operation, no performance tracking needed"))
                 .await?;
         }
 

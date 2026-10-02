@@ -1,6 +1,5 @@
 //! Payload field index operations: create and delete field indexes.
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::types::{PayloadFieldSchema, PayloadKeyTypeRef, SeqNumberType};
@@ -12,7 +11,6 @@ pub fn create_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
     field_schema: Option<&PayloadFieldSchema>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let Some(field_schema) = field_schema else {
         return Err(OperationError::TypeInferenceError {
@@ -48,7 +46,7 @@ pub fn create_field_index(
         }
 
         let (schema, indexes) =
-            match write_segment.build_field_index(op_num, field_name, field_schema, hw_counter)? {
+            match write_segment.build_field_index(op_num, field_name, field_schema)? {
                 BuildFieldIndexResult::SkippedByVersion => {
                     return Ok(false);
                 }

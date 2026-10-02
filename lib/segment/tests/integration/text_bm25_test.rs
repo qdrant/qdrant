@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -83,7 +83,7 @@ fn build_text_segment_deferred(
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut op_num: SeqNumberType = 0;
     segment
         .create_field_index(
@@ -92,7 +92,6 @@ fn build_text_segment_deferred(
             Some(&PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
                 text_params(),
             ))),
-            &hw_counter,
         )
         .unwrap();
     for (point_id, document) in documents.iter().enumerate() {
@@ -102,7 +101,6 @@ fn build_text_segment_deferred(
                 op_num,
                 PointIdType::from(point_id as u64),
                 NamedVectors::default(),
-                &hw_counter,
             )
             .unwrap();
         segment
@@ -111,14 +109,13 @@ fn build_text_segment_deferred(
                 PointIdType::from(point_id as u64),
                 &payload_json! { "text": document.as_str() },
                 &None,
-                &hw_counter,
             )
             .unwrap();
     }
     for &point_id in deleted {
         op_num += 1;
         segment
-            .delete_point(op_num, PointIdType::from(point_id), &hw_counter)
+            .delete_point(op_num, PointIdType::from(point_id))
             .unwrap();
     }
     segment
@@ -245,7 +242,6 @@ fn engine_rank(
         &|_| true,
         limit,
         &AtomicBool::new(false),
-        &HardwareCounterCell::new(),
     )
     .unwrap()
 }

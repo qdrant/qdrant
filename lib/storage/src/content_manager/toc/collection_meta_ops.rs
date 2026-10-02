@@ -8,7 +8,8 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
@@ -736,17 +737,16 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_hw_acc = AmbientContext::new_with_metrics_drain(
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_payload_index(
-                operation.field_name.clone(),
-                operation.field_schema,
-                collection_hw_acc,
-            )
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
+            .measured(collection_hw_acc)
             .await?;
 
         // We can solve issues related to this missing index
@@ -767,13 +767,16 @@ impl TableOfContent {
     }
 
     async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_hw_acc = AmbientContext::new_with_metrics_drain(
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_named_vector(operation.vector_name, operation.config, collection_hw_acc)
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_named_vector(operation.vector_name, operation.config)
+            .measured(collection_hw_acc)
             .await?;
 
         Ok(())

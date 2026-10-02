@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -41,13 +41,12 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
 
     let is_stopped = AtomicBool::new(false);
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _hw = hw::test_guard();
     group.bench_function("plain", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += plain_index
-                .query_points(&filter, &hw_counter, &is_stopped)
+                .query_points(&filter, &is_stopped)
                 .unwrap()
                 .len();
             query_count += 1;
@@ -67,7 +66,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
     let mut group = c.benchmark_group("boolean-query-points");
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let is_stopped = AtomicBool::new(false);
 
@@ -77,7 +76,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += struct_index
-                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                .with_view(|v| v.query_points(&filter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;
@@ -101,8 +100,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _hw = hw::test_guard();
     let mut index = StructPayloadIndex::open(
         payload_storage,
         id_tracker,
@@ -114,11 +112,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     .unwrap();
 
     index
-        .set_indexed(
-            &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword,
-            &hw_counter,
-        )
+        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
         .unwrap();
 
     let is_stopped = AtomicBool::new(false);
@@ -131,7 +125,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
             result_size += index
-                .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                .with_view(|v| v.query_points(&filter, &is_stopped))
                 .unwrap()
                 .len();
             query_count += 1;

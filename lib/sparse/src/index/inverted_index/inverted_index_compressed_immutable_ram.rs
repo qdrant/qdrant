@@ -2,8 +2,9 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::ext::VecExt;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFs, UioResult, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
@@ -61,12 +62,9 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             postings.push(new_posting_list.build());
         }
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Index construction is an internal operation"));
 
-        let total_sparse_size = postings
-            .iter()
-            .map(|p| p.view(&hw_counter).store_size().total)
-            .sum();
+        let total_sparse_size = postings.iter().map(|p| p.view().store_size().total).sum();
 
         Ok(InvertedIndexCompressedImmutableRam {
             postings,
@@ -94,11 +92,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell, // Ignored for in-ram index
         mut callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
     ) -> UioResult<()> {
         for (user_data, id) in ids {
-            callback(user_data, self.get(id, hw_counter)?.iter())?;
+            callback(user_data, self.get(id)?.iter())?;
         }
         Ok(())
     }
@@ -110,11 +107,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, usize) -> UioResult<()>,
     ) -> UioResult<()> {
         for (user_data, id) in ids {
-            callback(user_data, self.get(id, hw_counter)?.len())?;
+            callback(user_data, self.get(id)?.len())?;
         }
         Ok(())
     }
@@ -163,9 +159,9 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     where
         S: UniversalRead + 'static,
     {
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("🤖 Index construction is an internal operation"));
         let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
-        mmap_inverted_index.for_each_view(&hw_counter, |id, view| {
+        mmap_inverted_index.for_each_view(|id, view| {
             postings[id as usize] = Some(view.to_owned());
             Ok(())
         })?;
@@ -184,15 +180,11 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     }
 
     #[inline]
-    fn get<'a>(
-        &'a self,
-        id: DimOffset,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> UioResult<CompressedPostingListView<'a, W>> {
+    fn get<'a>(&'a self, id: DimOffset) -> UioResult<CompressedPostingListView<'a, W>> {
         let Some(posting) = self.postings.get(id as usize) else {
             return Err(out_of_bounds(id, self.len()));
         };
-        Ok(posting.view(hw_counter))
+        Ok(posting.view())
     }
 }
 

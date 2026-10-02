@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
 use segment::types::ScoredPoint;
 use shard::query::MmrInternal;
 use shard::query::mmr::mmr_from_points_with_vector as mmr_from_points_with_vector_impl;
@@ -17,7 +17,6 @@ pub async fn mmr_from_points_with_vector(
     limit: usize,
     search_runtime_handle: &AdaptiveSearchHandle,
     timeout: Duration,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>> {
     let distance = collection_params.get_distance(&mmr.using)?;
     let multivector_config = collection_params
@@ -25,16 +24,16 @@ pub async fn mmr_from_points_with_vector(
         .get_params(&mmr.using)
         .and_then(|vector_params| vector_params.multivector_config);
 
-    let cpu_utilization = hw_measurement_acc.cpu_utilization();
+    let hw_acc = hw::current();
     let handle = search_runtime_handle.spawn_blocking(move || {
-        cpu_utilization.measure(|| {
+        let _hw = hw_acc.enter_guard();
+        hw::cpu_utilization().measure(|| {
             mmr_from_points_with_vector_impl(
                 points_with_vector,
                 mmr,
                 distance,
                 multivector_config,
                 limit,
-                hw_measurement_acc,
             )
         })
     });

@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -48,12 +48,10 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
     let mut payload_storage = InMemoryPayloadStorage::default();
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let hw_counter = HardwareCounterCell::new();
-
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
         payload_storage
-            .set(id as PointOffsetType, &payload, &hw_counter)
+            .set(id as PointOffsetType, &payload)
             .unwrap();
     }
 
@@ -116,49 +114,25 @@ pub fn create_struct_payload_index(
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     index
-        .set_indexed(
-            &STR_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword,
-            &hw_counter,
-        )
+        .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
         .unwrap();
     index
-        .set_indexed(
-            &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float,
-            &hw_counter,
-        )
+        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
         .unwrap();
     index
-        .set_indexed(
-            &GEO_KEY.parse().unwrap(),
-            PayloadSchemaType::Geo,
-            &hw_counter,
-        )
+        .set_indexed(&GEO_KEY.parse().unwrap(), PayloadSchemaType::Geo)
         .unwrap();
     index
-        .set_indexed(
-            &TEXT_KEY.parse().unwrap(),
-            PayloadSchemaType::Text,
-            &hw_counter,
-        )
+        .set_indexed(&TEXT_KEY.parse().unwrap(), PayloadSchemaType::Text)
         .unwrap();
     index
-        .set_indexed(
-            &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Bool,
-            &hw_counter,
-        )
+        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Bool)
         .unwrap();
 
     index

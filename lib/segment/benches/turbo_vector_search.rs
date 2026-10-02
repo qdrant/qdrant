@@ -23,7 +23,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use criterion::measurement::WallTime;
@@ -78,7 +78,7 @@ fn subset_ids() -> Vec<PointOffsetType> {
 /// exactly as the optimizer does.
 fn build_dataset(dir: &Path) {
     let mut rng = rand::make_rng::<SmallRng>();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let encoder_dir = TempDir::new().expect("encoder tempdir created");
     let mut encoder = open_appendable_turbo_vector_storage(
@@ -92,7 +92,7 @@ fn build_dataset(dir: &Path) {
     for i in 0..VECTORS {
         let vector = random_vector(&mut rng, DIM);
         encoder
-            .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vector.as_slice().into())
             .expect("vector inserted");
     }
 
@@ -112,8 +112,7 @@ fn build_dataset(dir: &Path) {
 
 /// Score `ids` one point at a time — the exact pre-batching read pattern.
 fn score_unbatched(storage: &VectorStorageEnum, ids: impl Iterator<Item = PointOffsetType>) {
-    let scorer = new_raw_scorer(random_query(), storage, HardwareCounterCell::new())
-        .expect("scorer created");
+    let scorer = new_raw_scorer(random_query(), storage).expect("scorer created");
     let mut acc = 0.0;
     for id in ids {
         acc += scorer.score_point(id);
@@ -129,6 +128,7 @@ fn bench_subset(
     point_deleted: &BitSlice,
     clear_cache: bool,
 ) {
+    let _hw = hw::test_guard();
     for &(label, batched, storage) in modes {
         if !clear_cache {
             storage.populate().expect("storage populated");

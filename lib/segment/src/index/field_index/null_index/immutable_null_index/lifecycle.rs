@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::mutable_null_index::MutableNullIndex;
@@ -78,9 +77,8 @@ impl FieldIndexBuilderTrait for ImmutableNullIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

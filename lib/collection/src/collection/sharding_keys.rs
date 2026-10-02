@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use segment::types::ShardKey;
 
 use crate::collection::{AbortReshardingScope, Collection};
@@ -64,8 +65,6 @@ impl Collection {
         placement: ShardsPlacement,
         init_state: ReplicaState,
     ) -> CollectionResult<()> {
-        let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
-
         let (sharding_method, key_mapping) = {
             let shards_holder = self.shards_holder.read().await;
             (
@@ -155,9 +154,9 @@ impl Collection {
                         OperationWithClockTag::from(create_index_op),
                         WaitUntil::Visible,
                         None,
-                        hw_counter.clone(),
                         false,
                     )
+                    .unmeasured(reason("Internal operation. No measurement needed."))
                     .await?;
             }
 

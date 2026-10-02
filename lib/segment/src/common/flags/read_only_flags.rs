@@ -90,7 +90,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         fs: &Fs,
         _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
         _new_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
-        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs),

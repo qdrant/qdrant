@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry;
@@ -12,6 +13,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
         self.check_stopped()?;
+        let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
         let CountRequestInternal { filter, exact } = request;
 
         let points_count = if exact {
@@ -21,7 +23,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     None,
                     filter.as_ref(),
                     &self.is_stopped,
-                    &HardwareCounterCell::disposable(),
                     DeferredBehavior::VisibleOnly,
                 )
             })?;
@@ -35,7 +36,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             let estimations = self.par_map_segments(|segment| {
                 segment
                     .read_segment() // blocking sync lock
-                    .estimate_point_count(filter.as_ref(), &HardwareCounterCell::disposable())
+                    .estimate_point_count(filter.as_ref())
             })?;
 
             estimations.into_iter().merge_independent().exp

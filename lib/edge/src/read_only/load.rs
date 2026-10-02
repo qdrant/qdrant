@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::uio_trace;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
@@ -170,7 +170,6 @@ fn skip_level(err: &OperationError) -> log::Level {
 pub(crate) fn reload_segments_parallel<S>(
     pool: &ThreadPool,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
-    hw_counter: &HardwareCounterCell,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<(Uuid, OperationResult<()>)>>
 where
@@ -192,26 +191,24 @@ where
     )));
     check_process_stopped(is_stopped)?;
 
-    let reloads: Vec<_> = segments
-        .into_iter()
-        .zip(preloads)
-        .map(|((uuid, segment), (_, max_committed_id_res))| {
-            (uuid, segment, max_committed_id_res, hw_counter.fork())
-        })
-        .collect();
+    let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
     let ctx = uio_trace::Context::current();
-    let results = pool.install(|| {
-        reloads
-            .into_par_iter()
-            .map(|(uuid, segment, max_committed_id_res, hw)| {
-                check_process_stopped(is_stopped)?;
-                let res = match max_committed_id_res {
-                    Ok(max_committed_id) => segment.write().live_reload(max_committed_id, &hw),
-                    Err(err) => Err(err),
-                };
-                Ok((uuid, ctx.in_scope(|| res)))
-            })
-            .collect::<OperationResult<Vec<_>>>()
+    let results = hw::parallel(|acc| {
+        pool.install(|| {
+            reloads
+                .into_par_iter()
+                .map(|((uuid, segment), (_, max_committed_id_res))| {
+                    check_process_stopped(is_stopped)?;
+                    let _hw = acc.enter_guard();
+                    let result = ctx.in_scope(|| {
+                        max_committed_id_res.and_then(|max_committed_id| {
+                            segment.write().live_reload(max_committed_id)
+                        })
+                    });
+                    Ok((uuid, result))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })
     })?;
     check_process_stopped(is_stopped)?;
     Ok(results)

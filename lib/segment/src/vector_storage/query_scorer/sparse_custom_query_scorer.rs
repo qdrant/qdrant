@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -14,9 +14,9 @@ pub struct SparseCustomQueryScorer<
     TVectorStorage: SparseVectorStorageRead,
     TQuery: Query<SparseVector>,
 > {
+    hw: HwScale,
     vector_storage: &'a TVectorStorage,
     query: TQuery,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -25,29 +25,24 @@ impl<
     TQuery: Query<SparseVector> + TransformInto<TQuery, SparseVector, SparseVector>,
 > SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
 {
-    pub fn new(
-        query: TQuery,
-        vector_storage: &'a TVectorStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
         let query: TQuery = TransformInto::transform(query, &|mut vector| {
             vector.sort_by_indices();
             Ok(vector)
         })
         .unwrap();
 
-        hardware_counter.set_cpu_multiplier(size_of::<DimWeight>());
-
-        if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(size_of::<DimId>());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
-
         Self {
+            hw: HwScale {
+                cpu: size_of::<DimWeight>(),
+                vector_io_read: if vector_storage.is_on_disk() {
+                    size_of::<DimId>()
+                } else {
+                    0
+                },
+            },
             vector_storage,
             query,
-            hardware_counter,
         }
     }
 }
@@ -58,7 +53,7 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>>
     fn score(&self, v: &SparseVector) -> ScoreType {
         self.query.score_by(|example| {
             let cpu_units = v.indices.len() + example.indices.len();
-            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
+            self.hw.cpu(cpu_units);
             example.score(v).unwrap_or(0.0)
         })
     }
@@ -75,9 +70,8 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> Query
             .expect("Failed to get sparse vector");
 
         // not exactly correct for Gridstore where the indices are compressed into u8
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(stored.indices.len() + stored.values.len());
+        self.hw
+            .vector_io_read(stored.indices.len() + stored.values.len());
 
         self.score(&stored)
     }
@@ -88,9 +82,8 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> Query
         self.vector_storage
             .for_each_in_sparse_batch(ids, |idx, vector| {
                 // not exactly correct for Gridstore where the indices are compressed into u8
-                self.hardware_counter
-                    .vector_io_read()
-                    .incr_delta(vector.indices.len() + vector.values.len());
+                self.hw
+                    .vector_io_read(vector.indices.len() + vector.values.len());
 
                 scores[idx] = self.score(&vector);
             })

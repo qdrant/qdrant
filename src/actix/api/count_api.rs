@@ -2,6 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;
+use common::counter::hw::HwFutureExt;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
@@ -65,8 +66,8 @@ async fn count_points(
         params.timeout(),
         shard_selector,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())

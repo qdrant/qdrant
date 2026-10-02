@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
@@ -282,7 +281,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self,
         _idx: PointOffsetType,
         _tokens: super::TokenSet,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to immutable text index",
@@ -293,7 +291,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self,
         _idx: PointOffsetType,
         _document: super::Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to immutable text index",
@@ -320,7 +317,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match query {
             ParsedQuery::AllTokens(tokens) => Ok(Box::new(self.filter_has_all(tokens))),
@@ -335,7 +331,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         accept: &dyn Fn(PointOffsetType) -> bool,
         limit: usize,
         is_stopped: &AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ImmutablePostings::WithPositions(postings) = &self.postings else {
             return Err(OperationError::service_error(
@@ -373,11 +368,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         )
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         Ok(self.postings.posting_len(token_id))
     }
 
@@ -426,7 +417,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
         let lens = self.point_to_doc_len.as_deref();
@@ -448,7 +438,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        _: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));

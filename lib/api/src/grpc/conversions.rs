@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use ahash::AHashSet;
 use chrono::{NaiveDateTime, Timelike};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_data::HardwareData;
+use common::counter::hw::HwMetric;
+use common::counter::{AmbientContext, HardwareData};
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -3537,26 +3537,18 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
     }
 }
 
-impl From<HwMeasurementAcc> for HardwareUsage {
-    fn from(value: HwMeasurementAcc) -> Self {
-        let HardwareData {
-            cpu,
-            payload_io_read,
-            payload_io_write,
-            payload_index_io_read,
-            payload_index_io_write,
-            vector_io_read,
-            vector_io_write,
-        } = value.hw_data();
-
+impl From<AmbientContext> for HardwareUsage {
+    fn from(value: AmbientContext) -> Self {
+        let data = value.hw_data();
+        let m = |metric: HwMetric| data[metric] as u64;
         Self {
-            cpu: cpu as u64,
-            payload_io_read: payload_io_read as u64,
-            payload_io_write: payload_io_write as u64,
-            payload_index_io_read: payload_index_io_read as u64,
-            payload_index_io_write: payload_index_io_write as u64,
-            vector_io_read: vector_io_read as u64,
-            vector_io_write: vector_io_write as u64,
+            cpu: m(HwMetric::Cpu),
+            payload_io_read: m(HwMetric::PayloadIoRead),
+            payload_io_write: m(HwMetric::PayloadIoWrite),
+            payload_index_io_read: m(HwMetric::PayloadIndexIoRead),
+            payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
+            vector_io_read: m(HwMetric::VectorIoRead),
+            vector_io_write: m(HwMetric::VectorIoWrite),
         }
     }
 }
@@ -3573,15 +3565,15 @@ impl From<HardwareUsage> for HardwareData {
             vector_io_write,
         } = value;
 
-        HardwareData {
-            cpu: cpu as usize,
-            payload_io_read: payload_io_read as usize,
-            payload_io_write: payload_io_write as usize,
-            payload_index_io_read: payload_index_io_read as usize,
-            payload_index_io_write: payload_index_io_write as usize,
-            vector_io_read: vector_io_read as usize,
-            vector_io_write: vector_io_write as usize,
-        }
+        HardwareData::from_fn(|metric| match metric {
+            HwMetric::Cpu => cpu as usize,
+            HwMetric::PayloadIoRead => payload_io_read as usize,
+            HwMetric::PayloadIoWrite => payload_io_write as usize,
+            HwMetric::PayloadIndexIoRead => payload_index_io_read as usize,
+            HwMetric::PayloadIndexIoWrite => payload_index_io_write as usize,
+            HwMetric::VectorIoRead => vector_io_read as usize,
+            HwMetric::VectorIoWrite => vector_io_write as usize,
+        })
     }
 }
 

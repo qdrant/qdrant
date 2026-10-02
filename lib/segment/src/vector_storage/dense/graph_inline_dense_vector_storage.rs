@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
@@ -197,12 +196,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorage
     for GraphInlineDenseVectorStorage<T, S>
 {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
 

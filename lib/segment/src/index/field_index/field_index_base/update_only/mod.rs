@@ -16,7 +16,6 @@ mod writer;
 
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use serde_json::Value;
@@ -119,31 +118,23 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         values: &[&Value],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::IntIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::DatetimeIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::FloatIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::IntMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::KeywordIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::UuidMapIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::GeoIndex(index) => index.add_point(fs, slot, values, hw_counter),
-            Self::FullTextIndex(index) => index.add_point(fs, slot, values, hw_counter),
+            Self::IntIndex(index) => index.add_point(fs, slot, values),
+            Self::DatetimeIndex(index) => index.add_point(fs, slot, values),
+            Self::FloatIndex(index) => index.add_point(fs, slot, values),
+            Self::IntMapIndex(index) => index.add_point(fs, slot, values),
+            Self::KeywordIndex(index) => index.add_point(fs, slot, values),
+            Self::UuidMapIndex(index) => index.add_point(fs, slot, values),
+            Self::GeoIndex(index) => index.add_point(fs, slot, values),
+            Self::FullTextIndex(index) => index.add_point(fs, slot, values),
             Self::BoolIndex(index) => index.add_point(slot, values),
             Self::NullIndex(index) => index.add_point(slot, values),
         }
     }
 
     /// Persist everything buffered since the last flush.
-    ///
-    /// `hw_counter` is charged only by the bitmask-backed indexes, which do
-    /// their writing here; the rest charge each value as it is put.
-    pub fn flush(
-        &mut self,
-        fs: &impl UniversalAppendFs<AppendFile = S>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn flush(&mut self, fs: &impl UniversalAppendFs<AppendFile = S>) -> OperationResult<()> {
         match self {
             Self::IntIndex(index) => index.flush(),
             Self::DatetimeIndex(index) => index.flush(),
@@ -153,8 +144,8 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::UuidMapIndex(index) => index.flush(),
             Self::GeoIndex(index) => index.flush(),
             Self::FullTextIndex(index) => index.flush(),
-            Self::BoolIndex(index) => index.flush(fs, hw_counter),
-            Self::NullIndex(index) => index.flush(fs, hw_counter),
+            Self::BoolIndex(index) => index.flush(fs),
+            Self::NullIndex(index) => index.flush(fs),
         }
     }
 }

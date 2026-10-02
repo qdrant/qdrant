@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::ops::Bound;
 
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::counter::HwMeasurementIteratorExt;
+use common::counter::hw::{self, HwMetric};
 use common::generic_consts::Random;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead, UserData};
 use itertools::Either;
@@ -25,14 +25,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
-                .check_values_any(idx, |v| check_fn(v), &hw_counter)
+                .check_values_any(idx, |v| check_fn(v))
         } else {
             Ok(false)
         }
@@ -41,7 +38,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         mut on_match: M,
     ) -> OperationResult<()>
@@ -54,7 +50,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
-            ConditionedCounter::always(hw_counter),
             |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
         )
     }
@@ -62,12 +57,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         if self.storage.deleted.is_active(idx) {
             Some(Box::new(
-                self.storage
-                    .point_to_values
-                    // TODO: Propagate counter upwards
-                    .values_iter(idx, ConditionedCounter::never())
-                    .ok()??
-                    .map(|v| *v),
+                hw::unmeasured(reason("TODO: Propagate counter upwards"), || {
+                    self.storage.point_to_values.values_iter(idx)
+                })
+                .ok()??
+                .map(|v| *v),
             ))
         } else {
             None
@@ -92,16 +86,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         Ok(self
             .values_range_iterator(start_bound, end_bound)?
             .map(|point| point.idx)
-            .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
-                i.payload_index_io_read_counter()
-            }))
+            .measure_hw(HwMetric::PayloadIndexIoRead, size_of::<Point<T>>()))
     }
 
     fn orderable_values_range(
@@ -115,16 +104,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     /// Cheap `O(log n)` boundary search over the on-disk sorted pairs.
-    ///
-    /// `hw_counter` is unused: the two binary searches are accounted
-    /// upfront by the caller ([`query::estimate_points`]).
-    ///
-    /// [`query::estimate_points`]: super::super::query::estimate_points
     fn values_range_size(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         let (start, end) = self.values_range_bounds(start_bound, end_bound)?;
         Ok(end - start)

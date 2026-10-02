@@ -20,7 +20,7 @@ use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::{OrderBy, OrderByInterface};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
@@ -130,8 +130,8 @@ pub async fn search(
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
-        hw_measurement_acc.get_counter(),
     )
+    .measured(hw_measurement_acc.get_counter())
     .await?;
 
     let response = SearchResponse {
@@ -176,8 +176,8 @@ pub async fn core_search_batch(
         routing_token,
         auth,
         timeout,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = SearchBatchResponse {
@@ -238,8 +238,8 @@ pub async fn core_search_list(
             shard_selection,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let response = SearchBatchResponse {
@@ -295,8 +295,8 @@ pub async fn search_groups(
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let groups_result = GroupsResult::try_from(groups_result)
@@ -350,8 +350,8 @@ pub async fn recommend(
             shard_selector,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let response = RecommendResponse {
@@ -408,8 +408,8 @@ pub async fn recommend_batch(
             routing_token,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let response = RecommendBatchResponse {
@@ -464,8 +464,8 @@ pub async fn recommend_groups(
         shard_selector,
         auth,
         timeout.map(Duration::from_secs),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let groups_result = GroupsResult::try_from(groups_result)
@@ -512,8 +512,8 @@ pub async fn discover(
             shard_selector,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let response = DiscoverResponse {
@@ -569,8 +569,8 @@ pub async fn discover_batch(
             routing_token,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let response = DiscoverBatchResponse {
@@ -646,8 +646,8 @@ pub async fn scroll(
         timeout,
         shard_selector,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let points: Result<_, _> = scrolled_points
@@ -715,8 +715,8 @@ pub async fn count(
         timeout,
         shard_selector,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = CountResponse {
@@ -782,8 +782,8 @@ pub async fn get(
         timeout,
         shard_selector,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = GetResponse {
@@ -836,8 +836,8 @@ pub async fn query(
         shard_selector,
         auth,
         timeout,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = QueryResponse {
@@ -893,8 +893,8 @@ pub async fn query_batch(
         routing_token,
         auth,
         timeout,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = QueryBatchResponse {
@@ -956,8 +956,8 @@ pub async fn query_groups(
         shard_selector,
         auth,
         timeout,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let grpc_group_result = GroupsResult::try_from(groups_result)
@@ -1025,8 +1025,8 @@ pub async fn facet(
             routing_token,
             auth,
             timeout,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await?;
 
     let segment::data_types::facets::FacetResponse { hits } = facet_response;
@@ -1045,7 +1045,6 @@ pub async fn search_points_matrix(
     search_matrix_points: SearchMatrixPoints,
     auth: Auth,
     routing_token: Option<RoutingToken>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CollectionSearchMatrixResponse, Status> {
     let SearchMatrixPoints {
         collection_name,
@@ -1096,7 +1095,6 @@ pub async fn search_points_matrix(
             shard_selector,
             auth,
             timeout,
-            hw_measurement_acc,
         )
         .await?;
 

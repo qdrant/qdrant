@@ -22,7 +22,7 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
@@ -47,7 +47,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT)
             .map(|_| {
@@ -69,7 +69,7 @@ mod tests {
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             for id in 0..POINT_COUNT {
@@ -127,7 +127,7 @@ mod tests {
         const DIM: usize = 64;
         let dir = Builder::new().prefix("ro_dense_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let rand_vec = |rng: &mut StdRng| -> DenseVector {
             std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
@@ -147,7 +147,7 @@ mod tests {
         .unwrap();
         for (id, vector) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -169,7 +169,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(vector),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -193,9 +192,9 @@ mod tests {
 
             fs_err::remove_dir_all(dir.path()).unwrap();
 
-            reader.live_reload(&cached_fs, &deleted, &new, &hw).unwrap();
+            reader.live_reload(&cached_fs, &deleted, &new).unwrap();
         } else {
-            reader.live_reload(&MmapFs, &deleted, &new, &hw).unwrap();
+            reader.live_reload(&MmapFs, &deleted, &new).unwrap();
         }
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());
@@ -223,7 +222,7 @@ mod tests {
             .prefix("ro_dense_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -234,7 +233,7 @@ mod tests {
         )
         .unwrap();
         writer
-            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
+            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]))
             .unwrap();
         writer.flusher()().unwrap();
 
@@ -249,7 +248,7 @@ mod tests {
         .unwrap();
 
         writer
-            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
+            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]))
             .unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
@@ -261,7 +260,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -276,7 +274,7 @@ mod tests {
             .prefix("ro_dense_appended_batch")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -288,7 +286,7 @@ mod tests {
         .unwrap();
         for id in 0..3u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -305,7 +303,7 @@ mod tests {
 
         for id in 3..8u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]))
                 .unwrap();
         }
         let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
@@ -321,7 +319,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

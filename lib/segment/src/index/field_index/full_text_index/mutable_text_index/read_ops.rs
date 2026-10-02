@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 
@@ -38,18 +37,13 @@ impl FullTextIndexRead for MutableFullTextIndex {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
-        self.inner.doc_len_batch(point_ids, hw_counter, f)
+        self.inner.doc_len_batch(point_ids, f)
     }
 
-    fn posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
-        self.inner.posting_len(token_id, hw_counter)
+    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+        self.inner.posting_len(token_id)
     }
 
     fn score_bm25(
@@ -58,10 +52,8 @@ impl FullTextIndexRead for MutableFullTextIndex {
         accept: &dyn Fn(PointOffsetType) -> bool,
         limit: usize,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        self.inner
-            .score_bm25(query, accept, limit, is_stopped, hw_counter)
+        self.inner.score_bm25(query, accept, limit, is_stopped)
     }
 
     fn total_tokens(&self) -> Option<u64> {
@@ -71,28 +63,24 @@ impl FullTextIndexRead for MutableFullTextIndex {
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.inner.for_each_token_id(iter, hw_counter, f)
+        self.inner.for_each_token_id(iter, f)
     }
 
     fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.inner.filter_query(query, hw_counter)
+        self.inner.filter_query(query)
     }
 
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.inner
-            .estimate_query_cardinality(query, condition, hw_counter)
+        self.inner.estimate_query_cardinality(query, condition)
     }
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {

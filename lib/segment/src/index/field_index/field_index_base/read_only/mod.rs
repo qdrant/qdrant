@@ -4,7 +4,6 @@ mod read_ops;
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
@@ -301,41 +300,40 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFieldIndex::IntIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::DatetimeIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::IntMapIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::KeywordIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::FloatIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::GeoIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::FullTextIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::BoolIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::UuidIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::UuidMapIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFieldIndex::NullIndex(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
         }
     }

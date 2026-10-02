@@ -1,5 +1,4 @@
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -31,7 +30,6 @@ where
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for deleted_point in deleted_points {
             self.remove_point(*deleted_point)?;
