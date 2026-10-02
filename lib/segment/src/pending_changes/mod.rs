@@ -440,7 +440,7 @@ pub struct RecoveredPendingChanges {
 /// Pending changes log files that are part of a segment's state, packed into its snapshots.
 ///
 /// A log outlives its proxy until the segment durably persists its changes, after recovering it on
-/// load or unwrapping the proxy; the segment owns it meanwhile. Logs of proxies still wrapping the
+/// load or unwrapping the proxy; the segment adopts it meanwhile. Logs of proxies still wrapping the
 /// segment are not listed: a snapshot proxy's log only holds changes made after the freeze.
 #[derive(Clone, Debug, Default)]
 pub struct PendingChangesLogs {
@@ -453,7 +453,7 @@ impl PendingChangesLogs {
         self.files.lock().insert(path);
     }
 
-    /// Owned log files that exist on disk.
+    /// Adopted log files that exist on disk.
     pub fn files(&self) -> Vec<PathBuf> {
         let files = self.files.lock().clone();
         files.into_iter().filter(|path| path.is_file()).collect()

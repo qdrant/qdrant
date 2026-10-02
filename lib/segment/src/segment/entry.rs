@@ -602,7 +602,7 @@ impl StorageSegmentEntry for Segment {
         self.segment_path.clone()
     }
 
-    fn owned_pending_changes_logs(&self) -> PendingChangesLogs {
+    fn adopted_pending_changes_logs(&self) -> PendingChangesLogs {
         self.pending_changes_logs.clone()
     }
 }

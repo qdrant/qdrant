@@ -887,11 +887,11 @@ impl StorageSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().data_path()
     }
 
-    fn owned_pending_changes_logs(&self) -> PendingChangesLogs {
+    fn adopted_pending_changes_logs(&self) -> PendingChangesLogs {
         self.wrapped_segment
             .get()
             .read()
-            .owned_pending_changes_logs()
+            .adopted_pending_changes_logs()
     }
 }
 

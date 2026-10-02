@@ -2794,7 +2794,7 @@ fn delete_through_proxies(
 /// Snapshotting proxies every segment, and a proxy persists the changes buffered meanwhile into
 /// its pending changes log. That log must not be visible from the wrapped segment, otherwise it is
 /// packed and restoring replays e.g. CoW deletes whose upserts only live in the temp segment.
-/// Once unproxied the wrapped segment owns the log, and once flushed it must be removed, as
+/// Once unproxied the wrapped segment adopts the log, and once flushed it must be removed, as
 /// `unwrap_proxy` does for optimizer proxies; otherwise every snapshot leaves a log behind until
 /// the next restart.
 #[test]
@@ -2908,9 +2908,21 @@ fn test_nested_proxies_pending_changes_logs() {
         vec![inner_log.clone(), outer_log.clone()],
     );
 
-    // Neither proxy's live log is owned by the innermost segment, from either layer
-    assert!(inner.read().owned_pending_changes_logs().files().is_empty());
-    assert!(outer.read().owned_pending_changes_logs().files().is_empty());
+    // Neither proxy's live log is adopted by the innermost segment, from either layer
+    assert!(
+        inner
+            .read()
+            .adopted_pending_changes_logs()
+            .files()
+            .is_empty()
+    );
+    assert!(
+        outer
+            .read()
+            .adopted_pending_changes_logs()
+            .files()
+            .is_empty()
+    );
 
     // Unwrapping the outer layer hands its log over to the innermost segment, which the inner
     // proxy still wrapping it now lists below its own log
@@ -2920,7 +2932,7 @@ fn test_nested_proxies_pending_changes_logs() {
     let segments_lock = holder.upgradable_read();
     assert!(Arc::ptr_eq(&proxy_at(&segments_lock), &inner));
     assert_eq!(
-        inner.read().owned_pending_changes_logs().files(),
+        inner.read().adopted_pending_changes_logs().files(),
         vec![outer_log.clone()],
     );
     assert_eq!(
@@ -2937,10 +2949,10 @@ fn test_nested_proxies_pending_changes_logs() {
     SegmentHolder::unproxy_all_segments(&holder, segments_lock, &inner_ids, inner_tmp_id).unwrap();
     let segment = holder.read().get(segment_id).unwrap().clone();
     assert!(matches!(segment, LockedSegment::Original(_)));
-    let owned = segment.get().read().owned_pending_changes_logs().files();
+    let adopted = segment.get().read().adopted_pending_changes_logs().files();
     let mut expected = vec![inner_log.clone(), outer_log.clone()];
     expected.sort();
-    assert_eq!(owned, expected);
+    assert_eq!(adopted, expected);
 
     holder.read().flush_all(FlushMode::Sync, true).unwrap();
     assert!(

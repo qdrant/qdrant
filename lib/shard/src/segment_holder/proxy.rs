@@ -115,12 +115,12 @@ impl SegmentHolder {
                 ));
             }
 
-            // The wrapped segment owns the proxy log until a flush persists the propagated changes
+            // The wrapped segment adopts the proxy log until a flush persists the propagated changes
             let (ready_at, pending_changes_logs) = {
                 let wrapped_segment = wrapped_segment.get().read();
                 (
                     wrapped_segment.version(),
-                    wrapped_segment.owned_pending_changes_logs(),
+                    wrapped_segment.adopted_pending_changes_logs(),
                 )
             };
             pending_changes_logs.adopt(log_path.clone());

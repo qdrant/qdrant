@@ -44,8 +44,14 @@ pub trait SnapshotEntry {
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest>;
 
-    /// Pending changes log files visible from this segment, which are packed into its snapshots.
+    /// Pending changes log files a snapshot of this segment must pack: every log holding changes
+    /// not yet durable in the segment files.
     ///
-    /// Includes the logs of proxy layers below this one, never of the ones wrapping it.
+    /// These are the logs adopted by the underlying segment, see
+    /// [`StorageSegmentEntry::adopted_pending_changes_logs`], plus the log of each live proxy
+    /// layer from this one down. Logs of proxies wrapping this segment are never included: a
+    /// snapshot proxy's log only holds changes made after the freeze.
+    ///
+    /// [`StorageSegmentEntry::adopted_pending_changes_logs`]: crate::entry::StorageSegmentEntry::adopted_pending_changes_logs
     fn visible_pending_changes_log_files(&self) -> Vec<PathBuf>;
 }
