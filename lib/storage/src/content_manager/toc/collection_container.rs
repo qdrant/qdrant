@@ -262,9 +262,41 @@ impl TableOfContent {
                     Arc::new(collection)
                 };
 
-                let existing_collection = self
-                    .apply_collection_snapshot_state(id, existing_collection, state, !collection_exists)
-                    .await?;
+                let result = self
+                    .apply_collection_snapshot_state(id, &existing_collection, state)
+                    .await;
+
+                // A new collection already exists on disk, but we need to set replica states
+                // and disable new local replicas before we can add it to the list of collections.
+                //
+                // If we fail while preparing the collection, we must remove it from disk.
+                // Otherwise, the next attempt to create it would fail because it exists on disk,
+                // but is not in the list of collections.
+                if let Err(error) = result {
+                    if !collection_exists {
+                        existing_collection.stop_gracefully().await;
+                        drop(existing_collection);
+
+                        let path = self.get_collection_path(id);
+                        let deleted_dir = self.storage_config.storage_path.join(".deleted");
+
+                        let to_delete =
+                            safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
+                                StorageError::service_error(format!(
+                                    "Failed to apply snapshot state for collection {id}: {error}; \
+                                     failed to remove unpublished collection: {cleanup_error}",
+                                ))
+                            })?;
+
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(error) = to_delete.close() {
+                                log::error!("Can't delete unpublished collection from disk: {error}");
+                            }
+                        });
+                    }
+
+                    return Err(error);
+                }
 
                 // Mark local shards as dead (to initiate shard transfer),
                 // if collection has been created during snapshot application
@@ -316,23 +348,19 @@ impl TableOfContent {
         })
     }
 
-    /// Apply snapshot state, removing a new collection if reconciliation fails before publication.
-    /// The caller must hold `collection_create_lock` for a new collection so cleanup finishes
-    /// before another creation or deletion can use its directory.
     async fn apply_collection_snapshot_state(
         &self,
         id: &str,
-        collection: Arc<Collection>,
+        collection: &Collection,
         state: &collection_state::State,
-        new_collection: bool,
-    ) -> Result<Arc<Collection>, StorageError> {
+    ) -> Result<(), StorageError> {
         if &collection.state().await == state {
-            return Ok(collection);
+            return Ok(());
         }
 
         let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
             log::error!("Can't apply state: single node mode");
-            return Ok(collection);
+            return Ok(());
         };
 
         // State application may discover a transfer that the sender needs to abort.
@@ -348,39 +376,14 @@ impl TableOfContent {
             }
         };
 
-        let result = collection
+        #[cfg(test)]
+        tests::fail_collection_snapshot_state(id)?;
+
+        collection
             .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-            .await;
+            .await?;
 
-        if let Err(error) = result {
-            if new_collection {
-                // Construction has already persisted a valid config. Leaving this directory
-                // without a registry entry would make the next creation attempt reject it.
-                collection.stop_gracefully().await;
-                drop(collection);
-
-                let path = self.get_collection_path(id);
-                let deleted_dir = self.storage_config.storage_path.join(".deleted");
-
-                let to_delete =
-                    safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
-                        StorageError::service_error(format!(
-                            "Failed to apply snapshot state for collection {id}: {error}; \
-                             failed to remove unpublished collection: {cleanup_error}",
-                        ))
-                    })?;
-
-                tokio::task::spawn_blocking(move || {
-                    if let Err(error) = to_delete.close() {
-                        log::error!("Can't delete unpublished collection from disk: {error}");
-                    }
-                });
-            }
-
-            return Err(error.into());
-        }
-
-        Ok(collection)
+        Ok(())
     }
 
     async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {

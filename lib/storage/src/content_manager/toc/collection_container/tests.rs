@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,6 +18,7 @@ use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
+use crate::content_manager::errors::StorageError;
 use crate::rbac::{Access, AccessRequirements};
 use crate::types::{PerformanceConfig, StorageConfig};
 
@@ -175,26 +177,31 @@ fn snapshot_recreates_collection_with_incompatible_config() {
 #[test]
 fn snapshot_state_failure_removes_unpublished_collection_and_allows_retry() {
     let (_storage_dir, toc) = new_toc();
-    create_collection(&toc, "new");
+    create_collection(&toc, "seed");
     let mut snapshot = toc.collections_snapshot_sync();
-    let state = snapshot.collections.get_mut("new").unwrap();
-    state.config.uuid = Some(uuid::Uuid::new_v4());
-    let expected = state.clone();
+    let mut state = snapshot.collections["seed"].clone();
+    for shard in state.shards.values_mut() {
+        shard
+            .replicas
+            .insert(toc.this_peer_id, ReplicaState::Active);
+        shard.replicas.insert(1, ReplicaState::Active);
+    }
+    snapshot
+        .collections
+        .insert("new".to_string(), state.clone());
     let path = toc.get_collection_path("new");
 
-    // Reproduce the state after construction but before publication, with a valid config
-    // on disk. A UUID mismatch forces apply_state to fail without filesystem timing races.
-    let error = toc.general_runtime.block_on(async {
-        let _create_guard = toc.collection_create_lock.lock().await;
-        let collection = toc.collections.write().await.remove("new").unwrap();
-        toc.apply_collection_snapshot_state("new", collection, &expected, true)
-            .await
-            .err()
-            .expect("state application must fail")
-    });
+    // Fail after construction has persisted the collection config, before publication.
+    FAIL_SNAPSHOT_STATE_FOR.set(Some("new"));
+    let error = toc
+        .apply_collections_snapshot(snapshot.clone())
+        .unwrap_err();
 
-    assert!(error.to_string().contains("UUID mismatch"), "{error}");
-    assert!(toc.all_collections_sync().is_empty());
+    assert_eq!(
+        error.to_string(),
+        "Service internal error: injected snapshot state failure"
+    );
+    assert_eq!(toc.all_collections_sync(), vec!["seed".to_string()]);
     assert!(
         !path.exists(),
         "failed unpublished collection must be removed"
@@ -203,7 +210,7 @@ fn snapshot_state_failure_removes_unpublished_collection_and_allows_retry() {
     toc.apply_collections_snapshot(snapshot).unwrap();
 
     let collection = get_collection(&toc, "new");
-    assert_eq!(toc.general_runtime.block_on(collection.state()), expected);
+    assert_eq!(toc.general_runtime.block_on(collection.state()), state);
 }
 
 #[test]
@@ -211,25 +218,45 @@ fn snapshot_state_failure_keeps_published_collection() {
     let (_storage_dir, toc) = new_toc();
     create_collection(&toc, "existing");
     let mut snapshot = toc.collections_snapshot_sync();
-    let state = snapshot.collections.get_mut("existing").unwrap();
-    state.config.uuid = Some(uuid::Uuid::new_v4());
-    let collection = get_collection(&toc, "existing");
-    let original_state = toc.general_runtime.block_on(collection.state());
+    let original_state = snapshot.collections["existing"].clone();
+    let metadata = serde_json::from_value(serde_json::json!({"recovered": true})).unwrap();
+    snapshot
+        .collections
+        .get_mut("existing")
+        .unwrap()
+        .config
+        .metadata = Some(metadata);
 
-    let error = toc.general_runtime.block_on(async {
-        toc.apply_collection_snapshot_state("existing", collection, state, false)
-            .await
-            .err()
-            .expect("state application must fail")
-    });
+    FAIL_SNAPSHOT_STATE_FOR.set(Some("existing"));
+    let error = toc.apply_collections_snapshot(snapshot).unwrap_err();
 
-    assert!(error.to_string().contains("UUID mismatch"), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "Service internal error: injected snapshot state failure"
+    );
     let collection = get_collection(&toc, "existing");
     assert_eq!(
         toc.general_runtime.block_on(collection.state()),
         original_state
     );
     assert!(toc.get_collection_path("existing").exists());
+}
+
+// block_on polls snapshot application on the calling thread. Keep the failure local
+// to that thread so parallel tests cannot consume it, and clear it before retrying.
+thread_local! {
+    static FAIL_SNAPSHOT_STATE_FOR: Cell<Option<&'static str>> = const { Cell::new(None) };
+}
+
+pub(super) fn fail_collection_snapshot_state(id: &str) -> Result<(), StorageError> {
+    if FAIL_SNAPSHOT_STATE_FOR.get() == Some(id) {
+        FAIL_SNAPSHOT_STATE_FOR.set(None);
+        return Err(StorageError::service_error(
+            "injected snapshot state failure",
+        ));
+    }
+
+    Ok(())
 }
 
 fn create_collection(toc: &TableOfContent, name: &str) {
