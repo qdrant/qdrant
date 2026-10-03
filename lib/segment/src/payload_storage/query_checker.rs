@@ -220,6 +220,16 @@ where
         return Ok(field_condition.check_empty());
     }
 
+    // `is_empty` is evaluated against ALL values at the key, not per value:
+    // indexed fields, the `IsEmpty` condition form and a missing key all use
+    // all-empty semantics, so the unindexed per-value check would disagree
+    // with them on keys resolving to several values (see #10621).
+    if field_condition.values_count.is_none()
+        && let Some(is_empty) = field_condition.is_empty
+    {
+        return Ok(check_is_empty(field_values.iter().copied()) == is_empty);
+    }
+
     // This covers a case, when a field index affects the result of the condition.
     if let Some(field_indexes) = field_indexes {
         for p in field_values {
@@ -848,5 +858,64 @@ mod tests {
             !results[2],
             "Point 2 ('neutral text') must not match text_any('good cheap')"
         );
+    }
+
+    #[test]
+    fn test_field_condition_is_empty_multi_value_unindexed() {
+        // Regression test for #10621: `{"key": "a[].b", "is_empty": true}` on an
+        // unindexed key must use all-empty semantics, matching indexed fields
+        // and the `IsEmpty` condition form.
+        let hw_counter = HardwareCounterCell::new();
+
+        let mut payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
+        id_tracker.set_link(0.into(), 0).unwrap();
+        id_tracker.set_link(1.into(), 1).unwrap();
+
+        // One value empty, one not: NOT empty as a whole
+        payload_storage
+            .overwrite(0, &payload_json! {"a": [{"b": 1}, {"b": []}]}, &hw_counter)
+            .unwrap();
+        // All values empty or null: empty as a whole
+        payload_storage
+            .overwrite(
+                1,
+                &payload_json! {"a": [{"b": []}, {"b": null}]},
+                &hw_counter,
+            )
+            .unwrap();
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                id_tracker,
+            ))),
+            HashMap::new(),
+        );
+
+        let field_is_empty = Filter::new_must(Condition::Field(FieldCondition::new_is_empty(
+            JsonPath::new("a[].b"),
+            true,
+        )));
+        assert!(!payload_checker.check(0, &field_is_empty));
+        assert!(payload_checker.check(1, &field_is_empty));
+
+        // The `IsEmpty` condition form agrees on the same payloads
+        let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: JsonPath::new("a[].b"),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_empty_condition));
+        assert!(payload_checker.check(1, &is_empty_condition));
+
+        // `is_empty: false` inverts: at least one non-empty value
+        let field_not_empty = Filter::new_must(Condition::Field(FieldCondition::new_is_empty(
+            JsonPath::new("a[].b"),
+            false,
+        )));
+        assert!(payload_checker.check(0, &field_not_empty));
+        assert!(!payload_checker.check(1, &field_not_empty));
     }
 }
