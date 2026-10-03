@@ -5,7 +5,7 @@ use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
 use tempfile::Builder;
 
-use super::{LiveReloadResult, ReadOnlyAppendableIdTracker};
+use super::{LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe};
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
 use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
@@ -463,28 +463,30 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
 
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
-    // 1. Probe when nothing changed returns changed = false
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
-    assert!(
-        !changed,
+    // 1. Probe when nothing changed reports unchanged
+    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    assert_eq!(
+        probe,
+        TrackerProbe::Unchanged {
+            max_committed_id: 1
+        },
         "probe must report unchanged when no writes occurred"
     );
-    assert_eq!(max_committed_id, Some(1));
 
     // 2. Insert point 200, flush mappings and versions
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
     // Probe now detects changes and anchors max_committed_id to 2 points
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
-    assert!(changed, "probe must report changed after inserts");
+    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
     assert_eq!(
-        max_committed_id,
-        Some(2),
-        "probe must report max_committed_id 2 after inserts"
+        probe,
+        TrackerProbe::Changed {
+            max_committed_id: 2
+        },
+        "probe must report changed with max_committed_id 2 after inserts"
     );
+    let max_committed_id = probe.max_committed_id();
 
     // Before reload, writer adds point 300
     insert(&mut mutable, 300.into(), 2, 12);
@@ -502,11 +504,16 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     );
 
     // Subsequent probe now sees point 300 and commits it
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
-    assert!(changed);
-    assert_eq!(max_committed_id, Some(3));
-    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    assert_eq!(
+        probe,
+        TrackerProbe::Changed {
+            max_committed_id: 3
+        }
+    );
+    let result = read_only
+        .live_reload(&MmapFs, probe.max_committed_id())
+        .unwrap();
     assert_eq!(result.inserted, vec![2]);
     assert_eq!(read_only.available_point_count(), 3);
 
@@ -514,17 +521,23 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
-    assert!(changed, "probe must detect pure delete via mappings change");
-    assert_eq!(max_committed_id, Some(3));
-    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    assert_eq!(
+        probe,
+        TrackerProbe::Changed {
+            max_committed_id: 3
+        },
+        "probe must detect pure delete via mappings change"
+    );
+    let result = read_only
+        .live_reload(&MmapFs, probe.max_committed_id())
+        .unwrap();
     assert_eq!(result.deleted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
 }
 
 #[test]
-fn test_stage_preload_over_disk_cache() {
+fn test_probe_committed_over_disk_cache() {
     use std::sync::Arc;
 
     use common::universal_io::{
@@ -555,22 +568,26 @@ fn test_stage_preload_over_disk_cache() {
         ReadOnlyAppendableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &segment_dir, None)
             .unwrap();
 
-    // 1. Probe when nothing changed returns changed = false
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&cache_fs)).unwrap();
-    assert!(!changed);
-    assert_eq!(max_committed_id, Some(1));
+    // 1. Probe when nothing changed reports unchanged
+    let probe = futures::executor::block_on(read_only.probe_committed(&cache_fs)).unwrap();
+    assert_eq!(
+        probe,
+        TrackerProbe::Unchanged {
+            max_committed_id: 1
+        }
+    );
 
     // 2. Insert point 200, flush mappings and versions
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
     // Probe now should detect changes!
-    let (changed, max_committed_id) =
-        futures::executor::block_on(read_only.stage_preload(&cache_fs)).unwrap();
-    assert!(
-        changed,
-        "stage_preload over DiskCache must report changed after inserts"
+    let probe = futures::executor::block_on(read_only.probe_committed(&cache_fs)).unwrap();
+    assert_eq!(
+        probe,
+        TrackerProbe::Changed {
+            max_committed_id: 2
+        },
+        "probe_committed over DiskCache must report changed after inserts"
     );
-    assert_eq!(max_committed_id, Some(2));
 }

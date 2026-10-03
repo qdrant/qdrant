@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    LiveReloadResult, ReadOnlyAppendableIdTracker,
+    LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -68,14 +68,14 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         )?))
     }
 
-    /// Stage preloading for tracker files on the inner filesystem before taking the directory listing snapshot.
-    pub async fn stage_preload<Fs: UniversalReadFsAsync<File = S>>(
+    /// Measure how far the writer has committed, before the directory listing snapshot is taken.
+    pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
         &mut self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, Option<PointOffsetType>)> {
+    ) -> OperationResult<TrackerProbe> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.stage_preload(inner_fs).await,
-            Self::Immutable(_) | Self::DiskResident(_) => Ok((true, None)),
+            Self::Appendable(id_tracker) => id_tracker.probe_committed(inner_fs).await,
+            Self::Immutable(_) | Self::DiskResident(_) => Ok(TrackerProbe::Unknown),
         }
     }
 
