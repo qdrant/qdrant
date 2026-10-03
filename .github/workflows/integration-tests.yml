@@ -239,8 +239,56 @@ jobs:
           QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL: http://127.0.0.1:9000
         run: ./tests/shard-snapshot-api-tests.sh
 
-  e2e-tests:
+  # Builds the e2e image once; the e2e test jobs download it.
+  build-e2e-image:
     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true  # Fetch LFS files automatically
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build Qdrant Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          tags: qdrant/qdrant:e2e-tests
+          cache-from: type=gha,scope=docker-e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-e2e-tests' || '' }}
+          outputs: type=docker,dest=/tmp/e2e-image.tar
+          build-args: |
+            PROFILE=ci
+            FEATURES=data-consistency-check,staging
+      - name: Compress image
+        run: zstd -T0 -3 --rm /tmp/e2e-image.tar -o /tmp/e2e-image.tar.zst
+      - name: Upload image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-image
+          path: /tmp/e2e-image.tar.zst
+          compression-level: 0
+          retention-days: 1
+
+  e2e-tests:
+    name: e2e-tests (${{ matrix.group }})
+    needs: build-e2e-image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: other
+            pytest-args: -n 4 --dist=loadgroup tests/e2e_tests --ignore=tests/e2e_tests/test_data_compatibility.py
+          # Compatibility tests download large archives and run one at a time to spare the disk,
+          # so they get their own runners: 3 shards of the versions.
+          - group: compatibility-1
+            pytest-args: tests/e2e_tests/test_data_compatibility.py --splits 3 --group 1
+          - group: compatibility-2
+            pytest-args: tests/e2e_tests/test_data_compatibility.py --splits 3 --group 2
+          - group: compatibility-3
+            pytest-args: tests/e2e_tests/test_data_compatibility.py --splits 3 --group 3
 
     # Setup minio server
     services:
@@ -263,39 +311,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true  # Fetch LFS files automatically
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Install uv and Python dependencies
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
-      - name: Build Qdrant Docker image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - name: Download Qdrant image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          context: .
-          tags: qdrant/qdrant:e2e-tests
-          cache-from: type=gha,scope=docker-e2e-tests
-          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-e2e-tests' || '' }}
-          load: true
-          build-args: |
-            PROFILE=ci
-            FEATURES=data-consistency-check,staging
+          name: e2e-image
+          path: /tmp
+      - name: Load Qdrant image
+        run: zstd -dc /tmp/e2e-image.tar.zst | docker load
       - name: Verify Docker image
         run: docker images | grep qdrant
-      - name: Run e2e tests
-        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+      - name: Run e2e tests (${{ matrix.group }})
+        run: uv --project tests run pytest ${{ matrix.pytest-args }} -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 20
       - name: Upload test logs on failure
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: e2e-test-logs
+          name: e2e-test-logs-${{ matrix.group }}
           path: |
             tests/e2e_tests/test_*.log
             tests/e2e_tests/**/logs/
