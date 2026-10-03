@@ -9,7 +9,7 @@ mod write;
 use std::fmt;
 
 pub use append::{UniversalAppend, UniversalAppendFs};
-pub(crate) use async_io::read_whole_via_read_bytes;
+pub(crate) use async_io::read_from_via_read_bytes;
 pub use async_io::{ChunkSink, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync};
 pub use file_ops::{CachedReadFs, UniversalReadFs, UniversalWriteFs};
 pub use open_extra::OpenExtra;
