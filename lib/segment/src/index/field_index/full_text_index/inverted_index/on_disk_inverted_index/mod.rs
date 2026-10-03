@@ -168,7 +168,9 @@ impl OnDiskInvertedIndex<MmapFile> {
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
         match point_to_doc_len {
-            Some(lens) => MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?,
+            Some(lens) => {
+                let _ = MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?;
+            }
             // Every other file here is rewritten in place, so this is the only
             // one that could survive a rebuild. `open` would then read a
             // previous build's lengths as this build's, at offsets that now
