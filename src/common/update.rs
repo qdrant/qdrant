@@ -31,7 +31,9 @@ use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
-use crate::common::validate_vectors::validate_vector_dimensions;
+use crate::common::validate_vectors::{
+    validate_update_vector_values, validate_vector_dimensions, validate_vector_values,
+};
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -377,6 +379,7 @@ pub async fn do_upsert_points(
         let collection = toc.get_collection(&collection_pass).await?;
         let vectors_config = collection.vectors_config().await;
         validate_vector_dimensions(&operation, &vectors_config)?;
+        validate_vector_values(&operation, &vectors_config)?;
     }
 
     // Decide which operation to use based on update_filter and update_mode
@@ -494,6 +497,15 @@ pub async fn do_update_vectors(
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_params).await?;
+
+    {
+        let collection_pass = auth
+            .unlogged_access()
+            .check_collection_access(&collection_name, AccessRequirements::new())?;
+        let collection = toc.get_collection(&collection_pass).await?;
+        let vectors_config = collection.vectors_config().await;
+        validate_update_vector_values(&points, &vectors_config)?;
+    }
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
         UpdateVectorsOp {
