@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,6 +22,7 @@ use super::CollectionPath;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
+use crate::common::json_path_filter::apply_jq;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::TelemetryCollector;
@@ -34,6 +34,12 @@ pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
     pub per_collection: Option<bool>,
+    /// Optional jq-like path selecting a subset of the telemetry JSON.
+    ///
+    /// Supports object keys, `.` traversal, and `*` / `[]` iteration.
+    /// Example: `.collections.collections[].transfers`
+    #[validate(length(min = 1, max = 512))]
+    pub jq: Option<String>,
     #[validate(range(min = 1))]
     pub timeout: Option<u64>,
 }
@@ -45,11 +51,11 @@ impl TelemetryParam {
 }
 
 #[get("/telemetry")]
-fn telemetry(
+async fn telemetry(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
     ActixAuth(auth): ActixAuth,
-) -> impl Future<Output = HttpResponse> {
+) -> HttpResponse {
     helpers::time(async move {
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
@@ -61,6 +67,7 @@ fn telemetry(
             histograms: false,
             per_collection: params.per_collection.unwrap_or(false),
         };
+
         let telemetry_data = telemetry_collector
             .lock()
             .await
@@ -71,8 +78,15 @@ fn telemetry(
         } else {
             telemetry_data
         };
-        Ok(telemetry_data)
+
+        let value = serde_json::to_value(telemetry_data)?;
+        if let Some(jq) = params.jq.as_deref() {
+            apply_jq(&value, jq).map_err(StorageError::bad_request)
+        } else {
+            Ok(value)
+        }
     })
+    .await
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
