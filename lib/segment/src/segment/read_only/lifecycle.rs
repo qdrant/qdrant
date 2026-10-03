@@ -346,7 +346,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         let is_appendable = config.is_appendable();
-        let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
+        let deferred_internal_id = deferred_internal_id
+            .or_else(|| load_profile.and_then(|profile| profile.deferred_internal_id(&config)))
+            .filter(|_| is_appendable);
 
         let payload_storage_populate = load_profile
             .and_then(|profile| profile.payload_storage_placement())
