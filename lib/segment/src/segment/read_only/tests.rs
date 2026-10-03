@@ -1194,6 +1194,9 @@ fn test_live_preload_while_reader_holds_id_tracker() {
 
 /// Regression test: the writer flushes between the open's listing snapshot and the id-tracker
 /// open. The tracker must not commit points whose vectors that snapshot doesn't cover.
+///
+/// Not run on Windows: the writer's flush replaces files the staged open holds mapped.
+#[cfg(not(windows))]
 #[test]
 fn test_open_writer_appends_between_list_and_tracker_open() {
     let segments_dir = Builder::new()
