@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use aligned_vec::{AVec, RuntimeAlign};
+use futures::FutureExt;
+use futures::channel::oneshot::Receiver;
 use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
@@ -101,32 +103,38 @@ pub(crate) enum State<R: UniversalRead + 'static> {
 /// and components keep `len()` as their growth signal. Nothing else remembers
 /// the staged targets, hence the `target_len` on every variant.
 #[derive(Debug)]
+#[expect(clippy::type_complexity)]
 pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
-    /// Scheduling detected that the file size has not changed, so no need to
-    /// reopen.
+    /// File size has not changed.
     Unchanged,
-    /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
-    /// `target_len` and lets the new blocks fault in on demand.
+    /// Resize mirror to `target_len`; new blocks fault in on demand.
     Resize { target_len: u64 },
-    /// Populated (`Blocking` / `PreferBackground`): the appended tail is
-    /// already in flight on a fresh remote handle; apply resizes, drains it
-    /// and writes it. `future` drives the fetch (clones of it may be polled
-    /// externally); `data` receives the fetched bytes and the handle once
-    /// `future` completes.
+    /// Bounded tail fetch for populated files with known length.
     Tail {
         future: Shared<BoxFuture<'static, ()>>,
-        data: futures::channel::oneshot::Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
+        data: Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
         blocks_range: Range<u32>,
         target_len: u64,
+    },
+    /// Unbounded tail fetch for populated files with unknown length.
+    UnboundedTail {
+        future: Shared<BoxFuture<'static, ()>>,
+        data: Receiver<UioResult<(R, u64, AVec<u8, RuntimeAlign>)>>,
+        from: u64,
     },
 }
 
 impl<R: UniversalRead + 'static> ScheduledReopen<R> {
     /// Length the scheduled reopen would bring the mirror to, if anything is
-    /// staged.
+    /// staged with a known length.
     pub(super) fn target_len(&self) -> Option<u64> {
         match self {
-            ScheduledReopen::Unchanged => None,
+            ScheduledReopen::Unchanged
+            | ScheduledReopen::UnboundedTail {
+                future: _,
+                data: _,
+                from: _,
+            } => None,
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
                 target_len,
@@ -134,6 +142,16 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
                 future: _,
                 blocks_range: _,
             } => Some(*target_len),
+        }
+    }
+
+    pub(super) fn future(&self) -> Shared<BoxFuture<'static, ()>> {
+        match self {
+            ScheduledReopen::Tail { future, .. }
+            | ScheduledReopen::UnboundedTail { future, .. } => future.clone(),
+            ScheduledReopen::Unchanged | ScheduledReopen::Resize { .. } => {
+                async {}.boxed().shared()
+            }
         }
     }
 }
