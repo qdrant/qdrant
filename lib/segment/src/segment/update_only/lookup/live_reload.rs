@@ -29,12 +29,12 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
-        let (changed, max_committed_id) =
-            futures::executor::block_on(id_tracker.borrow_mut().stage_preload(fs.inner()))?;
-
-        if !changed {
+        let probe =
+            futures::executor::block_on(id_tracker.borrow_mut().probe_committed(fs.inner()))?;
+        if probe.is_unchanged() {
             return Ok(());
         }
+        let max_committed_id = probe.max_committed_id();
 
         // Prepare new LIST snapshot
         fs.cache_file_info()?;

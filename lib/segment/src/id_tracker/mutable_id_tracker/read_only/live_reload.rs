@@ -28,6 +28,45 @@ pub struct LiveReloadResult {
     pub deleted: Vec<PointOffsetType>,
 }
 
+/// What [`ReadOnlyAppendableIdTracker::probe_committed`] learned about the tracker files before
+/// the directory listing snapshot is taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackerProbe {
+    /// Neither tracker file changed since the last reload, so the listing can be skipped.
+    /// `max_committed_id` is the versions length observed by the probe.
+    Unchanged { max_committed_id: PointOffsetType },
+    /// A tracker file changed. The reload commits points below `max_committed_id`, the versions
+    /// length observed by the probe, which every file in the following listing covers.
+    Changed { max_committed_id: PointOffsetType },
+    /// The tracker detects changes only by comparing listing snapshots (immutable and
+    /// disk-resident trackers rewrite `deleted.dat` in place), so the listing is always needed.
+    Unknown,
+}
+
+impl TrackerProbe {
+    /// `true` if the probe proved the tracker files unchanged.
+    pub fn is_unchanged(&self) -> bool {
+        match self {
+            TrackerProbe::Unchanged {
+                max_committed_id: _,
+            } => true,
+            TrackerProbe::Changed {
+                max_committed_id: _,
+            }
+            | TrackerProbe::Unknown => false,
+        }
+    }
+
+    /// Upper bound for the points the following reload commits, `None` if the tracker has none.
+    pub fn max_committed_id(&self) -> Option<PointOffsetType> {
+        match self {
+            TrackerProbe::Unchanged { max_committed_id }
+            | TrackerProbe::Changed { max_committed_id } => Some(*max_committed_id),
+            TrackerProbe::Unknown => None,
+        }
+    }
+}
+
 impl LiveReloadResult {
     /// `true` if this delta carries no changes.
     pub fn is_empty(&self) -> bool {
@@ -62,15 +101,15 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    /// Stage preloading for `versions.dat` and `mappings.dat` directly on the inner filesystem
-    /// before taking the directory listing snapshot.
+    /// Measure how far the writer has committed, before the directory listing snapshot is taken.
     ///
-    /// If the files are already open, they are live-reloaded in place rather than reopened.
-    /// Anchors `max_committed_id` to the versions length observed at preload time.
-    pub async fn stage_preload<Fs: UniversalReadFsAsync<File = S>>(
+    /// Refreshes `versions.dat` and `mappings.dat` through the inner filesystem (live-reloading
+    /// held handles in place, opening missing ones) and reports the observed versions length as
+    /// `max_committed_id`. The tracker's visible state is unchanged until [`Self::live_reload`].
+    pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
         &mut self,
         inner_fs: &Fs,
-    ) -> OperationResult<(bool, Option<PointOffsetType>)> {
+    ) -> OperationResult<TrackerProbe> {
         match self.versions_file.as_mut() {
             Some(versions_file) => {
                 if let Some(fut) = versions_file.live_preload(|_| None).ok_not_found()? {
@@ -116,14 +155,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
-        let changed = versions_changed || mappings_changed;
 
-        let max_committed_id = Some(v_len as PointOffsetType);
-        Ok((changed, max_committed_id))
+        let max_committed_id = v_len as PointOffsetType;
+        Ok(if versions_changed || mappings_changed {
+            TrackerProbe::Changed { max_committed_id }
+        } else {
+            TrackerProbe::Unchanged { max_committed_id }
+        })
     }
 
     /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
-    /// [`Self::stage_preload`] on the inner filesystem, so this is a no-op.
+    /// [`Self::probe_committed`] on the inner filesystem, so this is a no-op.
     pub fn live_preload(
         &self,
         _fs: &impl CachedReadFs<File = S>,
