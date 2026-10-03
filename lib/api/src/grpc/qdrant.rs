@@ -2773,6 +2773,8 @@ pub enum ShardTransferMethod {
     WalDelta = 2,
     /// Stream shard records in batches for resharding
     ReshardingStreamRecords = 3,
+    /// Like Snapshot, but partitions the shard into independent buckets transferred over their own connections
+    SnapshotBucketed = 4,
 }
 impl ShardTransferMethod {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2785,6 +2787,7 @@ impl ShardTransferMethod {
             Self::Snapshot => "Snapshot",
             Self::WalDelta => "WalDelta",
             Self::ReshardingStreamRecords => "ReshardingStreamRecords",
+            Self::SnapshotBucketed => "SnapshotBucketed",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2794,6 +2797,7 @@ impl ShardTransferMethod {
             "Snapshot" => Some(Self::Snapshot),
             "WalDelta" => Some(Self::WalDelta),
             "ReshardingStreamRecords" => Some(Self::ReshardingStreamRecords),
+            "SnapshotBucketed" => Some(Self::SnapshotBucketed),
             _ => None,
         }
     }
