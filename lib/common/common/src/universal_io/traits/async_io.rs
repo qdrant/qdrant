@@ -23,24 +23,30 @@ pub trait UniversalReadAsync: UniversalRead {
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
 
-    /// Read the whole file into a sink: `init` receives the length of the file as read and
-    /// returns the sink, which then gets the file as `(offset, bytes)` chunks as they arrive,
-    /// each byte exactly once. Yields the sink once every byte was written.
-    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    /// Read the file from byte `from` to its end into a sink: `init` receives the total length
+    /// of the file as read and returns the sink, which then gets the bytes from `from` onwards
+    /// as `(offset, bytes)` chunks at their absolute file offsets as they arrive, each byte
+    /// exactly once. `from == 0` reads the whole file; `from` at or past the end builds the sink
+    /// and writes nothing. Yields the sink once every byte was written.
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static;
 }
 
-/// Destination of [`UniversalReadAsync::read_whole_into_async`]'s chunks.
+/// Destination of [`UniversalReadAsync::read_from_into_async`]'s chunks.
 pub trait ChunkSink {
     /// Write the chunk of `bytes` at byte `offset` of the file.
     fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()>;
 }
 
-/// [`UniversalReadAsync::read_whole_into_async`] for files that read the whole file with a
-/// single [`UniversalReadAsync::read_bytes_async`].
-pub(crate) async fn read_whole_via_read_bytes<F, W, I>(file: &F, init: I) -> UioResult<W>
+/// [`UniversalReadAsync::read_from_into_async`] for files that read the tail with a single
+/// [`UniversalReadAsync::read_bytes_async`].
+pub(crate) async fn read_from_via_read_bytes<F, W, I>(file: &F, from: u64, init: I) -> UioResult<W>
 where
     F: UniversalReadAsync + Sync,
     I: FnOnce(u64) -> UioResult<W>,
@@ -48,9 +54,9 @@ where
 {
     let len = file.len::<u8>()?;
     let mut sink = init(len)?;
-    if len > 0 {
-        let bytes = file.read_bytes_async(0..len, Sequential, 1).await?;
-        sink.write_chunk(0, &bytes)?;
+    if from < len {
+        let bytes = file.read_bytes_async(from..len, Sequential, 1).await?;
+        sink.write_chunk(from, &bytes)?;
     }
     Ok(sink)
 }

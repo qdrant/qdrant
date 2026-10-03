@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use super::{MmapFile, MmapFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::traits::read_whole_via_read_bytes;
+use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
     ChunkSink, ListedFile, OpenOptions, UioResult, UniversalRead, UniversalReadAsync,
     UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync,
@@ -47,12 +47,16 @@ impl UniversalReadAsync for MmapFile {
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         ready(self.read_bytes(range, access_pattern, align))
     }
-    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        read_whole_via_read_bytes(self, init)
+        read_from_via_read_bytes(self, from, init)
     }
 }
 

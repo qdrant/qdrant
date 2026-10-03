@@ -61,12 +61,16 @@ where
         self.cache.read_bytes_async(range, access_pattern, align)
     }
 
-    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        self.cache.read_whole_into_async(init)
+        self.cache.read_from_into_async(from, init)
     }
 }
 
