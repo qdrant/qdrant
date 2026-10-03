@@ -97,39 +97,71 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     }
 }
 
-/// Stream the whole object behind `file` into a sink with a single request (see
-/// [`AsyncRead::read_whole_single`]): `init` builds the sink from the object's length, then
-/// every chunk is handed to it the moment it arrives. Yields the sink.
+/// Stream the object behind `file` from byte offset `from` into a sink with a single request
+/// (see [`AsyncRead::read_from`]): `init` builds the sink from the object's length, then every chunk
+/// is handed to it the moment it arrives. Yields the sink.
 pub fn read_whole_into_sink<A, W, I>(
     file: &BlobFile<A>,
+    from: u64,
     init: I,
 ) -> impl Future<Output = UioResult<W>> + Send + 'static
 where
-    A: AsyncRead,
+    A: AsyncRead + Clone,
     I: FnOnce(u64) -> UioResult<W> + Send + 'static,
     W: ChunkSink + Send + 'static,
 {
-    let mut request = file.stats.request(Op::ReadFrom, &file.path, 0..0);
-    let read_fut = file.inner.read_from(&file.path, 0);
+    let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
+    let read_fut = file.inner.read_from(&file.path, from);
+    // Cloned for the cold disambiguation path only; building the `len` future is
+    // deferred until a read error actually occurs.
+    let inner = file.inner.clone();
+    let stats = file.stats.clone();
+    let path = file.path.clone();
     async move {
         request.start();
         let (size, stream) = match read_fut.await {
-            Ok(ok) => ok,
-            Err(err) => {
+            Ok(ok) => (ok.0, Some(ok.1)),
+            Err(err) if err.is_not_found() => {
                 request.set_err(&err);
                 return Err(err);
             }
+            Err(err) => {
+                // Settled after the `len` probe: a tail at or past EOF is an empty
+                // read, not a failed one.
+                let eof = stats
+                    .request(Op::Len, &path, 0..0)
+                    .wrap(inner.len(&path))
+                    .await;
+                if let Ok(eof) = eof
+                    && from >= eof
+                {
+                    (eof, None)
+                } else {
+                    request.set_err(&err);
+                    eof?;
+                    return Err(err);
+                }
+            }
         };
         request.set_end(size);
-        let result = stream_into_sink(stream, size, init).await;
+        let result = if let Some(stream) = stream {
+            stream_into_sink(stream, size, from, init).await
+        } else {
+            init(size)
+        };
         request.set_result(&result);
         result
     }
 }
 
-/// Hand every chunk of the `size`-byte `stream` to the sink `init` builds, checking the
-/// chunks stay within `size` and add up to it.
-async fn stream_into_sink<W, I>(mut stream: OffsetByteStream, size: u64, init: I) -> UioResult<W>
+/// Hand every chunk of the `size`-byte `stream` starting at `from` to the sink `init` builds,
+/// checking the chunks stay within `size` and add up to the expected length.
+async fn stream_into_sink<W, I>(
+    mut stream: OffsetByteStream,
+    size: u64,
+    from: u64,
+    init: I,
+) -> UioResult<W>
 where
     I: FnOnce(u64) -> UioResult<W>,
     W: ChunkSink,
@@ -138,7 +170,8 @@ where
     let mut written = 0;
     while let Some(chunk) = stream.next().await {
         let (offset, bytes) = chunk?;
-        let end = offset + bytes.len() as u64;
+        let file_offset = from + offset;
+        let end = file_offset + bytes.len() as u64;
         if end > size {
             return Err(UniversalIoError::S3 {
                 path: None,
@@ -146,13 +179,14 @@ where
                     .into(),
             });
         }
-        sink.write_chunk(offset, &bytes)?;
+        sink.write_chunk(file_offset, &bytes)?;
         written += bytes.len() as u64;
     }
-    if written != size {
+    let expected_len = size.saturating_sub(from);
+    if written != expected_len {
         return Err(UniversalIoError::S3 {
             path: None,
-            source: format!("short read: expected {size} bytes, got {written}").into(),
+            source: format!("short read: expected {expected_len} bytes, got {written}").into(),
         });
     }
     Ok(sink)

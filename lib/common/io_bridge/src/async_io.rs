@@ -72,17 +72,20 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         Ok(ACow::Owned(buf))
     }
 
-    /// Streams the whole object with a single request, handing each chunk to the sink on the
-    /// bridge runtime as it arrives.
-    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    /// Streams the object starting at `from` with a single request, handing each chunk to the sink
+    /// on the bridge runtime as it arrives.
+    fn read_whole_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        let task = self
-            .runtime
-            .handle()
-            .spawn(uio_trace::Context::current().wrap(read_whole_into_sink::<A, W, I>(self, init)));
+        let task = self.runtime.handle().spawn(
+            uio_trace::Context::current().wrap(read_whole_into_sink::<A, W, I>(self, from, init)),
+        );
         async move { task.await? }
     }
 }

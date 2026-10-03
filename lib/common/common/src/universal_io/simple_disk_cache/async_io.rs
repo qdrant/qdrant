@@ -59,7 +59,7 @@ where
                     // from `known_len` when the file was replaced since it was observed.
                     let mirror_path = local_path.clone();
                     let MirrorWriter(local, mut file) = remote
-                        .read_whole_into_async(move |len| {
+                        .read_whole_into_async(0, move |len| {
                             let file = TempPath::try_from_path(mirror_path)?;
                             Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
                         })
@@ -163,11 +163,15 @@ where
         }
     }
 
-    fn read_whole_into_async<W, I>(&self, init: I) -> impl Future<Output = UioResult<W>> + Send
+    fn read_whole_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        read_whole_via_read_bytes(self, init)
+        read_whole_via_read_bytes(self, from, init)
     }
 }

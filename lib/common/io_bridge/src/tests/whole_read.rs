@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs, OpenExtra as _,
-    OpenOptions, OwnedPipeline, Populate, ReadRange, UioResult, UniversalIoError, UniversalKind,
-    UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+    ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
+    OpenExtra as _, OpenOptions, OwnedPipeline, Populate, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -392,4 +392,45 @@ fn disk_cache_failed_async_prefill_removes_the_mirror() {
     assert!(err.to_string().contains("short read"), "{err}");
     let leftovers = MmapFs.list_files(&tmp.path().join("data.bin")).unwrap();
     assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[derive(Default)]
+struct TestSink(Vec<(u64, Vec<u8>)>);
+
+impl ChunkSink for TestSink {
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.0.push((offset, bytes.to_vec()));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn blob_file_read_whole_into_async_tail_and_empty() {
+    use common::universal_io::UniversalReadAsync;
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    // Tail read from a positive offset
+    let from = 10u64;
+    let sink = file
+        .read_whole_into_async(from, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert_eq!(&sink.0[0].1[..], &DATA[from as usize..]);
+    assert_eq!(sink.0[0].0, from);
+    assert_eq!(counters.from.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+
+    // Empty tail at EOF
+    let sink = file
+        .read_whole_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert!(sink.0.is_empty());
+    assert_eq!(counters.from.load(Ordering::Relaxed), 2);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 1);
 }
