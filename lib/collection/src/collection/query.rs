@@ -158,6 +158,12 @@ impl Collection {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
+        if target_shards.is_empty() {
+            return Err(CollectionError::not_found(format!(
+                "Collection `{}`",
+                self.id
+            )));
+        }
 
         let num_unique_shard_keys = target_shards
             .iter()
