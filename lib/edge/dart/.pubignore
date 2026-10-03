@@ -1,0 +1,10 @@
+# Dev-only artifacts kept out of the published package. The build hook downloads
+# per-platform prebuilt cdylibs on demand, so the ~55 MB of locally staged
+# libraries and the on-device Flutter harness never need to ship to pub.dev.
+# (pub already excludes .dart_tool/, .git/, and pubspec.lock by default.)
+native/
+e2e/
+build/
+Makefile
+build.sh
+uniffi.toml
