@@ -209,14 +209,6 @@ impl AsyncRead for UioGrpcSource {
         }
     }
 
-    /// [`read_from`](Self::read_from) streams the whole tail in one call already.
-    fn read_whole_single(
-        &self,
-        path: &Path,
-    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
-        self.read_from(path, 0)
-    }
-
     fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         let inner = self.inner.clone();
         let path = path_to_string(path);

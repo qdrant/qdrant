@@ -77,27 +77,12 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     /// by the backend as an unsatisfiable range (e.g. HTTP 416). Callers that
     /// must tolerate an empty tail should disambiguate with [`len`](Self::len);
     /// see `pipeline::read_from_into_byte_buffer`.
+    /// Fetch the object at `path` starting from byte offset `from`.
+    /// `from == 0` reads the whole object.
     fn read_from(
         &self,
         path: &Path,
         from: u64,
-    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static;
-
-    /// Fetch the whole object at `path`. Convenience for
-    /// [`read_from(path, 0)`](Self::read_from).
-    fn read_whole(
-        &self,
-        path: &Path,
-    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
-        self.read_from(path, 0)
-    }
-
-    /// Fetch the whole object at `path` in a single request: one response, so the bytes all
-    /// come from one version of the object. Yields the object's size and its bytes, shaped
-    /// like [`read_from`](Self::read_from)'s.
-    fn read_whole_single(
-        &self,
-        path: &Path,
     ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static;
 
     fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static;
