@@ -62,19 +62,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     }
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
-    /// will open. Returns `false` (nothing scheduled) when the mapping is not
-    /// in the on-disk format. `populate` is the mapping placement, see
-    /// [`open`](Self::open).
-    pub fn try_preopen(
-        fs: &impl CachedReadFs<File = S>,
-        segment_path: &Path,
-        populate: Populate,
-    ) -> OperationResult<bool> {
+    /// will open. `populate` is the mapping placement, see [`open`](Self::open).
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path, populate: Populate) {
         let i2e_path = i2e_path(segment_path);
-        if !UniversalReadFs::exists(fs, &i2e_path)? {
-            return Ok(false);
-        }
-
         fs.schedule_open(&i2e_path, Some(Self::i2e_open_options(populate)), None);
         fs.schedule_open(
             &e2i_path(segment_path),
@@ -91,8 +81,6 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             }),
             None,
         );
-
-        Ok(true)
     }
 
     /// Open the reader, loading only headers, the sparse index, and the

@@ -1,14 +1,16 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+    CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
+use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
+use crate::id_tracker::immutable_id_tracker::mappings_path as immutable_mappings_path;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
     LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
@@ -22,6 +24,14 @@ pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     DiskResident(ReadOnlyDiskIdTracker<S>),
 }
 
+/// Persisted id-tracker format of a segment, one per [`ReadOnlyIdTrackerEnum`] variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadOnlyIdTrackerFormat {
+    Appendable,
+    Immutable,
+    DiskResident,
+}
+
 impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// Schedule background prefetch for whichever id-tracker format is
     /// present, probing in the same order as [`Self::detect_and_load`].
@@ -32,14 +42,48 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         segment_path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate)? {
-            return Ok(());
+        match Self::detect_format(fs, segment_path)? {
+            ReadOnlyIdTrackerFormat::Appendable => {
+                ReadOnlyAppendableIdTracker::preopen(fs, segment_path)
+            }
+            ReadOnlyIdTrackerFormat::Immutable => {
+                ReadOnlyImmutableIdTracker::preopen(fs, segment_path)
+            }
+            ReadOnlyIdTrackerFormat::DiskResident => {
+                ReadOnlyDiskIdTracker::preopen(fs, segment_path, populate)?
+            }
         }
-        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
-            return Ok(());
-        }
-        ReadOnlyAppendableIdTracker::preopen(fs, segment_path);
         Ok(())
+    }
+
+    /// File to open before the segment's listing snapshot, so the snapshot covers every point
+    /// the tracker loads. `None` if the tracker format doesn't need one.
+    pub fn commit_mark(
+        listing: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<Option<(PathBuf, OpenOptions)>> {
+        Ok(match Self::detect_format(listing, segment_path)? {
+            ReadOnlyIdTrackerFormat::Appendable => {
+                Some(ReadOnlyAppendableIdTracker::<S>::commit_mark(segment_path))
+            }
+            ReadOnlyIdTrackerFormat::Immutable | ReadOnlyIdTrackerFormat::DiskResident => None,
+        })
+    }
+
+    /// The format stored at `segment_path`, judged from the files in the `listing` snapshot.
+    fn detect_format(
+        listing: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+    ) -> OperationResult<ReadOnlyIdTrackerFormat> {
+        Ok(
+            if UniversalReadFs::exists(listing, &i2e_path(segment_path))? {
+                ReadOnlyIdTrackerFormat::DiskResident
+            } else if UniversalReadFs::exists(listing, &immutable_mappings_path(segment_path))? {
+                ReadOnlyIdTrackerFormat::Immutable
+            } else {
+                ReadOnlyIdTrackerFormat::Appendable
+            },
+        )
     }
 
     /// Detect the persisted id-tracker format and load it, by *attempting* each
