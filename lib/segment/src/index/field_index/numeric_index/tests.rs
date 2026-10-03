@@ -209,6 +209,93 @@ fn test_set_empty_payload() {
 #[case(IndexType::MutableGridstore)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
+fn test_range_cardinality_exact_for_clustered_range(#[case] index_type: IndexType) {
+    // Values clustered in two narrow bands far apart, with a gap in between.
+    // The histogram's uniform-in-bucket interpolation is badly wrong for this
+    // shape, so `exp` must come from the exact index count, not the histogram.
+    // Credit: distribution and cases from #10153
+    let mut rng = StdRng::seed_from_u64(7);
+    let (_temp_dir, mut builder) = get_index_builder(index_type);
+    let hw_counter = HardwareCounterCell::new();
+
+    for i in 0..1000 {
+        let value = if rng.random_bool(0.5) {
+            10.0 + rng.random_range(0.0..10.0) // band [10, 20)
+        } else {
+            500.0 + rng.random_range(0.0..10.0) // band [500, 510)
+        };
+        builder
+            .add_point(i as PointOffsetType, &[&Value::from(value)], &hw_counter)
+            .unwrap();
+    }
+    let index = builder.finalize().unwrap();
+
+    let cases = [
+        (10.0, 20.0),
+        (500.0, 510.0),
+        (0.0, 30.0),
+        (490.0, 520.0),
+        (0.0, 1000.0),
+        (100.0, 400.0), // empty range in the gap between the bands
+    ];
+    for (gte, lt) in cases {
+        let range = Range {
+            gte: Some(OrderedFloat(gte)),
+            lt: Some(OrderedFloat(lt)),
+            gt: None,
+            lte: None,
+        };
+        let condition = FieldCondition::new_range(JsonPath::new("unused"), range);
+        let estimation = query::estimate_cardinality(index.inner(), &condition, &hw_counter)
+            .unwrap()
+            .unwrap();
+        let actual = index
+            .inner()
+            .filter(&condition, &hw_counter)
+            .unwrap()
+            .unwrap()
+            .unique()
+            .count();
+
+        // exp comes from the exact matched-value count, so it tracks the real
+        // count within 1% (not bit-exact: the value->point step is a
+        // probabilistic estimator). min/max stay the histogram band.
+        let tolerance = (actual as f64 * 0.01).ceil() as usize;
+        assert!(
+            estimation.exp.abs_diff(actual) <= tolerance,
+            "range [{gte}, {lt}): exp {} should be within {tolerance} of actual {actual}",
+            estimation.exp,
+        );
+    }
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_range_cardinality_inverted_range_is_zero(#[case] index_type: IndexType) {
+    // start > end. The BTree range query would panic without the boundary
+    // guard; `estimate_cardinality` must not panic and must return exp == 0.
+    let (_temp_dir, index) = random_index(1000, 1, index_type);
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+    let range = Range {
+        gte: Some(OrderedFloat(50.0)),
+        lte: Some(OrderedFloat(10.0)),
+        gt: None,
+        lt: None,
+    };
+    let condition = FieldCondition::new_range(JsonPath::new("unused"), range);
+    let estimation = query::estimate_cardinality(index.inner(), &condition, &hw_counter)
+        .unwrap()
+        .unwrap();
+    assert_eq!(estimation.exp, 0);
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_cardinality_exp(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 1, index_type);
 
