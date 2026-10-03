@@ -73,7 +73,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ) -> OperationResult<(bool, Option<PointOffsetType>)> {
         match self.versions_file.as_mut() {
             Some(versions_file) => {
-                versions_file.live_reload().ok_not_found()?;
+                if let Some(fut) = versions_file.live_preload(|_| None).ok_not_found()? {
+                    fut.await;
+                    versions_file.live_reload().ok_not_found()?;
+                }
             }
             None => {
                 let v_path = versions_path(&self.segment_path);
@@ -93,7 +96,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         match self.mappings_file.as_mut() {
             Some(mappings_file) => {
-                mappings_file.live_reload().ok_not_found()?;
+                if let Some(fut) = mappings_file.live_preload(|_| None).ok_not_found()? {
+                    fut.await;
+                    mappings_file.live_reload().ok_not_found()?;
+                }
             }
             None => {
                 let m_path = mappings_path(&self.segment_path);
@@ -147,8 +153,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed =
-            self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
+        let committed = self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
