@@ -7,13 +7,26 @@ IDE autocompletion and type checking.
 
 from enum import Enum
 from optparse import Option
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Union
 from uuid import UUID
 
 # Type aliases
+class NdArray(Protocol):
+    """A NumPy array, read as float32 in one call instead of element by element."""
+
+    shape: Tuple[int, ...]
+    def astype(self, dtype: Any, *, copy: bool = ...) -> Any: ...
+    def tobytes(self) -> bytes: ...
+
 PointId = Union[int, UUID, str]
-Vector = Union[List[float], List[List[float]], Dict[str, "NamedVector"]]
-NamedVector = Union[List[float], "SparseVector", List[List[float]]]
+Vector = Union[List[float], List[List[float]], NdArray, Dict[str, "NamedVector"]]
+NamedVector = Union[List[float], "SparseVector", List[List[float]], NdArray]
+BatchVectors = Union[
+    NdArray,
+    List[List[float]],
+    List[List[List[float]]],
+    Dict[str, Union[NdArray, List[NamedVector]]],
+]
 Payload = Dict[str, Any]
 JsonPath = str
 WithPayloadType = Union[bool, List[str], "PayloadSelector"]
@@ -3351,6 +3364,31 @@ class UpdateOperation:
                 - UpdateMode.Upsert (default): insert new points, update existing points
                 - UpdateMode.InsertOnly: only insert new points, do not update existing points
                 - UpdateMode.UpdateOnly: only update existing points, do not insert new points
+        """
+        ...
+
+    @staticmethod
+    def upsert_batch(
+        ids: List[PointId],
+        vectors: BatchVectors,
+        payloads: Optional[List[Optional[Payload]]] = None,
+        condition: Optional[Filter] = None,
+        update_mode: Optional[UpdateMode] = None,
+    ) -> "UpdateOperation":
+        """
+        Insert or update points given as columns, one entry per id.
+
+        Args:
+            ids: Point IDs.
+            vectors: One vector per id: a 2-D NumPy array (3-D for multivectors), a list of
+                vectors, or a dict mapping vector names to either. NumPy arrays are read
+                without converting them to Python lists.
+            payloads: Optional payload (or None) per id.
+            condition: Optional condition for conditional upsert.
+            update_mode: Optional mode of the upsert operation, as in upsert_points.
+
+        Raises:
+            ValueError: if vectors or payloads do not have one entry per id.
         """
         ...
 
