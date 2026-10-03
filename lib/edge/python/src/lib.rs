@@ -114,7 +114,7 @@ impl PyEdgeShard {
     }
 
     /// Create a new edge shard at `path` with the given configuration.
-    /// Fails if the path already contains segment data.
+    /// Creates `path` if it does not exist. Fails if the path already contains segment data.
     #[staticmethod]
     pub fn create(path: PathBuf, config: PyEdgeConfig) -> Result<Self> {
         let shard = edge::EdgeShard::new(&path, config.0)?;

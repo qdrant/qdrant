@@ -92,7 +92,8 @@ class EdgeShard:
     def create(path: str, config: "EdgeConfig") -> "EdgeShard":
         """
         Create a new edge shard at path with the given configuration.
-        Fails if the path already contains segment data.
+        Creates path if it does not exist. Fails if the path already contains
+        segment data.
 
         Args:
             path: Path to the shard directory (must not contain existing segments).
