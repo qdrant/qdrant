@@ -260,6 +260,21 @@ impl ClusterState {
                 }
 
                 let abort = planned.plan_abort_transfer(context, collection.into(), key)?;
+                // Skip the abort's removal of this same replica; the outer
+                // RemoveReplica below performs it exactly once, last.
+                let abort: Actions = abort
+                    .into_iter()
+                    .filter(|action| {
+                        !matches!(
+                            action,
+                            Action::RemoveReplica {
+                                shard_id: s,
+                                peer_id: p,
+                                ..
+                            } if *s == shard_id && *p == peer_id
+                        )
+                    })
+                    .collect();
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
             }
