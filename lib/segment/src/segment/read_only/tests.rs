@@ -998,7 +998,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     assert_eq!(
         read_only.available_point_count(),
         NUM_POINTS,
-        "first reload must only commit up to the probed watermark at preload time",
+        "first reload must only commit up to the probed max_committed_id at preload time",
     );
 
     // All currently available points must have valid vectors.

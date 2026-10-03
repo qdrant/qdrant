@@ -170,18 +170,18 @@ where
     let reloads: Vec<_> = segments
         .into_iter()
         .zip(preloads)
-        .map(|((uuid, segment), (_, watermark_res))| {
-            (uuid, segment, watermark_res, hw_counter.fork())
+        .map(|((uuid, segment), (_, max_committed_id_res))| {
+            (uuid, segment, max_committed_id_res, hw_counter.fork())
         })
         .collect();
     let ctx = uio_trace::Context::current();
     let results = pool.install(|| {
         reloads
             .into_par_iter()
-            .map(|(uuid, segment, watermark_res, hw)| {
+            .map(|(uuid, segment, max_committed_id_res, hw)| {
                 check_process_stopped(is_stopped)?;
-                let res = match watermark_res {
-                    Ok(watermark) => segment.write().live_reload(watermark, &hw),
+                let res = match max_committed_id_res {
+                    Ok(max_committed_id) => segment.write().live_reload(max_committed_id, &hw),
                     Err(err) => Err(err),
                 };
                 Ok((uuid, ctx.in_scope(|| res)))

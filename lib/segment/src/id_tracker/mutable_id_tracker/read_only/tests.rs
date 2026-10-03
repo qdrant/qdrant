@@ -454,7 +454,7 @@ fn test_merge_empty_is_noop() {
 }
 
 #[test]
-fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
+fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
@@ -476,7 +476,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    // Probe now detects changes and anchors watermark to 2 points
+    // Probe now detects changes and anchors max_committed_id to 2 points
     let (changed, max_committed_id) =
         futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
     assert!(changed, "probe must report changed after inserts");
@@ -490,7 +490,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     insert(&mut mutable, 300.into(), 2, 12);
     flush(&mutable);
 
-    // Reload is clamped to the probed watermark passed as argument (2 points, internal_id 1),
+    // Reload is clamped to the probed max_committed_id passed as argument (2 points, internal_id 1),
     // so point 300 (offset 2) is NOT committed yet!
     let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
     assert_eq!(result.inserted, vec![1]);
