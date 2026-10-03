@@ -336,6 +336,54 @@ pub fn will_need_multiple_pages(region: &[u8]) {
         return;
     }
 
+    will_need_aligned(addr, length);
+}
+
+#[cfg(not(unix))]
+pub fn will_need_multiple_pages(_region: &[u8]) {}
+
+/// 🤖 Like [`will_need_multiple_pages`], but also for a region within a single page.
+#[cfg(unix)]
+pub fn will_need(region: &[u8]) {
+    let Some(page_mask) = page_size().map(|s| s - 1) else {
+        return;
+    };
+    // 🤖 `madvise()` requires the address to be page-aligned.
+    let addr = region.as_ptr().map_addr(|addr| addr & !page_mask);
+    will_need_aligned(addr, region.len() + (region.as_ptr().addr() & page_mask));
+}
+
+#[cfg(not(unix))]
+pub fn will_need(_region: &[u8]) {}
+
+/// 🤖 Whether this thread took page faults since its previous call, or this is the first call.
+/// 🤖 Minor faults count: reading a page brought in by [`will_need`] is one.
+#[cfg(target_os = "linux")]
+pub fn thread_faulted() -> bool {
+    use std::cell::Cell;
+
+    use nix::libc;
+
+    thread_local! {
+        static FAULTS: Cell<Option<libc::c_long>> = const { Cell::new(None) };
+    }
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
+    // Safety: on success, `getrusage` initializes `usage`.
+    if unsafe { libc::getrusage(libc::RUSAGE_THREAD, usage.as_mut_ptr()) } != 0 {
+        return true;
+    }
+    let usage = unsafe { usage.assume_init() };
+    let faults = usage.ru_majflt + usage.ru_minflt;
+    FAULTS.replace(Some(faults)) != Some(faults)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn thread_faulted() -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn will_need_aligned(addr: *const u8, length: usize) {
     // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
     // (not file-baked mmap or even if it is an arbitrary invalid address), it
     // will return an error, but it won't crash or cause an undefined behavior.
@@ -348,9 +396,6 @@ pub fn will_need_multiple_pages(region: &[u8]) {
         }
     }
 }
-
-#[cfg(not(unix))]
-pub fn will_need_multiple_pages(_region: &[u8]) {}
 
 /// Returns the system page size in bytes, or `None` if it could not be determined.
 ///
@@ -376,4 +421,18 @@ fn get_page_size() -> Result<usize, String> {
         return Err(format!("Page size {page_size} is not a power of two"));
     }
     Ok(page_size)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thread_faulted() {
+        let mut mmap = memmap2::MmapMut::map_anon(16 * 4096).unwrap();
+        // 🤖 The first calls fault in their own stack and thread-local pages.
+        assert!((0..10).any(|_| !thread_faulted()));
+        mmap.fill(1);
+        assert!(thread_faulted());
+    }
 }

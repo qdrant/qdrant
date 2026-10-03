@@ -17,7 +17,7 @@ use self::pipeline::MmapReadPipeline;
 use super::traits::{UniversalReadFs, UniversalWriteFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Random};
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
 /// Filesystem handle for local mmap-backed files. Stateless.
@@ -252,6 +252,23 @@ impl UniversalRead for MmapFile {
 
     fn populate_auto() -> bool {
         false
+    }
+
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        // 🤖 already in RAM
+        if self.populate {
+            return;
+        }
+        // 🤖 Hints cost ~130 ns per vector even for cached pages: skip them until reads fault.
+        if !crate::mmap::advice::thread_faulted() {
+            return;
+        }
+        let bytes = self.as_bytes::<Random>();
+        for range in byte_ranges {
+            if let Ok(region) = read_bytes(bytes, range) {
+                crate::mmap::advice::will_need(region);
+            }
+        }
     }
 
     fn clear_ram_cache(&self) -> UioResult<()> {
