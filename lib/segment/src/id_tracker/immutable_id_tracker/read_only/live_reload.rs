@@ -1,8 +1,6 @@
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
-};
+use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 
 use super::ReadOnlyImmutableIdTracker;
@@ -11,13 +9,6 @@ use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
-    pub async fn stage_preload<Fs: UniversalReadFsAsync<File = S>>(
-        &mut self,
-        _inner_fs: &Fs,
-    ) -> OperationResult<(bool, Option<PointOffsetType>)> {
-        Ok((true, None))
-    }
-
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
     pub fn live_preload(
         &self,

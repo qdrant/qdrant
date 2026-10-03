@@ -2,8 +2,9 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync};
-
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
@@ -74,8 +75,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     ) -> OperationResult<(bool, Option<PointOffsetType>)> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.stage_preload(inner_fs).await,
-            Self::Immutable(id_tracker) => id_tracker.stage_preload(inner_fs).await,
-            Self::DiskResident(id_tracker) => id_tracker.stage_preload(inner_fs).await,
+            Self::Immutable(_) | Self::DiskResident(_) => Ok((true, None)),
         }
     }
 

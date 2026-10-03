@@ -38,8 +38,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // 1. Stage preloading for tracker files on inner fs before taking the directory listing snapshot,
         // anchoring max_committed_id and live-reloading held handles in place.
-        let (tracker_changed, max_committed_id) =
-            id_tracker.borrow_mut().stage_preload(reload_fs.inner()).await?;
+        let (tracker_changed, max_committed_id) = id_tracker
+            .borrow_mut()
+            .stage_preload(reload_fs.inner())
+            .await?;
 
         // 2. If nothing changed and there are no unapplied pending changes from a previous
         // failed reload, skip the expensive directory LIST and preloading entirely.
