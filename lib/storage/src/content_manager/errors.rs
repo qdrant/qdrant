@@ -52,6 +52,11 @@ pub enum StorageError {
     /// A node has reached its resource quota and cannot take on more data.
     #[error("Insufficient storage: {description}")]
     InsufficientStorage { description: String },
+    /// A request was refused by a strict mode rule. Answers like a bad request,
+    /// but stays a variant of its own so a peer can tell the two apart when it
+    /// converts a status back into an error.
+    #[error("Bad request: {description}")]
+    StrictMode { description: String },
 }
 
 impl StorageError {
@@ -176,7 +181,9 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
-            CollectionError::StrictMode { description } => StorageError::BadRequest { description },
+            CollectionError::StrictMode { .. } => StorageError::StrictMode {
+                description: overriding_description,
+            },
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
             }
@@ -253,7 +260,7 @@ impl From<CollectionError> for StorageError {
                 description: err.to_string(),
                 backtrace: None,
             },
-            CollectionError::StrictMode { description } => StorageError::BadRequest { description },
+            CollectionError::StrictMode { description } => StorageError::StrictMode { description },
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
             }
