@@ -3,9 +3,7 @@
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs,
-};
+use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 
 use super::ReadOnlyDiskIdTracker;

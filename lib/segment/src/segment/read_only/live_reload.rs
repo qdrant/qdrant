@@ -49,7 +49,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             return Ok(max_committed_id);
         }
 
-        // 3. Take directory listing snapshot now that watermark is anchored.
+        // 3. Take directory listing snapshot now that max_committed_id is anchored.
         reload_fs.cache_file_info_async().await?;
 
         check_process_stopped(is_stopped)?;
