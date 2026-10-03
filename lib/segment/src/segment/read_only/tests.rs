@@ -1191,3 +1191,97 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         .expect("reload");
     assert_eq!(read_only.available_point_count(), 20);
 }
+
+/// Regression test: the writer flushes between the open's listing snapshot and the id-tracker
+/// open. The tracker must not commit points whose vectors that snapshot doesn't cover.
+///
+/// Not run on Windows: the writer's flush replaces files the staged open holds mapped.
+#[cfg(not(windows))]
+#[test]
+fn test_open_writer_appends_between_list_and_tracker_open() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_open")
+        .tempdir()
+        .unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |mutable: &mut Segment, ids: std::ops::Range<usize>| {
+        for i in ids {
+            let vector: Vec<f32> = (0..DIM)
+                .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+                .collect();
+            let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+            mutable
+                .upsert_point(i as u64 + 1, (i as u64 + 1).into(), vectors, &hw)
+                .unwrap();
+        }
+        mutable.flush(true).unwrap();
+    };
+
+    upsert(&mut mutable, 0..NUM_POINTS);
+
+    // The open's listing snapshot.
+    let cached_fs = futures::executor::block_on(
+        ReadOnlySegment::<MmapFile>::build_cached_fs_async(&MmapFs, &mutable.data_path()),
+    )
+    .expect("listing");
+
+    // The writer crosses chunk 0 capacity (4096): chunk 1 is not in the snapshot.
+    upsert(&mut mutable, NUM_POINTS..5000);
+
+    let stop = AtomicBool::new(false);
+    let mut read_only = ReadOnlySegment::<MmapFile>::schedule_open_with_cached_fs(
+        cached_fs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &stop,
+    )
+    .and_then(|staged| staged.finish(&MmapFs))
+    .expect("read-only open");
+
+    assert_eq!(
+        read_only.available_point_count(),
+        NUM_POINTS,
+        "open must commit only what the listing snapshot covers",
+    );
+    for point_id in 1..=read_only.available_point_count() as u64 {
+        let vector = read_only
+            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .unwrap();
+        assert!(
+            vector.is_some(),
+            "vector for point {point_id} must be present"
+        );
+    }
+
+    // The next refresh picks up the rest.
+    preload_then_reload(&mut read_only, &hw).expect("reload");
+    assert_eq!(read_only.available_point_count(), 5000);
+}

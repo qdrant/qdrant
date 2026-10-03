@@ -27,26 +27,13 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         }
     }
 
-    /// Schedule background prefetch of every file [`open`](Self::open) will
-    /// read
-    ///
-    /// Returns `false` (nothing scheduled) when the segment is not in the
-    /// immutable format.
-    pub fn try_preopen(
-        fs: &impl CachedReadFs<File = S>,
-        segment_path: &Path,
-    ) -> OperationResult<bool> {
-        if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
-            return Ok(false);
-        }
-
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) {
         let options = Self::open_options();
 
         fs.schedule_open(&deleted_path(segment_path), Some(options), None);
         fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
         fs.schedule_open(&mappings_path(segment_path), Some(options), None);
-
-        Ok(true)
     }
 
     /// Open a read-only view over immutable ID tracker data at `segment_path`, threading every file

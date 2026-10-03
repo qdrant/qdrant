@@ -131,4 +131,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let options = Self::open_options();
         Ok(fs.open(path, options, Default::default()).ok_not_found()?)
     }
+
+    /// The versions file and its open options: [`Self::open`] loads only points it has versions for.
+    pub(crate) fn commit_mark(segment_path: &Path) -> (PathBuf, OpenOptions) {
+        (versions_path(segment_path), Self::open_options())
+    }
 }

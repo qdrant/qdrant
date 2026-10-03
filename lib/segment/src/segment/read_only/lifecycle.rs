@@ -55,6 +55,11 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
     cached_fs.cache_file_info()?;
+    if let Some((path, options)) =
+        ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark(&cached_fs, segment_path)?
+    {
+        cached_fs.cache_file_info_after_open(&path, options)?;
+    }
     schedule_static_files(&cached_fs, segment_path);
     Ok(cached_fs)
 }
@@ -148,6 +153,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     ) -> OperationResult<CachedFs<S::Fs>> {
         let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
         cached_fs.cache_file_info_async().await?;
+        if let Some((path, options)) =
+            ReadOnlyIdTrackerEnum::<S>::commit_mark(&cached_fs, segment_path)?
+        {
+            cached_fs
+                .cache_file_info_after_open_async(&path, options)
+                .await?;
+        }
         schedule_static_files(&cached_fs, segment_path);
         Ok(cached_fs)
     }

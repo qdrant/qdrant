@@ -42,18 +42,14 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)
-    /// will read. Returns `false` (nothing scheduled) when the tracker is not
-    /// in the on-disk format. `populate` is the placement of the per-point
-    /// data, see [`open`](Self::open).
-    pub fn try_preopen(
+    /// will read. `populate` is the placement of the per-point data, see
+    /// [`open`](Self::open).
+    pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
-    ) -> OperationResult<bool> {
-        if !DiskMappingReader::try_preopen(fs, segment_path, populate)? {
-            return Ok(false);
-        }
-
+    ) -> OperationResult<()> {
+        DiskMappingReader::preopen(fs, segment_path, populate);
         ReadOnlyVersions::schedule_preopen(fs, segment_path, populate)?;
         fs.schedule_open(
             &deleted_path(segment_path),
@@ -61,7 +57,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             None,
         );
 
-        Ok(true)
+        Ok(())
     }
 
     /// Open a read-only disk id tracker at `segment_path`; all per-point data
