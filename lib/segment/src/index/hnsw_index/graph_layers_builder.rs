@@ -520,7 +520,7 @@ impl GraphLayersBuilder {
     ) -> ScoredPointOffset {
         let nearest = self
             .search_on_level(
-                level_entry,
+                &[level_entry],
                 curr_level,
                 self.ef_construct,
                 points_scorer,
@@ -806,7 +806,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
@@ -919,7 +919,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
