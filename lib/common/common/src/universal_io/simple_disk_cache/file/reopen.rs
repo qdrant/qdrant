@@ -263,7 +263,7 @@ where
             async move {
                 let fetch = || async {
                     let collector = new_remote
-                        .read_whole_into_async(from, move |total_len| {
+                        .read_from_into_async(from, move |total_len| {
                             let tail_len = (total_len.saturating_sub(from)) as usize;
                             let mut buffer = AVec::new(REMOTE_READ_ALIGNMENT);
                             buffer.resize(tail_len, 0);
