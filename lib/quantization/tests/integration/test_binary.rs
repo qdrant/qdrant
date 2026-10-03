@@ -340,6 +340,10 @@ mod tests {
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
 
+        // Inverted distance scores are postprocessed with `abs()` before being
+        // returned, so they must remain non-positive to preserve result order.
+        assert!(scores.iter().all(|(score, _)| *score <= 0.0));
+
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         let sorted_indices: Vec<_> = scores.into_iter().map(|(_, i)| i).collect();
@@ -601,6 +605,10 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
+
+        // Inverted distance scores are postprocessed with `abs()` before being
+        // returned, so they must remain non-positive to preserve result order.
+        assert!(scores.iter().all(|(score, _)| *score <= 0.0));
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
