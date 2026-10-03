@@ -107,7 +107,7 @@ impl Collection {
 
         let max_limit = batch_request
             .iter()
-            .map(|req| req.limit + req.offset)
+            .map(|req| req.limit.saturating_add(req.offset))
             .max()
             .unwrap_or(0);
 
@@ -119,7 +119,7 @@ impl Collection {
 
         for request in batch_request.iter() {
             let mut new_request = request.clone();
-            let request_limit = new_request.limit + new_request.offset;
+            let request_limit = new_request.limit.saturating_add(new_request.offset);
 
             let is_exact = request.params.as_ref().is_some_and(|p| p.exact);
 
@@ -758,7 +758,9 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             // Otherwise, we expect the root result
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),
-                take: request.offset + request.limit,
+                // Use saturating_add so an unbounded user-supplied limit/offset cannot overflow
+                // (debug panic / release wraparound to a tiny take) — it clamps to usize::MAX instead.
+                take: request.offset.saturating_add(request.limit),
             }]
         }
     }
