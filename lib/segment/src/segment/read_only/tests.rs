@@ -914,8 +914,8 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
 
     // After the listing snapshot was taken, writer appends more points and flushes.
     // 5000 points will cross chunk 0 capacity (4096) and create chunk 1!
-    let mut op_num = NUM_POINTS as u64 + 1;
     for i in NUM_POINTS..5000 {
+        let op_num = i as u64 + 1;
         let vector: Vec<f32> = (0..DIM)
             .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
             .collect();
@@ -924,7 +924,6 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         mutable
             .upsert_point(op_num, point_id, vectors, &hw)
             .unwrap();
-        op_num += 1;
     }
     mutable.flush(true).unwrap();
 
@@ -954,7 +953,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // A subsequent preload and reload cycle picks up the remaining points.
     preload_then_reload(&mut read_only, &hw).expect("second live reload");
     assert_eq!(read_only.available_point_count(), 5000);
-    for point_id in 1..=5000 as u64 {
+    for point_id in 1..=5000_u64 {
         let vec = read_only
             .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
             .unwrap();

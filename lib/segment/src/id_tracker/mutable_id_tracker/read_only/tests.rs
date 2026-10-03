@@ -516,10 +516,7 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 
     let (changed, max_committed_id) =
         futures::executor::block_on(read_only.stage_preload(&MmapFs)).unwrap();
-    assert!(
-        changed,
-        "probe must detect pure delete via mappings change"
-    );
+    assert!(changed, "probe must detect pure delete via mappings change");
     assert_eq!(max_committed_id, Some(3));
     let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
     assert_eq!(result.deleted, vec![1]);
@@ -529,11 +526,15 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
 #[test]
 fn test_stage_preload_over_disk_cache() {
     use std::sync::Arc;
+
     use common::universal_io::{
         DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
     };
 
-    let tmp = Builder::new().prefix("disk_cache_tracker").tempdir().unwrap();
+    let tmp = Builder::new()
+        .prefix("disk_cache_tracker")
+        .tempdir()
+        .unwrap();
     let remote_root = tmp.path().join("remote");
     let local_root = tmp.path().join("local");
     let segment_dir = remote_root.join("segment");
@@ -567,7 +568,9 @@ fn test_stage_preload_over_disk_cache() {
     // Probe now should detect changes!
     let (changed, max_committed_id) =
         futures::executor::block_on(read_only.stage_preload(&cache_fs)).unwrap();
-    assert!(changed, "stage_preload over DiskCache must report changed after inserts");
+    assert!(
+        changed,
+        "stage_preload over DiskCache must report changed after inserts"
+    );
     assert_eq!(max_committed_id, Some(2));
 }
-

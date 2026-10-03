@@ -157,10 +157,10 @@ where
     let preloads = futures::executor::block_on(join_all(segments.iter().map(
         |(uuid, segment)| async move {
             let res = segment.read().live_preload(is_stopped).await;
-            if let Err(ref err) = res {
-                if !matches!(err, OperationError::Cancelled { .. }) {
-                    log::warn!("live_preload of segment {uuid} failed: {err}");
-                }
+            if let Err(ref err) = res
+                && !matches!(err, OperationError::Cancelled { .. })
+            {
+                log::warn!("live_preload of segment {uuid} failed: {err}");
             }
             (*uuid, res)
         },
