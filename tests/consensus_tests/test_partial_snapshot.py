@@ -118,7 +118,8 @@ def test_partial_snapshot(
 def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
+    # 100k points make recovery slow enough to observe the lock; big batches keep loading them fast
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000, bootstrap_batch_size = 1_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
     futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
@@ -130,7 +131,8 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
+    # 100k points make recovery slow enough to observe the lock; big batches keep loading them fast
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000, bootstrap_batch_size = 1_000)
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
     recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
@@ -234,14 +236,14 @@ def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
     assert_http_ok(resp)
 
 
-def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False):
-    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green)
+def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False, bootstrap_batch_size = 10):
+    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green, batch_size=bootstrap_batch_size)
     read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None)
     return write_peer, read_peer
 
-def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False):
+def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False, batch_size = 10):
     write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
-    bootstrap_collection(write_peer, shards, bootstrap_points)
+    bootstrap_collection(write_peer, shards, bootstrap_points, batch_size)
     if wait_for_green:
         wait_collection_green(write_peer, collection_name=COLLECTION)
     return write_peer
@@ -267,7 +269,7 @@ def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
 
     return uris[0]
 
-def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
+def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0, batch_size = 10):
     create_collection(
         peer_url,
         shard_number = shards,
@@ -280,7 +282,7 @@ def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
     wait_collection_exists_and_active_on_all_peers(COLLECTION, [peer_url])
 
     if bootstrap_points > 0:
-        upsert(peer_url, bootstrap_points)
+        upsert(peer_url, bootstrap_points, batch_size = batch_size)
 
 def recover_collection(peer_url: str, recover_from_url: str):
     snapshot_url = create_collection_snapshot(recover_from_url)
@@ -375,8 +377,8 @@ def scroll_points(peer_url: str):
     return points
 
 
-def upsert(peer_url: str, points: int, offset = 0):
-    upsert_random_points(peer_url, points, offset = offset, batch_size = 10, with_sparse_vector = False)
+def upsert(peer_url: str, points: int, offset = 0, batch_size = 10):
+    upsert_random_points(peer_url, points, offset = offset, batch_size = batch_size, with_sparse_vector = False)
 
 def delete(peer_url: str, until_id: int, from_id = 0):
     resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/delete?wait=true", json = {
