@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::{TryFutureExt, future};
+use futures::future;
 use itertools::{Either, Itertools};
 use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
@@ -175,32 +175,42 @@ impl Collection {
             is_auto_sharding,
         );
 
+        let local_only = shard_selection.is_shard_id();
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+            let shard = Arc::clone(shard);
             let shard_key = shard_key.cloned();
             let request_clone = Arc::clone(&batch_request);
-            shard
-                .query_batch(
-                    request_clone,
-                    read_consistency,
-                    routing_token,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                    hw_measurement_acc.clone(),
-                )
-                .and_then(move |mut shard_responses| async move {
-                    if shard_key.is_none() {
-                        return Ok(shard_responses);
-                    }
+            let hw_measurement_acc = hw_measurement_acc.clone();
+            async move {
+                let mut shard_responses = shard
+                    .query_batch(
+                        request_clone,
+                        read_consistency,
+                        routing_token,
+                        local_only,
+                        timeout,
+                        hw_measurement_acc,
+                    )
+                    .await?;
+
+                if shard_key.is_some() {
                     shard_responses
                         .iter_mut()
                         .flatten()
                         .flatten()
                         .for_each(|point| point.shard_key.clone_from(&shard_key));
+                }
 
-                    Ok(shard_responses)
-                })
+                Ok(shard_responses)
+            }
         });
-        future::try_join_all(all_searches).await
+
+        // `shard_holder` stays locked until every shard has answered. On an error or cancellation,
+        // it is released as soon as the remaining tasks are asked to abort, so those tasks may
+        // briefly outlive it, each holding its own `Arc` to its replica set.
+        let results = join_spawned(all_searches).await;
+        drop(shard_holder);
+        results
     }
 
     /// This function is used to query the collection. It will return a list of scored points.
@@ -762,4 +772,43 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             }]
         }
     }
+}
+
+/// Runs each future as its own task and collects the results in input order.
+///
+/// Unlike `try_join_all`, which polls every future on the caller's task, this lets the
+/// synchronous work of each shard request (building it, decoding its response) run on separate
+/// runtime threads. Stops at the first error; dropping the returned future aborts the rest.
+///
+/// A single future is awaited in place, as there is nothing to run it alongside.
+pub(crate) async fn join_spawned<T, F>(
+    futures: impl IntoIterator<Item = F>,
+) -> CollectionResult<Vec<T>>
+where
+    T: Send + 'static,
+    F: Future<Output = CollectionResult<T>> + Send + 'static,
+{
+    let mut futures: Vec<F> = futures.into_iter().collect();
+    if futures.len() <= 1 {
+        return match futures.pop() {
+            Some(future) => Ok(vec![future.await?]),
+            None => Ok(Vec::new()),
+        };
+    }
+
+    let count = futures.len();
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, future) in futures.into_iter().enumerate() {
+        tasks.spawn(async move { (index, future.await) });
+    }
+
+    let mut results: Vec<Option<T>> = (0..count).map(|_| None).collect();
+    while let Some(joined) = tasks.join_next().await {
+        let (index, result) = joined.map_err(|err| {
+            CollectionError::service_error(format!("shard query task failed: {err}"))
+        })?;
+        results[index] = Some(result?);
+    }
+
+    Ok(results.into_iter().flatten().collect())
 }
