@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
+use futures::lock::Mutex;
 
 pub use self::live_reload::{LiveReloadResult, TrackerProbe};
 use crate::id_tracker::point_mappings::PointMappings;
@@ -64,11 +65,17 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// entry, so a partial trailing entry (a flush in progress) is re-read on the next reload.
     mappings_read_to: u64,
 
+    /// Backing file handles, behind their own lock so [`Self::probe_committed`] can refresh them
+    /// under shared access while readers use the tracker. Readers never touch them.
+    files: Mutex<TrackerFiles<S>>,
+}
+
+struct TrackerFiles<S> {
     /// Backing handle for the append-only mappings log. `None` until the file exists; opened lazily
     /// and refreshed on live-reload.
-    mappings_file: Option<S>,
+    mappings: Option<S>,
 
     /// Backing handle for the random-access versions array. `None` until the file exists; opened
     /// lazily and refreshed on live-reload.
-    versions_file: Option<S>,
+    versions: Option<S>,
 }

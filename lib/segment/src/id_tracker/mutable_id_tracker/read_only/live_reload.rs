@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::path::PathBuf;
 
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
@@ -7,7 +8,7 @@ use common::universal_io::{
 };
 use futures::future::BoxFuture;
 
-use super::ReadOnlyAppendableIdTracker;
+use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, read_mappings_iter};
@@ -107,48 +108,27 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// held handles in place, opening missing ones) and reports the observed versions length as
     /// `max_committed_id`. The tracker's visible state is unchanged until [`Self::live_reload`].
     pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
-        &mut self,
+        &self,
         inner_fs: &Fs,
     ) -> OperationResult<TrackerProbe> {
-        match self.versions_file.as_mut() {
-            Some(versions_file) => {
-                if let Some(fut) = versions_file.live_preload(|_| None).ok_not_found()? {
-                    fut.await;
-                    versions_file.live_reload().ok_not_found()?;
-                }
-            }
-            None => {
-                let v_path = versions_path(&self.segment_path);
-                self.versions_file = inner_fs
-                    .open_async(v_path, Self::open_options(), Default::default())
-                    .await
-                    .ok_not_found()?;
-            }
-        }
-        let v_len = match self.versions_file.as_ref() {
-            Some(file) => {
-                let bytes = file.len::<u8>()?;
-                (bytes / VERSION_ELEMENT_SIZE) as usize
-            }
+        // Held across the refresh IO. Only refreshes take it, and the caller serializes those.
+        let mut files = self.files.lock().await;
+        let TrackerFiles { mappings, versions } = &mut *files;
+
+        // Refreshed concurrently, so the mappings may be observed older than the versions. That is
+        // safe: a point becomes visible only once both its insert and its version are read, so a
+        // missing insert just defers the point, and the grown mappings file flags the next probe
+        // as changed.
+        futures::try_join!(
+            Self::refresh_file(versions, inner_fs, versions_path(&self.segment_path)),
+            Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
+        )?;
+
+        let v_len = match versions {
+            Some(file) => (file.len::<u8>()? / VERSION_ELEMENT_SIZE) as usize,
             None => 0,
         };
-
-        match self.mappings_file.as_mut() {
-            Some(mappings_file) => {
-                if let Some(fut) = mappings_file.live_preload(|_| None).ok_not_found()? {
-                    fut.await;
-                    mappings_file.live_reload().ok_not_found()?;
-                }
-            }
-            None => {
-                let m_path = mappings_path(&self.segment_path);
-                self.mappings_file = inner_fs
-                    .open_async(m_path, Self::open_options(), Default::default())
-                    .await
-                    .ok_not_found()?;
-            }
-        }
-        let m_bytes = match self.mappings_file.as_ref() {
+        let m_bytes = match mappings {
             Some(file) => file.len::<u8>()?,
             None => 0,
         };
@@ -162,6 +142,29 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         } else {
             TrackerProbe::Unchanged { max_committed_id }
         })
+    }
+
+    /// Live-reload a held handle in place, or open it through `inner_fs` once the file exists.
+    async fn refresh_file<Fs: UniversalReadFsAsync<File = S>>(
+        file: &mut Option<S>,
+        inner_fs: &Fs,
+        path: PathBuf,
+    ) -> OperationResult<()> {
+        match file {
+            Some(file) => {
+                if let Some(fut) = file.live_preload(|_| None).ok_not_found()? {
+                    fut.await;
+                    file.live_reload().ok_not_found()?;
+                }
+            }
+            None => {
+                *file = inner_fs
+                    .open_async(path, Self::open_options(), Default::default())
+                    .await
+                    .ok_not_found()?;
+            }
+        }
+        Ok(())
     }
 
     /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
@@ -259,8 +262,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
+        let mappings_file = &mut self.files.get_mut().mappings;
         if !preloaded {
-            match self.mappings_file.as_mut() {
+            match mappings_file.as_mut() {
                 Some(file) => {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                     // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
@@ -268,11 +272,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     file.live_reload().ok_not_found()?;
                 }
                 None => {
-                    self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+                    *mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
                 }
             }
         }
-        let Some(file) = self.mappings_file.as_mut() else {
+        let Some(file) = mappings_file.as_mut() else {
             return Ok(Vec::new());
         };
 
@@ -324,8 +328,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     ) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
+        let versions_file = &mut self.files.get_mut().versions;
         if !preloaded {
-            match self.versions_file.as_mut() {
+            match versions_file.as_mut() {
                 Some(versions_file) => {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                     // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
@@ -333,11 +338,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     versions_file.live_reload().ok_not_found()?;
                 }
                 None => {
-                    self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+                    *versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
                 }
             }
         }
-        let Some(versions_file) = self.versions_file.as_mut() else {
+        let Some(versions_file) = versions_file.as_mut() else {
             return Ok(self.internal_to_version.len());
         };
 

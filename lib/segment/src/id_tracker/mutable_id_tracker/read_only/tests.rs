@@ -564,7 +564,7 @@ fn test_probe_committed_over_disk_cache() {
     })
     .unwrap();
 
-    let mut read_only =
+    let read_only =
         ReadOnlyAppendableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &segment_dir, None)
             .unwrap();
 

@@ -1118,3 +1118,76 @@ fn test_live_preload_skips_list_when_unchanged() {
         .expect("second reload");
     assert_eq!(read_only.available_point_count(), 10);
 }
+
+/// Regression test: `live_preload` runs under shared access, concurrently with readers.
+/// Probing the id tracker must not borrow it mutably while a reader holds it.
+#[test]
+fn test_live_preload_while_reader_holds_id_tracker() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_shared_preload")
+        .tempdir()
+        .unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |mutable: &mut Segment, ids: std::ops::Range<u64>| {
+        for i in ids {
+            let vector: Vec<f32> = (0..DIM).map(|j| (i as usize + j) as f32).collect();
+            let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+            mutable
+                .upsert_point(i + 1, (i + 1).into(), vectors, &hw)
+                .unwrap();
+        }
+        mutable.flush(true).unwrap();
+    };
+
+    upsert(&mut mutable, 0..10);
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    upsert(&mut mutable, 10..20);
+
+    let max_committed_id = {
+        let reader = read_only.id_tracker.borrow();
+        let max_committed_id =
+            futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+                .expect("preload alongside a reader");
+        assert_eq!(
+            reader.available_point_count(),
+            10,
+            "preload must not change what readers see"
+        );
+        max_committed_id
+    };
+
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("reload");
+    assert_eq!(read_only.available_point_count(), 20);
+}

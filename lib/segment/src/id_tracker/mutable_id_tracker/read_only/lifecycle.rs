@@ -6,8 +6,9 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
 };
+use futures::lock::Mutex;
 
-use super::ReadOnlyAppendableIdTracker;
+use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
 use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
@@ -72,8 +73,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             max_claimed_internal_id: None,
             mappings_read_to: 0,
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
-            mappings_file: None,
-            versions_file: None,
+            files: Mutex::new(TrackerFiles {
+                mappings: None,
+                versions: None,
+            }),
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
