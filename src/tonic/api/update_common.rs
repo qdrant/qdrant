@@ -1006,8 +1006,11 @@ fn convert_field_type(
     field_index_params: Option<PayloadIndexParams>,
 ) -> Result<Option<PayloadFieldSchema>, Status> {
     let field_type_parsed = field_type
-        .map(|x| FieldType::try_from(x).ok())
-        .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
+        .map(|x| {
+            FieldType::try_from(x)
+                .map_err(|_| Status::invalid_argument(format!("Unknown field type: {x}")))
+        })
+        .transpose()?;
 
     let field_schema = match (field_type_parsed, field_index_params) {
         (
@@ -1082,8 +1085,8 @@ fn convert_field_type(
             FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
             FieldType::Uuid => Some(PayloadSchemaType::Uuid.into()),
         },
-        (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
-        (None, None) => None,
+        (None, Some(_)) => return Err(Status::invalid_argument("field_type is missing")),
+        (None, None) => return Err(Status::invalid_argument("field_type is required")),
     };
 
     Ok(field_schema)
@@ -1241,4 +1244,67 @@ pub async fn delete_vector_name(
 
     let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn convert_field_type_rejects_unknown_int() {
+        let err = convert_field_type(Some(9999), None)
+            .expect_err("unknown FieldType integer should be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown field type"),
+            "unexpected message: {}",
+            err.message(),
+        );
+    }
+
+    #[test]
+    fn convert_field_type_rejects_unknown_int_with_params() {
+        let params = PayloadIndexParams {
+            index_params: Some(IndexParams::KeywordIndexParams(
+                grpc::qdrant::KeywordIndexParams::default(),
+            )),
+        };
+        let err = convert_field_type(Some(9999), Some(params))
+            .expect_err("unknown FieldType integer should be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown field type"),
+            "unexpected message: {}",
+            err.message(),
+        );
+    }
+
+    #[test]
+    fn convert_field_type_requires_field_type() {
+        let err =
+            convert_field_type(None, None).expect_err("missing field_type should be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn convert_field_type_requires_field_type_when_params_present() {
+        let params = PayloadIndexParams {
+            index_params: Some(IndexParams::KeywordIndexParams(
+                grpc::qdrant::KeywordIndexParams::default(),
+            )),
+        };
+        let err = convert_field_type(None, Some(params))
+            .expect_err("missing field_type with params should be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn convert_field_type_accepts_known_field_type() {
+        let schema = convert_field_type(Some(FieldType::Keyword as i32), None)
+            .expect("known FieldType should be accepted");
+        assert_eq!(
+            schema,
+            Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        );
+    }
 }
