@@ -1194,7 +1194,7 @@ mod tests_async {
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
-    use crate::universal_io::traits::read_whole_via_read_bytes;
+    use crate::universal_io::traits::read_from_via_read_bytes;
     use crate::universal_io::{
         ChunkSink, ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync,
         UniversalReadFsAsync, UserData,
@@ -1356,7 +1356,7 @@ mod tests_async {
             self.inner.read_bytes(range, access_pattern, align)
         }
 
-        fn read_whole_into_async<W, I>(
+        fn read_from_into_async<W, I>(
             &self,
             from: u64,
             init: I,
@@ -1365,7 +1365,7 @@ mod tests_async {
             I: FnOnce(u64) -> UioResult<W> + Send + 'static,
             W: ChunkSink + Send + 'static,
         {
-            read_whole_via_read_bytes(self, from, init)
+            read_from_via_read_bytes(self, from, init)
         }
     }
 

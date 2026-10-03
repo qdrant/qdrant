@@ -16,7 +16,7 @@ use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
-use crate::universal_io::traits::read_whole_via_read_bytes;
+use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
     ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
     UniversalReadFsAsync,
@@ -59,7 +59,7 @@ where
                     // from `known_len` when the file was replaced since it was observed.
                     let mirror_path = local_path.clone();
                     let MirrorWriter(local, mut file) = remote
-                        .read_whole_into_async(0, move |len| {
+                        .read_from_into_async(0, move |len| {
                             let file = TempPath::try_from_path(mirror_path)?;
                             Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
                         })
@@ -163,7 +163,7 @@ where
         }
     }
 
-    fn read_whole_into_async<W, I>(
+    fn read_from_into_async<W, I>(
         &self,
         from: u64,
         init: I,
@@ -172,6 +172,6 @@ where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        read_whole_via_read_bytes(self, from, init)
+        read_from_via_read_bytes(self, from, init)
     }
 }

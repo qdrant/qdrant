@@ -2,12 +2,13 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::uio_trace::{Op, Outcome};
+use common::uio_trace::Op;
 use common::universal_io::{ChunkSink, IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
 use crate::file::BlobFile;
 use crate::read::{AsyncRead, OffsetByteStream, with_running_offsets};
+use crate::stats::RequestObserver;
 
 /// Build the future that allocates an exact-size, `align`-aligned destination
 /// byte buffer, streams the backend read for `range` into it, and returns it as
@@ -44,63 +45,34 @@ pub fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
 /// Like [`read_into_byte_buffer`], but fetches everything from byte offset
 /// `from` to the end of the object, sizing the buffer from the object's total
 /// length carried in the response — no separate `len`/HEAD round-trip on the
-/// happy path. `from == 0` reads the whole object.
-///
-/// An offset at or past the end has no tail to read. The backend reports that as
-/// an unsatisfiable-range error rather than an empty body, so the error path
-/// confirms with a single `len`: if `from >= eof` the tail is genuinely empty
-/// and we yield a zero-length buffer; otherwise the original read error stands.
+/// happy path. `from == 0` reads the whole object. A tail at or past EOF yields
+/// a zero-length buffer (see [`read_tail`]).
 pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
     align: usize,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
-    let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
-    let read_fut = file.inner.read_from(&file.path, from);
-    // Cloned for the cold disambiguation path only; building the `len` future is
-    // deferred until a read error actually occurs.
-    let inner = file.inner.clone();
-    let stats = file.stats.clone();
-    let path = file.path.clone();
+    let tail = read_tail(file, from);
     async move {
-        request.start();
-        let (size, stream) = match read_fut.await {
-            Ok(ok) => ok,
-            // A missing object has no tail to be empty; the probe would only repeat the answer.
-            Err(err) if err.is_not_found() => {
-                request.set_err(&err);
-                return Err(err);
+        let (mut request, tail) = tail.await;
+        let (size, stream) = tail?;
+        let result = match stream {
+            Some(stream) => {
+                let len = size.saturating_sub(from) as usize;
+                scatter_stream_into_buffer(stream, len, align).await
             }
-            Err(err) => {
-                // Settled after the `len` probe: a tail at or past EOF is an empty
-                // read, not a failed one.
-                let eof = stats
-                    .request(Op::Len, &path, 0..0)
-                    .wrap(inner.len(&path))
-                    .await;
-                if let Ok(eof) = eof
-                    && from >= eof
-                {
-                    request.set(Outcome::Ok);
-                    return Ok(AVec::new(align));
-                }
-                request.set_err(&err);
-                eof?;
-                return Err(err);
-            }
+            None => Ok(AVec::new(align)),
         };
-        request.set_end(size);
-        let len = size.saturating_sub(from) as usize;
-        let result = scatter_stream_into_buffer(stream, len, align).await;
         request.set_result(&result);
         result
     }
 }
 
 /// Stream the object behind `file` from byte offset `from` into a sink with a single request
-/// (see [`AsyncRead::read_from`]): `init` builds the sink from the object's length, then every chunk
-/// is handed to it the moment it arrives. Yields the sink.
-pub fn read_whole_into_sink<A, W, I>(
+/// (see [`AsyncRead::read_from`]): `init` builds the sink from the object's total length, then
+/// every chunk is handed to it at its absolute file offset the moment it arrives. A tail at or
+/// past EOF builds the sink and writes nothing (see [`read_tail`]). Yields the sink.
+pub fn read_from_into_sink<A, W, I>(
     file: &BlobFile<A>,
     from: u64,
     init: I,
@@ -109,6 +81,33 @@ where
     A: AsyncRead + Clone,
     I: FnOnce(u64) -> UioResult<W> + Send + 'static,
     W: ChunkSink + Send + 'static,
+{
+    let tail = read_tail(file, from);
+    async move {
+        let (mut request, tail) = tail.await;
+        let (size, stream) = tail?;
+        let result = match stream {
+            Some(stream) => stream_into_sink(stream, size, from, init).await,
+            None => init(size),
+        };
+        request.set_result(&result);
+        result
+    }
+}
+
+/// [`AsyncRead::read_from`] at `from`, yielding the object's total size and the tail's stream.
+///
+/// An offset at or past the end has no tail to read. The backend reports that as an
+/// unsatisfiable-range error rather than an empty body, so the error path confirms with a
+/// single `len`: if `from >= eof` the tail is genuinely empty and the stream is `None`;
+/// otherwise the original read error stands.
+///
+/// The returned request is started; on error it is already settled, on success the caller
+/// settles it once the stream is consumed.
+fn read_tail<A: AsyncRead + Clone>(
+    file: &BlobFile<A>,
+    from: u64,
+) -> impl Future<Output = (RequestObserver, UioResult<(u64, Option<OffsetByteStream>)>)> + Send + 'static
 {
     let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
     let read_fut = file.inner.read_from(&file.path, from);
@@ -119,38 +118,29 @@ where
     let path = file.path.clone();
     async move {
         request.start();
-        let (size, stream) = match read_fut.await {
-            Ok(ok) => (ok.0, Some(ok.1)),
-            Err(err) if err.is_not_found() => {
+        let err = match read_fut.await {
+            Ok((size, stream)) => {
+                request.set_end(size);
+                return (request, Ok((size, Some(stream))));
+            }
+            Err(err) => err,
+        };
+        // A missing object has no tail to be empty; the probe would only repeat the answer.
+        if err.is_not_found() {
+            request.set_err(&err);
+            return (request, Err(err));
+        }
+        let eof = stats
+            .request(Op::Len, &path, 0..0)
+            .wrap(inner.len(&path))
+            .await;
+        match eof {
+            Ok(eof) if from >= eof => (request, Ok((eof, None))),
+            eof => {
                 request.set_err(&err);
-                return Err(err);
+                (request, eof.and(Err(err)))
             }
-            Err(err) => {
-                // Settled after the `len` probe: a tail at or past EOF is an empty
-                // read, not a failed one.
-                let eof = stats
-                    .request(Op::Len, &path, 0..0)
-                    .wrap(inner.len(&path))
-                    .await;
-                if let Ok(eof) = eof
-                    && from >= eof
-                {
-                    (eof, None)
-                } else {
-                    request.set_err(&err);
-                    eof?;
-                    return Err(err);
-                }
-            }
-        };
-        request.set_end(size);
-        let result = if let Some(stream) = stream {
-            stream_into_sink(stream, size, from, init).await
-        } else {
-            init(size)
-        };
-        request.set_result(&result);
-        result
+        }
     }
 }
 

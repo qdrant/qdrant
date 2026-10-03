@@ -17,7 +17,7 @@ use common::universal_io::{
 
 use crate::file::BlobFile;
 use crate::fs::BlobFs;
-use crate::pipeline::{read_into_byte_buffer, read_whole_into_sink};
+use crate::pipeline::{read_from_into_sink, read_into_byte_buffer};
 use crate::read::AsyncRead;
 
 impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
@@ -74,7 +74,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
 
     /// Streams the object starting at `from` with a single request, handing each chunk to the sink
     /// on the bridge runtime as it arrives.
-    fn read_whole_into_async<W, I>(
+    fn read_from_into_async<W, I>(
         &self,
         from: u64,
         init: I,
@@ -83,9 +83,13 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        let task = self.runtime.handle().spawn(
-            uio_trace::Context::current().wrap(read_whole_into_sink::<A, W, I>(self, from, init)),
-        );
+        let task =
+            self.runtime
+                .handle()
+                .spawn(
+                    uio_trace::Context::current()
+                        .wrap(read_from_into_sink::<A, W, I>(self, from, init)),
+                );
         async move { task.await? }
     }
 }

@@ -405,7 +405,7 @@ impl ChunkSink for TestSink {
 }
 
 #[tokio::test]
-async fn blob_file_read_whole_into_async_tail_and_empty() {
+async fn blob_file_read_from_into_async_tail_and_empty() {
     use common::universal_io::UniversalReadAsync;
 
     let source = CountingSource::new(DATA);
@@ -415,7 +415,7 @@ async fn blob_file_read_whole_into_async_tail_and_empty() {
     // Tail read from a positive offset
     let from = 10u64;
     let sink = file
-        .read_whole_into_async(from, |_| Ok(TestSink::default()))
+        .read_from_into_async(from, |_| Ok(TestSink::default()))
         .await
         .unwrap();
 
@@ -426,7 +426,7 @@ async fn blob_file_read_whole_into_async_tail_and_empty() {
 
     // Empty tail at EOF
     let sink = file
-        .read_whole_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
+        .read_from_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
         .await
         .unwrap();
 
