@@ -25,7 +25,9 @@ mod reopen;
 /// shrink or change in place. This type implements [`UniversalRead`] only —
 /// appends are deliberately not supported through the cache (append
 /// directly to the backing storage instead), and random-offset writes stay
-/// unsupported.
+/// unsupported. It is important to respect immutability, since with current
+/// architecture random-offset writes can cause UB or data races, as described
+/// in Security Advisory [GHSA-hwvf-r68q-v2g7](https://github.com/qdrant/qdrant/security/advisories/GHSA-hwvf-r68q-v2g7)
 ///
 /// The local mirror can either be initialized lazily on first read (filling
 /// blocks on demand from the remote) or eagerly if populate is set. See
