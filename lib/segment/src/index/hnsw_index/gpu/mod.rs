@@ -219,7 +219,7 @@ mod tests {
                     ef,
                     SearchAlgorithm::Hnsw,
                     &mut scorer,
-                    graph.unfiltered_entry_point(),
+                    &graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();
@@ -232,7 +232,7 @@ mod tests {
                     ef,
                     SearchAlgorithm::Hnsw,
                     &mut scorer,
-                    ref_graph.unfiltered_entry_point(),
+                    &ref_graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::{ConditionChecker as _, Rest, Select};
 use common::ext::aligned_vec::ACow;
 use common::flags::feature_flags;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -15,11 +16,11 @@ use itertools::Itertools as _;
 
 use super::GraphWithVectorsScorers;
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayers, SearchAlgorithm};
+use super::graph_layers::{GraphLayers, SearchAlgorithm, SearchEntry};
 use super::graph_layers_batched::GraphLayersBatched;
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
 use super::hnsw::{LINK_COMPRESSION_CONVERT_EXISTING, graph_residency};
-use super::point_scorer::{FilteredScorer, ScorerFilters};
+use super::point_scorer::FilteredScorer;
 use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{IoBackend, Memory};
@@ -54,8 +55,16 @@ pub struct GraphSearchArgs<'a> {
     pub algorithm: SearchAlgorithm,
     pub scorers: SearchScorers<'a>,
     pub custom_entry_points: Option<&'a [PointOffsetType]>,
+    pub filtered_points_reader: Option<&'a FilteredPoints<'a>>,
     pub is_stopped: &'a AtomicBool,
 }
+
+/// Should return up to `n` points that match the filter.
+/// Used when the graph has no entry point matching the filter.
+pub type FilteredPoints<'a> = dyn Fn(usize) -> OperationResult<Vec<PointOffsetType>> + 'a;
+
+/// How many [`GraphSearchArgs::filtered_points_reader`] to start from, per `ef`.
+const SEEDS_PER_EF: usize = 2;
 
 pub enum SearchScorers<'a> {
     Regular(FilteredScorer<'a>),
@@ -158,14 +167,22 @@ impl<S: UniversalRead> HnswGraph<S> {
             algorithm,
             mut scorers,
             custom_entry_points,
+            filtered_points_reader,
             is_stopped,
         } = args;
 
-        let filters = match &scorers {
-            SearchScorers::Regular(scorer) => scorer.filters(),
-            SearchScorers::WithVectors(scorers) => scorers.links.filters(),
+        let scorer = match &scorers {
+            SearchScorers::Regular(scorer) => scorer,
+            SearchScorers::WithVectors(scorers) => scorers.links,
         };
-        let Some(entry) = self.get_entry_point(filters, custom_entry_points)? else {
+        let seeds_num = SEEDS_PER_EF * ef.max(top);
+        let Some(entry) = self.get_entry_point(
+            scorer,
+            custom_entry_points,
+            filtered_points_reader,
+            seeds_num,
+        )?
+        else {
             return Ok(Vec::new());
         };
 
@@ -185,38 +202,74 @@ impl<S: UniversalRead> HnswGraph<S> {
 
         match (self, &mut scorers) {
             (HnswGraph::Direct(graph), SearchScorers::Regular(scorer)) => {
-                Ok(graph.search(top, ef, algorithm, scorer, entry, is_stopped)?)
+                Ok(graph.search(top, ef, algorithm, scorer, &entry, is_stopped)?)
             }
             (HnswGraph::Direct(graph), SearchScorers::WithVectors(scorers)) => {
-                Ok(graph.search_with_vectors(top, ef, *scorers, entry, is_stopped)?)
+                Ok(graph.search_with_vectors(top, ef, *scorers, &entry, is_stopped)?)
             }
             (HnswGraph::Batched(graph), SearchScorers::Regular(scorer)) => {
-                graph.search(top, ef, algorithm, scorer, entry, batch_size, is_stopped)
+                graph.search(top, ef, algorithm, scorer, &entry, batch_size, is_stopped)
             }
             (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => {
-                graph.search_with_vectors(top, ef, *scorers, entry, batch_size, is_stopped)
+                graph.search_with_vectors(top, ef, *scorers, &entry, batch_size, is_stopped)
             }
         }
     }
 
     fn get_entry_point(
         &self,
-        filters: &ScorerFilters<'_>,
+        scorer: &FilteredScorer,
         custom_entry_points: Option<&[PointOffsetType]>,
-    ) -> OperationResult<Option<EntryPoint>> {
-        let custom_best = custom_entry_points
-            .unwrap_or_default()
-            .iter()
-            .filter(|&&point_id| filters.check_vector(point_id))
-            .map(|&point_id| {
-                let level = self.point_level(point_id)?;
-                OperationResult::Ok(EntryPoint { point_id, level })
-            })
-            .process_results(|it| it.max_by_key(|ep| ep.level))?;
-        Ok(custom_best.or_else(|| {
-            self.entry_points()
-                .get_entry_point(|point_id| filters.check_vector(point_id))
-        }))
+        filtered_points: Option<&FilteredPoints<'_>>,
+        seeds_num: usize,
+    ) -> OperationResult<Option<SearchEntry>> {
+        // Custom entry points
+        if let Some(custom_entry_points) = custom_entry_points {
+            let mut point_ids = custom_entry_points.to_vec();
+            let matches =
+                scorer
+                    .filters()
+                    .check_batched(&mut point_ids, Select::Matches, Rest::Discard)?;
+            let custom_best = point_ids[..matches]
+                .iter()
+                .map(|&point_id| {
+                    let level = self.point_level(point_id)?;
+                    OperationResult::Ok(EntryPoint { point_id, level })
+                })
+                .process_results(|it| it.max_by_key(|ep| ep.level))?;
+            if let Some(entry_point) = custom_best {
+                return Ok(Some(SearchEntry::Point(entry_point)));
+            }
+        }
+
+        // Graph entry points
+        let entry_point = self
+            .entry_points()
+            .get_entry_point(|point_id| scorer.filters().check_vector(point_id));
+        if let Some(entry_point) = entry_point {
+            return Ok(Some(SearchEntry::Point(entry_point)));
+        }
+
+        // Filtered points as seeds
+        if let Some(filtered_points) = filtered_points {
+            let mut seed_ids = filtered_points(seeds_num)?;
+            let matches =
+                scorer
+                    .filters()
+                    .check_batched(&mut seed_ids, Select::Matches, Rest::Discard)?;
+            seed_ids.truncate(matches);
+            if seed_ids.is_empty() {
+                return Ok(None);
+            }
+            let mut scores = vec![0.0; seed_ids.len()];
+            scorer.raw_scorer().score_points(&seed_ids, &mut scores);
+            let seeds = std::iter::zip(seed_ids, scores)
+                .map(|(idx, score)| ScoredPointOffset { idx, score })
+                .collect();
+            return Ok(Some(SearchEntry::Seeds(seeds)));
+        }
+
+        Ok(None)
     }
 
     fn point_level(&self, point_id: PointOffsetType) -> OperationResult<usize> {

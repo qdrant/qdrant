@@ -4,6 +4,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{ScoreType, ScoredPointOffset};
 use num_traits::float::FloatCore;
 
+use crate::index::visited_pool::VisitedListHandle;
+
 /// Structure that holds context of the search
 pub struct SearchContext {
     /// Overall nearest points found so far
@@ -18,6 +20,21 @@ impl SearchContext {
             nearest: FixedLengthPriorityQueue::new(ef),
             candidates: BinaryHeap::new(),
         }
+    }
+
+    /// Create search context from `entries`, marking them as visited.
+    pub fn with_entries(
+        ef: usize,
+        entries: &[ScoredPointOffset],
+        visited_list: &mut VisitedListHandle,
+    ) -> Self {
+        let mut search_context = Self::new(ef);
+        for &entry in entries {
+            if !visited_list.check_and_update_visited(entry.idx) {
+                search_context.process_candidate(entry);
+            }
+        }
+        search_context
     }
 
     pub fn lower_bound(&self) -> ScoreType {
