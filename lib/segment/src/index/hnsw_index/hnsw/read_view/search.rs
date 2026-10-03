@@ -34,6 +34,8 @@ where
     P: PayloadIndexRead,
     S: UniversalRead,
 {
+    /// - `known_matches`: points known to match `filter`, reused as seeds
+    ///   instead of walking the payload index again.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn search_with_graph(
         &self,
@@ -43,6 +45,7 @@ where
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
         custom_entry_points: Option<&[PointOffsetType]>,
+        known_matches: &[PointOffsetType],
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ef = params
@@ -59,7 +62,7 @@ where
 
         let first_filtered_points = filter.map(|filter| {
             let (hw_counter, is_stopped) = (&hw_counter, &is_stopped);
-            move |n| self.first_filtered_points(filter, n, hw_counter, is_stopped)
+            move |n| self.first_filtered_points(filter, known_matches, n, hw_counter, is_stopped)
         });
         let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
@@ -167,6 +170,7 @@ where
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn search_vectors_with_graph(
         &self,
         vectors: &[&QueryVector],
@@ -174,6 +178,7 @@ where
         top: usize,
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
+        known_matches: &[PointOffsetType],
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         vectors
@@ -185,6 +190,7 @@ where
                     top,
                     params,
                     algorithm,
+                    known_matches,
                     vector_query_context,
                 ),
                 QueryVector::Nearest(_)
@@ -198,6 +204,7 @@ where
                     params,
                     algorithm,
                     None,
+                    known_matches,
                     vector_query_context,
                 ),
             })
@@ -341,10 +348,15 @@ where
     fn first_filtered_points(
         &self,
         filter: &Filter,
+        known_matches: &[PointOffsetType],
         n: usize,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>> {
+        if let Some(prefix) = known_matches.get(..n) {
+            // Take from `known_matches` as it has enough.
+            return Ok(prefix.to_vec());
+        }
         let cardinality = self
             .payload_index
             .estimate_cardinality(filter, hw_counter)?;
@@ -359,6 +371,7 @@ where
         Ok(points.take(n).collect())
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn discover_search_with_graph(
         &self,
         discover_query: DiscoverQuery<VectorInternal>,
@@ -366,6 +379,7 @@ where
         top: usize,
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
+        known_matches: &[PointOffsetType],
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Stage 1: Find best entry points using Context search
@@ -381,6 +395,7 @@ where
                 params,
                 algorithm,
                 None,
+                known_matches,
                 vector_query_context,
             )
             .map(|search_result| search_result.iter().map(|x| x.idx).collect())?;
@@ -395,6 +410,7 @@ where
             params,
             algorithm,
             Some(&custom_entry_points),
+            known_matches,
             vector_query_context,
         )
     }
