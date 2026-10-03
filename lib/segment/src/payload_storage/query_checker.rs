@@ -13,7 +13,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndexRead;
@@ -26,12 +26,12 @@ use crate::types::{
 };
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
-fn check_condition<F>(checker: &F, condition: &Condition) -> bool
+fn try_check_condition<F>(checker: &F, condition: &Condition) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: Fn(&Condition) -> OperationResult<bool>,
 {
     match condition {
-        Condition::Filter(filter) => check_filter(checker, filter),
+        Condition::Filter(filter) => try_check_filter(checker, filter),
         Condition::Field(_)
         | Condition::IsEmpty(_)
         | Condition::IsNull(_)
@@ -43,69 +43,102 @@ where
     }
 }
 
+fn try_check_filter<F>(checker: &F, filter: &Filter) -> OperationResult<bool>
+where
+    F: Fn(&Condition) -> OperationResult<bool>,
+{
+    Ok(try_check_should(checker, &filter.should)?
+        && try_check_min_should(checker, &filter.min_should)?
+        && try_check_must(checker, &filter.must)?
+        && try_check_must_not(checker, &filter.must_not)?)
+}
+
 pub fn check_filter<F>(checker: &F, filter: &Filter) -> bool
 where
     F: Fn(&Condition) -> bool,
 {
-    check_should(checker, &filter.should)
-        && check_min_should(checker, &filter.min_should)
-        && check_must(checker, &filter.must)
-        && check_must_not(checker, &filter.must_not)
+    try_check_filter(
+        &|condition| Ok::<bool, OperationError>(checker(condition)),
+        filter,
+    )
+    .expect("infallible condition checker")
 }
 
-fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
+fn try_check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: Fn(&Condition) -> OperationResult<bool>,
 {
-    let check = |x| check_condition(checker, x);
     match should {
-        None => true,
-        Some(conditions) => conditions.iter().any(check),
-    }
-}
-
-fn check_min_should<F>(checker: &F, min_should: &Option<MinShould>) -> bool
-where
-    F: Fn(&Condition) -> bool,
-{
-    let check = |x| check_condition(checker, x);
-    match min_should {
-        None => true,
-        Some(MinShould {
-            conditions,
-            min_count,
-        }) => {
-            conditions
-                .iter()
-                .filter(|cond| check(cond))
-                .take(*min_count)
-                .count()
-                == *min_count
+        None => Ok(true),
+        Some(conditions) => {
+            for condition in conditions {
+                if try_check_condition(checker, condition)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
     }
 }
 
-fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
+fn try_check_min_should<F>(checker: &F, min_should: &Option<MinShould>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: Fn(&Condition) -> OperationResult<bool>,
 {
-    let check = |x| check_condition(checker, x);
-    match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
+    match min_should {
+        None => Ok(true),
+        Some(MinShould {
+            conditions,
+            min_count,
+        }) => {
+            let mut matched = 0;
+            for condition in conditions {
+                if try_check_condition(checker, condition)? {
+                    matched += 1;
+                    if matched == *min_count {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(matched == *min_count)
+        }
     }
 }
 
-fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
+fn try_check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> OperationResult<bool>
 where
-    F: Fn(&Condition) -> bool,
+    F: Fn(&Condition) -> OperationResult<bool>,
 {
-    let check = |x| !check_condition(checker, x);
     match must {
-        None => true,
-        Some(conditions) => conditions.iter().all(check),
+        None => Ok(true),
+        Some(conditions) => {
+            for condition in conditions {
+                if !try_check_condition(checker, condition)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
     }
 }
+
+fn try_check_must_not<F>(checker: &F, must_not: &Option<Vec<Condition>>) -> OperationResult<bool>
+where
+    F: Fn(&Condition) -> OperationResult<bool>,
+{
+    match must_not {
+        None => Ok(true),
+        Some(conditions) => {
+            for condition in conditions {
+                if try_check_condition(checker, condition)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
 
 pub fn select_nested_indexes<'a, R, FI>(
     nested_path: &PayloadKeyType,
@@ -133,40 +166,45 @@ pub fn check_payload<'a, R, FI>(
     point_id: PointOffsetType,
     field_indexes: &AHashMap<PayloadKeyType, R>,
     hw_counter: &HardwareCounterCell,
-) -> bool
+) -> OperationResult<bool>
 where
     FI: FieldIndexRead,
     R: AsRef<Vec<FI>>,
 {
-    let checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => check_field_condition(
-            field_condition,
-            get_payload().deref(),
-            field_indexes,
-            hw_counter,
-        )
-        .unwrap(/* TODO(uio): handle errors */),
-        Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
-        Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
-        Condition::HasId(has_id) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
-            .is_some_and(|id| has_id.has_id.contains(&id)),
-        Condition::HasVector(has_vector) => {
-            if let Some(vector_storage) = vector_storages.get(&has_vector.has_vector) {
-                !vector_storage.borrow().is_deleted_vector(point_id)
-            } else {
-                false
+    let checker = |condition: &Condition| -> OperationResult<bool> {
+        Ok(match condition {
+            Condition::Field(field_condition) => {
+                // Propagate index read errors instead of panicking: a failing
+                // on-disk index must turn the query into an error, not crash
+                // the shard thread.
+                return check_field_condition(
+                    field_condition,
+                    get_payload().deref(),
+                    field_indexes,
+                    hw_counter,
+                );
             }
-        }
-        Condition::Nested(nested) => {
-            let nested_path = nested.array_key();
-            let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
-            get_payload()
-                .get_value(&nested_path)
-                .iter()
-                .filter_map(|value| value.as_object())
-                .any(|object| {
-                    check_payload(
+            Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
+            Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
+            Condition::HasId(has_id) => id_tracker
+                .and_then(|id_tracker| id_tracker.external_id(point_id))
+                .is_some_and(|id| has_id.has_id.contains(&id)),
+            Condition::HasVector(has_vector) => {
+                if let Some(vector_storage) = vector_storages.get(&has_vector.has_vector) {
+                    !vector_storage.borrow().is_deleted_vector(point_id)
+                } else {
+                    false
+                }
+            }
+            Condition::Nested(nested) => {
+                let nested_path = nested.array_key();
+                let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
+                let mut matched = false;
+                for value in get_payload().get_value(&nested_path) {
+                    let Some(object) = value.as_object() else {
+                        continue;
+                    };
+                    if check_payload(
                         Box::new(|| OwnedPayloadRef::from(object)),
                         None,            // HasId check in nested fields is not supported
                         &HashMap::new(), // HasVector check in nested fields is not supported
@@ -174,22 +212,27 @@ where
                         point_id,
                         &nested_indexes,
                         hw_counter,
-                    )
-                })
-        }
+                    )? {
+                        matched = true;
+                        break;
+                    }
+                }
+                matched
+            }
 
-        Condition::Slice(slice_condition) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
-            .is_some_and(|external_id| slice_condition.slice.check(external_id)),
+            Condition::Slice(slice_condition) => id_tracker
+                .and_then(|id_tracker| id_tracker.external_id(point_id))
+                .is_some_and(|external_id| slice_condition.slice.check(external_id)),
 
-        Condition::CustomIdChecker(cond) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
-            .is_some_and(|point_id| cond.0.check(point_id)),
+            Condition::CustomIdChecker(cond) => id_tracker
+                .and_then(|id_tracker| id_tracker.external_id(point_id))
+                .is_some_and(|point_id| cond.0.check(point_id)),
 
-        Condition::Filter(_) => unreachable!(),
+            Condition::Filter(_) => unreachable!(),
+        })
     };
 
-    check_filter(&checker, query)
+    try_check_filter(&checker, query)
 }
 
 pub fn check_is_empty_condition(
@@ -322,6 +365,7 @@ impl SimpleConditionChecker {
             &IndexesMap::new(),
             &HardwareCounterCell::new(),
         )
+        .expect("payload check failed in SimpleConditionChecker")
     }
 }
 
@@ -829,6 +873,7 @@ mod tests {
                     &field_indexes,
                     &hw_counter,
                 )
+                .unwrap()
             })
             .collect();
 
@@ -848,5 +893,250 @@ mod tests {
             !results[2],
             "Point 2 ('neutral text') must not match text_any('good cheap')"
         );
+    }
+
+    /// Field index whose storage read always fails, simulating an IO error in
+    /// an on-disk index.
+    struct FailingFieldIndex;
+
+    impl crate::index::field_index::PayloadFieldIndexRead for FailingFieldIndex {
+        fn count_indexed_points(&self) -> OperationResult<usize> {
+            unimplemented!()
+        }
+
+        fn filter<'a>(
+            &'a self,
+            _condition: &'a FieldCondition,
+            _hw_counter: &'a HardwareCounterCell,
+        ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+            unimplemented!()
+        }
+
+        fn estimate_cardinality(
+            &self,
+            _condition: &FieldCondition,
+            _hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<Option<crate::index::field_index::CardinalityEstimation>> {
+            unimplemented!()
+        }
+
+        fn for_each_payload_block(
+            &self,
+            _threshold: usize,
+            _key: PayloadKeyType,
+            _f: &mut dyn FnMut(
+                crate::index::field_index::PayloadBlockCondition,
+            ) -> OperationResult<()>,
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn condition_checker<'a>(
+            &'a self,
+            _condition: &FieldCondition,
+            _hw_acc: common::counter::hardware_accumulator::HwMeasurementAcc,
+        ) -> OperationResult<Option<crate::index::ConditionCheckerEnum<'a>>>
+        {
+            unimplemented!()
+        }
+
+        fn special_check_condition(
+            &self,
+            _condition: &FieldCondition,
+            _payload_value: &serde_json::Value,
+            _hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<Option<bool>> {
+            Err(crate::common::operation_error::OperationError::service_error(
+                "simulated index read failure",
+            ))
+        }
+    }
+
+    struct NoNumeric;
+
+    impl crate::index::field_index::numeric_index::NumericFieldIndexRead
+        for NoNumeric
+    {
+        fn get_ordering_values(
+            &self,
+            _idx: PointOffsetType,
+        ) -> impl Iterator<Item = crate::data_types::order_by::OrderValue> + '_ {
+            std::iter::empty()
+        }
+
+        fn stream_range(
+            &self,
+            _range: &crate::types::RangeInterface,
+        ) -> OperationResult<
+            impl DoubleEndedIterator<
+                Item = (crate::data_types::order_by::OrderValue, PointOffsetType),
+            > + '_,
+        > {
+            Ok(std::iter::empty())
+        }
+    }
+
+    struct NoFacet;
+
+    impl crate::index::field_index::FacetIndex for NoFacet {
+        fn unique_values_count(&self) -> usize {
+            unimplemented!()
+        }
+
+        fn for_points_values(
+            &self,
+            _points: impl Iterator<Item = PointOffsetType>,
+            _hw_counter: &HardwareCounterCell,
+            _f: impl FnMut(
+                PointOffsetType,
+                &mut dyn Iterator<Item = crate::data_types::facets::FacetValueRef<'_>>,
+            ),
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn for_values_map(
+            &self,
+            _values: impl Iterator<Item = crate::data_types::facets::FacetValue>,
+            _hw_counter: &HardwareCounterCell,
+            _f: impl FnMut(
+                crate::data_types::facets::FacetValue,
+                &mut dyn Iterator<Item = PointOffsetType>,
+            ) -> OperationResult<()>,
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn for_each_value(
+            &self,
+            _f: impl FnMut(
+                crate::data_types::facets::FacetValueRef<'_>,
+            ) -> OperationResult<()>,
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn for_each_count_per_value(
+            &self,
+            _deferred_internal_id: Option<PointOffsetType>,
+            _f: impl FnMut(
+                crate::data_types::facets::FacetHit<crate::data_types::facets::FacetValueRef<'_>>,
+            ) -> OperationResult<()>,
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn for_each_value_map(
+            &self,
+            _hw_acc: &HardwareCounterCell,
+            _f: impl FnMut(
+                crate::data_types::facets::FacetValueRef<'_>,
+                &mut dyn Iterator<Item = PointOffsetType>,
+            ) -> OperationResult<()>,
+        ) -> OperationResult<()> {
+            unimplemented!()
+        }
+    }
+
+    impl crate::index::field_index::FieldIndexRead for FailingFieldIndex {
+        fn get_telemetry_data(&self) -> OperationResult<crate::telemetry::PayloadIndexTelemetry> {
+            unimplemented!()
+        }
+
+        fn values_count(&self, _point_id: PointOffsetType) -> OperationResult<usize> {
+            unimplemented!()
+        }
+
+        fn values_is_empty(&self, _point_id: PointOffsetType) -> OperationResult<bool> {
+            unimplemented!()
+        }
+
+        fn value_retriever<'a, 'q>(
+            &'a self,
+            _hw_counter: &'q HardwareCounterCell,
+        ) -> OperationResult<
+            Option<
+                crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn<'q>,
+            >,
+        >
+        where
+            'a: 'q,
+        {
+            Ok(None)
+        }
+
+        fn as_numeric(
+            &self,
+        ) -> Option<
+            impl crate::index::field_index::numeric_index::NumericFieldIndexRead + '_,
+        > {
+            None::<NoNumeric>
+        }
+
+        fn as_facet_index(&self) -> Option<impl crate::index::field_index::FacetIndex + '_> {
+            None::<NoFacet>
+        }
+    }
+
+    /// A storage read error inside a field condition must propagate out of
+    /// `check_payload` instead of panicking the shard thread on `unwrap`.
+    #[test]
+    fn test_check_payload_propagates_index_read_errors() {
+        let payload = payload_json! {
+            "name": "John Doe",
+            "age": 43,
+        };
+        let payload: OwnedPayloadRef = (&payload).into();
+
+        let query = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("age"),
+            43.into(),
+        )));
+
+        let mut field_indexes: AHashMap<PayloadKeyType, Vec<FailingFieldIndex>> =
+            AHashMap::new();
+        field_indexes.insert(JsonPath::new("age"), vec![FailingFieldIndex]);
+
+        let result = check_payload(
+            Box::new(|| payload.clone()),
+            None,
+            &HashMap::new(),
+            &query,
+            0,
+            &field_indexes,
+            &HardwareCounterCell::new(),
+        );
+
+        assert!(
+            result.is_err(),
+            "index read error must propagate, not panic or silently pass"
+        );
+    }
+
+    /// The infallible `check_filter` wrapper keeps behaving exactly as before
+    /// for checkers that cannot fail.
+    #[test]
+    fn test_check_filter_infallible_wrapper_semantics() {
+        let is_age = |condition: &Condition| match condition {
+            Condition::Field(field_condition) => field_condition.key == JsonPath::new("age"),
+            _ => false,
+        };
+
+        let filter = Filter {
+            should: Some(vec![Condition::Field(FieldCondition::new_match(
+                JsonPath::new("age"),
+                43.into(),
+            ))]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        };
+        assert!(check_filter(&is_age, &filter));
+
+        let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("age"),
+            43.into(),
+        )));
+        assert!(!check_filter(&is_age, &filter));
     }
 }
