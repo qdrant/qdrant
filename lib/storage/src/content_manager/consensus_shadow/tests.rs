@@ -37,6 +37,7 @@ use crate::types::{PeerAddressById, PeerMetadataById};
 const COLLECTION: &str = "books";
 const ALIAS: &str = "novels";
 const OTHER_ALIAS: &str = "crime";
+const OTHER_PEER_ID: PeerId = PEER_ID + 1;
 const METADATA_KEY: &str = "owner";
 /// Collection absent from consensus state machine and `Container`
 const MISSING: &str = "outis";
@@ -117,6 +118,21 @@ fn diverged_collection_under_alias() {
     );
 }
 
+/// Peer removal can change every collection, so validation must compare all of them
+#[test]
+fn remove_peer_compares_collections() {
+    let shadow = Shadow::new(ShadowMode::Panic);
+    shadow.container.add_shard_for(0, OTHER_PEER_ID);
+
+    assert_eq!(shadow.apply(&nop()), None);
+    assert_eq!(
+        shadow
+            .apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID))
+            .as_deref(),
+        Some(format!("collections[{COLLECTION}].shards").as_str()),
+    );
+}
+
 /// Consensus state machine and operation handler should both reject a missing collection with
 /// the same error class
 #[test]
@@ -162,7 +178,7 @@ fn rejected_by_apply_only() {
 /// so validation should invalidate the entire consensus state machine
 #[test]
 fn not_covered_invalidates() {
-    invalidates(&remove_peer(), &Ok(true));
+    invalidates(&ConsensusOperations::RequestSnapshot, &Ok(true));
 }
 
 /// When an uncovered operation names a collection, validation should reload only that collection
@@ -515,11 +531,6 @@ fn drop_payload_index(collection: &str) -> ConsensusOperations {
     )))
 }
 
-/// Operation not covered by the consensus state machine that names no collection
-fn remove_peer() -> ConsensusOperations {
-    ConsensusOperations::RemovePeer(PEER_ID)
-}
-
 /// `Persistent` state containing this peer's address and metadata plus one cluster metadata key
 fn persistent(path: &Path) -> Persistent {
     let mut persistent =
@@ -598,7 +609,11 @@ impl Container {
 
     /// Add shard to `Container` without updating consensus state machine
     fn add_shard(&self, shard_id: ShardId) {
-        let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+        self.add_shard_for(shard_id, PEER_ID);
+    }
+
+    fn add_shard_for(&self, shard_id: ShardId, peer_id: PeerId) {
+        let replicas = HashMap::from([(peer_id, ReplicaState::Active)]);
 
         self.collections
             .lock()

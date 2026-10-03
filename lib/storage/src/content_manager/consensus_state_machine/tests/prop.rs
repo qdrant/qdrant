@@ -403,10 +403,19 @@ pub fn arb_consensus_operation(
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
         14 => collection_meta,
+        1 => arb_add_peer(),
+        1 => arb_peer_id().prop_map(ConsensusOperations::RemovePeer),
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
     ]
+}
+
+fn arb_add_peer() -> impl Strategy<Value = ConsensusOperations> {
+    arb_peer_id().prop_map(|peer_id| ConsensusOperations::AddPeer {
+        peer_id,
+        uri: peer_address(peer_id).to_string(),
+    })
 }
 
 fn arb_collection_meta_operation(

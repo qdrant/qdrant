@@ -18,6 +18,7 @@ use segment::types::{
     VectorNameBuf,
 };
 use shard::operations::vector_name_ops::VectorNameConfig;
+use tonic::transport::Uri;
 
 use crate::content_manager::collection_meta_ops::UpdateCollection;
 #[cfg(feature = "staging")]
@@ -28,6 +29,16 @@ use crate::quota::QuotaConfig;
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    AddPeer {
+        peer_id: PeerId,
+        uri: Uri,
+    },
+
+    /// Remove peer address and metadata after every collection has dropped its replicas
+    RemovePeer {
+        peer_id: PeerId,
+    },
+
     CreateCollection {
         collection: CollectionId,
         state: Box<collection_state::State>,
@@ -242,7 +253,9 @@ impl Action {
             | Action::SpawnTransferDriver { collection, .. }
             | Action::UnregisterTransfer { collection, .. } => Some(collection),
 
-            Action::UpdateAliases { .. }
+            Action::AddPeer { .. }
+            | Action::RemovePeer { .. }
+            | Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,
