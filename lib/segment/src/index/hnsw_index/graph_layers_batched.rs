@@ -435,9 +435,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             SearchContext::with_entries(ef, level_entries, &mut hop1_visited_list);
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
-        let hop1_limit = self.hnsw_m.level_m(level);
-        let hop2_limit = self.hnsw_m.level_m(level);
-        debug_assert_ne!(hop1_limit, 0); // See `FilteredBytesScorer::score_points`
+        let m = self.hnsw_m.level_m(level);
+        // 🤖 See `GraphLayers::search_on_level_acorn`.
+        let hop1_limit = if m == 0 { usize::MAX } else { m };
+        let hop2_limit = hop1_limit;
 
         let mut batch = Vec::with_capacity(links_batch_size);
         // See `GraphLayers::search_on_level_acorn`.
@@ -451,10 +452,11 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             is_match: bool,
         }
 
-        let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
-        let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
-        let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
-        let mut to_explore = Vec::with_capacity(hop1_limit * links_batch_size);
+        // 🤖 sized by `m`: the limits may be `usize::MAX`
+        let mut hop1_links = Vec::with_capacity(2 * m * links_batch_size);
+        let mut unchecked_links = Vec::with_capacity(2 * m * links_batch_size);
+        let mut to_score = Vec::with_capacity(m * links_batch_size);
+        let mut to_explore = Vec::with_capacity(m * links_batch_size);
         let mut tail_bridges = Vec::new();
 
         let mut round = 0;

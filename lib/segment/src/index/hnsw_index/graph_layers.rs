@@ -181,16 +181,18 @@ pub trait GraphLayersBase {
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
         // This is necessary to avoid over-scoring when there are many
         // additional graph links.
-        let hop1_limit = self.get_m(level);
-        let hop2_limit = self.get_m(level);
-        debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
+        let m = self.get_m(level);
+        // 🤖 `m = 0` graphs only have payload links: take all, as `search_on_level` does.
+        let hop1_limit = if m == 0 { usize::MAX } else { m };
+        let hop2_limit = hop1_limit;
 
         // Non-matches past the first `hop1_limit` links (the payload-block
         // tail) share this budget, evenly spaced.
         let hop1_tail_limit = hop1_limit;
 
-        let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
-        let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+        // 🤖 sized by `m`: the limits may be `usize::MAX`
+        let mut to_score = Vec::with_capacity(m * m.min(16));
+        let mut to_explore = Vec::with_capacity(m * m.min(16));
         let mut tail_bridges = Vec::new();
 
         while let Some(candidate) = search_context.candidates.pop() {
@@ -237,7 +239,7 @@ pub trait GraphLayersBase {
             for &hop1 in &to_explore {
                 check_process_stopped(is_stopped)?;
 
-                let total_limit = to_score.len() + hop2_limit;
+                let total_limit = to_score.len().saturating_add(hop2_limit);
                 _ = self.try_for_each_link(hop1, level, |hop2| {
                     if hop1_visited_list.check(hop2)
                         || hop2_visited_list.check_and_update_visited(hop2)
