@@ -39,7 +39,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // 1. Probe the tracker files on the inner fs before taking the directory listing snapshot,
         // anchoring max_committed_id and live-reloading held handles in place.
         let probe = id_tracker
-            .borrow_mut()
+            .borrow()
             .probe_committed(reload_fs.inner())
             .await?;
         let max_committed_id = probe.max_committed_id();

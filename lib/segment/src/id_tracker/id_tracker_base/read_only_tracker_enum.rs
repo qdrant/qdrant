@@ -70,7 +70,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
 
     /// Measure how far the writer has committed, before the directory listing snapshot is taken.
     pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
-        &mut self,
+        &self,
         inner_fs: &Fs,
     ) -> OperationResult<TrackerProbe> {
         match self {

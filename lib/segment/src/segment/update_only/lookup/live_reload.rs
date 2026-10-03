@@ -29,8 +29,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
-        let probe =
-            futures::executor::block_on(id_tracker.borrow_mut().probe_committed(fs.inner()))?;
+        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
         if probe.is_unchanged() {
             return Ok(());
         }
