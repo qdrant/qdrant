@@ -4,6 +4,7 @@ pub mod formula;
 pub mod mmr;
 pub mod planned_query;
 pub mod query_enum;
+pub mod rescore;
 pub mod scroll;
 mod validation;
 
