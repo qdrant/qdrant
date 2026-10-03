@@ -216,7 +216,7 @@ mod tests {
     use common::types::ScoreType;
     use segment::data_types::groups::GroupId;
     use segment::payload_json;
-    use segment::types::{WithPayloadInterface, WithVector};
+    use segment::types::{WithPayload, WithPayloadInterface, WithVector};
 
     use super::*;
 
@@ -358,5 +358,38 @@ mod tests {
             assert!(driver.next_request().is_none());
             assert!(driver.distill().is_empty());
         }
+    }
+
+    #[test]
+    fn groups_by_array_index() {
+        let mut driver = GroupByDriver::new(
+            base_query(),
+            "arr[1].x".parse().unwrap(),
+            GROUPS,
+            1,
+            Some(Order::LargeBetter),
+            RequestBudget {
+                collect: 1,
+                fill: 0,
+            },
+        );
+        let request = driver.next_request().unwrap();
+
+        // project the payload as a shard would
+        let selector = WithPayload::from(request.with_payload)
+            .payload_selector
+            .unwrap();
+        let point = |id, score, x0, x1| ScoredPoint {
+            payload: Some(selector.process(payload_json! { "arr": [{ "x": x0 }, { "x": x1 }] })),
+            ..point(id, score, "")
+        };
+        driver.add_points(&[point(1, 2.0, "a", "b"), point(2, 1.0, "c", "d")]);
+
+        let keys: Vec<_> = driver
+            .distill()
+            .into_iter()
+            .map(|group| group.key)
+            .collect();
+        assert_eq!(keys, [GroupId::from("b"), GroupId::from("d")]);
     }
 }
