@@ -2553,6 +2553,98 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
     );
 }
 
+#[test]
+fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    // A starts non-appendable and contains point 100.
+    let mut segment_a = empty_segment(dir.path());
+    segment_a
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    segment_a.appendable_flag = false;
+
+    // B starts appendable.
+    let segment_b = empty_segment(dir.path());
+
+    let mut holder = SegmentHolder::default();
+    let a = holder.add_new(segment_a);
+    let b = holder.add_new(segment_b);
+
+    // Move A -> B.
+    // This records: A depends on B.
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("A is non-appendable"),
+            |_, _, _, _| {},
+            None,
+            &hw_counter,
+        )
+        .unwrap();
+
+    assert_eq!(
+        holder.flush_dependency.lock().dependencies_of(&a).count(),
+        1,
+    );
+
+    // Replace the segments while preserving their IDs, reversing their roles.
+    //
+    // A is now appendable.
+    holder.replace(a, empty_segment(dir.path())).unwrap();
+
+    // B is now non-appendable and contains another point.
+    let mut replacement_b = empty_segment(dir.path());
+    replacement_b
+        .upsert_point(
+            20,
+            200.into(),
+            segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            &hw_counter,
+        )
+        .unwrap();
+    replacement_b.appendable_flag = false;
+
+    holder.replace(b, replacement_b).unwrap();
+
+    // Move B -> A.
+    //
+    // If the dependency belonging to the old incarnation of A/B survived
+    // replacement, this adds B depends on A while A still depends on B.
+    holder
+        .apply_points_with_conditional_move(
+            30,
+            &[200.into()],
+            |_, _| unreachable!("B is non-appendable"),
+            |_, _, _, _| {},
+            None,
+            &hw_counter,
+        )
+        .unwrap();
+
+    // There must still be a valid flush ordering.
+    let ids = [a, b];
+    let dependency = holder.flush_dependency.lock().clone();
+    let mut sorted = dependency.sort_elements(&ids);
+
+    assert_eq!(
+        sorted.by_ref().count(),
+        2,
+        "segment replacement must not leave stale CoW dependencies that create a cycle",
+    );
+
+    assert!(
+        sorted.into_unordered_vec().is_empty(),
+        "flush dependency graph contains a cycle after segment replacement",
+    );
+}
 /// A proxy segment must not hold back acknowledging the WAL. Flushing persists its buffered
 /// changes into the pending changes log, so the version returned by `flush_all` — which is what
 /// gets acknowledged in the WAL — advances past operations that only live in the proxy.
