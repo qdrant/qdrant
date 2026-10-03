@@ -30,3 +30,14 @@ impl<S: UniversalRead> LiveReload for MultivectorOffsetsStorageChunkedRead<S> {
             .live_reload(fs, deleted_points, new_points, hw_counter)
     }
 }
+
+impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    /// Quantized records the inner storage must hold for `new_points`.
+    pub fn published_rows_end(
+        &self,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<Option<usize>> {
+        self.data
+            .published_rows_end(new_points, |offset| (offset.start + offset.count) as usize)
+    }
+}
