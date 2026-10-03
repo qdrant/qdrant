@@ -5,8 +5,9 @@ use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
-    Query2bitSimd, Query4bitSimd, score_1bit_internal, score_2bit_internal,
+    Query2bitSimd, Query4bitSimd, Query8bitSimd, score_1bit_internal, score_2bit_internal,
     score_2bit_internal_weighted, score_4bit_internal, score_4bit_internal_weighted,
+    score_8bit_internal,
 };
 use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode, TQRotation};
 
@@ -143,6 +144,11 @@ impl TurboQuantizer {
             !(matches!(bits, TQBits::Bits1_5) && rotation_span == TQRotation::Unpadded),
             "Bits1_5 requires TQRotation::Padded",
         );
+        // Bits8 quantizes with a per-vector scale that EC's revert can't see.
+        debug_assert!(
+            !(matches!(bits, TQBits::Bits8) && error_correction.is_some()),
+            "Bits8 does not support TQ+ error correction",
+        );
 
         let padded_dim = Self::padded_dim(dim, bits);
         let rotation_dim = match rotation_span {
@@ -258,6 +264,19 @@ impl TurboQuantizer {
             xm as f32
         });
 
+        // Bits8: scale onto the uniform grid `[−127, 127]` by the vector's own
+        // max magnitude — no clipping, and the scale cancels in the
+        // renormalized score (`scaling_factor = l2 / ‖grid values‖`).
+        if self.bits == TQBits::Bits8 {
+            let abs_max = buf.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
+            if abs_max > 0.0 {
+                let grid_scale = 127.0 / abs_max;
+                for v in buf.iter_mut() {
+                    *v *= grid_scale;
+                }
+            }
+        }
+
         // Compute the post-quantization centroid norm for Dot and Cosine so
         // re-normalized scoring can divide by ||c|| instead of sqrt(d).
         //
@@ -298,6 +317,18 @@ impl TurboQuantizer {
     /// stays close to deterministic `sqrt(d)`. We undo EC on each centroid
     /// (`c · D' + M`) before measuring, matching llama-turbo-quant's approach.
     fn compute_centroid_norm(&self, buf: &[f64], scale: f64) -> f32 {
+        if self.bits == TQBits::Bits8 {
+            let sq_sum: f64 = buf
+                .iter()
+                .map(|&val| (val * scale).round().clamp(-127.0, 127.0).powi(2))
+                .sum();
+            // An all-zero vector: any positive norm keeps its score at 0.
+            return if sq_sum > 0.0 {
+                sq_sum.sqrt() as f32
+            } else {
+                1.0
+            };
+        }
         let centroids = self.bits.get_centroids();
         let boundaries = self.bits.get_centroid_boundaries();
         let mut sq_sum = 0.0_f64;
@@ -363,7 +394,17 @@ impl TurboQuantizer {
             DistanceType::L1 => scaling_factor,
         };
 
-        let scale = recovered_l2 / (self.padded_dim as f64).sqrt();
+        let scale = if self.bits == TQBits::Bits8 {
+            // Grid values carry a per-vector scale: divide by their own norm.
+            let cn_quant = unpacked.iter().map(|&x| x * x).sum::<f64>().sqrt();
+            if cn_quant > 0.0 {
+                recovered_l2 / cn_quant
+            } else {
+                0.0
+            }
+        } else {
+            recovered_l2 / (self.padded_dim as f64).sqrt()
+        };
         match &self.error_correction {
             // TQ+: stored centroids approximate `X+`; revert EC to recover the
             // rescaled coordinate before applying the length scale.
@@ -381,6 +422,10 @@ impl TurboQuantizer {
 
     pub fn get_padded_dim(&self) -> usize {
         self.padded_dim
+    }
+
+    pub fn bits(&self) -> TQBits {
+        self.bits
     }
 
     /// Undo the rotation applied during quantization on a `padded_dim`-sized
@@ -412,6 +457,7 @@ impl TurboQuantizer {
                 TQBits::Bits1_5 => score_1bit_internal(data_v1, data_v2),
                 TQBits::Bits2 => score_2bit_internal(data_v1, data_v2),
                 TQBits::Bits4 => score_4bit_internal(data_v1, data_v2),
+                TQBits::Bits8 => score_8bit_internal(data_v1, data_v2),
             },
         };
 
@@ -480,6 +526,7 @@ impl TurboQuantizer {
                 score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
                 CODEBOOK_SCALE_SQ_4BIT,
             ),
+            TQBits::Bits8 => unreachable!("Bits8 does not support TQ+ error correction"),
             TQBits::Bits1 | TQBits::Bits1_5 => {
                 // 1-bit TQ+ ignores `D'²` weighting and `xm`/`mm` corrections (see
                 // doc comment above `score_symmetric_ec`), so the score reduces to
@@ -559,6 +606,7 @@ impl TurboQuantizer {
             }
             TQBits::Bits2 => EncodedQueryTQData::Bits2(Query2bitSimd::new(&rotated_f32)),
             TQBits::Bits4 => EncodedQueryTQData::Bits4(Query4bitSimd::new(&rotated_f32)),
+            TQBits::Bits8 => EncodedQueryTQData::Bits8(Query8bitSimd::new(&rotated_f32)),
         };
         EncodedQueryTQ {
             data,
@@ -628,6 +676,7 @@ impl TurboQuantizer {
                 EncodedQueryTQData::Bits1Wide(q) => q.dotprod_batch(data, stride, scores),
                 EncodedQueryTQData::Bits2(q) => q.dotprod_batch(data, stride, scores),
                 EncodedQueryTQData::Bits4(q) => q.dotprod_batch(data, stride, scores),
+                EncodedQueryTQData::Bits8(q) => q.dotprod_batch(data, stride, scores),
             }
 
             for (v, score) in scores.iter_mut().enumerate() {
@@ -646,6 +695,7 @@ impl TurboQuantizer {
             EncodedQueryTQData::Bits1Wide(q) => q.dotprod(codes),
             EncodedQueryTQData::Bits2(q) => q.dotprod(codes),
             EncodedQueryTQData::Bits4(q) => q.dotprod(codes),
+            EncodedQueryTQData::Bits8(q) => q.dotprod(codes),
         }
     }
 

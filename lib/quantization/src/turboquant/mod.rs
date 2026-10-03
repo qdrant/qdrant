@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::turboquant::simd::{Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd};
+use crate::turboquant::simd::{
+    Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd, Query8bitSimd,
+};
 
 pub mod encoding;
 pub mod lloyd_max;
@@ -13,6 +15,9 @@ pub mod simd;
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TQBits {
+    /// Uniform 8-bit grid with a per-vector scale instead of a Lloyd-Max
+    /// codebook; Normal mode only (no TQ+ error correction).
+    Bits8,
     Bits4,
     Bits2,
     Bits1_5,
@@ -23,6 +28,7 @@ impl TQBits {
     #[inline]
     fn bit_size(&self) -> u8 {
         match self {
+            TQBits::Bits8 => 8,
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,
             // 1.5 bits is implemented as 1 bit with x1.5 dimension padding
@@ -63,7 +69,7 @@ impl TQBits {
         match self {
             TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
             TQBits::Bits2 => 4_096,
-            TQBits::Bits4 => 8_192,
+            TQBits::Bits4 | TQBits::Bits8 => 8_192,
         }
     }
 }
@@ -132,4 +138,5 @@ pub enum EncodedQueryTQData {
     Bits1Wide(Query1bitWideSimd),
     Bits2(Query2bitSimd),
     Bits4(Query4bitSimd),
+    Bits8(Query8bitSimd),
 }

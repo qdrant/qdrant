@@ -10,6 +10,7 @@ mod tests {
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
         score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
         score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
+        score_8bit_internal_scalar,
     };
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
     use rand::{RngExt, SeedableRng};
@@ -19,7 +20,18 @@ mod tests {
     const VECTORS_COUNT: usize = 513;
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
-    const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
+    const BITS: &[TQBits] = &[
+        TQBits::Bits8,
+        TQBits::Bits4,
+        TQBits::Bits2,
+        TQBits::Bits1_5,
+        TQBits::Bits1,
+    ];
+
+    /// Bits8 has no TQ+ mode.
+    fn supported(bits: TQBits, mode: TQMode) -> bool {
+        !(bits == TQBits::Bits8 && mode == TQMode::Plus)
+    }
 
     /// Absolute tolerance for an approximate score: an empirical per-bit
     /// coefficient (≈ 1.8x observed max across VECTORS_COUNT trials) times
@@ -33,6 +45,7 @@ mod tests {
             TQBits::Bits1_5 => 4.0,
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.9,
+            TQBits::Bits8 => 0.1,
         };
         coef * signal_std
     }
@@ -71,6 +84,7 @@ mod tests {
             TQBits::Bits1_5 => 4.5,
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.7,
+            TQBits::Bits8 => 0.08,
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -85,6 +99,7 @@ mod tests {
             TQBits::Bits1_5 => 48,
             TQBits::Bits2 => 32,
             TQBits::Bits4 => 8,
+            TQBits::Bits8 => 1,
         };
         dim >= min_dim
     }
@@ -182,6 +197,7 @@ mod tests {
             (_, TQBits::Bits1 | TQBits::Bits1_5) => score_1bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits2) => score_2bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits4) => score_4bit_internal_scalar(data_v1, data_v2),
+            (_, TQBits::Bits8) => score_8bit_internal_scalar(data_v1, data_v2),
         };
         let v1_scale = read_f32(extra_v1, 0);
         let v2_scale = read_f32(extra_v2, 0);
@@ -223,6 +239,9 @@ mod tests {
                     invert: false,
                 };
                 for &mode in &[TQMode::Normal, TQMode::Plus] {
+                    if !supported(bits, mode) {
+                        continue;
+                    }
                     let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
@@ -271,6 +290,9 @@ mod tests {
     #[case::plus_parallel(TQMode::Plus, 4)]
     fn test_tq_dot(#[case] mode: TQMode, #[case] num_threads: usize) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -325,6 +347,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_cosine(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -381,6 +406,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_dot_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -433,6 +461,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_cosine_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -489,6 +520,9 @@ mod tests {
         // non-zero query, should produce a score close to the true dot
         // product, which is exactly 0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -544,6 +578,9 @@ mod tests {
         // A zero query, scored with Dot against any encoded vector, should
         // produce a score close to the true dot product, which is exactly 0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -602,6 +639,9 @@ mod tests {
         // convention (preserve zero through preprocessing) yields a true
         // dot of zero post-rotation, so the encoded score should be ~0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -660,6 +700,9 @@ mod tests {
         // should produce a score close to 0. Same convention as above:
         // zero is preserved through query preprocessing.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -718,6 +761,9 @@ mod tests {
         // finite, sanely bounded scores; accuracy bounds elsewhere don't apply.
         let dim = 1;
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             let mut rng = rand::rngs::StdRng::seed_from_u64(42);
             let mut vector_data: Vec<Vec<f32>> = vec![];
             for _ in 0..VECTORS_COUNT {
@@ -769,6 +815,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l2(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -823,6 +872,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l2_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -875,6 +927,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l1(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -929,6 +984,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l1_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -1097,6 +1155,9 @@ mod tests {
                     };
 
                     for &mode in &[TQMode::Normal, TQMode::Plus] {
+                        if !supported(bits, mode) {
+                            continue;
+                        }
                         let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
                             &vector_parameters,
                             bits,
@@ -1146,6 +1207,9 @@ mod tests {
         let dim = 128;
         for &bits in BITS {
             for &mode in &[TQMode::Normal, TQMode::Plus] {
+                if !supported(bits, mode) {
+                    continue;
+                }
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let vector_data: Vec<Vec<f32>> = (0..VECTORS_COUNT)
                     .map(|_| (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect())

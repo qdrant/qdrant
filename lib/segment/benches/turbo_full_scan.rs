@@ -20,6 +20,7 @@ use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use quantization::turboquant::TQBits;
 use rand::distr::StandardUniform;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -63,7 +64,7 @@ fn build_dataset(dim: usize) -> Dataset {
 
     let turbo_dir = TempDir::new().expect("turbo tempdir created");
     let mut turbo = VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
-        open_appendable_turbo_vector_storage(turbo_dir.path(), dim, DISTANCE, true)
+        open_appendable_turbo_vector_storage(turbo_dir.path(), dim, DISTANCE, TQBits::Bits4, true)
             .expect("turbo storage created"),
     ));
     let mut dense = new_volatile_dense_vector_storage(dim, DISTANCE);
