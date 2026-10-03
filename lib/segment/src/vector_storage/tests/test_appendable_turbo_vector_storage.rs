@@ -1385,9 +1385,11 @@ fn score_stored_batch_matches_score_stored() {
         );
 
         let mut nearest_scores = vec![0.0; ids.len()];
-        nearest.score_stored_batch(ids, &mut nearest_scores);
+        nearest
+            .score_stored_batch(ids, &mut nearest_scores)
+            .unwrap();
         let mut reco_scores = vec![0.0; ids.len()];
-        reco.score_stored_batch(ids, &mut reco_scores);
+        reco.score_stored_batch(ids, &mut reco_scores).unwrap();
 
         for (idx, &id) in ids.iter().enumerate() {
             assert_eq!(
@@ -1568,7 +1570,7 @@ fn batch_scoring_accumulates_same_hw_counters() {
         let scorer =
             TurboQueryScorer::new(inputs[0].clone(), &storage, batch_acc.get_counter_cell());
         let mut scores = vec![0.0; ids.len()];
-        scorer.score_stored_batch(&ids, &mut scores);
+        scorer.score_stored_batch(&ids, &mut scores).unwrap();
     }
 
     assert_eq!(batch_acc.get_cpu(), per_point_acc.get_cpu());

@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::DenseVector;
 use crate::spaces::metric::Metric;
@@ -78,7 +79,11 @@ impl<TEncodedVectors> QueryScorer for QuantizedQueryScorer<'_, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hardware_counter
@@ -87,6 +92,7 @@ where
 
         self.quantized_data
             .score_points(&self.query, ids, scores, &self.hardware_counter);
+        Ok(())
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

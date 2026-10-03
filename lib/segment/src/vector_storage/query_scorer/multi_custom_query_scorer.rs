@@ -6,6 +6,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -121,7 +122,11 @@ impl<
         self.score_ref(stored.as_ref())
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         let vectors_read = self.hardware_counter.vector_io_read();
@@ -129,7 +134,7 @@ impl<
             .for_each_in_batch_multi(ids, |idx, vector| {
                 vectors_read.incr_delta(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
+            })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

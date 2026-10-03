@@ -267,7 +267,7 @@ impl<'a> FilteredScorer<'a> {
         &mut self,
         point_ids: &mut Vec<PointOffsetType>,
         limit: usize,
-    ) -> impl Iterator<Item = ScoredPointOffset> {
+    ) -> OperationResult<impl Iterator<Item = ScoredPointOffset>> {
         let mut n = self
             .filters
             .check_batched(point_ids, Select::Matches, Rest::Discard)
@@ -283,16 +283,16 @@ impl<'a> FilteredScorer<'a> {
     pub fn score_points_unfiltered(
         &mut self,
         point_ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = ScoredPointOffset> {
+    ) -> OperationResult<impl Iterator<Item = ScoredPointOffset>> {
         if self.scores_buffer.len() < point_ids.len() {
             self.scores_buffer.resize(point_ids.len(), 0.0);
         }
 
         self.raw_scorer
-            .score_points(point_ids, &mut self.scores_buffer[..point_ids.len()]);
+            .score_points(point_ids, &mut self.scores_buffer[..point_ids.len()])?;
 
-        std::iter::zip(point_ids, &self.scores_buffer)
-            .map(|(&idx, &score)| ScoredPointOffset { idx, score })
+        Ok(std::iter::zip(point_ids, &self.scores_buffer)
+            .map(|(&idx, &score)| ScoredPointOffset { idx, score }))
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
@@ -514,7 +514,7 @@ impl<'a> BatchFilteredSearcher<'a> {
 
             // Switching the loops improves batching performance, but slightly degrades single-query performance.
             for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
-                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size])?;
 
                 for i in 0..chunk_size {
                     top_k.push(ScoredPointOffset {
@@ -551,7 +551,7 @@ fn score_chunk(
         return Ok(());
     }
     for BatchSearch { raw_scorer, top_k } in scorer_batch {
-        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
+        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()])?;
         for i in 0..chunk.len() {
             top_k.push(ScoredPointOffset {
                 idx: chunk[i],

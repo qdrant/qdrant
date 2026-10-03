@@ -7,6 +7,7 @@ use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
@@ -101,14 +102,17 @@ impl<
     }
 
     #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         self.vector_storage
             .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector))
-            .expect("read vectors");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

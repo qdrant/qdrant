@@ -4,6 +4,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -45,7 +46,11 @@ impl<TStorage: TurboMultiScoring> QueryScorer for TurboMultiQueryScorer<'_, TSto
             .score_point_max_similarity(&self.query, idx, &self.hardware_counter)
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         let keys = ids.iter().copied().enumerate();
 
         let hw_counter = &self.hardware_counter;
@@ -62,7 +67,6 @@ impl<TStorage: TurboMultiScoring> QueryScorer for TurboMultiQueryScorer<'_, TSto
                     .storage
                     .score_records_max_similarity(&self.query, records);
             })
-            .expect("Failed to score stored batch");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

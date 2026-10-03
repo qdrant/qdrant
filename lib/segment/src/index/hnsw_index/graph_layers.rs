@@ -41,9 +41,7 @@ use serde::{Deserialize, Serialize};
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_links::{GraphLinks, GraphLinksFormat, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
-use crate::common::operation_error::{
-    CancellableResult, OperationError, OperationResult, check_process_stopped,
-};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
 use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer};
@@ -111,7 +109,7 @@ pub trait GraphLayersBase {
         ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
 
@@ -136,7 +134,7 @@ pub trait GraphLayersBase {
             });
 
             points_scorer
-                .score_points(&mut points_ids, limit)
+                .score_points(&mut points_ids, limit)?
                 .for_each(|score_point| {
                     search_context.process_candidate(score_point);
                     visited_list.check_and_update_visited(score_point.idx);
@@ -157,7 +155,7 @@ pub trait GraphLayersBase {
         ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         // Each node in `hop1_visited_list` either:
         // a) Non-deleted node that going to be scored and added to
         //    `search_context` for further expansion. (or already added)
@@ -252,7 +250,7 @@ pub trait GraphLayersBase {
             }
 
             points_scorer
-                .score_points_unfiltered(&to_score)
+                .score_points_unfiltered(&to_score)?
                 .for_each(|score_point| search_context.process_candidate(score_point));
         }
 
@@ -268,14 +266,14 @@ pub trait GraphLayersBase {
         target_level: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<ScoredPointOffset> {
+    ) -> OperationResult<ScoredPointOffset> {
         let mut links_buffer = Vec::new();
         let mut result = None;
         let mut level_entry = entry_point;
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
             let search_result =
-                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer);
+                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer)?;
             level_entry = search_result.idx;
             result = Some(search_result);
         }
@@ -301,7 +299,7 @@ pub trait GraphLayersBase {
         // Temporary buffer for links to avoid unnecessary allocations.
         // 'links' is reused if `search_entry_on_level` is called multiple times.
         links: &mut Vec<PointOffsetType>,
-    ) -> ScoredPointOffset {
+    ) -> OperationResult<ScoredPointOffset> {
         let limit = self.get_m(level);
 
         links.clear();
@@ -321,7 +319,7 @@ pub trait GraphLayersBase {
             });
 
             points_scorer
-                .score_points(links, limit)
+                .score_points(links, limit)?
                 .for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -329,7 +327,7 @@ pub trait GraphLayersBase {
                     }
                 });
         }
-        current_point
+        Ok(current_point)
     }
 }
 
@@ -358,7 +356,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         links_scorer: &FilteredBytesScorer,
         base_scorer: &dyn QueryScorerBytes,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
 
@@ -413,7 +411,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         links_scorer_raw: &dyn RawScorer,
         links_scorer: &FilteredBytesScorer,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<ScoredPointOffset> {
+    ) -> OperationResult<ScoredPointOffset> {
         let mut links_buffer = Vec::new();
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
@@ -426,7 +424,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
                 level,
                 links_scorer,
                 &mut links_buffer,
-            );
+            )?;
         }
         Ok(current_point)
     }
@@ -440,7 +438,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         level: usize,
         links_scorer: &FilteredBytesScorer,
         links: &mut Vec<(PointOffsetType, &'a [u8])>,
-    ) -> ScoredPointOffset {
+    ) -> OperationResult<ScoredPointOffset> {
         let limit = self.get_m(level);
 
         links.clear();
@@ -464,7 +462,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
                     }
                 });
         }
-        current_point
+        Ok(current_point)
     }
 }
 
@@ -539,7 +537,7 @@ impl GraphLayers {
         points_scorer: &mut FilteredScorer,
         entry_point: EntryPoint,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let zero_level_entry = self.search_entry(
             entry_point.point_id,
             entry_point.level,
@@ -566,7 +564,7 @@ impl GraphLayers {
         scorers: GraphWithVectorsScorers,
         entry_point: EntryPoint,
         is_stopped: &AtomicBool,
-    ) -> CancellableResult<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let zero_level_entry = self.search_entry_with_vectors(
             entry_point.point_id,
             entry_point.level,
