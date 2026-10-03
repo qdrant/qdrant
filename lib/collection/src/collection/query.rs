@@ -323,6 +323,10 @@ impl Collection {
             )
             .await?;
 
+        if all_shards_results.is_empty() {
+            return Ok(empty_batch_results(requests_batch.len()));
+        }
+
         let results_f = transposed_iter(all_shards_results)
             .zip(requests_batch.iter())
             .map(|(shards_results, request)| async {

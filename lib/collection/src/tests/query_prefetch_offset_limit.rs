@@ -6,13 +6,13 @@ use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use rand::{RngExt, rng};
-use segment::data_types::vectors::NamedQuery;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery};
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
 use shard::query::query_enum::QueryEnum;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
-use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use crate::config::{CollectionConfigInternal, CollectionParams, ShardingMethod, WalConfig};
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -21,6 +21,7 @@ use crate::operations::point_ops::{
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::VectorsConfig;
+use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
     ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -32,6 +33,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::WaitUntil;
+use crate::tests::fixtures::create_collection_config;
 
 const DIM: u64 = 4;
 const PEER_ID: u64 = 1;
@@ -132,6 +134,80 @@ async fn fixture() -> Collection {
         .expect("failed to insert points");
 
     collection
+}
+
+async fn empty_custom_sharded_collection() -> Collection {
+    let mut config = create_collection_config();
+    config.params.sharding_method = Some(ShardingMethod::Custom);
+
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+    let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
+
+    Collection::new(
+        "test".to_string(),
+        PEER_ID,
+        collection_dir.path(),
+        snapshots_path.path(),
+        &config,
+        Arc::new(SharedStorageConfig::default()),
+        CollectionShardDistribution {
+            shards: AHashMap::new(),
+        },
+        None,
+        ChannelService::default(),
+        dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
+        None,
+        None,
+        ResourceBudget::default(),
+        None,
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_empty_custom_sharded_collection() {
+    let collection = empty_custom_sharded_collection().await;
+
+    let request = CollectionQueryRequest {
+        prefetch: vec![],
+        query: None,
+        using: DEFAULT_VECTOR_NAME.to_owned(),
+        filter: None,
+        score_threshold: None,
+        limit: 1,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+        lookup_from: None,
+    };
+
+    let query_batch = |requests| {
+        collection.query_batch(
+            requests,
+            |_| async { None },
+            None,
+            None,
+            None,
+            HwMeasurementAcc::new(),
+        )
+    };
+
+    let single_result = query_batch(vec![(request.clone(), ShardSelectorInternal::All)])
+        .await
+        .expect("querying an empty custom-sharded collection should succeed");
+    assert_eq!(single_result, vec![vec![]]);
+
+    let batch_result = query_batch(vec![
+        (request.clone(), ShardSelectorInternal::All),
+        (request, ShardSelectorInternal::All),
+    ])
+    .await
+    .expect("batch querying an empty custom-sharded collection should succeed");
+    assert_eq!(batch_result, vec![vec![], vec![]]);
 }
 
 /// Test that limit and offset works properly with prefetches.
