@@ -10,14 +10,12 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedFs, CachedReadFs, Populate, UniversalReadFs, UniversalReadFsAsync, read_json_via,
 };
-use futures::FutureExt as _;
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
-use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -55,44 +53,15 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
-    futures::executor::block_on(build_cached_fs_async(fs, segment_path))
-}
-
-/// Async counterpart of [`build_cached_fs`].
-async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
-    fs: &Fs,
-    segment_path: &Path,
-) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-    cached_fs.cache_file_info_async().await?;
-    pin_committed_versions(&mut cached_fs, fs, segment_path).await?;
+    cached_fs.cache_file_info()?;
+    if let Some((path, options)) =
+        ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark(&cached_fs, segment_path)?
+    {
+        cached_fs.cache_file_info_after_open(&path, options)?;
+    }
     schedule_static_files(&cached_fs, segment_path);
     Ok(cached_fs)
-}
-
-/// Fix an appendable segment's commit mark before the listing snapshot its open uses.
-///
-/// The writer appends data before versions, so a listing taken after the versions file was read
-/// covers every point those versions commit. When the first listing holds the versions file, it
-/// is opened through `fs` and the listing is retaken. The handle is parked in the prefetch pool,
-/// where the id tracker's open picks it up at its pre-listing length. Other segments pay nothing.
-async fn pin_committed_versions<Fs: UniversalReadFsAsync>(
-    cached_fs: &mut CachedFs<Fs>,
-    fs: &Fs,
-    segment_path: &Path,
-) -> OperationResult<()> {
-    let path = ReadOnlyAppendableIdTracker::<Fs::File>::versions_path(segment_path);
-    if cached_fs.cached_file_info(&path).is_none() {
-        return Ok(());
-    }
-    let versions =
-        ReadOnlyAppendableIdTracker::<Fs::File>::open_versions_async(fs, segment_path).await?;
-    // Taking the listing drops the prefetch pool, so the handle is parked after it.
-    cached_fs.cache_file_info_async().await?;
-    if let Some(file) = versions {
-        cached_fs.schedule(path, futures::future::ready(Ok(file)).boxed());
-    }
-    Ok(())
 }
 
 /// How the payload storage of a segment with `config` is brought into memory.
@@ -182,7 +151,17 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &S::Fs,
         segment_path: &Path,
     ) -> OperationResult<CachedFs<S::Fs>> {
-        build_cached_fs_async(fs, segment_path).await
+        let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
+        cached_fs.cache_file_info_async().await?;
+        if let Some((path, options)) =
+            ReadOnlyIdTrackerEnum::<S>::commit_mark(&cached_fs, segment_path)?
+        {
+            cached_fs
+                .cache_file_info_after_open_async(&path, options)
+                .await?;
+        }
+        schedule_static_files(&cached_fs, segment_path);
+        Ok(cached_fs)
     }
 
     /// Stage an open without assembling the segment: take the listing snapshot

@@ -42,6 +42,11 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     let mut cached_fs = CachedFs::new(fs, segment_path)?;
 
     cached_fs.cache_file_info()?;
+    if let Some((path, options)) =
+        ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark(&cached_fs, segment_path)?
+    {
+        cached_fs.cache_file_info_after_open(&path, options)?;
+    }
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {

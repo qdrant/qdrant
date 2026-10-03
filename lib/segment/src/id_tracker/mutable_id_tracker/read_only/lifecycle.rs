@@ -5,7 +5,6 @@ use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
-    UniversalReadFsAsync,
 };
 use futures::lock::Mutex;
 
@@ -133,25 +132,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         Ok(fs.open(path, options, Default::default()).ok_not_found()?)
     }
 
-    /// Path of the versions file. Only this tracker format writes it, so a listing that holds
-    /// it belongs to an appendable segment.
-    pub(crate) fn versions_path(segment_path: &Path) -> PathBuf {
-        versions_path(segment_path)
-    }
-
-    /// Open the versions file through `fs` the way [`Self::open`] does, `None` if it doesn't
-    /// exist. The handle keeps the length it had when opened until it is live-reloaded.
-    pub(crate) async fn open_versions_async<Fs: UniversalReadFsAsync<File = S>>(
-        fs: &Fs,
-        segment_path: &Path,
-    ) -> OperationResult<Option<S>> {
-        Ok(fs
-            .open_async(
-                versions_path(segment_path),
-                Self::open_options(),
-                Default::default(),
-            )
-            .await
-            .ok_not_found()?)
+    /// The versions file and its open options: [`Self::open`] loads only points it has versions for.
+    pub(crate) fn commit_mark(segment_path: &Path) -> (PathBuf, OpenOptions) {
+        (versions_path(segment_path), Self::open_options())
     }
 }

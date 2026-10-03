@@ -12,8 +12,8 @@ mod async_io;
 
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
+    CachedReadFs, ListedFile, OkNotFound as _, OpenExtra, OpenOptions, Populate, UioResult,
+    UniversalIoError, UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
 };
 
 #[derive(Clone, Debug)]
@@ -233,6 +233,48 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
         let list = self.fs.list_files_async(&self.prefix_path).await?;
         self.apply_file_info(list);
         Ok(())
+    }
+
+    /// Open `path`, then take the listing snapshot: the snapshot is never older than the opened
+    /// file. The handle serves the next [`open`](UniversalReadFs::open) of `path`. If `path`
+    /// doesn't exist, only the snapshot is taken.
+    pub fn cache_file_info_after_open(
+        &mut self,
+        path: &Path,
+        options: OpenOptions,
+    ) -> UioResult<()> {
+        let file = self
+            .fs
+            .open(path, options, Default::default())
+            .ok_not_found()?;
+        self.cache_file_info()?;
+        self.keep_opened(path, file);
+        Ok(())
+    }
+
+    /// Async counterpart of [`Self::cache_file_info_after_open`].
+    pub async fn cache_file_info_after_open_async(
+        &mut self,
+        path: &Path,
+        options: OpenOptions,
+    ) -> UioResult<()> {
+        let file = self
+            .fs
+            .open_async(path.to_path_buf(), options, Default::default())
+            .await
+            .ok_not_found()?;
+        self.cache_file_info_async().await?;
+        self.keep_opened(path, file);
+        Ok(())
+    }
+
+    /// Park `file` for the next open of `path`. Must run after the snapshot, which clears them.
+    fn keep_opened(&self, path: &Path, file: Option<Fs::File>) {
+        if let Some(file) = file {
+            self.files_prefetched
+                .lock()
+                .insert(path.to_path_buf(), ScheduledFile::Ready(Ok(file)));
+        }
     }
 }
 
