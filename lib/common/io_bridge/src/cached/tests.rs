@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::universal_io::{
-    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFs as _,
+    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalRead as _, UniversalReadFs as _,
+    UniversalWriteFs as _,
 };
 use futures::stream::{BoxStream, StreamExt as _};
 
@@ -237,4 +238,49 @@ fn rewrite_append_at_nonzero_offset_on_a_missing_object_conflicts() {
         UniversalIoError::AppendOffsetConflict { offset: 3, .. }
     );
     assert!(source.content().is_none());
+}
+
+/// Length comes from the per-open mirror, bytes from the live remote.
+#[test]
+#[ignore = "reproduces an open defect: the mirror's length outlives the object it describes"]
+fn a_save_over_an_open_handle_updates_its_length() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+
+    fs.atomic_save(Path::new("bucket/obj"), b"0123").unwrap();
+    let file = fs
+        .open("bucket/obj", open_options(), Default::default())
+        .unwrap();
+    assert_eq!(file.len::<u8>().unwrap(), 4, "the object as first opened");
+
+    fs.atomic_save(Path::new("bucket/obj"), b"0123456789")
+        .unwrap();
+
+    assert_eq!(
+        file.len::<u8>().unwrap(),
+        10,
+        "the length must describe the object the reader now reads",
+    );
+}
+
+/// A fresh open is correct, which places the defect on handles held across a save.
+#[test]
+fn a_grown_bitmask_is_not_read_as_a_truncated_one() {
+    use common::stored_bitmask::{StoredBitmask, save_bitmask};
+    use roaring::RoaringBitmap;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+    let path = Path::new("bucket/obj");
+
+    save_bitmask(&fs, path, 0, RoaringBitmap::new()).unwrap();
+    let opened = StoredBitmask::open(&fs, path, open_options(), Default::default()).unwrap();
+    drop(opened);
+
+    save_bitmask(&fs, path, 64, RoaringBitmap::from_iter([3u32])).unwrap();
+
+    StoredBitmask::open(&fs, path, open_options(), Default::default())
+        .expect("the grown bitmask must open against its own length");
 }

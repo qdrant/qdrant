@@ -3901,6 +3901,7 @@ dependencies = [
  "common",
  "futures",
  "log",
+ "roaring",
  "slab",
  "strum",
  "tempfile",

@@ -52,6 +52,7 @@ where
         let inner = ReadOnlyChunkedVectors {
             config,
             len: status.len,
+            status_len: status.len,
             chunks,
             directory: directory.to_owned(),
             advice,

@@ -37,6 +37,9 @@ pub struct ReadOnlyChunkedVectors<T: bytemuck::Pod + Send, S: UniversalRead> {
     /// [`ChunkedVectors`](super::ChunkedVectors) this is kept in sync with the
     /// writable status mmap.
     pub(super) len: usize,
+    /// What the status file last reported. `len` trails it while the chunks
+    /// have not caught up.
+    pub(super) status_len: usize,
     pub(super) chunks: Vec<TypedStorage<S, T>>,
     pub(super) directory: PathBuf,
     /// Open-time chunk settings, reused by live-reload to open new chunks.
@@ -49,14 +52,41 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::types::PointOffsetType;
+    use common::universal_io::{
+        ListedFile, MmapFile, MmapFs, OpenOptions, UioResult, UniversalReadFs, UniversalReadFsAsync,
+    };
     use tempfile::Builder;
 
     use super::super::chunks::chunk_name;
+    use super::super::config::status_file;
     use super::super::test_utils::{append_range, make_vec};
     use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::*;
     use crate::common::live_reload::LiveReload;
+
+    /// Append vectors straight into chunk 0, leaving the status file alone.
+    fn append_chunk_bytes(directory: &std::path::Path, seeds: std::ops::Range<usize>, dim: usize) {
+        use std::io::Write as _;
+
+        let mut bytes = Vec::new();
+        for seed in seeds {
+            bytes.extend_from_slice(bytemuck::cast_slice(&make_vec(seed, dim)));
+        }
+        let mut file = fs_err::OpenOptions::new()
+            .append(true)
+            .open(chunk_name(directory, 0))
+            .unwrap();
+        file.write_all(&bytes).unwrap();
+    }
+
+    /// Move the stored count ahead of the chunks it describes.
+    fn set_status_len(directory: &std::path::Path, len: usize) {
+        let path = status_file(directory);
+        let mut bytes = fs_err::read(&path).unwrap();
+        bytes[..std::mem::size_of::<usize>()].copy_from_slice(&len.to_ne_bytes());
+        fs_err::write(&path, &bytes).unwrap();
+    }
 
     /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
@@ -405,5 +435,197 @@ mod tests {
             Some(make_vec(99, DIM).as_slice()),
             "vector 99 must survive a failed reload",
         );
+    }
+
+    /// A reload must not advertise vectors its chunks cannot serve: the status
+    /// file and the chunks are separate objects, and the count can arrive
+    /// first.
+    #[test]
+    fn live_reload_does_not_outrun_its_chunks() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        set_status_len(dir.path(), 150);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        assert_eq!(
+            reader.len(),
+            100,
+            "reload must not count vectors the chunks do not hold",
+        );
+
+        let keys: Vec<PointOffsetType> = (0..reader.len() as PointOffsetType).collect();
+        let mut seen = 0;
+        reader
+            .for_each_in_batch(&keys, |_, _| seen += 1)
+            .expect("every advertised vector is readable");
+        assert_eq!(seen, 100);
+    }
+
+    /// A scorer reads through `for_each_vector`, which the read-only dense
+    /// storage wraps in `.expect("read vectors")` — where an over-advertised
+    /// `len` surfaced as a panic.
+    #[test]
+    fn a_capped_reload_keeps_the_scorer_read_in_bounds() {
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_scorer").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        set_status_len(dir.path(), 150);
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+
+        let offsets = (0..reader.len() as PointOffsetType).map(|key| ((), key, 1u32));
+        let mut seen = 0;
+        reader
+            .for_each_vector::<Random, _>(offsets, |(), _| {
+                seen += 1;
+                Ok(())
+            })
+            .expect("every advertised vector is readable");
+        assert_eq!(seen, 100);
+    }
+
+    /// `MmapFs` with etags, so `CachedFs` can recognise an unchanged file the
+    /// way an object store does; local listings carry none.
+    #[derive(Clone, Debug)]
+    struct EtaggedFs(MmapFs);
+
+    fn with_etags(mut files: Vec<ListedFile>) -> Vec<ListedFile> {
+        for file in &mut files {
+            file.etag = Some(format!("{}:{:?}", file.size, file.last_modified));
+        }
+        files
+    }
+
+    impl UniversalReadFs for EtaggedFs {
+        type File = MmapFile;
+        type OpenExtra = ();
+        type ContextConfig = ();
+
+        fn from_context(_context: ()) -> UioResult<Self> {
+            Ok(Self(MmapFs))
+        }
+
+        fn list_files(&self, prefix_path: &std::path::Path) -> UioResult<Vec<ListedFile>> {
+            Ok(with_etags(self.0.list_files(prefix_path)?))
+        }
+
+        fn exists(&self, path: &std::path::Path) -> UioResult<bool> {
+            self.0.exists(path)
+        }
+
+        fn open(
+            &self,
+            path: impl AsRef<std::path::Path>,
+            options: OpenOptions,
+            extra: (),
+        ) -> UioResult<MmapFile> {
+            self.0.open(path, options, extra)
+        }
+    }
+
+    impl UniversalReadFsAsync for EtaggedFs {
+        fn open_async(
+            &self,
+            path: std::path::PathBuf,
+            options: OpenOptions,
+            extra: (),
+        ) -> impl Future<Output = UioResult<MmapFile>> + Send + '_ {
+            self.0.open_async(path, options, extra)
+        }
+
+        async fn list_files_async(
+            &self,
+            prefix_path: &std::path::Path,
+        ) -> UioResult<Vec<ListedFile>> {
+            Ok(with_etags(self.0.list_files_async(prefix_path).await?))
+        }
+    }
+
+    /// A capped reload has to be retried even though the status file that
+    /// caused it never changes again: the bytes it counted can arrive later,
+    /// and an unchanged status must not short-circuit the chunk refresh.
+    #[test]
+    fn live_reload_retries_after_a_capped_reload() {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
+        const DIM: usize = 32;
+        let dir = Builder::new().prefix("chunked_capped").tempdir().unwrap();
+        let hw = HardwareCounterCell::disposable();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        let mut cached_fs = CachedFs::new(EtaggedFs(MmapFs), dir.path()).unwrap();
+        let cycle = |reader: &mut ReadOnlyChunkedVectors<f32, MmapFile>,
+                     cached_fs: &mut CachedFs<EtaggedFs>| {
+            cached_fs.rotate_cache_file_info();
+            cached_fs.cache_file_info().unwrap();
+            LiveReload::live_preload(&*reader, cached_fs).unwrap();
+            reader
+                .live_reload(&*cached_fs, &empty, &empty, &hw)
+                .unwrap();
+        };
+
+        cycle(&mut reader, &mut cached_fs);
+        assert_eq!(reader.len(), 100);
+
+        // The count arrives first; the reload can only serve what is there.
+        set_status_len(dir.path(), 150);
+        cycle(&mut reader, &mut cached_fs);
+        assert_eq!(reader.len(), 100);
+
+        // Now the bytes land, without the status moving again.
+        append_chunk_bytes(dir.path(), 100..150, DIM);
+        cycle(&mut reader, &mut cached_fs);
+
+        assert_eq!(reader.len(), 150, "a capped reload must be retried");
+        for offset in [0, 99, 100, 149] {
+            assert_eq!(
+                reader.get::<Random>(offset).unwrap().as_ref(),
+                make_vec(offset, DIM).as_slice(),
+                "vector {offset} mismatch after the retried reload",
+            );
+        }
     }
 }

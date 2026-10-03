@@ -53,6 +53,20 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         self.len
     }
 
+    /// Vectors the open chunk handles can serve, as one run from offset zero:
+    /// a short chunk ends it, since later offsets sit past the gap it leaves.
+    pub(super) fn served_len(&self) -> OperationResult<usize> {
+        let mut served = 0;
+        for chunk in &self.chunks {
+            let in_chunk = chunk.len()? as usize / self.config.dim;
+            served += in_chunk.min(self.config.chunk_size_vectors);
+            if in_chunk < self.config.chunk_size_vectors {
+                break;
+            }
+        }
+        Ok(served)
+    }
+
     #[inline]
     pub fn dim(&self) -> usize {
         self.config.dim
@@ -304,6 +318,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         let Self {
             config: _,
             len: _,
+            status_len: _,
             chunks: _,
             directory: _,
             advice: _,
