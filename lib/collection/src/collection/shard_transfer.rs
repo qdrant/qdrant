@@ -22,6 +22,12 @@ use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct AbortShardTransferScope {
+    /// Replica removed by the caller after every related transfer is unregistered
+    pub skip_replica: Option<(ShardId, PeerId)>,
+}
+
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
         self.shards_holder.read().await.get_transfers(|transfer| {
@@ -535,6 +541,16 @@ impl Collection {
         transfer: ShardTransfer,
         shard_holder: &ShardHolder,
     ) -> CollectionResult<()> {
+        self.abort_shard_transfer_scoped(transfer, shard_holder, AbortShardTransferScope::default())
+            .await
+    }
+
+    async fn abort_shard_transfer_scoped(
+        &self,
+        transfer: ShardTransfer,
+        shard_holder: &ShardHolder,
+        scope: AbortShardTransferScope,
+    ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
         let transfer_key = transfer.key();
         log::debug!("Aborting shard transfer {transfer:?}");
@@ -550,37 +566,39 @@ impl Collection {
 
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
-        if let Some(replica_set) = shard_holder.get_shard(shard_id) {
-            if replica_set.peer_state(transfer.to).is_some() {
-                if is_resharding_transfer {
-                    // If *resharding* shard transfer failed, we don't need/want to change replica state:
-                    // - on transfer failure, the whole resharding would be aborted (see below),
-                    //   and so all changes to replicas would be discarded/rolled-back anyway
-                    // - during resharding *up*, we transfer points to a single new shard replica;
-                    //   it is expected that this node is initially empty/incomplete, and so failed
-                    //   transfer should not strictly introduce inconsistency (it just means the node
-                    //   is *still* empty/incomplete); marking this new replica as `Dead` would only
-                    //   make requests to return explicit errors
-                    // - during resharding *down*, we transfer points from shard-to-be-removed
-                    //   to all other shards; all other shards are expected to be `Active`,
-                    //   and so failed transfer does not introduce any inconsistencies to points
-                    //   that are not affected by resharding in all other shards
-                } else if transfer.sync {
-                    replica_set
-                        .set_replica_state(transfer.to, ReplicaState::Dead)
-                        .await?;
-                } else {
-                    self.invalidate_clean_local_shards([transfer
-                        .to_shard_id
-                        .unwrap_or(transfer.shard_id)])
-                        .await;
-                    replica_set.remove_peer(transfer.to).await?;
+        if scope.skip_replica != Some((shard_id, transfer.to)) {
+            if let Some(replica_set) = shard_holder.get_shard(shard_id) {
+                if replica_set.peer_state(transfer.to).is_some() {
+                    if is_resharding_transfer {
+                        // If *resharding* shard transfer failed, we don't need/want to change replica state:
+                        // - on transfer failure, the whole resharding would be aborted (see below),
+                        //   and so all changes to replicas would be discarded/rolled-back anyway
+                        // - during resharding *up*, we transfer points to a single new shard replica;
+                        //   it is expected that this node is initially empty/incomplete, and so failed
+                        //   transfer should not strictly introduce inconsistency (it just means the node
+                        //   is *still* empty/incomplete); marking this new replica as `Dead` would only
+                        //   make requests to return explicit errors
+                        // - during resharding *down*, we transfer points from shard-to-be-removed
+                        //   to all other shards; all other shards are expected to be `Active`,
+                        //   and so failed transfer does not introduce any inconsistencies to points
+                        //   that are not affected by resharding in all other shards
+                    } else if transfer.sync {
+                        replica_set
+                            .set_replica_state(transfer.to, ReplicaState::Dead)
+                            .await?;
+                    } else {
+                        self.invalidate_clean_local_shards([transfer
+                            .to_shard_id
+                            .unwrap_or(transfer.shard_id)])
+                            .await;
+                        replica_set.remove_peer(transfer.to).await?;
+                    }
                 }
+            } else {
+                log::warn!(
+                    "Aborting shard transfer {transfer_key:?}, but shard {shard_id} does not exist"
+                );
             }
-        } else {
-            log::warn!(
-                "Aborting shard transfer {transfer_key:?}, but shard {shard_id} does not exist"
-            );
         }
 
         if transfer.from == self.this_peer_id {
@@ -601,6 +619,18 @@ impl Collection {
     pub async fn abort_shard_transfer_and_resharding(
         &self,
         transfer_key: ShardTransferKey,
+    ) -> CollectionResult<()> {
+        self.abort_shard_transfer_and_resharding_scoped(
+            transfer_key,
+            AbortShardTransferScope::default(),
+        )
+        .await
+    }
+
+    pub(super) async fn abort_shard_transfer_and_resharding_scoped(
+        &self,
+        transfer_key: ShardTransferKey,
+        scope: AbortShardTransferScope,
     ) -> CollectionResult<()> {
         // Look up transfer and any resharding state we need to abort
         let resharding_state = {
@@ -660,7 +690,8 @@ impl Collection {
             .get_transfer(&transfer_key)
             .expect("shard transfer exists");
 
-        self.abort_shard_transfer(transfer, &shard_holder).await
+        self.abort_shard_transfer_scoped(transfer, &shard_holder, scope)
+            .await
     }
 
     /// Initiate local partial shard

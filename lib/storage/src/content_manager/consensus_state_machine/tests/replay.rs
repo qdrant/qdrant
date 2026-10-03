@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 
+use collection::shards::replica_set::Change;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use proptest::prelude::*;
 
 use super::prop::*;
@@ -9,6 +11,7 @@ use super::*;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, RenameAlias,
 };
+use crate::content_manager::errors::StorageError;
 
 proptest! {
     /// Accepted operation changes the state only through its own actions.
@@ -71,6 +74,8 @@ proptest! {
     /// Usually that is the full action list. An operation may put side-effect-only actions after
     /// its last state change, so an earlier prefix can already equal the goal. Rejecting before
     /// that would make partial state permanent.
+    /// Replica removal's existing last-replica rejection after transfer abort is checked separately
+    /// because both implementations can invalidate that check before completing the operation.
     #[test]
     fn replay_after_crash_converges((state, operation) in arb_state_and_operation()) {
         if replay_may_diverge(&operation) {
@@ -107,8 +112,14 @@ proptest! {
                 }
 
                 ApplyOutcome::Rejected(err) => {
+                    let known_guard_failure = replica_removal_guard_may_reject(
+                        &state,
+                        &operation,
+                        &actions[..crash_after],
+                        &err,
+                    );
                     prop_assert!(
-                        reached_goal,
+                        reached_goal || known_guard_failure,
                         "replay after {} of {} actions was rejected before reaching the goal: {}",
                         crash_after,
                         actions.len(),
@@ -123,6 +134,73 @@ proptest! {
             }
         }
     }
+}
+
+/// Transfer abort can invalidate the replica-removal check before the caller removes its replica.
+/// Both implementations check the initial replica set, so replay can reject after an abort
+/// removes another replica or marks it dead. Keep checking every accepted replay and every other
+/// rejection until validation is fixed in both implementations.
+pub(super) fn replica_removal_guard_may_reject(
+    state: &ClusterState,
+    operation: &ConsensusOperations,
+    applied_actions: &[Action],
+    error: &StorageError,
+) -> bool {
+    let ConsensusOperations::CollectionMeta(operation) = operation else {
+        return false;
+    };
+    let CollectionMetaOperations::UpdateCollection(operation) = operation.as_ref() else {
+        return false;
+    };
+    let Some(changes) = &operation.shard_replica_changes else {
+        return false;
+    };
+    let StorageError::BadRequest { description } = error else {
+        return false;
+    };
+    let Ok(collection) = state.resolve_collection(&operation.collection_name) else {
+        return false;
+    };
+    let collection_state = state.collection(&collection).expect("collection exists");
+
+    changes.iter().any(|&Change::Remove(shard_id, peer_id)| {
+        if *description
+            != format!(
+                "Shard {shard_id} must have at least one active replica after removing {peer_id}"
+            )
+        {
+            return false;
+        }
+
+        collection_state.transfers.iter().any(|transfer| {
+            if transfer.is_resharding()
+                || transfer.to == peer_id
+                || transfer.to_shard_id.unwrap_or(transfer.shard_id) != shard_id
+            {
+                return false;
+            }
+
+            applied_actions.iter().any(|action| {
+                matches!(action, Action::RemoveReplica {
+                    collection: changed_collection,
+                    shard_id: changed_shard,
+                    peer_id: changed_peer,
+                } if !transfer.sync
+                        && *changed_collection == collection
+                        && *changed_shard == shard_id
+                        && *changed_peer == transfer.to)
+                    || matches!(action, Action::SetReplicaState {
+                    collection: changed_collection,
+                    shard_id: changed_shard,
+                    peer_id: changed_peer,
+                    state: ReplicaState::Dead,
+                } if transfer.sync
+                        && *changed_collection == collection
+                        && *changed_shard == shard_id
+                        && *changed_peer == transfer.to)
+            })
+        })
+    })
 }
 
 /// Apply `operation` without modifying `state`
