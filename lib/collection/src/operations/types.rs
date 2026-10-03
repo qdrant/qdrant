@@ -1289,6 +1289,9 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::DeadlineExceeded => Self::Timeout {
                 description: format!("Deadline Exceeded: {err}"),
             },
+            tonic::Code::Cancelled if err.message() == "Timeout expired" => Self::Timeout {
+                description: format!("Deadline Exceeded: {err}"),
+            },
             tonic::Code::Cancelled => Self::cancelled(err.to_string()),
             tonic::Code::FailedPrecondition => Self::pre_condition_failed(err.to_string()),
             tonic::Code::ResourceExhausted
@@ -2008,5 +2011,48 @@ mod tests {
             expected["uuid"] = json!(Uuid::nil().anonymize());
             assert_eq!(serde_json::to_value(info.anonymize()).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn test_tonic_status_timeout_conversion() {
+        // Tonic timeout expired cancellation must map to CollectionError::Timeout
+        let timeout_status = tonic::Status::cancelled("Timeout expired");
+        let err = CollectionError::from(timeout_status);
+        assert!(
+            matches!(err, CollectionError::Timeout { .. }),
+            "Expected Timeout, got: {err:?}"
+        );
+
+        // Standard DeadlineExceeded must map to CollectionError::Timeout
+        let deadline_status = tonic::Status::deadline_exceeded("deadline exceeded");
+        let err = CollectionError::from(deadline_status);
+        assert!(
+            matches!(err, CollectionError::Timeout { .. }),
+            "Expected Timeout, got: {err:?}"
+        );
+
+        // Negative control: Genuine cancellation must remain CollectionError::Cancelled
+        let cancelled_status = tonic::Status::cancelled("client aborted request");
+        let err = CollectionError::from(cancelled_status);
+        assert!(
+            matches!(err, CollectionError::Cancelled { .. }),
+            "Expected Cancelled, got: {err:?}"
+        );
+
+        // Negative control: Empty message cancellation must remain CollectionError::Cancelled
+        let cancelled_empty = tonic::Status::cancelled("");
+        let err = CollectionError::from(cancelled_empty);
+        assert!(
+            matches!(err, CollectionError::Cancelled { .. }),
+            "Expected Cancelled, got: {err:?}"
+        );
+
+        // Negative control: Unavailable peer must remain CollectionError::ServiceError
+        let unavail_status = tonic::Status::unavailable("peer unreachable");
+        let err = CollectionError::from(unavail_status);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError, got: {err:?}"
+        );
     }
 }
