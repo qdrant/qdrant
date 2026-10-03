@@ -8,6 +8,7 @@ use self::on_disk_text_index::OnDiskFullTextIndex;
 use crate::data_types::index::TextIndexParams;
 
 pub mod full_text_index_read;
+pub use inverted_index::bm25::{Bm25Params, Bm25Query, Bm25Term};
 mod immutable_text_index;
 mod inverted_index;
 mod lifecycle;
