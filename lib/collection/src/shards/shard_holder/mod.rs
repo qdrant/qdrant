@@ -1238,8 +1238,9 @@ impl ShardHolder {
         }
 
         let snapshot_file_name = format!(
-            "{collection_name}-shard-{shard_id}-{}.snapshot",
+            "{collection_name}-shard-{shard_id}-{}-{}.snapshot",
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            uuid::Uuid::new_v4(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
@@ -1314,8 +1315,9 @@ impl ShardHolder {
         }
 
         let snapshot_file_name = format!(
-            "{collection_name}-shard-{shard_id}-{}.snapshot",
+            "{collection_name}-shard-{shard_id}-{}-{}.snapshot",
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            uuid::Uuid::new_v4(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
