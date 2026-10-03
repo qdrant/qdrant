@@ -1,9 +1,12 @@
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::{Advice, AdviceSetting};
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkUnchanged, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkUnchanged, OpenOptions, Populate, TypedStorage, UniversalRead, UniversalReadFs,
+    UniversalReadFsAsync,
 };
+use futures::FutureExt;
 use futures::future::BoxFuture;
 
 use super::super::chunks::{chunk_name, chunk_open_options, list_chunk_files, read_chunks_from};
@@ -19,8 +22,37 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         &self,
         fs: &Fs,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        // Status is the change signal, let reload skip reloading if this didn't change.
-        fs.reschedule_open(&status_file(&self.directory), None, None);
+        let status_path = status_file(&self.directory);
+
+        // Status is the change signal.
+        if fs.is_file_unchanged(&status_path) {
+            // This will let `live_reload` know that nothing changed.
+            fs.reschedule_open(&status_path, None, None);
+            return Ok(Vec::new());
+        }
+
+        let (status_tx, status_rx) = futures::channel::oneshot::channel::<()>();
+        let status_rx = status_rx.shared();
+
+        let inner = fs.inner().clone();
+        let path = status_path.clone();
+        let status_fut = async move {
+            let res = inner
+                .open_async(
+                    path,
+                    OpenOptions {
+                        writeable: false,
+                        need_sequential: false,
+                        populate: Populate::PreferBackground,
+                        advice: AdviceSetting::Advice(Advice::Sequential),
+                    },
+                    Default::default(),
+                )
+                .await;
+            let _ = status_tx.send(());
+            res
+        };
+        fs.schedule(status_path, status_fut.boxed());
 
         let num_files = list_chunk_files(fs, &self.directory)?.len();
 
@@ -28,25 +60,23 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         // the one the next append lands in.
         let last_chunk = self.config.get_chunk_index(self.len);
 
-        let fresh_from = if last_chunk < self.chunks.len().min(num_files) {
-            fs.reschedule_open(
-                &chunk_name(&self.directory, last_chunk),
-                Some(chunk_open_options(self.advice, self.populate, false)),
-                None,
-            );
-            last_chunk + 1
-        } else {
-            last_chunk
-        };
+        for chunk_id in last_chunk..num_files {
+            let chunk_path = chunk_name(&self.directory, chunk_id);
+            let options = chunk_open_options(self.advice, self.populate, false);
+            let inner = fs.inner().clone();
+            let signal = status_rx.clone();
 
-        // Prefetch the rest of the chunks the reload may open.
-        for chunk_id in fresh_from..num_files {
-            fs.schedule_open(
-                &chunk_name(&self.directory, chunk_id),
-                Some(chunk_open_options(self.advice, self.populate, false)),
-                None,
-            );
+            let chunk_fut = async move {
+                // Schedule chunks AFTER status has been read to have a consistent view.
+                let _ = signal.await;
+                inner
+                    .open_async(chunk_path, options, Default::default())
+                    .await
+            };
+
+            fs.schedule(chunk_name(&self.directory, chunk_id), chunk_fut.boxed());
         }
+
         Ok(Vec::new())
     }
 
