@@ -525,3 +525,49 @@ fn test_probe_changes_anchors_watermark_and_detects_pure_delete() {
     assert_eq!(result.deleted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
 }
+
+#[test]
+fn test_stage_preload_over_disk_cache() {
+    use std::sync::Arc;
+    use common::universal_io::{
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
+    };
+
+    let tmp = Builder::new().prefix("disk_cache_tracker").tempdir().unwrap();
+    let remote_root = tmp.path().join("remote");
+    let local_root = tmp.path().join("local");
+    let segment_dir = remote_root.join("segment");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::create_dir_all(&local_root).unwrap();
+
+    let mut mutable = MutableIdTracker::open(&segment_dir, None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+
+    let mut read_only =
+        ReadOnlyAppendableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &segment_dir, None)
+            .unwrap();
+
+    // 1. Probe when nothing changed returns changed = false
+    let (changed, max_committed_id) =
+        futures::executor::block_on(read_only.stage_preload(&cache_fs)).unwrap();
+    assert!(!changed);
+    assert_eq!(max_committed_id, Some(1));
+
+    // 2. Insert point 200, flush mappings and versions
+    insert(&mut mutable, 200.into(), 1, 11);
+    flush(&mutable);
+
+    // Probe now should detect changes!
+    let (changed, max_committed_id) =
+        futures::executor::block_on(read_only.stage_preload(&cache_fs)).unwrap();
+    assert!(changed, "stage_preload over DiskCache must report changed after inserts");
+    assert_eq!(max_committed_id, Some(2));
+}
+
