@@ -127,14 +127,6 @@ impl AsyncRead for CountingSource {
         }
     }
 
-    fn read_whole_single(
-        &self,
-
-        path: &Path,
-    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
-        self.read_from(path, 0)
-    }
-
     fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
         self.counters.len.fetch_add(1, Ordering::Relaxed);
         let len = self.data.len() as u64;

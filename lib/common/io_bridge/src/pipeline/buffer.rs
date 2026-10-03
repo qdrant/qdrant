@@ -110,7 +110,7 @@ where
     W: ChunkSink + Send + 'static,
 {
     let mut request = file.stats.request(Op::ReadFrom, &file.path, 0..0);
-    let read_fut = file.inner.read_whole_single(&file.path);
+    let read_fut = file.inner.read_from(&file.path, 0);
     async move {
         request.start();
         let (size, stream) = match read_fut.await {
