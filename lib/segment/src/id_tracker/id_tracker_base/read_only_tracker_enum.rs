@@ -2,14 +2,16 @@ use std::path::Path;
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    LiveReloadResult, ReadOnlyAppendableIdTracker,
+    LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -66,7 +68,18 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         )?))
     }
 
-    /// Stage everything the next [`Self::live_reload`] needs. Shared access.
+    /// Measure how far the writer has committed, before the directory listing snapshot is taken.
+    pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        inner_fs: &Fs,
+    ) -> OperationResult<TrackerProbe> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.probe_committed(inner_fs).await,
+            Self::Immutable(_) | Self::DiskResident(_) => Ok(TrackerProbe::Unknown),
+        }
+    }
+
+    /// Stage post-LIST preloading on `CachedFs` (e.g. `reschedule_open` for `deleted.dat`).
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
@@ -86,9 +99,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
+        max_committed_id: Option<PointOffsetType>,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs),
+            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }
