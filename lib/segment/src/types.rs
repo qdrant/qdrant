@@ -815,6 +815,9 @@ impl Indexes {
 #[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    /// Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    /// may still be built when the effective payload M is positive (see payload_m).
+    /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[validate(range(min = 4))]
@@ -842,7 +845,9 @@ pub struct HnswConfig {
     /// set. Default: `cached` (`cold` if `on_disk` is set to true).
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub memory: Option<Memory>,
-    /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    /// Number of additional payload-aware links per node. If unset, the value of m is used.
+    /// An effective value of 0 disables these additional links. A positive value allows
+    /// them for indexed payload fields with HNSW enabled, even when m is 0.
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
