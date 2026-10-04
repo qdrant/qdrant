@@ -207,8 +207,8 @@ impl TableOfContent {
                 };
 
                 if recreate_collection {
+                    drop(existing_collection.take());
                     self.delete_collection_locked(id).await?;
-                    existing_collection = None;
                 }
 
                 let collection_exists = existing_collection.is_some();
