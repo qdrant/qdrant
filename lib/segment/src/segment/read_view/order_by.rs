@@ -8,7 +8,7 @@ use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::{Either, Itertools};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
+use crate::data_types::order_by::{Direction, OrderBy, OrderValue, StartFrom};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
@@ -109,8 +109,20 @@ where
                 key: order_by.key.to_string(),
             })?;
 
+        // `as_range` is only a superset for integers above 2^53, so re-check those exactly.
+        let direction = order_by.direction();
+        let exact_start = match order_by.start_from {
+            Some(StartFrom::Integer(start)) => Some(OrderValue::Int(start)),
+            _ => None,
+        };
+
         let range_iter = numeric_index
             .stream_range(&order_by.as_range())?
+            .filter(move |(value, _)| match (&exact_start, direction) {
+                (None, _) => true,
+                (Some(start), Direction::Asc) => value >= start,
+                (Some(start), Direction::Desc) => value <= start,
+            })
             // We can't early-stop the iterator for deferred points because the items are sorted
             // lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
