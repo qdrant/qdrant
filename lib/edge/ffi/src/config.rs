@@ -441,8 +441,10 @@ pub enum TurboQuantBitSize {
     Bits1Point5,
     /// 2 bits per component.
     Bits2,
-    /// 4 bits per component (default; best recall of the Turbo modes).
+    /// 4 bits per component (default).
     Bits4,
+    /// 8 bits per component (best recall of the Turbo modes).
+    Bits8,
 }
 
 impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
@@ -452,6 +454,7 @@ impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
             TurboQuantBitSize::Bits1Point5 => SegmentTurboQuantBitSize::Bits1_5,
             TurboQuantBitSize::Bits2 => SegmentTurboQuantBitSize::Bits2,
             TurboQuantBitSize::Bits4 => SegmentTurboQuantBitSize::Bits4,
+            TurboQuantBitSize::Bits8 => SegmentTurboQuantBitSize::Bits8,
         }
     }
 }
@@ -463,6 +466,7 @@ impl From<SegmentTurboQuantBitSize> for TurboQuantBitSize {
             SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1Point5,
             SegmentTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
             SegmentTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+            SegmentTurboQuantBitSize::Bits8 => TurboQuantBitSize::Bits8,
         }
     }
 }

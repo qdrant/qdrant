@@ -1522,6 +1522,7 @@ impl From<segment::types::TurboQuantBitSize> for TurboQuantBitSize {
             segment::types::TurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits15,
             segment::types::TurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
             segment::types::TurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+            segment::types::TurboQuantBitSize::Bits8 => TurboQuantBitSize::Bits8,
         }
     }
 }
@@ -1534,6 +1535,7 @@ fn turbo_quant_bit_size_from_i32(value: i32) -> Result<segment::types::TurboQuan
         TurboQuantBitSize::Bits15 => segment::types::TurboQuantBitSize::Bits1_5,
         TurboQuantBitSize::Bits2 => segment::types::TurboQuantBitSize::Bits2,
         TurboQuantBitSize::Bits4 => segment::types::TurboQuantBitSize::Bits4,
+        TurboQuantBitSize::Bits8 => segment::types::TurboQuantBitSize::Bits8,
     })
 }
 

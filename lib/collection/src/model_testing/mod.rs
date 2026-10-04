@@ -270,6 +270,17 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         inline_storage: false,
         initially_active: true,
     },
+    // 8-bit TurboQuant quantization, the only width without TQ+: Normal mode on both the
+    // appendable (empty-fit) and the optimizer-built quantized storages.
+    VectorCandidate {
+        name: "f",
+        kind: VectorKind::Dense(8),
+        datatype: None,
+        distance: Distance::Cosine,
+        quantization: Some(QuantizationKind::TurboBits8),
+        inline_storage: false,
+        initially_active: true,
+    },
     // Quantization x datatype combos. Live appendable inserts quantize the pristine f32
     // input; optimizer rebuilds and CoW moves re-quantize from the lossy storage
     // read-back, so the codes for the same point differ across those paths. Predictions
@@ -420,6 +431,8 @@ pub(super) enum QuantizationKind {
     /// Turbo4 storage source this forces the rotate-back branch of
     /// `should_keep_source_rotated`, where default-bits `Turbo` takes the keep-rotated one.
     TurboBits1_5,
+    /// TurboQuant with `Bits8` encoding, which has no TQ+ mode and quantizes in Normal mode.
+    TurboBits8,
 }
 
 #[derive(Copy, Clone, Debug)]

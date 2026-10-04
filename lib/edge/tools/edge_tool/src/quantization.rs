@@ -35,6 +35,8 @@ pub enum QuantizationPreset {
     Turbo2,
     #[value(name = "turbo4")]
     Turbo4,
+    #[value(name = "turbo8")]
+    Turbo8,
 }
 
 impl QuantizationPreset {
@@ -81,6 +83,7 @@ impl QuantizationPreset {
             Self::Turbo1_5 => turbo(TurboQuantBitSize::Bits1_5),
             Self::Turbo2 => turbo(TurboQuantBitSize::Bits2),
             Self::Turbo4 => turbo(TurboQuantBitSize::Bits4),
+            Self::Turbo8 => turbo(TurboQuantBitSize::Bits8),
         }
     }
 }

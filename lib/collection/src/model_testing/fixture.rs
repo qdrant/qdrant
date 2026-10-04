@@ -99,6 +99,13 @@ fn quantization_config(kind: QuantizationKind) -> QuantizationConfig {
                 bits: Some(TurboQuantBitSize::Bits1_5),
             },
         }),
+        QuantizationKind::TurboBits8 => QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
     }
 }
 

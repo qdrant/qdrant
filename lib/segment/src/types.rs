@@ -1086,6 +1086,7 @@ pub enum TurboQuantBitSize {
     Bits2,
     #[default]
     Bits4,
+    Bits8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
