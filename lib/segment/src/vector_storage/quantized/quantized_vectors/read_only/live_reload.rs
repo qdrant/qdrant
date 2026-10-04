@@ -4,9 +4,10 @@ use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 
+use super::storage::{BinaryChunkedMulti, TQChunkedMulti};
 use super::{ReadOnlyQuantizedVectorStorage, ReadOnlyQuantizedVectors};
 use crate::common::live_reload::LiveReload;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
     type File = S;
@@ -111,20 +112,62 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
                     .live_reload(fs, deleted_points, new_points, hw_counter)?
             }
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                q.offsets_storage_mut()
-                    .live_reload(fs, deleted_points, new_points, hw_counter)?;
-                if let Some(rows) = q.offsets_storage().published_rows_end(new_points)? {
-                    q.storage_mut().storage_mut().live_reload_to(fs, rows)?;
-                }
+                live_reload_binary_multi(q, fs, deleted_points, new_points, hw_counter)?;
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                q.offsets_storage_mut()
-                    .live_reload(fs, deleted_points, new_points, hw_counter)?;
-                if let Some(rows) = q.offsets_storage().published_rows_end(new_points)? {
-                    q.storage_mut().storage_mut().live_reload_to(fs, rows)?;
-                }
+                live_reload_tq_multi(q, fs, deleted_points, new_points, hw_counter)?;
             }
         }
         Ok(())
     }
+}
+
+fn live_reload_binary_multi<S: UniversalRead, Fs: UniversalReadFs<File = S>>(
+    q: &mut BinaryChunkedMulti<S>,
+    fs: &Fs,
+    deleted_points: &SortedSlice<'_, PointOffsetType>,
+    new_points: &SortedSlice<'_, PointOffsetType>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    q.offsets_storage_mut()
+        .live_reload(fs, deleted_points, new_points, hw_counter)?;
+    if let Some(&last_point) = new_points.last() {
+        let offset = q
+            .offsets_storage()
+            .get_offset_opt(last_point)
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Offset of published point {last_point} is missing",
+                ))
+            })?;
+        q.storage_mut()
+            .storage_mut()
+            .live_reload_to(fs, (offset.start + offset.count) as usize)?;
+    }
+    Ok(())
+}
+
+fn live_reload_tq_multi<S: UniversalRead, Fs: UniversalReadFs<File = S>>(
+    q: &mut TQChunkedMulti<S>,
+    fs: &Fs,
+    deleted_points: &SortedSlice<'_, PointOffsetType>,
+    new_points: &SortedSlice<'_, PointOffsetType>,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
+    q.offsets_storage_mut()
+        .live_reload(fs, deleted_points, new_points, hw_counter)?;
+    if let Some(&last_point) = new_points.last() {
+        let offset = q
+            .offsets_storage()
+            .get_offset_opt(last_point)
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Offset of published point {last_point} is missing",
+                ))
+            })?;
+        q.storage_mut()
+            .storage_mut()
+            .live_reload_to(fs, (offset.start + offset.count) as usize)?;
+    }
+    Ok(())
 }

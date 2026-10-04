@@ -1,5 +1,4 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -105,27 +104,6 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
 
         self.apply(reopened, new_len);
         Ok(())
-    }
-
-    /// End of the row range the last of `new_points` refers to, with `self`
-    /// holding one offset entry per point. Writers append rows in point order,
-    /// so the last point's range ends after every earlier one.
-    pub fn published_rows_end(
-        &self,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        range_end: impl FnOnce(&T) -> usize,
-    ) -> OperationResult<Option<usize>> {
-        let Some(&last_point) = new_points.last() else {
-            return Ok(None);
-        };
-
-        let offsets = self.get::<Random>(last_point as usize).ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Offset of published point {last_point} is missing in {}",
-                self.directory.display(),
-            ))
-        })?;
-        Ok(offsets.first().map(range_end))
     }
 
     /// First chunk that can have changed: the one the next append lands in.
