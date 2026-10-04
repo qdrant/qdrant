@@ -179,13 +179,15 @@ impl TableOfContent {
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            let mut existing_collections = self.collections.write().await;
+            let collection_create_guard = self.collection_create_lock.lock().await;
 
             for (id, state) in &data.collections {
-                if let Some(existing_collection) = existing_collections.get(id) {
+                let mut existing_collection = self.collections.read().await.get(id).cloned();
+
+                let recreate_collection = if let Some(existing_collection) = &existing_collection {
                     let collection_uuid = existing_collection.uuid().await;
 
-                    let recreate_collection = if collection_uuid != state.config.uuid {
+                    if collection_uuid != state.config.uuid {
                         log::warn!(
                             "Recreating collection {id}, because collection UUID is different: \
                              existing collection UUID: {collection_uuid:?}, \
@@ -203,24 +205,22 @@ impl TableOfContent {
                         true
                     } else {
                         false
-                    };
-
-                    if recreate_collection {
-                        // Drop `collections` lock
-                        drop(existing_collections);
-
-                        // Delete collection
-                        self.delete_collection(id).await?;
-
-                        // Re-acquire `collections` lock 🙄
-                        existing_collections = self.collections.write().await;
                     }
+                } else {
+                    false
+                };
+
+                if recreate_collection {
+                    drop(existing_collection.take());
+                    self.delete_collection_locked(id).await?;
                 }
 
-                let collection_exists = existing_collections.contains_key(id);
+                let collection_exists = existing_collection.is_some();
 
                 // Create collection if not present locally
-                if !collection_exists {
+                let collection = if let Some(existing_collection) = existing_collection {
+                    existing_collection
+                } else {
                     let collection_path = self.create_collection_path(id).await?;
                     let snapshots_path = self.create_snapshots_path(id).await?;
                     let shard_distribution =
@@ -256,16 +256,10 @@ impl TableOfContent {
                         self.storage_config.optimizers_overwrite.clone(),
                     )
                     .await?;
-                    existing_collections.validate_collection_not_exists(id)?;
-                    existing_collections.insert(id.clone(), Arc::new(collection));
-                }
-
-                let Some(existing_collection) = existing_collections.get(id) else {
-                    unreachable!()
+                    Arc::new(collection)
                 };
 
-                // Update collection state
-                if &existing_collection.state().await != state {
+                let apply_state_result = if &collection.state().await != state {
                     if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
                         // In some cases on state application it might be needed to abort the transfer
                         let abort_transfer = |transfer| {
@@ -281,19 +275,22 @@ impl TableOfContent {
                                 )
                             };
                         };
-                        existing_collection
+                        collection
                             .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-                            .await?;
+                            .await
                     } else {
                         log::error!("Can't apply state: single node mode");
+                        Ok(())
                     }
-                }
+                } else {
+                    Ok(())
+                };
 
                 // Mark local shards as dead (to initiate shard transfer),
                 // if collection has been created during snapshot application
-                if !collection_exists {
-                    for shard_id in existing_collection.get_local_shards().await {
-                        let shard_holder = existing_collection.shards_holder().read_owned().await;
+                if !collection_exists && apply_state_result.is_ok() {
+                    for shard_id in collection.get_local_shards().await {
+                        let shard_holder = collection.shards_holder().read_owned().await;
 
                         let Some(replica_set) = shard_holder.get_shard(shard_id) else {
                             continue;
@@ -304,13 +301,18 @@ impl TableOfContent {
                         }
                     }
                 }
+
+                if !collection_exists {
+                    let mut existing_collections = self.collections.write().await;
+                    existing_collections.validate_collection_not_exists(id)?;
+                    existing_collections.insert(id.clone(), collection);
+                }
+
+                apply_state_result?;
             }
 
             // Collect names of collections that are present locally
-            let collection_names: Vec<_> = existing_collections.keys().cloned().collect();
-
-            // Drop `collections` lock
-            drop(existing_collections);
+            let collection_names: Vec<_> = self.collections.read().await.keys().cloned().collect();
 
             // Remove collections that are present locally, but are not in the snapshot state
             for collection_name in &collection_names {
@@ -320,9 +322,11 @@ impl TableOfContent {
                          because it is not part of the consensus snapshot",
                     );
 
-                    self.delete_collection(collection_name).await?;
+                    self.delete_collection_locked(collection_name).await?;
                 }
             }
+
+            drop(collection_create_guard);
 
             // Apply alias mapping
             self.alias_persistence
