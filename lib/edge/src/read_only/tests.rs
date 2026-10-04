@@ -25,7 +25,7 @@ use crate::config::vectors::EdgeVectorParams;
 use crate::edge_shard::scan_segment_dirs;
 use crate::read_only::{
     ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,
-    SegmentEnumerator,
+    ReadOnlyEdgeShardPools, SegmentEnumerator,
 };
 use crate::read_view::EdgeShardRead;
 use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
@@ -105,6 +105,7 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         LocalSegmentEnumerator::new(path),
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap()
@@ -211,6 +212,7 @@ fn follower_with_load_profile_serves_reads() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         Some(scroll_request.load_profile()),
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -251,6 +253,108 @@ fn live_reload_picks_up_incremental_writes() {
     assert_eq!(exact_count(&follower), 100);
     assert_eq!(exact_count(&follower), leader_exact_count(&leader));
     assert_follower_vectors(&follower, &[1, 50, 51, 100]);
+}
+
+#[test]
+fn live_reload_progresses_while_search_pool_is_occupied() {
+    let dir = tempfile::tempdir().unwrap();
+    fs_err::create_dir(dir.path().join(SEGMENTS_PATH)).unwrap();
+    let mut config = test_config();
+    config.max_search_threads = Some(1);
+    // Start empty so the first reload opens new segments and the second reload updates survivors.
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        Some(config.clone()),
+        None,
+        Default::default(),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let leader = EdgeShard::new(dir.path(), config).unwrap();
+    upsert(&leader, 1..=50);
+    leader.flush().unwrap();
+
+    let timeout = std::time::Duration::from_secs(10);
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    follower.search_pool.spawn(move || {
+        let _ = started_tx.send(());
+        let _ = release_rx.recv();
+    });
+    started_rx.recv_timeout(timeout).unwrap();
+
+    std::thread::scope(|scope| {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let follower = &follower;
+        let leader = &leader;
+        scope.spawn(move || {
+            follower.live_reload().unwrap();
+            upsert(leader, 51..=100);
+            leader.flush().unwrap();
+            follower.live_reload().unwrap();
+            done_tx.send(()).unwrap();
+        });
+        let result = done_rx.recv_timeout(timeout);
+        // Release before asserting so a regression cannot leave the scoped thread blocked.
+        release_tx.send(()).unwrap();
+        result.expect("opening and reloading segments must not wait for search workers");
+    });
+
+    assert_eq!(exact_count(&follower), 100);
+    assert_follower_vectors(&follower, &[1, 50, 51, 100]);
+}
+
+#[test]
+fn followers_reuse_provided_pools() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_config();
+    config.max_search_threads = Some(1);
+    let leader = EdgeShard::new(dir.path(), config.clone()).unwrap();
+    upsert(&leader, 1..=50);
+    leader.flush().unwrap();
+
+    let search = crate::read_view::build_segment_pool("test-search", 2, None).unwrap();
+    let load = crate::read_view::build_segment_pool("test-load", 3, None).unwrap();
+    // Exercise both overrides together and each independently, including fallback pool creation.
+    let followers = [(true, true), (true, false), (false, true)].map(|(use_search, use_load)| {
+        let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_pools(
+            MmapFs,
+            dir.path(),
+            Some(config.clone()),
+            None,
+            ReadOnlyEdgeShardPools {
+                search: use_search.then(|| search.clone()),
+                load: use_load.then(|| load.clone()),
+            },
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert_eq!(Arc::ptr_eq(&follower.search_pool, &search), use_search);
+        assert_eq!(Arc::ptr_eq(&follower.load_pool, &load), use_load);
+        assert_eq!(
+            follower.search_pool.current_num_threads(),
+            if use_search { 2 } else { 1 }
+        );
+        assert_eq!(
+            follower.load_pool.current_num_threads(),
+            if use_load { 3 } else { 1 }
+        );
+        assert_eq!(exact_count(&follower), 50);
+        follower
+    });
+
+    upsert(&leader, 51..=100);
+    leader.flush().unwrap();
+    for follower in followers {
+        follower.live_reload().unwrap();
+        assert_eq!(exact_count(&follower), 100);
+        assert_follower_vectors(&follower, &[1, 50, 51, 100]);
+    }
+    // The caller still owns usable pools after every follower has been dropped.
+    assert_eq!(search.install(rayon::current_num_threads), 2);
+    assert_eq!(load.install(rayon::current_num_threads), 3);
 }
 
 #[test]
@@ -399,6 +503,7 @@ fn provided_config_overrides_tunables_at_open() {
         LocalSegmentEnumerator::new(dir.path()),
         Some(provided),
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -482,6 +587,7 @@ fn follower_uses_injected_enumerator() {
         },
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -614,6 +720,7 @@ fn open_rejects_a_cancelled_flag() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         None,
+        Default::default(),
         &stopped,
     ));
     assert!(stopped.load(Ordering::Relaxed));
@@ -685,6 +792,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
         },
         None,
         None,
+        Default::default(),
         &stopped,
     )
     .unwrap();

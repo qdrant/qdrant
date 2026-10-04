@@ -91,7 +91,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 }
 
 /// Build a shard's per-segment thread pool with `num_threads` worker threads, its threads named
-/// `{thread_name_prefix}-{idx}`. Shards build one at open and keep it for their lifetime, so
+/// `{thread_name_prefix}-{idx}`. Shards build their pools at open and keep them for their lifetime, so
 /// per-segment work doesn't spawn fresh threads per operation.
 ///
 /// `num_threads` is the already-resolved thread count (see [`EdgeConfig::search_thread_count`]);
