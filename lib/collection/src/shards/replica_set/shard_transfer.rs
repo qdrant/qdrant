@@ -7,6 +7,7 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
@@ -172,16 +173,25 @@ impl ShardReplicaSet {
 
         let wal_ack_pins = local_shard.update_handler.lock().await.wal_ack_pins.clone();
 
-        // Proxify local shard
-        //
-        // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
-        let local_shard = match local.take() {
+        // Proxify local shard. The local shard slot must remain populated for the
+        // duration of the `QueueProxyShard::new` await below: a cancellation
+        // between taking the slot and inserting the new proxy leaves
+        // `self.local = None`, which the surrounding `match local.deref()` then
+        // surfaces as `Cannot queue proxify local shard N because it is not
+        // active` on every subsequent caller (see #9745). Use a `Dummy`
+        // placeholder instead of `take()` so a retried-but-safe request always
+        // finds the slot occupied.
+        let local_shard = match local.replace(Shard::Dummy(DummyShard::new(
+            "Local shard is being queue proxified",
+        ))) {
             Some(Shard::Local(local)) => local,
             Some(Shard::ForwardProxy(proxy)) => proxy.wrapped_shard,
             _ => unreachable!(),
         };
 
-        // Try to queue proxify with or without version
+        // Try to queue proxify with or without version. If this future is
+        // cancelled, `local_shard` is dropped, but the local slot is still
+        // populated by the `Dummy` placeholder above — no `None` window.
         let proxy_shard = match from_version {
             None => {
                 Ok(QueueProxyShard::new(local_shard, remote_shard, &wal_ack_pins, progress).await)
@@ -202,12 +212,12 @@ impl ShardReplicaSet {
         match proxy_shard {
             // All good, insert queue proxy shard
             Ok(proxy_shard) => {
-                let _ = local.insert(Shard::QueueProxy(proxy_shard));
+                let _ = local.replace(Shard::QueueProxy(proxy_shard));
                 Ok(())
             }
             Err((local_shard, err)) => {
                 log::warn!("Failed to queue proxify shard, reverting to local shard: {err}");
-                let _ = local.insert(Shard::Local(local_shard));
+                let _ = local.replace(Shard::Local(local_shard));
                 Err(err)
             }
         }
