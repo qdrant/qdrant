@@ -71,12 +71,13 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
 /// Stream the object behind `file` from byte offset `from` into a sink with a single request
 /// (see [`AsyncRead::read_from`]): `init` builds the sink from the object's total length, then
 /// every chunk is handed to it at its absolute file offset the moment it arrives. A tail at or
-/// past EOF builds the sink and writes nothing (see [`read_tail`]). Yields the sink.
+/// past EOF builds the sink and writes nothing (see [`read_tail`]). Yields the sink and the
+/// number of tail bytes read.
 pub fn read_from_into_sink<A, W, I>(
     file: &BlobFile<A>,
     from: u64,
     init: I,
-) -> impl Future<Output = UioResult<W>> + Send + 'static
+) -> impl Future<Output = UioResult<(W, u64)>> + Send + 'static
 where
     A: AsyncRead + Clone,
     I: FnOnce(u64) -> UioResult<W> + Send + 'static,
@@ -91,7 +92,7 @@ where
             None => init(size),
         };
         request.set_result(&result);
-        result
+        result.map(|sink| (sink, size.saturating_sub(from)))
     }
 }
 

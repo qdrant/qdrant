@@ -72,11 +72,16 @@ where
                 blocks_range,
                 target_len,
             } => {
-                futures::executor::block_on(future);
-                let (new_remote, fetched) = data
-                    .try_recv()
-                    .expect("sender is never dropped before sending")
-                    .expect("data should be available, and no other consumer exists")?;
+                let (new_remote, fetched) = match data.try_recv() {
+                    Ok(Some(res)) => res?,
+                    Ok(None) => {
+                        futures::executor::block_on(future);
+                        data.try_recv()
+                            .expect("sender is never dropped before sending")
+                            .expect("data should be available, and no other consumer exists")?
+                    }
+                    Err(_) => panic!("sender is never dropped before sending"),
+                };
 
                 // resize only after the fetch succeeded
                 local.resize(&self.local_path, target_len)?;
@@ -95,11 +100,16 @@ where
                 mut data,
                 from,
             } => {
-                futures::executor::block_on(future);
-                let (new_remote, total_len, fetched) = data
-                    .try_recv()
-                    .expect("sender is never dropped before sending")
-                    .expect("data should be available, and no other consumer exists")?;
+                let (new_remote, total_len, fetched) = match data.try_recv() {
+                    Ok(Some(res)) => res?,
+                    Ok(None) => {
+                        futures::executor::block_on(future);
+                        data.try_recv()
+                            .expect("sender is never dropped before sending")
+                            .expect("data should be available, and no other consumer exists")?
+                    }
+                    Err(_) => panic!("sender is never dropped before sending"),
+                };
 
                 let local_len = local.mmap().len::<u8>()?;
                 check_not_shrunk(local_len, total_len)?;

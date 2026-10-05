@@ -83,6 +83,12 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
+        let started = std::time::Instant::now();
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
+            "schedule read for 0 of {} range {from}..",
+            self.path.display()
+        );
         let task =
             self.runtime
                 .handle()
@@ -90,6 +96,14 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
                     uio_trace::Context::current()
                         .wrap(read_from_into_sink::<A, W, I>(self, from, init)),
                 );
-        async move { task.await? }
+        async move {
+            let (sink, bytes) = task.await??;
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "awaited read for 0 returned {bytes} bytes in {:?}",
+                started.elapsed()
+            );
+            Ok(sink)
+        }
     }
 }

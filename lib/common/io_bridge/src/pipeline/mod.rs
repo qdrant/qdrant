@@ -95,9 +95,8 @@ where
         });
         log::trace!(
             target: crate::LATENCY_LOG_TARGET,
-            "schedule_whole read of {} from {}",
+            "schedule read for {user_data:?} of {} range {from}..",
             file.path.display(),
-            from
         );
 
         let future = read_from_into_byte_buffer::<A>(file, from, 1);
