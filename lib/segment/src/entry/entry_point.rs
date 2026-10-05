@@ -19,6 +19,7 @@ use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
@@ -52,6 +53,26 @@ pub trait ReadSegmentEntry {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
+    /// Rank points by BM25 over the text index of `field` and return the `top`
+    /// best, highest first.
+    ///
+    /// `terms` must already be tokenized by the field's tokenizer, and
+    /// `query_context` must carry the field's text statistics, gathered over
+    /// every segment of the shard. A segment without a text index on `field`
+    /// scores nothing.
+    #[allow(clippy::too_many_arguments)]
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>>;
 
     /// Rescore results with a formula that can reference payload values.
     ///

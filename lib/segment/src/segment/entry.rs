@@ -24,6 +24,7 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
@@ -66,6 +67,31 @@ impl ReadSegmentEntry for Segment {
                 filter,
                 top,
                 params,
+                query_context,
+            )
+        })
+    }
+
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| {
+            view.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter,
+                top,
                 query_context,
             )
         })

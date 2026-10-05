@@ -18,13 +18,14 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::ReadSegmentEntry;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::{PayloadIndexRead, UniversalReadExt};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
-    VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Read-only counterpart of `impl ReadSegmentEntry for Segment`.
@@ -62,6 +63,31 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
                 filter,
                 top,
                 params,
+                query_context,
+            )
+        })
+    }
+
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| {
+            view.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter,
+                top,
                 query_context,
             )
         })

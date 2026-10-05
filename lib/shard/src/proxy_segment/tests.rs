@@ -1308,3 +1308,219 @@ fn test_pending_changes_log_manifest_version_tracks_content() {
         "appending to the log must bump its manifest version ({old_version} -> {new_version})",
     );
 }
+
+/// A text-indexed segment of `count` points, point `i` holding a document
+/// whose term counts vary with `i`, so BM25 ranks them apart.
+fn build_text_segment(path: &std::path::Path, count: u64) -> segment::segment::Segment {
+    use segment::data_types::index::TextIndexParams;
+    use segment::json_path::JsonPath;
+    use segment::payload_json;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
+
+    let hw_counter = HardwareCounterCell::new();
+    let mut segment = empty_segment(path);
+    let params = TextIndexParams {
+        phrase_matching: Some(true),
+        ..TextIndexParams::default()
+    };
+    segment
+        .create_field_index(
+            1,
+            &JsonPath::new("text"),
+            Some(&PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                params,
+            ))),
+            &hw_counter,
+        )
+        .unwrap();
+    for i in 0..count {
+        let op_num = 2 + i;
+        let text = ["alpha"; 5][..(i % 5 + 1) as usize].join(" ")
+            + &" beta".repeat((i % 3) as usize)
+            + &" gamma".repeat((i % 7) as usize);
+        segment
+            .upsert_point(
+                op_num,
+                i.into(),
+                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
+            )
+            .unwrap();
+        segment
+            .set_payload(
+                op_num,
+                i.into(),
+                &payload_json! { "text": text },
+                &None,
+                &hw_counter,
+            )
+            .unwrap();
+    }
+    segment
+}
+
+/// A proxy scores BM25 as its wrapped segment does, minus the points deleted
+/// through it, on both of its deletion paths: the synced deleted mask of a
+/// proxy over an original segment, and the id filter a proxy over another
+/// proxy falls back to.
+#[test]
+fn test_score_bm25_hides_proxy_deletions() {
+    use segment::data_types::index::TextIndexParams;
+    use segment::entry::ReadSegmentEntry;
+    use segment::index::field_index::full_text_index::Bm25Params;
+    use segment::json_path::JsonPath;
+
+    let _scoring = TextIndexParams::override_scoring(true);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let count = 60;
+    let original_segment = LockedSegment::new(build_text_segment(dir.path(), count));
+    let hw_counter = HardwareCounterCell::new();
+
+    let field = JsonPath::new("text");
+    let terms = ["alpha".to_owned(), "gamma".to_owned()];
+    let score = |segment: &dyn ReadSegmentEntry, stats_from: &dyn ReadSegmentEntry| {
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field, terms.iter().cloned());
+        stats_from.fill_query_context(&mut query_context).unwrap();
+        segment
+            .score_bm25(
+                &field,
+                &terms,
+                Bm25Params::default(),
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                count as usize,
+                &query_context.get_segment_query_context(),
+            )
+            .unwrap()
+    };
+
+    let mut proxy_segment = ProxySegment::new(original_segment.clone());
+    let deleted: Vec<PointIdType> = [3u64, 8, 20, 41].map(PointIdType::from).to_vec();
+    for (op, &id) in deleted.iter().enumerate() {
+        proxy_segment
+            .delete_point(100 + op as SeqNumberType, id, &hw_counter)
+            .unwrap();
+    }
+    assert!(proxy_segment.deleted_mask.is_some());
+
+    // Statistics from the wrapped segment on both sides: the proxy forwards
+    // its gather there, so this isolates the exclusion.
+    let wrapped = original_segment.get().read();
+    let expected: Vec<ScoredPoint> = score(&*wrapped, &*wrapped)
+        .into_iter()
+        .filter(|point| !deleted.contains(&point.id))
+        .collect();
+    assert_eq!(expected.len(), count as usize - deleted.len());
+    assert_eq!(score(&proxy_segment, &*wrapped), expected);
+    drop(wrapped);
+
+    let double_proxy = ProxySegment::new(LockedSegment::from(proxy_segment));
+    assert!(double_proxy.deleted_mask.is_none());
+    let mut double_proxy = double_proxy;
+    double_proxy
+        .delete_point(200, PointIdType::from(50), &hw_counter)
+        .unwrap();
+    let wrapped = original_segment.get().read();
+    let expected: Vec<ScoredPoint> = expected
+        .into_iter()
+        .filter(|point| point.id != PointIdType::from(50))
+        .collect();
+    assert_eq!(score(&double_proxy, &*wrapped), expected);
+}
+
+/// A pending change that replaces or drops the wrapped segment's text index
+/// makes the proxy score nothing and contribute no text statistics for that
+/// field, as `search_batch` does for a stale vector: the wrapped index is not
+/// the one the proxy presents. A change the wrapped index already satisfies
+/// leaves it serving.
+#[test]
+fn test_bm25_skips_a_stale_wrapped_text_index() {
+    use segment::data_types::index::{TextIndexParams, TokenizerType};
+    use segment::entry::ReadSegmentEntry;
+    use segment::index::field_index::full_text_index::Bm25Params;
+    use segment::json_path::JsonPath;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
+
+    let _scoring = TextIndexParams::override_scoring(true);
+    let hw_counter = HardwareCounterCell::new();
+    let field = JsonPath::new("text");
+    let terms = ["alpha".to_owned(), "gamma".to_owned()];
+    let count = 20;
+    let wrapped_schema = || {
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+            phrase_matching: Some(true),
+            ..TextIndexParams::default()
+        }))
+    };
+    let other_schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+            tokenizer: TokenizerType::Whitespace,
+            phrase_matching: Some(true),
+            ..TextIndexParams::default()
+        }));
+
+    // (documents gathered, points scored) through a proxy after `change`.
+    let through_proxy = |change: &dyn Fn(&mut ProxySegment)| {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let wrapped = LockedSegment::new(build_text_segment(dir.path(), count));
+        let mut proxy = ProxySegment::new(wrapped);
+        change(&mut proxy);
+        let mut query_context = QueryContext::default();
+        query_context.init_text_stats(&field, terms.iter().cloned());
+        proxy.fill_query_context(&mut query_context).unwrap();
+        let documents = query_context.mut_text_stats()[&field].documents;
+        let scored = proxy
+            .score_bm25(
+                &field,
+                &terms,
+                Bm25Params::default(),
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                count as usize,
+                &query_context.get_segment_query_context(),
+            )
+            .unwrap()
+            .len();
+        (documents, scored)
+    };
+
+    let serving = (count as usize, count as usize);
+    assert_eq!(through_proxy(&|_| {}), serving, "no pending change");
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy.delete_field_index(100, &field).unwrap();
+        }),
+        (0, 0),
+        "pending delete",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .create_field_index(100, &field, Some(&other_schema), &hw_counter)
+                .unwrap();
+        }),
+        (0, 0),
+        "pending create of another schema",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .delete_field_index_if_incompatible(100, &field, &other_schema)
+                .unwrap();
+        }),
+        (0, 0),
+        "pending replacement the wrapped index does not match",
+    );
+    assert_eq!(
+        through_proxy(&|proxy| {
+            proxy
+                .delete_field_index_if_incompatible(100, &field, &wrapped_schema())
+                .unwrap();
+        }),
+        serving,
+        "pending replacement the wrapped index already matches",
+    );
+}
