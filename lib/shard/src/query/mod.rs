@@ -5,6 +5,7 @@ pub mod mmr;
 pub mod planned_query;
 pub mod query_enum;
 pub mod scroll;
+pub mod text;
 mod validation;
 
 pub mod query_context;
