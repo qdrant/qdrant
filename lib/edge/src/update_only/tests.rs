@@ -332,6 +332,95 @@ mod store {
         assert_eq!(results[1].payload, Some(payload_json! { "kind": "fresh" }),);
     }
 
+    /// A point moved out of an immutable segment loses its old copy while
+    /// the write target is below the deferred-points threshold, and keeps it
+    /// once the target is past it: the new copy is deferred, so a reader
+    /// hiding deferred points still serves the old one.
+    #[test]
+    fn store_past_deferred_threshold_keeps_the_old_copy() {
+        use std::sync::atomic::AtomicBool;
+
+        use segment::data_types::load_profile::LoadProfile;
+
+        use crate::read_only::LocalSegmentEnumerator;
+
+        let dir = vacuumed_leader("edge-update-store-deferred");
+        recreate_payload_storages_append_only(dir.path());
+
+        // 1 KB of 1-dim f32 vectors: slots from 256 on are deferred.
+        let threshold_kb = 1;
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            Some(threshold_kb),
+        )
+        .unwrap();
+
+        let moved = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(501)
+        };
+        let (writer, outcome) = writer.apply_batch(store_batch(2000, vec![moved])).unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.tombstoned.len(), 1, "below the cutoff, moves retire");
+        assert!(record.shadowed.is_empty());
+
+        let filler = (2001..=2256).map(point).collect();
+        let (writer, _) = writer.apply_batch(store_batch(2001, filler)).unwrap();
+
+        let rewritten = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(500)
+        };
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(2002, vec![rewritten]))
+            .unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.kind, PointApplyKind::Stored);
+        assert!(record.tombstoned.is_empty());
+        assert_eq!(record.superseded, None);
+        assert_eq!(
+            record.shadowed.len(),
+            1,
+            "past the cutoff, the old copy stays"
+        );
+
+        let retrieve_500 = |follower: &ReadOnlyEdgeShard<MmapFile>| {
+            let results = follower
+                .retrieve(
+                    RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(500)])
+                        .with_vector(WithVector::Bool(true))
+                        .build(),
+                )
+                .unwrap();
+            assert_eq!(results.len(), 1);
+            results[0].vector.clone()
+        };
+
+        // Showing every point, the newest copy wins.
+        let follower = open_follower(dir.path());
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(7).vector.try_into().unwrap()),
+        );
+
+        // Hiding deferred points, the kept copy still serves.
+        let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            None,
+            Some(LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(threshold_kb))),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(500).vector.try_into().unwrap()),
+        );
+    }
+
     /// A retried store batch is a no-op — through the same writer and through
     /// a fresh one over the same directory alike: every point already carries
     /// the batch's version, which only a published versions array can tell
@@ -680,6 +769,7 @@ fn optimizing_target_gets_a_created_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -733,6 +823,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(writer.segments_count(), 0);

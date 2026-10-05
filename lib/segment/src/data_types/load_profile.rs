@@ -28,8 +28,7 @@ use std::collections::HashSet;
 use common::types::PointOffsetType;
 use common::universal_io::Populate;
 
-use crate::common::BYTES_IN_KB;
-use crate::common::deferred_points::deferred_point_offset;
+use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::json_path::JsonPath;
 use crate::types::{Condition, Filter, PayloadKeyType, SegmentConfig, VectorName, VectorNameBuf};
 
@@ -147,11 +146,7 @@ impl LoadProfile {
     }
 
     /// Internal id from which points of a segment with `config` are deferred, or `None` to
-    /// show every point.
-    ///
-    /// Mirrors the leader's conversion over the segment's dense vectors. The leader counts
-    /// only vectors with HNSW enabled, which a segment config doesn't record, so a large
-    /// vector with HNSW disabled makes the cutoff stricter here than on the leader.
+    /// show every point. See [`segment_deferred_internal_id`].
     pub fn deferred_internal_id(&self, config: &SegmentConfig) -> Option<PointOffsetType> {
         let Self {
             warm_vectors: _,
@@ -159,22 +154,7 @@ impl LoadProfile {
             warm_payload_storage: _,
             deferred_points_threshold_kb,
         } = self;
-        let threshold_bytes = (*deferred_points_threshold_kb)?.saturating_mul(BYTES_IN_KB);
-        if threshold_bytes == 0 {
-            return None;
-        }
-        config
-            .vector_data
-            .values()
-            .map(|vector_config| {
-                deferred_point_offset(
-                    threshold_bytes,
-                    vector_config.size,
-                    vector_config.datatype,
-                    vector_config.multivector_config.is_some(),
-                )
-            })
-            .min()
+        segment_deferred_internal_id(config, (*deferred_points_threshold_kb)?)
     }
 
     /// Placement override for the payload storage.

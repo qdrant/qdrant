@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFsAsync, read_json_via};
 
 use super::LookupSegment;
+use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -61,15 +62,19 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// `fs` is the canonical backend: the caching wrapper lives only for this
     /// open, and it is `fs` that components keep for later re-opens.
     ///
-    /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
-    /// working the same directory — see [`open_via`](Self::open_via).
+    /// `deferred_threshold_kb` is the deferred-points threshold agreed with an
+    /// external rebuilder working the same directory, in KB like the indexing
+    /// threshold; it is converted to this segment's cutoff (see
+    /// [`segment_deferred_internal_id`] and [`open_via`](Self::open_via)).
     pub fn open(
         fs: Fs,
         segment_path: &Path,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let config = Self::preopen(&cached_fs, segment_path)?;
+        let deferred_internal_id = deferred_threshold_kb
+            .and_then(|threshold_kb| segment_deferred_internal_id(&config, threshold_kb));
         Self::open_via(cached_fs, segment_path, config, deferred_internal_id)
     }
 
