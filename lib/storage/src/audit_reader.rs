@@ -53,8 +53,9 @@ pub fn read_local_audit_logs(
         ));
     }
 
+    // Files left in `dir` by a previous `file` configuration are stale.
     let dir = &config.dir;
-    if !dir.exists() {
+    if !config.output.writes_file() || !dir.exists() {
         return Ok(Vec::new());
     }
 
