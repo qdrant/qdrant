@@ -82,6 +82,15 @@ pub enum SearchAlgorithm {
     Acorn,
 }
 
+/// Where a search enters the graph.
+#[derive(Debug, Clone)]
+pub enum SearchEntry {
+    /// Descend from this point down to level 0. Classic HNSW.
+    Point(EntryPoint),
+    /// Start level 0 from all of these points at once.
+    Seeds(Vec<ScoredPointOffset>),
+}
+
 pub trait GraphLayersBase {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_>;
 
@@ -106,17 +115,14 @@ pub trait GraphLayersBase {
     /// See [module docs](self) for comparison with other search functions.
     fn search_on_level(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context = SearchContext::with_entries(ef, level_entries, &mut visited_list);
 
         let limit = self.get_m(level);
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
@@ -152,7 +158,7 @@ pub trait GraphLayersBase {
     /// See [module docs](self) for comparison with other search functions.
     fn search_on_level_acorn(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
@@ -163,15 +169,14 @@ pub trait GraphLayersBase {
         //    `search_context` for further expansion. (or already added)
         // b) Deleted node that scheduled for exploration for 2-hop neighbors.
         let mut hop1_visited_list = self.get_visited_list_from_pool();
-        hop1_visited_list.check_and_update_visited(level_entry.idx);
 
         // Nodes in `hop2_visited_list` are already explored as 2-hop neighbors.
         // Being in this list doesn't prevent the node to be handled again as
         // 1-hop neighbor.
         let mut hop2_visited_list = self.get_visited_list_from_pool();
 
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context =
+            SearchContext::with_entries(ef, level_entries, &mut hop1_visited_list);
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
         // This is necessary to avoid over-scoring when there are many
@@ -180,8 +185,13 @@ pub trait GraphLayersBase {
         let hop2_limit = self.get_m(level);
         debug_assert_ne!(self.get_m(level), 0); // See `FilteredBytesScorer::score_points`
 
+        // Non-matches past the first `hop1_limit` links (the payload-block
+        // tail) share this budget, evenly spaced.
+        let hop1_tail_limit = hop1_limit;
+
         let mut to_score = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
         let mut to_explore = Vec::with_capacity(hop1_limit * hop2_limit.min(16));
+        let mut tail_bridges = Vec::new();
 
         while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
@@ -192,23 +202,36 @@ pub trait GraphLayersBase {
 
             to_explore.clear();
             to_score.clear();
+            tail_bridges.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
+            let mut rank = 0;
             _ = self.try_for_each_link(candidate.idx, level, |hop1| {
-                if hop1_visited_list.check_and_update_visited(hop1) {
+                let is_head = rank < hop1_limit;
+                rank += 1;
+
+                if hop1_visited_list.check(hop1) {
                     return ControlFlow::Continue(());
                 }
 
                 if points_scorer.filters().check_vector(hop1) {
+                    hop1_visited_list.check_and_update_visited(hop1);
                     to_score.push(hop1);
                     if to_score.len() >= hop1_limit {
                         return ControlFlow::Break(());
                     }
-                } else {
+                } else if is_head {
+                    hop1_visited_list.check_and_update_visited(hop1);
                     to_explore.push(hop1);
+                } else {
+                    tail_bridges.push(hop1);
                 }
                 ControlFlow::Continue(())
             });
+            for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                hop1_visited_list.check_and_update_visited(hop1);
+                to_explore.push(hop1);
+            }
 
             // Collect 2-hop neighbors (neighbors of neighbors)
             for &hop1 in &to_explore {
@@ -334,7 +357,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
     /// See [module docs](self) for comparison with other search functions.
     fn search_on_level_with_vectors(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         links_scorer: &FilteredBytesScorer,
@@ -342,11 +365,9 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         is_stopped: &AtomicBool,
     ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut links_search_context = SearchContext::new(ef);
+        let mut links_search_context =
+            SearchContext::with_entries(ef, level_entries, &mut visited_list);
         let mut base_search_context = SearchContext::new(ef);
-        links_search_context.process_candidate(level_entry);
 
         let limit = self.get_m(level);
         let mut points: Vec<(PointOffsetType, &[u8])> = Vec::with_capacity(2 * limit);
@@ -450,6 +471,12 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
     }
 }
 
+/// Up to `limit` evenly spaced elements of `items`.
+pub(super) fn evenly_spaced<T: Copy>(items: &[T], limit: usize) -> impl Iterator<Item = T> {
+    let picks = items.len().min(limit);
+    (0..picks).map(move |j| items[j * items.len() / picks])
+}
+
 impl GraphLayersBase for GraphLayers {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_> {
         self.visited_pool.get(self.links.num_points())
@@ -503,8 +530,8 @@ impl GraphLayers {
     }
 
     #[cfg(any(test, feature = "testing"))]
-    pub fn unfiltered_entry_point(&self) -> EntryPoint {
-        self.entry_points.get_entry_point(|_| true).unwrap()
+    pub fn unfiltered_entry_point(&self) -> SearchEntry {
+        SearchEntry::Point(self.entry_points.get_entry_point(|_| true).unwrap())
     }
 
     pub fn search(
@@ -513,23 +540,26 @@ impl GraphLayers {
         ef: usize,
         algorithm: SearchAlgorithm,
         points_scorer: &mut FilteredScorer,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let zero_level_entry = self.search_entry(
-            entry_point.point_id,
-            entry_point.level,
-            0,
-            points_scorer,
-            is_stopped,
-        )?;
+        let level_entries: &[_] = match entry {
+            SearchEntry::Point(entry_point) => &[self.search_entry(
+                entry_point.point_id,
+                entry_point.level,
+                0,
+                points_scorer,
+                is_stopped,
+            )?],
+            SearchEntry::Seeds(seeds) => seeds,
+        };
         let ef = max(ef, top);
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
-                self.search_on_level(zero_level_entry, 0, ef, points_scorer, is_stopped)
+                self.search_on_level(level_entries, 0, ef, points_scorer, is_stopped)
             }
             SearchAlgorithm::Acorn => {
-                self.search_on_level_acorn(zero_level_entry, 0, ef, points_scorer, is_stopped)
+                self.search_on_level_acorn(level_entries, 0, ef, points_scorer, is_stopped)
             }
         }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
@@ -540,19 +570,22 @@ impl GraphLayers {
         top: usize,
         ef: usize,
         scorers: GraphWithVectorsScorers,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let zero_level_entry = self.search_entry_with_vectors(
-            entry_point.point_id,
-            entry_point.level,
-            0,
-            scorers.links.raw_scorer(),
-            scorers.links_bytes,
-            is_stopped,
-        )?;
+        let level_entries: &[_] = match entry {
+            SearchEntry::Point(entry_point) => &[self.search_entry_with_vectors(
+                entry_point.point_id,
+                entry_point.level,
+                0,
+                scorers.links.raw_scorer(),
+                scorers.links_bytes,
+                is_stopped,
+            )?],
+            SearchEntry::Seeds(seeds) => seeds,
+        };
         let nearest = self.search_on_level_with_vectors(
-            zero_level_entry,
+            level_entries,
             0,
             max(top, ef),
             scorers.links_bytes,
@@ -750,6 +783,15 @@ mod tests {
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead};
 
+    #[test]
+    fn test_evenly_spaced() {
+        assert_eq!(evenly_spaced(b"", 4).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 0).collect_vec(), b"");
+        assert_eq!(evenly_spaced(b"012", 4).collect_vec(), b"012");
+        assert_eq!(evenly_spaced(b"01234567", 4).collect_vec(), b"0246");
+        assert_eq!(evenly_spaced(b"0123456789", 4).collect_vec(), b"0257");
+    }
+
     /// `preopen_universal` must schedule exactly the files `load_universal`
     /// goes on to consume.
     ///
@@ -831,7 +873,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap()
@@ -878,10 +920,10 @@ mod tests {
 
         let nearest_on_level = graph_layers
             .search_on_level(
-                ScoredPointOffset {
+                &[ScoredPointOffset {
                     idx: 0,
                     score: scorer.score_point(0),
-                },
+                }],
                 0,
                 32,
                 &mut scorer,

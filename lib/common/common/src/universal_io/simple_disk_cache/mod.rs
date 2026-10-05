@@ -48,7 +48,7 @@ where
 ///
 /// Matches `disk_cache::BLOCK_SIZE` and is a small multiple of typical
 /// filesystem block sizes (usually 4 KiB).
-const BLOCK_SIZE: usize = 16 * 1024; // 16kB
+pub(super) const BLOCK_SIZE: usize = 16 * 1024; // 16kB
 
 const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
     writeable: false,
@@ -57,7 +57,7 @@ const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
     advice: AdviceSetting::Global,
 };
 
-fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
+pub(super) fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
     let start = u32::try_from(byte_range.start / BLOCK_SIZE as u64)
         .expect("file too large for block cache (>70 TiB)");
     if byte_range.start >= byte_range.end {

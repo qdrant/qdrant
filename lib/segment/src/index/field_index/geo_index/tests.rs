@@ -513,7 +513,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexType) {
-    let (mut builder, _, _) = create_builder(index_type);
+    let (mut builder, _temp_dir, _) = create_builder(index_type);
 
     let r_meters = 100.0;
     let geo_values = json!([BERLIN, NYC]);
@@ -531,7 +531,7 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
-    let (mut builder, _, _) = create_builder(index_type);
+    let (mut builder, _temp_dir, _) = create_builder(index_type);
     let geo_values = json!([BERLIN, POTSDAM]);
     let hw_counter = HardwareCounterCell::new();
     builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
@@ -729,7 +729,7 @@ fn test_empty_index_cardinality(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn query_across_antimeridian(#[case] index_type: IndexType) {
-    let (mut builder, _, _) = create_builder(index_type);
+    let (mut builder, _temp_dir, _) = create_builder(index_type);
     let geo_values = json!([BERLIN]);
     let hw_counter = HardwareCounterCell::new();
 

@@ -11,12 +11,15 @@ use common::universal_io::UserData;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
+use crate::data_types::vectors::{
+    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
-    DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum,
-    VectorStorageRead, default_for_each_in_dense_batch, default_read_vector_bytes_impl,
+    DenseVectorStorage, DenseVectorStorageRead, MultiVectorStorageRead, VectorStorage,
+    VectorStorageEnum, VectorStorageRead, default_for_each_in_dense_batch,
+    default_read_vector_bytes_impl,
 };
 
 /// Placeholder vector storage that contains no data.
@@ -120,6 +123,52 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
     }
 }
 
+/// Multivector view of the placeholder, used when it was created with a
+/// multivector config. Every slot is deleted and holds one zero inner vector,
+/// so scoring stays well-defined and the results are discarded as deleted.
+impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
+    fn get_multi<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+    ) -> CowMultiVector<'_, VectorElementType> {
+        CowMultiVector::Owned(TypedMultiDenseVector::placeholder(self.dim))
+    }
+
+    fn get_multi_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<CowMultiVector<'_, VectorElementType>> {
+        ((key as usize) < self.num_points).then(|| self.get_multi::<P>(key))
+    }
+
+    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    where
+        F: FnMut(usize, TypedMultiDenseVectorRef<'_, VectorElementType>),
+    {
+        let zeros = vec![0.0; self.dim];
+        for idx in 0..keys.len() {
+            callback(idx, TypedMultiDenseVectorRef::new(&zeros, self.dim));
+        }
+    }
+
+    fn iterate_inner_vectors(
+        &self,
+    ) -> impl Iterator<Item = Cow<'_, [VectorElementType]>> + Clone + Send {
+        // All vectors are deleted, so there are no inner vectors to report.
+        std::iter::empty()
+    }
+
+    fn multi_vector_config(&self) -> &MultiVectorConfig {
+        self.multi_vector_config
+            .as_ref()
+            .expect("multivector view requires the placeholder to have a multivector config")
+    }
+}
+
 impl VectorStorageRead for EmptyDenseVectorStorage {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         // All vectors are deleted, so there are no available vectors.
@@ -202,6 +251,9 @@ mod tests {
     use common::generic_consts::Random;
 
     use super::*;
+    use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorInternal};
+    use crate::types::MultiVectorComparator;
+    use crate::vector_storage::raw_scorer::new_raw_scorer;
 
     #[test]
     fn test_empty_dense_basic_contract() {
@@ -223,7 +275,7 @@ mod tests {
         assert_eq!(storage.deleted_vector_bitslice().len(), 1000);
         assert!(storage.is_deleted_vector(0));
         assert!(storage.is_deleted_vector(999));
-        assert_eq!(storage.vector_dim(), 128);
+        assert_eq!(DenseVectorStorageRead::vector_dim(&storage), 128);
         assert!(storage.files().is_empty());
         assert!(storage.multi_vector_config().is_none());
 
@@ -321,5 +373,33 @@ mod tests {
         );
         // delete_vector returns false because it was already deleted
         assert!(!storage.delete_vector(0).unwrap());
+    }
+
+    /// Searching a multivector added to an already-indexed segment (backed by this
+    /// placeholder) must not fail with a multi/regular conversion error.
+    #[test]
+    fn test_empty_dense_multi_vector_raw_scorer() {
+        let multi_cfg = MultiVectorConfig {
+            comparator: MultiVectorComparator::MaxSim,
+        };
+        let storage = new_empty_dense_vector_storage(
+            4,
+            Distance::Cosine,
+            VectorStorageDatatype::Float32,
+            false,
+            Some(multi_cfg),
+            3,
+        );
+        let query = QueryVector::Nearest(VectorInternal::MultiDense(
+            MultiDenseVectorInternal::new(vec![1.0; 8], 4),
+        ));
+
+        let scorer = new_raw_scorer(query, &storage, HardwareCounterCell::disposable())
+            .expect("multivector query on an empty placeholder must not fail");
+
+        // Slots are deleted zero placeholders: scoring them must not panic.
+        let mut scores = [0.0; 3];
+        scorer.score_points(&[0, 1, 2], &mut scores);
+        assert!(scores.iter().all(|score| score.is_finite()));
     }
 }

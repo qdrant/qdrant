@@ -138,6 +138,13 @@ pub struct ClusterConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct P2pConfig {
+    /// Host or IP address to bind the internal (p2p) gRPC listener to.
+    /// Defaults to `service.host` when not set. Set this to an internal
+    /// interface to keep the internal port off the interface that serves
+    /// the public API.
+    #[validate(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
     #[serde(default)]
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
@@ -150,6 +157,7 @@ pub struct P2pConfig {
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
+            host: None,
             port: None,
             connection_pool_size: default_connection_pool_size(),
             enable_tls: false,
@@ -419,17 +427,26 @@ impl Settings {
         //
         // The API key is always forwarded on internal gRPC requests, but the
         // receiving side only verifies it when `enforce_internal_auth` is set.
-        // Warn when a cluster has an API key yet leaves the internal API open.
-        if self.cluster.enabled
-            && !all_keys_are_empty
-            && !self.service.enforce_internal_auth.unwrap_or_default()
-        {
-            log::warn!(
-                "Running in distributed mode with an API key configured, but \
-                 `service.enforce_internal_auth` is not enabled. The internal \
-                 (p2p) gRPC API is not authenticated. Enable \
-                 `enforce_internal_auth`.",
-            );
+        // Warn whenever a distributed deployment leaves the internal API open,
+        // with or without an API key. Without a key, enforcement cannot be
+        // enabled at all, so the only control is network restriction of the port.
+        if self.cluster.enabled && !self.service.enforce_internal_auth.unwrap_or_default() {
+            if all_keys_are_empty {
+                log::warn!(
+                    "Running in distributed mode without an API key. The internal \
+                     (p2p) gRPC API is not authenticated, and \
+                     `service.enforce_internal_auth` cannot be enabled without \
+                     `service.api_key`. Restrict the internal port to cluster \
+                     nodes and configure an API key.",
+                );
+            } else {
+                log::warn!(
+                    "Running in distributed mode with an API key configured, but \
+                     `service.enforce_internal_auth` is not enabled. The internal \
+                     (p2p) gRPC API is not authenticated. Enable \
+                     `enforce_internal_auth`.",
+                );
+            }
         }
 
         // The internal API only accepts the read-write keys. With just a

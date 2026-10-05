@@ -1,3 +1,4 @@
+mod action_applier;
 mod collection_container;
 mod collection_meta_ops;
 mod create_collection;

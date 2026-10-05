@@ -154,6 +154,14 @@ where
             prefix_index,
         }
     }
+
+    /// Don't journal the value mappings of the built index, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub(crate) fn disable_journal(&mut self) {
+        if let Some(MapIndex::Mutable(index)) = &mut self.index {
+            index.storage.disable_journal();
+        }
+    }
 }
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexGridstoreBuilder<N>

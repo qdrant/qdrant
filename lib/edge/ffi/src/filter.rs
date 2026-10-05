@@ -719,9 +719,9 @@ fn filter_to_segment(f: Filter, depth: u32) -> Result<SegmentFilter, crate::erro
             .collect::<Result<Vec<_>, _>>()
     };
     Ok(SegmentFilter {
-        must: must.map(&convert).transpose()?,
-        should: should.map(&convert).transpose()?,
-        must_not: must_not.map(&convert).transpose()?,
+        must: must.map(convert).transpose()?,
+        should: should.map(convert).transpose()?,
+        must_not: must_not.map(convert).transpose()?,
         min_should: min_should
             .map(
                 |MinShould {

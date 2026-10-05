@@ -12,8 +12,8 @@ use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex,
-    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex, TypedStorage,
+    UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -48,7 +48,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the file
-        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
+        OnDiskPointToValues::<GeoPoint, S>::build_from_iter(
             path,
             dynamic_index
                 .point_to_values

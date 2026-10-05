@@ -23,7 +23,8 @@ pub use config::shard::EdgeConfig;
 pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 pub use edge_shard::EdgeShard;
 pub use read_only::{
-    LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard, SegmentEnumerator,
+    LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,
+    SegmentEnumerator,
 };
 pub use read_view::{
     EdgeShardRead, EdgeShardReadWithCancellation, Group, ReadSegmentHandle, SearchMatrixResponse,

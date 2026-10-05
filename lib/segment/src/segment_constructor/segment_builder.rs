@@ -104,7 +104,10 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
-        let payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
+        // A segment being built is thrown away on a crash, and durably flushed before it is
+        // loaded, so its storages don't need a journal to repair torn writes
+        let mut payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
+        payload_storage.disable_journal();
 
         let mut vector_data = HashMap::new();
 
@@ -126,10 +129,13 @@ impl SegmentBuilder {
         for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
-            let vector_storage = create_sparse_vector_storage(
+            let mut vector_storage = create_sparse_vector_storage(
                 &vector_storage_path,
                 &sparse_vector_config.storage_type,
             )?;
+            if let VectorStorageEnum::SparseMmap(storage) = &mut vector_storage {
+                storage.disable_journal();
+            }
 
             vector_data.insert(
                 vector_name.to_owned(),
@@ -700,6 +706,8 @@ impl SegmentBuilder {
                 StorageType::from_appendable(appendable_flag),
                 IndexLoadMode::CreateIfMissing,
             )?;
+            // Like the storages, the field indices of a segment being built need no journal
+            payload_index.disable_journal();
             for (field, payload_schema, progress) in indexed_fields {
                 progress.start();
                 payload_index.set_indexed(&field, payload_schema, hw_counter)?;

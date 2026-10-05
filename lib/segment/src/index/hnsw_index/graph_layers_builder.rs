@@ -520,7 +520,7 @@ impl GraphLayersBuilder {
     ) -> ScoredPointOffset {
         let nearest = self
             .search_on_level(
-                level_entry,
+                &[level_entry],
                 curr_level,
                 self.ef_construct,
                 points_scorer,
@@ -806,7 +806,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
@@ -852,12 +852,12 @@ mod tests {
 
         assert_eq!(orig_len, builder_len);
 
-        for idx in 0..builder_len {
+        for (idx, layers) in graph_layers_builder.links_layers.iter().enumerate() {
             let links_orig = &graph_layers_orig
                 .links
                 .links(idx as PointOffsetType, 0)
                 .collect_vec();
-            let links_builder = graph_layers_builder.links_layers[idx][0].read();
+            let links_builder = layers[0].read();
             let link_container_from_builder = links_builder.links().to_vec();
             let m = match format {
                 GraphLinksFormat::Plain => 0,
@@ -919,7 +919,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();

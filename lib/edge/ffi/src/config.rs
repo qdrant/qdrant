@@ -753,6 +753,11 @@ pub struct VectorDataConfig {
     /// recall/memory/speed trade-off. Built by [`crate::EdgeShard::optimize`].
     #[uniffi(default = None)]
     pub hnsw_config: Option<HnswIndexConfig>,
+    /// Memory placement of the original vector storage. `None`/`null` defaults
+    /// to `Cached`. `Pinned` is not supported for dense vector storage
+    /// (defensively mapped to `Cached`).
+    #[uniffi(default = None)]
+    pub memory: Option<Memory>,
 }
 
 impl From<VectorDataConfig> for SegmentVectorDataConfig {
@@ -760,15 +765,19 @@ impl From<VectorDataConfig> for SegmentVectorDataConfig {
         let VectorDataConfig {
             size,
             distance,
+            memory,
             quantization_config,
             multivector_config,
             datatype,
             hnsw_config,
         } = c;
+        let memory = memory
+            .map(SegmentMemory::from)
+            .unwrap_or(SegmentMemory::Cached);
         SegmentVectorDataConfig {
             size: crate::error::clamp_usize(size),
             distance: SegmentDistance::from(distance),
-            storage_type: VectorStorageType::InRamChunkedMmap,
+            storage_type: VectorStorageType::appendable_from_memory(memory),
             // The index travels via the `index` field: emit `Hnsw` when the host
             // supplied HNSW params (so `edge::EdgeConfig::from_segment_config`
             // picks them up and the optimizer builds an HNSW index), else `Plain`.
@@ -788,9 +797,7 @@ impl From<SegmentVectorDataConfig> for VectorDataConfig {
         let SegmentVectorDataConfig {
             size,
             distance,
-            // The FFI storage type is fixed at `InRamChunkedMmap` on the write
-            // path and not surfaced back.
-            storage_type: _,
+            storage_type,
             index,
             quantization_config,
             multivector_config,
@@ -799,6 +806,7 @@ impl From<SegmentVectorDataConfig> for VectorDataConfig {
         VectorDataConfig {
             size: size as u64,
             distance: Distance::from(distance),
+            memory: storage_type.memory().map(Memory::from),
             quantization_config: quantization_config.and_then(|q| q.try_into().ok()),
             multivector_config: multivector_config.map(MultiVectorConfig::from),
             datatype: datatype.map(VectorStorageDatatype::from),
@@ -889,21 +897,35 @@ pub struct SparseVectorDataConfig {
     /// Optional score modifier (e.g. IDF weighting).
     #[uniffi(default = None)]
     pub modifier: Option<Modifier>,
+    /// Memory placement of the sparse index. `None`/`null` defaults to
+    /// `Pinned` (in-RAM mutable index). Use `Cold` or `Cached` for an
+    /// mmap-backed index.
+    #[uniffi(default = None)]
+    pub memory: Option<Memory>,
 }
 
 impl From<SparseVectorDataConfig> for SegmentSparseVectorDataConfig {
     fn from(c: SparseVectorDataConfig) -> Self {
         let SparseVectorDataConfig {
             full_scan_threshold,
+            memory,
             datatype,
             modifier,
         } = c;
+        let memory = memory.map(SegmentMemory::from);
+        // Structural index type follows the legacy on_disk mapping: heap
+        // placements stay MutableRam; cold/cached use Mmap. Persist only the
+        // explicit `memory` so cold vs cached is recoverable.
+        let index_type = match memory {
+            Some(SegmentMemory::Cold) | Some(SegmentMemory::Cached) => SegmentSparseIndexType::Mmap,
+            Some(SegmentMemory::Pinned) | None => SegmentSparseIndexType::MutableRam,
+        };
         SegmentSparseVectorDataConfig {
             index: SparseIndexConfig {
-                index_type: SegmentSparseIndexType::MutableRam,
+                index_type,
                 full_scan_threshold: full_scan_threshold.map(crate::error::clamp_usize),
                 datatype: datatype.map(SegmentVectorStorageDatatype::from),
-                memory: None,
+                memory,
             },
             storage_type: SparseVectorStorageType::Mmap,
             modifier: modifier.map(SegmentModifier::from),
@@ -916,18 +938,19 @@ impl From<SegmentSparseVectorDataConfig> for SparseVectorDataConfig {
         let SegmentSparseVectorDataConfig {
             index:
                 SparseIndexConfig {
-                    // Fixed on the write path (`MutableRam`) and not surfaced
-                    // back; placement of the sparse index is not an FFI knob.
                     index_type: _,
                     full_scan_threshold,
                     datatype,
-                    memory: _,
+                    memory,
                 },
             storage_type: _,
             modifier,
         } = c;
         SparseVectorDataConfig {
             full_scan_threshold: full_scan_threshold.map(|v| v as u64),
+            // Prefer the explicit stored memory; otherwise leave unset so a
+            // MutableRam-only config does not invent a `Pinned` knob.
+            memory: memory.map(Memory::from),
             datatype: datatype.map(VectorStorageDatatype::from),
             modifier: modifier.map(Modifier::from),
         }
@@ -969,6 +992,16 @@ pub struct EdgeConfig {
     /// Named sparse vector fields.
     #[uniffi(default)]
     pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
+    /// Memory placement of the payload storage. `None`/`null` defaults to
+    /// `Cold` (on-disk mmap). `Pinned` is not supported for payload storage
+    /// (defensively mapped to `Cached`).
+    #[uniffi(default = None)]
+    pub payload_memory: Option<Memory>,
+    /// Memory placement of the point id tracker in non-appendable segments.
+    /// `None`/`null` uses the deployment default (`Pinned`, or `Cold` in
+    /// serverless-compatible mode).
+    #[uniffi(default = None)]
+    pub id_tracker_memory: Option<Memory>,
 }
 
 /// Inclusive bounds for a dense vector's dimensionality, mirroring the server's
@@ -1133,7 +1166,12 @@ impl From<EdgeConfig> for SegmentConfig {
         let EdgeConfig {
             vector_data,
             sparse_vector_data,
+            payload_memory,
+            id_tracker_memory,
         } = c;
+        let payload_memory = payload_memory
+            .map(SegmentMemory::from)
+            .unwrap_or(SegmentMemory::Cold);
         SegmentConfig {
             vector_data: vector_data
                 .into_iter()
@@ -1143,8 +1181,8 @@ impl From<EdgeConfig> for SegmentConfig {
                 .into_iter()
                 .map(|(k, v)| (k, SegmentSparseVectorDataConfig::from(v)))
                 .collect(),
-            payload_storage_type: PayloadStorageType::Mmap,
-            id_tracker_memory: None,
+            payload_storage_type: PayloadStorageType::from_memory(payload_memory),
+            id_tracker_memory: id_tracker_memory.map(SegmentMemory::from),
         }
     }
 }
@@ -1154,9 +1192,8 @@ impl From<SegmentConfig> for EdgeConfig {
         let SegmentConfig {
             vector_data,
             sparse_vector_data,
-            // Fixed on the write path (`Mmap`); not an FFI knob.
-            payload_storage_type: _,
-            id_tracker_memory: _,
+            payload_storage_type,
+            id_tracker_memory,
         } = c;
         EdgeConfig {
             vector_data: vector_data
@@ -1167,6 +1204,8 @@ impl From<SegmentConfig> for EdgeConfig {
                 .into_iter()
                 .map(|(k, v)| (k, SparseVectorDataConfig::from(v)))
                 .collect(),
+            payload_memory: Some(Memory::from(payload_storage_type.memory())),
+            id_tracker_memory: id_tracker_memory.map(Memory::from),
         }
     }
 }
@@ -1181,18 +1220,20 @@ impl From<SegmentConfig> for EdgeConfig {
 /// field as `per_vector.or(global)`, mirroring how the engine actually applies
 /// them, so `config()` reflects what the host requested.
 impl From<&edge::EdgeConfig> for EdgeConfig {
+    #[allow(deprecated)]
     fn from(c: &edge::EdgeConfig) -> Self {
         let edge::EdgeConfig {
             vectors,
             sparse_vectors,
             // Shard-global quantization is a fallback for per-vector configs
-            // (resolved below); the remaining engine-level knobs (payload/WAL
-            // placement, optimizers, search threads, and the always-populated
-            // global HNSW — see the per-vector comment below) have no FFI
+            // (resolved below); WAL / optimizers / search threads have no FFI
             // surface.
             quantization_config: global_quantization_config,
             hnsw_config: _,
+            // Resolved together via `requested_payload_memory` below.
             on_disk_payload: _,
+            payload_memory: _,
+            id_tracker_memory,
             optimizers: _,
             wal_options: _,
             max_search_threads: _,
@@ -1204,9 +1245,9 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                 let edge::EdgeVectorParams {
                     size,
                     distance,
-                    // Storage placement is fixed by the FFI write path and not
-                    // surfaced back.
+                    // Resolved together via `memory_placement` below.
                     on_disk: _,
+                    memory: _,
                     multivector_config,
                     datatype,
                     quantization_config,
@@ -1240,6 +1281,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                     VectorDataConfig {
                         size: *size as u64,
                         distance: Distance::from(*distance),
+                        memory: p.memory_placement().map(Memory::from),
                         quantization_config: quant,
                         multivector_config: multivector_config.map(MultiVectorConfig::from),
                         datatype: datatype.map(VectorStorageDatatype::from),
@@ -1253,9 +1295,9 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             .map(|(name, p)| {
                 let edge::EdgeSparseVectorParams {
                     full_scan_threshold,
-                    // Storage placement is fixed by the FFI write path and not
-                    // surfaced back.
+                    // Resolved together via `memory_placement` below.
                     on_disk: _,
+                    memory: _,
                     modifier,
                     datatype,
                 } = p;
@@ -1263,6 +1305,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
                     name.clone(),
                     SparseVectorDataConfig {
                         full_scan_threshold: full_scan_threshold.map(|v| v as u64),
+                        memory: p.memory_placement().map(Memory::from),
                         datatype: datatype.map(VectorStorageDatatype::from),
                         modifier: modifier.map(Modifier::from),
                     },
@@ -1272,6 +1315,10 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
         EdgeConfig {
             vector_data,
             sparse_vector_data,
+            // Left unset when neither parameter was set, so read-back does not invent a
+            // `Cold` default.
+            payload_memory: c.requested_payload_memory().map(Memory::from),
+            id_tracker_memory: (*id_tracker_memory).map(Memory::from),
         }
     }
 }

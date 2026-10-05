@@ -11626,7 +11626,7 @@
             ]
           },
           "comment": {
-            "description": "A human-readable report of the transfer progress. Available only on the source peer.",
+            "description": "A human-readable report of the transfer progress. Available only on the source peer, and on the target peer during snapshot recovery.",
             "type": "string",
             "nullable": true
           }
@@ -13042,6 +13042,9 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_large_cardinality": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_acorn": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_exact": {

@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::collections::HashMap;
 use std::num::NonZero;
 
@@ -21,6 +22,7 @@ fn base_builder() -> edge::EdgeConfigBuilder {
             multivector_config: None,
             datatype: None,
             on_disk: None,
+            memory: None,
             hnsw_config: None,
         },
     )

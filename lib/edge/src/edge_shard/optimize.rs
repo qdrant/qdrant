@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -25,7 +26,21 @@ impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
     ///
     /// This is synchronous and does not spawn background optimization workers.
+    /// Each optimization gets the full number of indexing threads it asks for.
     pub fn optimize(&self) -> OperationResult<bool> {
+        let num_indexing_threads =
+            max_num_indexing_threads(&self.config().segment_optimizer_config());
+        self.optimize_with_budget(ResourceBudget::new(
+            num_indexing_threads,
+            num_indexing_threads,
+        ))
+    }
+
+    /// Like [`optimize`](Self::optimize), but takes CPU/IO for each optimization from `budget`.
+    ///
+    /// Blocks until `budget` has a permit available, so a clone of one budget shared between
+    /// concurrent calls (e.g. across shards) caps their combined resource usage.
+    pub fn optimize_with_budget(&self, budget: ResourceBudget) -> OperationResult<bool> {
         let optimizers = self.build_blocking_optimizers();
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
@@ -43,11 +58,8 @@ impl EdgeShard {
             let mut optimized_in_iteration = false;
 
             for (optimizer, segment_ids) in planned {
-                let num_indexing_threads = optimizer.num_indexing_threads();
-                let desired_io = num_indexing_threads;
-                // Bypass budget in Edge, always allocate the full desired IO for the optimizer.
-                let budget = ResourceBudget::new(num_indexing_threads, desired_io);
-                let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
+                let desired_io = optimizer.num_indexing_threads();
+                let permit = budget.acquire(0, desired_io, &stopped).ok_or_else(|| {
                     OperationError::service_error(format!(
                         "failed to acquire resource permit for {} optimizer",
                         optimizer.name(),
@@ -60,7 +72,7 @@ impl EdgeShard {
                     segment_ids,
                     Uuid::new_v4(),
                     permit,
-                    budget,
+                    budget.clone(),
                     &stopped,
                     progress,
                     Box::new(|| ()),
@@ -952,6 +964,8 @@ mod tests {
     fn test_config() -> EdgeConfig {
         EdgeConfig {
             on_disk_payload: Some(false),
+            payload_memory: None,
+            id_tracker_memory: None,
             vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),
                 EdgeVectorParams {
@@ -961,6 +975,7 @@ mod tests {
                     multivector_config: None,
                     datatype: None,
                     on_disk: None,
+                    memory: None,
                     hnsw_config: None,
                 },
             )]),
@@ -986,6 +1001,7 @@ mod tests {
             multivector_config: None,
             datatype: None,
             on_disk: None,
+            memory: None,
             hnsw_config: None,
         };
         EdgeConfig {

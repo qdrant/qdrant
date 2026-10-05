@@ -450,7 +450,9 @@ where
         deferred_internal_id,
     )?;
 
-    // Flush all pending changes of each segment, now wrapped segments won't change anymore
+    // Flush all pending changes of each segment, now wrapped segments won't change anymore.
+    // Segment snapshots rely on this: they don't pack the pending changes logs of unwrapped
+    // proxies, whose changes this persists into the wrapped segments.
     segments_lock.flush_all_up_to(FlushMode::Sync, true, applied_up_to)?;
 
     // Apply provided function

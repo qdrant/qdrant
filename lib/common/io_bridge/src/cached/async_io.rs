@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+    ChunkSink, ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
     UniversalWriteFsAsync,
 };
 
@@ -59,6 +59,18 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
+    }
+
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        self.cache.read_from_into_async(from, init)
     }
 }
 

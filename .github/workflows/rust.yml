@@ -18,16 +18,70 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  select-packages:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # PRs check out the merge commit, whose first parent is the base branch
+        fetch-depth: 2
+    - name: Select affected packages
+      id: select
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          packages=$(python3 tools/ci/affected_packages.py HEAD^1)
+        else
+          packages=--workspace
+        fi
+        echo "Selected: ${packages:-<none>}"
+        echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
   rust-tests:
+    needs: select-packages
+    if: needs.select-packages.outputs.packages != ''
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
+    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
+    # tests write. The target directory stays in the workspace, where rust-cache can cache it.
+    - name: Set up Dev Drive
+      if: matrix.os == 'windows-latest'
+      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      with:
+        drive-size: 50GB
+        trusted-dev-drive: true
+        env-mapping: |
+          TMP,{{ DEV_DRIVE }}/tmp
+          TEMP,{{ DEV_DRIVE }}/tmp
+    - name: Create temp directory on Dev Drive
+      if: matrix.os == 'windows-latest'
+      run: mkdir -p "$TMP"
+      shell: bash
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    # Before rust-cache, so the linker config and CARGO_PROFILE_DEV_DEBUG are part of the cache key
+    - name: Configure linker (mold on Linux, rust-lld on Windows)
+      run: |
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
+          echo "linker = \"clang\"" >> .cargo/config.toml
+          echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-pc-windows-msvc]" >> .cargo/config.toml
+          echo "linker = \"rust-lld.exe\"" >> .cargo/config.toml
+          # No debug info: MSVC writes a PDB per test binary, which slows linking. Panic messages
+          # keep their file:line; only backtraces lose line numbers.
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+        fi
+      shell: bash
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
@@ -36,19 +90,10 @@ jobs:
       uses: ./.github/actions/setup-protoc
     - name: Install mold
       uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-    - name: Enable mold on Linux
-      run: |
-        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-          mkdir .cargo
-          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
-          echo "linker = \"clang\"" >> .cargo/config.toml
-          echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
-        fi
-      shell: bash
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
-      run: cargo build --workspace --tests --locked
+      run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
     # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
     # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
     # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
@@ -58,7 +103,7 @@ jobs:
       shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci --locked
+      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked
     - name: Upload test report
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:

@@ -7,15 +7,18 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use tempfile::TempPath;
+
 use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
-use super::{DiskCacheRemote, block_aligned_fetch, to_block_range};
+use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
-    ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
+    ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
     UniversalReadFsAsync,
 };
 
@@ -49,21 +52,23 @@ where
             },
             Populate::PreferBackground | Populate::Blocking => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
-                let len = match extra.known_len {
-                    Some(len) => len,
-                    None => remote.len::<u8>()?,
-                };
-                let local = LocalState::new(&local_path, len, options)?;
-                // An empty object has nothing to populate, and a bounded `0..0`
-                // range is rejected by the backend rather than answered with an
-                // empty body (see `AsyncRead::read_range`), so skip the fetch.
-                if len > 0 {
-                    let byte_range = 0..len;
-                    let content = remote
-                        .read_bytes_async(byte_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                let local = if extra.known_len == Some(0) {
+                    LocalState::new(&local_path, 0, options)?
+                } else {
+                    // The mirror is created at the length of the file as read, which differs
+                    // from `known_len` when the file was replaced since it was observed.
+                    let mirror_path = local_path.clone();
+                    let MirrorWriter(local, mut file) = remote
+                        .read_from_into_async(0, move |len| {
+                            let file = TempPath::try_from_path(mirror_path)?;
+                            Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
+                        })
                         .await?;
-                    unsafe { local.write_mmap_bytes(&content, to_block_range(byte_range)) };
-                }
+                    // The `DiskCache` removes the mirror from here on.
+                    file.disable_cleanup(true);
+                    local
+                };
+                local.mark_fully_fetched();
                 State::ready(remote, local)
             }
             Populate::Partial(read_range) => {
@@ -99,6 +104,17 @@ where
 
     async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.list_files_async(prefix_path).await
+    }
+}
+
+/// Fills a fresh mirror from a whole-file read, owning it until the read completes. Dropped
+/// before that, on a failed or abandoned read, it removes the mirror file. The fields drop in
+/// order, so the mirror is unmapped before its file is removed, as Windows requires.
+struct MirrorWriter(LocalState, TempPath);
+
+impl ChunkSink for MirrorWriter {
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.0.write_at(offset, bytes)
     }
 }
 
@@ -145,5 +161,17 @@ where
                 }
             }
         }
+    }
+
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        read_from_via_read_bytes(self, from, init)
     }
 }

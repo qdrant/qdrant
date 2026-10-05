@@ -23,18 +23,19 @@ impl<R> DiskCache<R>
 where
     R: DiskCacheRemote,
 {
-    /// Make sure every byte in the range `byte_start..remote_len` is present on the local file
+    /// Make sure every byte from `byte_start` to the end of the file is present on the local file
     fn populate_from(&self, byte_start: u64) -> UioResult<()> {
         if crate::low_memory::low_memory_mode().skip_populate() {
             return Ok(());
         }
 
-        let remote_len = self.state()?.remote.len::<u8>()?;
-        if remote_len == 0 {
+        // The mirror is sized to the remote file on init: no remote round-trip needed
+        let len = self.len::<u8>()?;
+        if len == 0 {
             return Ok(());
         }
 
-        let one_byte_per_block = (byte_start..remote_len)
+        let one_byte_per_block = (byte_start..len)
             .step_by(BLOCK_SIZE)
             .map(|byte_offset| ((), ReadRange::one(byte_offset)));
 

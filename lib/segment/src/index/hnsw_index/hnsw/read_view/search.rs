@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
@@ -12,15 +14,14 @@ use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
-use crate::index::hnsw_index::graph::{GraphSearchArgs, SearchScorers};
+use crate::index::hnsw_index::graph::{FilteredPoints, GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
-use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
 };
-use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, SearchParams};
+use crate::types::{Filter, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
@@ -33,26 +34,20 @@ where
     P: PayloadIndexRead,
     S: UniversalRead,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn search_with_graph(
         &self,
         vector: &QueryVector,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        algorithm: SearchAlgorithm,
         custom_entry_points: Option<&[PointOffsetType]>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ef = params
             .and_then(|params| params.hnsw_ef)
             .unwrap_or(self.config.ef);
-        let acorn_enabled = params
-            .and_then(|params| params.acorn)
-            .is_some_and(|acorn| acorn.enable);
-        let acorn_max_selectivity = params
-            .and_then(|params| params.acorn)
-            .and_then(|acorn| acorn.max_selectivity)
-            .map_or(ACORN_MAX_SELECTIVITY_DEFAULT, |v| *v);
-
         let is_stopped = vector_query_context.is_stopped();
 
         let deleted_points = vector_query_context
@@ -62,34 +57,11 @@ where
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
-        let mut algorithm = SearchAlgorithm::Hnsw;
-        if acorn_enabled
-            && self.config.m0 != 0
-            && let Some(filter) = filter
-        {
-            // NOTE: technically we also might want to use ACORN for unfiltered
-            // searches for segments with a lot of deleted points. But in
-            // practice, such segments most likely to be picked by an optimizer
-            // soon.
-
-            let available_vector_count = self.vector_storage.available_vector_count();
-            let selectivity = if available_vector_count == 0 {
-                1.0
-            } else {
-                let query_point_cardinality = self
-                    .payload_index
-                    .estimate_cardinality(filter, &hw_counter)?;
-                let query_cardinality = adjust_to_available_vectors(
-                    query_point_cardinality,
-                    available_vector_count,
-                    self.id_tracker.available_point_count(),
-                );
-                query_cardinality.exp as f64 / available_vector_count as f64
-            };
-            if selectivity <= acorn_max_selectivity {
-                algorithm = SearchAlgorithm::Acorn;
-            }
-        }
+        let first_filtered_points = filter.map(|filter| {
+            let (hw_counter, is_stopped) = (&hw_counter, &is_stopped);
+            move |n| self.first_filtered_points(filter, n, hw_counter, is_stopped)
+        });
+        let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
@@ -140,6 +112,7 @@ where
                     base: base_scorer_bytes,
                 }),
                 custom_entry_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
             Ok(Some(result))
@@ -168,6 +141,7 @@ where
                 algorithm,
                 scorers: SearchScorers::Regular(points_scorer),
                 custom_entry_points,
+                filtered_points_reader,
                 is_stopped: &is_stopped,
             })?;
 
@@ -199,6 +173,7 @@ where
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        algorithm: SearchAlgorithm,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         vectors
@@ -209,15 +184,22 @@ where
                     filter,
                     top,
                     params,
+                    algorithm,
                     vector_query_context,
                 ),
                 QueryVector::Nearest(_)
                 | QueryVector::RecommendBestScore(_)
                 | QueryVector::RecommendSumScores(_)
                 | QueryVector::Context(_)
-                | QueryVector::FeedbackNaive(_) => {
-                    self.search_with_graph(vector, filter, top, params, None, vector_query_context)
-                }
+                | QueryVector::FeedbackNaive(_) => self.search_with_graph(
+                    vector,
+                    filter,
+                    top,
+                    params,
+                    algorithm,
+                    None,
+                    vector_query_context,
+                ),
             })
             .collect()
     }
@@ -355,12 +337,35 @@ where
         )
     }
 
+    /// The first `n` points matching `filter`, in payload index order.
+    fn first_filtered_points(
+        &self,
+        filter: &Filter,
+        n: usize,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let cardinality = self
+            .payload_index
+            .estimate_cardinality(filter, hw_counter)?;
+        let points = self.payload_index.iter_filtered_points(
+            filter,
+            &cardinality,
+            hw_counter,
+            is_stopped,
+            // HNSW is built on non-appendable segments, which have no deferred points.
+            DeferredBehavior::WithDeferred,
+        )?;
+        Ok(points.take(n).collect())
+    }
+
     fn discover_search_with_graph(
         &self,
         discover_query: DiscoverQuery<VectorInternal>,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
+        algorithm: SearchAlgorithm,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Stage 1: Find best entry points using Context search
@@ -374,6 +379,7 @@ where
                 filter,
                 DISCOVERY_ENTRY_POINT_COUNT,
                 params,
+                algorithm,
                 None,
                 vector_query_context,
             )
@@ -387,6 +393,7 @@ where
             filter,
             top,
             params,
+            algorithm,
             Some(&custom_entry_points),
             vector_query_context,
         )

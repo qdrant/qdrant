@@ -66,8 +66,11 @@ proptest! {
     /// Replay reaches the same state as a run that never crashed, no matter how many actions
     /// were applied before the crash.
     ///
-    /// Replay may be rejected only after every action was applied, where the state is already
-    /// complete. Rejecting any earlier would make the partial state permanent.
+    /// Replay may be rejected only once the applied prefix has reached the goal state.
+    ///
+    /// Usually that is the full action list. An operation may put side-effect-only actions after
+    /// its last state change, so an earlier prefix can already equal the goal. Rejecting before
+    /// that would make partial state permanent.
     #[test]
     fn replay_after_crash_converges((state, operation) in arb_state_and_operation()) {
         if replay_may_diverge(&operation) {
@@ -89,6 +92,7 @@ proptest! {
                 crashed.apply_action(action);
             }
 
+            let reached_goal = crashed == goal;
             let mut replay = state_machine(crashed);
 
             match replay.apply(&operation) {
@@ -103,10 +107,9 @@ proptest! {
                 }
 
                 ApplyOutcome::Rejected(err) => {
-                    prop_assert_eq!(
-                        crash_after,
-                        actions.len(),
-                        "replay after {} of {} actions was rejected: {}",
+                    prop_assert!(
+                        reached_goal,
+                        "replay after {} of {} actions was rejected before reaching the goal: {}",
                         crash_after,
                         actions.len(),
                         err,

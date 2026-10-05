@@ -1,4 +1,5 @@
 mod reexports_from_qdrant_crates {
+    pub use common::budget::ResourceBudget;
     pub use segment::common::operation_error::{OperationError, OperationResult};
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};
     pub use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
@@ -27,8 +28,8 @@ mod reexports_from_qdrant_crates {
         GeoPoint, GeoPolygon, GeoRadius, HasIdCondition, HasVectorCondition,
         HnswConfig as HnswIndexConfig, IdfCorpusParams, IdfParams, IdfScope, IsEmptyCondition,
         IsNullCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchSubstring,
-        MatchText, MatchTextAny, MatchValue, MinShould, MultiVectorComparator, MultiVectorConfig,
-        Nested, NestedCondition, Payload, PayloadFieldSchema, PayloadIndexInfo,
+        MatchText, MatchTextAny, MatchValue, Memory, MinShould, MultiVectorComparator,
+        MultiVectorConfig, Nested, NestedCondition, Payload, PayloadFieldSchema, PayloadIndexInfo,
         PayloadSchemaParams, PayloadSchemaType, PayloadSelector, PayloadSelectorExclude,
         PayloadSelectorInclude, ProductQuantizationConfig, QuantizationConfig,
         QuantizationSearchParams, Range, RangeInterface, ScalarQuantizationConfig, ScalarType,

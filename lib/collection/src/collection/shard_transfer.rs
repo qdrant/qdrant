@@ -182,18 +182,18 @@ impl Collection {
                 CollectionError::bad_request(format!("shard {to_shard_id} doesn't exist"))
             })?;
 
-            let _was_not_transferred =
-                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
-
-            let from_is_local = from_replica_set.is_local().await;
-            let to_is_local = to_replica_set.is_local().await;
-
             // Checked at the top of the function — the method is always set by the
             // peer that submitted this transfer to consensus.
             let transfer_method = shard_transfer.method.expect("transfer method must be set");
             let initial_state = self
                 .initial_replica_state_for_transfer(transfer_method)
                 .await?;
+
+            let _was_not_transferred =
+                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
+
+            let from_is_local = from_replica_set.is_local().await;
+            let to_is_local = to_replica_set.is_local().await;
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
             // (on all peers, regardless if shard is local or remote on that peer).
@@ -709,6 +709,7 @@ impl Collection {
                 .await?;
 
             let this_peer_id = replica_set.this_peer_id();
+            let replica_set = Arc::clone(replica_set);
 
             // Clone the `Arc`s so the spawn_blocking task can consume its own
             // handles while the outer future still owns `replica_set` for the
@@ -727,6 +728,8 @@ impl Collection {
                     },
                     Duration::from_secs(60),
                 );
+
+                // Reject request, if no transfer was registered within 60 seconds
                 if !shard_transfer_registered {
                     return Ok(false);
                 }
@@ -737,7 +740,7 @@ impl Collection {
                 // behind instead, with the previous transfer still registered, the sender is
                 // refused as well and retries.
                 //
-                // `get_transfers` is called without the `shards_holder` read lock because
+                // The transfers are read without the `shards_holder` read lock because
                 // `shard_transfers` carries its own internal synchronization (parking_lot
                 // `RwLock`); see `SaveOnDisk`.
                 if let Some(from_peer_id) = from_peer_id
@@ -748,13 +751,13 @@ impl Collection {
                         .all(|transfer| transfer.from != from_peer_id)
                 {
                     return Err(CollectionError::bad_request(format!(
-                        "Refusing to initiate shard transfer into shard {shard_id}: \
-                         the registered shard transfer is not from peer {from_peer_id}",
+                        "Refusing to initiate shard transfer from peer {from_peer_id} into shard {shard_id}: \
+                         there is no registered transfer from peer {from_peer_id}",
                     )));
                 }
 
-                // It is not enough to check for shard_transfer_registered,
-                // because it is registered before the state of the shard is changed.
+                // Transfer is registered before the replica state is set.
+                // Wait until the local replica switches to a shard transfer state.
                 Ok(replica_set.wait_for_state_condition_sync(
                     |state| {
                         state

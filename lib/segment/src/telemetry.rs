@@ -63,6 +63,11 @@ pub struct VectorIndexSearchesTelemetry {
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_large_cardinality: OperationDurationStatistics,
 
+    /// Filtered graph searches ACORN ran. `filtered_large_cardinality` does not count them.
+    // `default` keeps it out of the schema's `required` list; absent when ACORN never ran.
+    #[serde(default, skip_serializing_if = "OperationDurationStatistics::is_empty")]
+    pub filtered_acorn: OperationDurationStatistics,
+
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub filtered_exact: OperationDurationStatistics,
 

@@ -5,7 +5,9 @@ use common::generic_consts::Random;
 use common::universal_io::{ReadPipeline, UniversalRead, UserData};
 
 use crate::Result;
-use crate::tracker::{OptionalPointer, PointOffset, PointerUpdates, TrackerHeader, ValuePointer};
+use crate::tracker::{
+    OptionalPointer, PointOffset, PointerUpdates, TrackerHeader, ValuePointer, decode_slot,
+};
 
 pub struct Iter<'a, U, I, S>
 where
@@ -109,7 +111,7 @@ where
             unreachable!();
         };
 
-        let pointer = match pointer.to_option() {
+        let pointer = match decode_slot(pointer) {
             Some(pointer) => PointerItem::Valid(pointer),
             None => PointerItem::Empty,
         };

@@ -599,17 +599,51 @@ mod tests_mod {
         assert_eq!(&*bytes, &new_data[..]);
     }
 
-    /// Scheduling against a snapshot that does not cover the file fails with
-    /// `NotFound` — the file resolves its own remote path, so there is no
-    /// path argument to mispair.
+    /// When no file info is provided (e.g. file is missing from snapshot),
+    /// live_preload falls back to checking/reading from the remote:
+    /// - when not populating: len() call to resize local mmap
+    /// - when populating: unbounded read for the new tail of the file
     #[test]
-    fn reopen_schedule_missing_from_snapshot_errors() {
-        let scn = Scenario::new(BLOCK_SIZE);
-        let cache = scn.open::<R>(PREFILL);
+    fn live_preload_without_file_info_falls_back() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
 
-        // `map(drop)` discards the staged future, which is not `Debug`.
-        let err = cache.live_preload(|_| None).map(drop).unwrap_err();
-        assert_matches!(err, UniversalIoError::NotFound { .. });
+        let original_len = scn.data.len() as u64;
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+
+        let staged = cache.live_preload(|_| None).unwrap();
+        futures::executor::block_on(staged);
+
+        // Before live_reload, local file is not resized yet
+        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+
+        cache.live_reload().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
+    }
+
+    #[test]
+    fn live_preload_without_file_info_twice() {
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+
+        let staged1 = cache.live_preload(|_| None).unwrap();
+        let staged2 = cache.live_preload(|_| None).unwrap();
+        futures::executor::block_on(async {
+            staged1.await;
+            staged2.await;
+        });
+        cache.live_reload().unwrap();
+
+        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(&*bytes, &new_data[..]);
     }
 
     /// `Populate::Partial` prefetches only the requested (block-aligned) range;
@@ -1194,9 +1228,10 @@ mod tests_async {
     use super::*;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
+    use crate::universal_io::traits::read_from_via_read_bytes;
     use crate::universal_io::{
-        ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync, UniversalReadFsAsync,
-        UserData,
+        ChunkSink, ListedFile, MmapFs, UioResult, UniversalKind, UniversalReadAsync,
+        UniversalReadFsAsync, UserData,
     };
 
     fn sync_read_error() -> UniversalIoError {
@@ -1354,6 +1389,18 @@ mod tests_async {
             self.async_reads.fetch_add(1, Ordering::Relaxed);
             self.inner.read_bytes(range, access_pattern, align)
         }
+
+        fn read_from_into_async<W, I>(
+            &self,
+            from: u64,
+            init: I,
+        ) -> impl Future<Output = UioResult<W>> + Send
+        where
+            I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+            W: ChunkSink + Send + 'static,
+        {
+            read_from_via_read_bytes(self, from, init)
+        }
     }
 
     /// A cache miss must fetch through the remote's async read and commit the
@@ -1439,6 +1486,36 @@ mod tests_async {
 
         let state = file.state().unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
+    }
+
+    /// A populating async open mirrors every byte, including the partial tail block, and
+    /// serves later reads locally.
+    #[tokio::test]
+    async fn populating_open_mirrors_whole_file() {
+        let scn = Scenario::new(BLOCK_SIZE * 5 + 100);
+        let file = scn
+            .fs::<AsyncOnlyRemote>()
+            .open_async(
+                scn.remote_path.clone(),
+                OpenOptions {
+                    writeable: false,
+                    need_sequential: false,
+                    populate: Populate::PreferBackground,
+                    advice: AdviceSetting::Global,
+                },
+                Default::default(),
+            )
+            .await
+            .unwrap();
+
+        let state = file.state().unwrap();
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
+        assert!(state.local.contains(0..6));
+
+        let eof = scn.data.len() as u64;
+        let bytes = file.read_bytes_async(0..eof, Sequential, 1).await.unwrap();
+        assert_eq!(&*bytes, &scn.data[..]);
+        assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
     }
 
     /// A zero-length object has nothing to populate: a populating async open

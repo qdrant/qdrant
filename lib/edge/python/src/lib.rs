@@ -48,7 +48,7 @@ mod qdrant_edge {
     use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
     #[pymodule_export]
     use super::config::vector_data::{
-        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMultiVectorComparator,
+        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMemory, PyMultiVectorComparator,
         PyMultiVectorConfig, PyPlainIndexConfig, PyVectorStorageDatatype,
     };
     #[pymodule_export]
@@ -114,7 +114,7 @@ impl PyEdgeShard {
     }
 
     /// Create a new edge shard at `path` with the given configuration.
-    /// Fails if the path already contains segment data.
+    /// Creates `path` if it does not exist. Fails if the path already contains segment data.
     #[staticmethod]
     pub fn create(path: PathBuf, config: PyEdgeConfig) -> Result<Self> {
         let shard = edge::EdgeShard::new(&path, config.0)?;

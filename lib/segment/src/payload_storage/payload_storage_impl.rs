@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use blobstore::config::CreateOptions;
+use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
@@ -22,8 +23,10 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        serde_json::from_slice(data).map_err(|err| {
+            BlobstoreError::decode_error(format!("Failed to deserialize payload: {err}"))
+        })
     }
 }
 
@@ -91,6 +94,11 @@ where
     /// Heap RAM held beyond the page cache of the storage files.
     pub fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
+    }
+
+    /// Don't journal value mappings on flush, see [`Blobstore::disable_journal`].
+    pub fn disable_journal(&mut self) {
+        self.storage.disable_journal();
     }
 
     /// Switch to a layout for a storage that is only read from now on, persisted by the next

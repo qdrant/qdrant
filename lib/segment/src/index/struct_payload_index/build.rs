@@ -49,6 +49,9 @@ impl StructPayloadIndex {
 
         for index in &mut builders {
             index.init()?;
+            if !self.journaled {
+                index.disable_journal();
+            }
         }
 
         payload_storage.iter(

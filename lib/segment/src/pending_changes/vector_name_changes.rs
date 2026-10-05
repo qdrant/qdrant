@@ -154,6 +154,11 @@ impl ProxyVectorNameChanges {
         self.intent.clear();
     }
 
+    /// Keep only the intents for which `keep` returns true.
+    pub fn retain(&mut self, mut keep: impl FnMut(&VectorNameBuf, &IntendedVector) -> bool) {
+        self.intent.retain(|name, intent| keep(name, intent));
+    }
+
     /// Iterate over proxied vector name intents in order of version.
     ///
     /// Intents must be applied in version order: an intent with a stale version

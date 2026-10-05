@@ -6,6 +6,7 @@ use std::{fmt, thread};
 
 use common::storage_version::VERSION_FILE;
 use common::tar_ext;
+use common::universal_io::OkNotFound as _;
 use fs_err as fs;
 use uuid::Uuid;
 
@@ -17,7 +18,6 @@ use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
-use crate::pending_changes::list_pending_changes_log_files;
 use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
@@ -48,12 +48,13 @@ impl SnapshotEntry for Segment {
         Ok(id)
     }
 
-    fn take_snapshot(
+    fn take_snapshot_with_pending_changes_logs(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
+        pending_changes_logs: &[PathBuf],
     ) -> OperationResult<()> {
         let segment_id = self.segment_uuid();
 
@@ -63,7 +64,7 @@ impl SnapshotEntry for Segment {
             None => None,
 
             Some(manifest) => {
-                let updated_manifest = self._get_segment_manifest()?;
+                let updated_manifest = self._get_segment_manifest(pending_changes_logs)?;
 
                 let updated_manifest_json =
                     serde_json::to_vec(&updated_manifest).map_err(|err| {
@@ -101,12 +102,12 @@ impl SnapshotEntry for Segment {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
                     let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, include_if)
+                    snapshot_files(self, temp_path, &tar, include_if, pending_changes_logs)
                 })??;
             }
             SnapshotFormat::Streamable => {
                 let tar = tar.descend(Path::new(&segment_id.to_string()))?;
-                snapshot_files(self, temp_path, &tar, include_if)?;
+                snapshot_files(self, temp_path, &tar, include_if, pending_changes_logs)?;
             }
         }
 
@@ -114,12 +115,23 @@ impl SnapshotEntry for Segment {
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        self._get_segment_manifest()
+        self._get_segment_manifest(&self.visible_pending_changes_log_files())
+    }
+
+    fn visible_pending_changes_log_files(&self) -> Vec<PathBuf> {
+        self.pending_changes_logs
+            .iter()
+            .filter(|path| path.is_file())
+            .cloned()
+            .collect()
     }
 }
 
 impl Segment {
-    fn _get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+    fn _get_segment_manifest(
+        &self,
+        pending_changes_logs: &[PathBuf],
+    ) -> OperationResult<SegmentManifest> {
         let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
@@ -177,9 +189,9 @@ impl Segment {
 
         // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
         // segment. Carried in snapshots so recovery replays them onto the segment.
-        let pending_changes_files = list_pending_changes_log_files(&self.segment_path)
-            .into_iter()
-            .map(|file| (file, FileVersion::Unversioned));
+        let pending_changes_files = pending_changes_logs
+            .iter()
+            .map(|file| (file.clone(), FileVersion::Unversioned));
 
         let mut file_versions = HashMap::with_capacity(files.len());
 
@@ -263,6 +275,7 @@ pub fn snapshot_files(
     temp_path: &Path,
     tar: &tar_ext::BuilderExt<impl Write + Seek>,
     include_if: impl Fn(&Path) -> bool,
+    pending_changes_logs: &[PathBuf],
 ) -> OperationResult<()> {
     // use temp_path for intermediary files
     let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
@@ -357,11 +370,13 @@ pub fn snapshot_files(
         .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
 
     // Pending proxy changes logs, if any proxy segment persisted buffered changes for this
-    // segment; replayed onto the segment when it is loaded on recovery
-    for file in list_pending_changes_log_files(&segment.segment_path) {
-        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
-        tar.blocking_append_file(&file, stripped_path)
-            .map_err(|err| failed_to_add("pending changes log file", &file, err))?;
+    // segment; replayed onto the segment when it is loaded on recovery. Skipped if removed since
+    // listed: logs are only removed once their changes are durable in other packed files.
+    for file in pending_changes_logs {
+        let stripped_path = strip_prefix(file, &segment.segment_path)?;
+        tar.blocking_append_file(file, stripped_path)
+            .ok_not_found()
+            .map_err(|err| failed_to_add("pending changes log file", file, err))?;
     }
 
     Ok(())

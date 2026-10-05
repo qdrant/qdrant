@@ -28,19 +28,6 @@ use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt, PutPayload
 use crate::append::AppendContext;
 use crate::backend::BlobBackend;
 
-/// Size of the bounded range GETs that [`AsyncRead::read_from`] splits a large
-/// object into. Bounds the blast radius of a dropped connection (a retry
-/// re-fetches one chunk, not the whole object) while staying large enough that
-/// the per-request round-trip stays amortized.
-const DEFAULT_READ_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
-
-/// Number of follow-up chunk GETs a multi-part [`AsyncRead::read_from`] keeps
-/// in flight at once. Chunks are yielded as they complete (out of order,
-/// tagged with their offset); a larger value hides more per-request round-trip
-/// latency at the cost of buffering up to `concurrency * chunk_size` bytes
-/// ahead of the consumer.
-const READ_CHUNK_CONCURRENCY: usize = 16;
-
 /// [`AsyncRead`] handle over an object store. Holds the store as `Arc<S>` so it
 /// is cheap to clone; the object key is supplied per call.
 ///
@@ -54,8 +41,6 @@ pub struct ObjectStoreSource<S> {
     /// this source was built from a config (see
     /// [`BlobBackend::append_context`]).
     append: Option<AppendContext>,
-    /// Chunk size for multi-part [`AsyncRead::read_from`] reads.
-    chunk_size: u64,
 }
 
 impl<S> Clone for ObjectStoreSource<S> {
@@ -63,7 +48,6 @@ impl<S> Clone for ObjectStoreSource<S> {
         Self {
             store: self.store.clone(),
             append: self.append.clone(),
-            chunk_size: self.chunk_size,
         }
     }
 }
@@ -78,22 +62,12 @@ impl<S> ObjectStoreSource<S> {
         Self {
             store,
             append: None,
-            chunk_size: DEFAULT_READ_CHUNK_SIZE,
         }
     }
 
     /// Attach an [`AppendContext`] enabling the native append RPC.
     pub fn with_append_context(mut self, context: AppendContext) -> Self {
         self.append = Some(context);
-        self
-    }
-
-    /// Override the chunk size used by multi-part [`AsyncRead::read_from`]
-    /// reads. Must be non-zero.
-    #[cfg(test)]
-    fn with_chunk_size(mut self, chunk_size: u64) -> Self {
-        assert_ne!(chunk_size, 0, "read chunk size must be non-zero");
-        self.chunk_size = chunk_size;
         self
     }
 
@@ -114,7 +88,6 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         Ok(Self {
             store: Arc::new(S::build_store(config)?),
             append: S::append_context(config)?,
-            chunk_size: DEFAULT_READ_CHUNK_SIZE,
         })
     }
 
@@ -201,87 +174,18 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
     ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
         let store = self.store.clone();
         let key = build_key(path);
-        let chunk_size = self.chunk_size;
+        let opts = GetOptions {
+            range: (from > 0).then_some(object_store::GetRange::Offset(from)),
+            ..Default::default()
+        };
         async move {
-            // Multi-part read: instead of one open-ended `Range: bytes=from-`
-            // GET, the object is fetched in bounded chunks of `chunk_size`. The
-            // first chunk doubles as the size probe — a bounded range response
-            // still carries the object's total size (`Content-Range`), so no
-            // separate HEAD is needed on the happy path.
-            let opts = GetOptions {
-                range: Some(GetRange::Bounded(from..from.saturating_add(chunk_size))),
-                ..Default::default()
-            };
-            // Note: a bounded range is unsatisfiable on an empty object even at
-            // offset 0 — the at-or-past-end error the trait documents; callers
-            // that must tolerate an empty tail disambiguate with `len` (see
-            // `read_from_into_byte_buffer`).
-            let mut first = store
+            let result = store
                 .get_opts(&key, opts)
                 .await
                 .map_err(|err| map_get_err(err, &key))?;
-            let total = first.meta.size;
-            // Follow-up chunks are pinned to the version the probe saw.
-            // All major providers support `e-tag`. For now, we won't fail if
-            // it doesn't support it.
-            let e_tag = first.meta.e_tag.take();
-            let first_end = first.range.end;
-            let first_stream =
-                io_bridge::with_running_offsets(first.into_stream().map_err(UniversalIoError::s3));
-            if first_end >= total {
-                return Ok((total, first_stream));
-            }
-            // The probe revealed the total size, so all remaining ranges are
-            // known up front and up to `READ_CHUNK_CONCURRENCY` of them are
-            // downloaded concurrently. Each chunk body is collected *inside*
-            // its future: the unordered window only drives futures while it is
-            // polled, so a future that merely opened the response and handed
-            // back a body stream would stall the other transfers. Chunks are
-            // yielded the moment they complete, tagged with their tail-relative
-            // offsets — a slow or retried chunk never blocks delivery of the
-            // others. Peak buffering is `READ_CHUNK_CONCURRENCY * chunk_size`
-            // bytes ahead of the consumer.
-            let rest = futures::stream::iter((first_end..total).step_by(chunk_size as usize))
-                .map(move |start| {
-                    let store = store.clone();
-                    let key = key.clone();
-                    let e_tag = e_tag.clone();
-                    let end = start.saturating_add(chunk_size).min(total);
-                    async move {
-                        let opts = GetOptions {
-                            range: Some(GetRange::Bounded(start..end)),
-                            if_match: e_tag,
-                            ..Default::default()
-                        };
-                        let chunk = store
-                            .get_opts(&key, opts)
-                            .await
-                            .map_err(|err| map_get_err(err, &key))?;
-                        // Keep the body's frames as-is instead of coalescing
-                        // them into one contiguous `Bytes` — that would memcpy
-                        // nearly the whole object a second time. The consumer
-                        // scatters by offset, so per-frame tagging suffices.
-                        let mut offset = start - from;
-                        let frames: Vec<_> = chunk
-                            .into_stream()
-                            .map_err(UniversalIoError::s3)
-                            .map_ok(|frame| {
-                                let at = offset;
-                                offset += frame.len() as u64;
-                                (at, frame)
-                            })
-                            .try_collect()
-                            .await?;
-                        Ok::<_, UniversalIoError>(futures::stream::iter(
-                            frames.into_iter().map(Ok::<_, UniversalIoError>),
-                        ))
-                    }
-                })
-                .buffer_unordered(READ_CHUNK_CONCURRENCY)
-                .try_flatten();
-            // `select` polls both sides, so the follow-up window opens while
-            // the probe body is still streaming.
-            Ok((total, futures::stream::select(first_stream, rest).boxed()))
+            let size = result.meta.size;
+            let stream = result.into_stream().map_err(UniversalIoError::s3);
+            Ok((size, io_bridge::with_running_offsets(stream)))
         }
     }
 
@@ -582,10 +486,10 @@ mod tests {
     }
 
     #[test]
-    fn read_from_in_chunks() {
+    fn read_from_offsets() {
         let runtime = BridgeRuntime::global();
-        let store = inmemory_with(&runtime, &[("obj", b"0123456789")]);
-        let source = ObjectStoreSource::new(store).with_chunk_size(3);
+        let store = inmemory_with(&runtime, &[("obj", b"0123456789"), ("empty", b"")]);
+        let source = ObjectStoreSource::new(store);
 
         let (total, bytes) = collect_read_from(&runtime, &source, "obj", 0);
         assert_eq!(total, 10);
@@ -595,41 +499,20 @@ mod tests {
         assert_eq!(total, 10);
         assert_eq!(bytes, b"456789");
 
-        // Tail smaller than one chunk: served entirely by the probe request.
         let (total, bytes) = collect_read_from(&runtime, &source, "obj", 8);
         assert_eq!(total, 10);
         assert_eq!(bytes, b"89");
+
+        // Offset 0 on an empty object succeeds with an empty stream
+        let (total, bytes) = collect_read_from(&runtime, &source, "empty", 0);
+        assert_eq!(total, 0);
+        assert!(bytes.is_empty());
     }
 
+    /// An offset past EOF on a range GET errors with an unsatisfiable range;
+    /// `BlobFile`'s disambiguation turns that into an empty read.
     #[test]
-    fn read_from_more_chunks_than_concurrency_reassembles_exactly() {
-        let runtime = BridgeRuntime::global();
-        let store = Arc::new(InMemory::new());
-        let data: Vec<u8> = (0..=255).collect();
-        runtime.block_on(async {
-            store
-                .put(
-                    &object_store::path::Path::from("obj"),
-                    Bytes::from(data.clone()).into(),
-                )
-                .await
-                .unwrap();
-        });
-        // 7-byte chunks over 256 bytes: ~36 follow-up GETs racing through the
-        // unordered window; the offset-tagged chunks must tile the object
-        // exactly whatever order they complete in.
-        let source = ObjectStoreSource::new(store).with_chunk_size(7);
-        let (total, bytes) = collect_read_from(&runtime, &source, "obj", 0);
-        assert_eq!(total, 256);
-        assert_eq!(bytes, data);
-    }
-
-    /// A bounded probe on an empty object is an unsatisfiable range, so the
-    /// raw `read_from` errors; the pipeline's `len` disambiguation (see
-    /// `read_from_into_byte_buffer`) turns that into an empty buffer, counted
-    /// as a completed read rather than an error.
-    #[test]
-    fn read_whole_empty_object_yields_empty_buffer() {
+    fn read_from_past_eof_errors_raw_but_disambiguates_in_file() {
         use common::uio_trace::Op;
 
         let runtime = BridgeRuntime::global();
@@ -638,66 +521,30 @@ mod tests {
         let source = ObjectStoreSource::new(store.clone());
         assert!(
             runtime
-                .block_on(source.read_from(Path::new("empty"), 0))
+                .block_on(source.read_from(Path::new("empty"), 1))
                 .is_err(),
-            "bounded probe on an empty object is unsatisfiable"
+            "offset past EOF is an unsatisfiable range error"
         );
 
         let stats = io_bridge::RemoteIoStats::default();
         let file = make_file(runtime, store, "empty").with_stats(stats.clone());
-        let bytes = file.read_whole::<u8>().expect("read_whole");
+        let mut pipeline = common::universal_io::OwnedPipeline::new(file).unwrap();
+        pipeline.schedule_whole((), 1).unwrap();
+        let (_, bytes) = pipeline.wait().unwrap().expect("read scheduled");
         assert!(bytes.is_empty());
 
         let snapshot = stats.snapshot();
-        let read_from = snapshot.op(Op::ReadFrom);
-        assert_eq!(
-            (read_from.completed, read_from.errors, read_from.bytes),
-            (1, 0, 0)
-        );
+        assert_eq!(snapshot.op(Op::ReadFrom).completed, 1);
         assert_eq!(snapshot.op(Op::Len).completed, 1);
     }
 
     #[test]
-    fn read_whole_through_blob_file_in_chunks() {
+    fn read_whole_through_blob_file() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
-        let file = BlobFile::new(
-            ObjectStoreSource::new(store).with_chunk_size(4),
-            runtime,
-            PathBuf::from("obj"),
-        );
+        let file = BlobFile::new(ObjectStoreSource::new(store), runtime, PathBuf::from("obj"));
         let cow = file.read_whole::<u8>().expect("read_whole");
         assert_eq!(&cow[..], b"hello world");
-    }
-
-    #[test]
-    fn read_from_fails_on_concurrent_overwrite() {
-        let runtime = BridgeRuntime::global();
-        let store = inmemory_with(&runtime, &[("obj", b"0123456789")]);
-        let source = ObjectStoreSource::new(store.clone()).with_chunk_size(4);
-        runtime.block_on(async {
-            // The probe resolves inside `read_from` and pins the ETag; the
-            // follow-up GETs only go out once the stream is polled. Overwrite
-            // in between: every follow-up chunk must fail the `if_match`
-            // precondition rather than stitch bytes from two versions.
-            let (total, mut stream) = source.read_from(Path::new("obj"), 0).await.expect("read");
-            assert_eq!(total, 10);
-            store
-                .put(
-                    &object_store::path::Path::from("obj"),
-                    Bytes::from_static(b"XXXXXXXXXX").into(),
-                )
-                .await
-                .unwrap();
-            let mut results = Vec::new();
-            while let Some(item) = stream.next().await {
-                results.push(item);
-            }
-            assert!(
-                results.iter().any(Result::is_err),
-                "expected a precondition failure, got {results:?}"
-            );
-        });
     }
 
     #[test]

@@ -31,17 +31,18 @@ use collection::config::{
     self, CollectionConfigInternal, CollectionParams, PayloadStorageParams, ShardingMethod,
     WalConfig,
 };
-use collection::operations::config_diff::DiffConfig as _;
+use collection::operations::config_diff::{DiffConfig as _, OptimizersConfigDiff};
 use collection::operations::types::VectorsConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::CollectionId;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::ShardTransferMethod;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
-use segment::types::{HnswConfig, ShardKey};
+use segment::types::HnswConfig;
 
 pub use self::action::{
-    Action, CollectionConfigDiff, TransferOutcome, apply_collection_config_diffs,
+    Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
+    apply_collection_config_diffs,
 };
 pub use self::state::ClusterState;
 use super::errors::StorageResult;
@@ -133,12 +134,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                // TODO: Removing replica may abort transfers and resharding, which are not implemented yet
-                if operation.has_shard_replica_changes() {
-                    ApplyOutcome::NotCovered
-                } else {
-                    ApplyOutcome::new(self.state.plan_update_collection(operation))
-                }
+                ApplyOutcome::new(self.state.plan_update_collection(&self.context, operation))
             }
 
             CollectionMetaOperations::DeleteCollection(operation) => {
@@ -154,12 +150,7 @@ impl ConsensusStateMachine {
             }
 
             CollectionMetaOperations::DropShardKey(operation) => {
-                // TODO: Dropping shard key may abort resharding, which are not implemented yet
-                if self.is_reshardng(&operation.collection_name, Some(&operation.shard_key)) {
-                    ApplyOutcome::NotCovered
-                } else {
-                    ApplyOutcome::new(self.state.plan_drop_shard_key(operation))
-                }
+                ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
             }
 
             CollectionMetaOperations::Resharding(collection, operation) => {
@@ -170,8 +161,15 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(result)
             }
 
-            CollectionMetaOperations::SetShardReplicaState(_)
-            | CollectionMetaOperations::TransferShard(_, _) => ApplyOutcome::NotCovered,
+            CollectionMetaOperations::TransferShard(collection, operation) => ApplyOutcome::new(
+                self.state
+                    .plan_transfer(&self.context, collection, operation),
+            ),
+
+            CollectionMetaOperations::SetShardReplicaState(operation) => ApplyOutcome::new(
+                self.state
+                    .plan_set_shard_replica_state(&self.context, operation),
+            ),
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
@@ -199,22 +197,6 @@ impl ConsensusStateMachine {
             }
         }
     }
-
-    fn is_reshardng(&self, collection: &str, shard_key: Option<&ShardKey>) -> bool {
-        let Ok(collection_name) = self.state.resolve_collection(collection) else {
-            return false;
-        };
-
-        let Some(collection) = self.state.collection(&collection_name) else {
-            return false;
-        };
-
-        let Some(resharding) = collection.resharding.as_ref() else {
-            return false;
-        };
-
-        resharding.shard_key.as_ref() == shard_key
-    }
 }
 
 /// Node-local values operations read.
@@ -232,6 +214,7 @@ pub struct NodeContext {
     pub max_collections: Option<usize>,
     pub wal: WalConfig,
     pub optimizers: OptimizersConfig,
+    pub optimizers_overwrite: Option<OptimizersConfigDiff>,
     pub hnsw_index: HnswConfig,
     pub payload: Option<PayloadStorageParams>,
     /// Mirrors the deprecated storage config flag of the same name, which `payload` overrides
@@ -260,7 +243,7 @@ impl NodeContext {
             snapshots_path: _,
             snapshots_config: _,
             temp_path: _,
-            optimizers_overwrite: _,
+            optimizers_overwrite,
             performance: _,
             hnsw_global_config: _,
             mmap_advice: _,
@@ -282,6 +265,7 @@ impl NodeContext {
             max_collections: *max_collections,
             wal: wal.clone(),
             optimizers: optimizers.clone(),
+            optimizers_overwrite: optimizers_overwrite.clone(),
             hnsw_index: *hnsw_index,
             payload: *payload,
             on_disk_payload: *on_disk_payload,

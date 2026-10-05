@@ -24,6 +24,7 @@ pub(crate) mod tests;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub use live_reload::LiveReloadOutcome;
 use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
@@ -38,7 +39,7 @@ use crate::read_only::holder::ReadOnlySegmentHolder;
 ///
 /// Generic over the read backend `S` (e.g. `MmapFile` for local memory-mapped files; the same
 /// abstraction `ReadOnlySegment` uses, so blob/S3 backends are possible). Use
-/// [`open_mmap`](ReadOnlyEdgeShard::open_mmap) for the common local case.
+/// [`open`](ReadOnlyEdgeShard::open) for the common local case.
 pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     path: PathBuf,
     /// Read backend handle; passed to segment `open` and `live_reload`.
