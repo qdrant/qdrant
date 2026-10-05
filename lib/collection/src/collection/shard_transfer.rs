@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -686,12 +687,20 @@ impl Collection {
         let collection_path = self.path.clone();
 
         async move {
-            let shards_holder_guard = shards_holder.clone().read_owned().await;
+            // This handler may run before consensus applies `StartTransfer`.
+            // Release the shard holder read lock before waiting for consensus.
+            // Otherwise, an earlier operation that needs the write lock can block consensus
+            // from applying `StartTransfer`, leaving this handler waiting until timeout.
+            let (replica_set, shard_transfers) = {
+                let shards_holder_guard = shards_holder.read().await;
+                let Some(replica_set) = shards_holder_guard.get_shard(shard_id).cloned() else {
+                    return Err(CollectionError::service_error(format!(
+                        "Shard {shard_id} doesn't exist, repartition is not supported yet"
+                    )));
+                };
 
-            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist, repartition is not supported yet"
-                )));
+                let shard_transfers = Arc::clone(&shards_holder_guard.shard_transfers);
+                (replica_set, shard_transfers)
             };
 
             // Wait for the replica set to have the local shard initialized
@@ -701,11 +710,30 @@ impl Collection {
                 .await?;
 
             let this_peer_id = replica_set.this_peer_id();
-            let replica_set = Arc::clone(replica_set);
+            let validate_transfer = move |transfers: &HashSet<ShardTransfer>| {
+                let is_registered = transfers.iter().any(|transfer| {
+                    transfer.is_target(this_peer_id, shard_id)
+                        && from_peer_id.is_none_or(|peer_id| transfer.from == peer_id)
+                });
+
+                if !is_registered {
+                    let sender = from_peer_id
+                        .map(|peer_id| format!(" from peer {peer_id}"))
+                        .unwrap_or_default();
+                    return Err(CollectionError::bad_request(format!(
+                        "Refusing to initiate shard transfer{sender} into shard {shard_id}: \
+                         there is no registered transfer{sender}",
+                    )));
+                }
+
+                Ok(())
+            };
+
+            let replica_set_for_wait = Arc::clone(&replica_set);
 
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
                 // Wait for transfer targeting this replica
-                let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
+                let shard_transfer_registered = shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers
                             .iter()
@@ -716,53 +744,46 @@ impl Collection {
 
                 // Reject request, if no transfer was registered within 60 seconds
                 if !shard_transfer_registered {
-                    return Ok(false);
+                    let description = format!(
+                        "Failed to initiate shard transfer: \
+                         No transfer into shard {shard_id} was registered by consensus \
+                         within 60 seconds"
+                    );
+
+                    return Err(CollectionError::Timeout { description });
                 }
 
-                // Check that request comes from expected sender
-                if let Some(from_peer_id) = from_peer_id {
-                    let transfers = shards_holder_guard
-                        .get_transfers(|transfer| transfer.is_target(this_peer_id, shard_id));
-
-                    let is_expected_sender = transfers
-                        .iter()
-                        .any(|transfer| transfer.from == from_peer_id);
-
-                    if !is_expected_sender {
-                        return Err(CollectionError::bad_request(format!(
-                            "Refusing to initiate shard transfer from peer {from_peer_id} into shard {shard_id}: \
-                             there is no registered transfer from peer {from_peer_id}",
-                        )));
-                    }
-                }
+                // Validate that request comes from expected sender
+                validate_transfer(&shard_transfers.read())?;
 
                 // Transfer is registered before the replica state is set.
                 // Wait until the local replica switches to a shard transfer state.
-                Ok(replica_set.wait_for_state_condition_sync(
+                let is_partial_or_recovery = replica_set_for_wait.wait_for_state_condition_sync(
                     |state| {
                         state
                             .get_peer_state(this_peer_id)
                             .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
                     },
                     defaults::CONSENSUS_META_OP_WAIT,
-                ))
+                );
+
+                if !is_partial_or_recovery {
+                    let description = format!(
+                        "Failed to initiate shard transfer: \
+                         Replica of shard {shard_id} on peer {this_peer_id} did not enter \
+                         a shard transfer state within {:?}",
+                        defaults::CONSENSUS_META_OP_WAIT,
+                    );
+
+                    return Err(CollectionError::Timeout { description });
+                }
+
+                Ok(())
             });
 
             match AbortOnDropHandle::new(shard_transfer_requested).await {
-                Ok(Ok(true)) => Ok(()),
-
-                Ok(Ok(false)) => {
-                    let description = "\
-                        Failed to initiate shard transfer: \
-                        Didn't receive shard transfer notification from consensus in 60 seconds";
-
-                    Err(CollectionError::Timeout {
-                        description: description.into(),
-                    })
-                }
-
+                Ok(Ok(())) => Ok(()),
                 Ok(Err(err)) => Err(err),
-
                 Err(err) => Err(CollectionError::service_error(format!(
                     "Failed to initiate shard transfer: \
                      Failed to execute wait-for-consensus-notification task: \
@@ -770,17 +791,37 @@ impl Collection {
                 ))),
             }?;
 
-            // At this point we made sure that receiver replica is synced and expecting incoming
-            // shard transfer.
-            // Further checks are an extra safety net, in normal situation they should not fail.
-
+            // Acquire the shard holder read lock and recheck the shard and transfer after
+            // waiting for consensus. Hold the lock until transfer initialization finishes,
+            // so the shard cannot be replaced or removed.
             let shards_holder_guard = shards_holder.read_owned().await;
 
-            let Some(replica_set) = shards_holder_guard.get_shard(shard_id) else {
+            // Check that the replica set is unchanged
+            let Some(current_replica_set) = shards_holder_guard.get_shard(shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {shard_id} doesn't exist, repartition is not supported yet"
                 )));
             };
+
+            if !Arc::ptr_eq(&replica_set, current_replica_set) {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} was replaced during transfer initiation"
+                )));
+            }
+
+            // Check that a matching transfer is registered
+            validate_transfer(&shards_holder_guard.shard_transfers.read())?;
+
+            // Check that the replica is in a shard transfer state
+            let is_partial_or_recovery = replica_set
+                .peer_state(this_peer_id)
+                .is_some_and(|state| state.is_partial_or_recovery());
+
+            if !is_partial_or_recovery {
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {shard_id} is no longer in a shard transfer state"
+                )));
+            }
 
             if replica_set.is_proxy().await {
                 debug_assert!(false, "We should not have proxy shard here");
