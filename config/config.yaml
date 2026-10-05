@@ -533,6 +533,9 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
-#   # If true, write audit log entries to stdout in addition to the log file.
-#   # Default: false
-#   stdout: false
+#   # Where to write audit log entries:
+#   #   file            - rolling log files in `dir`
+#   #   stdout / stderr - only the given stream, nothing is written to `dir`
+#   #   file_and_stdout / file_and_stderr - both
+#   # Default: file
+#   output: file

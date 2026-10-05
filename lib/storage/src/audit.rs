@@ -78,10 +78,9 @@ pub struct AuditConfig {
     #[serde(default = "default_log_api")]
     pub log_api: bool,
 
-    /// If true, write every audit event to stdout in addition to the log file.
-    /// Default: false.
+    /// Where to write audit events.  Default: `file`.
     #[serde(default)]
-    pub stdout: bool,
+    pub output: AuditOutput,
 }
 
 fn default_audit_dir() -> PathBuf {
@@ -102,6 +101,41 @@ pub enum AuditRotation {
     #[default]
     Daily,
     Hourly,
+}
+
+/// Destination of audit log entries.
+///
+/// A single value rather than a list, so it can be set through an environment
+/// variable (e.g. `QDRANT__AUDIT__OUTPUT=stdout`).
+#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditOutput {
+    /// Rolling log files in `dir`.
+    #[default]
+    File,
+    Stdout,
+    Stderr,
+    FileAndStdout,
+    FileAndStderr,
+}
+
+impl AuditOutput {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuditOutput::File => "file",
+            AuditOutput::Stdout => "stdout",
+            AuditOutput::Stderr => "stderr",
+            AuditOutput::FileAndStdout => "file_and_stdout",
+            AuditOutput::FileAndStderr => "file_and_stderr",
+        }
+    }
+
+    pub fn writes_file(self) -> bool {
+        match self {
+            AuditOutput::File | AuditOutput::FileAndStdout | AuditOutput::FileAndStderr => true,
+            AuditOutput::Stdout | AuditOutput::Stderr => false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,12 +189,17 @@ pub struct AuditEvent {
 // ---------------------------------------------------------------------------
 
 struct AuditLogger {
-    writer: Mutex<NonBlocking>,
-    stdout: bool,
+    writers: Vec<Mutex<NonBlocking>>,
+}
+
+/// Keeps the audit writer threads alive.  Dropping it flushes remaining
+/// buffered events and shuts the threads down.
+pub struct AuditGuard {
+    _guards: Vec<WorkerGuard>,
 }
 
 impl AuditLogger {
-    fn new(config: &AuditConfig) -> anyhow::Result<(Self, WorkerGuard)> {
+    fn new(config: &AuditConfig) -> anyhow::Result<(Self, AuditGuard)> {
         let AuditConfig {
             enabled: _,
             dir,
@@ -168,42 +207,56 @@ impl AuditLogger {
             max_log_files,
             trust_forwarded_headers: _,
             log_api: _,
-            stdout,
+            output,
         } = config;
 
-        fs_err::create_dir_all(dir)?;
+        // Each destination is wrapped in a non-blocking writer, so the actual
+        // I/O is performed by a dedicated worker thread.  The returned
+        // `WorkerGuard`s **must** be kept alive for the lifetime of the program.
+        let mut writers = Vec::new();
+        let mut guards = Vec::new();
 
-        let rotation = match rotation {
-            AuditRotation::Daily => Rotation::DAILY,
-            AuditRotation::Hourly => Rotation::HOURLY,
+        if output.writes_file() {
+            fs_err::create_dir_all(dir)?;
+
+            let rotation = match rotation {
+                AuditRotation::Daily => Rotation::DAILY,
+                AuditRotation::Hourly => Rotation::HOURLY,
+            };
+
+            let appender = RollingFileAppender::builder()
+                .rotation(rotation)
+                .filename_prefix("audit")
+                .filename_suffix("log")
+                .max_log_files((*max_log_files).max(1))
+                .build(dir)
+                .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
+
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            writers.push(Mutex::new(writer));
+            guards.push(guard);
+        }
+
+        let console = match output {
+            AuditOutput::File => None,
+            AuditOutput::Stdout | AuditOutput::FileAndStdout => {
+                Some(tracing_appender::non_blocking(std::io::stdout()))
+            }
+            AuditOutput::Stderr | AuditOutput::FileAndStderr => {
+                Some(tracing_appender::non_blocking(std::io::stderr()))
+            }
         };
+        if let Some((writer, guard)) = console {
+            writers.push(Mutex::new(writer));
+            guards.push(guard);
+        }
 
-        let appender = RollingFileAppender::builder()
-            .rotation(rotation)
-            .filename_prefix("audit")
-            .filename_suffix("log")
-            .max_log_files((*max_log_files).max(1))
-            .build(dir)
-            .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
-
-        // Wrap the appender in a non-blocking writer.  The actual file I/O is
-        // performed by a dedicated worker thread.  The returned `WorkerGuard`
-        // **must** be kept alive for the lifetime of the program – dropping it
-        // flushes remaining buffered events and shuts down the worker thread.
-        let (non_blocking, guard) = tracing_appender::non_blocking(appender);
-
-        Ok((
-            Self {
-                writer: Mutex::new(non_blocking),
-                stdout: *stdout,
-            },
-            guard,
-        ))
+        Ok((Self { writers }, AuditGuard { _guards: guards }))
     }
 
     fn write(&self, event: &AuditEvent) {
         // Serialize to a buffer first so the entire event is sent as one
-        // atomic message to the non-blocking writer (avoids interleaved
+        // atomic message to each non-blocking writer (avoids interleaved
         // partial writes from concurrent callers).
         let mut buf = match serde_json::to_vec(event) {
             Ok(buf) => buf,
@@ -214,17 +267,10 @@ impl AuditLogger {
         };
         buf.push(b'\n');
 
-        if self.stdout {
-            // `Stdout` is line-buffered and `buf` ends with a newline, so the
-            // event is flushed as a whole line.
-            if let Err(err) = std::io::stdout().write_all(&buf) {
-                log::error!("Failed to write audit log entry to stdout: {err}");
+        for writer in &self.writers {
+            if let Err(err) = writer.lock().write_all(&buf) {
+                log::error!("Failed to write audit log entry: {err}");
             }
-        }
-
-        let mut writer = self.writer.lock();
-        if let Err(err) = writer.write_all(&buf) {
-            log::error!("Failed to write audit log entry: {err}");
         }
     }
 }
@@ -237,10 +283,10 @@ impl AuditLogger {
 /// most once (from `main`).  If the config is `None` or `enabled` is `false`,
 /// no logger is created and all `audit_log` calls are no‑ops.
 ///
-/// Returns a [`WorkerGuard`] that **must** be held alive (typically in
+/// Returns an [`AuditGuard`] that **must** be held alive (typically in
 /// `main`) until the program exits.  Dropping the guard flushes any
-/// remaining buffered audit events to disk.
-pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<WorkerGuard>> {
+/// remaining buffered audit events.
+pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<AuditGuard>> {
     let Some(config) = config else {
         return Ok(None);
     };
@@ -252,7 +298,7 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         max_log_files: _,
         trust_forwarded_headers,
         log_api,
-        stdout: _,
+        output,
     } = config;
 
     if !enabled {
@@ -269,7 +315,15 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         .set(logger)
         .map_err(|_| anyhow::anyhow!("Audit logger already initialised"))?;
 
-    log::info!("Audit logging enabled, writing to {}", dir.display());
+    if output.writes_file() {
+        log::info!(
+            "Audit logging enabled, output: {}, dir: {}",
+            output.as_str(),
+            dir.display(),
+        );
+    } else {
+        log::info!("Audit logging enabled, output: {}", output.as_str());
+    }
 
     Ok(Some(guard))
 }
@@ -318,14 +372,24 @@ mod tests {
     }
 
     #[test]
-    fn stdout_flag_is_off_by_default() {
+    fn output_defaults_to_file() {
         let config: AuditConfig = serde_json::from_str("{}").expect("empty config is valid");
-        assert!(!config.stdout);
-        assert!(
-            serde_json::from_str::<AuditConfig>(r#"{"stdout": true}"#)
-                .expect("config is valid")
-                .stdout
-        );
+        assert_eq!(config.output, AuditOutput::File);
+    }
+
+    #[test]
+    fn output_values_round_trip() {
+        for output in [
+            AuditOutput::File,
+            AuditOutput::Stdout,
+            AuditOutput::Stderr,
+            AuditOutput::FileAndStdout,
+            AuditOutput::FileAndStderr,
+        ] {
+            let json = format!(r#"{{"output": "{}"}}"#, output.as_str());
+            let config: AuditConfig = serde_json::from_str(&json).expect("config is valid");
+            assert_eq!(config.output, output);
+        }
     }
 
     #[test]

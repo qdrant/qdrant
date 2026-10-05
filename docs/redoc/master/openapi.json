@@ -12117,8 +12117,8 @@
           "dir",
           "log_api",
           "max_log_files",
+          "output",
           "rotation",
-          "stdout",
           "trust_forwarded_headers"
         ],
         "properties": {
@@ -12139,8 +12139,8 @@
           "log_api": {
             "type": "boolean"
           },
-          "stdout": {
-            "type": "boolean"
+          "output": {
+            "type": "string"
           },
           "dir_size_bytes": {
             "type": "integer",
