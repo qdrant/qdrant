@@ -8,6 +8,7 @@ impl MergePlan {
     ///
     /// Validation includes:
     /// - If fusion with weights is used, the number of weights must match the number of sources.
+    /// - BM25 over a text index is a leaf, never a rescore.
     pub fn new(
         sources: Vec<Source>,
         rescore_stages: Option<RescoreStages>,
@@ -30,6 +31,7 @@ impl MergePlan {
             match source {
                 Source::SearchesIdx(_) => {}
                 Source::ScrollsIdx(_) => {}
+                Source::TextsIdx(_) => {}
                 Source::Prefetch(nested_plan) => nested_plan.validate()?,
             }
         }
@@ -68,6 +70,12 @@ fn validate_query(query: &ScoringQuery, sources: &[Source]) -> OperationResult<(
         ScoringQuery::Formula(_) => Ok(()),
         ScoringQuery::Sample(_) => Ok(()),
         ScoringQuery::Mmr(_) => Ok(()),
+        // It scores each shard's segments directly, and has no way yet to
+        // score a set of prefetched points.
+        ScoringQuery::Text(_) => Err(OperationError::validation_error(
+            "BM25 over a text index cannot rescore prefetches yet; use it as a prefetch, \
+             or as a query without prefetches",
+        )),
     }
 }
 

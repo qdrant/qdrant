@@ -275,6 +275,8 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
                 ScoringQuery::Formula(_) => {}
                 ScoringQuery::Sample(_) => {}
                 ScoringQuery::Mmr(_) => {}
+                // Not exposed: edge does not run BM25 over a text index yet.
+                ScoringQuery::Text(_) => {}
             }
         }
 
@@ -304,6 +306,10 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
             ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
             ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
             ScoringQuery::Mmr(mmr) => PyMmr(mmr).into_bound_py_any(py),
+            // Never built from Python, see `_variants`.
+            ScoringQuery::Text(_) => Err(PyValueError::new_err(
+                "BM25 over a text index is not supported on edge yet",
+            )),
         }
     }
 }
@@ -327,6 +333,7 @@ impl Repr for PyScoringQuery {
             ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
             ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
             ScoringQuery::Mmr(mmr) => PyMmr::wrap_ref(mmr).fmt(f),
+            ScoringQuery::Text(_) => f.unimplemented(),
         }
     }
 }

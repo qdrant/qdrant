@@ -508,6 +508,7 @@ impl ShardOperation for LocalShard {
                 .iter()
                 .map(|s| s.search_rate_cost())
                 .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
+                .chain(planned_query.texts.iter().map(|t| t.text_rate_cost()))
                 .sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
