@@ -190,6 +190,19 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         }
     }
 
+    /// The points [`Self::visible_scan_masks`] hides from a query, as ids
+    /// rather than masks, for callers that count what a query can see.
+    pub fn invisible_points(self) -> InvisiblePoints<'a> {
+        let (cutoff, deleted, shadowed) = self.visible_scan_masks();
+        let (total, _) = self.internal_scan_masks();
+        InvisiblePoints {
+            cutoff,
+            total,
+            deleted,
+            shadowed,
+        }
+    }
+
     /// Mask form of [`Self::iter_internal`]: an id is in the iteration iff it
     /// is below the returned total point count and unset in the deleted
     /// bitslice. Unlike [`Self::visible_scan_masks`], no deferred or
@@ -298,5 +311,97 @@ self_cell! {
 
         #[covariant]
         dependent: IdTrackerEnumMappingsRef,
+    }
+}
+
+/// The points a query cannot see: deleted, shadowed, or at or above the
+/// deferred cutoff. See [`PointMappingsRefEnum::invisible_points`].
+#[derive(Clone, Copy)]
+pub struct InvisiblePoints<'a> {
+    cutoff: Option<PointOffsetType>,
+    total: PointOffsetType,
+    deleted: &'a BitSlice,
+    shadowed: &'a BitSlice,
+}
+
+impl<'a> InvisiblePoints<'a> {
+    /// Only the points `deleted` marks, with nothing deferred or shadowed.
+    pub fn deleted(deleted: &'a BitSlice) -> Self {
+        Self {
+            cutoff: None,
+            total: 0,
+            deleted,
+            shadowed: BitSlice::empty(),
+        }
+    }
+
+    /// Every invisible point once, in no particular order. A point that is
+    /// both deleted and shadowed, or deleted and deferred, is yielded once.
+    pub fn iter(self) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let Self {
+            cutoff,
+            total,
+            deleted,
+            shadowed,
+        } = self;
+        let below_cutoff = move |id: &PointOffsetType| cutoff.is_none_or(|cutoff| *id < cutoff);
+        let deleted_ids = deleted
+            .iter_ones()
+            .map(|id| id as PointOffsetType)
+            .filter(below_cutoff);
+        let shadowed_ids = shadowed
+            .iter_ones()
+            .map(|id| id as PointOffsetType)
+            .filter(below_cutoff)
+            .filter(move |&id| !deleted.get_bit(id as usize).unwrap_or(false));
+        let deferred_ids = cutoff.map_or(0..0, |cutoff| cutoff..total);
+        deleted_ids.chain(shadowed_ids).chain(deferred_ids)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::bitvec::BitVec;
+
+    use super::*;
+
+    fn bits(len: usize, ones: &[usize]) -> BitVec {
+        let mut bits = BitVec::repeat(false, len);
+        for &one in ones {
+            bits.set(one, true);
+        }
+        bits
+    }
+
+    fn sorted(invisible: InvisiblePoints<'_>) -> Vec<PointOffsetType> {
+        let mut ids: Vec<_> = invisible.iter().collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    #[test]
+    fn invisible_points_are_yielded_once() {
+        let deleted = bits(8, &[1, 3, 6]);
+        let shadowed = bits(8, &[2, 3]);
+
+        // Without a cutoff: deleted and shadowed, 3 being both.
+        let invisible = InvisiblePoints {
+            cutoff: None,
+            total: 8,
+            deleted: &deleted,
+            shadowed: &shadowed,
+        };
+        assert_eq!(sorted(invisible), [1, 2, 3, 6]);
+
+        // With one: deleted below it, then everything from it on, 6 being both.
+        let invisible = InvisiblePoints {
+            cutoff: Some(5),
+            total: 8,
+            deleted: &deleted,
+            shadowed: BitSlice::empty(),
+        };
+        assert_eq!(sorted(invisible), [1, 3, 5, 6, 7]);
+
+        assert_eq!(sorted(InvisiblePoints::deleted(&deleted)), [1, 3, 6]);
     }
 }

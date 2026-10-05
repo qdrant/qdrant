@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::bitvec::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
@@ -16,6 +15,7 @@ use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::id_tracker::InvisiblePoints;
 use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
@@ -99,13 +99,13 @@ pub trait PayloadIndexRead {
 
     /// Add this segment's contribution to the corpus statistics of a text
     /// field: document frequency per seeded term, document count, and total
-    /// tokens. A field with no text index contributes nothing. `deleted` is
-    /// the id tracker's deleted bitslice: points it marks are not documents,
-    /// even when the deletion never reached the field index.
+    /// tokens. A field with no text index contributes nothing. `invisible`
+    /// are the points a query cannot see: they are not documents, even where
+    /// the field index still counts them.
     fn fill_text_statistics(
         &self,
         field: PayloadKeyTypeRef,
-        deleted: &BitSlice,
+        invisible: InvisiblePoints<'_>,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,

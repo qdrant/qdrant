@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -27,6 +28,16 @@ fn field() -> JsonPath {
 
 /// A segment with a text index over `documents`, one point each.
 fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
+    build_text_segment_deferred(path, documents, None)
+}
+
+/// [`build_text_segment`] with every offset from `deferred_internal_id` on
+/// deferred.
+fn build_text_segment_deferred(
+    path: &std::path::Path,
+    documents: &[&str],
+    deferred_internal_id: Option<PointOffsetType>,
+) -> Segment {
     let config = SegmentConfig {
         vector_data: Default::default(),
         sparse_vector_data: HashMap::new(),
@@ -34,7 +45,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
         id_tracker_memory: None,
     };
 
-    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let mut op_num: SeqNumberType = 0;
@@ -161,4 +172,61 @@ fn deleted_points_leave_text_statistics() {
         // 4 + 2 tokens over the 2 remaining documents.
         assert_eq!(text.avg_doc_len(), Some(3.0), "append_only: {append_only}");
     }
+}
+
+/// The text statistics of `segment` for `field()`: `N` and `avgdl`.
+fn gather(segment: &Segment) -> (usize, Option<f32>) {
+    let mut query_context = QueryContext::default();
+    query_context.init_text_stats(&field(), ["quick"].map(str::to_string));
+    segment.fill_query_context(&mut query_context).unwrap();
+    let segment_context = query_context.get_segment_query_context();
+    let text = segment_context.get_text_context(&field()).unwrap();
+    (text.document_count(), text.avg_doc_len())
+}
+
+/// Deferred points are indexed like any other but invisible to a query, so
+/// they are not documents yet. Under append-only mutations an update of a
+/// visible point clones it behind the cutoff, and the version a query still
+/// sees is counted, once.
+#[test]
+fn deferred_points_leave_text_statistics() {
+    let _scoring = TextIndexParams::override_scoring(true);
+    let hw_counter = HardwareCounterCell::new();
+
+    let dir = Builder::new()
+        .prefix("text_stats_deferred")
+        .tempdir()
+        .unwrap();
+    let mut segment = build_text_segment_deferred(
+        &dir.path().join("segment"),
+        &[
+            "the quick brown fox",
+            "a quick fox",
+            "deferred text",
+            "another deferred document",
+        ],
+        Some(2),
+    );
+    // 4 + 3 tokens over the 2 visible documents.
+    assert_eq!(gather(&segment), (2, Some(3.5)));
+
+    segment.append_only_mutations = true;
+    segment
+        .upsert_point(
+            100,
+            PointIdType::from(0),
+            NamedVectors::default(),
+            &hw_counter,
+        )
+        .unwrap();
+    segment
+        .set_payload(
+            100,
+            PointIdType::from(0),
+            &payload_json! { "text": "short" },
+            &None,
+            &hw_counter,
+        )
+        .unwrap();
+    assert_eq!(gather(&segment), (2, Some(3.5)), "the update is deferred");
 }

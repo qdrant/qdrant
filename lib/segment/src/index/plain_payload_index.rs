@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
-use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
@@ -19,7 +18,7 @@ use super::payload_config::PayloadFieldSchemaWithIndexType;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::id_tracker::{IdTrackerEnum, IdTrackerRead, InvisiblePoints};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::full_text_index::Bm25Params;
@@ -203,7 +202,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn fill_text_statistics(
         &self,
         _field: PayloadKeyTypeRef,
-        _deleted: &BitSlice,
+        _invisible: InvisiblePoints<'_>,
         _stats: &mut TextFieldStats,
         _is_stopped: &AtomicBool,
         _hw_counter: &HardwareCounterCell,
