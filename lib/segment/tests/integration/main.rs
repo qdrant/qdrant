@@ -1,6 +1,7 @@
 #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
 mod batch_search_test;
+mod bm25_compare;
 mod byte_storage_hnsw_test;
 mod byte_storage_quantization_test;
 mod disbalanced_vectors_test;
