@@ -32,18 +32,25 @@ use crate::operations::universal_query::shard_query::{
 pub enum FetchedSource {
     Search(usize),
     Scroll(usize),
+    Text(usize),
 }
 
 struct PrefetchResults {
     search_results: Mutex<Vec<Vec<ScoredPoint>>>,
     scroll_results: Mutex<Vec<Vec<ScoredPoint>>>,
+    text_results: Mutex<Vec<Vec<ScoredPoint>>>,
 }
 
 impl PrefetchResults {
-    fn new(search_results: Vec<Vec<ScoredPoint>>, scroll_results: Vec<Vec<ScoredPoint>>) -> Self {
+    fn new(
+        search_results: Vec<Vec<ScoredPoint>>,
+        scroll_results: Vec<Vec<ScoredPoint>>,
+        text_results: Vec<Vec<ScoredPoint>>,
+    ) -> Self {
         Self {
             scroll_results: Mutex::new(scroll_results),
             search_results: Mutex::new(search_results),
+            text_results: Mutex::new(text_results),
         }
     }
 
@@ -51,6 +58,7 @@ impl PrefetchResults {
         match element {
             FetchedSource::Search(idx) => self.search_results.lock().get_mut(idx).map(mem::take),
             FetchedSource::Scroll(idx) => self.scroll_results.lock().get_mut(idx).map(mem::take),
+            FetchedSource::Text(idx) => self.text_results.lock().get_mut(idx).map(mem::take),
         }
         .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
     }
@@ -81,9 +89,12 @@ impl LocalShard {
             hw_counter_acc.clone(),
         );
 
-        // execute both searches and scrolls concurrently
-        let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
-        let prefetch_holder = PrefetchResults::new(search_results, scroll_results);
+        let texts_f = self.do_text_searches(request.texts, timeout, hw_counter_acc.clone());
+
+        // execute searches, scrolls and BM25 queries concurrently
+        let (search_results, scroll_results, text_results) =
+            tokio::try_join!(searches_f, scrolls_f, texts_f)?;
+        let prefetch_holder = PrefetchResults::new(search_results, scroll_results, text_results);
 
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
@@ -227,6 +238,9 @@ impl LocalShard {
                     }
                     Source::ScrollsIdx(idx) => {
                         sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
+                    }
+                    Source::TextsIdx(idx) => {
+                        sources.push(prefetch_holder.get(FetchedSource::Text(idx))?)
                     }
                     Source::Prefetch(prefetch) => {
                         let merged = self
@@ -418,6 +432,10 @@ impl LocalShard {
                 )
                 .await
             }
+            // Refused when the query is planned, see `MergePlan::validate`.
+            ScoringQuery::Text(_) => Err(CollectionError::service_error(
+                "BM25 over a text index cannot rescore prefetches",
+            )),
         }
     }
 
