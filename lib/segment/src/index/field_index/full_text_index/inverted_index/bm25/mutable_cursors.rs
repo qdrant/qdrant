@@ -13,13 +13,17 @@ struct MutableCursor<'a> {
     frequencies: Option<FrequencyLookup<'a>>,
 }
 
-/// Where a cursor's current id sits in its list's frequencies.
+/// Finds the term frequency of a cursor's current id.
+///
+/// The bitmap iterator does not expose its position, so the cursor tracks it.
 struct FrequencyLookup<'a> {
-    /// The list's ids, only to rank an id a seek landed on.
+    /// The list's ids. Used only to recompute `at` with a rank after a seek.
     ids: &'a RoaringBitmap,
+    /// The frequency of each id, in id order: the n-th id's is `values[n]`.
     values: &'a [u32],
-    /// The index of the cursor's current id in `values`, once known: a seek
-    /// loses it, and only a read of the frequency pays the rank to find it.
+    /// The position of the current id in `values`. Moving to the next id
+    /// increments it, a seek resets it to `None`, and reading a frequency
+    /// recomputes it from `ids` if needed (so seeks never pay for the rank).
     at: Option<usize>,
 }
 
