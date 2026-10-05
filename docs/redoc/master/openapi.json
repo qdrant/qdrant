@@ -12160,6 +12160,7 @@
           "dir",
           "log_api",
           "max_log_files",
+          "output",
           "rotation",
           "trust_forwarded_headers"
         ],
@@ -12180,6 +12181,9 @@
           },
           "log_api": {
             "type": "boolean"
+          },
+          "output": {
+            "type": "string"
           },
           "dir_size_bytes": {
             "type": "integer",
