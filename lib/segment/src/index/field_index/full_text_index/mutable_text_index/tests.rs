@@ -55,6 +55,7 @@ fn test_full_text_indexing() {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     {
@@ -184,9 +185,9 @@ fn test_full_text_indexing() {
     }
 }
 
-/// Build a gridstore index with length recording forced on or off, so both
-/// shapes stay covered while `TextIndexParams::scoring` is a const saying
-/// `false`.
+/// Build a gridstore index with length recording forced on or off,
+/// independently of the params, so a test can pick any shape, including ones
+/// params no longer produce (see [`length_config`]).
 fn gridstore_index(
     path: std::path::PathBuf,
     config: TextIndexParams,
@@ -212,6 +213,14 @@ fn doc_lens(index: &FullTextIndex) -> (Vec<u32>, u64) {
     (lens, inverted.total_tokens)
 }
 
+/// Params with `phrase_matching` as given and `scoring` unset: the tests pass
+/// the recording flag to [`gridstore_index`] themselves.
+///
+/// `length_config(false)` with recording on is **positions off, lengths on**, a
+/// shape params cannot produce any more, since `scoring` implies
+/// `phrase_matching`. The tests that build it are kept on purpose, as guards
+/// for a TF-only tier: lengths recorded without positions, which would bring
+/// back the deduplicated gridstore records these tests were written against.
 fn length_config(phrase_matching: bool) -> TextIndexParams {
     TextIndexParams {
         r#type: TextIndexType::Text,
@@ -226,12 +235,14 @@ fn length_config(phrase_matching: bool) -> TextIndexParams {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     }
 }
 
 /// `phrase_matching: false` is the case at risk: those tokens are deduplicated
 /// on the way to the gridstore, so a length derived from them after reopening
-/// would count distinct terms rather than all of them.
+/// would count distinct terms rather than all of them. That case is a TF-only
+/// tier guard, see [`length_config`].
 #[rstest]
 fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
@@ -295,6 +306,7 @@ fn doc_len_excludes_array_boundary_sentinels() {
 /// `tokenize_doc` does not strip the sentinel's own character from user text,
 /// so those tokens are indexed and must be counted. Filtering the count by
 /// value rather than by inserted count reads this document as two tokens long.
+/// Positions off, lengths on: a TF-only tier guard, see [`length_config`].
 #[test]
 fn doc_len_counts_sentinel_characters_in_user_text() {
     let temp_dir = Builder::new().prefix("doc_len_nul").tempdir().unwrap();
@@ -322,7 +334,8 @@ fn doc_len_counts_sentinel_characters_in_user_text() {
 }
 
 /// Removing a point takes its length back out of the running total, so `avgdl`
-/// is not inflated by documents that no longer exist.
+/// is not inflated by documents that no longer exist. Positions off, lengths
+/// on: a TF-only tier guard, see [`length_config`].
 #[test]
 fn removing_a_point_discounts_its_length() {
     let temp_dir = Builder::new().prefix("doc_len_remove").tempdir().unwrap();
@@ -352,7 +365,9 @@ fn removing_a_point_discounts_its_length() {
     assert_eq!(doc_lens(&index), (vec![3, 0], 3));
 }
 
-/// Overwriting a point replaces its length instead of adding to it.
+/// Overwriting a point replaces its length instead of adding to it. Built
+/// positions off, lengths on (`new(false, true)`): a TF-only tier guard, see
+/// [`length_config`].
 #[test]
 fn overwriting_a_point_replaces_its_length() {
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
