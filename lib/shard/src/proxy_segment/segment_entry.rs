@@ -861,20 +861,13 @@ impl ReadSegmentEntry for ProxySegment {
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         // A text field whose wrapped index is stale contributes nothing, as it
-        // scores nothing: its statistics are set aside while the wrapped
-        // segment fills the rest, which only fills the fields it is given.
-        let stale: Vec<_> = query_context
+        // scores nothing: its statistics are reverted to what they were before
+        // the wrapped segment filled them.
+        let stale_indexes_to_restore: Vec<_> = query_context
             .mut_text_stats()
-            .keys()
-            .filter(|field| self.is_wrapped_index_stale(field))
-            .cloned()
-            .collect();
-        let set_aside: Vec<_> = stale
-            .into_iter()
-            .filter_map(|field| {
-                let stats = query_context.mut_text_stats().remove(&field)?;
-                Some((field, stats))
-            })
+            .iter()
+            .filter(|(field, _)| self.is_wrapped_index_stale(field))
+            .map(|(field, stats)| (field.clone(), stats.clone()))
             .collect();
 
         // Information from temporary segment is not too important for query context
@@ -883,7 +876,11 @@ impl ReadSegmentEntry for ProxySegment {
             .get()
             .read()
             .fill_query_context(query_context);
-        query_context.mut_text_stats().extend(set_aside);
+
+        // restore the text stats, so it is not affected by stalled indexes
+        for (field, stats) in stale_indexes_to_restore {
+            query_context.mut_text_stats().insert(field, stats);
+        }
         filled
     }
 

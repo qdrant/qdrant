@@ -51,7 +51,7 @@ pub struct IdfScopeStats {
 /// Corpus statistics for one text field, summed over every segment of one
 /// local shard. Keyed by term string rather than `TokenId`, which is local to
 /// the segment that assigned it.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextFieldStats {
     /// Document frequency per query term, seeded with the terms the query
     /// needs so each segment knows which ones to resolve and report.
