@@ -1373,27 +1373,22 @@ impl ShardHolder {
         ))
     }
 
+    /// Extract a shard snapshot and prepare its files for recovering the local replica.
+    ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn restore_shard_snapshot(
-        &self,
+    /// This method is cancel safe.
+    #[expect(clippy::too_many_arguments)]
+    pub async fn prepare_shard_snapshot(
         snapshot_data: SnapshotData,
-        recovery_type: RecoveryType,
-        collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-        recovery_progress: Option<RecoveryProgressHandle>,
+        recovery_progress: Option<&RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
-    ) -> CollectionResult<()> {
-        if !self.contains_shard(shard_id) {
-            return Err(shard_not_found_error(shard_id));
-        }
-
+    ) -> CollectionResult<tempfile::TempDir> {
         if !temp_dir.exists() {
             fs::create_dir_all(temp_dir)?;
         }
@@ -1403,47 +1398,62 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         // Set unpacking stage
-        if let Some(recovery_progress) = &recovery_progress {
+        if let Some(recovery_progress) = recovery_progress {
             recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
         }
 
-        let extract = {
-            let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
+        let extract = cancel::blocking::spawn_cancel_on_token(
+            cancel.child_token(),
+            move |cancel| -> CollectionResult<_> {
+                // TODO: Make `tar_unpack_file`/`move_all` cancellable?
+                match snapshot_data {
+                    SnapshotData::Packed(snapshot_path) => {
+                        if cancel.is_cancelled() {
+                            return Err(cancel::Error::Cancelled.into());
+                        }
 
-            cancel::blocking::spawn_cancel_on_token(
-                cancel.child_token(),
-                move |cancel| -> CollectionResult<_> {
-                    match snapshot_data {
-                        SnapshotData::Packed(snapshot_path) => {
-                            if cancel.is_cancelled() {
-                                return Err(cancel::Error::Cancelled.into());
-                            }
-                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir)?;
-                            snapshot_path.close()?;
-                        }
-                        SnapshotData::Unpacked(snapshot_dir) => {
-                            move_all(snapshot_dir.path(), &snapshot_temp_dir)?;
-                        }
+                        tar_unpack_file(&snapshot_path, snapshot_temp_dir.path())?;
+                        snapshot_path.close()?;
                     }
 
-                    if cancel.is_cancelled() {
-                        return Err(cancel::Error::Cancelled.into());
+                    SnapshotData::Unpacked(snapshot_dir) => {
+                        move_all(snapshot_dir.path(), snapshot_temp_dir.path())?;
                     }
+                }
 
-                    ShardReplicaSet::restore_snapshot(
-                        &snapshot_temp_dir,
-                        this_peer_id,
-                        is_distributed,
-                    )?;
-                    common::fs::bulk_sync_dir(&snapshot_temp_dir)?;
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
 
-                    Ok(())
-                },
-            )
-        };
+                ShardReplicaSet::restore_snapshot(
+                    snapshot_temp_dir.path(),
+                    this_peer_id,
+                    is_distributed,
+                )?;
 
-        extract.await??;
+                common::fs::bulk_sync_dir(snapshot_temp_dir.path())?;
+                Ok(snapshot_temp_dir)
+            },
+        );
 
+        extract.await?
+    }
+
+    /// Replace or merge the local replica's files with files from the extracted snapshot directory,
+    /// then load the recovered shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    pub async fn restore_shard_snapshot(
+        &self,
+        snapshot_temp_dir: &Path,
+        recovery_type: RecoveryType,
+        collection_path: &Path,
+        shard_id: ShardId,
+        recovery_progress: Option<RecoveryProgressHandle>,
+        cancel: cancel::CancellationToken,
+    ) -> CollectionResult<()> {
         // Set restoring stage
         if let Some(recovery_progress) = &recovery_progress {
             recovery_progress.lock().set_stage(RecoveryStage::Restoring);
@@ -1453,7 +1463,7 @@ impl ShardHolder {
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(
-                snapshot_temp_dir.path(),
+                snapshot_temp_dir,
                 recovery_type,
                 collection_path,
                 shard_id,
