@@ -149,9 +149,11 @@ impl<'a> QuantizedScorerBuilder<'a> {
         storage: &'a Q,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.datatype {
-            // A Turbo4 source is dequantized to `f32` before re-quantization, so
-            // its query is preprocessed as `VectorElementType` like Float32.
-            VectorStorageDatatype::Float32 | VectorStorageDatatype::Turbo4 => match self.distance {
+            // A TurboQuant source is dequantized to `f32` before re-quantization,
+            // so its query is preprocessed as `VectorElementType` like Float32.
+            VectorStorageDatatype::Float32
+            | VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8 => match self.distance {
                 Distance::Cosine => {
                     self.build_with_metric::<VectorElementType, CosineMetric, _>(storage)
                 }

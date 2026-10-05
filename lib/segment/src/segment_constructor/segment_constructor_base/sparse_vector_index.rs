@@ -69,7 +69,7 @@ pub(crate) fn open_or_create_sparse_vector_index(
         (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
             VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
         }
-        (_, VectorStorageDatatype::Turbo4) => {
+        (_, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
             unreachable!("Sparse index incompatible with turbo. Validated at API level.")
         }
     };

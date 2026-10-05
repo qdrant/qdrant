@@ -20,14 +20,12 @@ use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
-use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::turboquant::{EncodedQueryTQ, TQBits};
 use quantization::{EncodedStorage, EncodedStorageWrite};
 use smallvec::{SmallVec, smallvec};
 
-use super::super::shared::{
-    DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
-};
+use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -104,6 +102,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     multi_vector_config: MultiVectorConfig,
     in_ram: bool,
 ) -> OperationResult<AppendableMmapMultiTurboVectorStorage> {
@@ -111,14 +110,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
     let populate = Populate::from(in_ram);
 
-    let quantizer = TurboQuantizer::new(
-        dim,
-        TQDT_BITS,
-        TQDT_MODE,
-        distance.into(),
-        TQDT_ROTATION,
-        None,
-    );
+    let quantizer = shared::build_quantizer(dim, distance, bits);
 
     let storage = QuantizedChunkedStorage::new(
         MmapFs,
@@ -534,7 +526,7 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
     fn is_on_disk(&self) -> bool {
@@ -757,6 +749,7 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
     use crate::vector_storage::common::CHUNK_SIZE;
+    use crate::vector_storage::turbo::shared::{TQDT_MODE, TQDT_ROTATION};
 
     /// Deterministic multivectors of unit inner vectors; point `i` gets `(i % 4) + 1` inner vectors.
     fn make_multi_vectors(dim: usize, count: usize, seed: u64) -> Vec<MultiDenseVectorInternal> {
@@ -825,11 +818,9 @@ mod tests {
 
     impl Oracle {
         fn new(dim: usize, distance: Distance) -> Self {
-            // TQDT_BITS / TQDT_MODE come from turbo/mod.rs via the production
-            // `use super::{…}` + the test module's `use super::*;` (same as the dense tests).
             let quantizer = TurboQuantizer::new(
                 dim,
-                TQDT_BITS,
+                TQBits::Bits4,
                 TQDT_MODE,
                 distance.into(),
                 TQDT_ROTATION,
@@ -883,6 +874,7 @@ mod tests {
                         dir.path(),
                         dim,
                         distance,
+                        TQBits::Bits4,
                         MultiVectorConfig::default(),
                         false,
                     )
@@ -897,6 +889,7 @@ mod tests {
                     dir.path(),
                     dim,
                     distance,
+                    TQBits::Bits4,
                     MultiVectorConfig::default(),
                     true,
                 )
@@ -997,6 +990,7 @@ mod tests {
                         dir.path(),
                         dim,
                         distance,
+                        TQBits::Bits4,
                         MultiVectorConfig::default(),
                         false,
                     )
@@ -1028,6 +1022,7 @@ mod tests {
                     dir.path(),
                     dim,
                     distance,
+                    TQBits::Bits4,
                     MultiVectorConfig::default(),
                     true,
                 )
@@ -1072,6 +1067,7 @@ mod tests {
                 src_dir.path(),
                 DIM,
                 distance,
+                TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
             )
@@ -1084,6 +1080,7 @@ mod tests {
                 dst_dir.path(),
                 DIM,
                 distance,
+                TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
             )
@@ -1119,6 +1116,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1165,6 +1163,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1265,6 +1264,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1343,6 +1343,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1394,6 +1395,7 @@ mod tests {
                 dir.path(),
                 DIM,
                 distance,
+                TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
             )
@@ -1440,6 +1442,7 @@ mod tests {
                 dir.path(),
                 DIM,
                 distance,
+                TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
             )
@@ -1485,6 +1488,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1518,6 +1522,7 @@ mod tests {
                 dir.path(),
                 DIM,
                 distance,
+                TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
             )
@@ -1660,6 +1665,7 @@ mod tests {
             dir.path(),
             dim,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             in_ram,
         )
@@ -1720,6 +1726,7 @@ mod tests {
                         dir.path(),
                         dim,
                         distance,
+                        TQBits::Bits4,
                         MultiVectorConfig::default(),
                         in_ram,
                     )
@@ -1739,6 +1746,7 @@ mod tests {
             dir.path(),
             dim,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             in_ram,
         )
@@ -1751,6 +1759,7 @@ mod tests {
             dst_dir.path(),
             dim,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             false,
         )
@@ -1772,6 +1781,7 @@ mod tests {
             dst_dir.path(),
             dim,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1827,6 +1837,7 @@ mod tests {
             dir.path(),
             DIM,
             distance,
+            TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
         )
@@ -1896,6 +1907,7 @@ mod tests {
                         dir.path(),
                         dim,
                         distance,
+                        TQBits::Bits4,
                         MultiVectorConfig::default(),
                         true,
                     )
@@ -1958,6 +1970,7 @@ mod tests {
                         dir.path(),
                         dim,
                         distance,
+                        TQBits::Bits4,
                         MultiVectorConfig::default(),
                         true,
                     )

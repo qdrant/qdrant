@@ -29,7 +29,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
-use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
+use crate::vector_storage::turbo::{open_appendable_turbo_vector_storage, tq_bits};
 use crate::vector_storage::{
     MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
     VectorStorageRead,
@@ -457,9 +457,15 @@ pub fn open_appendable_memmap_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 => {
-            open_appendable_turbo_vector_storage(vector_storage_path, size, distance, populate)
-                .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s)))
+        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+            open_appendable_turbo_vector_storage(
+                vector_storage_path,
+                size,
+                distance,
+                tq_bits(storage_element_type),
+                populate,
+            )
+            .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s)))
         }
     }
 }
@@ -498,14 +504,17 @@ pub fn open_appendable_memmap_multi_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 => open_appendable_turbo_multi_vector_storage(
-            path,
-            dim,
-            distance,
-            multi_vector_config,
-            populate,
-        )
-        .map(|s| VectorStorageEnum::MultiDenseTurbo(Box::new(s))),
+        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+            open_appendable_turbo_multi_vector_storage(
+                path,
+                dim,
+                distance,
+                tq_bits(storage_element_type),
+                multi_vector_config,
+                populate,
+            )
+            .map(|s| VectorStorageEnum::MultiDenseTurbo(Box::new(s)))
+        }
     }
 }
 

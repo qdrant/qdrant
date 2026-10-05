@@ -316,10 +316,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
             }
             (
                 SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
-                VectorStorageDatatype::Turbo4,
+                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8,
             ) => {
                 return Err(OperationError::service_error(
-                    "Turbo4 datatype storage is not yet supported",
+                    "TurboQuant datatype storage is not yet supported",
                 ));
             }
         };

@@ -84,6 +84,8 @@ pub enum VectorStorageDatatype {
     /// engine reports for a Turbo-quantized field; configure TurboQuant itself
     /// via [`QuantizationConfig::Turbo`], not by setting this datatype directly.
     Turbo4,
+    /// TurboQuant 8-bit storage.
+    Turbo8,
 }
 
 impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
@@ -93,6 +95,7 @@ impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
             VectorStorageDatatype::Float16 => SegmentVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => SegmentVectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4 => SegmentVectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8 => SegmentVectorStorageDatatype::Turbo8,
         }
     }
 }
@@ -104,6 +107,7 @@ impl From<SegmentVectorStorageDatatype> for VectorStorageDatatype {
             SegmentVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             SegmentVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
             SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            SegmentVectorStorageDatatype::Turbo8 => VectorStorageDatatype::Turbo8,
         }
     }
 }

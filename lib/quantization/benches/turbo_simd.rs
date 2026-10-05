@@ -5,18 +5,20 @@ use quantization::encoded_vectors_binary::BitsStoreType;
 use quantization::turboquant::simd::{
     Query1bitSimd, Query1bitWideSimd, QuerySimd, score_1bit_internal, score_1bit_internal_scalar,
     score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
-    score_4bit_internal_scalar,
+    score_4bit_internal_scalar, score_8bit_internal, score_8bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
     score_1bit_internal_avx2, score_1bit_internal_avx512_vpopcntdq, score_1bit_internal_sse,
     score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
     score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
+    score_8bit_internal_avx2, score_8bit_internal_avx512_vnni, score_8bit_internal_sse,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use quantization::turboquant::simd::{
     score_1bit_internal_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
-    score_4bit_internal_neon, score_4bit_internal_neon_sdot,
+    score_4bit_internal_neon, score_4bit_internal_neon_sdot, score_8bit_internal_neon,
+    score_8bit_internal_neon_sdot,
 };
 use rand::prelude::SmallRng;
 use rand::seq::SliceRandom;
@@ -27,6 +29,7 @@ use rand::{RngExt, SeedableRng};
 /// that hits the worst-case tail for that pipeline:
 ///   • odd chunk count → SDOT / AVX2 / AVX-512 leftover branch fires.
 ///   • `dim % chunk_dim` at its maximum → scalar tail helper does the most work.
+const DIMS_8BIT: &[usize] = &[128, 1535, 1536]; // 1535 = odd block count + maximal tail
 const DIMS_4BIT: &[usize] = &[128, 1534, 1536]; // 1534 = 95 chunks (odd) + 14-dim tail
 const DIMS_2BIT: &[usize] = &[128, 1532, 1536]; // 1532 = 95 chunks (odd) + 12-dim tail
 const DIMS_1BIT: &[usize] = &[128, 1528, 1536]; // 1528 = 11 blocks (odd) + 120-dim tail
@@ -223,6 +226,7 @@ fn dotprod_cold<const PLANES: usize, const QUERY_BYTES: usize>(
 }
 
 fn bench_dotprod_cold(c: &mut Criterion) {
+    dotprod_cold::<1, 2>(c, "query8bit_dotprod_cold", DIMS_8BIT);
     dotprod_cold::<2, 2>(c, "query4bit_dotprod_cold", DIMS_4BIT);
     dotprod_cold::<4, 2>(c, "query2bit_dotprod_cold", DIMS_2BIT);
     dotprod_cold::<8, 1>(c, "query1bit_dotprod_cold", DIMS_1BIT);
@@ -346,6 +350,11 @@ fn dotprod_scan<const PLANES: usize, const QUERY_BYTES: usize>(
 /// Scan dims: powers of two plus each width's odd-block-count dim with a
 /// maximal tail (see `DIMS_{4,2,1}BIT`).
 fn bench_dotprod_scan(c: &mut Criterion) {
+    dotprod_scan::<1, 2>(
+        c,
+        "query8bit_dotprod_scan",
+        &[64, 128, 256, 512, 1024, 1535, 1536],
+    );
     dotprod_scan::<2, 2>(
         c,
         "query4bit_dotprod_scan",
@@ -732,8 +741,60 @@ fn bench_score_2bit_cold(c: &mut Criterion) {
     group.finish();
 }
 
+/// [`score_8bit_internal`] with both vectors cold from DRAM, as in
+/// [`bench_score_cold`].
+fn bench_score_8bit_cold(c: &mut Criterion) {
+    type Kernel = unsafe fn(&[u8], &[u8]) -> f32;
+    let mut kernels: Vec<(&str, Kernel)> = vec![
+        ("scalar", score_8bit_internal_scalar),
+        ("dispatch", score_8bit_internal),
+    ];
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        kernels.push(("neon", score_8bit_internal_neon));
+        if std::arch::is_aarch64_feature_detected!("dotprod") {
+            kernels.push(("neon_sdot", score_8bit_internal_neon_sdot));
+        }
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse4.1") {
+            kernels.push(("sse", score_8bit_internal_sse));
+        }
+        if std::is_x86_feature_detected!("avx2") {
+            kernels.push(("avx2", score_8bit_internal_avx2));
+        }
+        if std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vnni")
+        {
+            kernels.push(("avx512_vnni", score_8bit_internal_avx512_vnni));
+        }
+    }
+
+    let mut group = c.benchmark_group("query8bit_score_cold");
+    for dim in dims(DIMS_8BIT) {
+        let pool = VectorPool::with_packed_bytes(dim, 7);
+        group.throughput(Throughput::Elements(dim as u64));
+        for &(name, kernel) in &kernels {
+            group.bench_with_input(BenchmarkId::new(name, dim), &dim, |b, _| {
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let va = pool.vector(cursor);
+                    let vb = pool.vector(cursor + 1);
+                    cursor = cursor.wrapping_add(2);
+                    // SAFETY: only kernels the host supports are listed.
+                    unsafe { kernel(black_box(va), black_box(vb)) }
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_score_8bit_cold,
     bench_dotprod_cold,
     bench_dotprod_scan,
     bench_score_cold,

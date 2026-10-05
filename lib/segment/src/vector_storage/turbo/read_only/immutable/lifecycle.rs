@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use quantization::turboquant::TQBits;
 
 use super::ReadOnlyImmutableTurboVectorStorage;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -26,7 +27,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
         Ok(())
     }
 
-    /// Open the read-only counterpart of a single-file `Turbo4` dense storage at
+    /// Open the read-only counterpart of a single-file TurboQuant dense storage at
     /// `path`, threading every file open through `fs`; reads the existing layout
     /// but creates and writes nothing.
     pub fn open(
@@ -34,9 +35,10 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage =
             QuantizedStorage::from_file(fs, &path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
@@ -65,8 +67,9 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>> 
         graph: HnswGraph<S>,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         Ok(Self {
             on_disk: graph.is_on_disk(),
             storage: GraphVectors::new(graph, quantizer.quantized_size())?,

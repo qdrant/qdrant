@@ -15,6 +15,20 @@ const CENTROIDS_4BIT: [f32; 16] = [
 ];
 const CENTROIDS_4BIT_BOUNDARIES: [f32; 15] = calculate_boundaries(CENTROIDS_4BIT);
 
+/// 8-bit: not Lloyd-Max but the uniform integer grid `k − 128`, so that an
+/// unpacked code is its signed grid value. Quantization onto it uses a
+/// per-vector scale (see `TurboQuantizer::quantize`), not these boundaries.
+const CENTROIDS_8BIT: [f32; 256] = {
+    let mut out = [0.0; 256];
+    let mut k = 0;
+    while k < 256 {
+        out[k] = k as f32 - 128.0;
+        k += 1;
+    }
+    out
+};
+const CENTROIDS_8BIT_BOUNDARIES: [f32; 255] = calculate_boundaries(CENTROIDS_8BIT);
+
 /// Const evaluation of centroid boundaries. With this function we can have constant
 /// boundaries that are always derived from the original centroids all done at compile time.
 const fn calculate_boundaries<const N: usize, const B: usize>(centroids: [f32; N]) -> [f32; B] {
@@ -37,6 +51,7 @@ impl TQBits {
             TQBits::Bits1_5 => &CENTROIDS_1BIT,
             TQBits::Bits2 => &CENTROIDS_2BIT,
             TQBits::Bits4 => &CENTROIDS_4BIT,
+            TQBits::Bits8 => &CENTROIDS_8BIT,
         }
     }
 
@@ -51,6 +66,7 @@ impl TQBits {
             TQBits::Bits1_5 => &CENTROIDS_1BIT_BOUNDARIES,
             TQBits::Bits2 => &CENTROIDS_2BIT_BOUNDARIES,
             TQBits::Bits4 => &CENTROIDS_4BIT_BOUNDARIES,
+            TQBits::Bits8 => &CENTROIDS_8BIT_BOUNDARIES,
         }
     }
 }

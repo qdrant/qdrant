@@ -3,6 +3,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
+use quantization::turboquant::TQBits;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -46,8 +47,9 @@ impl UpdateOnlyMultiTurboVectorStorage {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(

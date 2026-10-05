@@ -119,6 +119,18 @@ impl TurboQuantizer {
         );
 
         let mut out = Vec::with_capacity(self.quantized_size());
+
+        if self.bits == TQBits::Bits8 {
+            // Already scaled onto the grid by `quantize_impl`.
+            out.extend(scaled.into_iter().map(|val| {
+                crate::turboquant::simd::query8bit::signed_code(
+                    val.round().clamp(-127.0, 127.0) as i32
+                )
+            }));
+            out.extend_from_slice(extras.as_bytes());
+            return out;
+        }
+
         let mut bit_writer = BitWriter::new(&mut out);
 
         let boundaries = self.bits.get_centroid_boundaries();
@@ -198,6 +210,7 @@ impl TurboQuantizer {
             TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // // 16 elements per 3 bytes
             TQBits::Bits2 => dim.next_multiple_of(4), // 4 elements per byte
             TQBits::Bits4 => dim.next_multiple_of(2), // 2 elements per byte
+            TQBits::Bits8 => dim,                     // 1 element per byte
         }
     }
 

@@ -13,9 +13,10 @@
 //!
 //! | Path              | x86_64                                | aarch64           |
 //! |-------------------|---------------------------------------|-------------------|
-//! | asymmetric, 1/2/4 | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
+//! | asymmetric, 1/2/4/8 | AVX-512 VNNI, AVX2, SSE4.1+SSSE3    | NEON + SDOT, NEON |
 //! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3 | NEON              |
 //! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
+//! | symmetric, 8      | AVX-512 VNNI, AVX2, SSE4.1            | NEON + SDOT, NEON |
 //!
 //! On any other target the scalar reference kernels take over.
 
@@ -24,6 +25,7 @@ pub mod query;
 pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;
+pub mod query8bit;
 
 /// Best multiply-accumulate backend the host CPU supports, in preference
 /// order AVX-512 VNNI → AVX2 → SSE → NEON + SDOT → NEON → scalar.  Shared by
@@ -111,6 +113,13 @@ pub use query4bit::{
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query4bit::{score_4bit_internal_neon, score_4bit_internal_neon_sdot};
+pub use query8bit::{Query8bitSimd, score_8bit_internal, score_8bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query8bit::{
+    score_8bit_internal_avx2, score_8bit_internal_avx512_vnni, score_8bit_internal_sse,
+};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query8bit::{score_8bit_internal_neon, score_8bit_internal_neon_sdot};
 
 /// Test-only helpers shared by every `query{N}bit` submodule.
 ///

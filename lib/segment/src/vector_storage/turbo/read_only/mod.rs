@@ -2,8 +2,8 @@
 //!
 //! Opens the TurboQuant-encoded blob and deletion flags over an arbitrary
 //! [`UniversalRead`] backend (mmap / cache / remote), so a read-only segment can
-//! retrieve and score a `Turbo4`-typed vector storage. The quantizer is fully
-//! determined by `(dim, distance)` (fixed TQDT constants), so nothing beyond the
+//! retrieve and score a TurboQuant-typed vector storage. The quantizer is fully
+//! determined by `(dim, distance, bits)` (fixed TQDT constants), so nothing beyond the
 //! encoded bytes and flags is read from disk.
 //!
 //! Mirroring the reference read-only dense storages, the on-disk layout is a
@@ -73,6 +73,7 @@ mod tests {
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
+    use quantization::turboquant::TQBits;
     use tempfile::Builder;
 
     use super::*;
@@ -93,8 +94,14 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+        let mut writer = open_appendable_turbo_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
             .unwrap();
@@ -105,6 +112,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             Populate::No,
         )
         .unwrap();
@@ -142,8 +150,14 @@ mod tests {
             .unwrap();
         let hw = HardwareCounterCell::disposable();
 
-        let mut writer =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+        let mut writer = open_appendable_turbo_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         for id in 0..3u32 {
             writer
                 .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
@@ -156,6 +170,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             Populate::No,
         )
         .unwrap();
