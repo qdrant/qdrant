@@ -6,6 +6,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use fs_err as fs;
 use rstest::rstest;
 use segment::types::StrictModeConfig;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -253,7 +254,7 @@ pub(super) fn pause_extraction(snapshot_temp_dir: &Path) {
         let _ = reached.send(snapshot_temp_dir.to_path_buf());
         if release.blocking_recv().is_ok() {
             // Writing after the caller exits must still be safe: the task owns the directory.
-            std::fs::write(snapshot_temp_dir.join("after-cancellation"), b"test").unwrap();
+            fs::write(snapshot_temp_dir.join("after-cancellation"), b"test").unwrap();
         }
     }
 }
@@ -265,7 +266,7 @@ pub(super) fn pause_extraction(snapshot_temp_dir: &Path) {
 async fn snapshot_preparation_keeps_temp_dir_until_extraction_finishes(#[case] cancel_token: bool) {
     let temp_dir = tempfile::tempdir().unwrap();
     let snapshot_dir = tempfile::tempdir().unwrap();
-    std::fs::write(snapshot_dir.path().join("data"), b"snapshot").unwrap();
+    fs::write(snapshot_dir.path().join("data"), b"snapshot").unwrap();
     let cancel = cancel::CancellationToken::new();
     let task_cancel = cancel.clone();
     let temp_path = temp_dir.path().to_path_buf();
@@ -315,10 +316,7 @@ async fn snapshot_preparation_keeps_temp_dir_until_extraction_finishes(#[case] c
         prepared_path.is_dir(),
         "caller deleted the running task's directory"
     );
-    assert_eq!(
-        std::fs::read(prepared_path.join("data")).unwrap(),
-        b"snapshot"
-    );
+    assert_eq!(fs::read(prepared_path.join("data")).unwrap(), b"snapshot");
 
     release_tx.send(()).unwrap();
     timeout(Duration::from_secs(10), async {
