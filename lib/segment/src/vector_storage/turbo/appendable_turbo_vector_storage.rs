@@ -16,8 +16,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
-use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::turboquant::{EncodedQueryTQ, TQBits};
 use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -62,9 +62,10 @@ pub fn open_appendable_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     in_ram: bool,
 ) -> OperationResult<AppendableMmapTurboVectorStorage> {
-    AppendableMmapTurboVectorStorage::open(path, dim, distance, in_ram)
+    AppendableMmapTurboVectorStorage::open(path, dim, distance, bits, in_ram)
 }
 
 impl AppendableMmapTurboVectorStorage {
@@ -73,11 +74,12 @@ impl AppendableMmapTurboVectorStorage {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         in_ram: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
 
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedChunkedStorage::new(
             MmapFs,
             &path.join(VECTORS_DIR_PATH),
@@ -203,7 +205,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
     fn is_on_disk(&self) -> bool {

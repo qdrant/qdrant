@@ -1401,6 +1401,7 @@ pub enum Datatype {
     Uint8,
     Float16,
     Turbo4,
+    Turbo8,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1410,6 +1411,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
             Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            Datatype::Turbo8 => VectorStorageDatatype::Turbo8,
         }
     }
 }
@@ -1465,6 +1467,8 @@ pub struct VectorParams {
     ///   It expects vector elements to be in range `[0, 255]`.
     /// - For `turbo4` datatype - vectors are quantized to 4 bits per element using the
     ///   TurboQuant algorithm.
+    /// - For `turbo8` datatype - vectors are quantized to 8 bits per element using the
+    ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1478,11 +1482,13 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
-/// Reject the `Turbo4` datatype on sparse vector configs.
+/// Reject the TurboQuant datatypes on sparse vector configs.
 /// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
 fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
-    if matches!(datatype, Datatype::Turbo4) {
-        return Err(common::validation::sparse_turbo4_unsupported_error());
+    match datatype {
+        Datatype::Turbo4 => return Err(common::validation::sparse_turbo4_unsupported_error()),
+        Datatype::Turbo8 => return Err(common::validation::sparse_turbo8_unsupported_error()),
+        Datatype::Float32 | Datatype::Uint8 | Datatype::Float16 => {}
     }
     Ok(())
 }

@@ -110,6 +110,16 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         inline_storage: false,
         initially_active: true,
     },
+    // TurboQuant 8-bit storage: same contract as "q".
+    VectorCandidate {
+        name: "t",
+        kind: VectorKind::Dense(7),
+        datatype: Some(Datatype::Turbo8),
+        distance: Distance::Cosine,
+        quantization: None,
+        inline_storage: false,
+        initially_active: true,
+    },
     // Half-precision storage. Lossy but deterministic and idempotent: the model records
     // the f32 -> f16 -> f32 round-trip and compares exactly.
     VectorCandidate {
@@ -331,7 +341,7 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 ///   (dense-only follows from the quantization constraint).
 fn assert_candidates_predictable() {
     for c in ALL_CANDIDATES {
-        let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4));
+        let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4 | Datatype::Turbo8));
         let supported = match c.kind {
             VectorKind::Dense(_) => {
                 !turbo4 || matches!(c.distance, Distance::Dot | Distance::Cosine)

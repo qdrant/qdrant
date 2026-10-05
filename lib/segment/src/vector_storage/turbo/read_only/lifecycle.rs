@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use quantization::turboquant::TQBits;
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use super::ReadOnlyChunkedTurboVectorStorage;
@@ -24,7 +25,7 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         Ok(())
     }
 
-    /// Open the read-only counterpart of a chunked `Turbo4` dense storage at
+    /// Open the read-only counterpart of a chunked TurboQuant dense storage at
     /// `path`, threading every file open through `fs`; reads the existing layout
     /// but creates and writes nothing.
     pub fn open(
@@ -32,9 +33,10 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedChunkedStorageRead::open(
             fs,
             &path.join(VECTORS_DIR_PATH),
