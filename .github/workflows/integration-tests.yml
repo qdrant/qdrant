@@ -19,7 +19,8 @@ env:
   UV_VERSION: 0.9.17
 
 jobs:
-  integration-tests:
+  # Builds the debug binary once; the integration and consensus test jobs download it.
+  build-qdrant:
 
     runs-on: ubuntu-latest
 
@@ -27,6 +28,8 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -34,38 +37,29 @@ jobs:
           shared-key: integration-tests
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
           save-if: ${{ github.ref == 'refs/heads/dev' }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.13'
-      - name: Install dependencies
-        run: |
-          sudo apt-get install clang
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv --project tests lock --check
-          uv --project tests sync
-      - name: Build
-        run: cargo build --features "service_debug data-consistency-check staging" --locked
-      - name: Run integration tests
-        run: uv --project tests run bash ./tests/integration-tests.sh
-        shell: bash
-
-  integration-tests-consensus:
-
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Protoc
-        uses: ./.github/actions/setup-protoc
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          shared-key: integration-tests
-          # integration-tests is the broadest build in this group and owns saving the cache
-          save-if: "false"
       - name: Install dependencies
         run: sudo apt-get install clang
+      - name: Build
+        run: cargo build --features "service_debug data-consistency-check staging" --locked
+      - name: Upload qdrant binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qdrant-debug
+          path: target/debug/qdrant
+          retention-days: 1
+
+  integration-tests:
+    needs: build-qdrant
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [single, distributed]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
@@ -75,20 +69,71 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
-      - name: Build
-        run: cargo build --features "service_debug data-consistency-check staging" --locked
-      - name: Run integration tests - 1 peer
-        run: uv --project tests run bash ./tests/integration-tests.sh distributed
+      - name: Download qdrant binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: qdrant-debug
+          path: target/debug
+      - name: Make qdrant binary executable
+        # Artifacts don't keep file permissions
+        run: chmod +x target/debug/qdrant
+      - name: Run integration tests
+        run: uv --project tests run bash ./tests/integration-tests.sh ${{ matrix.mode == 'distributed' && 'distributed' || '' }}
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: uv --project tests run pytest -n auto --dist=loadfile -v tests/consensus_tests --durations=10
+
+  integration-tests-consensus:
+    needs: build-qdrant
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Install uv and Python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
+      - name: Download qdrant binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: qdrant-debug
+          path: target/debug
+      - name: Make qdrant binary executable
+        run: chmod +x target/debug/qdrant
+      - name: Run integration tests - multiple peers - pytest (shard ${{ matrix.shard }}/3)
+        # pytest-split balances shards with tests/consensus_tests/.test_durations; contiguous chunks keep
+        # each test file (and its module-scoped cluster) in one shard. Each shard uploads the durations of
+        # its own tests; to refresh the file from a dev run:
+        #   gh run download <run-id> -p 'consensus-test-durations-*'
+        #   jq -S -s add consensus-test-durations-*/.test_durations > tests/consensus_tests/.test_durations
+        run: |
+          uv --project tests run pytest -n auto --dist=loadfile -v tests/consensus_tests --durations=10 \
+            --splits 3 --group ${{ matrix.shard }} \
+            --durations-path tests/consensus_tests/.test_durations --store-durations --clean-durations
         timeout-minutes: 60
+      - name: Upload test durations
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: consensus-test-durations-${{ matrix.shard }}
+          path: tests/consensus_tests/.test_durations
+          include-hidden-files: true
+          retention-days: 7
       - name: upload logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           path: consensus_test_logs
-          name: consensus-test-logs
+          name: consensus-test-logs-${{ matrix.shard }}
           retention-days: 10
 
   test-consensus-compose:
