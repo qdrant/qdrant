@@ -363,6 +363,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Mmr.diversity", "range(min = 0.0, max = 1.0)"),
             ("Mmr.candidates_limit", "range(max = 16_384)"),
             ("Rrf.k", "range(min = 1)"),
+            ("TextQuery.k", "range(min = 0.0)"),
+            ("TextQuery.b", "range(min = 0.0, max = 1.0)"),
             ("Query.variant", ""),
             ("PrefetchQuery.prefetch", ""),
             ("PrefetchQuery.query", ""),
