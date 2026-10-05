@@ -1,3 +1,4 @@
+pub mod bm25;
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
 pub(super) mod mutable_inverted_index;
@@ -9,13 +10,15 @@ mod postings_iterator;
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
+use bm25::Bm25Query;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_estimator::expected_should_estimation;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
@@ -232,6 +235,28 @@ pub trait InvertedIndex {
         token_id: TokenId,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<usize>>;
+
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. Term frequencies come from positions, so an
+    /// index built without them cannot score and reports an error.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "called once `FullTextIndexRead` scores")
+    )]
+    ///
+    /// Only the mutable index scores for now; the others report an error.
+    fn score_bm25(
+        &self,
+        _query: &Bm25Query,
+        _accept: &dyn Fn(PointOffsetType) -> bool,
+        _limit: usize,
+        _is_stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        Err(OperationError::service_error(
+            "BM25 scoring is not supported by this text index yet",
+        ))
+    }
 
     fn estimate_cardinality(
         &self,
