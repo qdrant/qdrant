@@ -1,3 +1,4 @@
+pub(super) mod bm25;
 pub mod clock_map;
 pub mod disk_usage_watcher;
 pub(super) mod facet;
