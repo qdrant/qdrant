@@ -595,6 +595,7 @@ impl Validate for super::qdrant::TextIndexParams {
             ascii_folding: _,
             enable_hnsw: _,
             memory: _,
+            scoring: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }

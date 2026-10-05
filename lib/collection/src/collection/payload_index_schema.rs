@@ -47,6 +47,7 @@ impl Collection {
         wait: bool,
         hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
+        let field_schema = field_schema.normalized();
         self.payload_index_schema.write(|schema| {
             schema
                 .schema
