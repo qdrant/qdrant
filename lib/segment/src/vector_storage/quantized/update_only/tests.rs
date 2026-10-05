@@ -22,8 +22,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
-use quantization::turboquant::{TQMode, TQRotation};
+use quantization::turboquant::TQRotation;
 use quantization::{EncodedStorage as _, EncodedVectors as _};
+use rstest::rstest;
 use tempfile::TempDir;
 
 use super::{UpdateOnlyQuantizedVectorStorage, UpdateOnlyQuantizedVectors};
@@ -55,12 +56,12 @@ fn binary_config() -> QuantizationConfig {
     })
 }
 
-fn turbo_config() -> QuantizationConfig {
+fn turbo_config(bits: TurboQuantBitSize) -> QuantizationConfig {
     QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: None,
             memory: None,
-            bits: Some(TurboQuantBitSize::Bits4),
+            bits: Some(bits),
         },
     })
 }
@@ -135,7 +136,7 @@ fn create_empty_overlay(
         }
         QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
             let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
-            let mode = TQMode::Plus;
+            let mode = QuantizedVectors::tq_mode(bits);
             let quantized_vector_size =
                 encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
             let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
@@ -289,10 +290,13 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
     }
 }
 
-#[test]
-fn turbo_bytes_match_the_standard_batch_encode_path() {
+// `Bits8` has no TQ+, so it covers the Normal-mode overlay.
+#[rstest]
+#[case::bits4(TurboQuantBitSize::Bits4)]
+#[case::bits8(TurboQuantBitSize::Bits8)]
+fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitSize) {
     let dir = TempDir::with_prefix("update_only_quantized_turbo").unwrap();
-    let config = turbo_config();
+    let config = turbo_config(bits);
     let vectors = some_vectors(6);
 
     write_all(&config, dir.path(), &vectors);
@@ -312,7 +316,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
         | QuantizationConfig::Product(_)
         | QuantizationConfig::Binary(_) => unreachable!(),
     };
-    let mode = TQMode::Plus;
+    let mode = QuantizedVectors::tq_mode(bits);
     let quantized_vector_size =
         encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
     let data_path =

@@ -593,7 +593,7 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
     );
 }
 
-// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2.
+// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2 (Bits8 below).
 // Bits1 and Bits1_5 are intentionally omitted across all distances:
 // they don't reliably clear the standard helper's 40% recall floor
 // and would be flaky-to-failing under this shape.
@@ -673,6 +673,89 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
         }),
         true,
         true,
+    );
+}
+
+// Bits8 is the only width without TQ+: these cover its Normal-mode quantization path.
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_bits8_test() {
+    // Bits8 is more accurate than Bits4, so the standard helper's recall floor
+    // holds with a parallel build, as for Bits4.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
     );
 }
 

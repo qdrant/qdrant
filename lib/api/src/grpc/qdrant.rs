@@ -2583,6 +2583,7 @@ pub enum TurboQuantBitSize {
     Bits15 = 1,
     Bits2 = 2,
     Bits4 = 3,
+    Bits8 = 4,
 }
 impl TurboQuantBitSize {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2595,6 +2596,7 @@ impl TurboQuantBitSize {
             Self::Bits15 => "Bits1_5",
             Self::Bits2 => "Bits2",
             Self::Bits4 => "Bits4",
+            Self::Bits8 => "Bits8",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2604,6 +2606,7 @@ impl TurboQuantBitSize {
             "Bits1_5" => Some(Self::Bits15),
             "Bits2" => Some(Self::Bits2),
             "Bits4" => Some(Self::Bits4),
+            "Bits8" => Some(Self::Bits8),
             _ => None,
         }
     }

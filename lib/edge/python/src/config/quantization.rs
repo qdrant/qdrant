@@ -543,6 +543,7 @@ pub enum PyTurboQuantBitSize {
     Bits1_5,
     Bits2,
     Bits4,
+    Bits8,
 }
 
 #[pymethods]
@@ -559,6 +560,7 @@ impl Repr for PyTurboQuantBitSize {
             Self::Bits1_5 => "Bits1_5",
             Self::Bits2 => "Bits2",
             Self::Bits4 => "Bits4",
+            Self::Bits8 => "Bits8",
         };
 
         f.simple_enum::<Self>(repr)
@@ -572,6 +574,7 @@ impl From<TurboQuantBitSize> for PyTurboQuantBitSize {
             TurboQuantBitSize::Bits1_5 => PyTurboQuantBitSize::Bits1_5,
             TurboQuantBitSize::Bits2 => PyTurboQuantBitSize::Bits2,
             TurboQuantBitSize::Bits4 => PyTurboQuantBitSize::Bits4,
+            TurboQuantBitSize::Bits8 => PyTurboQuantBitSize::Bits8,
         }
     }
 }
@@ -583,6 +586,7 @@ impl From<PyTurboQuantBitSize> for TurboQuantBitSize {
             PyTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1_5,
             PyTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
             PyTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+            PyTurboQuantBitSize::Bits8 => TurboQuantBitSize::Bits8,
         }
     }
 }

@@ -16,7 +16,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
-use quantization::turboquant::TQBits;
+use quantization::turboquant::{TQBits, TQMode};
 
 /// Local-file backend ([`MmapFile`]) shared by every persisted (mmap / chunked) quantized
 /// storage variant. Paired with the [`READ_FS`] value handle.
@@ -192,6 +192,17 @@ impl QuantizedVectors {
             TurboQuantBitSize::Bits1_5 => TQBits::Bits1_5,
             TurboQuantBitSize::Bits2 => TQBits::Bits2,
             TurboQuantBitSize::Bits4 => TQBits::Bits4,
+            TurboQuantBitSize::Bits8 => TQBits::Bits8,
+        }
+    }
+
+    /// TurboQuant mode for a quantization config's bit width: TQ+ wherever it is
+    /// supported. `Bits8` has no TQ+ (its per-vector grid scale replaces the
+    /// per-coordinate fit), so it uses Normal mode.
+    pub(in crate::vector_storage::quantized) fn tq_mode(bits: TQBits) -> TQMode {
+        match bits {
+            TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 | TQBits::Bits4 => TQMode::Plus,
+            TQBits::Bits8 => TQMode::Normal,
         }
     }
 
@@ -285,7 +296,7 @@ impl QuantizedVectors {
                 quantization::encoded_vectors_tq::get_quantized_vector_size(
                     vector_parameters,
                     bits,
-                    quantization::turboquant::TQMode::Plus,
+                    Self::tq_mode(bits),
                 )
             }
         }
