@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use common::universal_io::{MmapFile, MmapFs, Populate};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::super::InvertedIndex;
+use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
+use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
 use crate::data_types::query_context::fancy_idf;
 
@@ -124,6 +128,17 @@ fn assert_top_k(actual: &[ScoredPointOffset], expected: &[ScoredPointOffset], li
     assert_eq!(ids.len(), actual.len(), "a document was returned twice");
 }
 
+fn on_disk(
+    dir: &std::path::Path,
+    immutable: &ImmutableInvertedIndex,
+    deleted: &BitVec,
+) -> OnDiskInvertedIndex<MmapFile> {
+    OnDiskInvertedIndex::create(dir.to_path_buf(), immutable).unwrap();
+    OnDiskInvertedIndex::<MmapFile>::open(&MmapFs, dir.to_path_buf(), Populate::No, true, deleted)
+        .unwrap()
+        .unwrap()
+}
+
 fn run<I: InvertedIndex>(
     index: &I,
     query: &Bm25Query,
@@ -157,15 +172,25 @@ fn queries() -> Vec<Vec<&'static str>> {
 }
 
 /// Every shape reproduces the definition, with and without pruning in
-/// play, with deletions applied before and after the index is built.
+/// play, with deletions applied before the conversion to the immutable
+/// shapes and again after.
 #[rstest]
 fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
     let deleted_before = [4, 5, 6, 100, 250];
     let deleted_after = [7, 8, 300];
 
     let mut mutable = fixture(11, 400, &deleted_before);
+    let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut after_mask = BitVec::repeat(false, 400);
+    for &idx in &deleted_after {
+        after_mask.set(idx as usize, true);
+    }
+    let on_disk = on_disk(dir.path(), &immutable, &after_mask);
+    let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
     for &idx in &deleted_after {
         mutable.remove(idx);
+        immutable.remove(idx);
     }
 
     for terms in queries() {
@@ -174,6 +199,62 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
 
         eprintln!("{terms:?} limit {limit}");
         assert_top_k(&run(&mutable, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&immutable, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&on_disk, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&from_disk, &query, |_| true, limit), &expected, limit);
+    }
+}
+
+/// Blocking changes when lengths are read, never the ranking: every block
+/// size reproduces the definition, asks for each candidate's length once,
+/// and asks in batches no larger than the block.
+#[rstest]
+fn block_size_does_not_change_the_ranking(#[values(1, 10, 1000)] limit: usize) {
+    rank_in_blocks::<1>(limit);
+    rank_in_blocks::<2>(limit);
+    rank_in_blocks::<7>(limit);
+    rank_in_blocks::<ON_DISK_BLOCK>(limit);
+    rank_in_blocks::<1000>(limit);
+}
+
+fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
+    let index = fixture(23, 500, &[3, 30, 300]);
+    let documents = index.point_to_doc.as_deref().unwrap();
+    let lengths = index.point_to_doc_len.as_deref().unwrap();
+    for terms in queries() {
+        let query = query(&index, &terms, Bm25Params::default());
+        let postings = query
+            .terms()
+            .iter()
+            .map(|term| index.postings.get(term.token_id as usize))
+            .collect();
+        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        let mut asked: Vec<PointOffsetType> = Vec::new();
+        let actual = score_top_k::<_, BLOCK>(
+            &query,
+            &mut cursors,
+            |point_ids, out| {
+                assert!(point_ids.len() <= BLOCK);
+                asked.extend_from_slice(point_ids);
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = Some(lengths[*point_id as usize]);
+                }
+                Ok(())
+            },
+            |_| true,
+            limit,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_top_k(&actual, &reference(&index, &query, |_| true), limit);
+        let asked_count = asked.len();
+        asked.sort_unstable();
+        asked.dedup();
+        assert_eq!(
+            asked.len(),
+            asked_count,
+            "block {BLOCK}: a length was read twice"
+        );
     }
 }
 
@@ -182,14 +263,22 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
 #[test]
 fn accept_restricts_the_ranking() {
     let mutable = fixture(5, 300, &[]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
     let even = |idx: PointOffsetType| idx.is_multiple_of(2);
 
     for terms in queries() {
         let query = query(&mutable, &terms, Bm25Params::default());
         let expected = reference(&mutable, &query, even);
-        let actual = run(&mutable, &query, even, 7);
-        assert_top_k(&actual, &expected, 7);
-        assert!(actual.iter().all(|hit| even(hit.idx)));
+        for actual in [
+            run(&mutable, &query, even, 7),
+            run(&immutable, &query, even, 7),
+            run(&on_disk, &query, even, 7),
+        ] {
+            assert_top_k(&actual, &expected, 7);
+            assert!(actual.iter().all(|hit| even(hit.idx)));
+        }
     }
 }
 
@@ -255,6 +344,12 @@ fn positions_are_required() {
     .unwrap();
     assert!(
         without_positions
+            .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
+            .is_err()
+    );
+    let immutable = ImmutableInvertedIndex::from(without_positions);
+    assert!(
+        immutable
             .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
             .is_err()
     );
@@ -348,6 +443,72 @@ fn query_dedups_and_orders_by_bound() {
     .unwrap();
     let ids: Vec<_> = query.terms().iter().map(|term| term.token_id).collect();
     assert_eq!(ids, [1, 3]);
+}
+
+/// `df` keeps deleted documents on the immutable shapes while `N` drops
+/// them, so the statistics a gather reads there understate `IDF`. This
+/// measures what that does to the ranking, against the definition over
+/// live documents, and bounds it. The same index scored with exact
+/// statistics reproduces the definition, so the gap is in the statistics
+/// alone, not in the scorer.
+#[test]
+fn deleted_documents_inflate_df_on_immutable_shapes() {
+    let hw_counter = HardwareCounterCell::new();
+    let mutable = fixture(21, 500, &[]);
+    let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let mut live = mutable;
+    // One document in ten.
+    for idx in (0..500).filter(|idx| idx % 10 == 0) {
+        immutable.remove(idx);
+        live.remove(idx);
+    }
+    let terms = ["w0", "w3", "w17", "w30"];
+
+    let exact = query(&live, &terms, Bm25Params::default());
+    let expected = reference(&live, &exact, |_| true);
+    assert_top_k(&run(&immutable, &exact, |_| true, 20), &expected, 20);
+
+    // The statistics as a gather reads them off the immutable index:
+    // posting lengths still count the removed documents, the document
+    // count does not.
+    let n = immutable.points_count as f32;
+    let avg = immutable.total_tokens as f32 / n;
+    let inflated = Bm25Query::new(
+        terms.iter().map(|term| {
+            let token_id = immutable.vocab[*term];
+            let df = immutable
+                .get_posting_len(token_id, &hw_counter)
+                .unwrap()
+                .unwrap() as f32;
+            Bm25Term {
+                token_id,
+                idf: fancy_idf(n, df).max(0.0),
+            }
+        }),
+        Bm25Params::default(),
+        Some(avg),
+    )
+    .unwrap();
+    let actual = run(&immutable, &inflated, |_| true, 20);
+
+    let by_id: HashMap<PointOffsetType, ScoreType> =
+        expected.iter().map(|hit| (hit.idx, hit.score)).collect();
+    let max_relative_deviation = actual
+        .iter()
+        .map(|hit| {
+            let reference = by_id[&hit.idx];
+            (hit.score - reference).abs() / reference
+        })
+        .fold(0.0, ScoreType::max);
+    eprintln!("max relative deviation with 10% deleted: {max_relative_deviation}");
+    assert!(
+        max_relative_deviation > 0.0,
+        "the inflation should be visible"
+    );
+    assert!(
+        max_relative_deviation < 0.25,
+        "deleted documents move scores by {max_relative_deviation}"
+    );
 }
 
 /// Parameters outside the domain the MaxScore bound holds in are refused
