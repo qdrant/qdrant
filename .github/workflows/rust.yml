@@ -81,6 +81,11 @@ jobs:
           # keep their file:line; only backtraces lose line numbers.
           echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
+        # Optimize third-party dependencies only: tests spend much of their time in them (serde_json,
+        # compression, rand), and rust-cache keeps them, so they are rebuilt only when Cargo.lock changes.
+        # Written before rust-cache runs, so the setting is part of the cache key.
+        mkdir -p .cargo
+        printf '[profile.dev.package."*"]\nopt-level = 1\n' >> .cargo/config.toml
       shell: bash
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
