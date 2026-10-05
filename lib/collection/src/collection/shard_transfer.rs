@@ -683,7 +683,6 @@ impl Collection {
         from_peer_id: Option<PeerId>,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
         let shards_holder = self.shards_holder.clone();
-
         let collection_path = self.path.clone();
 
         async move {
@@ -692,14 +691,15 @@ impl Collection {
             // Otherwise, an earlier operation that needs the write lock can block consensus
             // from applying `StartTransfer`, leaving this handler waiting until timeout.
             let (replica_set, shard_transfers) = {
-                let shards_holder_guard = shards_holder.read().await;
-                let Some(replica_set) = shards_holder_guard.get_shard(shard_id).cloned() else {
+                let shard_holder = shards_holder.read().await;
+
+                let Some(replica_set) = shard_holder.get_shard(shard_id).cloned() else {
                     return Err(CollectionError::service_error(format!(
                         "Shard {shard_id} doesn't exist, repartition is not supported yet"
                     )));
                 };
 
-                let shard_transfers = Arc::clone(&shards_holder_guard.shard_transfers);
+                let shard_transfers = Arc::clone(&shard_holder.shard_transfers);
                 (replica_set, shard_transfers)
             };
 
@@ -720,6 +720,7 @@ impl Collection {
                     let sender = from_peer_id
                         .map(|peer_id| format!(" from peer {peer_id}"))
                         .unwrap_or_default();
+
                     return Err(CollectionError::bad_request(format!(
                         "Refusing to initiate shard transfer{sender} into shard {shard_id}: \
                          there is no registered transfer{sender}",
@@ -730,7 +731,6 @@ impl Collection {
             };
 
             let replica_set_for_wait = Arc::clone(&replica_set);
-
             let shard_transfer_requested = tokio::task::spawn_blocking(move || {
                 // Wait for transfer targeting this replica
                 let shard_transfer_registered = shard_transfers.wait_for(
@@ -794,10 +794,10 @@ impl Collection {
             // Acquire the shard holder read lock and recheck the shard and transfer after
             // waiting for consensus. Hold the lock until transfer initialization finishes,
             // so the shard cannot be replaced or removed.
-            let shards_holder_guard = shards_holder.read_owned().await;
+            let shard_holder = shards_holder.read_owned().await;
 
             // Check that the replica set is unchanged
-            let Some(current_replica_set) = shards_holder_guard.get_shard(shard_id) else {
+            let Some(current_replica_set) = shard_holder.get_shard(shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {shard_id} doesn't exist, repartition is not supported yet"
                 )));
@@ -810,7 +810,7 @@ impl Collection {
             }
 
             // Check that a matching transfer is registered
-            validate_transfer(&shards_holder_guard.shard_transfers.read())?;
+            validate_transfer(&shard_holder.shard_transfers.read())?;
 
             // Check that the replica is in a shard transfer state
             let is_partial_or_recovery = replica_set
@@ -833,13 +833,15 @@ impl Collection {
             if replica_set.is_dummy().await {
                 // We can reach here because of either of these:
                 // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
-                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
+                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer
+                //    to recover from Dead state after an update fails
                 //
                 // In both cases, it's safe to drop existing local shard data
                 log::debug!(
                     "Initiating transfer to dummy shard {}. Initializing empty local shard first",
                     replica_set.shard_id,
                 );
+
                 // Also removes the initializing flag. We can do this without waiting for the
                 // transfer to finish, because if the transfer fails in between, Qdrant will retry it.
                 replica_set.init_empty_local_shard(&collection_path).await?;
