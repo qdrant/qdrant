@@ -30,8 +30,10 @@ impl PostingList {
         self.list.contains(val)
     }
 
+    /// The concrete type is exposed so a caller can seek with
+    /// [`roaring::bitmap::Iter::advance_to`].
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+    pub fn iter(&self) -> roaring::bitmap::Iter<'_> {
         self.list.iter()
     }
 
