@@ -61,7 +61,7 @@ pub async fn index() -> impl Responder {
 
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<TelemetryCollector>,
     health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
     logger_handle: LoggerHandle,
@@ -74,11 +74,7 @@ pub fn init(
             AuthKeys::try_create(&settings.service, dispatcher.toc(&auth, &pass).clone());
         let upload_dir = dispatcher.toc(&auth, &pass).upload_dir().unwrap();
         let dispatcher_data = web::Data::from(dispatcher);
-        let actix_telemetry_collector = telemetry_collector
-            .lock()
-            .await
-            .actix_telemetry_collector
-            .clone();
+        let actix_telemetry_collector = telemetry_collector.actix_telemetry_collector.clone();
         let debugger_state = web::Data::new(DebuggerState::from_settings(&settings));
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let logger_handle_data = web::Data::new(logger_handle);

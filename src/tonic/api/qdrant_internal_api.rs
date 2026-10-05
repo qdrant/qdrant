@@ -16,7 +16,6 @@ use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::quota;
 use storage::rbac::AccessRequirements;
-use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use crate::common::consensus_lag::applied_log_to_grpc;
@@ -26,7 +25,7 @@ use crate::tonic::auth::extract_auth;
 
 pub struct QdrantInternalService {
     /// Telemetry collector
-    telemetry_collector: Arc<Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<TelemetryCollector>,
     /// Qdrant settings
     settings: Settings,
     /// Consensus state
@@ -37,7 +36,7 @@ pub struct QdrantInternalService {
 
 impl QdrantInternalService {
     pub fn new(
-        telemetry_collector: Arc<Mutex<TelemetryCollector>>,
+        telemetry_collector: Arc<TelemetryCollector>,
         settings: Settings,
         consensus_state: ConsensusStateRef,
     ) -> Self {
@@ -110,8 +109,8 @@ impl QdrantInternal for QdrantInternalService {
         let timing = Instant::now();
         let timeout = Duration::from_secs(timeout);
 
-        let telemetry_collector = self.telemetry_collector.lock().await;
-        let telemetry_data = telemetry_collector
+        let telemetry_data = self
+            .telemetry_collector
             .prepare_data(&auth, detail, only_collections, Some(timeout))
             .await?;
 
