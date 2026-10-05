@@ -16,7 +16,7 @@ use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
     CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
@@ -158,6 +158,12 @@ impl Collection {
             return Ok(Default::default());
         }
 
+        if limit_per_sample == usize::MAX {
+            return Err(CollectionError::BadInput {
+                description: "limit is too large".to_string(),
+            });
+        }
+
         self.collection_config
             .read()
             .await
@@ -238,7 +244,7 @@ impl Collection {
                 using: using.clone(),
                 filter: Some(filter.clone()),
                 score_threshold: None,
-                limit: limit_per_sample + 1, // +1 to exclude the point itself afterward
+                limit: limit_per_sample.saturating_add(1), // +1 to exclude the point itself afterward
                 offset: 0,
                 params: None,
                 with_vector: WithVector::Bool(false),
@@ -275,7 +281,7 @@ impl Collection {
                 scores.remove(sample_pos);
             } else {
                 // if not found pop lowest score
-                if scores.len() == limit_per_sample + 1 {
+                if scores.len() == limit_per_sample.saturating_add(1) {
                     // if we have enough results, remove the last one
                     scores.pop();
                 }
