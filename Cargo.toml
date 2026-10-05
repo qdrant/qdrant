@@ -431,6 +431,10 @@ debug = "line-tables-only"
 [profile.dev.package.sha2]
 opt-level = 3
 
+# Override for fast quantization (k-means, encoding, scoring) in dev and test builds
+[profile.dev.package.quantization]
+opt-level = 3
+
 # Override for fast sha256 hashing in ci builds
 [profile.ci.package.sha2]
 opt-level = 3
