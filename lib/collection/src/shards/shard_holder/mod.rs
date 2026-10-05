@@ -1402,6 +1402,9 @@ impl ShardHolder {
             recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
         }
 
+        #[cfg(test)]
+        snapshot_preparation_tests::pause_preparation(temp_dir).await;
+
         let extract = cancel::blocking::spawn_cancel_on_token(
             cancel.child_token(),
             move |cancel| -> CollectionResult<_> {
@@ -1420,6 +1423,9 @@ impl ShardHolder {
                         move_all(snapshot_dir.path(), snapshot_temp_dir.path())?;
                     }
                 }
+
+                #[cfg(test)]
+                snapshot_preparation_tests::pause_extraction(snapshot_temp_dir.path());
 
                 if cancel.is_cancelled() {
                     return Err(cancel::Error::Cancelled.into());
@@ -1803,3 +1809,6 @@ mod restart_transfer_tests {
         assert_eq!(holder.shard_transfers.read().len(), 1);
     }
 }
+
+#[cfg(test)]
+mod snapshot_preparation_tests;
