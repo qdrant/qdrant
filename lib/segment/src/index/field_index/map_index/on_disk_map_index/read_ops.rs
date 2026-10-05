@@ -15,6 +15,8 @@ use super::super::{IdIter, MapIndexKey};
 use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::on_disk_point_to_values::ValuesIter;
+use crate::index::field_index::stat_tools::number_of_selected_points;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::payload_config::StorageType;
 
 impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
@@ -168,6 +170,119 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                 log::error!("Error while getting iterator for value {value:?}: {err:?}");
                 Box::new(iter::empty())
             }
+        }
+    }
+
+    fn match_cardinality(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        let Some(stored_count) = self.get_count_for_value(value, hw_counter) else {
+            return CardinalityEstimation::exact(0);
+        };
+
+        if self.storage.deleted.deleted_count() == 0 {
+            return CardinalityEstimation::exact(stored_count);
+        }
+
+        let live_points = self.get_indexed_points();
+        let total_points = live_points + self.storage.deleted.deleted_count();
+        let max = stored_count.min(live_points);
+        let exp = if total_points == 0 {
+            0
+        } else {
+            stored_count
+                .saturating_mul(live_points)
+                .div_ceil(total_points)
+                .min(max)
+        };
+
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp,
+            max,
+        }
+    }
+
+    fn except_cardinality<'b>(
+        &self,
+        excluded: impl Iterator<Item = &'b N>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation
+    where
+        N: 'b,
+    {
+        let excluded_value_counts: Vec<_> = excluded
+            .map(|val| self.get_count_for_value(val, hw_counter).unwrap_or(0))
+            .collect();
+        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
+
+        if self.storage.deleted.deleted_count() == 0 {
+            debug_assert!(total_excluded_value_count <= self.get_values_count());
+
+            let non_excluded_values_count = self
+                .get_values_count()
+                .saturating_sub(total_excluded_value_count);
+            let max_values_per_point = self
+                .get_unique_values_count()
+                .saturating_sub(excluded_value_counts.len());
+
+            if max_values_per_point == 0 {
+                debug_assert_eq!(non_excluded_values_count, 0);
+                return CardinalityEstimation::exact(0);
+            }
+
+            let min_not_excluded_by_values =
+                non_excluded_values_count.div_ceil(max_values_per_point);
+
+            let min = min_not_excluded_by_values.max(
+                self.get_indexed_points()
+                    .saturating_sub(total_excluded_value_count),
+            );
+
+            let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
+
+            let max = self
+                .get_indexed_points()
+                .saturating_sub(max_excluded_value_count)
+                .min(non_excluded_values_count);
+
+            let exp =
+                number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
+                    .max(min)
+                    .min(max);
+
+            return CardinalityEstimation {
+                primary_clauses: vec![],
+                min,
+                exp,
+                max,
+            };
+        }
+
+        let live_points = self.get_indexed_points();
+        let stored_non_excluded_values = self
+            .get_values_count()
+            .saturating_sub(total_excluded_value_count);
+
+        if live_points == 0 || stored_non_excluded_values == 0 {
+            return CardinalityEstimation::exact(0);
+        }
+
+        let total_points = live_points + self.storage.deleted.deleted_count();
+        let estimated_live_non_excluded_values = stored_non_excluded_values
+            .saturating_mul(live_points)
+            .div_ceil(total_points);
+        let exp = number_of_selected_points(live_points, estimated_live_non_excluded_values)
+            .min(live_points);
+
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp,
+            max: live_points,
         }
     }
 
