@@ -41,6 +41,7 @@ pub mod process_cpu_usage;
 pub mod progress_tracker;
 pub mod rate_limiting;
 pub mod raw_bytes_serde;
+pub mod reason;
 pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;
