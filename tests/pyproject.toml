@@ -21,6 +21,7 @@ dependencies = [
     "qdrant-client>=1.19.0,<2",
     "tqdm>=4.67.1,<5",
     "filelock>=3.20,<4",
+    "pytest-split>=0.10,<1",
 ]
 
 [tool.uv]
