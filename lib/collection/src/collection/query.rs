@@ -69,7 +69,7 @@ impl Collection {
     }
 
     /// If the query limit above this value, it will be a subject to undersampling.
-    const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
+    pub(crate) const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
 
     /// Give some more ensurance for undersampling,
     /// retrieve more points to prevent undersampling errors.

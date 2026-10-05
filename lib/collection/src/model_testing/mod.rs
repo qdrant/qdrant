@@ -527,6 +527,22 @@ pub async fn run(
 ) {
     assert_candidates_predictable();
 
+    // The `t` text index: where optimized segments keep it (RAM or disk, so both scorers and both
+    // length read paths run) and how it tokenizes. Keyed off the seed rather than drawn, so the op
+    // stream is the same.
+    let text_params = fixture::text_index_params(seed);
+    println!(
+        "model_testing: text index memory={:?} tokenizer={:?} lowercase={:?} min/max={:?}/{:?} \
+         stopwords={:?} stemmer={:?} ascii_folding={:?}",
+        text_params.memory,
+        text_params.tokenizer,
+        text_params.lowercase,
+        text_params.min_token_len,
+        text_params.max_token_len,
+        text_params.stopwords,
+        text_params.stemmer,
+        text_params.ascii_folding,
+    );
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -534,6 +550,7 @@ pub async fn run(
         max_segment_size_kb,
         indexing_threshold_kb,
         on_disk,
+        text_params,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
@@ -800,7 +817,13 @@ pub async fn run(
                     log::debug!("op:{i} CreateSnapshot skipped (one already in flight)");
                 }
             } else {
-                apply::apply(&collection, &mut model, &mut active_names, &op).await;
+                // No segment is wrapped in a proxy: the optimizer is off, and no snapshot is
+                // proxying segments while it runs. Only then are statistics the model's.
+                let no_proxies = disable_optimizer
+                    && pending_snapshot
+                        .as_ref()
+                        .is_none_or(JoinHandle::is_finished);
+                apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
             }
         }
         // Reap a finished background snapshot (non-blocking check); panics if it errored.
