@@ -1,6 +1,8 @@
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::BitSliceExt as _;
+use common::condition_checker::ConditionChecker;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
@@ -15,13 +17,14 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PointIdType, RawPayload, ScoredPoint, SearchParams,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointIdType, RawPayload, ScoredPoint,
+    SearchParams, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -427,6 +430,65 @@ where
                 )
             })
             .collect()
+    }
+
+    /// Rank this segment's points by BM25 over the text index of `field` and
+    /// return the `top` best, highest first.
+    ///
+    /// `terms` must already be tokenized by the field's tokenizer. Their `IDF`
+    /// and the average document length come from the text statistics
+    /// `query_context` was filled with, over every segment of the shard, so a
+    /// point scores the same whichever segment holds it. A point is scored only
+    /// if a query sees it: not deleted (by the id tracker, or by the context's
+    /// deleted points in its place), not deferred, not shadowed, and matching
+    /// `filter`. A segment without a text index on `field` scores nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let context = query_context.get_text_context(field).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "no text statistics were gathered for field {field}",
+            ))
+        })?;
+        let hw_counter = context.hardware_counter();
+
+        let filter_context = filter
+            .map(|filter| self.payload_index.filter_context(filter, &hw_counter))
+            .transpose()?;
+        let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
+        let deleted = context.deleted_points().unwrap_or(deleted);
+        let accept = |point_id: PointOffsetType| {
+            let bit = point_id as usize;
+            cutoff.is_none_or(|cutoff| point_id < cutoff)
+                && !deleted.get_bit(bit).unwrap_or(false)
+                && !shadowed.get_bit(bit).unwrap_or(false)
+                && filter_context
+                    .as_ref()
+                    .is_none_or(|filter| filter.check_infallible(point_id))
+        };
+
+        let internal_result = self
+            .payload_index
+            .score_bm25(field, terms, &context, params, &accept, top)?;
+
+        check_stopped(context.is_stopped())?;
+
+        self.process_search_result(
+            internal_result,
+            with_payload,
+            with_vector,
+            &hw_counter,
+            context.is_stopped(),
+        )
     }
 
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {

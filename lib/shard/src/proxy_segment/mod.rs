@@ -137,6 +137,24 @@ impl UnsyncedProxySegment {
 }
 
 impl ProxySegment {
+    /// Whether the wrapped segment's index on `field` is not the one this
+    /// proxy presents, see `ProxyIndexChanges::is_wrapped_index_stale`.
+    /// Takes the wrapped segment's read lock, so it must be called without
+    /// holding it.
+    pub(crate) fn is_wrapped_index_stale(&self, field: &PayloadKeyType) -> bool {
+        let changes = self.pending_changes.index_changes();
+        if changes.is_empty() {
+            return false;
+        }
+        let wrapped_schema = self
+            .wrapped_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .remove(field);
+        changes.is_wrapped_index_stale(field, wrapped_schema.as_ref())
+    }
+
     /// Build a proxy wrapping `segment` and immediately sync its `deleted_mask`.
     ///
     /// Test-only convenience that collapses the two-phase [`UnsyncedProxySegment::new`] +
