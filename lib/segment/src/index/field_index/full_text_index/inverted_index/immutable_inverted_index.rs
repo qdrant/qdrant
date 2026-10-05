@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
+use super::bm25::{Bm25Query, PositionalCursors, score_top_k};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -43,17 +45,16 @@ fn get_all_or_none<'a, V: PostingValue>(
 pub struct ImmutableInvertedIndex {
     pub(super) postings: ImmutablePostings,
     pub(super) vocab: HashMap<String, TokenId>,
+    /// Number of distinct tokens per point, i.e. the size of its token set:
+    /// a token that occurs several times in the text counts once.
+    /// Zero for a point without tokens or a removed one.
     pub(super) point_to_tokens_count: Vec<usize>,
 
-    /// Total tokens per point, for BM25 length normalization. `None` when this
-    /// index does not record lengths.
+    /// Number of token occurrences per point, i.e. the length of the tokenized
+    /// text with repetitions, summed over all of the point's values. `None`
+    /// when this index does not record lengths.
     ///
-    /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
-    /// so summing it never counts a deleted document. A zero can still be a
-    /// live document whose tokens were all filtered, but only until the index
-    /// is written out: `create` puts every point with no tokens into the "no
-    /// tokens" mask, so after a round trip through disk that document is
-    /// indistinguishable from a deleted one.
+    /// Zeroed wherever `point_to_tokens_count` is.
     pub(super) point_to_doc_len: Option<Vec<u32>>,
     /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
     /// meaningful when that vector exists.
@@ -326,6 +327,50 @@ impl InvertedIndex for ImmutableInvertedIndex {
             ParsedQuery::Phrase(tokens) => Ok(Box::new(self.filter_has_phrase(tokens))),
             ParsedQuery::AnyTokens(tokens) => Ok(Box::new(self.filter_has_any(tokens))),
         }
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let ImmutablePostings::WithPositions(postings) = &self.postings else {
+            return Err(OperationError::service_error(
+                "text index stores no positions, term frequencies cannot be computed",
+            ));
+        };
+        let views = query
+            .terms()
+            .iter()
+            .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
+            .collect();
+        let mut cursors = PositionalCursors::new(views);
+        let lengths = self.point_to_doc_len.as_deref();
+        // Deleted points stay in these postings and are masked here, as the
+        // filter path does.
+        let is_active = |point_id: PointOffsetType| {
+            self.point_to_tokens_count
+                .get(point_id as usize)
+                .is_some_and(|count| *count > 0)
+                && accept(point_id)
+        };
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                }
+                Ok(())
+            },
+            is_active,
+            limit,
+            is_stopped,
+        )
     }
 
     fn get_posting_len(
