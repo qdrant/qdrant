@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use quantization::encoded_vectors_tq;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
-use quantization::turboquant::{TQMode, TQRotation};
+use quantization::turboquant::TQRotation;
 
 use super::super::{
     QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType, READ_FS, ReadFile,
@@ -35,7 +35,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = TQMode::Plus;
+        let mode = Self::tq_mode(bits);
         let quantized_vector_size =
             encoded_vectors_tq::get_quantized_vector_size(vector_parameters, bits, mode);
         let meta_path = Self::get_meta_path(path);
@@ -127,7 +127,7 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
-        let mode = TQMode::Plus;
+        let mode = Self::tq_mode(bits);
         let quantized_vector_size =
             encoded_vectors_tq::get_quantized_vector_size(vector_parameters, bits, mode);
         let meta_path = Self::get_meta_path(path);

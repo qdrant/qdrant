@@ -45,11 +45,13 @@ use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
     MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
-    PointIdType, SearchParams, SnapshotFormat, SparseVectorDataConfig, SparseVectorStorageType,
+    PointIdType, QuantizationConfig, SearchParams, SnapshotFormat, SparseVectorDataConfig,
+    SparseVectorStorageType, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
     ValueVariants, VectorDataConfig, VectorStorageDatatype, VectorStorageType, WithPayload,
     WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
+use crate::vector_storage::new_raw_scorer;
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
 
 fn init_logger() {
@@ -1408,6 +1410,102 @@ fn test_upsert_raw_malformed_blob_rejected() {
         ),
         "malformed blob must be rejected as MalformedVectorBlob, got {result:?}",
     );
+}
+
+/// Appendable segments quantize with TurboQuant too: the quantized storage is created empty
+/// with the segment, every upsert is encoded into it, and it is reopened on load. `Bits8` has
+/// no TQ+, so it takes the Normal-mode path.
+#[rstest]
+#[case::bits4(TurboQuantBitSize::Bits4)]
+#[case::bits8(TurboQuantBitSize::Bits8)]
+fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
+    init_logger();
+    let dim = 64;
+    let num_points = 50;
+    #[allow(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    let quantization_config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: None,
+            memory: None,
+            bits: Some(bits),
+        },
+    });
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Cosine,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: Some(quantization_config.clone()),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    for i in 0..num_points {
+        let vector: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        segment
+            .upsert_point(100, i.into(), only_default_vector(&vector), &hw_counter)
+            .unwrap();
+    }
+    let query: QueryVector = (0..dim)
+        .map(|_| rng.random_range(-1.0..1.0))
+        .collect::<Vec<f32>>()
+        .into();
+
+    let check_quantized_scores = |segment: &Segment| {
+        let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
+        let quantized_vectors = vector_data.quantized_vectors.borrow();
+        let quantized_vectors = quantized_vectors
+            .as_ref()
+            .expect("appendable segment must have quantized vectors");
+        assert_eq!(
+            quantized_vectors.config().quantization_config,
+            quantization_config,
+        );
+        let vector_storage = vector_data.vector_storage.borrow();
+        let quantized_scorer = quantized_vectors
+            .raw_scorer(query.clone(), HardwareCounterCell::new())
+            .unwrap();
+        let original_scorer =
+            new_raw_scorer(query.clone(), &vector_storage, HardwareCounterCell::new()).unwrap();
+        for i in 0..num_points as PointOffsetType {
+            let quantized = quantized_scorer.score_point(i);
+            let original = original_scorer.score_point(i);
+            assert!(
+                (quantized - original).abs() < 0.05,
+                "point {i}: quantized score {quantized} vs original {original}",
+            );
+        }
+    };
+
+    check_quantized_scores(&segment);
+
+    segment.flush(true).unwrap();
+    let segment_path = segment.segment_path.clone();
+    drop(segment);
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    check_quantized_scores(&segment);
 }
 
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested

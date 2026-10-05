@@ -7174,7 +7174,8 @@
           "bits1",
           "bits1_5",
           "bits2",
-          "bits4"
+          "bits4",
+          "bits8"
         ]
       },
       "Datatype": {

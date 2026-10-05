@@ -424,6 +424,7 @@ enum TurboQuantBitSize{
   Bits1_5 = 1;
   Bits2 = 2;
   Bits4 = 3;
+  Bits8 = 4;
 }
 
 message QuantizationConfig {
