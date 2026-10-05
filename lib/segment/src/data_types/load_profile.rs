@@ -18,13 +18,20 @@
 //!
 //! Mutable (appendable) components ignore the profile: their open paths reconstruct
 //! in-memory state and cannot be demoted (see `ReadOnlyFieldIndex::preopen`).
+//!
+//! Besides placement, the profile carries the shard's deferred-points threshold: the one
+//! visibility setting a read-only open can't learn from the segment itself (see
+//! [`LoadProfile::with_deferred_points_threshold_kb`]).
 
 use std::collections::HashSet;
 
+use common::types::PointOffsetType;
 use common::universal_io::Populate;
 
+use crate::common::BYTES_IN_KB;
+use crate::common::deferred_points::deferred_point_offset;
 use crate::json_path::JsonPath;
-use crate::types::{Condition, Filter, PayloadKeyType, VectorName, VectorNameBuf};
+use crate::types::{Condition, Filter, PayloadKeyType, SegmentConfig, VectorName, VectorNameBuf};
 
 /// Which components of a read-only segment a specific request needs warmed.
 ///
@@ -44,6 +51,9 @@ pub struct LoadProfile {
     /// request returns payloads or filters (a condition on an unindexed field falls back
     /// to reading raw payloads); parked cold otherwise.
     warm_payload_storage: bool,
+    /// Deferred-points threshold of the shard, in KB like the indexing threshold. `None`
+    /// shows every point.
+    deferred_points_threshold_kb: Option<usize>,
 }
 
 impl LoadProfile {
@@ -63,6 +73,7 @@ impl LoadProfile {
             warm_vectors: HashSet::new(),
             warm_payload_fields,
             warm_payload_storage: with_payload || filter.is_some(),
+            deferred_points_threshold_kb: None,
         }
     }
 
@@ -77,6 +88,7 @@ impl LoadProfile {
             warm_vectors: HashSet::from([vector_name.to_owned()]),
             warm_payload_fields: filter_payload_keys(filter),
             warm_payload_storage: with_payload || filter.is_some(),
+            deferred_points_threshold_kb: None,
         }
     }
 
@@ -87,7 +99,18 @@ impl LoadProfile {
             warm_vectors: HashSet::new(),
             warm_payload_fields: HashSet::new(),
             warm_payload_storage: false,
+            deferred_points_threshold_kb: None,
         }
+    }
+
+    /// Hide points of appendable segments past `threshold_kb`, as a leader with
+    /// `prevent_unoptimized` defers them. The threshold is in KB, like the indexing threshold
+    /// (the leader uses the indexing threshold, capped by an explicit max segment size); each
+    /// segment converts it to an internal id from its own vector sizes.
+    #[must_use]
+    pub fn with_deferred_points_threshold_kb(mut self, threshold_kb: Option<usize>) -> Self {
+        self.deferred_points_threshold_kb = threshold_kb;
+        self
     }
 
     /// Fold another request's profile into this one: a component *either* request needs
@@ -108,10 +131,50 @@ impl LoadProfile {
             warm_vectors,
             warm_payload_fields,
             warm_payload_storage,
+            deferred_points_threshold_kb,
         } = other;
         self.warm_vectors.extend(warm_vectors);
         self.warm_payload_fields.extend(warm_payload_fields);
         self.warm_payload_storage |= warm_payload_storage;
+        // Parts of one request share the shard's threshold; the stricter one wins otherwise.
+        self.deferred_points_threshold_kb = match (
+            self.deferred_points_threshold_kb,
+            deferred_points_threshold_kb,
+        ) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    /// Internal id from which points of a segment with `config` are deferred, or `None` to
+    /// show every point.
+    ///
+    /// Mirrors the leader's conversion over the segment's dense vectors. The leader counts
+    /// only vectors with HNSW enabled, which a segment config doesn't record, so a large
+    /// vector with HNSW disabled makes the cutoff stricter here than on the leader.
+    pub fn deferred_internal_id(&self, config: &SegmentConfig) -> Option<PointOffsetType> {
+        let Self {
+            warm_vectors: _,
+            warm_payload_fields: _,
+            warm_payload_storage: _,
+            deferred_points_threshold_kb,
+        } = self;
+        let threshold_bytes = (*deferred_points_threshold_kb)?.saturating_mul(BYTES_IN_KB);
+        if threshold_bytes == 0 {
+            return None;
+        }
+        config
+            .vector_data
+            .values()
+            .map(|vector_config| {
+                deferred_point_offset(
+                    threshold_bytes,
+                    vector_config.size,
+                    vector_config.datatype,
+                    vector_config.multivector_config.is_some(),
+                )
+            })
+            .min()
     }
 
     /// Placement override for the payload storage.
@@ -120,6 +183,7 @@ impl LoadProfile {
             warm_vectors: _,
             warm_payload_fields: _,
             warm_payload_storage,
+            deferred_points_threshold_kb: _,
         } = self;
         if *warm_payload_storage {
             None
@@ -167,6 +231,7 @@ impl LoadProfile {
             warm_vectors: _,
             warm_payload_fields,
             warm_payload_storage: _,
+            deferred_points_threshold_kb: _,
         } = self;
         if warm_payload_fields.contains(field) {
             None
@@ -182,6 +247,7 @@ impl LoadProfile {
             warm_vectors,
             warm_payload_fields: _,
             warm_payload_storage: _,
+            deferred_points_threshold_kb: _,
         } = self;
         if warm_vectors.contains(vector_name) {
             None

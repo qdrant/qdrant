@@ -65,6 +65,7 @@ All of these accept an environment variable as a fallback, shown in brackets.
 - `--cache-dir` — local mirror directory for the segment disk cache. Each remote block is fetched once and served locally afterwards. Defaults to a stable subdirectory of the system temp dir, so **the cache persists across runs** — delete it to force a cold read.
 - `--search-threads` — size of the shard's search thread pool (used to read segments in parallel at open, and to run searches). `0` derives it from the CPU count.
 - `--no-load-profile` — by default the shard is opened *for the specific request*, warming only the segment components that request will touch and leaving the rest cold. This flag disables that and warms everything per the persisted segment configs, like a long-lived deployment would. Use it when benchmarking steady-state behaviour rather than cold start.
+- `--deferred-threshold-kb <KB>` — hide points the leader defers under `prevent_unoptimized`: points of appendable segments past this threshold, in KB like the indexing threshold (pass the leader's indexing threshold, capped by an explicit max segment size). Without it every stored point is visible. Conflicts with `--no-load-profile`.
 - `--uio-trace <PATH>` — record every network storage request into this file, one JSON line each.
   Open the file with `tools/uio-trace-visualizer.html` to see the read timeline.
 

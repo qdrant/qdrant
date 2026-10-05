@@ -138,7 +138,11 @@ where
     // with `--no-load-profile`). An omitted `--vector` stays a placeholder until the open
     // reveals the dimension (the profile only needs the vector name).
     let mut request = PreparedRequest::build(&cli.command)?;
-    let load_profile = (!cli.connection.no_load_profile).then(|| request.load_profile());
+    let load_profile = (!cli.connection.no_load_profile).then(|| {
+        request
+            .load_profile()
+            .with_deferred_points_threshold_kb(cli.connection.deferred_threshold_kb)
+    });
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
     // them via the manifest. `prefix` is passed only as the shard's (logical) path label. A

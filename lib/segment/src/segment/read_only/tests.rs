@@ -356,6 +356,68 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
     }
 }
 
+/// A profile's deferred-points threshold hides the tail of an appendable segment: 1 KB of
+/// `DIM` f32 vectors is 32 points, so only the first 32 inserted points stay visible.
+#[test]
+fn read_only_segment_load_profile_defers_points() {
+    let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    for i in 0..NUM_POINTS {
+        let vector = vec![1.0; DIM];
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        mutable
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let profile = LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(1));
+    let read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        Some(&profile),
+    )
+    .expect("read-only open with deferred threshold");
+
+    assert_eq!(read_only.available_point_count_without_deferred(), 32);
+    assert!(read_only.has_point(32.into(), DeferredBehavior::VisibleOnly));
+    assert!(!read_only.has_point(33.into(), DeferredBehavior::VisibleOnly));
+
+    let unfiltered =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(
+        unfiltered.available_point_count_without_deferred(),
+        NUM_POINTS
+    );
+}
+
 /// Open a segment straight from an S3-compatible store (rustfs/minio) over
 /// `BlobFs` and assert it answers queries identically to the local reference.
 ///

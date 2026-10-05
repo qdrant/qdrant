@@ -13,6 +13,7 @@ use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::deferred_points::deferred_point_offset;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
@@ -314,10 +315,6 @@ impl CollectionParams {
     ) -> Option<PointOffsetType> {
         let threshold_bytes = deferred_point_threshold_bytes?.get();
 
-        // Because we cannot predict multivector size,
-        // define here a constant-size inner vectors count for multivector.
-        const MULTIVECTOR_SIZE: usize = 16;
-
         self.vectors
             .params_iter()
             // Skip vectors without HNSW indexing
@@ -328,25 +325,12 @@ impl CollectionParams {
                     .then_some(params)
             })
             .map(|params| {
-                let element_bytes = match params.datatype {
-                    Some(Datatype::Float16) => 2,
-                    Some(Datatype::Uint8) => 1,
-                    // Placeholder: Turbo4 is ~0.5 byte/dim + per-row scale.
-                    // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
-                    Some(Datatype::Turbo4) => 1,
-                    Some(Datatype::Float32) | None => 4,
-                };
-
-                let dim = params.size.get() as usize;
-
-                let vector_bytes = if params.multivector_config.is_some() {
-                    element_bytes * dim * MULTIVECTOR_SIZE
-                } else {
-                    element_bytes * dim
-                };
-
-                let deferred_from = threshold_bytes.div_ceil(vector_bytes);
-                PointOffsetType::try_from(deferred_from).unwrap_or(PointOffsetType::MAX)
+                deferred_point_offset(
+                    threshold_bytes,
+                    params.size.get() as usize,
+                    params.datatype.map(VectorStorageDatatype::from),
+                    params.multivector_config.is_some(),
+                )
             })
             .min()
     }
