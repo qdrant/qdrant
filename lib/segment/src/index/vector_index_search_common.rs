@@ -25,6 +25,11 @@ pub fn is_quantized_search<Q: QuantizedVectorsRead>(
     quantized_storage.is_some() && !ignore_quantization && !exact
 }
 
+/// Returns whether the scores use Binary Quantization's XOR-based representation.
+fn is_binary_quantization(config: &QuantizationConfig) -> bool {
+    matches!(config, QuantizationConfig::Binary(_))
+}
+
 pub fn get_oversampled_top<Q: QuantizedVectorsRead>(
     quantized_storage: Option<&Q>,
     params: Option<&SearchParams>,
@@ -90,10 +95,7 @@ where
         && vector_storage.distance() == Distance::Euclid
         && matches!(vector, QueryVector::Nearest(VectorInternal::Dense(_)))
         && let Some(quantized_vectors) = quantized_vectors
-        && matches!(
-            &quantized_vectors.config().quantization_config,
-            QuantizationConfig::Binary(_)
-        )
+        && is_binary_quantization(&quantized_vectors.config().quantization_config)
     {
         // BQ returns dim - 2 * h, where h is the (possibly weighted) XOR count.
         // Convert to a non-positive quantized distance proxy (-4 * h) before

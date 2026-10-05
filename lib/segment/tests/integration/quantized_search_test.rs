@@ -199,8 +199,8 @@ fn binary_quantized_euclid_default_rescore_and_unquantized_scores_are_unchanged(
 }
 
 #[test]
-fn binary_quantized_other_distances_are_unchanged() {
-    for distance in [Distance::Dot, Distance::Cosine, Distance::Manhattan] {
+fn binary_quantized_dot_and_cosine_without_rescore_are_unchanged() {
+    for distance in [Distance::Dot, Distance::Cosine] {
         let (segment, _dir, _quantized_dir) = binary_segment(distance);
         let params = SearchParams {
             quantization: Some(QuantizationSearchParams {
@@ -215,6 +215,26 @@ fn binary_quantized_other_distances_are_unchanged() {
             .collect();
         assert_eq!(scores, [2.0, 0.0, 0.0, -2.0, -2.0], "{distance:?}");
     }
+}
+
+#[test]
+fn binary_quantized_manhattan_without_rescore_is_unchanged() {
+    let (segment, _dir, _quantized_dir) = binary_segment(Distance::Manhattan);
+    let params = SearchParams {
+        quantization: Some(QuantizationSearchParams {
+            rescore: Some(false),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    // Manhattan uses the BQ similarity directly. The Euclidean-only conversion
+    // must not shift these scores when rescoring is explicitly disabled.
+    let scores: Vec<_> = search(&segment, &params, 5)
+        .into_iter()
+        .map(|point| point.score)
+        .collect();
+    assert_eq!(scores, [2.0, 0.0, 0.0, -2.0, -2.0]);
 }
 
 #[test]
