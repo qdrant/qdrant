@@ -407,6 +407,7 @@ inherits = "release"
 debug-assertions = true
 lto = false
 opt-level = 0
+codegen-units = 256 # restore default value for faster compilation
 
 # Inherits by default from release
 [profile.bench]
