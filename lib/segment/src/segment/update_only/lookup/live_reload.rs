@@ -29,6 +29,12 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
+        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+        let max_committed_id = probe.max_committed_id();
+
         // Prepare new LIST snapshot
         fs.cache_file_info()?;
 
@@ -45,7 +51,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs)?;
+        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };

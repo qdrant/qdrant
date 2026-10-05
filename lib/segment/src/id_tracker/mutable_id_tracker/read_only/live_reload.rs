@@ -1,12 +1,14 @@
 use std::io::Cursor;
+use std::path::PathBuf;
 
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs};
-use futures::FutureExt;
+use common::universal_io::{
+    CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
 
-use super::ReadOnlyAppendableIdTracker;
+use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::change::MappingChange;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, read_mappings_iter};
@@ -25,6 +27,45 @@ pub struct LiveReloadResult {
     pub inserted: Vec<PointOffsetType>,
     /// Offsets that were previously reported as available and are now deleted.
     pub deleted: Vec<PointOffsetType>,
+}
+
+/// What [`ReadOnlyAppendableIdTracker::probe_committed`] learned about the tracker files before
+/// the directory listing snapshot is taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackerProbe {
+    /// Neither tracker file changed since the last reload, so the listing can be skipped.
+    /// `max_committed_id` is the versions length observed by the probe.
+    Unchanged { max_committed_id: PointOffsetType },
+    /// A tracker file changed. The reload commits points below `max_committed_id`, the versions
+    /// length observed by the probe, which every file in the following listing covers.
+    Changed { max_committed_id: PointOffsetType },
+    /// The tracker detects changes only by comparing listing snapshots (immutable and
+    /// disk-resident trackers rewrite `deleted.dat` in place), so the listing is always needed.
+    Unknown,
+}
+
+impl TrackerProbe {
+    /// `true` if the probe proved the tracker files unchanged.
+    pub fn is_unchanged(&self) -> bool {
+        match self {
+            TrackerProbe::Unchanged {
+                max_committed_id: _,
+            } => true,
+            TrackerProbe::Changed {
+                max_committed_id: _,
+            }
+            | TrackerProbe::Unknown => false,
+        }
+    }
+
+    /// Upper bound for the points the following reload commits, `None` if the tracker has none.
+    pub fn max_committed_id(&self) -> Option<PointOffsetType> {
+        match self {
+            TrackerProbe::Unchanged { max_committed_id }
+            | TrackerProbe::Changed { max_committed_id } => Some(*max_committed_id),
+            TrackerProbe::Unknown => None,
+        }
+    }
 }
 
 impl LiveReloadResult {
@@ -61,33 +102,78 @@ impl LiveReloadResult {
 }
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
-    /// Stage what the next [`live_reload`](Self::live_reload) does per file: a
-    /// reopen for held handles, a prefetch for files it opens lazily. Absence
-    /// is tolerated the same way the reload tolerates it.
+    /// Measure how far the writer has committed, before the directory listing snapshot is taken.
+    ///
+    /// Refreshes `versions.dat` and `mappings.dat` through the inner filesystem (live-reloading
+    /// held handles in place, opening missing ones) and reports the observed versions length as
+    /// `max_committed_id`. The tracker's visible state is unchanged until [`Self::live_reload`].
+    pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        inner_fs: &Fs,
+    ) -> OperationResult<TrackerProbe> {
+        // Held across the refresh IO. Only refreshes take it, and the caller serializes those.
+        let mut files = self.files.lock().await;
+        let TrackerFiles { mappings, versions } = &mut *files;
+
+        // Refreshed concurrently, so the mappings may be observed older than the versions. That is
+        // safe: a point becomes visible only once both its insert and its version are read, so a
+        // missing insert just defers the point, and the grown mappings file flags the next probe
+        // as changed.
+        futures::try_join!(
+            Self::refresh_file(versions, inner_fs, versions_path(&self.segment_path)),
+            Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
+        )?;
+
+        let v_len = match versions {
+            Some(file) => (file.len::<u8>()? / VERSION_ELEMENT_SIZE) as usize,
+            None => 0,
+        };
+        let m_bytes = match mappings {
+            Some(file) => file.len::<u8>()?,
+            None => 0,
+        };
+
+        let versions_changed = v_len != self.internal_to_version.len();
+        let mappings_changed = m_bytes != self.mappings_read_to;
+
+        let max_committed_id = v_len as PointOffsetType;
+        Ok(if versions_changed || mappings_changed {
+            TrackerProbe::Changed { max_committed_id }
+        } else {
+            TrackerProbe::Unchanged { max_committed_id }
+        })
+    }
+
+    /// Live-reload a held handle in place, or open it through `inner_fs` once the file exists.
+    async fn refresh_file<Fs: UniversalReadFsAsync<File = S>>(
+        file: &mut Option<S>,
+        inner_fs: &Fs,
+        path: PathBuf,
+    ) -> OperationResult<()> {
+        match file {
+            Some(file) => {
+                if let Some(fut) = file.live_preload(|_| None).ok_not_found()? {
+                    fut.await;
+                    file.live_reload().ok_not_found()?;
+                }
+            }
+            None => {
+                *file = inner_fs
+                    .open_async(path, Self::open_options(), Default::default())
+                    .await
+                    .ok_not_found()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
+    /// [`Self::probe_committed`] on the inner filesystem, so this is a no-op.
     pub fn live_preload(
         &self,
-        fs: &impl CachedReadFs<File = S>,
+        _fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        let options = Self::open_options();
-        let mut futs: Vec<BoxFuture<'static, ()>> = Vec::new();
-        for (file, path) in [
-            (&self.versions_file, versions_path(&self.segment_path)),
-            (&self.mappings_file, mappings_path(&self.segment_path)),
-        ] {
-            match file {
-                Some(file) => {
-                    futs.extend(
-                        file.live_preload(|p| fs.cached_file_info(p))
-                            .ok_not_found()?
-                            .map(FutureExt::boxed),
-                    );
-                }
-                None => {
-                    fs.schedule_open(&path, Some(options), None);
-                }
-            };
-        }
-        Ok(futs)
+        Ok(Vec::new())
     }
 
     /// Consume mapping and version changes appended to storage since the last reload.
@@ -106,14 +192,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        max_committed_id: Option<PointOffsetType>,
     ) -> OperationResult<LiveReloadResult> {
+        let preloaded = max_committed_id.is_some();
+
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed = self.reload_versions(fs)? as PointOffsetType;
+        let committed = self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
-        let changes = self.read_new_mapping_changes(fs)?;
+        let changes = self.read_new_mapping_changes(fs, preloaded)?;
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
@@ -169,21 +258,25 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     fn read_new_mapping_changes(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        preloaded: bool,
     ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
-        match self.mappings_file.as_mut() {
-            Some(file) => {
-                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-                // an empty file.
-                file.live_reload().ok_not_found()?;
-            }
-            None => {
-                self.mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+        let mappings_file = &mut self.files.get_mut().mappings;
+        if !preloaded {
+            match mappings_file.as_mut() {
+                Some(file) => {
+                    // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                    // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                    // an empty file.
+                    file.live_reload().ok_not_found()?;
+                }
+                None => {
+                    *mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+                }
             }
         }
-        let Some(file) = self.mappings_file.as_mut() else {
+        let Some(file) = mappings_file.as_mut() else {
             return Ok(Vec::new());
         };
 
@@ -227,28 +320,34 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// slot, so [`internal_version`](crate::id_tracker::IdTrackerRead::internal_version) returns
     /// `None` for it (it is never given a fake version) until its version is appended here. We do
     /// not read versions for deleted points, a deleted point's version is considered gone.
-    fn reload_versions(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<usize> {
+    fn reload_versions(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        max_committed_id: Option<PointOffsetType>,
+        preloaded: bool,
+    ) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
-        match self.versions_file.as_mut() {
-            Some(versions_file) => {
-                // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
-                // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
-                // an empty file (no committed versions).
-                versions_file.live_reload().ok_not_found()?;
-            }
-            None => {
-                self.versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+        let versions_file = &mut self.files.get_mut().versions;
+        if !preloaded {
+            match versions_file.as_mut() {
+                Some(versions_file) => {
+                    // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
+                    // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
+                    // an empty file (no committed versions).
+                    versions_file.live_reload().ok_not_found()?;
+                }
+                None => {
+                    *versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+                }
             }
         }
-        let Some(versions_file) = self.versions_file.as_mut() else {
+        let Some(versions_file) = versions_file.as_mut() else {
             return Ok(self.internal_to_version.len());
         };
 
         // Disjoint field borrow so the read (from `versions_file`) can extend `internal_to_version`.
         let internal_to_version = &mut self.internal_to_version;
-
-        let loaded_len = internal_to_version.len() as u64;
 
         // Floor the raw byte length to whole elements: a partially-written trailing version (a torn
         // flush) is ignored, only fully-written versions are loaded. We read the byte length rather
@@ -257,13 +356,22 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
             return Ok(internal_to_version.len());
         };
-        let versions_len = versions_bytes / VERSION_ELEMENT_SIZE;
+        let mut versions_len = (versions_bytes / VERSION_ELEMENT_SIZE) as usize;
+
+        if let Some(target) = max_committed_id {
+            versions_len = versions_len.min(target as usize);
+        }
+
+        let loaded_len = internal_to_version.len();
 
         // Append the newly flushed tail. Anything beyond `versions_len` is not flushed yet and
         // stays absent until a later reload (the mapped-but-versionless case).
         if versions_len > loaded_len {
             let tail = versions_file.read::<_, SeqNumberType>(
-                ReadRange::new(loaded_len * VERSION_ELEMENT_SIZE, versions_len - loaded_len),
+                ReadRange::new(
+                    (loaded_len as u64) * VERSION_ELEMENT_SIZE,
+                    (versions_len - loaded_len) as u64,
+                ),
                 Sequential,
             )?;
             internal_to_version.extend_from_slice(&tail);

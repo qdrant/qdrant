@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
 use rstest::rstest;
 use tempfile::Builder;
 
@@ -648,8 +648,9 @@ fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
     hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
-    futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
-    segment.live_reload(hw_counter)
+    let max_committed_id =
+        futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
+    segment.live_reload(max_committed_id, hw_counter)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -915,4 +916,340 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
     assert!(!stopped.load(Ordering::Relaxed));
     assert_eq!(read_only.available_point_count(), NUM_POINTS);
     assert_query_equivalence(&mutable, &read_only);
+}
+
+/// Regression test: writer flushes new vectors and versions while live_preload
+/// is in flight / after the LIST snapshot was taken.
+/// id-tracker must never expose points whose vectors are missing or not yet loaded.
+#[test]
+fn test_live_reload_writer_appends_between_preload_list_and_reload() {
+    let segments_dir = Builder::new().prefix("appendable_seg").tempdir().unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    for i in 0..NUM_POINTS {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        let op_num = (i + 1) as u64;
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+
+    // Staged preload takes the CachedFs snapshot (t0).
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+            .expect("live preload");
+
+    // After the listing snapshot was taken, writer appends more points and flushes.
+    // 5000 points will cross chunk 0 capacity (4096) and create chunk 1!
+    for i in NUM_POINTS..5000 {
+        let op_num = i as u64 + 1;
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    // Now reload.
+    // Under the safe read sequence, this reload commits at most the state probed
+    // before the LIST (i.e. NUM_POINTS), keeping all components consistent!
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("first live reload");
+    assert_eq!(
+        read_only.available_point_count(),
+        NUM_POINTS,
+        "first reload must only commit up to the probed max_committed_id at preload time",
+    );
+
+    // All currently available points must have valid vectors.
+    for point_id in 1..=read_only.available_point_count() as u64 {
+        let vec = read_only
+            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .unwrap();
+        assert!(
+            vec.is_some(),
+            "vector for point {point_id} must be present, but got None"
+        );
+    }
+
+    // A subsequent preload and reload cycle picks up the remaining points.
+    preload_then_reload(&mut read_only, &hw).expect("second live reload");
+    assert_eq!(read_only.available_point_count(), 5000);
+    for point_id in 1..=5000_u64 {
+        let vec = read_only
+            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .unwrap();
+        assert!(
+            vec.is_some(),
+            "vector for point {point_id} must be present after second reload"
+        );
+    }
+}
+
+/// Regression test: pure deletes without any inserts do not grow `versions.dat`,
+/// but must still be detected via `mappings.dat` changes and reloaded.
+#[test]
+fn test_live_reload_pure_delete_without_inserts() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_del")
+        .tempdir()
+        .unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    for i in 0..NUM_POINTS {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        let op_num = (i + 1) as u64;
+        mutable
+            .upsert_point(op_num, point_id, vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+
+    // Delete a point without adding any new points (versions.dat length does not change)
+    let op_num = NUM_POINTS as u64 + 1;
+    mutable.delete_point(op_num, 5.into(), &hw).unwrap();
+    mutable.flush(true).unwrap();
+
+    preload_then_reload(&mut read_only, &hw).expect("live reload after delete");
+    assert_eq!(
+        read_only.available_point_count(),
+        NUM_POINTS - 1,
+        "pure delete must reduce available point count"
+    );
+    assert!(
+        !read_only.has_point(5.into(), DeferredBehavior::VisibleOnly),
+        "deleted point must no longer be present"
+    );
+}
+
+/// Verify that `live_preload` short-circuits and skips the directory LIST
+/// when the tracker files are unchanged.
+#[test]
+fn test_live_preload_skips_list_when_unchanged() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_skip")
+        .tempdir()
+        .unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    for i in 0..10 {
+        let vector: Vec<f32> = (0..DIM).map(|j| (i + j) as f32).collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        mutable
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    // First preload + reload
+    preload_then_reload(&mut read_only, &hw).expect("first reload");
+    assert_eq!(read_only.available_point_count(), 10);
+
+    // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
+    let config_path = mutable.data_path().join("config.json");
+    assert!(
+        read_only
+            .reload_fs
+            .borrow()
+            .cached_file_info(&config_path)
+            .is_none()
+    );
+
+    // Call live_preload again without any writer changes
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+            .expect("second preload");
+    assert_eq!(max_committed_id, Some(10));
+
+    // Since nothing changed, live_preload skipped cache_file_info_async(), so cached_file_info remains None!
+    assert!(
+        read_only
+            .reload_fs
+            .borrow()
+            .cached_file_info(&config_path)
+            .is_none(),
+        "live_preload must skip directory listing when tracker files are unchanged",
+    );
+
+    // live_reload is an instantaneous no-op
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("second reload");
+    assert_eq!(read_only.available_point_count(), 10);
+}
+
+/// Regression test: `live_preload` runs under shared access, concurrently with readers.
+/// Probing the id tracker must not borrow it mutably while a reader holds it.
+#[test]
+fn test_live_preload_while_reader_holds_id_tracker() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_shared_preload")
+        .tempdir()
+        .unwrap();
+    let hw = HardwareCounterCell::new();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |mutable: &mut Segment, ids: std::ops::Range<u64>| {
+        for i in ids {
+            let vector: Vec<f32> = (0..DIM).map(|j| (i as usize + j) as f32).collect();
+            let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+            mutable
+                .upsert_point(i + 1, (i + 1).into(), vectors, &hw)
+                .unwrap();
+        }
+        mutable.flush(true).unwrap();
+    };
+
+    upsert(&mut mutable, 0..10);
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    upsert(&mut mutable, 10..20);
+
+    let max_committed_id = {
+        let reader = read_only.id_tracker.borrow();
+        let max_committed_id =
+            futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
+                .expect("preload alongside a reader");
+        assert_eq!(
+            reader.available_point_count(),
+            10,
+            "preload must not change what readers see"
+        );
+        max_committed_id
+    };
+
+    read_only
+        .live_reload(max_committed_id, &hw)
+        .expect("reload");
+    assert_eq!(read_only.available_point_count(), 20);
 }

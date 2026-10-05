@@ -17,7 +17,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         &self,
         fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        // The reload reads the whole bitslice
         fs.reschedule_open(
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
