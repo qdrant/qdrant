@@ -73,6 +73,12 @@ struct Args {
     #[clap(long, default_value_t = false)]
     disable_optimizer: bool,
 
+    /// Turn on the `append_only_mutations` feature flag: point deletions become id-tracker
+    /// tombstones that leave payloads and field indexes untouched, and mutations of appendable
+    /// segments go through clone-and-tombstone. Exercises the paths append-only storages take.
+    #[clap(long, default_value_t = false)]
+    append_only_mutations: bool,
+
     /// Optimizer `max_segment_size` in KB. Smaller values produce more segments and more
     /// optimizer churn (more chances to trip races); larger values mimic production
     /// cadence. The fixture's default (10 KB) is well below production thresholds because
@@ -175,7 +181,10 @@ fn main() {
 
 async fn run_main(args: Args) {
     env_logger::init();
-    init_feature_flags(FeatureFlags::default());
+    init_feature_flags(FeatureFlags {
+        append_only_mutations: args.append_only_mutations,
+        ..FeatureFlags::default()
+    });
     let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(true);
     init_requests_profile_collector(tokio::runtime::Handle::current());
 
@@ -223,7 +232,7 @@ async fn run_main(args: Args) {
          storage_path={} disable_optimizer={} max_segment_size_kb={} indexing_threshold_kb={} \
          restart_probability={} swarm_interval={} \
          on_disk={} async_scorer={} pre_restart_check={} enable_force_off={} \
-         disable_snapshots={}",
+         disable_snapshots={} append_only_mutations={}",
         args.seed,
         args.shard_count,
         args.id_pool,
@@ -239,6 +248,7 @@ async fn run_main(args: Args) {
         args.pre_restart_check,
         args.enable_force_off,
         args.disable_snapshots,
+        args.append_only_mutations,
     );
     let start = Instant::now();
     collection::model_testing::run(
