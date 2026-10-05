@@ -184,6 +184,27 @@ pub struct AuditEvent {
     pub error: Option<String>,
 }
 
+/// Value of the `kind` field written with every audit log line, so audit
+/// entries can be told apart from regular logs sharing the same stream.
+pub const AUDIT_LOG_KIND: &str = "audit";
+
+/// On-disk / on-stream representation of an [`AuditEvent`].
+#[derive(Serialize)]
+struct AuditLogLine<'a> {
+    kind: &'static str,
+    #[serde(flatten)]
+    event: &'a AuditEvent,
+}
+
+impl<'a> AuditLogLine<'a> {
+    fn new(event: &'a AuditEvent) -> Self {
+        Self {
+            kind: AUDIT_LOG_KIND,
+            event,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Logger implementation
 // ---------------------------------------------------------------------------
@@ -258,7 +279,7 @@ impl AuditLogger {
         // Serialize to a buffer first so the entire event is sent as one
         // atomic message to each non-blocking writer (avoids interleaved
         // partial writes from concurrent callers).
-        let mut buf = match serde_json::to_vec(event) {
+        let mut buf = match serde_json::to_vec(&AuditLogLine::new(event)) {
             Ok(buf) => buf,
             Err(err) => {
                 log::error!("Failed to serialize audit log entry: {err}");
@@ -369,6 +390,29 @@ mod tests {
             out.len()
         );
         assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn log_line_is_tagged_and_readable_as_event() {
+        let event = AuditEvent {
+            timestamp: Utc::now(),
+            method: Some("list_collections".to_string()),
+            api: None,
+            auth_type: AuthType::None,
+            subject: None,
+            remote: None,
+            collection: None,
+            tracing_id: None,
+            result: AuditResult::Ok,
+            error: None,
+        };
+
+        let line = serde_json::to_string(&AuditLogLine::new(&event)).expect("serializable");
+        assert!(line.starts_with(r#"{"kind":"audit","#), "{line}");
+
+        let parsed: AuditEvent = serde_json::from_str(&line).expect("readable as event");
+        assert_eq!(parsed.method, event.method);
+        assert_eq!(parsed.timestamp, event.timestamp);
     }
 
     #[test]

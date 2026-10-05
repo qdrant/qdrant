@@ -537,5 +537,6 @@ tls:
 #   #   file            - rolling log files in `dir`
 #   #   stdout / stderr - only the given stream, nothing is written to `dir`
 #   #   file_and_stdout / file_and_stderr - both
+#   # Each entry is a JSON line with `"kind": "audit"`, to tell it apart from regular logs.
 #   # Default: file
 #   output: file
