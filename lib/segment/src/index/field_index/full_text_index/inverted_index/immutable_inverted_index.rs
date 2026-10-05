@@ -45,17 +45,16 @@ fn get_all_or_none<'a, V: PostingValue>(
 pub struct ImmutableInvertedIndex {
     pub(super) postings: ImmutablePostings,
     pub(super) vocab: HashMap<String, TokenId>,
+    /// Number of distinct tokens per point, i.e. the size of its token set:
+    /// a token that occurs several times in the text counts once.
+    /// Zero for a point without tokens or a removed one.
     pub(super) point_to_tokens_count: Vec<usize>,
 
-    /// Total tokens per point, for BM25 length normalization. `None` when this
-    /// index does not record lengths.
+    /// Number of token occurrences per point, i.e. the length of the tokenized
+    /// text with repetitions, summed over all of the point's values. `None`
+    /// when this index does not record lengths.
     ///
-    /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
-    /// so summing it never counts a deleted document. A zero can still be a
-    /// live document whose tokens were all filtered, but only until the index
-    /// is written out: `create` puts every point with no tokens into the "no
-    /// tokens" mask, so after a round trip through disk that document is
-    /// indistinguishable from a deleted one.
+    /// Zeroed wherever `point_to_tokens_count` is.
     pub(super) point_to_doc_len: Option<Vec<u32>>,
     /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
     /// meaningful when that vector exists.
