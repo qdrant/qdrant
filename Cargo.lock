@@ -7165,6 +7165,7 @@ dependencies = [
  "chrono",
  "clap",
  "common",
+ "crc32c",
  "criterion",
  "data-encoding",
  "dataset",
