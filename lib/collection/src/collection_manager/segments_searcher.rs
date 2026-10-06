@@ -231,8 +231,12 @@ impl SegmentsSearcher {
                 };
 
                 // Collect the segments first so we don't lock the segment holder during the operations.
+                // Empty segments are left out: each segment costs a blocking task, a thread
+                // handoff and back, and an optimized collection keeps an empty appendable
+                // segment beside its indexed one, so every search paid one for nothing.
                 segments_lock
                     .non_appendable_then_appendable_segments()
+                    .filter(|segment| !is_known_empty(segment))
                     .collect()
             };
 
@@ -715,6 +719,17 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
     poisson_sampling.max(ef_limit).min(limit)
 }
 
+/// Whether `segment` has no point a search could return.
+///
+/// Read without waiting. If the segment's lock is held right now, it is not
+/// known to be empty and is searched as before.
+fn is_known_empty(segment: &LockedSegment) -> bool {
+    segment
+        .get()
+        .try_read()
+        .is_some_and(|segment| segment.available_point_count() == 0)
+}
+
 /// Process sequentially contiguous batches
 ///
 /// # Arguments
@@ -854,7 +869,9 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{TEST_TIMEOUT, build_test_holder, random_segment};
+    use crate::collection_manager::fixtures::{
+        TEST_TIMEOUT, build_test_holder, empty_segment, random_segment,
+    };
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::types::CoreSearchRequest;
 
@@ -944,6 +961,94 @@ mod tests {
 
         assert!(result[0].id == 3.into() || result[0].id == 11.into());
         assert!(result[1].id == 3.into() || result[1].id == 11.into());
+    }
+
+    fn search_request(rnd: &mut impl rand::Rng, limit: usize) -> CoreSearchRequest {
+        SearchRequestInternal {
+            vector: random_vector(rnd, 4).into(),
+            limit,
+            offset: None,
+            with_payload: None,
+            with_vector: None,
+            filter: None,
+            params: None,
+            score_threshold: None,
+        }
+        .into()
+    }
+
+    async fn search_holder(
+        holder: &LockedSegmentHolder,
+        batch: &Arc<CoreSearchRequestBatch>,
+    ) -> Vec<Vec<ScoredPoint>> {
+        let query_context =
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, HwMeasurementAcc::new());
+        SegmentsSearcher::search(
+            holder.clone(),
+            batch.clone(),
+            &AdaptiveSearchHandle::current_for_tests(),
+            true,
+            query_context,
+            TEST_TIMEOUT,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[test]
+    fn test_is_known_empty() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        assert!(is_known_empty(&LockedSegment::new(empty_segment(
+            dir.path()
+        ))));
+        assert!(!is_known_empty(&LockedSegment::new(random_segment(
+            dir.path(),
+            10,
+            100,
+            4
+        ))));
+    }
+
+    /// An optimized collection keeps an empty appendable segment beside its
+    /// indexed one. Leaving it out of the fan-out changes no result, with
+    /// sampling on (which more than one segment used to enable).
+    #[tokio::test]
+    async fn test_empty_segment_changes_no_result() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+        holder.add_new(random_segment(dir.path(), 10, 2000, 4));
+        let empty_id = holder.add_new(empty_segment(dir.path()));
+        let segment_holder = LockedSegmentHolder::new(holder);
+
+        let mut rnd = rand::rng();
+        let batch = Arc::new(CoreSearchRequestBatch {
+            searches: vec![search_request(&mut rnd, 150), search_request(&mut rnd, 10)],
+        });
+        let with_empty = search_holder(&segment_holder, &batch).await;
+        segment_holder.write().remove(&[empty_id]);
+        let without_empty = search_holder(&segment_holder, &batch).await;
+        assert_eq!(with_empty, without_empty);
+        assert_eq!(with_empty[0].len(), 150);
+    }
+
+    /// With every segment empty there is nothing to fan out to, and each search
+    /// in the batch still gets its (empty) result.
+    #[tokio::test]
+    async fn test_all_empty_segments_return_one_empty_result_per_search() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut holder = SegmentHolder::default();
+        holder.add_new(empty_segment(dir.path()));
+        holder.add_new(empty_segment(dir.path()));
+        let segment_holder = LockedSegmentHolder::new(holder);
+
+        let mut rnd = rand::rng();
+        let batch = Arc::new(CoreSearchRequestBatch {
+            searches: vec![search_request(&mut rnd, 5), search_request(&mut rnd, 5)],
+        });
+        assert_eq!(
+            search_holder(&segment_holder, &batch).await,
+            vec![vec![], vec![]]
+        );
     }
 
     #[tokio::test]
