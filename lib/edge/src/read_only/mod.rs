@@ -111,4 +111,10 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     pub fn segments_count(&self) -> usize {
         self.segments.read().len()
     }
+
+    /// Hold the current read epoch, as a read in flight does.
+    #[cfg(test)]
+    pub(crate) fn hold_read_epoch(&self) -> ReadEpochGuard {
+        self.read_epochs.enter()
+    }
 }

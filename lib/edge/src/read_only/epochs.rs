@@ -49,3 +49,62 @@ impl ReadEpochs {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A running read of the ending epoch keeps the wait from finishing, until it is dropped.
+    #[test]
+    fn waits_for_reads_of_the_ending_epoch() {
+        let epochs = ReadEpochs::default();
+        let not_stopped = AtomicBool::new(false);
+
+        let first = epochs.enter();
+        assert!(!epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+
+        // `first` belongs to an epoch that already ended, `second` to the one ending next
+        let second = epochs.enter();
+        drop(first);
+        assert!(!epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+
+        drop(second);
+        assert!(epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+    }
+
+    /// Reads that start while a pass waits join the new epoch, so they do not prolong the wait.
+    #[test]
+    fn reads_of_the_new_epoch_do_not_block_the_wait() {
+        let epochs = Arc::new(ReadEpochs::default());
+        let not_stopped = AtomicBool::new(false);
+
+        let old_read = epochs.enter();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            drop(old_read);
+        });
+        let late_reader = {
+            let epochs = epochs.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(10));
+                let read = epochs.enter();
+                std::thread::sleep(Duration::from_secs(2));
+                drop(read);
+            })
+        };
+
+        let started = Instant::now();
+        assert!(epochs.advance_and_wait(Duration::from_secs(1), &not_stopped));
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        releaser.join().unwrap();
+        late_reader.join().unwrap();
+    }
+
+    #[test]
+    fn a_stopped_wait_gives_up() {
+        let epochs = ReadEpochs::default();
+        let _read = epochs.enter();
+        assert!(!epochs.advance_and_wait(Duration::from_secs(10), &AtomicBool::new(true)));
+    }
+}

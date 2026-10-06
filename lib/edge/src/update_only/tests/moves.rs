@@ -471,3 +471,98 @@ fn move_into_an_unlisted_target_waits_for_its_listing() {
     assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
     assert_eq!(approximate_count(&follower), POINTS);
 }
+
+/// A follower whose source view was fresher serves the old copy, and the pass that brings the
+/// target's new copy into view also removes the old one.
+#[test]
+fn held_delete_is_released_once_the_target_catches_up() {
+    let fixture = MoveFixture::new();
+    let view = fixture.compose(
+        "catching-up",
+        &fixture.after.clone(),
+        &fixture.before.clone(),
+        |_, _| {},
+    );
+
+    let follower = open_follower(&view);
+    assert_eq!(served_vector(&follower, MOVED), Some(MOVED as f32));
+    assert_eq!(approximate_count(&follower), POINTS);
+
+    // The target catches up: its files grow in place, as the writer's appends do
+    let target = segment_path(&fixture.after, fixture.target);
+    for entry in walkdir::WalkDir::new(&target) {
+        let entry = entry.unwrap();
+        let relative = entry.path().strip_prefix(&target).unwrap();
+        let destination = segment_path(&view, fixture.target).join(relative);
+        if entry.file_type().is_dir() {
+            fs_err::create_dir_all(&destination).unwrap();
+        } else {
+            fs_err::copy(entry.path(), &destination).unwrap();
+        }
+    }
+    follower.live_reload().unwrap();
+
+    assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
+    assert_eq!(exact_count(&follower), POINTS);
+    assert_eq!(
+        approximate_count(&follower),
+        POINTS,
+        "the old copy must be gone in the same pass",
+    );
+}
+
+/// A read that started before a pass installed the target's new copy may have missed it, so the
+/// pass masks the old copy only once that read is done. Until then both copies serve, which only
+/// the approximate count notices.
+#[test]
+fn masks_wait_for_reads_of_the_previous_epoch() {
+    let fixture = MoveFixture::new();
+    let view = fixture.compose(
+        "epoch",
+        &fixture.after.clone(),
+        &fixture.before.clone(),
+        |_, _| {},
+    );
+    let follower = std::sync::Arc::new(open_follower(&view));
+    assert_eq!(served_vector(&follower, MOVED), Some(MOVED as f32));
+
+    let target = segment_path(&fixture.after, fixture.target);
+    for entry in walkdir::WalkDir::new(&target) {
+        let entry = entry.unwrap();
+        let destination =
+            segment_path(&view, fixture.target).join(entry.path().strip_prefix(&target).unwrap());
+        if entry.file_type().is_dir() {
+            fs_err::create_dir_all(&destination).unwrap();
+        } else {
+            fs_err::copy(entry.path(), &destination).unwrap();
+        }
+    }
+
+    let read_in_flight = follower.hold_read_epoch();
+    let reload = {
+        let follower = follower.clone();
+        std::thread::spawn(move || follower.live_reload().unwrap())
+    };
+
+    // The pass installs the new copy, then waits for the read in flight before masking the old one
+    let started = std::time::Instant::now();
+    while served_vector(&follower, MOVED) != Some(NEW_VECTOR) {
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert!(
+        !reload.is_finished(),
+        "the pass waits for the read in flight"
+    );
+    assert_eq!(
+        approximate_count(&follower),
+        POINTS + 1,
+        "both copies serve"
+    );
+
+    drop(read_in_flight);
+    reload.join().unwrap();
+    assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
+    assert_eq!(approximate_count(&follower), POINTS);
+}
