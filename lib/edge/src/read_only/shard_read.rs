@@ -6,7 +6,7 @@ use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
 use crate::EdgeConfig;
-use crate::read_only::ReadOnlyEdgeShard;
+use crate::read_only::{ReadEpochGuard, ReadOnlyEdgeShard};
 use crate::read_view::ReadViewProvider;
 
 /// The follower's segments are homogeneous, so its handle is the concrete
@@ -20,6 +20,10 @@ where
 
     fn read_segments(&self) -> Vec<Arc<RwLock<ReadOnlySegment<S>>>> {
         self.segments.read().read_handles()
+    }
+
+    fn read_epoch(&self) -> Option<ReadEpochGuard> {
+        Some(self.read_epochs.enter())
     }
 
     fn config_snapshot(&self) -> Arc<EdgeConfig> {

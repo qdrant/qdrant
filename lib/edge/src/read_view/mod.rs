@@ -21,6 +21,14 @@ pub(crate) use self::shard_read::ReadViewProvider;
 pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
 use crate::EdgeConfig;
 
+/// What a read holds for its whole lifetime, so that a read-only follower's reload does not mask a
+/// copy the read may still need (see `read_only::epochs`). Only the read-only follower has read
+/// epochs, so without it a read holds nothing.
+#[cfg(feature = "serverless")]
+pub(crate) type ReadEpochToken = crate::read_only::ReadEpochGuard;
+#[cfg(not(feature = "serverless"))]
+pub(crate) type ReadEpochToken = std::convert::Infallible;
+
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,
 /// non-appendable first then appendable) plus an immutable config snapshot.
 ///
@@ -36,6 +44,8 @@ pub struct EdgeReadView<H: ReadSegmentHandle> {
     pub(crate) pool: Arc<ThreadPool>,
     /// Shared by every stage and segment of this read. Never reset or set by the read itself.
     pub(crate) is_stopped: Arc<AtomicBool>,
+    /// The read epoch this read holds for its lifetime, when the shard has them.
+    _epoch: Option<ReadEpochToken>,
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -45,6 +55,15 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             config,
             pool,
             is_stopped: Arc::new(AtomicBool::new(false)),
+            _epoch: None,
+        }
+    }
+
+    /// Hold `epoch` for the lifetime of this read.
+    pub(crate) fn with_epoch(self, epoch: Option<ReadEpochToken>) -> Self {
+        Self {
+            _epoch: epoch,
+            ..self
         }
     }
 

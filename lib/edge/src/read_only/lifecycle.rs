@@ -186,6 +186,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             load_pool,
             load_profile,
             live_reload_lock: Default::default(),
+            read_epochs: Default::default(),
             gone_segments: Default::default(),
         };
         shard.live_reload_cancellable(is_stopped)?;
