@@ -111,6 +111,7 @@ where
                     available_vector_count,
                     self.id_tracker.available_point_count(),
                 );
+                let full_scan_threshold = self.filtered_full_scan_threshold(params, top);
 
                 // if exact search is requested, we should not use HNSW index
                 if exact || is_hnsw_disabled {
@@ -132,7 +133,7 @@ where
                     );
                 }
 
-                if query_cardinality.max < self.config.full_scan_threshold {
+                if query_cardinality.max < full_scan_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -146,7 +147,7 @@ where
                     );
                 }
 
-                if query_cardinality.min > self.config.full_scan_threshold {
+                if query_cardinality.min > full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
                     return self.search_vectors_with_graph_filtered(
                         vectors,
@@ -169,7 +170,7 @@ where
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
                         |idx| filter_context.check(idx),
-                        self.config.full_scan_threshold,
+                        full_scan_threshold,
                         available_vector_count, // Check cardinality among available vectors
                     )?
                 };
@@ -199,6 +200,29 @@ where
                 }
             }
         }
+    }
+
+    /// The point count below which a filtered search scores the filter's matches
+    /// instead of walking the graph.
+    ///
+    /// Without `ef_aware_filtered_planner`, the configured `full_scan_threshold`. With
+    /// it, the calibrated break-even (`calibrated_filtered_threshold`) for the `ef` the
+    /// walk would run with (`hnsw_ef`, at least `top`) and this segment's vector size.
+    fn filtered_full_scan_threshold(&self, params: Option<&SearchParams>, top: usize) -> usize {
+        let threshold = self.config.full_scan_threshold;
+        if !common::flags::feature_flags().ef_aware_filtered_planner {
+            return threshold;
+        }
+        let ef = params
+            .and_then(|params| params.hnsw_ef)
+            .unwrap_or(self.config.ef)
+            .max(top);
+        let vector_bytes = self
+            .vector_storage
+            .size_of_available_vectors_in_bytes()
+            .checked_div(self.vector_storage.available_vector_count())
+            .unwrap_or(0);
+        calibrated_filtered_threshold(threshold, vector_bytes, ef)
     }
 
     /// Filtered graph search, timed under the counter of the algorithm it runs.
@@ -251,5 +275,92 @@ where
         } else {
             SearchAlgorithm::Hnsw
         }
+    }
+}
+
+/// The break-even match count of the calibration below, at `CALIBRATION_EF` and the
+/// default `full_scan_threshold_kb` (10,000) for 2048-byte vectors (512 x f32).
+const CALIBRATED_BREAK_EVEN: f64 = 1_300.0;
+const CALIBRATION_EF: f64 = 100.0;
+const CALIBRATION_VECTOR_BYTES: f64 = 2048.0;
+const DEFAULT_FULL_SCAN_THRESHOLD_KB: f64 = 10_000.0;
+/// The break-even grows as `ef^0.9`: a walk costs more with `ef` (about `ef^0.4` to
+/// `ef^0.65`) and also with how many neighbours the filter admits, so the match count
+/// a scan can afford grows almost in proportion.
+const BREAK_EVEN_EF_EXPONENT: f64 = 0.9;
+/// And as `bytes^-0.5`: scoring a match costs less than proportionally more for a wider
+/// vector, and a walk barely more up to 2 KB. `full_scan_threshold_kb` assumes `bytes^-1`.
+const BREAK_EVEN_BYTES_EXPONENT: f64 = -0.5;
+
+/// The match count below which scoring a filter's matches beats walking the graph, for
+/// a walk at `ef` over vectors of `vector_bytes`, given the configured threshold in points
+/// (`full_scan_threshold_kb x 1024 / vector_bytes`, as `derive_config` computes it).
+///
+/// Calibrated on Qdrant's own filtered search (uniform keyword filters at 0.5% to 10%
+/// selectivity, unquantized f32 at d = 128, 512 and 1536, m = 16, `ef` 32 to 512): at
+/// `ef` 100 the measured break-even is about 2,600, 1,300 and 750 points, where the
+/// default 10,000 KB threshold reads 20,000, 5,000 and 1,666. The configured threshold
+/// keeps its meaning as a scale: twice the default threshold, twice the break-even.
+fn calibrated_filtered_threshold(threshold_points: usize, vector_bytes: usize, ef: usize) -> usize {
+    if vector_bytes == 0 {
+        return threshold_points;
+    }
+    let bytes = vector_bytes as f64;
+    let threshold_kb = threshold_points as f64 * bytes / 1024.0;
+    let break_even = CALIBRATED_BREAK_EVEN
+        * (threshold_kb / DEFAULT_FULL_SCAN_THRESHOLD_KB)
+        * (ef.max(1) as f64 / CALIBRATION_EF).powf(BREAK_EVEN_EF_EXPONENT)
+        * (bytes / CALIBRATION_VECTOR_BYTES).powf(BREAK_EVEN_BYTES_EXPONENT);
+    break_even.round().max(1.0) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `derive_config`'s conversion of the default 10,000 KB to points.
+    fn default_points(vector_bytes: usize) -> usize {
+        10_000 * 1024 / vector_bytes
+    }
+
+    #[test]
+    fn test_reproduces_the_calibration_at_ef_100() {
+        for (dim, want) in [(128, 2_600), (512, 1_300), (1536, 750)] {
+            let bytes = dim * 4;
+            let got = calibrated_filtered_threshold(default_points(bytes), bytes, 100);
+            assert!(
+                got.abs_diff(want) <= want / 50,
+                "d={dim}: {got} against {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_break_even_grows_with_ef_and_stays_monotonic() {
+        let at = |ef| calibrated_filtered_threshold(default_points(2048), 2048, ef);
+        assert!(at(32) < at(64) && at(64) < at(128) && at(128) < at(512));
+        // ef^0.9: five times the `ef`, about 4.3 times the break-even.
+        let ratio = at(500) as f64 / at(100) as f64;
+        assert!((4.2..4.4).contains(&ratio), "{ratio}");
+    }
+
+    #[test]
+    fn test_the_configured_threshold_still_scales_it() {
+        let base = calibrated_filtered_threshold(default_points(2048), 2048, 100);
+        let doubled = calibrated_filtered_threshold(2 * default_points(2048), 2048, 100);
+        assert!(
+            doubled.abs_diff(2 * base) <= 1,
+            "{doubled} against {}",
+            2 * base
+        );
+    }
+
+    #[test]
+    fn test_degenerate_inputs() {
+        // No vectors to size: the configured threshold, as without the flag.
+        assert_eq!(calibrated_filtered_threshold(5_000, 0, 100), 5_000);
+        // `ef` 0 is read as 1, and the threshold never reaches zero.
+        assert!(calibrated_filtered_threshold(5_000, 2048, 0) >= 1);
+        assert!(calibrated_filtered_threshold(0, 2048, 100) >= 1);
     }
 }
