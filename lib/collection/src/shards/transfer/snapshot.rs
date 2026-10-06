@@ -15,7 +15,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::SharedShardHolder;
+use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -209,16 +209,17 @@ pub(super) async fn transfer_snapshot(
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
 
-        // `ShardHolder::create_shard_snapshot` returns a `Future` that can be awaited
-        // without borrowing the shard holder
-        let snapshot_creator = shard_holder
-            .read()
-            .await
-            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-            .await?;
+        // Setup can wait for update-queue capacity, so use the cloned replica set
+        // without holding the shard holder lock for either setup or snapshot creation.
+        let snapshot_creator = ShardHolder::create_shard_snapshot(
+            &replica_set,
+            snapshots_path,
+            collection_id,
+            shard_id,
+            temp_dir,
+        )
+        .await?;
 
-        // Release shard holder lock before awaiting snapshot creation,
-        // so collection writers and readers queued behind them can proceed
         let snapshot_description = snapshot_creator.await?;
 
         // TODO: If future is cancelled until `get_shard_snapshot_path` resolves,

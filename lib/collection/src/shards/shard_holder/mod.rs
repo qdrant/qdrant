@@ -29,7 +29,7 @@ use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
-use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
+use tokio::sync::{RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
@@ -1219,7 +1219,7 @@ impl ShardHolder {
     ///
     /// This method is cancel safe.
     pub async fn create_shard_snapshot(
-        &self,
+        shard: &ShardReplicaSet,
         snapshots_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
@@ -1227,10 +1227,6 @@ impl ShardHolder {
     ) -> CollectionResult<impl Future<Output = CollectionResult<SnapshotDescription>> + use<>> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is canceled
-
-        let shard = self
-            .get_shard(shard_id)
-            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         if !shard.is_local().await && !shard.is_queue_proxy().await {
             return Err(CollectionError::bad_input(format!(
@@ -1299,7 +1295,7 @@ impl ShardHolder {
     ///
     /// This method is cancel safe.
     pub async fn stream_shard_snapshot(
-        shard: OwnedRwLockReadGuard<ShardHolder, Arc<ShardReplicaSet>>,
+        shard: Arc<ShardReplicaSet>,
         collection_name: &str,
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
