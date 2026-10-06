@@ -91,10 +91,15 @@ fn shadowed_leader(prefix: &str) -> (TempDir, Uuid) {
     (dir, immutable)
 }
 
-/// How many copies `find_outdated` reports.
-fn outdated_count(shard: &DeleteOnlyEdgeShard<MmapFs>, version: SeqNumberType) -> usize {
-    let outdated = shard.find_outdated(&published(version)).unwrap();
-    outdated.values().map(Vec::len).sum()
+/// `find_outdated` for points 1-3 at `version`, sorted.
+fn outdated(shard: &DeleteOnlyEdgeShard<MmapFs>, version: SeqNumberType) -> Vec<ExtendedPointId> {
+    let mut ids = shard.find_outdated(&published(version)).unwrap();
+    ids.sort();
+    ids
+}
+
+fn ids(ids: impl IntoIterator<Item = u64>) -> Vec<ExtendedPointId> {
+    ids.into_iter().map(ExtendedPointId::NumId).collect()
 }
 
 fn published(version: SeqNumberType) -> HashMap<ExtendedPointId, SeqNumberType> {
@@ -113,26 +118,25 @@ fn deletes_the_copies_older_than_the_published_ones() {
     let (dir, immutable) = shadowed_leader("edge-delete-only-delete");
 
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
-    assert_eq!(outdated_count(&shard, NEWER), 3);
-    assert_eq!(shard.delete_outdated(&published(NEWER)).unwrap(), 3);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(stale, ids(1..=3));
+    assert_eq!(shard.delete_points(&stale).unwrap(), 3);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
-    assert_eq!(outdated_count(&reopened, NEWER), 0);
+    assert!(outdated(&reopened, NEWER).is_empty());
     assert_eq!(exact_count(&open_follower(dir.path())), 300);
 }
 
 #[test]
-fn a_newer_head_keeps_the_older_copies() {
+fn a_newer_copy_makes_a_point_not_outdated() {
     let (dir, _) = shadowed_leader("edge-delete-only-head");
 
     // The appendable's copies at NEWER are past the published version.
-    let mut shard =
-        DeleteOnlyEdgeShard::open(MmapFs, LocalSegmentEnumerator::new(dir.path())).unwrap();
-    assert_eq!(outdated_count(&shard, NEWER - 1), 0);
-    assert_eq!(shard.delete_outdated(&published(NEWER - 1)).unwrap(), 0);
+    let shard = DeleteOnlyEdgeShard::open(MmapFs, LocalSegmentEnumerator::new(dir.path())).unwrap();
+    assert!(outdated(&shard, NEWER - 1).is_empty());
 }
 
-/// A delete made after `open` survives `delete_outdated` once the shard is
+/// A delete made after `open` survives `delete_points` once the shard is
 /// reloaded.
 #[cfg_attr(
     windows,
@@ -146,17 +150,18 @@ fn a_reload_keeps_deletes_made_after_open() {
 
     let writer =
         UpdateOnlyEdgeShard::open(MmapFs, dir.path(), only(&dir, &[immutable]), None).unwrap();
-    let ids = vec![ExtendedPointId::NumId(2), ExtendedPointId::NumId(5)];
     let (_writer, outcome) = writer
-        .apply_batch([(NEWER + 1, PointOperation(DeletePoints { ids }))])
+        .apply_batch([(NEWER + 1, PointOperation(DeletePoints { ids: ids([2, 5]) }))])
         .unwrap();
     assert_eq!(outcome.deleted, 2);
 
     shard.live_reload().unwrap();
-    assert_eq!(shard.delete_outdated(&published(NEWER)).unwrap(), 2);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(stale, ids([1, 3]));
+    assert_eq!(shard.delete_points(&stale).unwrap(), 2);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
-    assert_eq!(outdated_count(&reopened, NEWER), 0);
+    assert!(outdated(&reopened, NEWER).is_empty());
     // Points 1 to 3 from the appendable, the rest but 5 from the immutable.
     assert_eq!(exact_count(&open_follower(dir.path())), 299);
 }

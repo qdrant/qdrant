@@ -1,8 +1,9 @@
-//! Delete-only shard: removes old copies of points after a rebuild publishes
-//! newer ones.
+//! Delete-only shard: finds and deletes points over a set of segments, opening
+//! only their id trackers.
 //!
-//! While a point's newer copy is deferred, its older copies stay visible. Once
-//! a rebuild publishes the newer copy, the older ones are duplicates.
+//! Built for removing outdated copies after a rebuild: while a point's newer
+//! copy is deferred, its older copies stay visible, and once a rebuild
+//! publishes the newer copy elsewhere, the older ones are duplicates.
 
 #[cfg(test)]
 mod tests;
@@ -10,6 +11,7 @@ mod tests;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 use rayon::ThreadPool;
@@ -21,9 +23,9 @@ use uuid::Uuid;
 
 use crate::read_only::{ListedSegment, SegmentEnumerator};
 use crate::read_view::build_segment_pool;
-use crate::update_only::locate::{locate_in, merge_locations};
+use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
 
-/// Deletes outdated point copies in the segments it was opened on. Opens id
+/// Finds and deletes points in the segments it was opened on. Opens id
 /// trackers only.
 pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
     fs: Fs,
@@ -34,7 +36,7 @@ pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
 impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// Open the id trackers of the listed segments. Writes nothing: opening an
     /// appendable writer would drop slots claimed by an in-flight batch, so
-    /// writers are opened in [`delete_outdated`](Self::delete_outdated).
+    /// writers are opened in [`delete_points`](Self::delete_points).
     pub fn open(fs: Fs, enumerator: impl SegmentEnumerator) -> OperationResult<Self> {
         let pool = build_segment_pool(
             "edge-delete",
@@ -63,22 +65,50 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         })
     }
 
-    /// Delete the outdated copies of the points in `published`, the versions
-    /// a rebuild published elsewhere. A point's copies here are outdated when
-    /// all of them are older than its published version; if any copy is at
-    /// least as new, it is a deferred head and all copies stay. Returns the
-    /// number of copies deleted.
+    /// Points in `versions` whose copies in this shard are all older than the
+    /// given version, based on the trackers' last read.
+    ///
+    /// For example, with segment A holding point 1 at version 3 and point 2 at
+    /// version 5, and segment B holding point 1 at version 7:
+    ///
+    /// - `{1: 8}` gives `[1]`: both copies, at 3 and 7, are older than 8.
+    /// - `{1: 6}` gives `[]`: B's copy at 7 is newer than 6.
+    /// - `{2: 5}` gives `[]`: the copy at 5 is not older than 5.
+    /// - `{3: 9}` gives `[]`: the shard holds no copy of point 3.
+    pub fn find_outdated(
+        &self,
+        versions: &HashMap<PointIdType, SeqNumberType>,
+    ) -> OperationResult<Vec<PointIdType>> {
+        let ids: Vec<PointIdType> = versions.keys().copied().collect();
+        Ok(self
+            .locate(&ids)?
+            .into_iter()
+            .filter(|(id, located)| located.newest.version < versions[id])
+            .map(|(id, _)| id)
+            .collect())
+    }
+
+    /// Delete every copy of `ids` in this shard. Ids the shard does not hold
+    /// are ignored. Returns how many copies were deleted.
     ///
     /// The writers resume from the trackers' last read, so call
     /// [`live_reload`](Self::live_reload) first, under the shard's write lock,
-    /// and again before any later call. On error, some segments may already
-    /// be written.
-    pub fn delete_outdated(
-        &mut self,
-        published: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<usize> {
+    /// and again before any later call. Decide on `ids` after that reload: a
+    /// copy written since the last read would be deleted too. On error, some
+    /// segments may already be written.
+    pub fn delete_points(&mut self, ids: &[PointIdType]) -> OperationResult<usize> {
+        let mut by_segment: HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = HashMap::new();
+        for (id, located) in self.locate(ids)? {
+            for (segment, internal_id) in located.slots {
+                by_segment
+                    .entry(segment)
+                    .or_default()
+                    .push((id, internal_id));
+            }
+        }
+
         let mut deleted = 0;
-        for (uuid, points) in self.find_outdated(published)? {
+        for (uuid, points) in by_segment {
             let segment = &self.segments[&uuid];
             UpdateOnlySegmentEnum::open(
                 self.fs.clone(),
@@ -92,33 +122,17 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         Ok(deleted)
     }
 
-    /// Dry run of [`delete_outdated`](Self::delete_outdated) against the
-    /// trackers' last read: the copies it would delete, as `(point id,
-    /// internal id)` pairs per segment.
-    pub fn find_outdated(
+    /// Every copy of `ids` across the segments, with the newest marked.
+    fn locate(
         &self,
-        published: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>> {
-        let ids: Vec<PointIdType> = published.keys().copied().collect();
+        ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
         let per_segment = self.pool.install(|| {
             self.segments
                 .par_iter()
-                .map(|(uuid, segment)| locate_in(*uuid, segment, &ids))
+                .map(|(uuid, segment)| locate_in(*uuid, segment, ids))
                 .collect::<OperationResult<Vec<_>>>()
         })?;
-
-        let mut by_segment: HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = HashMap::new();
-        for (id, located) in merge_locations(per_segment) {
-            if located.newest.version >= published[&id] {
-                continue;
-            }
-            for (segment, internal_id) in located.slots {
-                by_segment
-                    .entry(segment)
-                    .or_default()
-                    .push((id, internal_id));
-            }
-        }
-        Ok(by_segment)
+        Ok(merge_locations(per_segment))
     }
 }
