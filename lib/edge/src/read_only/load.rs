@@ -13,6 +13,7 @@ use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
+use segment::id_tracker::point_moves::PointMovesMode;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
 use uuid::Uuid;
@@ -75,6 +76,7 @@ where
                                 uuid,
                                 None,
                                 load_profile,
+                                PointMovesMode::Ignore,
                                 is_stopped,
                             )
                         })
