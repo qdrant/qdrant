@@ -97,6 +97,10 @@ pub struct FeatureFlags {
     /// tombstoning the old copy. The read-only id trackers always read the logs.
     pub record_point_moves: bool,
 
+    /// In the serverless read-only follower, resolve point moves across segments: the old copy of a
+    /// moved point is masked once its new copy is visible, rather than as soon as its move is read.
+    pub resolve_point_moves: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
@@ -125,6 +129,7 @@ impl Default for FeatureFlags {
             persist_proxy_segments: false,
             combined_vector_storage: true,
             record_point_moves: false,
+            resolve_point_moves: false,
             serverless_compatible: false,
         }
     }
@@ -161,8 +166,9 @@ impl FeatureFlags {
             transfer_raw_payloads: true,
             persist_proxy_segments: true,
             combined_vector_storage: true,
-            // Deliberately not enabled by `all`: only the serverless writer uses it.
+            // Deliberately not enabled by `all`: only the serverless writer and follower use them.
             record_point_moves: false,
+            resolve_point_moves: false,
             serverless_compatible: false,
         }
     }

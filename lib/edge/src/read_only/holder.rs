@@ -15,6 +15,10 @@ use crate::read_only::enumerate::ListedSegment;
 pub(crate) struct ReadOnlySegmentHolder<S: UniversalReadExt + 'static> {
     by_uuid: HashMap<Uuid, Slot<S>>,
     id_source: usize,
+    /// Whether [`Self::remove_missing`] keeps the segments the manifest no longer lists: a follower
+    /// resolving point moves drops them only once no copy on them may be the only visible one of
+    /// its point, see [`resolve_point_moves`](crate::read_only::ReadOnlyEdgeShard::resolve_point_moves).
+    keep_unlisted: bool,
 }
 
 struct Slot<S: UniversalReadExt + 'static> {
@@ -25,16 +29,16 @@ struct Slot<S: UniversalReadExt + 'static> {
     segment: Arc<RwLock<ReadOnlySegment<S>>>,
 }
 
-impl<S: UniversalReadExt + 'static> Default for ReadOnlySegmentHolder<S> {
-    fn default() -> Self {
+impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
+    /// An empty holder; with `keep_unlisted`, see [`Self::remove_missing`].
+    pub(crate) fn new(keep_unlisted: bool) -> Self {
         Self {
             by_uuid: HashMap::new(),
             id_source: 0,
+            keep_unlisted,
         }
     }
-}
 
-impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
     pub(crate) fn contains(&self, uuid: &Uuid) -> bool {
         self.by_uuid.contains_key(uuid)
     }
@@ -68,12 +72,18 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
     /// Drop every segment whose UUID is no longer present on disk (e.g. removed by the leader's
     /// optimization). This only releases the follower's handle/mmap — it never touches the leader's
     /// files.
+    ///
+    /// A holder that keeps unlisted segments drops nothing here; point move resolution removes them
+    /// one by one instead.
     pub(crate) fn remove_missing(&mut self, on_disk: &HashMap<Uuid, ListedSegment>) {
+        if self.keep_unlisted {
+            return;
+        }
         self.by_uuid.retain(|uuid, _| on_disk.contains_key(uuid));
     }
 
-    /// Drop a single segment (e.g. one whose files vanished mid-reload and whose removal was
-    /// confirmed against the manifest). Same handle-only semantics as [`Self::remove_missing`].
+    /// Drop a single segment: one the leader superseded, or whose files vanished mid-reload. Same
+    /// handle-only semantics as [`Self::remove_missing`].
     pub(crate) fn remove(&mut self, uuid: &Uuid) {
         self.by_uuid.remove(uuid);
     }
