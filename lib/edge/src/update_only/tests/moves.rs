@@ -602,3 +602,68 @@ fn advance_segment(view: &Path, uuid: Uuid, from: &Path) {
         }
     }
 }
+
+/// A target keeps a settled moved-in record only until the source applied its mask: the pass after
+/// the one that masked the old copy forgets the record. A record naming a source the follower does
+/// not hold yet stays, and masks the old copy once the source loads.
+#[test]
+fn settled_moved_in_records_are_pruned_once_applied() {
+    let fixture = MoveFixture::new();
+    // The target shows the move and the source does not, so only the target's record masks the
+    // old copy
+    let view = fixture.compose(
+        "pruned",
+        &fixture.before.clone(),
+        &fixture.after.clone(),
+        |_, _| {},
+    );
+
+    let manifest_path = segment_manifest_path(&view);
+    let listed: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(&manifest_path).unwrap()).unwrap();
+    let mut unlisted = listed.clone();
+    assert!(unlisted.remove(&fixture.source).is_some());
+    fs_err::write(&manifest_path, serde_json::to_vec(&unlisted).unwrap()).unwrap();
+
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        &view,
+        ManifestSegmentEnumerator::new(MmapFs, &view),
+        None,
+        None,
+        Default::default(),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
+    for _ in 0..2 {
+        assert_eq!(
+            follower.settled_moved_in_count(),
+            1,
+            "the record waits while its source is not listed",
+        );
+        follower.live_reload().unwrap();
+    }
+
+    // The source is listed: it loads, the next pass masks the old copy, and the pass after
+    // forgets the record
+    fs_err::write(&manifest_path, serde_json::to_vec(&listed).unwrap()).unwrap();
+    follower.live_reload().unwrap();
+    assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
+    assert_eq!(
+        approximate_count(&follower),
+        POINTS + 1,
+        "the old copy serves until the next live_reload",
+    );
+    follower.live_reload().unwrap();
+    assert_serves(&follower, Some(NEW_VECTOR), POINTS, "old copy masked");
+    follower.live_reload().unwrap();
+    assert_eq!(follower.settled_moved_in_count(), 0, "record forgotten");
+    assert_serves(&follower, Some(NEW_VECTOR), POINTS, "record forgotten");
+
+    // The source's own record arrives later and changes nothing
+    advance_segment(&view, fixture.source, &fixture.after);
+    follower.live_reload().unwrap();
+    assert_eq!(follower.settled_moved_in_count(), 0);
+    assert_serves(&follower, Some(NEW_VECTOR), POINTS, "source caught up");
+}

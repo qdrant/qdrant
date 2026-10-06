@@ -109,4 +109,23 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     pub fn segments_count(&self) -> usize {
         self.segments.read().len()
     }
+
+    /// The settled moved-in records the open segments keep, counted per source slot.
+    #[cfg(test)]
+    pub(crate) fn settled_moved_in_count(&self) -> u64 {
+        let holder = self.segments.read();
+        holder
+            .uuids()
+            .into_iter()
+            .filter_map(|uuid| holder.segment_arc(&uuid))
+            .map(|segment| {
+                segment
+                    .read()
+                    .id_tracker
+                    .borrow()
+                    .settled_moved_in()
+                    .map_or(0, |settled| settled.values().map(|slots| slots.len()).sum())
+            })
+            .sum()
+    }
 }
