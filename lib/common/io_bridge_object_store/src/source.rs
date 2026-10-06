@@ -201,6 +201,27 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
+    fn file_info(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<Option<ListedFile>>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        let path = path.to_path_buf();
+        async move {
+            match store.head(&key).await {
+                Ok(meta) => Ok(Some(ListedFile {
+                    path,
+                    size: meta.size,
+                    last_modified: Some(SystemTime::from(meta.last_modified)),
+                    etag: meta.e_tag,
+                })),
+                Err(object_store::Error::NotFound { .. }) => Ok(None),
+                Err(other) => Err(UniversalIoError::s3_at(key.to_string(), other)),
+            }
+        }
+    }
+
     fn kind() -> UniversalKind {
         <S as BlobBackend>::kind()
     }
@@ -590,6 +611,40 @@ mod tests {
                 ("dir/page_1.dat".to_string(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn select_files_async_with_inmemory_store() {
+        use common::universal_io::UniversalReadFsAsync;
+
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(
+            &runtime,
+            &[("dir/file_a.dat", b"1234"), ("dir/file_b.dat", b"56789")],
+        );
+        let source = ObjectStoreSource::new(store);
+        let fs = io_bridge::BlobFs::new(source, runtime.clone());
+
+        let paths = [
+            Path::new("dir/file_a.dat"),
+            Path::new("dir/file_b.dat"),
+            Path::new("dir/file_c.dat"),
+        ];
+
+        let selected = runtime
+            .block_on(fs.select_files_async(&paths))
+            .expect("select_files_async");
+
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].path, Path::new("dir/file_a.dat"));
+        assert_eq!(selected[0].size, 4);
+        assert!(selected[0].etag.is_some());
+        assert!(selected[0].last_modified.is_some());
+
+        assert_eq!(selected[1].path, Path::new("dir/file_b.dat"));
+        assert_eq!(selected[1].size, 5);
+        assert!(selected[1].etag.is_some());
+        assert!(selected[1].last_modified.is_some());
     }
 
     #[test]
