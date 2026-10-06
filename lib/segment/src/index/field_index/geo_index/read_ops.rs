@@ -227,43 +227,58 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_bounding_box;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(Box::new(filter_geo_points(
+            geo,
+            geo_hashes,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )?.into_iter())));
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
         let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_radius;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(Box::new(filter_geo_points(
+            geo,
+            geo_hashes,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )?.into_iter())));
     }
 
     if let Some(geo_polygon) = &condition.geo_polygon {
         let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = geo_polygon.convert();
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
-                geo.check_values_any(point, hw_counter, &|geo_point| {
-                    geo_condition_copy.check_point(geo_point)
-                })
-                .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+        return Ok(Some(Box::new(filter_geo_points(
+            geo,
+            geo_hashes,
+            hw_counter,
+            move |geo_point| geo_condition_copy.check_point(geo_point),
+        )?.into_iter())));
     }
 
     Ok(None)
+}
+
+/// Eagerly evaluate `check_fn` on every point covered by `geo_hashes`.
+///
+/// Done eagerly so that read errors from on-disk storage propagate to the
+/// caller: inside a lazy `Iterator::filter` an error can only be downgraded to
+/// "point does not match", which silently truncates filtered search and scroll
+/// results (same class as #10181 for the numeric index).
+fn filter_geo_points<G: GeoIndexRead + ?Sized>(
+    geo: &G,
+    geo_hashes: Vec<GeoHash>,
+    hw_counter: &HardwareCounterCell,
+    check_fn: impl Fn(&GeoPoint) -> bool,
+) -> OperationResult<Vec<PointOffsetType>> {
+    let mut matched = Vec::new();
+    for point in geo.iterator(geo_hashes)? {
+        if geo.check_values_any(point, hw_counter, &check_fn)? {
+            matched.push(point);
+        }
+    }
+    Ok(matched)
 }
 
 pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
@@ -388,5 +403,161 @@ where
             |item, matched| p.write(item, matched == select.is_match()),
         )?;
         Ok(p.finish())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ordered_float::OrderedFloat;
+
+    use super::*;
+    use crate::types::GeoRadius;
+
+    /// Geo index whose storage read fails for one specific point, simulating
+    /// an mmap/gridstore read error in the on-disk index.
+    struct FailingGeoIndex {
+        points: Vec<PointOffsetType>,
+        failing_point: PointOffsetType,
+    }
+
+    impl GeoIndexRead for FailingGeoIndex {
+        fn points_count(&self) -> usize {
+            unimplemented!()
+        }
+
+        fn points_values_count(&self) -> usize {
+            unimplemented!()
+        }
+
+        fn max_values_per_point(&self) -> usize {
+            unimplemented!()
+        }
+
+        fn points_of_hash(
+            &self,
+            _hash: GeoHash,
+            _hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<usize> {
+            unimplemented!()
+        }
+
+        fn values_of_hash(
+            &self,
+            _hash: GeoHash,
+            _hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<usize> {
+            unimplemented!()
+        }
+
+        fn check_values_any(
+            &self,
+            idx: PointOffsetType,
+            _hw_counter: &HardwareCounterCell,
+            _check_fn: &dyn Fn(&GeoPoint) -> bool,
+        ) -> OperationResult<bool> {
+            if idx == self.failing_point {
+                return Err(OperationError::service_error("simulated storage read error"));
+            }
+            Ok(true)
+        }
+
+        fn values_count(&self, _idx: PointOffsetType) -> usize {
+            unimplemented!()
+        }
+
+        fn get_values(
+            &self,
+            _idx: PointOffsetType,
+        ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+            unimplemented!()
+        }
+
+        fn iterator(
+            &self,
+            _values: Vec<GeoHash>,
+        ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+            Ok(Box::new(self.points.iter().copied()))
+        }
+
+        fn points_per_hash_filtered(
+            &self,
+            _filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        ) -> OperationResult<Vec<(GeoHash, usize)>> {
+            unimplemented!()
+        }
+
+        fn get_storage_type(&self) -> StorageType {
+            unimplemented!()
+        }
+
+        fn ram_usage_bytes(&self) -> usize {
+            unimplemented!()
+        }
+
+        fn is_on_disk(&self) -> bool {
+            true
+        }
+
+        fn populate(&self) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn clear_cache(&self) -> OperationResult<()> {
+            unimplemented!()
+        }
+
+        fn files(&self) -> Vec<PathBuf> {
+            unimplemented!()
+        }
+
+        fn immutable_files(&self) -> Vec<PathBuf> {
+            unimplemented!()
+        }
+
+        fn telemetry_index_type(&self) -> &'static str {
+            "failing_geo"
+        }
+    }
+
+    fn radius_condition() -> FieldCondition {
+        FieldCondition::new_geo_radius(
+            "geo".parse().unwrap(),
+            GeoRadius {
+                center: GeoPoint {
+                    lon: OrderedFloat(0.0),
+                    lat: OrderedFloat(0.0),
+                },
+                radius: OrderedFloat(1000.0),
+            },
+        )
+    }
+
+    #[test]
+    fn test_geo_filter_propagates_read_errors() {
+        let index = FailingGeoIndex {
+            points: vec![0, 1, 2],
+            failing_point: 1,
+        };
+
+        // Before the fix this returned Ok(...) with an iterator that silently
+        // dropped the point whose read failed; the error must surface instead.
+        let hw_counter = HardwareCounterCell::new();
+        let result = filter(&index, &radius_condition(), &hw_counter);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_geo_filter_without_read_errors_returns_all_matches() {
+        let index = FailingGeoIndex {
+            points: vec![0, 1, 2],
+            failing_point: 99,
+        };
+
+        let hw_counter = HardwareCounterCell::new();
+        let result = filter(&index, &radius_condition(), &hw_counter)
+            .expect("no read errors")
+            .expect("radius condition produces an iterator");
+        let matched: Vec<_> = result.collect();
+        assert_eq!(matched, vec![0, 1, 2]);
     }
 }
