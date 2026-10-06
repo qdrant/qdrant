@@ -11,6 +11,7 @@ use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
+use crate::id_tracker::point_moves::MoveResolution;
 use crate::index::UniversalReadExt;
 
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
@@ -159,7 +160,72 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     }
 }
 
+/// Point moves, see [`point_moves`](crate::id_tracker::point_moves). A segment whose id tracker
+/// does not resolve moves reports nothing to delete.
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
+    /// Delete what `resolution` names, in the id tracker and in every component.
+    ///
+    /// Components only apply the deletions, they touch no file, so this does no IO. The delta goes
+    /// through `pending_reload` like a reload's: if a component fails, the next reload replays it.
+    pub fn apply_point_moves(&mut self, resolution: &MoveResolution) -> OperationResult<()> {
+        if resolution.is_empty() {
+            return Ok(());
+        }
+
+        let Self {
+            uuid: _,
+            segment_path: _,
+            id_tracker,
+            vector_data,
+            payload_index,
+            payload_storage,
+            pending_reload,
+            reload_fs: _,
+            segment_type: _,
+            segment_config: _,
+        } = self;
+
+        let fresh = id_tracker.borrow_mut().apply_point_moves(resolution);
+        let mut pending = pending_reload.borrow_mut();
+        pending.merge(fresh);
+
+        {
+            // SAFETY: `merge` keeps both lists sorted ascending.
+            let deleted = unsafe { SortedSlice::new_unchecked(&pending.deleted) };
+
+            payload_storage.borrow_mut().apply_deletions(&deleted)?;
+            payload_index.borrow_mut().apply_deletions(&deleted)?;
+            for vector_data in vector_data.values() {
+                vector_data.apply_deletions(&deleted)?;
+            }
+        }
+
+        // Inserts a failed reload left unapplied stay, for the next reload to replay with the
+        // deletions, which is idempotent
+        if pending.inserted.is_empty() {
+            *pending = LiveReloadResult::default();
+        }
+        Ok(())
+    }
+}
+
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
+    /// Apply `deleted` to this vector's storage, index and quantized vectors, without IO.
+    fn apply_deletions(&self, deleted: &SortedSlice<'_, PointOffsetType>) -> OperationResult<()> {
+        let Self {
+            vector_index,
+            vector_storage,
+            quantized_vectors,
+        } = self;
+
+        vector_storage.borrow_mut().apply_deletions(deleted)?;
+        vector_index.borrow_mut().apply_deletions(deleted)?;
+        if let Some(quantized_vectors) = quantized_vectors.borrow_mut().as_mut() {
+            quantized_vectors.apply_deletions(deleted)?;
+        }
+        Ok(())
+    }
+
     /// Stage this vector's next [`Self::live_reload`]. Shared access only.
     fn live_preload(
         &self,

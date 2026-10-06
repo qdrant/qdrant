@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
+use ahash::AHashMap;
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
+use roaring::RoaringBitmap;
 use strum::{EnumDiscriminants, EnumIter, IntoEnumIterator as _};
+use uuid::Uuid;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
@@ -13,6 +16,7 @@ use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTrack
 use crate::id_tracker::mutable_id_tracker::read_only::{
     LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
+use crate::id_tracker::point_moves::{MoveResolution, PointMoves, PointMovesMode, SlotRef};
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -58,18 +62,46 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         max_committed_offset: Option<PointOffsetType>,
         populate: Populate,
     ) -> OperationResult<Self> {
-        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
-            return Ok(Self::DiskResident(tracker));
-        }
-        if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {
-            return Ok(Self::Immutable(tracker));
-        }
-        Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open_capped(
+        Self::detect_and_load_with_moves(
             fs,
             segment_path,
             deferred_internal_id,
             max_committed_offset,
-        )?))
+            populate,
+            PointMovesMode::Apply,
+        )
+    }
+
+    /// [`detect_and_load`](Self::detect_and_load) with point moves handled per `moves`, see
+    /// [`point_moves`](crate::id_tracker::point_moves). The move log is read along with the
+    /// tombstones, from the fetch [`preopen`](Self::preopen) staged.
+    pub fn detect_and_load_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
+        populate: Populate,
+        moves: PointMovesMode,
+    ) -> OperationResult<Self> {
+        if let Some(tracker) =
+            ReadOnlyDiskIdTracker::try_open_with_moves(fs, segment_path, populate, moves)?
+        {
+            return Ok(Self::DiskResident(tracker));
+        }
+        if let Some(tracker) =
+            ReadOnlyImmutableIdTracker::try_open_with_moves(fs, segment_path, moves)?
+        {
+            return Ok(Self::Immutable(tracker));
+        }
+        Ok(Self::Appendable(
+            ReadOnlyAppendableIdTracker::open_with_moves(
+                fs,
+                segment_path,
+                deferred_internal_id,
+                max_committed_offset,
+                moves,
+            )?,
+        ))
     }
 
     /// Files whose size bounds the committed points, across every format that
@@ -337,6 +369,89 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.deferred_deleted_count(),
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deferred_deleted_count(),
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.deferred_deleted_count(),
+        }
+    }
+}
+
+/// Point moves, see [`point_moves`](crate::id_tracker::point_moves). A tracker that applies moves
+/// as it reads them keeps no records: every method reports nothing to resolve on it.
+impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
+    /// Whether `internal_id` has settled in this view: its point, or a later state of it, is
+    /// visible. Only appendable segments receive moves; every slot of the others has settled.
+    pub fn is_settled(&self, internal_id: PointOffsetType) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.is_settled(internal_id),
+            Self::Immutable(id_tracker) => (internal_id as usize) < id_tracker.total_point_count(),
+            Self::DiskResident(id_tracker) => {
+                (internal_id as usize) < id_tracker.total_point_count()
+            }
+        }
+    }
+
+    fn point_moves_state(&self) -> Option<&PointMoves> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.point_moves(),
+            Self::Immutable(id_tracker) => id_tracker.point_moves(),
+            Self::DiskResident(id_tracker) => id_tracker.point_moves(),
+        }
+    }
+
+    /// Whether this tracker resolves point moves.
+    pub fn resolves_point_moves(&self) -> bool {
+        self.point_moves_state().is_some()
+    }
+
+    /// Per source segment, the source slots of this segment's settled moved-in records: the masks
+    /// the shard hands to those segments.
+    pub fn settled_moved_in(&self) -> Option<&AHashMap<Uuid, RoaringBitmap>> {
+        self.point_moves_state().map(PointMoves::settled_moved_in)
+    }
+
+    /// Every local slot this segment's moved-out records name, with its target: the moves the
+    /// shard checks for settled targets.
+    pub fn moved_out(&self) -> Vec<(PointOffsetType, SlotRef)> {
+        self.point_moves_state()
+            .map(|moves| moves.moved_out().collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether a moved-out record names a copy this view may still show: its move may not have
+    /// settled, so it may be the only visible copy of its point.
+    pub fn holds_point_moves(&self) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.holds_point_moves(),
+            Self::Immutable(id_tracker) => id_tracker.holds_point_moves(),
+            Self::DiskResident(id_tracker) => id_tracker.holds_point_moves(),
+        }
+    }
+
+    /// Whether a moved-out record names a copy this view may still show once `resolution` is
+    /// applied: then that copy may still be the only visible one of its point.
+    pub fn holds_point_moves_beyond(&self, resolution: &MoveResolution) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.holds_point_moves_beyond(resolution),
+            Self::Immutable(id_tracker) => id_tracker.holds_point_moves_beyond(resolution),
+            Self::DiskResident(id_tracker) => id_tracker.holds_point_moves_beyond(resolution),
+        }
+    }
+
+    /// The slots to delete now. `superseded` are the slots of this segment whose copy a settled
+    /// move replaced, as the shard found them: by this segment's moved-out records with a settled
+    /// target, or by other segments' settled moved-in records.
+    pub fn resolve_point_moves(&self, superseded: Option<&RoaringBitmap>) -> MoveResolution {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.resolve_point_moves(superseded),
+            Self::Immutable(id_tracker) => id_tracker.resolve_point_moves(superseded),
+            Self::DiskResident(id_tracker) => id_tracker.resolve_point_moves(superseded),
+        }
+    }
+
+    /// Delete what `resolution` names, returning the slots that were live as a delete-only delta.
+    pub fn apply_point_moves(&mut self, resolution: &MoveResolution) -> LiveReloadResult {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.apply_point_moves(resolution),
+            Self::Immutable(id_tracker) => id_tracker.apply_point_moves(resolution),
+            Self::DiskResident(id_tracker) => id_tracker.apply_point_moves(resolution),
         }
     }
 }
