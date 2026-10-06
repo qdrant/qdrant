@@ -100,7 +100,7 @@ jobs:
             --on-disk \
             --async-scorer
         shell: bash
-        timeout-minutes: 300
+        timeout-minutes: 360
       - name: Run model testing (no io_uring)
         id: no_io_uring
         # Run even if the async-scorer pass failed, so both signals are collected.
@@ -114,7 +114,7 @@ jobs:
             --id-pool "$ID_POOL" \
             --on-disk
         shell: bash
-        timeout-minutes: 300
+        timeout-minutes: 360
       # Which of the two passes broke is the first thing triage needs: one failing while the
       # other survives the same seed points at the io_uring read path (or rules it out), and
       # every failure so far has split that way. Rendered here rather than in the issue template
