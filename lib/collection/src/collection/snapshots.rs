@@ -12,7 +12,6 @@ use segment::utils::fs::move_all;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
@@ -299,15 +298,24 @@ impl Collection {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        let snapshot_creator = self
+        // Snapshot setup can wait for update-queue capacity. Clone the shard so that
+        // this wait does not hold the shard holder read lock and block holder writers.
+        let shard = self
             .shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshots_path, self.name(), shard_id, temp_dir)
-            .await?;
-        // We don't hold shards_holder lock here on purpose,
-        // because snapshot creation may take a long time,
-        // and we don't want to block other operations on the collection.
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        let snapshot_creator = ShardHolder::create_shard_snapshot(
+            &shard,
+            &self.snapshots_path,
+            self.name(),
+            shard_id,
+            temp_dir,
+        )
+        .await?;
         snapshot_creator.await
     }
 
@@ -317,11 +325,15 @@ impl Collection {
         manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
-        let shard = OwnedRwLockReadGuard::try_map(
-            self.shards_holder.clone().read_owned().await,
-            |shard_holder| shard_holder.get_shard(shard_id),
-        )
-        .map_err(|_| shard_not_found_error(shard_id))?;
+        // Streaming uses the same snapshot setup and must not hold the holder lock
+        // while waiting for update-queue capacity.
+        let shard = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir).await
     }
