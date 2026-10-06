@@ -1,6 +1,7 @@
 mod handle;
 mod ops;
 mod shard_read;
+#[cfg(feature = "serverless")]
 mod shard_read_with_cancellation;
 
 use std::sync::Arc;
@@ -15,6 +16,7 @@ pub use self::handle::ReadSegmentHandle;
 pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
+#[cfg(feature = "serverless")]
 pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
 use crate::EdgeConfig;
 
