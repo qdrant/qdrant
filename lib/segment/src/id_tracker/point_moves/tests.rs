@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Write as _;
 
 use common::bitvec::BitVec;
@@ -252,6 +253,26 @@ fn move_state_settles_and_lists_moves() {
 
     moves.forget([1, 2]);
     assert!(!moves.has_moved_out());
+}
+
+/// Settled moved-in pairs are forgotten once their source slot is retired, and a source left with
+/// none is dropped.
+#[test]
+fn prune_settled_forgets_retired_source_slots() {
+    let mut moves = PointMoves::default();
+    moves.ingest([moved_in(3, &[(20, 5), (21, 6)]), moved_in(4, &[(22, 7)])]);
+    moves.settle_all();
+
+    let retired_in_3 = HashMap::from([(segment(3), RoaringBitmap::from_iter([5u32]))]);
+    moves.prune_settled(&retired_in_3);
+    let settled = moves.settled_moved_in();
+    assert_eq!(settled[&segment(3)], RoaringBitmap::from_iter([6u32]));
+    assert_eq!(settled[&segment(4)], RoaringBitmap::from_iter([7u32]));
+
+    let retired_in_4 = HashMap::from([(segment(4), RoaringBitmap::from_iter([7u32]))]);
+    moves.prune_settled(&retired_in_4);
+    assert!(!moves.settled_moved_in().contains_key(&segment(4)));
+    assert_eq!(moves.settled_moved_in().len(), 1);
 }
 
 /// A slot two moved-out records name keeps the target of the last record only.
