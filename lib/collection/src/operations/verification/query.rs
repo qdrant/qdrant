@@ -239,6 +239,13 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
+        // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
+        for prefetch in &self.prefetch {
+            prefetch
+                .check_strict_mode(collection, strict_mode_config)
+                .await?;
+        }
+
         if let Some(query) = self.query.as_ref() {
             // check query can perform fullscan when not rescoring
             if self.prefetch.is_empty() {

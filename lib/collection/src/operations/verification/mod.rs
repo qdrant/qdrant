@@ -409,9 +409,10 @@ mod test {
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
     use common::budget::ResourceBudget;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::json_path::JsonPath;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
-        SearchParams, StrictModeConfig, ValueVariants,
+        SearchParams, StrictModeConfig, ValueVariants, WithPayloadInterface, WithVector,
     };
     use tempfile::Builder;
 
@@ -423,6 +424,9 @@ mod test {
     use crate::operations::types::{
         CollectionError, CountRequestInternal, DiscoverRequestInternal, SearchRequest,
         SearchRequestBatch,
+    };
+    use crate::operations::universal_query::collection_query::{
+        CollectionPrefetch, CollectionQueryGroupsRequest,
     };
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
@@ -443,6 +447,7 @@ mod test {
         test_filter_write(&collection).await;
         test_substring_filter(&collection).await;
         test_request_exact(&collection).await;
+        test_query_groups_prefetch_limit(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
     }
@@ -590,6 +595,117 @@ mod test {
             exact: false,
         };
         assert_strict_mode_success(request, collection).await;
+    }
+
+    /// Regression for issue #10520: group queries (`POST /points/query/groups`
+    /// and gRPC `QueryGroups`) used to skip strict-mode verification on their
+    /// prefetches. With `max_query_limit: 4`, a request with
+    /// `limit: 2 * group_size: 1` (= 2) plus a prefetch of `limit: 1000` was
+    /// accepted pre-fix; the same prefetch on the non-groups `/points/query`
+    /// endpoint is rejected because `CollectionQueryRequest` already
+    /// iterates `self.prefetch`. This test pins the groups endpoint to the
+    /// same recursive verification.
+    async fn test_query_groups_prefetch_limit(collection: &Collection) {
+        let oversized_prefetch = CollectionPrefetch {
+            prefetch: vec![],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            limit: 1000,
+            params: None,
+            lookup_from: None,
+        };
+
+        // Pre-fix: this would pass strict mode (prefetch count ignored).
+        // Post-fix: rejected because the prefetch limit (1000) exceeds
+        // `max_query_limit` (4), and the root limit*group_size (2*1=2) is
+        // under it.
+        let request = CollectionQueryGroupsRequest {
+            prefetch: vec![oversized_prefetch],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+            group_by: JsonPath::new(INDEXED_KEY),
+            group_size: 1,
+            limit: 2,
+            with_lookup: None,
+        };
+        assert_strict_mode_error(request, collection).await;
+
+        // Sanity: a small prefetch under the limit must still pass. Confirms
+        // the recursive verification does not introduce false positives.
+        let compliant_prefetch = CollectionPrefetch {
+            prefetch: vec![],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            limit: 1,
+            params: None,
+            lookup_from: None,
+        };
+        let request = CollectionQueryGroupsRequest {
+            prefetch: vec![compliant_prefetch],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+            group_by: JsonPath::new(INDEXED_KEY),
+            group_size: 1,
+            limit: 2,
+            with_lookup: None,
+        };
+        assert_strict_mode_success(request, collection).await;
+
+        // Recursive case: a nested prefetch two levels deep. With the
+        // recursive prefetch iteration in `CollectionPrefetch::check_custom`
+        // plus the new top-level iteration on `CollectionQueryGroupsRequest`,
+        // an oversized nested limit must surface as a strict-mode error.
+        let nested_prefetch = CollectionPrefetch {
+            prefetch: vec![CollectionPrefetch {
+                prefetch: vec![],
+                query: None,
+                using: String::new(),
+                filter: None,
+                score_threshold: None,
+                limit: 1000,
+                params: None,
+                lookup_from: None,
+            }],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            limit: 1,
+            params: None,
+            lookup_from: None,
+        };
+        let request = CollectionQueryGroupsRequest {
+            prefetch: vec![nested_prefetch],
+            query: None,
+            using: String::new(),
+            filter: None,
+            score_threshold: None,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+            lookup_from: None,
+            group_by: JsonPath::new(INDEXED_KEY),
+            group_size: 1,
+            limit: 2,
+            with_lookup: None,
+        };
+        assert_strict_mode_error(request, collection).await;
     }
 
     async fn test_search_batch_limit(collection: &Collection) {
