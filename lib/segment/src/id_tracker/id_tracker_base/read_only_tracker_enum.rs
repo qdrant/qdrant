@@ -13,6 +13,9 @@ use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTrack
 use crate::id_tracker::mutable_id_tracker::read_only::{
     LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
+use crate::id_tracker::mutable_id_tracker::versions_storage::{
+    VERSION_ELEMENT_SIZE, versions_path,
+};
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -53,6 +56,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
+        max_committed_id: Option<PointOffsetType>,
         populate: Populate,
     ) -> OperationResult<Self> {
         if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
@@ -61,11 +65,21 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {
             return Ok(Self::Immutable(tracker));
         }
-        Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
+        Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open_capped(
             fs,
             segment_path,
             deferred_internal_id,
+            max_committed_id,
         )?))
+    }
+
+    /// Upper bound on committed points derived from `cached_fs`'s file info for `versions.dat`.
+    pub fn max_committed_id_from_cached_fs(
+        fs: &impl CachedReadFs,
+        segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        fs.cached_file_info(&versions_path(segment_path))
+            .map(|info| (info.size / VERSION_ELEMENT_SIZE) as PointOffsetType)
     }
 
     /// Measure how far the writer has committed, before the directory listing snapshot is taken.

@@ -1,6 +1,6 @@
 mod change;
-mod mappings_storage;
-mod versions_storage;
+pub(crate) mod mappings_storage;
+pub(crate) mod versions_storage;
 
 #[cfg(test)]
 pub(super) mod tests;

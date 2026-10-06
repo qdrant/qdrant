@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
-use segment::segment::read_only::ReadOnlySegment;
+use segment::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
 use uuid::Uuid;
 
 /// Open the given segments and return the ones that loaded, in input order.
@@ -47,7 +47,7 @@ where
 {
     // Stage every open: LIST all segments concurrently, then preopen each one.
     let listed_futs = segments.into_iter().map(|(uuid, path)| async move {
-        let cached_fs = ReadOnlySegment::<S>::build_cached_fs_async(fs, &path).await;
+        let cached_fs = build_cached_fs_async(fs, &path).await;
         (uuid, path, cached_fs)
     });
     check_process_stopped(is_stopped)?;

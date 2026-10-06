@@ -8,7 +8,8 @@ use common::low_memory::low_memory_mode;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedFs, CachedReadFs, Populate, UniversalReadFs, UniversalReadFsAsync, read_json_via,
+    CachedFs, CachedReadFs, FileInfo, Populate, UniversalReadFs, UniversalReadFsAsync,
+    read_json_via,
 };
 use uuid::Uuid;
 
@@ -16,6 +17,7 @@ use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
+use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -53,9 +55,38 @@ fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
+    futures::executor::block_on(build_cached_fs_async(fs, segment_path))
+}
+
+/// Take the segment's listing snapshot without blocking, for
+/// [`schedule_open_with_cached_fs`](ReadOnlySegment::schedule_open_with_cached_fs).
+/// Callers opening many segments overlap their LIST round-trips.
+pub async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
+    fs: &Fs,
+    segment_path: &Path,
+) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-    cached_fs.cache_file_info()?;
+
+    // Probe id-tracker versions file first, so we have an accurate commit mark available.
+    let versions_p = versions_path(segment_path);
+    let probed_files = cached_fs
+        .inner()
+        .select_files_async(std::slice::from_ref(&versions_p))
+        .await?;
+
+    // Schedule other static files to overlap with LIST op.
     schedule_static_files(&cached_fs, segment_path);
+
+    // LIST
+    cached_fs.cache_file_info_async().await?;
+
+    // Inject id-tracker probe into cached_fs.
+    let versions_info = probed_files
+        .into_iter()
+        .find(|f| f.path == versions_p)
+        .map(FileInfo::from);
+    cached_fs.set_file_info(versions_p, versions_info);
+
     Ok(cached_fs)
 }
 
@@ -139,19 +170,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         .finish(fs)
     }
 
-    /// Take the segment's listing snapshot without blocking, for
-    /// [`schedule_open_with_cached_fs`](Self::schedule_open_with_cached_fs).
-    /// Callers opening many segments overlap their LIST round-trips.
-    pub async fn build_cached_fs_async(
-        fs: &S::Fs,
-        segment_path: &Path,
-    ) -> OperationResult<CachedFs<S::Fs>> {
-        let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-        cached_fs.cache_file_info_async().await?;
-        schedule_static_files(&cached_fs, segment_path);
-        Ok(cached_fs)
-    }
-
     /// Stage an open without assembling the segment: take the listing snapshot
     /// and put every fetch the open needs in flight. Callers opening many
     /// segments overlap their IO ([`StagedSegmentOpen::wait`]) before
@@ -185,7 +203,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     }
 
     /// [`schedule_open`](Self::schedule_open) over a snapshot already taken by
-    /// [`build_cached_fs_async`](Self::build_cached_fs_async).
+    /// [`build_cached_fs_async`].
     pub fn schedule_open_with_cached_fs<'a>(
         fs: CachedFs<S::Fs>,
         segment_path: &Path,
@@ -362,10 +380,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // Detect the persisted format by attempting each format's open (no
         // per-file `exists` round-trips — important for object-storage backends).
+        let max_committed_id =
+            ReadOnlyIdTrackerEnum::<S>::max_committed_id_from_cached_fs(&fs, segment_path);
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             &fs,
             segment_path,
             deferred_internal_id,
+            max_committed_id,
             id_tracker_populate(&config, &fs, segment_path),
         )?));
 
