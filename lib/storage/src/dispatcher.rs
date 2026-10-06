@@ -71,11 +71,19 @@ impl Dispatcher {
     /// On deployments without consensus - a submitted operation is always run to completion.
     pub async fn submit_collection_meta_op(
         &self,
-        operation: CollectionMetaOperations,
+        mut operation: CollectionMetaOperations,
         auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         auth.check_collection_meta_operation(&operation)?;
+
+        if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+            // Keep an existing timestamp: collections re-created from a config
+            // (snapshot recovery, cluster migration) retain their original creation time
+            op.create_collection
+                .created_at
+                .get_or_insert_with(chrono::Utc::now);
+        }
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {

@@ -447,6 +447,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             config,
             payload_schema,
             update_queue,
+            created_at,
         } = value;
 
         let CollectionConfig {
@@ -614,6 +615,8 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .map(api::grpc::qdrant::CollectionWarning::from)
                 .collect(),
             update_queue: update_queue.map(api::grpc::qdrant::UpdateQueueInfo::from),
+            created_at: created_at
+                .map(|dt| api::grpc::conversions::naive_date_time_to_proto(dt.naive_utc())),
         }
     }
 }
@@ -945,6 +948,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     payload_schema,
                     warnings,
                     update_queue,
+                    created_at,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -977,6 +981,17 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .try_collect()?,
                     warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
                     update_queue: update_queue.map(UpdateQueueInfo::from),
+                    created_at: created_at
+                        .map(|ts| {
+                            chrono::DateTime::from_timestamp(
+                                ts.seconds,
+                                u32::try_from(ts.nanos).unwrap_or(0),
+                            )
+                            .ok_or_else(|| {
+                                Status::invalid_argument(format!("Malformed created_at: {ts}"))
+                            })
+                        })
+                        .transpose()?,
                 })
             }
         }

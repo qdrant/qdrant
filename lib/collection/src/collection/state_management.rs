@@ -182,6 +182,7 @@ impl Collection {
                 strict_mode_config,
                 uuid: _,
                 metadata,
+                created_at: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params

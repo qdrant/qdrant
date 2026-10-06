@@ -3,6 +3,7 @@ package qdrant;
 
 import "json_with_int.proto";
 import "qdrant_common.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
@@ -944,6 +945,8 @@ message CollectionInfo {
   repeated CollectionWarning warnings = 11;
   // Update queue info
   UpdateQueueInfo update_queue = 12;
+  // Time of the collection creation, absent for collections created before it was recorded
+  optional google.protobuf.Timestamp created_at = 13;
 }
 
 message ChangeAliases {
