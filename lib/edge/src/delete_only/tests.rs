@@ -81,7 +81,8 @@ fn shadowed_leader(prefix: &str) -> (TempDir, Uuid) {
     drop(leader);
 
     let (immutable, appendable) = segments(&dir);
-    let writer = UpdateOnlyEdgeShard::open(MmapFs, dir.path(), only(&dir, &[appendable])).unwrap();
+    let writer =
+        UpdateOnlyEdgeShard::open(MmapFs, dir.path(), only(&dir, &[appendable]), None).unwrap();
     let points = (1..=3).map(point).collect();
     let (_writer, outcome) = writer
         .apply_batch([(NEWER, PointOperation(UpsertPoints(PointsList(points))))])
@@ -136,7 +137,8 @@ fn refreshes_before_retiring() {
     let (dir, immutable) = shadowed_leader("edge-delete-only-refresh");
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
 
-    let writer = UpdateOnlyEdgeShard::open(MmapFs, dir.path(), only(&dir, &[immutable])).unwrap();
+    let writer =
+        UpdateOnlyEdgeShard::open(MmapFs, dir.path(), only(&dir, &[immutable]), None).unwrap();
     let ids = vec![ExtendedPointId::NumId(2), ExtendedPointId::NumId(5)];
     let (_writer, outcome) = writer
         .apply_batch([(NEWER + 1, PointOperation(DeletePoints { ids }))])

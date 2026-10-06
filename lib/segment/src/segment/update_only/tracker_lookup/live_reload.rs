@@ -8,6 +8,12 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
     pub fn live_reload(&mut self) -> OperationResult<()> {
         let Self { fs, id_tracker, .. } = self;
 
+        let probe = futures::executor::block_on(id_tracker.probe_committed(fs.inner()))?;
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+        let max_committed_id = probe.max_committed_id();
+
         // Prepare new LIST snapshot
         fs.cache_file_info()?;
 
@@ -16,7 +22,7 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
             futures::join!(fs.wait_all(), futures::future::join_all(futs))
         });
 
-        id_tracker.live_reload(fs)?;
+        id_tracker.live_reload(fs, max_committed_id)?;
 
         fs.rotate_cache_file_info();
         Ok(())
