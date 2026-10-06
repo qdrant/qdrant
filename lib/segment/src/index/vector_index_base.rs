@@ -28,7 +28,7 @@ use crate::types::{Filter, SearchParams};
 /// only requires this trait, which makes it possible to implement read-only
 /// segments without duplicating index code.
 pub trait VectorIndexRead {
-    /// Type and graph parameters of this opened index, without loading deferred files.
+    /// Does not load deferred index files.
     fn index_type(&self) -> VectorIndexType;
 
     /// Return list of Ids with fitting

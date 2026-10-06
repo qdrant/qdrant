@@ -21,11 +21,8 @@ pub struct ShardInfo {
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: usize,
-    /// Runtime index metadata for each named vector, with one entry per segment containing it.
-    /// Empty storages are included. Entry order is unspecified.
-    ///
-    /// These are the indexes observed under each segment's read lock during this `info` call;
-    /// a later call may observe different indexes after optimization or live reload.
+    /// One entry per segment and vector name, including empty storages; order is unspecified.
+    /// Captured per segment during this call and may change before a query runs.
     pub vector_indexes: HashMap<VectorNameBuf, Vec<VectorIndexInfo>>,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,

@@ -7,15 +7,13 @@ use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::VectorNameBuf;
 use crate::vector_storage::VectorStorageRead;
 
-/// Runtime index metadata for one vector storage in a segment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VectorIndexInfo {
     pub index_type: VectorIndexType,
-    /// Available vectors in the underlying storage, before any proxy point-deletion mask.
+    /// Available vectors before proxy point-deletion masks.
     pub vectors_count: usize,
 }
 
-/// Read the actual indexes opened by a segment without loading deferred graphs.
 pub trait VectorIndexInfoProvider {
     fn vector_index_info(&self) -> HashMap<VectorNameBuf, VectorIndexInfo>;
 }
