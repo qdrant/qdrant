@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
@@ -6,6 +6,7 @@ use common::universal_io::{
     CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::future::BoxFuture;
+use strum::{EnumDiscriminants, EnumIter, IntoEnumIterator as _};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
@@ -13,12 +14,11 @@ use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTrack
 use crate::id_tracker::mutable_id_tracker::read_only::{
     LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
-use crate::id_tracker::mutable_id_tracker::versions_storage::{
-    VERSION_ELEMENT_SIZE, versions_path,
-};
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
+#[derive(EnumDiscriminants)]
+#[strum_discriminants(name(ReadOnlyIdTrackerKind), derive(EnumIter))]
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     Appendable(ReadOnlyAppendableIdTracker<S>),
     Immutable(ReadOnlyImmutableIdTracker<S>),
@@ -56,7 +56,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
-        max_committed_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
         populate: Populate,
     ) -> OperationResult<Self> {
         if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
@@ -69,17 +69,45 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             fs,
             segment_path,
             deferred_internal_id,
-            max_committed_id,
+            max_committed_offset,
         )?))
     }
 
-    /// Upper bound on committed points derived from `cached_fs`'s file info for `versions.dat`.
-    pub fn max_committed_id_from_cached_fs(
+    /// Files whose size bounds the committed points, across every format that
+    /// has one. Probe them before taking the listing snapshot.
+    pub fn commit_mark_paths(segment_path: &Path) -> Vec<PathBuf> {
+        ReadOnlyIdTrackerKind::iter()
+            .filter_map(|kind| match kind {
+                ReadOnlyIdTrackerKind::Appendable => {
+                    ReadOnlyAppendableIdTracker::<S>::commit_mark_path(segment_path)
+                }
+                ReadOnlyIdTrackerKind::Immutable => {
+                    ReadOnlyImmutableIdTracker::<S>::commit_mark_path(segment_path)
+                }
+                ReadOnlyIdTrackerKind::DiskResident => {
+                    ReadOnlyDiskIdTracker::<S>::commit_mark_path(segment_path)
+                }
+            })
+            .collect()
+    }
+
+    /// Exclusive offset bound of committed points, from `fs`'s snapshot of the
+    /// [`commit_mark_paths`](Self::commit_mark_paths) files.
+    pub fn max_committed_offset(
         fs: &impl CachedReadFs,
         segment_path: &Path,
     ) -> Option<PointOffsetType> {
-        fs.cached_file_info(&versions_path(segment_path))
-            .map(|info| (info.size / VERSION_ELEMENT_SIZE) as PointOffsetType)
+        ReadOnlyIdTrackerKind::iter().find_map(|kind| match kind {
+            ReadOnlyIdTrackerKind::Appendable => {
+                ReadOnlyAppendableIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+            ReadOnlyIdTrackerKind::Immutable => {
+                ReadOnlyImmutableIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+            ReadOnlyIdTrackerKind::DiskResident => {
+                ReadOnlyDiskIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+        })
     }
 
     /// Measure how far the writer has committed, before the directory listing snapshot is taken.

@@ -19,12 +19,12 @@ use crate::types::SeqNumberType;
 
 const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
-pub(crate) const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
+pub(super) const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
 // Entries are written as `u64`, a change to `SeqNumberType` has to be made there too.
 const _: () = assert!(VERSION_ELEMENT_SIZE == size_of::<u64>() as u64);
 
-pub(crate) fn versions_path(segment_path: &Path) -> PathBuf {
+pub(super) fn versions_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_VERSIONS)
 }
 

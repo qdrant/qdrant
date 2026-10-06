@@ -12,7 +12,6 @@ use common::universal_io::{
 use super::LookupSegment;
 use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
@@ -52,12 +51,9 @@ async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs, segment_path)?;
 
-    // Probe id-tracker versions file first, so we have an accurate commit mark available.
-    let versions_p = versions_path(segment_path);
-    let probed_files = cached_fs
-        .inner()
-        .select_files_async(std::slice::from_ref(&versions_p))
-        .await?;
+    // Probe id-tracker commit marks first, so we have an accurate commit mark available.
+    let commit_marks = ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark_paths(segment_path);
+    let probed_files = cached_fs.inner().select_files_async(&commit_marks).await?;
 
     // Schedule other static files to overlap with LIST op. Absence is tolerated here:
     // the subsequent read reports it gracefully.
@@ -69,11 +65,13 @@ async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
     cached_fs.cache_file_info_async().await?;
 
     // Inject id-tracker probe into cached_fs.
-    let versions_info = probed_files
-        .into_iter()
-        .find(|f| f.path == versions_p)
-        .map(FileInfo::from);
-    cached_fs.set_file_info(versions_p, versions_info);
+    for path in commit_marks {
+        let info = probed_files
+            .iter()
+            .find(|f| f.path == path)
+            .map(FileInfo::from);
+        cached_fs.set_file_info(path, info);
+    }
 
     Ok(cached_fs)
 }
@@ -144,8 +142,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         )?));
 
         let appendable = config.is_appendable();
-        let max_committed_id =
-            ReadOnlyIdTrackerEnum::<Fs::File>::max_committed_id_from_cached_fs(&fs, segment_path);
+        let max_committed_offset =
+            ReadOnlyIdTrackerEnum::<Fs::File>::max_committed_offset(&fs, segment_path);
 
         // Detect the persisted format by attempting each format's open. The
         // deferred threshold applies to the appendable tracker only, mirroring
@@ -154,7 +152,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             &fs,
             segment_path,
             deferred_internal_id.filter(|_| appendable),
-            max_committed_id,
+            max_committed_offset,
             WRITER_POPULATE,
         )?));
 

@@ -35,13 +35,13 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
             });
         }
 
-        let max_committed_id =
-            ReadOnlyIdTrackerEnum::<Fs::File>::max_committed_id_from_cached_fs(&fs, segment_path);
+        let max_committed_offset =
+            ReadOnlyIdTrackerEnum::<Fs::File>::max_committed_offset(&fs, segment_path);
         let id_tracker = ReadOnlyIdTrackerEnum::detect_and_load(
             &fs,
             segment_path,
             None,
-            max_committed_id,
+            max_committed_offset,
             WRITER_POPULATE,
         )?;
 

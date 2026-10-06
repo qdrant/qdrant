@@ -17,7 +17,6 @@ use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
-use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -67,12 +66,9 @@ pub async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
 
-    // Probe id-tracker versions file first, so we have an accurate commit mark available.
-    let versions_p = versions_path(segment_path);
-    let probed_files = cached_fs
-        .inner()
-        .select_files_async(std::slice::from_ref(&versions_p))
-        .await?;
+    // Probe id-tracker commit marks first, so we have an accurate commit mark available.
+    let commit_marks = ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark_paths(segment_path);
+    let probed_files = cached_fs.inner().select_files_async(&commit_marks).await?;
 
     // Schedule other static files to overlap with LIST op.
     schedule_static_files(&cached_fs, segment_path);
@@ -81,11 +77,13 @@ pub async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
     cached_fs.cache_file_info_async().await?;
 
     // Inject id-tracker probe into cached_fs.
-    let versions_info = probed_files
-        .into_iter()
-        .find(|f| f.path == versions_p)
-        .map(FileInfo::from);
-    cached_fs.set_file_info(versions_p, versions_info);
+    for path in commit_marks {
+        let info = probed_files
+            .iter()
+            .find(|f| f.path == path)
+            .map(FileInfo::from);
+        cached_fs.set_file_info(path, info);
+    }
 
     Ok(cached_fs)
 }
@@ -380,13 +378,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // Detect the persisted format by attempting each format's open (no
         // per-file `exists` round-trips — important for object-storage backends).
-        let max_committed_id =
-            ReadOnlyIdTrackerEnum::<S>::max_committed_id_from_cached_fs(&fs, segment_path);
+        let max_committed_offset =
+            ReadOnlyIdTrackerEnum::<S>::max_committed_offset(&fs, segment_path);
         let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
             &fs,
             segment_path,
             deferred_internal_id,
-            max_committed_id,
+            max_committed_offset,
             id_tracker_populate(&config, &fs, segment_path),
         )?));
 
