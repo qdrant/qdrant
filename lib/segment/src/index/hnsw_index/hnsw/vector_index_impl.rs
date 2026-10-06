@@ -10,12 +10,19 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::{VectorIndex, VectorIndexRead};
+use crate::index::{VectorIndex, VectorIndexRead, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
 impl VectorIndexRead for HNSWIndex {
+    fn index_type(&self) -> VectorIndexType {
+        VectorIndexType::Hnsw {
+            m: self.config.m,
+            payload_m: self.config.payload_m,
+        }
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],

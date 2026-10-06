@@ -47,11 +47,11 @@ impl PyShardInfo {
 
 impl PyShardInfo {
     fn _getters(self) {
-        // Every field should have a getter method
         let ShardInfo {
             segments_count: _,
             points_count: _,
             indexed_vectors_count: _,
+            vector_indexes: _,
             payload_schema: _,
         } = self.0;
     }

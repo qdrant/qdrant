@@ -18,6 +18,7 @@ use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQuer
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
+use crate::entry::VectorIndexInfoProvider;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -33,7 +34,7 @@ use crate::types::{
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait ReadSegmentEntry {
+pub trait ReadSegmentEntry: VectorIndexInfoProvider {
     fn is_proxy(&self) -> bool;
 
     /// Get version of specified point

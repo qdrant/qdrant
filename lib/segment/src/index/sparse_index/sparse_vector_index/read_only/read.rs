@@ -9,13 +9,17 @@ use super::ReadOnlySparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::{UniversalReadExt, VectorIndexRead};
+use crate::index::{UniversalReadExt, VectorIndexRead, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
 impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
     for ReadOnlySparseVectorIndex<S, TInvertedIndex>
 {
+    fn index_type(&self) -> VectorIndexType {
+        VectorIndexType::Sparse
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],

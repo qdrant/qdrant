@@ -23,7 +23,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::index::UniversalReadExt;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
@@ -33,6 +32,7 @@ use crate::index::sparse_index::sparse_vector_index::read_only::{
 };
 use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
+use crate::index::{UniversalReadExt, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Indexes, Memory, SearchParams, SparseVectorDataConfig, VectorDataConfig,
@@ -373,6 +373,20 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
 }
 
 impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
+    fn index_type(&self) -> VectorIndexType {
+        match self {
+            Self::Plain(index) => index.index_type(),
+            Self::Hnsw(index) => index.index_type(),
+            Self::SparseMutableRam(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedStoredF32(_)
+            | Self::SparseCompressedStoredF16(_)
+            | Self::SparseCompressedStoredU8(_) => VectorIndexType::Sparse,
+        }
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],

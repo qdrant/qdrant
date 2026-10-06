@@ -24,6 +24,7 @@ impl EdgeShard {
                 segments_count,
                 points_count,
                 indexed_vectors_count,
+                vector_indexes: _,
                 payload_schema,
             } = shard.info()?;
             Ok(ShardInfo {
@@ -38,8 +39,6 @@ impl EdgeShard {
         })
     }
 }
-
-// ── ShardInfo ───────────────────────────────────────────────────────────────
 
 /// Summary information about a shard's on-disk state.
 #[derive(Clone, Debug, uniffi::Record)]

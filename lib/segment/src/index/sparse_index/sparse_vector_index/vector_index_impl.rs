@@ -17,7 +17,7 @@ use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
+use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::sparse::StoredSparseVector;
@@ -55,6 +55,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 }
 
 impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInvertedIndex> {
+    fn index_type(&self) -> VectorIndexType {
+        VectorIndexType::Sparse
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],

@@ -16,6 +16,8 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::vectors::{
         DEFAULT_VECTOR_NAME, NamedQuery, TypedMultiDenseVector,
     };
+    pub use segment::entry::VectorIndexInfo;
+    pub use segment::index::VectorIndexType;
     pub use segment::index::payload_config::{PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig};
     pub use segment::index::query_optimization::rescore_formula::parsed_formula::DecayKind;
     pub use segment::json_path::JsonPath;

@@ -9,7 +9,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::VectorIndexRead;
+use crate::index::{VectorIndexRead, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
@@ -32,6 +32,10 @@ impl PlainVectorIndex {
 }
 
 impl VectorIndexRead for PlainVectorIndex {
+    fn index_type(&self) -> VectorIndexType {
+        VectorIndexType::Plain
+    }
+
     fn search(
         &self,
         query_vectors: &[&QueryVector],
