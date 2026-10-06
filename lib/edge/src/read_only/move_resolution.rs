@@ -31,7 +31,7 @@ use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_only::enumerate::SegmentListing;
 use crate::read_only::load::reload_segments_parallel;
 use crate::read_only::moves::{
-    Trackers, UnheldTargets, is_segment_gone, resolve_moves, unknown_targets,
+    Resolution, Trackers, UnheldTargets, is_segment_gone, resolve_moves, unknown_targets,
 };
 
 /// A held segment.
@@ -271,15 +271,39 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             }
         }
 
-        let gone = self.gone_segments.lock();
-        resolve_moves(
-            &trackers,
-            &UnheldTargets {
-                listing,
-                replacements_loaded: all_listed_held,
-                gone: &gone,
-            },
-        )
+        let Resolution { deletes, retired } = {
+            let gone = self.gone_segments.lock();
+            resolve_moves(
+                &trackers,
+                &UnheldTargets {
+                    listing,
+                    replacements_loaded: all_listed_held,
+                    gone: &gone,
+                },
+            )
+        };
+
+        // Forget the settled moved-in records whose masks an earlier pass applied, so a segment
+        // only keeps the records of moves still in flight
+        if !retired.is_empty() {
+            for (_, segment) in held {
+                // Only segments that points moved into have such records, the others are not
+                // locked for writing
+                let names_retired = segment
+                    .read()
+                    .id_tracker
+                    .borrow()
+                    .settled_moved_in()
+                    .is_some_and(|settled| {
+                        settled.keys().any(|source| retired.contains_key(source))
+                    });
+                if names_retired {
+                    segment.write().prune_settled_moved_in(&retired);
+                }
+            }
+        }
+
+        deletes
     }
 
     /// Re-derive the config once superseded segments are dropped, the way live_reload derives it

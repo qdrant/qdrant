@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::sorted_slice::SortedSlice;
@@ -6,6 +7,8 @@ use common::universal_io::{
     CachedReadFs, PreloadFuture, UioResult, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::future::join_all;
+use roaring::RoaringBitmap;
+use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -163,6 +166,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 /// Point moves, see [`point_moves`](crate::id_tracker::point_moves). A segment whose id tracker
 /// does not resolve moves reports nothing to delete.
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
+    /// Forget the settled moved-in records whose source slot `retired` names, per source segment.
+    pub fn prune_settled_moved_in(&mut self, retired: &HashMap<Uuid, RoaringBitmap>) {
+        self.id_tracker.borrow_mut().prune_settled_moved_in(retired);
+    }
+
     /// Delete what `resolution` names, in the id tracker and in every component.
     ///
     /// Components only apply the deletions, they touch no file, so this does no IO. The delta goes
