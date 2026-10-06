@@ -173,7 +173,7 @@ where
 
         if prefer_filter_iter {
             // Iterate the filter, then hash each value to get counts
-            self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped, hw_counter)
+            self.visit_filter_iter(facet_index, filter, &cardinality, None, is_stopped, hw_counter)
         } else {
             // Every posting element will be checked, so materializing the entire filter
             // is cheaper than that many per-point evaluations.
@@ -258,6 +258,7 @@ where
                 facet_index,
                 &new_filter,
                 &new_cardinality,
+                Some(&candidates),
                 is_stopped,
                 hw_counter,
             )
@@ -279,11 +280,17 @@ where
     /// `iter_filtered_points` with [`DeferredBehavior::VisibleOnly`] already
     /// excludes deferred and soft-deleted points, so the yielded ids can be
     /// hashed directly.
+    ///
+    /// `candidates` restricts which values are hashed: the sampling plan must
+    /// count only the values it sampled, because a point needs just one
+    /// candidate value to pass the merged filter, and hashing every value it
+    /// carries would leak never-sampled values into the result.
     fn visit_filter_iter<F: FacetIndex>(
         &self,
         facet_index: &F,
         filter: &Filter,
         cardinality: &CardinalityEstimation,
+        candidates: Option<&HashSet<FacetValue>>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
@@ -298,6 +305,11 @@ where
         facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
             iter.for_each(|value| {
                 let value = value.to_owned();
+                if let Some(candidates) = candidates {
+                    if !candidates.contains(&value) {
+                        return;
+                    }
+                }
                 *hits.entry(value).or_insert(0) += 1;
             });
         })?;
