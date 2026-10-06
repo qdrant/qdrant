@@ -23,6 +23,17 @@ where
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.remove_point(*deleted_point);
+        }
+
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         _fs: &Fs,
@@ -32,10 +43,6 @@ where
         // No on-disk state is changing when we live-reload, as
         // this UniversalMapIndex is not mutable.
         // We only patch in-memory deleted bitslice representation.
-        for deleted_point in deleted_points {
-            self.remove_point(*deleted_point)
-        }
-
-        Ok(())
+        self.apply_deletions(deleted_points)
     }
 }

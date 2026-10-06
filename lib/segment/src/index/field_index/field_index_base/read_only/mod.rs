@@ -295,6 +295,25 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
         }
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::GeoIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::BoolIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::NullIndex(index) => index.apply_deletions(deleted_points),
+        }
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

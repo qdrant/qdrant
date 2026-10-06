@@ -20,6 +20,14 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
         Ok(futs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Deletions are served from the id tracker, nothing here tracks them
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

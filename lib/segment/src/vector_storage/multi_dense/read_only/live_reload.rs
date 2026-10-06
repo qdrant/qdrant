@@ -24,6 +24,16 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
         Ok(futs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.vectors.apply_deletions(deleted_points)?;
+        self.offsets.apply_deletions(deleted_points)?;
+        self.deleted.insert_all(deleted_points);
+        Ok(())
+    }
+
     /// Reload the vectors and offsets, apply `deleted_points`, and fold in the
     /// persisted deletion of each appended offset — a live point may have a
     /// deleted vector slot recorded only on disk.
