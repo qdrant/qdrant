@@ -5,8 +5,10 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::uio_trace;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
+use futures::StreamExt;
 use futures::future::join_all;
-use parking_lot::RwLock;
+use futures::stream::FuturesUnordered;
+use parking_lot::{Mutex, RwLock};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -17,10 +19,10 @@ use uuid::Uuid;
 
 /// Open the given segments and return the ones that loaded, in input order.
 ///
-/// The IO never rides `pool` (the shard's search pool): every segment's
-/// fetches are staged up front and driven to completion on the calling
-/// thread, so the pool only runs the CPU-bound assembly and searches are
-/// not stalled behind parked IO threads.
+/// Listings and the final fetch wait run on the calling thread. Staging and
+/// assembly run on `pool` (the shard's dedicated load pool), so one segment's
+/// config reads do not block staging on other workers or occupy search workers.
+/// Each segment is staged as soon as its own listing pipeline completes.
 ///
 /// A `load_profile` (see [`LoadProfile`]) parks the components the shard's request won't touch
 /// cold instead of warming them per the segment configs.
@@ -45,27 +47,51 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
-    // Stage every open: LIST all segments concurrently, then preopen each one.
-    let listed_futs = segments.into_iter().map(|(uuid, path)| async move {
-        let cached_fs = build_cached_fs_async(fs, &path).await;
-        (uuid, path, cached_fs)
-    });
     check_process_stopped(is_stopped)?;
-    let listed = futures::executor::block_on(join_all(listed_futs));
+    let mut listed_futs: FuturesUnordered<_> = segments
+        .into_iter()
+        .enumerate()
+        .map(|(index, (uuid, path))| async move {
+            let cached_fs = build_cached_fs_async(fs, &path).await;
+            (index, uuid, path, cached_fs)
+        })
+        .collect();
+    let ctx = uio_trace::Context::current();
+    let staged_opens = Mutex::new(Vec::new());
+    // Keep polling all listings on the caller while workers stage each ready segment.
+    // An in-place scope leaves every pool worker available, including in a single-thread pool.
+    pool.in_place_scope(|scope| {
+        let ctx = &ctx;
+        let staged_opens = &staged_opens;
+        futures::executor::block_on(async {
+            while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
+                check_process_stopped(is_stopped)?;
+                scope.spawn(move |_| {
+                    let staged_open = ctx.in_scope(|| {
+                        cached_fs.and_then(|cached_fs| {
+                            ReadOnlySegment::<S>::schedule_open_with_cached_fs(
+                                cached_fs,
+                                &segment_path,
+                                uuid,
+                                None,
+                                load_profile,
+                                is_stopped,
+                            )
+                        })
+                    });
+                    staged_opens.lock().push((index, uuid, staged_open));
+                });
+            }
+            OperationResult::Ok(())
+        })
+    })?;
     check_process_stopped(is_stopped)?;
 
+    // Listing and staging completion order must not change the returned segment order.
+    let mut staged_opens = staged_opens.into_inner();
+    staged_opens.sort_unstable_by_key(|(index, _, _)| *index);
     let mut staged = Vec::new();
-    for (uuid, segment_path, cached_fs) in listed {
-        let staged_open = cached_fs.and_then(|cached_fs| {
-            ReadOnlySegment::<S>::schedule_open_with_cached_fs(
-                cached_fs,
-                &segment_path,
-                uuid,
-                None,
-                load_profile,
-                is_stopped,
-            )
-        });
+    for (_, uuid, staged_open) in staged_opens {
         match staged_open {
             Ok(segment) => staged.push((uuid, segment)),
             Err(err @ OperationError::Cancelled { .. }) => return Err(err),
@@ -84,7 +110,6 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    let ctx = uio_trace::Context::current();
     let loaded = pool.install(|| {
         staged
             .into_par_iter()

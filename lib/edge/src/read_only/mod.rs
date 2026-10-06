@@ -35,6 +35,17 @@ pub use crate::read_only::enumerate::{
 };
 use crate::read_only::holder::ReadOnlySegmentHolder;
 
+/// Optional caller-owned pools for a read-only follower. Pools can be shared across shards;
+/// omitted pools are created at open using the provided [`EdgeConfig`].
+#[derive(Clone, Default)]
+pub struct ReadOnlyEdgeShardPools {
+    /// Runs per-segment reads. Overrides the configured search thread count and core affinity.
+    pub search: Option<Arc<rayon::ThreadPool>>,
+    /// Runs segment staging, assembly, and live-reload apply. By default, a separate unpinned
+    /// pool is created with [`EdgeConfig::search_thread_count`] workers.
+    pub load: Option<Arc<rayon::ThreadPool>>,
+}
+
 /// Read-only follower view over an edge shard's on-disk directory.
 ///
 /// Generic over the read backend `S` (e.g. `MmapFile` for local memory-mapped files; the same
@@ -53,11 +64,14 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// Discovers the current segment directories. Injected because segment discovery is
     /// backend-specific (see [`SegmentEnumerator`]) until an on-disk manifest exists.
     enumerator: Box<dyn SegmentEnumerator>,
-    /// Fixed-size pool used to open segments in parallel on open/live_reload and to run per-segment
-    /// reads in parallel. Segments never carry `max_search_threads`, so it is sized from
+    /// Fixed-size pool used to run per-segment reads in parallel.
+    /// Unless supplied by the caller, it is sized from
     /// `provided_config` alone: the CPU-derived default unless explicitly set (see
     /// [`EdgeConfig::search_thread_count`]).
     search_pool: Arc<rayon::ThreadPool>,
+    /// Pool for segment staging, assembly, and live-reload apply. Separate from the search pool
+    /// by default, so blocking config reads do not occupy search workers.
+    load_pool: Arc<rayon::ThreadPool>,
     /// Request-specific load profile this shard was opened with, if any: components the request
     /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
     /// later [`live_reload`](Self::live_reload) discovers load with the same placement.
