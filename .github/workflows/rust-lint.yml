@@ -50,6 +50,10 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
     - name: Check cargo clippy warnings for all targets and features
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+    - name: Check cargo clippy warnings for edge without the serverless feature
+      # Workspace builds unify `serverless` on through the edge tools; this is
+      # the edge that the published qdrant-edge crate gets.
+      run: cargo clippy -p edge --all-targets -- -D warnings
 
   ast-grep:
 
