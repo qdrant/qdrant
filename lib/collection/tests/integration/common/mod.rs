@@ -79,6 +79,7 @@ pub async fn collection_fixture(
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshot_path = collection_path.join("snapshots");

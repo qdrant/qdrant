@@ -62,6 +62,7 @@ fn create_collection_request() -> CreateCollection {
         strict_mode_config: None,
         uuid: None,
         metadata: None,
+        created_at: None,
     }
 }
 
@@ -96,6 +97,7 @@ fn collection_config(params: CollectionParams) -> CollectionConfigInternal {
         strict_mode_config: None,
         uuid: None,
         metadata: None,
+        created_at: None,
     }
 }
 

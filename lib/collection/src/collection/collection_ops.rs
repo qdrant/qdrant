@@ -445,6 +445,7 @@ impl Collection {
                 config: _,
                 payload_schema,
                 update_queue,
+                created_at: _,
             } = response;
             info.status = cmp::max(info.status, status);
             info.optimizer_status = cmp::max(info.optimizer_status, optimizer_status);
@@ -479,6 +480,9 @@ impl Collection {
                     .or_insert(response_schema);
             }
         }
+
+        // Shard responses from remote peers don't carry it, take it from the local config
+        info.created_at = self.collection_config.read().await.created_at;
 
         Ok(info)
     }

@@ -1792,6 +1792,9 @@ pub struct CollectionInfo {
     /// Update queue info
     #[prost(message, optional, tag = "12")]
     pub update_queue: ::core::option::Option<UpdateQueueInfo>,
+    /// Time of the collection creation, absent for collections created before it was recorded
+    #[prost(message, optional, tag = "13")]
+    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

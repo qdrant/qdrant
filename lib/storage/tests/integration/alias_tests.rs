@@ -262,6 +262,7 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                             strict_mode_config: None,
                             uuid: None,
                             metadata: None,
+                            created_at: None,
                         },
                     )
                     .unwrap(),

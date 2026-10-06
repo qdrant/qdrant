@@ -182,6 +182,7 @@ fn shard_with(
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     // The schema is what the optimizer builds the index from in the segments

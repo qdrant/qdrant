@@ -122,6 +122,7 @@ async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

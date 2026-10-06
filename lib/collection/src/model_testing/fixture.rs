@@ -223,6 +223,7 @@ pub(super) async fn fixture(
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let shards: AHashMap<ShardId, HashSet<PeerId>> = (0..shard_count)

@@ -828,6 +828,7 @@ mod test {
             strict_mode_config: Some(strict_mode_config.clone()),
             uuid: None,
             metadata: None,
+            created_at: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

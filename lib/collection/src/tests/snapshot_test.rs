@@ -58,6 +58,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();

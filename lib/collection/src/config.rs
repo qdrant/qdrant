@@ -9,6 +9,7 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use chrono::{DateTime, Utc};
 use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
@@ -383,6 +384,10 @@ pub struct CollectionConfigInternal {
     /// such as creation time, migration data, inference model info, etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
+    /// Time of the collection creation, assigned once when the creation is submitted.
+    /// Absent for collections created before this field was introduced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionConfigInternal {

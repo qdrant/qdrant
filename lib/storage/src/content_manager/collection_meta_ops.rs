@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
+use chrono::{DateTime, Utc};
 use collection::config::{
     CollectionConfigInternal, CollectionParams, IdTrackerParams, PayloadStorageParams,
     ShardingMethod,
@@ -200,6 +201,9 @@ pub struct CreateCollection {
     /// such as creation time, migration data, inference model info, etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 /// Fill exactly one placement level, by precedence: request `memory`, request legacy `on_disk`,
@@ -573,6 +577,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         } = value;
 
         let CollectionParams {
@@ -606,6 +611,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         }
     }
 }

@@ -84,6 +84,7 @@ async fn sparse_idf_collection_fixture(path: &std::path::Path) -> Collection {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshot_path = path.join("snapshots");

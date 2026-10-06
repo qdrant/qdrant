@@ -53,6 +53,7 @@ pub fn create_collection_config_with_dim(dim: usize) -> CollectionConfigInternal
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     }
 }
 

@@ -6558,6 +6558,12 @@
                 "nullable": true
               }
             ]
+          },
+          "created_at": {
+            "description": "Time of the collection creation. Absent for collections created before Qdrant started recording it.",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
