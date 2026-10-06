@@ -9,6 +9,7 @@ use common::universal_io::UniversalRead;
 
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
+use crate::id_tracker::point_moves::SlotMoves;
 
 /// Implementation of Read-Only ID Tracker compatible with
 /// [`ImmutableIdTracker`] data format.
@@ -19,4 +20,8 @@ pub struct ReadOnlyImmutableIdTracker<S: UniversalRead> {
     deleted: StoredBitSlice<S>,
     internal_to_version: CompressedVersions,
     mappings: CompressedPointMappings,
+    /// Point moves, when this tracker resolves them: tombstones are then held back from
+    /// [`mappings`](Self::mappings) until the shard applies them, see
+    /// [`point_moves`](crate::id_tracker::point_moves).
+    moves: Option<Box<SlotMoves<S>>>,
 }
