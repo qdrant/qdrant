@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::rest::models::HardwareUsage;
+use chrono::SubsecRound as _;
 use collection::common::fetch_vectors::CollectionName;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
@@ -82,7 +83,7 @@ impl Dispatcher {
             // (snapshot recovery, cluster migration) retain their original creation time
             op.create_collection
                 .created_at
-                .get_or_insert_with(chrono::Utc::now);
+                .get_or_insert_with(|| chrono::Utc::now().trunc_subsecs(3));
         }
 
         // if distributed deployment is enabled
