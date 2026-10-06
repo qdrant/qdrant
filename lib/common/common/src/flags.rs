@@ -252,6 +252,7 @@ mod tests {
         assert!(flags.compact_logstore_tracker);
         assert!(flags.persist_proxy_segments);
         assert!(flags.record_point_moves);
+        assert!(flags.resolve_point_moves);
     }
 
     #[test]
