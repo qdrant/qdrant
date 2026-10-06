@@ -10,7 +10,6 @@ mod tests;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 use rayon::ThreadPool;
@@ -64,19 +63,11 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         })
     }
 
-    /// How many copies [`delete_outdated`](Self::delete_outdated) would
-    /// delete, based on the last read.
-    pub fn count_outdated(
-        &self,
-        newer: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<usize> {
-        Ok(self.find_outdated(newer)?.values().map(Vec::len).sum())
-    }
-
-    /// Delete every copy of a point when all its copies here are older than
-    /// its version in `newer`. If any copy is at least that new, it is a
-    /// deferred head and all copies stay. Returns the number of copies
-    /// deleted.
+    /// Delete the outdated copies of the points in `published`, the versions
+    /// a rebuild published elsewhere. A point's copies here are outdated when
+    /// all of them are older than its published version; if any copy is at
+    /// least as new, it is a deferred head and all copies stay. Returns the
+    /// number of copies deleted.
     ///
     /// The writers resume from the trackers' last read, so call
     /// [`live_reload`](Self::live_reload) first, under the shard's write lock,
@@ -84,10 +75,10 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// be written.
     pub fn delete_outdated(
         &mut self,
-        newer: &HashMap<PointIdType, SeqNumberType>,
+        published: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<usize> {
         let mut deleted = 0;
-        for (uuid, points) in self.find_outdated(newer)? {
+        for (uuid, points) in self.find_outdated(published)? {
             let segment = &self.segments[&uuid];
             UpdateOnlySegmentEnum::open(
                 self.fs.clone(),
@@ -101,16 +92,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         Ok(deleted)
     }
 
-    /// Find the outdated copies of the points in `newer`.
-    ///
-    /// A point's copies here are outdated when all of them are older than the
-    /// point's version in `newer`. Returns, per segment, the `(point id,
-    /// internal id)` pairs to tombstone there.
-    fn find_outdated(
+    /// Dry run of [`delete_outdated`](Self::delete_outdated) against the
+    /// trackers' last read: the copies it would delete, as `(point id,
+    /// internal id)` pairs per segment.
+    pub fn find_outdated(
         &self,
-        newer: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>> {
-        let ids: Vec<PointIdType> = newer.keys().copied().collect();
+        published: &HashMap<PointIdType, SeqNumberType>,
+    ) -> OperationResult<HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>> {
+        let ids: Vec<PointIdType> = published.keys().copied().collect();
         let per_segment = self.pool.install(|| {
             self.segments
                 .par_iter()
@@ -118,9 +107,9 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 .collect::<OperationResult<Vec<_>>>()
         })?;
 
-        let mut by_segment: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        let mut by_segment: HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = HashMap::new();
         for (id, located) in merge_locations(per_segment) {
-            if located.newest.version >= newer[&id] {
+            if located.newest.version >= published[&id] {
                 continue;
             }
             for (segment, internal_id) in located.slots {
