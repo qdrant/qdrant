@@ -213,6 +213,30 @@ fn rewrite_appends_are_counted_as_remote_requests() {
     assert_eq!(delta.total().abandoned, 0);
 }
 
+/// A filesystem built over a caller's observer reports its requests there.
+#[test]
+fn new_with_stats_reports_into_the_given_observer() {
+    use common::uio_trace::Op;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), tmp.path().to_path_buf()).unwrap();
+    let shared = crate::stats::RemoteIoStats::default();
+    let fs = CachedBlobFs::new_with_stats(
+        source,
+        BridgeRuntime::global(),
+        Arc::new(config),
+        shared.clone(),
+    );
+    let mut file = fs.open_append("bucket/obj", open_options()).unwrap();
+
+    file.append(0, b"abc".as_slice()).unwrap();
+    file.append(3, b"de".as_slice()).unwrap();
+    let seen = shared.snapshot();
+    assert_eq!(seen.op(Op::Save).completed, 2);
+    assert_eq!(seen.op(Op::Read).completed, 1);
+}
+
 /// A non-zero offset against a missing object is an offset conflict —
 /// the object's length is zero, not unknowable.
 #[test]
