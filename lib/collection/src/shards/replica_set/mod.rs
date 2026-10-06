@@ -378,6 +378,10 @@ impl ShardReplicaSet {
     }
 
     pub async fn stop_gracefully(&self) {
+        log::info!(
+            "stop_gracefully: acquiring local shard write lock (shard {})",
+            self.shard_id
+        );
         if let Some(local) = self.local.write().await.take() {
             local.stop_gracefully().await;
         }

@@ -777,7 +777,7 @@ pub async fn run(
             stage_breadcrumb(&bar, &format!("op:{i} restart: collect_clock_ticks"));
             let pre_clocks = verify::collect_clock_ticks(&collection).await;
             stage_breadcrumb(&bar, &format!("op:{i} restart: stop_gracefully"));
-            collection.stop_gracefully().await;
+            stop_gracefully_or_hang(&collection, i).await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
             // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
             // old collection is silently kept alive.
@@ -919,7 +919,7 @@ pub async fn run(
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
     stage_breadcrumb(&bar, "reload: stop_gracefully");
-    collection.stop_gracefully().await;
+    stop_gracefully_or_hang(&collection, applied).await;
     // Checked close-before-reopen, same as the mid-run restart path.
     drop(
         Arc::into_inner(collection)
@@ -958,6 +958,27 @@ fn stage_breadcrumb(bar: &ProgressBar, msg: &str) {
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
 /// `create_snapshot` fails loudly instead of stalling the run forever.
 const SNAPSHOT_HANG_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Same idea as [`SNAPSHOT_HANG_TIMEOUT`]: `Collection::stop_gracefully` joins update / flush /
+/// optimizer workers with no deadline. Nightly run 37403541684 sat here for ~3h after
+/// `restart: stop_gracefully` with no further breadcrumbs. Fail the soak instead of eating the
+/// GitHub Actions job budget. The last `stop_gracefully: waiting for …` info log names the join.
+const STOP_GRACEFULLY_HANG_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Close the collection, panicking if shutdown never returns.
+async fn stop_gracefully_or_hang(collection: &Collection, tick: usize) {
+    tokio::time::timeout(
+        STOP_GRACEFULLY_HANG_TIMEOUT,
+        collection.stop_gracefully(),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "stop_gracefully did not finish within {STOP_GRACEFULLY_HANG_TIMEOUT:?} (op:{tick}); \
+             last `stop_gracefully:` info log names the lock or worker join that hung"
+        )
+    });
+}
 
 /// Finish the in-flight background snapshot (if any): await the task, panic if `create_snapshot`
 /// errored or the task panicked, then delete the archive (we don't recover it). Called per-iteration
