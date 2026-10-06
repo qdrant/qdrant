@@ -11,6 +11,7 @@ mod multi_vec_test;
 mod pagination_test;
 mod resharding_abort_deferred_points_test;
 mod shard_transfer_atomicity_test;
+mod shard_transfer_initiation_test;
 mod snapshot_recovery_test;
 mod sparse_idf_test;
 mod stale_shard_transfer_test;
