@@ -32,6 +32,7 @@ use segment::index::UniversalReadExt;
 use crate::EdgeConfig;
 pub use crate::read_only::enumerate::{
     ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, SegmentEnumerator,
+    SegmentListing, UnusableSegmentState,
 };
 use crate::read_only::holder::ReadOnlySegmentHolder;
 
