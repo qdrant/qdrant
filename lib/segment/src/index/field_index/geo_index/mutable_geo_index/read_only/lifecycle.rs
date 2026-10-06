@@ -14,13 +14,20 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
     /// will read.
     ///
     /// Returns whether the on-disk directory exists.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         // Blobstore reader
-        Ok(
-            BlobstoreReader::<Vec<RawGeoPoint>, S>::preopen(fs, dir, Populate::PreferBackground)
-                .ok_not_found()?
-                .is_some(),
+        Ok(BlobstoreReader::<Vec<RawGeoPoint>, S>::preopen(
+            fs,
+            dir,
+            Populate::PreferBackground,
+            hw_counter,
         )
+        .ok_not_found()?
+        .is_some())
     }
 
     /// Open the appendable (Gridstore) geo index read-only, threading every
@@ -41,9 +48,10 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            BlobstoreReader::<Vec<RawGeoPoint>, S>::open(fs, path, Populate::Blocking)
+            BlobstoreReader::<Vec<RawGeoPoint>, S>::open(fs, path, Populate::Blocking, hw_counter)
                 .ok_not_found()?
         else {
             // Files don't exist, cannot load
@@ -54,7 +62,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         let hw_counter = HardwareCounterCell::disposable();
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset(&hw_counter)?,
                 |idx, values: Vec<RawGeoPoint>| {
                     let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
                     in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;

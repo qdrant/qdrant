@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::universal_io::{UniversalReadFs, read_json_via};
 use schemars::JsonSchema;
@@ -126,8 +127,12 @@ impl SparseIndexConfig {
     }
 
     /// Universal-IO variant of [`Self::load`].
-    pub fn load_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
-        Ok(read_json_via(fs, path)?)
+    pub fn load_universal<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        Ok(read_json_via(fs, path, hw_counter)?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

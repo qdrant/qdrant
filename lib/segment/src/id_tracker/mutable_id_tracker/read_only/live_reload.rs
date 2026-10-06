@@ -1,6 +1,8 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -110,6 +112,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
+        hw_acc: &HwMeasurementAcc,
     ) -> OperationResult<TrackerProbe> {
         // Held across the refresh IO. Only refreshes take it, and the caller serializes those.
         let mut files = self.files.lock().await;
@@ -120,16 +123,27 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // missing insert just defers the point, and the grown mappings file flags the next probe
         // as changed.
         futures::try_join!(
-            Self::refresh_file(versions, inner_fs, versions_path(&self.segment_path)),
-            Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
+            Self::refresh_file(
+                versions,
+                inner_fs,
+                versions_path(&self.segment_path),
+                hw_acc
+            ),
+            Self::refresh_file(
+                mappings,
+                inner_fs,
+                mappings_path(&self.segment_path),
+                hw_acc
+            ),
         )?;
 
+        let hw_counter = hw_acc.get_counter_cell();
         let v_len = match versions {
-            Some(file) => (file.len::<u8>()? / VERSION_ELEMENT_SIZE) as usize,
+            Some(file) => (file.len::<u8>(&hw_counter)? / VERSION_ELEMENT_SIZE) as usize,
             None => 0,
         };
         let m_bytes = match mappings {
-            Some(file) => file.len::<u8>()?,
+            Some(file) => file.len::<u8>(&hw_counter)?,
             None => 0,
         };
 
@@ -149,17 +163,24 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         file: &mut Option<S>,
         inner_fs: &Fs,
         path: PathBuf,
+        hw_acc: &HwMeasurementAcc,
     ) -> OperationResult<()> {
         match file {
             Some(file) => {
-                if let Some(fut) = file.live_preload(|_| None).ok_not_found()? {
+                let hw_counter = hw_acc.get_counter_cell();
+                if let Some(fut) = file.live_preload(|_| None, &hw_counter).ok_not_found()? {
                     fut.await;
-                    file.live_reload().ok_not_found()?;
+                    file.live_reload(&hw_counter).ok_not_found()?;
                 }
             }
             None => {
                 *file = inner_fs
-                    .open_async(path, Self::open_options(), Default::default())
+                    .open_async(
+                        path,
+                        Self::open_options(),
+                        Default::default(),
+                        hw_acc.clone(),
+                    )
                     .await
                     .ok_not_found()?;
             }
@@ -193,16 +214,18 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
         max_committed_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<LiveReloadResult> {
         let preloaded = max_committed_id.is_some();
 
         // Append versions flushed since the last reload (mappings are flushed before versions).
         // `committed` is the exclusive offset bound for which versions exist, i.e. the commit mark.
-        let committed = self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
+        let committed =
+            self.reload_versions(fs, max_committed_id, preloaded, hw_counter)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, or cancel a still-pending insert.
-        let changes = self.read_new_mapping_changes(fs, preloaded)?;
+        let changes = self.read_new_mapping_changes(fs, preloaded, hw_counter)?;
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
@@ -259,6 +282,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
         preloaded: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<MappingChange>> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
@@ -269,10 +293,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                     // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
                     // an empty file.
-                    file.live_reload().ok_not_found()?;
+                    file.live_reload(hw_counter).ok_not_found()?;
                 }
                 None => {
-                    *mappings_file = Self::try_open(fs, &mappings_path(&self.segment_path))?;
+                    *mappings_file =
+                        Self::try_open(fs, &mappings_path(&self.segment_path), hw_counter)?;
                 }
             }
         }
@@ -280,7 +305,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             return Ok(Vec::new());
         };
 
-        let Some(file_len) = file.len::<u8>().ok_not_found()? else {
+        let Some(file_len) = file.len::<u8>(hw_counter).ok_not_found()? else {
             return Ok(Vec::new());
         };
 
@@ -299,7 +324,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             return Ok(Vec::new());
         }
 
-        let bytes = file.read::<_, u8>(ReadRange::new(start, file_len - start), Sequential)?;
+        let bytes = file.read::<_, u8>(
+            ReadRange::new(start, file_len - start),
+            Sequential,
+            hw_counter,
+        )?;
         let mut reader = Cursor::new(bytes.as_ref());
 
         let mut changes = Vec::new();
@@ -325,6 +354,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         max_committed_id: Option<PointOffsetType>,
         preloaded: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
@@ -335,10 +365,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
                     // object does not exist yet (e.g. S3) reports `NotFound` here or from `len`; treat that as
                     // an empty file (no committed versions).
-                    versions_file.live_reload().ok_not_found()?;
+                    versions_file.live_reload(hw_counter).ok_not_found()?;
                 }
                 None => {
-                    *versions_file = Self::try_open(fs, &versions_path(&self.segment_path))?;
+                    *versions_file =
+                        Self::try_open(fs, &versions_path(&self.segment_path), hw_counter)?;
                 }
             }
         }
@@ -353,7 +384,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // flush) is ignored, only fully-written versions are loaded. We read the byte length rather
         // than `len::<SeqNumberType>()` on purpose, some backends debug-assert the file length is a
         // whole number of elements, which a torn flush violates.
-        let Some(versions_bytes) = versions_file.len::<u8>().ok_not_found()? else {
+        let Some(versions_bytes) = versions_file.len::<u8>(hw_counter).ok_not_found()? else {
             return Ok(internal_to_version.len());
         };
         let mut versions_len = (versions_bytes / VERSION_ELEMENT_SIZE) as usize;
@@ -373,6 +404,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     (versions_len - loaded_len) as u64,
                 ),
                 Sequential,
+                hw_counter,
             )?;
             internal_to_version.extend_from_slice(&tail);
         }

@@ -14,8 +14,9 @@ impl<S: UniversalRead> LiveReload for QuantizedChunkedStorageRead<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        self.data.live_preload(fs)
+        self.data.live_preload(fs, hw_counter)
     }
 
     /// Pick up quantized vectors a writer appended to the chunked backing.

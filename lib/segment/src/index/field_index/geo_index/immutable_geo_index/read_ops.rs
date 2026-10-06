@@ -50,11 +50,15 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
         Ok(ImmutableGeoIndex::check_values_any(self, idx, check_fn))
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
+    fn values_count(&self, idx: PointOffsetType, _hw_counter: &HardwareCounterCell) -> usize {
         ImmutableGeoIndex::values_count(self, idx)
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         ImmutableGeoIndex::get_values(self, idx)
             .map(|iter| Box::new(iter.copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
     }
@@ -62,6 +66,7 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         Ok(Box::new(
             values
@@ -74,6 +79,7 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
         Ok(ImmutableGeoIndex::points_per_hash(self)
             .filter(|pair| filter(pair))
@@ -92,7 +98,7 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
         false
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 

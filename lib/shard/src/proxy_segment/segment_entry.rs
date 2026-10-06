@@ -58,7 +58,11 @@ impl ProxySegment {
     /// Takes the wrapped info rather than fetching it, so both
     /// [`SegmentEntry::info`] (which needs `index_schema`, and can fail) and
     /// [`SegmentEntry::size_info`] (which cannot) can share it.
-    fn adjusted_info(&self, wrapped_info: SegmentInfo) -> SegmentInfo {
+    fn adjusted_info(
+        &self,
+        wrapped_info: SegmentInfo,
+        hw_counter: &HardwareCounterCell,
+    ) -> SegmentInfo {
         // Remove vector-data entries for names that the proxy has deleted or
         // superseded with a different schema — their counts and size reflect
         // the old, stale storage and should not be surfaced.
@@ -111,7 +115,7 @@ impl ProxySegment {
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count(),
+            num_points: self.available_point_count(hw_counter),
             num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: wrapped_info.num_deleted_deferred_points.map(
                 |num_deleted_deferred_points| {
@@ -137,9 +141,17 @@ impl ReadSegmentEntry for ProxySegment {
         true
     }
 
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+    fn point_version(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         // Use wrapped segment version, if absent we have no version at all
-        let wrapped_version = self.wrapped_segment.get().read().point_version(point_id)?;
+        let wrapped_version = self
+            .wrapped_segment
+            .get()
+            .read()
+            .point_version(point_id, hw_counter)?;
 
         // Ignore point from wrapped segment if already marked for deletion with newer version
         // By `point_version` semantics we don't expect to get a version if the point
@@ -599,8 +611,17 @@ impl ReadSegmentEntry for ProxySegment {
     }
 
     /// Read points in [from; to) range
-    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
-        let read_points = self.wrapped_segment.get().read().read_range(from, to);
+    fn read_range(
+        &self,
+        from: Option<PointIdType>,
+        to: Option<PointIdType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType> {
+        let read_points = self
+            .wrapped_segment
+            .get()
+            .read()
+            .read_range(from, to, hw_counter);
         if self.pending_changes.deleted_points().is_empty() {
             read_points
         } else {
@@ -677,7 +698,12 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(hits)
     }
 
-    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
+    fn has_point(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         !self
             .pending_changes
             .deleted_points()
@@ -686,25 +712,29 @@ impl ReadSegmentEntry for ProxySegment {
                 .wrapped_segment
                 .get()
                 .read()
-                .has_point(point_id, deferred_behavior)
+                .has_point(point_id, deferred_behavior, hw_counter)
     }
 
     fn is_empty(&self) -> bool {
         self.wrapped_segment.get().read().is_empty()
     }
 
-    fn available_point_count(&self) -> usize {
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
         let deleted_points_count = self.pending_changes.deleted_points().len();
-        let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
+        let wrapped_segment_count = self
+            .wrapped_segment
+            .get()
+            .read()
+            .available_point_count(hw_counter);
         wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 
-    fn available_point_count_without_deferred(&self) -> usize {
+    fn available_point_count_without_deferred(&self, hw_counter: &HardwareCounterCell) -> usize {
         let wrapped_segment_visible_count = self
             .wrapped_segment
             .get()
             .read()
-            .available_point_count_without_deferred();
+            .available_point_count_without_deferred(hw_counter);
 
         // Amount of visible points that are deleted in this proxy.
         let deleted_visible = self
@@ -716,12 +746,19 @@ impl ReadSegmentEntry for ProxySegment {
         wrapped_segment_visible_count.saturating_sub(deleted_visible)
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.wrapped_segment.get().read().deleted_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.wrapped_segment
+            .get()
+            .read()
+            .deleted_point_count(hw_counter)
             + self.pending_changes.deleted_points().len()
     }
 
-    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
+    fn available_vectors_size_in_bytes(
+        &self,
+        vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         // Stale vectors contribute zero bytes to the size estimate: the
         // wrapped's storage is doomed to be discarded by the optimiser, and
         // any new schema has no points indexed in this segment yet. Also
@@ -737,8 +774,9 @@ impl ReadSegmentEntry for ProxySegment {
 
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
-        let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;
-        let wrapped_count = wrapped_segment_guard.available_point_count();
+        let wrapped_size =
+            wrapped_segment_guard.available_vectors_size_in_bytes(vector_name, hw_counter)?;
+        let wrapped_count = wrapped_segment_guard.available_point_count(hw_counter);
         drop(wrapped_segment_guard);
 
         let stored_points = wrapped_count;
@@ -773,7 +811,7 @@ impl ReadSegmentEntry for ProxySegment {
             let wrapped_segment_guard = wrapped_segment.read();
             (
                 wrapped_segment_guard.estimate_point_count(filter.as_deref(), hw_counter)?,
-                wrapped_segment_guard.available_point_count_without_deferred(),
+                wrapped_segment_guard.available_point_count_without_deferred(hw_counter),
             )
         };
 
@@ -807,16 +845,19 @@ impl ReadSegmentEntry for ProxySegment {
         SegmentType::Special
     }
 
-    fn size_info(&self) -> SegmentInfo {
+    fn size_info(&self, hw_counter: &HardwareCounterCell) -> SegmentInfo {
         // Same proxy adjustments as `info`, over the wrapped segment's size
         // info. Uses `size_info` rather than `info` so it stays infallible:
         // only `info`'s `index_schema` can fail to compute.
-        self.adjusted_info(self.wrapped_segment.get().read().size_info())
+        self.adjusted_info(
+            self.wrapped_segment.get().read().size_info(hw_counter),
+            hw_counter,
+        )
     }
 
-    fn info(&self) -> OperationResult<SegmentInfo> {
-        let wrapped_info = self.wrapped_segment.get().read().info()?;
-        Ok(self.adjusted_info(wrapped_info))
+    fn info(&self, hw_counter: &HardwareCounterCell) -> OperationResult<SegmentInfo> {
+        let wrapped_info = self.wrapped_segment.get().read().info(hw_counter)?;
+        Ok(self.adjusted_info(wrapped_info, hw_counter))
     }
 
     fn config(&self) -> &SegmentConfig {
@@ -855,8 +896,15 @@ impl ReadSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().vector_names()
     }
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
-        self.wrapped_segment.get().read().get_telemetry_data(detail)
+    fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentTelemetry> {
+        self.wrapped_segment
+            .get()
+            .read()
+            .get_telemetry_data(detail, hw_counter)
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
@@ -884,7 +932,7 @@ impl ReadSegmentEntry for ProxySegment {
         filled
     }
 
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+    fn point_is_deferred(&self, point_id: PointIdType, hw_counter: &HardwareCounterCell) -> bool {
         !self
             .pending_changes
             .deleted_points()
@@ -893,11 +941,15 @@ impl ReadSegmentEntry for ProxySegment {
                 .wrapped_segment
                 .get()
                 .read()
-                .point_is_deferred(point_id)
+                .point_is_deferred(point_id, hw_counter)
     }
 
-    fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        let mut ids = self.wrapped_segment.get().read().deferred_point_ids();
+    fn deferred_point_ids(&self, hw_counter: &HardwareCounterCell) -> Vec<PointIdType> {
+        let mut ids = self
+            .wrapped_segment
+            .get()
+            .read()
+            .deferred_point_ids(hw_counter);
         if self.deleted_deferred_count > 0 {
             ids.retain(|point_id| !self.pending_changes.deleted_points().contains_key(point_id));
         }
@@ -942,8 +994,17 @@ impl StorageSegmentEntry for ProxySegment {
         )
     }
 
-    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
-        let wrapped_flusher = self.wrapped_segment.get().read().flusher(force, up_to);
+    fn flusher(
+        &self,
+        force: bool,
+        up_to: Option<SeqNumberType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Flusher> {
+        let wrapped_flusher = self
+            .wrapped_segment
+            .get()
+            .read()
+            .flusher(force, up_to, hw_counter);
         let pending_changes_flusher = self.pending_changes.flusher(self.version, up_to);
 
         match (wrapped_flusher, pending_changes_flusher) {
@@ -1035,6 +1096,7 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _vector_name: &VectorName,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Print current stack trace for easier debugging of unexpected calls
         Err(OperationError::service_error(format!(
@@ -1096,7 +1158,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
         let was_deferred_point;
@@ -1108,8 +1170,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 let (point_offset, is_deferred) = {
                     let read_segment = raw_segment.read();
                     (
-                        read_segment.get_internal_id(point_id),
-                        read_segment.point_is_deferred(point_id),
+                        read_segment.get_internal_id(point_id, hw_counter),
+                        read_segment.point_is_deferred(point_id, hw_counter),
                     )
                 };
                 was_deferred_point = is_deferred;
@@ -1136,8 +1198,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 let (has_point, is_deferred) = {
                     let read_proxy = proxy.read();
                     (
-                        read_proxy.has_point(point_id, DeferredBehavior::WithDeferred),
-                        read_proxy.point_is_deferred(point_id),
+                        read_proxy.has_point(point_id, DeferredBehavior::WithDeferred, hw_counter),
+                        read_proxy.point_is_deferred(point_id, hw_counter),
                     )
                 };
                 was_deferred_point = is_deferred;
@@ -1248,6 +1310,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         vector_name: &VectorName,
         vector_config: &VectorNameConfig,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -28,6 +29,7 @@ where
         path: &Path,
         memory: Memory,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Low-memory mode degrades the placement at load time (pinned falls back to the
         // pure-mmap `Storage` variant). Files are shared between variants; the persisted
@@ -36,7 +38,7 @@ where
 
         let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) =
-            OnDiskNumericIndex::open(&MmapFs, path, populate, deleted_points)?
+            OnDiskNumericIndex::open(&MmapFs, path, populate, deleted_points, hw_counter)?
         else {
             // Files don't exist, cannot load
             return Ok(None);
@@ -45,7 +47,7 @@ where
         if memory.is_heap() {
             // Load into RAM, use on-disk as backing storage
             Ok(Some(NumericIndexInner::Immutable(
-                ImmutableNumericIndex::load_from_on_disk(on_disk_index),
+                ImmutableNumericIndex::load_from_on_disk(on_disk_index, hw_counter),
             )))
         } else {
             // Use on-disk directly
@@ -53,14 +55,20 @@ where
         }
     }
 
-    pub fn new_gridstore(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
-        Ok(MutableNumericIndex::open_gridstore(dir, create_if_missing)?
-            .map(NumericIndexInner::Mutable))
+    pub fn new_gridstore(
+        dir: PathBuf,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
+        Ok(
+            MutableNumericIndex::open_gridstore(dir, create_if_missing, hw_counter)?
+                .map(NumericIndexInner::Mutable),
+        )
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            NumericIndexInner::Mutable(index) => index.flusher(),
+            NumericIndexInner::Mutable(index) => index.flusher(hw_counter),
             NumericIndexInner::Immutable(index) => index.flusher(),
             NumericIndexInner::OnDisk(index) => index.flusher(),
         }
@@ -82,9 +90,13 @@ where
         }
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(index) => index.remove_point(idx)?,
+            NumericIndexInner::Mutable(index) => index.remove_point(idx, hw_counter)?,
             NumericIndexInner::Immutable(index) => index.remove_point(idx),
             NumericIndexInner::OnDisk(index) => index.remove_point(idx),
         }
@@ -93,11 +105,11 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             NumericIndexInner::Mutable(_) => {}   // Not a mmap
             NumericIndexInner::Immutable(_) => {} // Not a mmap
-            NumericIndexInner::OnDisk(index) => index.populate()?,
+            NumericIndexInner::OnDisk(index) => index.populate(hw_counter)?,
         }
         Ok(())
     }

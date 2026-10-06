@@ -209,9 +209,16 @@ impl ShardReplicaSet {
         .await
     }
 
-    pub async fn info(&self, local_only: bool) -> CollectionResult<CollectionInfo> {
+    pub async fn info(
+        &self,
+        local_only: bool,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<CollectionInfo> {
         self.execute_read_operation(
-            |shard| async move { shard.info().await }.boxed(),
+            |shard| {
+                let hw_acc = hw_acc.clone();
+                async move { shard.info(&hw_acc).await }.boxed()
+            },
             // Collection info read: replica routing does not apply.
             None,
             local_only,

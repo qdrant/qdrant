@@ -262,6 +262,10 @@ pub struct SegmentQueryContext<'a> {
 }
 
 impl<'a> SegmentQueryContext<'a> {
+    pub fn hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
+
     pub fn available_point_count(&self) -> usize {
         self.query_context.available_point_count()
     }
@@ -341,6 +345,10 @@ impl VectorQueryContext<'_> {
         self.hardware_counter.fork()
     }
 
+    pub fn hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
+
     pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
@@ -416,6 +424,10 @@ impl TextQueryContext<'_> {
 
     pub fn hardware_counter(&self) -> HardwareCounterCell {
         self.hardware_counter.fork()
+    }
+
+    pub fn hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
     }
 
     /// `N`: documents carrying the field, over this shard's segments.

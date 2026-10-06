@@ -8,6 +8,7 @@ use super::format::{
     BitmaskContent, BitmaskHeader, Encoding, HEADER_SIZE, MAGIC, MAX_LOGICAL_LEN, VERSION,
 };
 use crate::bitvec::{BitSlice, BitVec};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Sequential;
 use crate::universal_io::{
     OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
@@ -50,11 +51,12 @@ impl<S: UniversalRead> StoredBitmask<S> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
         let path = path.as_ref();
-        let storage = TypedStorage::open(fs, path, options, extra)?;
+        let storage = TypedStorage::open(fs, path, options, extra, hw_counter)?;
 
-        let file_len = storage.len()?;
+        let file_len = storage.len(hw_counter)?;
         if file_len < HEADER_SIZE as u64 {
             return Err(invalid_data(
                 path,
@@ -62,7 +64,11 @@ impl<S: UniversalRead> StoredBitmask<S> {
             ));
         }
 
-        let header_bytes = storage.read(ReadRange::new(0, HEADER_SIZE as u64), Sequential)?;
+        let header_bytes = storage.read(
+            ReadRange::new(0, HEADER_SIZE as u64),
+            Sequential,
+            hw_counter,
+        )?;
         let header: BitmaskHeader = bytemuck::pod_read_unaligned(&header_bytes);
 
         if header.magic != MAGIC {
@@ -132,10 +138,11 @@ impl<S: UniversalRead> StoredBitmask<S> {
     }
 
     /// Read and decode the payload, in the stored polarity.
-    pub fn read(&self) -> UioResult<BitmaskContent<'_>> {
+    pub fn read(&self, hw_counter: &HardwareCounterCell) -> UioResult<BitmaskContent<'_>> {
         let payload = self.storage.read(
             ReadRange::new(HEADER_SIZE as u64, self.payload_len),
             Sequential,
+            hw_counter,
         )?;
 
         match self.encoding {
@@ -160,8 +167,8 @@ impl<S: UniversalRead> StoredBitmask<S> {
 
     /// Read and decode the payload into a bitmap of the set positions,
     /// normalizing away the stored encoding/polarity.
-    pub fn read_ones(&self) -> UioResult<RoaringBitmap> {
-        match self.read()? {
+    pub fn read_ones(&self, hw_counter: &HardwareCounterCell) -> UioResult<RoaringBitmap> {
+        match self.read(hw_counter)? {
             BitmaskContent::Dense(bits) => Ok(bits
                 .iter_ones()
                 .map(|idx| idx as u32)

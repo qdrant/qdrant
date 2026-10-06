@@ -3,6 +3,7 @@ use std::ops::Range;
 
 use bytemuck::TransparentWrapper;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{ReadPipeline, UioResult, UserData};
@@ -43,9 +44,10 @@ where
         file: &'file File,
         range: Range<u64>,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         self.inner
-            .schedule::<P>(user_data, File::peel_ref(file), range, align)
+            .schedule::<P>(user_data, File::peel_ref(file), range, align, hw_counter)
     }
 
     fn schedule_whole(
@@ -53,13 +55,14 @@ where
         user_data: U,
         file: &'file Self::File,
         from: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         self.inner
-            .schedule_whole(user_data, File::peel_ref(file), from)
+            .schedule_whole(user_data, File::peel_ref(file), from, hw_counter)
     }
 
     #[inline]
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
-        self.inner.wait()
+    fn wait(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>> {
+        self.inner.wait(hw_counter)
     }
 }

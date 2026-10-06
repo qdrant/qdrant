@@ -66,7 +66,15 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_dense_vector_storage_with_uring(dir, DIMS, DISTANCE, false, true).unwrap()
+    open_dense_vector_storage_with_uring(
+        dir,
+        DIMS,
+        DISTANCE,
+        false,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {
@@ -155,6 +163,7 @@ fn scoring_equivalency(
         &mut other_storage,
         &raw_storage,
         NUM_POINTS as PointOffsetType,
+        &HardwareCounterCell::new(),
     )?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
@@ -166,6 +175,7 @@ fn scoring_equivalency(
             quant_dir.path(),
             4,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )?)
     } else {
         None
@@ -178,7 +188,7 @@ fn scoring_equivalency(
         let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
         );
 
         let mut other_scorer = FilteredScorer::new(
@@ -186,11 +196,12 @@ fn scoring_equivalency(
             &other_storage,
             quantized_vectors.as_ref(),
             None,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
             HardwareCounterCell::new(),
         )?;
 
-        let points = (0..other_storage.total_vector_count() as _).sample(&mut rng, SAMPLE_SIZE);
+        let points = (0..other_storage.total_vector_count(&HardwareCounterCell::new()) as _)
+            .sample(&mut rng, SAMPLE_SIZE);
 
         let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
         let other_scores = other_scorer

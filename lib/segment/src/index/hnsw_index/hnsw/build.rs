@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::thread;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::types::PointOffsetType;
@@ -37,6 +38,7 @@ impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
         open_args: HnswIndexOpenArgs<'_>,
         build_args: VectorIndexBuildArgs<'_, R>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         if HnswGraphConfig::get_config_path(open_args.path).exists()
             || GraphLayers::get_path(open_args.path).exists()
@@ -46,7 +48,7 @@ impl HNSWIndex {
                 open_args.path
             );
             debug_assert!(false);
-            return Self::open(open_args);
+            return Self::open(open_args, hw_counter);
         }
 
         let HnswIndexOpenArgs {
@@ -76,8 +78,13 @@ impl HNSWIndex {
         let quantized_vectors_ref = quantized_vectors.borrow();
         let payload_index_ref = payload_index.borrow();
 
-        let total_vector_count = vector_storage_ref.total_vector_count();
-        let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
+        let total_vector_count = vector_storage_ref.total_vector_count(hw_counter);
+        let mut config = derive_config(
+            &hnsw_config,
+            &*vector_storage_ref,
+            total_vector_count,
+            hw_counter,
+        );
 
         let mut build_main_graph = config.m > 0;
         if !build_main_graph {
@@ -106,6 +113,7 @@ impl HNSWIndex {
                     &vector_storage_ref,
                     &quantized_vectors_ref,
                     id_tracker_ref.deref(),
+                    hw_counter,
                 )
             })
             .max_by_key(|old_index| old_index.valid_points);
@@ -145,11 +153,11 @@ impl HNSWIndex {
 
         let pool = build_thread_pool(permit.num_cpus as usize)?;
 
-        let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
+        let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count, hw_counter));
 
         let mut indexed_vectors = 0;
         for vector_id in id_tracker_ref
-            .point_mappings()
+            .point_mappings(hw_counter)
             .iter_internal_excluding(deleted_bitslice)
         {
             check_process_stopped(stopped)?;
@@ -177,6 +185,7 @@ impl HNSWIndex {
             deleted_bitslice,
             num_entries,
             stopped,
+            hw_counter,
         )?;
         #[cfg(not(feature = "gpu"))]
         let gpu_graph: Option<GraphLayersBuilder> = None;
@@ -200,6 +209,7 @@ impl HNSWIndex {
                 progress_main_graph.unwrap(),
                 &pool,
                 stopped,
+                hw_counter,
             )?;
         } else {
             drop(old_index);
@@ -229,6 +239,7 @@ impl HNSWIndex {
                 &pool,
                 rng,
                 stopped,
+                hw_counter,
             )?;
 
             debug_assert!(indexed_vectors >= indexed_payload_vectors || config.m == 0);
@@ -251,6 +262,7 @@ impl HNSWIndex {
             &vector_storage_ref,
             quantized_vectors_ref.as_ref(),
             is_on_disk,
+            hw_counter,
         )?;
         debug_assert!(
             deleted_points_unlinked(&graph, deleted_bitslice),
@@ -319,6 +331,7 @@ fn save_graph(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
     on_disk: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<GraphLayers> {
     let graph_links_vectors = inline_vectors
         .then(|| {
@@ -333,7 +346,7 @@ fn save_graph(
         Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
         None => GraphLinksFormatParam::Compressed,
     };
-    graph_layers_builder.into_graph_layers(path, format_param, on_disk)
+    graph_layers_builder.into_graph_layers(path, format_param, on_disk, hw_counter)
 }
 
 /// Whether no deleted point has links on level 0.

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 
 use super::bool_index::BoolIndex;
 use super::bool_index::immutable_bool_index::ImmutableBoolIndex;
@@ -36,6 +37,7 @@ pub enum IndexSelector<'a> {
 
 impl IndexSelector<'_> {
     /// Loads the correct index based on `index_type`.
+    #[expect(clippy::too_many_arguments)]
     pub fn new_index_with_type(
         &self,
         field: &JsonPath,
@@ -44,6 +46,7 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         id_tracker: &IdTrackerEnum,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<FieldIndex>> {
         let index = match (&index_type.index_type, payload_schema.expand().as_ref()) {
             (PayloadIndexType::IntIndex, PayloadSchemaParams::Integer(params)) => {
@@ -57,7 +60,7 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                self.numeric_new(field, create_if_missing, deleted_points)?
+                self.numeric_new(field, create_if_missing, deleted_points, hw_counter)?
                     .map(FieldIndex::IntIndex)
             }
             (PayloadIndexType::IntMapIndex, PayloadSchemaParams::Integer(params)) => {
@@ -71,11 +74,11 @@ impl IndexSelector<'_> {
                     );
                 }
 
-                self.map_new(field, create_if_missing, deleted_points, false)?
+                self.map_new(field, create_if_missing, deleted_points, false, hw_counter)?
                     .map(FieldIndex::IntMapIndex)
             }
             (PayloadIndexType::DatetimeIndex, PayloadSchemaParams::Datetime(_)) => self
-                .numeric_new(field, create_if_missing, deleted_points)?
+                .numeric_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(FieldIndex::DatetimeIndex),
 
             (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(params)) => self
@@ -84,19 +87,26 @@ impl IndexSelector<'_> {
                     create_if_missing,
                     deleted_points,
                     params.prefix.unwrap_or_default(),
+                    hw_counter,
                 )?
                 .map(FieldIndex::KeywordIndex),
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => self
-                .numeric_new(field, create_if_missing, deleted_points)?
+                .numeric_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(FieldIndex::FloatIndex),
 
             (PayloadIndexType::GeoIndex, PayloadSchemaParams::Geo(_)) => self
-                .geo_new(field, create_if_missing, deleted_points)?
+                .geo_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(FieldIndex::GeoIndex),
 
             (PayloadIndexType::FullTextIndex, PayloadSchemaParams::Text(params)) => self
-                .text_new(field, params.clone(), create_if_missing, deleted_points)?
+                .text_new(
+                    field,
+                    params.clone(),
+                    create_if_missing,
+                    deleted_points,
+                    hw_counter,
+                )?
                 .map(FieldIndex::FullTextIndex),
 
             (PayloadIndexType::BoolIndex, PayloadSchemaParams::Bool(_)) => self
@@ -105,20 +115,25 @@ impl IndexSelector<'_> {
                     create_if_missing,
                     deleted_points,
                     index_type.mutability,
+                    hw_counter,
                 )?
                 .map(FieldIndex::BoolIndex),
 
             (PayloadIndexType::UuidIndex, PayloadSchemaParams::Uuid(_)) => self
-                .map_new(field, create_if_missing, deleted_points, false)?
+                .map_new(field, create_if_missing, deleted_points, false, hw_counter)?
                 .map(FieldIndex::UuidMapIndex),
 
             (PayloadIndexType::UuidMapIndex, PayloadSchemaParams::Uuid(_)) => self
-                .map_new(field, create_if_missing, deleted_points, false)?
+                .map_new(field, create_if_missing, deleted_points, false, hw_counter)?
                 .map(FieldIndex::UuidMapIndex),
 
-            (PayloadIndexType::NullIndex, _) => {
-                self.new_null_index(field, create_if_missing, id_tracker, index_type.mutability)?
-            }
+            (PayloadIndexType::NullIndex, _) => self.new_null_index(
+                field,
+                create_if_missing,
+                id_tracker,
+                index_type.mutability,
+                hw_counter,
+            )?,
 
             // Storage inconsistency. Should never happen.
             (index_type, schema) => {
@@ -138,6 +153,7 @@ impl IndexSelector<'_> {
         payload_schema: &PayloadFieldSchema,
         create_if_missing: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => self
@@ -146,6 +162,7 @@ impl IndexSelector<'_> {
                     create_if_missing,
                     deleted_points,
                     params.prefix.unwrap_or_default(),
+                    hw_counter,
                 )?
                 .map(|index| vec![FieldIndex::KeywordIndex(index)]),
             PayloadSchemaParams::Integer(integer_params) => {
@@ -153,7 +170,13 @@ impl IndexSelector<'_> {
                 let use_range = integer_params.range.unwrap_or(true);
 
                 let lookup = if use_lookup {
-                    match self.map_new(field, create_if_missing, deleted_points, false)? {
+                    match self.map_new(
+                        field,
+                        create_if_missing,
+                        deleted_points,
+                        false,
+                        hw_counter,
+                    )? {
                         Some(index) => Some(FieldIndex::IntMapIndex(index)),
                         None => return Ok(None),
                     }
@@ -161,7 +184,7 @@ impl IndexSelector<'_> {
                     None
                 };
                 let range = if use_range {
-                    match self.numeric_new(field, create_if_missing, deleted_points)? {
+                    match self.numeric_new(field, create_if_missing, deleted_points, hw_counter)? {
                         Some(index) => Some(FieldIndex::IntIndex(index)),
                         None => return Ok(None),
                     }
@@ -172,10 +195,10 @@ impl IndexSelector<'_> {
                 Some(lookup.into_iter().chain(range).collect())
             }
             PayloadSchemaParams::Float(_) => self
-                .numeric_new(field, create_if_missing, deleted_points)?
+                .numeric_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(|index| vec![FieldIndex::FloatIndex(index)]),
             PayloadSchemaParams::Geo(_) => self
-                .geo_new(field, create_if_missing, deleted_points)?
+                .geo_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(|index| vec![FieldIndex::GeoIndex(index)]),
             PayloadSchemaParams::Text(text_index_params) => self
                 .text_new(
@@ -183,6 +206,7 @@ impl IndexSelector<'_> {
                     text_index_params.clone(),
                     create_if_missing,
                     deleted_points,
+                    hw_counter,
                 )?
                 .map(|index| vec![FieldIndex::FullTextIndex(index)]),
             PayloadSchemaParams::Bool(_) => self
@@ -191,13 +215,14 @@ impl IndexSelector<'_> {
                     create_if_missing,
                     deleted_points,
                     self.default_mutability(),
+                    hw_counter,
                 )?
                 .map(|index| vec![FieldIndex::BoolIndex(index)]),
             PayloadSchemaParams::Datetime(_) => self
-                .numeric_new(field, create_if_missing, deleted_points)?
+                .numeric_new(field, create_if_missing, deleted_points, hw_counter)?
                 .map(|index| vec![FieldIndex::DatetimeIndex(index)]),
             PayloadSchemaParams::Uuid(_) => self
-                .map_new(field, create_if_missing, deleted_points, false)?
+                .map_new(field, create_if_missing, deleted_points, false, hw_counter)?
                 .map(|index| vec![FieldIndex::UuidMapIndex(index)]),
         };
 
@@ -210,6 +235,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
         let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => {
@@ -270,7 +296,7 @@ impl IndexSelector<'_> {
                 vec![self.text_builder(field, text_index_params.clone(), deleted_points)]
             }
             PayloadSchemaParams::Bool(_) => {
-                vec![self.bool_builder(field)?]
+                vec![self.bool_builder(field, hw_counter)?]
             }
             PayloadSchemaParams::Datetime(_) => {
                 vec![self.numeric_builder(
@@ -303,6 +329,7 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         deleted_points: &BitSlice,
         prefix_index: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<MapIndex<N>>>
     where
         Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
@@ -311,11 +338,14 @@ impl IndexSelector<'_> {
             // The immutable variants detect prefix support from the presence
             // of the prefix index file, written at build time.
             IndexSelector::NonAppendable { dir, memory } => {
-                MapIndex::new_immutable(&map_dir(dir, field), *memory, deleted_points)?
+                MapIndex::new_immutable(&map_dir(dir, field), *memory, deleted_points, hw_counter)?
             }
-            IndexSelector::Appendable { dir } => {
-                MapIndex::new_mutable(map_dir(dir, field), create_if_missing, prefix_index)?
-            }
+            IndexSelector::Appendable { dir } => MapIndex::new_mutable(
+                map_dir(dir, field),
+                create_if_missing,
+                prefix_index,
+                hw_counter,
+            )?,
         })
     }
 
@@ -348,16 +378,20 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         create_if_missing: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<NumericIndex<T, P>>>
     where
         Vec<T>: Blob,
     {
         Ok(match self {
-            IndexSelector::NonAppendable { dir, memory } => {
-                NumericIndex::new_immutable(&numeric_dir(dir, field), *memory, deleted_points)?
-            }
+            IndexSelector::NonAppendable { dir, memory } => NumericIndex::new_immutable(
+                &numeric_dir(dir, field),
+                *memory,
+                deleted_points,
+                hw_counter,
+            )?,
             IndexSelector::Appendable { dir } => {
-                NumericIndex::new_mutable(numeric_dir(dir, field), create_if_missing)?
+                NumericIndex::new_mutable(numeric_dir(dir, field), create_if_missing, hw_counter)?
             }
         })
     }
@@ -390,13 +424,14 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         create_if_missing: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<GeoIndex>> {
         Ok(match self {
             IndexSelector::NonAppendable { dir, memory } => {
-                GeoIndex::new_immutable(&map_dir(dir, field), *memory, deleted_points)?
+                GeoIndex::new_immutable(&map_dir(dir, field), *memory, deleted_points, hw_counter)?
             }
             IndexSelector::Appendable { dir } => {
-                GeoIndex::new_mutable(map_dir(dir, field), create_if_missing)?
+                GeoIndex::new_mutable(map_dir(dir, field), create_if_missing, hw_counter)?
             }
         })
     }
@@ -434,16 +469,18 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         total_point_count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<FieldIndexBuilder> {
         let builder = match self {
             IndexSelector::NonAppendable { dir, memory: _ } => {
                 FieldIndexBuilder::ImmutableNullIndex(ImmutableNullIndex::builder(
                     &null_dir(dir, field),
                     total_point_count,
+                    hw_counter,
                 )?)
             }
             IndexSelector::Appendable { dir } => FieldIndexBuilder::MutableNullIndex(
-                MutableNullIndex::builder(&null_dir(dir, field), total_point_count)?,
+                MutableNullIndex::builder(&null_dir(dir, field), total_point_count, hw_counter)?,
             ),
         };
         Ok(builder)
@@ -455,6 +492,7 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         id_tracker: &IdTrackerEnum,
         mutability: IndexMutability,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<FieldIndex>> {
         let total_point_count = id_tracker.total_point_count();
         // `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
@@ -466,7 +504,8 @@ impl IndexSelector<'_> {
                 Ok(ImmutableNullIndex::open(
                     &null_dir(dir, field),
                     total_point_count,
-                    id_tracker.deleted_point_bitslice(),
+                    id_tracker.deleted_point_bitslice(hw_counter),
+                    hw_counter,
                 )?
                 .map(NullIndex::Immutable)
                 .map(FieldIndex::NullIndex))
@@ -478,6 +517,7 @@ impl IndexSelector<'_> {
                     &null_dir(dir, field),
                     total_point_count,
                     create_if_missing,
+                    hw_counter,
                 )?
                 .map(NullIndex::Mutable)
                 .map(FieldIndex::NullIndex))
@@ -491,15 +531,23 @@ impl IndexSelector<'_> {
         config: TextIndexParams,
         create_if_missing: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<FullTextIndex>> {
         let config = config.normalized();
         Ok(match self {
-            IndexSelector::NonAppendable { dir, memory } => {
-                FullTextIndex::new_mmap(text_dir(dir, field), config, *memory, deleted_points)?
-            }
-            IndexSelector::Appendable { dir } => {
-                FullTextIndex::new_gridstore(text_dir(dir, field), config, create_if_missing)?
-            }
+            IndexSelector::NonAppendable { dir, memory } => FullTextIndex::new_mmap(
+                text_dir(dir, field),
+                config,
+                *memory,
+                deleted_points,
+                hw_counter,
+            )?,
+            IndexSelector::Appendable { dir } => FullTextIndex::new_gridstore(
+                text_dir(dir, field),
+                config,
+                create_if_missing,
+                hw_counter,
+            )?,
         })
     }
 
@@ -530,19 +578,23 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
+    fn bool_builder(
+        &self,
+        field: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<FieldIndexBuilder> {
         match self {
             IndexSelector::NonAppendable { dir, memory: _ } => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(
-                    ImmutableBoolIndex::builder(&dir)?,
+                    ImmutableBoolIndex::builder(&dir, hw_counter)?,
                 ))
             }
             // Skip Gridstore for boolean index, mmap index is simpler and is also mutable
             IndexSelector::Appendable { dir } => {
                 let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolGridstoreIndex(
-                    MutableBoolIndex::builder(&dir)?,
+                    MutableBoolIndex::builder(&dir, hw_counter)?,
                 ))
             }
         }
@@ -554,18 +606,20 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         deleted_points: &BitSlice,
         mutability: IndexMutability,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<BoolIndex>> {
         // `MutableBoolIndex` and `ImmutableBoolIndex` share the same on-disk
         // format; stored mutability picks which in-memory wrapper to build.
         Ok(match (self, mutability) {
             (IndexSelector::NonAppendable { dir, memory: _ }, IndexMutability::Immutable) => {
                 let dir = bool_dir(dir, field);
-                ImmutableBoolIndex::open(&dir, deleted_points)?.map(BoolIndex::Immutable)
+                ImmutableBoolIndex::open(&dir, deleted_points, hw_counter)?
+                    .map(BoolIndex::Immutable)
             }
             (IndexSelector::NonAppendable { dir, memory: _ }, IndexMutability::Mutable)
             | (IndexSelector::Appendable { dir }, _) => {
                 let dir = bool_dir(dir, field);
-                MutableBoolIndex::open(&dir, create_if_missing)?.map(BoolIndex::Mutable)
+                MutableBoolIndex::open(&dir, create_if_missing, hw_counter)?.map(BoolIndex::Mutable)
             }
         })
     }

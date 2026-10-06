@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(feature = "testing")]
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::storage_version::StorageVersion as _;
@@ -110,6 +109,7 @@ fn build_ram_index(
     vector_storage: &impl VectorStorageRead,
     stopped: &AtomicBool,
     mut tick_progress: impl FnMut(),
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(InvertedIndexRam, IndicesTracker)> {
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -117,7 +117,7 @@ fn build_ram_index(
     // yields them sorted, so a `Sequential` batch read lets the storage
     // coalesce the IO into block reads instead of a round-trip per point.
     let ids = id_tracker
-        .point_mappings()
+        .point_mappings(hw_counter)
         .iter_internal_excluding(deleted_bitslice)
         .map(|id| ((), id));
 
@@ -131,29 +131,33 @@ fn build_ram_index(
     // - the sparse index is built *before* recovering the WAL when loading a segment
     // `read_vectors` simply skips such ids; the WAL replay recovers them afterwards.
     let mut result: OperationResult<()> = Ok(());
-    vector_storage.read_vectors::<Sequential, _>(ids, |(), id, vector| {
-        if result.is_err() {
-            return;
-        }
-        if let Err(err) = check_process_stopped(stopped) {
-            result = Err(OperationError::from(err));
-            return;
-        }
-        let vector: &SparseVector = match vector.as_vec_ref().try_into() {
-            Ok(vector) => vector,
-            Err(err) => {
-                result = Err(err);
+    vector_storage.read_vectors::<Sequential, _>(
+        ids,
+        |(), id, vector| {
+            if result.is_err() {
                 return;
             }
-        };
-        // do not index empty vectors
-        if !vector.is_empty() {
-            indices_tracker.register_indices(vector);
-            let vector = indices_tracker.remap_vector(vector.to_owned());
-            ram_index_builder.add(id, vector);
-        }
-        tick_progress();
-    });
+            if let Err(err) = check_process_stopped(stopped) {
+                result = Err(OperationError::from(err));
+                return;
+            }
+            let vector: &SparseVector = match vector.as_vec_ref().try_into() {
+                Ok(vector) => vector,
+                Err(err) => {
+                    result = Err(err);
+                    return;
+                }
+            };
+            // do not index empty vectors
+            if !vector.is_empty() {
+                indices_tracker.register_indices(vector);
+                let vector = indices_tracker.remap_vector(vector.to_owned());
+                ram_index_builder.add(id, vector);
+            }
+            tick_progress();
+        },
+        hw_counter,
+    );
     result?;
 
     Ok((ram_index_builder.build(), indices_tracker))
@@ -161,7 +165,10 @@ fn build_ram_index(
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
-    pub fn open<F: FnMut()>(args: SparseVectorIndexOpenArgs<'_, MmapFs, F>) -> OperationResult<Self>
+    pub fn open<F: FnMut()>(
+        args: SparseVectorIndexOpenArgs<'_, MmapFs, F>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self>
     where
         TInvertedIndex: InvertedIndexReadWrite<MmapFile>,
     {
@@ -183,13 +190,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             stopped,
             tick_progress,
+            hw_counter,
         )?;
         let (inverted_index, config, indices_tracker, persist) = match plan {
             SparseOpenPlan::Load {
                 config,
                 indices_tracker,
             } => (
-                TInvertedIndex::open_rw(fs, path)?,
+                TInvertedIndex::open_rw(fs, path, hw_counter)?,
                 config,
                 indices_tracker,
                 false,
@@ -245,6 +253,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         path: &Path,
         stopped: &AtomicBool,
         tick_progress: impl FnMut(),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SparseOpenPlan> {
         if !config.index_type.is_persisted() {
             // RAM mutable case - build from scratch, keep the provided config, do not persist.
@@ -254,6 +263,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 &*vector_storage.borrow(),
                 stopped,
                 tick_progress,
+                hw_counter,
             )?;
             return Ok(SparseOpenPlan::Build {
                 config,
@@ -263,7 +273,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             });
         }
 
-        let stored_version = TInvertedIndex::Version::load_universal(&MmapFs, path)?;
+        let stored_version = TInvertedIndex::Version::load_universal(&MmapFs, path, hw_counter)?;
         if stored_version == Some(TInvertedIndex::Version::current()) {
             let config = SparseIndexConfig::load(&SparseIndexConfig::get_config_path(path))?;
             let indices_tracker = IndicesTracker::open(path)?;
@@ -287,6 +297,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &*vector_storage.borrow(),
             stopped,
             tick_progress,
+            hw_counter,
         )?;
         Ok(SparseOpenPlan::Build {
             config,

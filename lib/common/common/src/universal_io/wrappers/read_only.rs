@@ -6,6 +6,7 @@ use std::path::Path;
 use bytemuck::TransparentWrapper;
 
 use super::WrappedReadPipeline;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::cached_fs::FileInfo;
@@ -46,12 +47,16 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.0.list_files(prefix_path)
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
+        self.0.list_files(prefix_path, hw_counter)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
-        self.0.exists(path)
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
+        self.0.exists(path, hw_counter)
     }
 
     fn open(
@@ -59,9 +64,10 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: F::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
-        Ok(ReadOnly(self.0.open(path, options, extra)?))
+        Ok(ReadOnly(self.0.open(path, options, extra, hw_counter)?))
     }
 }
 
@@ -90,9 +96,10 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
         debug_assert!(!options.writeable);
-        let io = fs.open(path, options, extra)?;
+        let io = fs.open(path, options, extra, hw_counter)?;
         Ok(Self(io))
     }
 }
@@ -110,16 +117,17 @@ where
         U: UserData;
 
     #[inline]
-    fn live_reload(&mut self) -> UioResult<()> {
-        self.0.live_reload()
+    fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.0.live_reload(hw_counter)
     }
 
     #[inline]
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
-        self.0.live_preload(get_file_info)
+        self.0.live_preload(get_file_info, hw_counter)
     }
 
     #[inline]
@@ -127,8 +135,9 @@ where
         &self,
         range: ReadRange,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Cow<'_, [T]>> {
-        self.0.read(range, access_pattern)
+        self.0.read(range, access_pattern, hw_counter)
     }
 
     #[inline]
@@ -137,13 +146,14 @@ where
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
-        self.0.read_bytes(range, access_pattern, align)
+        self.0.read_bytes(range, access_pattern, align, hw_counter)
     }
 
     #[inline]
-    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
-        self.0.read_whole()
+    fn read_whole<T: Item>(&self, hw_counter: &HardwareCounterCell) -> UioResult<Cow<'_, [T]>> {
+        self.0.read_whole(hw_counter)
     }
 
     #[inline]
@@ -152,6 +162,7 @@ where
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         access_pattern: P,
         callback: impl FnMut(U, &[T]) -> Result<(), E>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -159,7 +170,8 @@ where
         U: UserData,
         E: From<UniversalIoError>,
     {
-        self.0.read_batch(ranges, access_pattern, callback)
+        self.0
+            .read_batch(ranges, access_pattern, callback, hw_counter)
     }
 
     #[inline]
@@ -167,8 +179,9 @@ where
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
-        self.0.read_iter(ranges, access_pattern)
+        self.0.read_iter(ranges, access_pattern, hw_counter)
     }
 
     #[inline]
@@ -176,18 +189,19 @@ where
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
-        self.0.read_bytes_iter(ranges, access_pattern)
+        self.0.read_bytes_iter(ranges, access_pattern, hw_counter)
     }
 
     #[inline]
-    fn len<T>(&self) -> UioResult<u64> {
-        self.0.len::<T>()
+    fn len<T>(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64> {
+        self.0.len::<T>(hw_counter)
     }
 
     #[inline]
-    fn populate(&self) -> UioResult<()> {
-        self.0.populate()
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.0.populate(hw_counter)
     }
 
     #[inline]

@@ -49,16 +49,27 @@ where
         Ok(self.point_to_values.check_values_any(idx, |v| check_fn(v)))
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         let iter = self.point_to_values.get_values(idx)?;
         Some(Box::new(iter.copied()))
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         self.point_to_values.get_values_count(idx)
     }
 
-    fn total_unique_values_count(&self) -> OperationResult<usize> {
+    fn total_unique_values_count(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         Ok(self.map.len())
     }
 
@@ -78,6 +89,7 @@ where
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         Ok(self
             .map

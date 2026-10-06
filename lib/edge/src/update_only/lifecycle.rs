@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFs, UniversalAppendFs, UniversalWriteFsAsync};
 use futures::StreamExt as _;
@@ -69,12 +70,18 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 .into_par_iter()
                 .map(|(uuid, listing)| {
                     let ListedSegment { path, writable } = listing;
-                    let segment = LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
+                    let segment = LookupSegment::open(
+                        fs.clone(),
+                        &path,
+                        deferred_threshold_kb,
+                        &HardwareCounterCell::disposable(),
+                    )?;
                     let writer = UpdateOnlySegmentEnum::open(
                         fs.clone(),
                         &path,
                         &segment.segment_config,
-                        segment.writer_state(),
+                        segment.writer_state(&HardwareCounterCell::disposable()),
+                        &HardwareCounterCell::disposable(),
                     )?;
                     Ok((uuid, segment, writer, writable))
                 })
@@ -140,26 +147,42 @@ where
             .prefix("appendable-")
             .tempdir_in(temp_path)
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
-        let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
+        let (mut segment, token) = build_segment(
+            scratch.path(),
+            config,
+            None,
+            true,
+            &HardwareCounterCell::disposable(),
+        )?;
         let uuid = token.id();
         let hw_counter = HardwareCounterCell::disposable();
         for (key, schema) in indexed_fields {
             segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
-        segment.flush(true)?;
+        segment.flush(true, &hw_counter)?;
         let local = segment.data_path();
         drop(segment);
 
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
-        futures::executor::block_on(copy_dir(&self.fs, &local, &remote))?;
+        futures::executor::block_on(copy_dir(
+            &self.fs,
+            &local,
+            &remote,
+            &hw_counter.new_accumulator(),
+        ))?;
 
-        let lookup =
-            LookupSegment::<Fs>::open(self.fs.clone(), &remote, self.deferred_threshold_kb)?;
+        let lookup = LookupSegment::<Fs>::open(
+            self.fs.clone(),
+            &remote,
+            self.deferred_threshold_kb,
+            &hw_counter,
+        )?;
         let writer = UpdateOnlySegmentEnum::open(
             self.fs.clone(),
             &remote,
             &lookup.segment_config,
-            lookup.writer_state(),
+            lookup.writer_state(&hw_counter),
+            &hw_counter,
         )?;
         self.segments.write().insert(uuid, lookup, true);
         self.writers.insert(uuid, writer);
@@ -180,6 +203,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     fs: &F,
     local: &Path,
     remote: &Path,
+    hw_acc: &HwMeasurementAcc,
 ) -> OperationResult<()> {
     let mut dirs = vec![remote.to_path_buf()];
     let mut files = Vec::new();
@@ -212,7 +236,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
         .map(|(source, target)| async move {
             let result = match fs_err::read(&source) {
                 Ok(bytes) => fs
-                    .atomic_save_async(target.clone(), bytes)
+                    .atomic_save_async(target.clone(), bytes, hw_acc.clone())
                     .await
                     .map_err(|err| {
                         OperationError::service_error(format!("save {}: {err}", target.display()))
@@ -239,7 +263,7 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     }
     if let Some(err) = first_error {
         for object in landed {
-            if let Err(cleanup) = fs.remove_async(object.clone()).await {
+            if let Err(cleanup) = fs.remove_async(object.clone(), hw_acc.clone()).await {
                 log::warn!(
                     "failed segment copy left {} behind: {cleanup}",
                     object.display()

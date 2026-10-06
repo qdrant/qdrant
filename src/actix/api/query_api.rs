@@ -74,6 +74,7 @@ async fn query_points(
             &collection.collection_name,
             &dispatcher,
             &auth,
+            &hw_measurement_acc,
         )
         .await?;
 
@@ -165,6 +166,7 @@ async fn query_points_batch(
             &collection.collection_name,
             &dispatcher,
             &auth,
+            &hw_measurement_acc,
         )
         .await?;
 
@@ -245,6 +247,7 @@ async fn query_points_groups(
             &collection.collection_name,
             &dispatcher,
             &auth,
+            &hw_measurement_acc,
         )
         .await?;
 

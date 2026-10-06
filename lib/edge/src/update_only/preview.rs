@@ -7,6 +7,7 @@
 //! [`preview_batch`]: UpdateOnlyEdgeShard::preview_batch
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
@@ -79,8 +80,9 @@ pub(super) fn resolve_batch<Fs: UniversalReadFsAsync>(
     segments: &LookupSegmentHolder<Fs>,
     plan: UpdateBatchPlan,
     pool: &ThreadPool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointPreview>> {
-    let locations = locate_points(segments, &plan, pool)?;
+    let locations = locate_points(segments, &plan, pool, hw_counter)?;
     let mut stored = read_stored_points(segments, &plan, &locations, pool)?;
 
     let mut points = Vec::with_capacity(plan.len());
@@ -149,7 +151,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         }
 
         let segments = self.segments.read();
-        let points = resolve_batch(&segments, plan, &self.pool)?;
+        let points = resolve_batch(
+            &segments,
+            plan,
+            &self.pool,
+            &HardwareCounterCell::disposable(),
+        )?;
         Ok(UpdateBatchPreview { points })
     }
 }

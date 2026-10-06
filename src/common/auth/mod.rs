@@ -345,6 +345,7 @@ mod tests {
             ChannelService::new(6333, false, None, None),
             0,
             None,
+            &HwMeasurementAcc::new(),
         )
         .unwrap();
         (Arc::new(toc), dir)

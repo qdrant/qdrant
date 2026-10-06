@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
@@ -44,16 +45,28 @@ pub trait NullIndexRead {
     /// Per-variant telemetry tag (e.g. `"mutable_null_index"`).
     fn telemetry_index_type(&self) -> &'static str;
 
-    fn values_count(&self, id: PointOffsetType) -> OperationResult<usize> {
-        Ok(usize::from(self.has_values_flags().get(id)?))
+    fn values_count(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        Ok(usize::from(self.has_values_flags().get(id, hw_counter)?))
     }
 
-    fn values_is_empty(&self, id: PointOffsetType) -> OperationResult<bool> {
-        Ok(!self.has_values_flags().get(id)?)
+    fn values_is_empty(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Ok(!self.has_values_flags().get(id, hw_counter)?)
     }
 
-    fn values_is_null(&self, id: PointOffsetType) -> OperationResult<bool> {
-        self.is_null_flags().get(id)
+    fn values_is_null(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        self.is_null_flags().get(id, hw_counter)
     }
 
     fn indexed_points_count(&self) -> usize {
@@ -111,6 +124,7 @@ pub trait NullIndexRead {
 pub(super) fn filter<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &'a FieldCondition,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     let FieldCondition {
         key: _,
@@ -131,21 +145,21 @@ pub(super) fn filter<'a, N: NullIndexRead>(
     let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = if let Some(is_empty) = is_empty {
         if *is_empty {
             // Return points that don't have values
-            Box::new(has_values_flags.iter_falses()?.chain({
+            Box::new(has_values_flags.iter_falses(hw_counter)?.chain({
                 let end = has_values_flags.len() as PointOffsetType;
                 end..total_point_count as u32
             }))
         } else {
             // Return points that have values
-            Box::new(has_values_flags.iter_trues()?)
+            Box::new(has_values_flags.iter_trues(hw_counter)?)
         }
     } else if let Some(is_null) = is_null {
         if *is_null {
             // Return points that have null values
-            Box::new(is_null_flags.iter_trues()?)
+            Box::new(is_null_flags.iter_trues(hw_counter)?)
         } else {
             // Return points that don't have null values
-            Box::new(is_null_flags.iter_falses()?.chain({
+            Box::new(is_null_flags.iter_falses(hw_counter)?.chain({
                 let end = is_null_flags.len() as PointOffsetType;
                 end..total_point_count as u32
             }))
@@ -160,6 +174,7 @@ pub(super) fn filter<'a, N: NullIndexRead>(
 pub(super) fn estimate_cardinality<N: NullIndexRead>(
     null_index: &N,
     condition: &FieldCondition,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     let FieldCondition {
         key,
@@ -179,7 +194,7 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
 
     let estimation = if let Some(is_empty) = is_empty {
         if *is_empty {
-            let has_values_count = has_values_flags.count_trues()?;
+            let has_values_count = has_values_flags.count_trues(hw_counter)?;
             // Upper bound: may include soft-deleted offsets (index has no deleted bitslice).
             let estimated = total_point_count.saturating_sub(has_values_count);
 
@@ -193,19 +208,19 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
                 ))],
             }
         } else {
-            let count = has_values_flags.count_trues()?;
+            let count = has_values_flags.count_trues(hw_counter)?;
             CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
                 FieldCondition::new_is_empty(key.clone(), false),
             ))
         }
     } else if let Some(is_null) = is_null {
         if *is_null {
-            let count = is_null_flags.count_trues()?;
+            let count = is_null_flags.count_trues(hw_counter)?;
             CardinalityEstimation::exact(count).with_primary_clause(PrimaryCondition::from(
                 FieldCondition::new_is_null(key.clone(), true),
             ))
         } else {
-            let is_null_count = is_null_flags.count_trues()?;
+            let is_null_count = is_null_flags.count_trues(hw_counter)?;
             // Upper bound: may include soft-deleted offsets (index has no deleted bitslice).
             let estimated = total_point_count.saturating_sub(is_null_count);
 
@@ -229,7 +244,7 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
 pub(super) fn condition_checker<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &FieldCondition,
-    _hw_acc: HwMeasurementAcc,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<NullConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
@@ -250,6 +265,7 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
             null_index,
             kind: CheckKind::IsEmpty,
             expected: is_empty,
+            hw_counter: hw_acc.get_counter_cell(),
         });
     }
     if let Some(is_null) = *is_null {
@@ -257,6 +273,7 @@ pub(super) fn condition_checker<'a, N: NullIndexRead>(
             null_index,
             kind: CheckKind::IsNull,
             expected: is_null,
+            hw_counter: hw_acc.get_counter_cell(),
         });
     }
     None
@@ -266,6 +283,7 @@ pub struct NullConditionChecker<'a, N> {
     null_index: &'a N,
     kind: CheckKind,
     expected: bool,
+    hw_counter: HardwareCounterCell,
 }
 
 enum CheckKind {
@@ -278,8 +296,10 @@ impl<N: NullIndexRead> ConditionChecker for NullConditionChecker<'_, N> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         let actual = match self.kind {
-            CheckKind::IsEmpty => self.null_index.values_is_empty(point_id)?,
-            CheckKind::IsNull => self.null_index.values_is_null(point_id)?,
+            CheckKind::IsEmpty => self
+                .null_index
+                .values_is_empty(point_id, &self.hw_counter)?,
+            CheckKind::IsNull => self.null_index.values_is_null(point_id, &self.hw_counter)?,
         };
         Ok(actual == self.expected)
     }

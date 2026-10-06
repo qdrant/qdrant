@@ -49,10 +49,10 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// JSON `Value`s. Mirrors `GeoIndex::value_retriever`.
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            GeoIndexRead::get_values(self, point_id)
+            GeoIndexRead::get_values(self, point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(v).ok())
@@ -105,7 +105,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
+            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true, &hw_counter)
                 .unwrap()
                 .unwrap();
             mutable
@@ -124,13 +124,13 @@ mod tests {
                     &hw_counter,
                 )
                 .unwrap();
-            mutable.flusher()().unwrap();
+            mutable.flusher(&hw_counter)().unwrap();
         }
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyGeoIndex::open_appendable(&fs, dir.path().to_path_buf())
+            ReadOnlyGeoIndex::open_appendable(&fs, dir.path().to_path_buf(), &hw_counter)
                 .unwrap()
                 .unwrap();
 
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(GeoIndexRead::points_count(&index), 3);
         assert_eq!(GeoIndexRead::points_values_count(&index), 4);
         assert_eq!(GeoIndexRead::max_values_per_point(&index), 2);
-        assert_eq!(GeoIndexRead::values_count(&index, 0), 1);
-        assert_eq!(GeoIndexRead::values_count(&index, 2), 2);
+        assert_eq!(GeoIndexRead::values_count(&index, 0, &hw_counter), 1);
+        assert_eq!(GeoIndexRead::values_count(&index, 2, &hw_counter), 2);
     }
 }

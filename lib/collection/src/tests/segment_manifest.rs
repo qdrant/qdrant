@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use shard::files::segment_manifest_path;
@@ -39,6 +40,7 @@ async fn writes_segment_manifest_when_flag_enabled() {
         AdaptiveSearchHandle::current_for_tests(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

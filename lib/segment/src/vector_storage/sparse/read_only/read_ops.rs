@@ -33,6 +33,7 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
         &self,
         keys: &[PointOffsetType],
         mut callback: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector),
@@ -51,12 +52,13 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
             point_offsets,
             callback,
             HardwareCounterCell::disposable().vector_io_read(),
+            hw_counter,
         )
     }
 }
 
 impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         unreachable!("Sparse storage does not know its total size, get from index instead")
     }
 
@@ -72,12 +74,16 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         true
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.next_point_offset
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key)
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
             .unwrap_or_else(CowVector::default_sparse)
     }
 
@@ -85,6 +91,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
             let Some(sparse_vector) = sparse_vector else {
@@ -101,11 +108,16 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
                 keys.into_iter(),
                 callback,
                 HardwareCounterCell::disposable().vector_io_read(),
+                hw_counter,
             )
             .expect("sparse vectors read")
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         match self
             .storage
             .get_value::<P>(key, &HardwareCounterCell::disposable())
@@ -131,6 +143,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Same batched pass as `read_vectors`, re-serializing the stored form
         // instead of decoding it into a `SparseVector`.
@@ -146,6 +159,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
                 Ok(())
             },
             HardwareCounterCell::disposable().vector_io_read(),
+            hw_counter,
         )
     }
 }

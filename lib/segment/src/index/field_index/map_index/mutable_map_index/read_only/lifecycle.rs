@@ -14,13 +14,18 @@ impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         // Blobstore reader
         Ok(
             BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::preopen(
                 fs,
                 dir,
                 Populate::PreferBackground,
+                hw_counter,
             )
             .ok_not_found()?
             .is_some(),
@@ -45,11 +50,13 @@ where
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) = BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
             fs,
             path,
             Populate::Blocking,
+            hw_counter,
         )
         .ok_not_found()?
         else {
@@ -63,7 +70,7 @@ where
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
         let hw_counter = HardwareCounterCell::disposable();
         storage.iter::<_, BlobstoreError>(
-            storage.max_point_offset()?,
+            storage.max_point_offset(&hw_counter)?,
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);
                 Ok(true)

@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
@@ -35,16 +36,27 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
+        if !UniversalReadFs::exists(fs, &mappings_path(segment_path), hw_counter)? {
             return Ok(false);
         }
 
         let options = Self::open_options();
 
-        fs.schedule_open(&deleted_path(segment_path), Some(options), None);
-        fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
-        fs.schedule_open(&mappings_path(segment_path), Some(options), None);
+        fs.schedule_open(&deleted_path(segment_path), Some(options), None, hw_counter);
+        fs.schedule_open(
+            &version_mapping_path(segment_path),
+            Some(options),
+            None,
+            hw_counter,
+        );
+        fs.schedule_open(
+            &mappings_path(segment_path),
+            Some(options),
+            None,
+            hw_counter,
+        );
 
         Ok(true)
     }
@@ -65,32 +77,51 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
+        if !UniversalReadFs::exists(fs, &mappings_path(segment_path), hw_counter)? {
             return Ok(None);
         }
-        Ok(Some(Self::open(fs, segment_path)?))
+        Ok(Some(Self::open(fs, segment_path, hw_counter)?))
     }
 
-    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let options = Self::open_options();
 
-        let deleted =
-            StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
+        let deleted = StoredBitSlice::open(
+            fs,
+            deleted_path(segment_path),
+            options,
+            Default::default(),
+            hw_counter,
+        )?;
         let mut deleted_bitvec = BitVec::new();
-        deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
+        deleted_bitvec.extend_from_bitslice(deleted.read_all(hw_counter)?.as_ref());
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
             options,
             Default::default(),
+            hw_counter,
         )?);
         let internal_to_version =
-            CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
+            CompressedVersions::from_slice(&internal_to_version_file.read_whole(hw_counter)?);
 
-        let mappings_file = fs.open(mappings_path(segment_path), options, Default::default())?;
-        let mappings_bytes = mappings_file
-            .read::<_, u8>(ReadRange::new(0, mappings_file.len::<u8>()?), Sequential)?;
+        let mappings_file = fs.open(
+            mappings_path(segment_path),
+            options,
+            Default::default(),
+            hw_counter,
+        )?;
+        let mappings_bytes = mappings_file.read::<_, u8>(
+            ReadRange::new(0, mappings_file.len::<u8>(hw_counter)?),
+            Sequential,
+            hw_counter,
+        )?;
         let mappings = load_mapping(Cursor::new(mappings_bytes.as_ref()), Some(deleted_bitvec))?;
 
         Ok(Self {

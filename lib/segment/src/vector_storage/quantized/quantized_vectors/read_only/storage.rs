@@ -231,18 +231,24 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
         }
     }
 
-    pub fn get_quantized_vector(&self, id: PointOffsetType) -> Cow<'_, [u8]> {
+    pub fn get_quantized_vector(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
         match self {
-            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.get_quantized_vector(id),
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.get_quantized_vector(id),
+            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.get_quantized_vector(id, hw_counter),
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => {
+                q.get_quantized_vector(id, hw_counter)
+            }
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.get_quantized_vector(id, hw_counter),
             ReadOnlyQuantizedVectorStorage::ScalarRamMulti(_)
             | ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(_)
             | ReadOnlyQuantizedVectorStorage::PQRamMulti(_)
@@ -308,7 +314,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             ReadOnlyQuantizedVectorStorage::ScalarRam(_)
             | ReadOnlyQuantizedVectorStorage::PQRam(_)
@@ -318,35 +324,35 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
             | ReadOnlyQuantizedVectorStorage::PQRamMulti(_)
             | ReadOnlyQuantizedVectorStorage::BinaryRamMulti(_)
             | ReadOnlyQuantizedVectorStorage::TQRamMulti(_) => {} // already in RAM
-            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.storage().populate(),
-            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.storage().populate(),
-            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.storage().populate(),
-            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.storage().populate(),
+            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.storage().populate(hw_counter),
+            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.storage().populate(hw_counter),
+            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.storage().populate(hw_counter),
+            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.storage().populate(hw_counter),
             ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => {
-                q.storage().storage().populate();
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter);
+                q.offsets_storage().populate(hw_counter)?;
             }
             ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => {
-                q.storage().storage().populate();
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter);
+                q.offsets_storage().populate(hw_counter)?;
             }
             ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => {
-                q.storage().storage().populate();
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter);
+                q.offsets_storage().populate(hw_counter)?;
             }
             ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => {
-                q.storage().storage().populate();
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter);
+                q.offsets_storage().populate(hw_counter)?;
             }
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.storage().populate()?,
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.storage().populate()?,
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.storage().populate(hw_counter)?,
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.storage().populate(hw_counter)?,
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                q.storage().storage().populate()?;
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter)?;
+                q.offsets_storage().populate(hw_counter)?;
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                q.storage().storage().populate()?;
-                q.offsets_storage().populate()?;
+                q.storage().storage().populate(hw_counter)?;
+                q.offsets_storage().populate(hw_counter)?;
             }
         }
         Ok(())

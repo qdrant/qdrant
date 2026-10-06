@@ -8,6 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_data::HardwareData;
 use common::uio_trace::{self, Op, Outcome};
 use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
 use strum::{EnumCount as _, IntoEnumIterator as _};
@@ -31,10 +33,18 @@ impl RemoteIoStats {
 
     /// Observe one remote request in both the statistics and the trace. `range` is the
     /// payload the request transfers; its length is counted as bytes on success.
-    pub(crate) fn request(&self, op: Op, path: &Path, range: Range<u64>) -> RequestObserver {
+    pub(crate) fn request(
+        &self,
+        op: Op,
+        path: &Path,
+        range: Range<u64>,
+        hw_acc: &HwMeasurementAcc,
+    ) -> RequestObserver {
         RequestObserver {
             trace: uio_trace::Request::new(op, path, range.clone()),
             stats: self.op(op).clone(),
+            hw_acc: hw_acc.clone(),
+            op,
             guard: None,
             range,
         }
@@ -95,6 +105,8 @@ impl RemoteIoStatsSnapshot {
 pub(crate) struct RequestObserver {
     trace: uio_trace::Request,
     stats: OpStats,
+    hw_acc: HwMeasurementAcc,
+    op: Op,
     guard: Option<OpGuard>,
     range: Range<u64>,
 }
@@ -104,6 +116,7 @@ impl RequestObserver {
         self.trace.start();
         if self.guard.is_none() {
             self.guard = Some(self.stats.start(Instant::now()));
+            self.hw_acc.accumulate(hw_usage(self.op));
         }
     }
 
@@ -149,5 +162,18 @@ impl RequestObserver {
         let result = future.await;
         self.set_result(&result);
         result
+    }
+}
+
+/// 🤖 Hardware usage of one started request: GET-like requests are reads, the rest are writes.
+fn hw_usage(op: Op) -> HardwareData {
+    let (read, write) = match op {
+        Op::Exists | Op::Read | Op::ReadFrom | Op::Len => (1, 0),
+        Op::List | Op::Create | Op::Remove | Op::Save | Op::Append => (0, 1),
+    };
+    HardwareData {
+        object_store_read_requests: read,
+        object_store_write_requests: write,
+        ..HardwareData::default()
     }
 }

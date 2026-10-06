@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitVec, DeletedBitVec};
 use common::counter::conditioned_counter::ConditionedCounter;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
@@ -177,15 +178,26 @@ where
         Ok(())
     }
 
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: &Path, populate: Populate) {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let file_name = dir.join(POINT_TO_VALUES_PATH);
-        fs.schedule_open(&file_name, Some(Self::open_options(populate)), None);
+        fs.schedule_open(
+            &file_name,
+            Some(Self::open_options(populate)),
+            None,
+            hw_counter,
+        );
     }
 
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let file_name = dir.join(POINT_TO_VALUES_PATH);
 
@@ -196,9 +208,9 @@ where
             advice: AdviceSetting::Global,
         };
 
-        let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
+        let store = ReadOnly::open(fs, &file_name, open_options, Default::default(), hw_counter)?;
 
-        let header = store.read(ReadRange::one(0), Random)?[0];
+        let header = store.read(ReadRange::one(0), Random, hw_counter)?[0];
 
         Ok(Self {
             file_name,
@@ -244,20 +256,23 @@ where
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
-        let Some((bytes_range, count)) = self.get_bytes_range(point_id)?.map(|(range, count)| {
-            let range = universal_io::ReadRange {
-                byte_offset: range.start,
-                length: range.end - range.start,
-            };
-            // Measure IO overhead of `self.get_bytes_range()` and the length of the values
-            hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
+        let Some((bytes_range, count)) =
+            self.get_bytes_range(point_id, hw_counter.parent())?
+                .map(|(range, count)| {
+                    let range = universal_io::ReadRange {
+                        byte_offset: range.start,
+                        length: range.end - range.start,
+                    };
+                    // Measure IO overhead of `self.get_bytes_range()` and the length of the values
+                    hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
 
-            (range, count)
-        }) else {
+                    (range, count)
+                })
+        else {
             return Ok(None);
         };
 
-        let bytes = self.store.read(bytes_range, Random)?;
+        let bytes = self.store.read(bytes_range, Random, hw_counter.parent())?;
 
         let iter = ValuesIter::new(bytes, count);
 
@@ -278,7 +293,7 @@ where
 
         let points_count = self.header.points_count as PointOffsetType;
         let ranges_start = self.header.ranges_start;
-        let file_len = self.store.len::<u8>()?;
+        let file_len = self.store.len::<u8>(hw_counter.parent())?;
 
         // Batch 1: Resolve each values' range and count
         let mut value_reads = Vec::with_capacity(items.size_hint().0.min(10_000));
@@ -295,8 +310,10 @@ where
             let length = if point_id + 1 < points_count { 2 } else { 1 };
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
-        self.store
-            .read_batch(range_reads, Random, |user_data, ranges| {
+        self.store.read_batch(
+            range_reads,
+            Random,
+            |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
@@ -315,23 +332,33 @@ where
                 value_reads.push((user_data, count as usize, ReadRange::new(start, length)));
 
                 UioResult::Ok(())
-            })?;
+            },
+            hw_counter.parent(),
+        )?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
         let value_reads = value_reads
             .into_iter()
             .map(|(user_data, count, range)| ((user_data, count), range));
-        self.store
-            .read_batch(value_reads, Random, |(user_data, count), bytes| {
+        self.store.read_batch(
+            value_reads,
+            Random,
+            |(user_data, count), bytes| {
                 f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
                 UioResult::Ok(())
-            })?;
+            },
+            hw_counter.parent(),
+        )?;
 
         Ok(())
     }
 
-    pub fn get_values_count(&self, point_id: PointOffsetType) -> OperationResult<Option<usize>> {
-        self.get_range(point_id)
+    pub fn get_values_count(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        self.get_range(point_id, hw_counter)
             .map_some(|range| range.count as usize)
     }
 
@@ -351,14 +378,18 @@ where
         0
     }
 
-    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
+    fn get_range(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<MmapRange>> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset =
                 (self.header.ranges_start as usize) + (point_id as usize) * size_of::<MmapRange>();
 
             let range = self
                 .store
-                .read(ReadRange::one(range_offset as u64), Random)?[0];
+                .read(ReadRange::one(range_offset as u64), Random, hw_counter)?[0];
             Ok(Some(range))
         } else {
             Ok(None)
@@ -369,17 +400,21 @@ where
     fn get_bytes_range(
         &self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<(Range<u64>, usize)>> {
-        let Some(MmapRange { start, count }) = self.get_range(point_id)? else {
+        let Some(MmapRange { start, count }) = self.get_range(point_id, hw_counter)? else {
             return Ok(None);
         };
 
         // Use next point's start as end offset for this one.
-        let end = match self.get_range(point_id + 1).map_some(|range| range.start)? {
+        let end = match self
+            .get_range(point_id + 1, hw_counter)
+            .map_some(|range| range.start)?
+        {
             Some(end) => end,
             None => {
                 // if there is no next point, then use end of file
-                self.store.len::<u8>()?
+                self.store.len::<u8>(hw_counter)?
             }
         };
 
@@ -388,8 +423,8 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.store.populate().map_err(Into::into)
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.store.populate(hw_counter).map_err(Into::into)
     }
 
     /// Drop disk cache.
@@ -409,6 +444,7 @@ where
     pub fn for_all_points_values(
         &self,
         mut f: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Report deleted points with values too.
         let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
@@ -416,7 +452,7 @@ where
         self.values_iter_batch(
             (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
             &blank_bitmask,
-            ConditionedCounter::never(),
+            ConditionedCounter::never(hw_counter),
             |point_id, values| {
                 if values.count > 0 {
                     f(point_id, values);
@@ -556,12 +592,21 @@ mod tests {
                 .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.borrow()))),
         )
         .unwrap();
-        let ppv = OnDiskPointToValues::<T, Fs::File>::open(fs, dir.path(), Populate::No).unwrap();
+        let ppv = OnDiskPointToValues::<T, Fs::File>::open(
+            fs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         // Roundtrip check
         for (idx, values) in values.iter().enumerate() {
             let v = ppv
-                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
+                .values_iter(
+                    idx as PointOffsetType,
+                    ConditionedCounter::never(&HardwareCounterCell::new()),
+                )
                 .unwrap()
                 .unwrap()
                 .map(Cow::into_owned)
@@ -588,7 +633,7 @@ mod tests {
             ppv.values_iter_batch(
                 (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
                 &deleted,
-                ConditionedCounter::never(),
+                ConditionedCounter::never(&HardwareCounterCell::new()),
                 |id, vals| reported.push((id, vals.map(Cow::into_owned).collect_vec())),
             )
             .unwrap();

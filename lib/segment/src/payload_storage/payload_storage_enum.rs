@@ -145,13 +145,13 @@ impl PayloadStorageRead for PayloadStorageEnum {
         }
     }
 
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+    fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.get_storage_size_bytes(),
-            PayloadStorageEnum::Mmap(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::InMemory(s) => s.get_storage_size_bytes(hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.get_storage_size_bytes(hw_counter),
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::IoUring(s) => s.get_storage_size_bytes(hw_counter),
         }
     }
 
@@ -264,13 +264,13 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.flusher(),
-            PayloadStorageEnum::Mmap(s) => s.flusher(),
+            PayloadStorageEnum::InMemory(s) => s.flusher(hw_counter),
+            PayloadStorageEnum::Mmap(s) => s.flusher(hw_counter),
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.flusher(),
+            PayloadStorageEnum::IoUring(s) => s.flusher(hw_counter),
         }
     }
 
@@ -298,13 +298,13 @@ impl PayloadStorage for PayloadStorageEnum {
 impl PayloadStorageEnum {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemory(_) => {}
-            PayloadStorageEnum::Mmap(s) => s.populate()?,
+            PayloadStorageEnum::Mmap(s) => s.populate(hw_counter)?,
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.populate()?,
+            PayloadStorageEnum::IoUring(s) => s.populate(hw_counter)?,
         }
         Ok(())
     }
@@ -336,13 +336,13 @@ impl PayloadStorageEnum {
 
     /// Switch to a layout for a storage that is only read from now on, for storages that have
     /// one. Persisted by the next flush, the storage stays writable.
-    pub fn make_immutable(&self) -> OperationResult<()> {
+    pub fn make_immutable(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemory(_) => {}
-            PayloadStorageEnum::Mmap(s) => s.make_immutable()?,
+            PayloadStorageEnum::Mmap(s) => s.make_immutable(hw_counter)?,
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.make_immutable()?,
+            PayloadStorageEnum::IoUring(s) => s.make_immutable(hw_counter)?,
         }
         Ok(())
     }
@@ -363,10 +363,13 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mut storage: PayloadStorageEnum =
-            PayloadStorageImpl::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)
-                .unwrap()
-                .into();
+        let mut storage: PayloadStorageEnum = PayloadStorageImpl::<MmapFile>::open_or_create(
+            dir.path().to_path_buf(),
+            populate,
+            &hw_counter,
+        )
+        .unwrap()
+        .into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         storage.clear_all(&hw_counter).unwrap();

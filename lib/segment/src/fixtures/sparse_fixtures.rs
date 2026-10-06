@@ -49,11 +49,12 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
         payload_dir,
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &HardwareCounterCell::new(),
     )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let vector_storage = Arc::new(AtomicRefCell::new(VectorStorageEnum::SparseMmap(
-        MmapSparseVectorStorage::open_or_create(storage_dir)?,
+        MmapSparseVectorStorage::open_or_create(storage_dir, &HardwareCounterCell::new())?,
     )));
     let mut borrowed_storage = vector_storage.borrow_mut();
 
@@ -70,14 +71,14 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
 
     // assert all empty points are in storage
     assert_eq!(
-        vector_storage.borrow().available_vector_count(),
+        vector_storage.borrow().available_vector_count(&hw_counter),
         num_vectors,
     );
 
     let sparse_index_config =
         SparseIndexConfig::new(Some(full_scan_threshold), index_type, None, None);
-    let sparse_vector_index: SparseVectorIndex<I> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+    let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
+        SparseVectorIndexOpenArgs {
             fs: &MmapFs,
             config: sparse_index_config,
             id_tracker,
@@ -86,7 +87,9 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
             path: index_dir,
             stopped: &stopped,
             tick_progress: || (),
-        })?;
+        },
+        &hw_counter,
+    )?;
 
     assert_eq!(
         sparse_vector_index.indexed_vector_count(),

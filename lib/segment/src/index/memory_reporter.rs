@@ -1,8 +1,10 @@
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
 use crate::index::vector_index_base::{VectorIndex as _, VectorIndexEnum, VectorIndexRead as _};
 
 impl MemoryReporter for VectorIndexEnum {
-    fn memory_usage(&self) -> ComponentMemoryUsage {
+    fn memory_usage(&self, hw_counter: &HardwareCounterCell) -> ComponentMemoryUsage {
         match self {
             // Plain index: no files, no extra memory (searches storage directly)
             VectorIndexEnum::Plain(_) => ComponentMemoryUsage::empty(),
@@ -36,27 +38,27 @@ impl MemoryReporter for VectorIndexEnum {
             VectorIndexEnum::SparseRam(index) => ComponentMemoryUsage::from_files_and_ram(
                 index.files(),
                 FileStorageIntent::OnDisk,
-                index.size_of_searchable_vectors_in_bytes() as u64,
+                index.size_of_searchable_vectors_in_bytes(hw_counter) as u64,
             ),
             VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
                 ComponentMemoryUsage::from_files_and_ram(
                     index.files(),
                     FileStorageIntent::OnDisk,
-                    index.size_of_searchable_vectors_in_bytes() as u64,
+                    index.size_of_searchable_vectors_in_bytes(hw_counter) as u64,
                 )
             }
             VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
                 ComponentMemoryUsage::from_files_and_ram(
                     index.files(),
                     FileStorageIntent::OnDisk,
-                    index.size_of_searchable_vectors_in_bytes() as u64,
+                    index.size_of_searchable_vectors_in_bytes(hw_counter) as u64,
                 )
             }
             VectorIndexEnum::SparseCompressedImmutableRamU8(index) => {
                 ComponentMemoryUsage::from_files_and_ram(
                     index.files(),
                     FileStorageIntent::OnDisk,
-                    index.size_of_searchable_vectors_in_bytes() as u64,
+                    index.size_of_searchable_vectors_in_bytes(hw_counter) as u64,
                 )
             }
 

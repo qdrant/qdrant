@@ -69,10 +69,10 @@ impl VectorIndexRead for PlainVectorIndex {
         0
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
         self.vector_storage
             .borrow()
-            .size_of_available_vectors_in_bytes()
+            .size_of_available_vectors_in_bytes(hw_counter)
     }
 
     fn fill_idf_statistics(

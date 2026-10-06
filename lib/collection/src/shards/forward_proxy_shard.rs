@@ -164,9 +164,9 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn transfer_indexes(&self) -> CollectionResult<()> {
+    pub async fn transfer_indexes(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<()> {
         let _update_lock = self.update_lock.lock().await;
-        for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema {
+        for (index_key, index_type) in self.wrapped_shard.info(hw_acc).await?.payload_schema {
             // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
@@ -555,9 +555,10 @@ impl ForwardProxyShard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.wrapped_shard
-            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
             .await
     }
 
@@ -582,8 +583,11 @@ impl ForwardProxyShard {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShardTelemetry> {
-        self.wrapped_shard.get_telemetry_data(detail, timeout).await
+        self.wrapped_shard
+            .get_telemetry_data(detail, timeout, hw_acc)
+            .await
     }
 
     pub async fn get_optimization_status(
@@ -593,8 +597,12 @@ impl ForwardProxyShard {
         self.wrapped_shard.get_optimization_status(timeout).await
     }
 
-    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
-        self.wrapped_shard.get_size_stats(timeout).await
+    pub async fn get_size_stats(
+        &self,
+        timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<SizeStats> {
+        self.wrapped_shard.get_size_stats(timeout, hw_acc).await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
@@ -623,8 +631,11 @@ impl ForwardProxyShard {
         self.wrapped_shard.set_normal_wal_retention().await;
     }
 
-    pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
-        self.wrapped_shard.memory_report().await
+    pub async fn memory_report(
+        &self,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<CollectionMemoryReport> {
+        self.wrapped_shard.memory_report(hw_acc).await
     }
 }
 
@@ -809,9 +820,9 @@ impl ShardOperation for ForwardProxyShard {
             .await
     }
 
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
         let local_shard = &self.wrapped_shard;
-        local_shard.info().await
+        local_shard.info(hw_acc).await
     }
     async fn core_search(
         &self,

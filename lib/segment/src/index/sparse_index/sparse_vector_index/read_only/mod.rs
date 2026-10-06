@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::storage_version::StorageVersion as _;
@@ -79,6 +80,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
     /// Similar to [`super::SparseVectorIndex::open`].
     pub fn open<Fs: UniversalReadFs<File = S>>(
         args: ReadOnlySparseVectorIndexOpenArgs<S, Fs>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         TInvertedIndex: InvertedIndexReadOnly<S>,
@@ -92,9 +94,9 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
             path,
         } = args;
 
-        let inverted_index = TInvertedIndex::open_ro(fs, path)?;
+        let inverted_index = TInvertedIndex::open_ro(fs, path, hw_counter)?;
 
-        let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
+        let stored_version = TInvertedIndex::Version::load_universal(fs, path, hw_counter)?;
         if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error_light(format!(
                 "Sparse index version mismatch, expected {}, found {}",
@@ -103,7 +105,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
             )));
         }
 
-        let indices_tracker = IndicesTracker::open_universal(fs, path)?;
+        let indices_tracker = IndicesTracker::open_universal(fs, path, hw_counter)?;
 
         Ok(Self {
             config,
@@ -158,6 +160,7 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
         id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         // The read-only open path carries no cancellation flag.
         let stopped = AtomicBool::new(false);
@@ -166,6 +169,7 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
             &*vector_storage.borrow(),
             &stopped,
             || (),
+            hw_counter,
         )?;
         Ok(Self {
             config,
@@ -190,6 +194,7 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
     pub fn live_reload(
         &mut self,
         inserted: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -211,25 +216,29 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
         // instead of a round-trip per point. A point without a vector for
         // this sparse name is skipped by the storage.
         let mut result = Ok(());
-        vector_storage.read_vectors::<Sequential, _>(ids, |(), id, vector| {
-            if result.is_err() {
-                return;
-            }
-            let vector: &SparseVector = match vector.as_vec_ref().try_into() {
-                Ok(vector) => vector,
-                Err(err) => {
-                    result = Err(err);
+        vector_storage.read_vectors::<Sequential, _>(
+            ids,
+            |(), id, vector| {
+                if result.is_err() {
                     return;
                 }
-            };
-            // do not index empty vectors
-            if vector.is_empty() {
-                return;
-            }
-            indices_tracker.register_indices(vector);
-            let vector = indices_tracker.remap_vector(vector.to_owned());
-            inverted_index.upsert(id, vector, None);
-        });
+                let vector: &SparseVector = match vector.as_vec_ref().try_into() {
+                    Ok(vector) => vector,
+                    Err(err) => {
+                        result = Err(err);
+                        return;
+                    }
+                };
+                // do not index empty vectors
+                if vector.is_empty() {
+                    return;
+                }
+                indices_tracker.register_indices(vector);
+                let vector = indices_tracker.remap_vector(vector.to_owned());
+                inverted_index.upsert(id, vector, None);
+            },
+            hw_counter,
+        );
         result
     }
 }

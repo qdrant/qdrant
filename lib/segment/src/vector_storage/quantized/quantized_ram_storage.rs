@@ -30,8 +30,12 @@ impl QuantizedRamStorage {
     /// Schedule background prefetch of the data file [`Self::from_file`] reads.
     ///
     /// The load reads the whole file, so the prefetch populates it.
-    pub fn preopen<S: UniversalRead>(fs: &impl CachedReadFs<File = S>, path: &Path) {
-        OneshotFile::<S>::preopen(fs, path)
+    pub fn preopen<S: UniversalRead>(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        OneshotFile::<S>::preopen(fs, path, hw_counter)
     }
 
     /// Load all quantized vectors into RAM through the provided [`UniversalRead`]
@@ -44,6 +48,7 @@ impl QuantizedRamStorage {
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         if quantized_vector_size == 0 {
             return Err(OperationError::service_error(
@@ -51,12 +56,12 @@ impl QuantizedRamStorage {
             ));
         }
 
-        let storage = OneshotFile::open(fs, path)?;
+        let storage = OneshotFile::open(fs, path, hw_counter)?;
 
         // Read the whole file in a single access and validate against the returned
         // buffer's length, rather than querying `len()` separately. Avoids an extra
         // metadata round-trip on backends where size lookups are expensive (e.g. S3).
-        let data = storage.read_whole::<u8>()?;
+        let data = storage.read_whole::<u8>(hw_counter)?;
         let len = data.len();
         if !len.is_multiple_of(quantized_vector_size) {
             return Err(OperationError::inconsistent_storage(format!(
@@ -101,7 +106,7 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         false
     }
 
-    fn vectors_count(&self) -> usize {
+    fn vectors_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.len()
     }
 
@@ -116,11 +121,19 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+    fn get_vector_data(
+        &self,
+        index: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+    fn get_vector_data_opt(
+        &self,
+        index: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>> {
         Some(Cow::Borrowed(
             self.vectors.get_opt(index as VectorOffsetType)?,
         ))
@@ -130,6 +143,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
         // Tiny batches gain nothing from hints, cache-resident storages have
         // nothing to fetch, and dense-ascending batches stream — in all three
@@ -140,7 +154,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
             || storage_bytes < MIN_PREFETCH_STORAGE_BYTES
             || is_read_with_prefetch_efficient(offsets)
         {
-            default_for_each_batch(self, offsets, callback);
+            default_for_each_batch(self, offsets, callback, hw_counter);
             return;
         }
 
@@ -176,6 +190,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+        _hw_counter: &HardwareCounterCell,
     ) {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
@@ -215,7 +230,7 @@ impl quantization::EncodedStorageBuilder for QuantizedRamStorageBuilder {
     type Storage = QuantizedRamStorage;
     type Error = std::io::Error;
 
-    fn build(self) -> std::io::Result<QuantizedRamStorage> {
+    fn build(self, _hw_counter: &HardwareCounterCell) -> std::io::Result<QuantizedRamStorage> {
         if let Some(dir) = self.path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -255,7 +270,13 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 0).unwrap_err();
+        let err = QuantizedRamStorage::from_file::<MmapFile>(
+            &MmapFs,
+            &path,
+            0,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap_err();
 
         assert!(matches!(
             err,
@@ -270,7 +291,13 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4, 5]).unwrap();
 
-        let err = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap_err();
+        let err = QuantizedRamStorage::from_file::<MmapFile>(
+            &MmapFs,
+            &path,
+            2,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap_err();
 
         assert!(matches!(
             err,
@@ -287,11 +314,27 @@ mod tests {
         let path = dir.path().join("quantized.bin");
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        let storage = QuantizedRamStorage::from_file::<MmapFile>(&MmapFs, &path, 2).unwrap();
+        let storage = QuantizedRamStorage::from_file::<MmapFile>(
+            &MmapFs,
+            &path,
+            2,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        assert_eq!(storage.vectors_count(), 2);
-        assert_eq!(storage.get_vector_data(0).as_ref(), [1, 2]);
-        assert_eq!(storage.get_vector_data(1).as_ref(), [3, 4]);
+        assert_eq!(storage.vectors_count(&HardwareCounterCell::new()), 2);
+        assert_eq!(
+            storage
+                .get_vector_data(0, &HardwareCounterCell::new())
+                .as_ref(),
+            [1, 2]
+        );
+        assert_eq!(
+            storage
+                .get_vector_data(1, &HardwareCounterCell::new())
+                .as_ref(),
+            [3, 4]
+        );
     }
 
     /// `for_each_run` must serve every offset exactly once with bytes
@@ -323,19 +366,25 @@ mod tests {
 
         for ids in [&ascending, &scattered] {
             let mut visited = 0;
-            storage.for_each_run(ids, |first, run_len, bytes| {
-                assert_eq!(first, visited, "runs must cover `ids` in order");
-                assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
-                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
-                    assert_eq!(
-                        vector.as_slice(),
-                        storage.get_vector_data(ids[first + i]).as_ref(),
-                        "run bytes diverge at offset {}",
-                        ids[first + i],
-                    );
-                }
-                visited += run_len;
-            });
+            storage.for_each_run(
+                ids,
+                |first, run_len, bytes| {
+                    assert_eq!(first, visited, "runs must cover `ids` in order");
+                    assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
+                    for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                        assert_eq!(
+                            vector.as_slice(),
+                            storage
+                                .get_vector_data(ids[first + i], &HardwareCounterCell::new())
+                                .as_ref(),
+                            "run bytes diverge at offset {}",
+                            ids[first + i],
+                        );
+                    }
+                    visited += run_len;
+                },
+                &HardwareCounterCell::new(),
+            );
             assert_eq!(visited, ids.len());
         }
     }

@@ -17,6 +17,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Distance, ShardKey};
 use tempfile::Builder;
 use tonic::transport::Uri;
@@ -92,6 +93,7 @@ async fn new_collection(path: &Path) -> Collection {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap()
@@ -112,6 +114,7 @@ async fn load_collection(path: &Path) -> Collection {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
 }

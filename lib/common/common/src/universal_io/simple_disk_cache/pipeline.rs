@@ -6,6 +6,7 @@ use std::sync::Arc;
 use slab::Slab;
 
 use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -78,7 +79,7 @@ where
         });
     }
 
-    if range.end > local.mmap().len::<u8>()? {
+    if range.end > local.mmap().len::<u8>(&HardwareCounterCell::disposable())? {
         // If remote file has grown, and `reopen` hasn't been called, it is OOB
         return Err(UniversalIoError::OutOfBounds {
             start: range.start,
@@ -99,8 +100,11 @@ where
 
     // BLOCK_SIZE aligned, clamped to EOF. `range` is non-empty here, so the
     // block range is non-empty and `block_aligned_fetch` yields `Some`.
-    let (blocks_range, blocks_byte_range) = block_aligned_fetch(range, local.mmap().len::<u8>()?)
-        .expect("non-empty range has a non-empty block range");
+    let (blocks_range, blocks_byte_range) = block_aligned_fetch(
+        range,
+        local.mmap().len::<u8>(&HardwareCounterCell::disposable())?,
+    )
+    .expect("non-empty range has a non-empty block range");
 
     Ok(Source::Remote {
         blocks_range,
@@ -115,18 +119,19 @@ where
 /// `byte_range` must correspond to blocks already known to be local (typically
 /// because [`pick_source`] returned [`Source::Local`] for it, or
 /// [`commit_and_complete`] just fetched them).
-pub(super) unsafe fn read_local<R>(
-    file: &DiskCache<R>,
+pub(super) unsafe fn read_local<'a, R>(
+    file: &'a DiskCache<R>,
     range: Range<u64>,
     is_sequential: bool,
-) -> UioResult<&[u8]>
+    hw_counter: &HardwareCounterCell,
+) -> UioResult<&'a [u8]>
 where
     R: DiskCacheRemote,
 {
     if range.is_empty() {
         return Ok(&[]);
     }
-    let local = file.state()?.local;
+    let local = file.state(hw_counter)?.local;
     if is_sequential {
         unsafe { local.read_mmap_bytes::<Sequential>(range) }
     } else {
@@ -138,13 +143,17 @@ where
 ///
 /// # Safety
 /// `bytes` must be the remote content of `fetch.guard.placeholder().blocks_range` (clamped to EOF).
-unsafe fn commit_and_complete<'file, R>(fetch: RemoteFetch<'file, R>, bytes: &[u8]) -> UioResult<()>
+unsafe fn commit_and_complete<'file, R>(
+    fetch: RemoteFetch<'file, R>,
+    bytes: &[u8],
+    hw_counter: &HardwareCounterCell,
+) -> UioResult<()>
 where
     R: DiskCacheRemote,
 {
     let RemoteFetch { file, guard } = fetch;
 
-    let local = file.state()?.local;
+    let local = file.state(hw_counter)?.local;
 
     unsafe {
         local.write_mmap_bytes(bytes, guard.placeholder().blocks_range.clone());
@@ -202,6 +211,7 @@ where
         file: &'file DiskCache<R>,
         guard: PlaceholderGuard,
         is_sequential: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Arc<Placeholder>>
     where
         R: DiskCacheRemote,
@@ -209,7 +219,7 @@ where
         let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
         let entry = self.in_flight.vacant_entry();
         let placeholder = guard.placeholder().clone();
-        let state = file.state()?;
+        let state = file.state(hw_counter)?;
 
         if is_sequential {
             remote_pipeline.schedule::<Sequential>(
@@ -217,6 +227,7 @@ where
                 state.remote,
                 placeholder.blocks_byte_range.clone(),
                 REMOTE_READ_ALIGNMENT,
+                hw_counter,
             )?;
         } else {
             remote_pipeline.schedule::<Random>(
@@ -224,6 +235,7 @@ where
                 state.remote,
                 placeholder.blocks_byte_range.clone(),
                 REMOTE_READ_ALIGNMENT,
+                hw_counter,
             )?;
         }
 
@@ -233,7 +245,7 @@ where
     }
 
     /// Assume there are in-flight fetches in this pipeline's remote, await them.
-    fn drive_in_flight(&mut self) -> UioResult<()>
+    fn drive_in_flight(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()>
     where
         R: DiskCacheRemote,
     {
@@ -241,7 +253,7 @@ where
             .remote_pipeline
             .get_mut()
             .expect("in_flight is not empty, remote pipeline must exist");
-        let (fetch_id, bytes) = match remote_pipeline.wait() {
+        let (fetch_id, bytes) = match remote_pipeline.wait(hw_counter) {
             Ok(completion) => completion.expect("in_flight is not empty, completion must exist"),
             Err(err) => {
                 self.in_flight.clear();
@@ -257,33 +269,38 @@ where
             .expect("completed fetch has an in-flight entry");
 
         // SAFETY: `bytes` is the content of `fetch.guard.placeholder().blocks_range` as scheduled.
-        unsafe { commit_and_complete(fetch, &bytes) }
+        unsafe { commit_and_complete(fetch, &bytes, hw_counter) }
     }
 
     fn handle_timed_out_wait(
         &mut self,
         read: ScheduledRead<'file, R, U>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Option<(U, &'file [u8])>>
     where
         R: DiskCacheRemote,
     {
         // avoid more piggybacking on a stalled leader.
-        let state = read.file.state()?;
+        let state = read.file.state(hw_counter)?;
         state.local.placeholders.remove(&read.placeholder);
 
         // confirm it isn't available locally
         let blocks_range = to_block_range(read.range.clone());
         if state.local.contains(blocks_range) {
-            let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+            let slice =
+                unsafe { read_local::<R>(read.file, read.range, read.is_sequential, hw_counter)? };
             return Ok(Some((read.user_data, slice)));
         }
 
         // fetch independently on this pipeline
-        let (blocks_range, blocks_byte_range) =
-            block_aligned_fetch(read.range.clone(), state.local.mmap().len::<u8>()?)
-                .expect("non-empty range has non-empty block range");
+        let (blocks_range, blocks_byte_range) = block_aligned_fetch(
+            read.range.clone(),
+            state.local.mmap().len::<u8>(hw_counter)?,
+        )
+        .expect("non-empty range has non-empty block range");
         let guard = Placeholder::new_unshared(blocks_range, blocks_byte_range);
-        let placeholder = self.schedule_remote_fetch(read.file, guard, read.is_sequential)?;
+        let placeholder =
+            self.schedule_remote_fetch(read.file, guard, read.is_sequential, hw_counter)?;
         self.pending.push_front(ScheduledRead {
             placeholder,
             ..read
@@ -322,14 +339,15 @@ where
         file: &'file DiskCache<R>,
         range: Range<u64>,
         _align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
-        let state = file.state()?;
+        let state = file.state(hw_counter)?;
         match pick_source::<P>(state.local, range.clone())? {
             Source::Local {
                 range,
                 is_sequential,
             } => {
-                let bytes = unsafe { read_local::<R>(file, range, is_sequential)? };
+                let bytes = unsafe { read_local::<R>(file, range, is_sequential, hw_counter)? };
                 self.results.push_back((user_data, bytes));
             }
             Source::Remote {
@@ -351,13 +369,15 @@ where
                         blocks_byte_range,
                     ) {
                         PlaceholderResult::AlreadyLocal => {
-                            let bytes = unsafe { read_local::<R>(file, range, P::IS_SEQUENTIAL)? };
+                            let bytes = unsafe {
+                                read_local::<R>(file, range, P::IS_SEQUENTIAL, hw_counter)?
+                            };
                             self.results.push_back((user_data, bytes));
                             return Ok(());
                         }
                         PlaceholderResult::Piggyback(placeholder) => placeholder,
                         PlaceholderResult::Leader(guard) => {
-                            self.schedule_remote_fetch(file, guard, P::IS_SEQUENTIAL)?
+                            self.schedule_remote_fetch(file, guard, P::IS_SEQUENTIAL, hw_counter)?
                         }
                     }
                 };
@@ -379,21 +399,22 @@ where
         user_data: U,
         file: &'file DiskCache<R>,
         from: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()>
     where
         Self::File: UniversalRead,
     {
-        let state = file.state()?;
-        let eof = state.local.mmap().len::<u8>()?;
+        let state = file.state(hw_counter)?;
+        let eof = state.local.mmap().len::<u8>(hw_counter)?;
 
         if from >= eof {
             return Ok(());
         }
 
-        self.schedule::<Sequential>(user_data, file, from..eof, 1)
+        self.schedule::<Sequential>(user_data, file, from..eof, 1, hw_counter)
     }
 
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>> {
         loop {
             if let Some((user_data, slice)) = self.results.pop_front() {
                 return Ok(Some((user_data, ACow::Borrowed(slice))));
@@ -406,13 +427,15 @@ where
                 .position(|read| read.placeholder.is_completed())
             {
                 let read = self.pending.remove(idx).expect("idx exists");
-                let slice = unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+                let slice = unsafe {
+                    read_local::<R>(read.file, read.range, read.is_sequential, hw_counter)?
+                };
                 return Ok(Some((read.user_data, ACow::Borrowed(slice))));
             }
 
             // Drive remote fetches this pipeline is leading
             if !self.in_flight.is_empty() {
-                self.drive_in_flight()?;
+                self.drive_in_flight(hw_counter)?;
                 continue;
             }
 
@@ -420,16 +443,24 @@ where
             if let Some(read) = self.pending.pop_front() {
                 match read.placeholder.wait() {
                     WaitResult::Completed => {
-                        let slice =
-                            unsafe { read_local::<R>(read.file, read.range, read.is_sequential)? };
+                        let slice = unsafe {
+                            read_local::<R>(read.file, read.range, read.is_sequential, hw_counter)?
+                        };
                         return Ok(Some((read.user_data, ACow::Borrowed(slice))));
                     }
                     WaitResult::Promoted(guard) => {
-                        self.schedule_remote_fetch(read.file, guard, read.is_sequential)?;
+                        self.schedule_remote_fetch(
+                            read.file,
+                            guard,
+                            read.is_sequential,
+                            hw_counter,
+                        )?;
                         self.pending.push_front(read);
                     }
                     WaitResult::TimedOut => {
-                        if let Some((user_data, slice)) = self.handle_timed_out_wait(read)? {
+                        if let Some((user_data, slice)) =
+                            self.handle_timed_out_wait(read, hw_counter)?
+                        {
                             return Ok(Some((user_data, ACow::Borrowed(slice))));
                         }
                     }

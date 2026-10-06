@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::{DetailsLevel, TelemetryDetail};
 use strum::IntoEnumIterator;
@@ -43,6 +44,7 @@ async fn test_shard_telemetry() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -52,7 +54,7 @@ async fn test_shard_telemetry() {
         let details = TelemetryDetail::new(detail_level, false);
 
         let telemetry = shard
-            .get_telemetry_data(details, Duration::from_millis(10))
+            .get_telemetry_data(details, Duration::from_millis(10), &HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(telemetry.num_points, Some(0));
@@ -61,13 +63,13 @@ async fn test_shard_telemetry() {
         let segments = shard.segments();
         let write_segment_holder_guard = segments.write();
         let telemetry = shard
-            .get_telemetry_data(details, Duration::from_millis(10))
+            .get_telemetry_data(details, Duration::from_millis(10), &HwMeasurementAcc::new())
             .await;
         assert_matches!(telemetry, Err(CollectionError::Timeout { .. }));
 
         drop(write_segment_holder_guard);
         let telemetry = shard
-            .get_telemetry_data(details, Duration::from_millis(10))
+            .get_telemetry_data(details, Duration::from_millis(10), &HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(telemetry.num_points, Some(0));

@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::UserData;
 
@@ -16,13 +17,17 @@ pub trait TrackerRead {
     ///
     /// Maintained by the writer: exact and in memory for the writable trackers, taken from the
     /// persisted state for the read-only ones.
-    fn max_point_offset(&self) -> Result<PointOffset>;
+    fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset>;
 
     /// Get the mapping at the given point offset.
     ///
     /// Point offsets without a mapping yield `None`, including those at or past
     /// [`max_point_offset`](Self::max_point_offset).
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>>;
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>>;
 
     /// Get the mappings for a contiguous range of point offsets.
     ///
@@ -31,6 +36,7 @@ pub trait TrackerRead {
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>>;
 
     /// Iterate the mappings for the given point offsets.
@@ -38,9 +44,10 @@ pub trait TrackerRead {
     /// Issues batched reads against the underlying storage, so async backends can fetch entries
     /// in parallel. Yields one [`PointerItem`] per requested point offset, possibly in a
     /// different order.
-    fn iter<U, I>(
-        &self,
+    fn iter<'a, U, I>(
+        &'a self,
         point_offsets: I,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,

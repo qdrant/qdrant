@@ -43,8 +43,12 @@ impl ReadSegmentEntry for Segment {
         false
     }
 
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        self.with_view(|view| view.point_version(point_id))
+    fn point_version(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
+        self.with_view(|view| view.point_version(point_id, hw_counter))
     }
 
     fn search_batch(
@@ -247,14 +251,24 @@ impl ReadSegmentEntry for Segment {
         self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped, hw_counter))
     }
 
-    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
-        self.with_view(|view| view.read_range(from, to))
+    fn read_range(
+        &self,
+        from: Option<PointIdType>,
+        to: Option<PointIdType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType> {
+        self.with_view(|view| view.read_range(from, to, hw_counter))
     }
 
-    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
+    fn has_point(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.id_tracker
             .borrow()
-            .internal_id_with_behavior(point_id, deferred_behavior)
+            .internal_id_with_behavior(point_id, deferred_behavior, hw_counter)
             .is_some()
     }
 
@@ -262,16 +276,20 @@ impl ReadSegmentEntry for Segment {
         self.id_tracker.borrow().total_point_count() == 0
     }
 
-    fn available_point_count(&self) -> usize {
-        self.id_tracker.borrow().available_point_count()
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.borrow().available_point_count(hw_counter)
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.id_tracker.borrow().deleted_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.borrow().deleted_point_count(hw_counter)
     }
 
-    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
-        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
+    fn available_vectors_size_in_bytes(
+        &self,
+        vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name, hw_counter))
     }
 
     fn estimate_point_count<'a>(
@@ -309,14 +327,26 @@ impl ReadSegmentEntry for Segment {
         self.segment_type
     }
 
-    fn size_info(&self) -> SegmentInfo {
+    fn size_info(&self, hw_counter: &HardwareCounterCell) -> SegmentInfo {
         self.with_view(|view| {
-            view.build_size_info(self.uuid, self.segment_type, self.appendable_flag)
+            view.build_size_info(
+                self.uuid,
+                self.segment_type,
+                self.appendable_flag,
+                hw_counter,
+            )
         })
     }
 
-    fn info(&self) -> OperationResult<SegmentInfo> {
-        self.with_view(|view| view.build_info(self.uuid, self.segment_type, self.appendable_flag))
+    fn info(&self, hw_counter: &HardwareCounterCell) -> OperationResult<SegmentInfo> {
+        self.with_view(|view| {
+            view.build_info(
+                self.uuid,
+                self.segment_type,
+                self.appendable_flag,
+                hw_counter,
+            )
+        })
     }
 
     fn config(&self) -> &SegmentConfig {
@@ -338,7 +368,11 @@ impl ReadSegmentEntry for Segment {
         names
     }
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
+    fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentTelemetry> {
         self.with_view(|view| {
             view.build_telemetry(
                 self.uuid,
@@ -346,6 +380,7 @@ impl ReadSegmentEntry for Segment {
                 self.appendable_flag,
                 &self.segment_config,
                 detail,
+                hw_counter,
             )
         })
     }
@@ -354,16 +389,16 @@ impl ReadSegmentEntry for Segment {
         self.with_view(|view| view.fill_query_context(query_context))
     }
 
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        self.with_view(|view| view.point_is_deferred(point_id))
+    fn point_is_deferred(&self, point_id: PointIdType, hw_counter: &HardwareCounterCell) -> bool {
+        self.with_view(|view| view.point_is_deferred(point_id, hw_counter))
     }
 
-    fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        self.with_view(|view| view.deferred_point_ids())
+    fn deferred_point_ids(&self, hw_counter: &HardwareCounterCell) -> Vec<PointIdType> {
+        self.with_view(|view| view.deferred_point_ids(hw_counter))
     }
 
-    fn available_point_count_without_deferred(&self) -> usize {
-        self.with_view(|view| view.available_point_count_without_deferred())
+    fn available_point_count_without_deferred(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.with_view(|view| view.available_point_count_without_deferred(hw_counter))
     }
 
     fn has_deferred_points(&self) -> bool {
@@ -401,11 +436,15 @@ impl Segment {
     }
 
     /// Iterator over all points in segment in ascending order.
-    pub fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        let mappings =
-            PointMappingsGuard::new(self.id_tracker.borrow(), |guard| guard.point_mappings());
+    pub fn iter_points<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
+        let mappings = PointMappingsGuard::new(self.id_tracker.borrow(), |guard| {
+            guard.point_mappings(hw_counter)
+        });
         Box::new(IterPointsIterator::new(mappings, |mappings| {
-            Box::new(mappings.borrow_dependent().iter_external())
+            Box::new(mappings.borrow_dependent().iter_external(hw_counter))
         }))
     }
 }
@@ -423,7 +462,12 @@ impl StorageSegmentEntry for Segment {
         (*self.persisted_version.lock()).unwrap_or(0)
     }
 
-    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher> {
+    fn flusher(
+        &self,
+        force: bool,
+        up_to: Option<SeqNumberType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
         match (self.version, current_persisted_version) {
@@ -445,7 +489,7 @@ impl StorageSegmentEntry for Segment {
         let vector_storage_flushers: Vec<_> = self
             .vector_data
             .values()
-            .map(|v| v.vector_storage.borrow().flusher())
+            .map(|v| v.vector_storage.borrow().flusher(hw_counter))
             .collect();
         let quantization_flushers: Vec<_> = self
             .vector_data
@@ -467,9 +511,9 @@ impl StorageSegmentEntry for Segment {
             state.initial_version = state.initial_version.map(|initial| initial.min(up_to));
         }
         let segment_path = self.segment_path.clone();
-        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
-        let payload_index_flusher = self.payload_index.borrow().flusher();
-        let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
+        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher(hw_counter);
+        let payload_index_flusher = self.payload_index.borrow().flusher(hw_counter);
+        let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher(hw_counter);
         let persisted_version = self.persisted_version.clone();
 
         // Flush order is important:
@@ -635,10 +679,11 @@ impl NonAppendableSegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
@@ -650,6 +695,7 @@ impl NonAppendableSegmentEntry for Segment {
                     segment.delete_point_internal(internal_id, Some(op_num), hw_counter)?;
                     Ok((true, Some(internal_id)))
                 },
+                hw_counter,
             ),
         }
     }
@@ -717,7 +763,7 @@ impl NonAppendableSegmentEntry for Segment {
         // If the apply never happens, the leftover files are wiped by the next
         // build of this field.
         for index in &field_index {
-            index.flusher()()?;
+            index.flusher(hw_counter)()?;
         }
 
         Ok(BuildFieldIndexResult::Built {
@@ -752,9 +798,10 @@ impl NonAppendableSegmentEntry for Segment {
         op_num: SeqNumberType,
         vector_name: &VectorName,
         vector_config: &VectorNameConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment.create_vector_name_impl(op_num, vector_name, vector_config)
+            segment.create_vector_name_impl(op_num, vector_name, vector_config, hw_counter)
         })
     }
 
@@ -780,10 +827,11 @@ impl SegmentEntry for Segment {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
-        let stored_internal_point = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let stored_internal_point = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         match stored_internal_point {
             Some(existing_internal_id) => self.handle_point_mutate(
                 op_num,
@@ -800,11 +848,17 @@ impl SegmentEntry for Segment {
                     Ok(true)
                 },
             ),
-            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_index =
-                    segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
-                Ok((false, Some(new_index)))
-            }),
+            None => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                None,
+                |segment| {
+                    let new_index =
+                        segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
+                    Ok((false, Some(new_index)))
+                },
+                hw_counter,
+            ),
         }
     }
 
@@ -821,10 +875,11 @@ impl SegmentEntry for Segment {
         }
         // No `preprocess` here on purpose: raw bytes are the stored form,
         // already preprocessed (e.g. cosine-normalized) on first ingestion.
-        let stored_internal_point = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let stored_internal_point = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         match stored_internal_point {
             // Not `handle_point_mutate`: upsert replaces the whole point, so
             // the raw clone path skips the vector snapshot entirely instead
@@ -855,13 +910,20 @@ impl SegmentEntry for Segment {
                             Ok((true, Some(existing_internal_id)))
                         }
                     },
+                    hw_counter,
                 )
             }
-            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_index =
-                    segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
-                Ok((false, Some(new_index)))
-            }),
+            None => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                None,
+                |segment| {
+                    let new_index =
+                        segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+                    Ok((false, Some(new_index)))
+                },
+                hw_counter,
+            ),
         }
     }
 
@@ -882,10 +944,11 @@ impl SegmentEntry for Segment {
         // Raw bytes are the stored form, already preprocessed on first
         // ingestion; only the freshly decoded overlay needs preprocessing.
         updated_vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
-        let stored_internal_point = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let stored_internal_point = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         match stored_internal_point {
             Some(existing_internal_id) => {
                 let append_only = self.is_append_only();
@@ -918,21 +981,28 @@ impl SegmentEntry for Segment {
                         }
                         Ok((true, Some(internal_id)))
                     },
+                    hw_counter,
                 )
             }
-            None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_id = segment.id_tracker.borrow().total_point_count() as PointOffsetType;
-                segment.write_point_parts(
-                    new_id,
-                    op_num,
-                    raw_vectors,
-                    &updated_vectors,
-                    payload,
-                    hw_counter,
-                )?;
-                segment.id_tracker.borrow_mut().set_link(point_id, new_id)?;
-                Ok((false, Some(new_id)))
-            }),
+            None => self.handle_point_version_and_failure(
+                op_num,
+                point_id,
+                None,
+                |segment| {
+                    let new_id = segment.id_tracker.borrow().total_point_count() as PointOffsetType;
+                    segment.write_point_parts(
+                        new_id,
+                        op_num,
+                        raw_vectors,
+                        &updated_vectors,
+                        payload,
+                        hw_counter,
+                    )?;
+                    segment.id_tracker.borrow_mut().set_link(point_id, new_id)?;
+                    Ok((false, Some(new_id)))
+                },
+                hw_counter,
+            ),
         }
     }
 
@@ -945,10 +1015,11 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -975,12 +1046,14 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         check_vector_name(vector_name, &self.segment_config)?;
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -1007,7 +1080,7 @@ impl SegmentEntry for Segment {
                     .get(vector_name)
                     .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
                 let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                vector_storage.delete_vector(internal_id)
+                vector_storage.delete_vector(internal_id, hw_counter)
             },
             |raw_vectors, _updated_vectors, _payload| {
                 raw_vectors.remove(vector_name);
@@ -1027,10 +1100,11 @@ impl SegmentEntry for Segment {
         full_payload: &Payload,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -1070,10 +1144,11 @@ impl SegmentEntry for Segment {
         key: &Option<JsonPath>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -1111,10 +1186,11 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,
@@ -1146,10 +1222,11 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let internal_id = self
-            .id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred);
+        let internal_id = self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        );
         let Some(internal_id) = internal_id else {
             return Err(OperationError::PointIdError {
                 missed_point_id: point_id,

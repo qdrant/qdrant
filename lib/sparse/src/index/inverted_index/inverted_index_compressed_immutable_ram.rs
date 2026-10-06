@@ -33,8 +33,13 @@ type Storage = common::universal_io::MmapFile;
 impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
     for InvertedIndexCompressedImmutableRam<W>
 {
-    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> UioResult<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_ro(fs, path)?;
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self> {
+        let mmap_inverted_index =
+            InvertedIndexCompressedMmap::<W, S>::open_ro(fs, path, hw_counter)?;
         Self::from_mmap_index(mmap_inverted_index)
     }
 }
@@ -42,8 +47,13 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
     for InvertedIndexCompressedImmutableRam<W>
 {
-    fn open_rw_impl(fs: &<S as UniversalRead>::Fs, path: &Path) -> UioResult<Self> {
-        let mmap_inverted_index = InvertedIndexCompressedMmap::<W, S>::open_rw(fs, path)?;
+    fn open_rw_impl(
+        fs: &<S as UniversalRead>::Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self> {
+        let mmap_inverted_index =
+            InvertedIndexCompressedMmap::<W, S>::open_rw(fs, path, hw_counter)?;
         Self::from_mmap_index(mmap_inverted_index)
     }
 
@@ -248,9 +258,12 @@ mod tests {
             .save(tmp_dir_path.path())
             .unwrap();
 
-        let loaded_inverted_index =
-            InvertedIndexCompressedImmutableRam::<W>::open_ro(&MmapFs, tmp_dir_path.path())
-                .unwrap();
+        let loaded_inverted_index = InvertedIndexCompressedImmutableRam::<W>::open_ro(
+            &MmapFs,
+            tmp_dir_path.path(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(inverted_index_immutable_ram, loaded_inverted_index);
     }
 }

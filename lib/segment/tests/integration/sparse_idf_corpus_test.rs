@@ -63,7 +63,8 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
         id_tracker_memory: None,
     };
 
-    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(path, &config, None, true, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let mut op_num: SeqNumberType = 0;
@@ -236,7 +237,8 @@ fn sparse_idf_statistics_corpus_strategies() {
         payload_storage_type: Default::default(),
         id_tracker_memory: None,
     };
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     segment

@@ -49,7 +49,7 @@ where
         query: &Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        let available_points = self.available_point_count();
+        let available_points = self.available_point_count(hw_counter);
         let estimator = |condition: &Condition| {
             self.condition_cardinality(condition, None, DeferredBehavior::VisibleOnly, hw_counter)
         };
@@ -62,7 +62,7 @@ where
         nested_path: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        let available_points = self.available_point_count();
+        let available_points = self.available_point_count(hw_counter);
         let estimator = |condition: &Condition| {
             self.condition_cardinality(
                 condition,
@@ -140,11 +140,18 @@ where
         Ok(Vec::new())
     }
 
-    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PayloadIndexTelemetry>> {
         self.field_indexes
             .iter()
             .flat_map(|(name, field)| field.iter().map(move |field| (name, field)))
-            .map(|(name, field)| Ok(field.get_telemetry_data()?.set_name(name.to_string())))
+            .map(|(name, field)| {
+                Ok(field
+                    .get_telemetry_data(hw_counter)?
+                    .set_name(name.to_string()))
+            })
             .collect()
     }
 
@@ -170,7 +177,7 @@ where
         let payload_retrievers = self.retrievers_map(payload_vars.clone(), hw_counter)?;
 
         let payload_provider = PayloadProvider::new(self.payload.clone());
-        let total = self.available_point_count();
+        let total = self.available_point_count(hw_counter);
         let condition_checkers = self
             .convert_conditions(
                 conditions,
@@ -200,7 +207,7 @@ where
         is_stopped: &'b AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
-        let point_mappings = self.id_tracker.point_mappings();
+        let point_mappings = self.id_tracker.point_mappings(hw_counter);
 
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
@@ -278,7 +285,11 @@ where
         }
     }
 
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize> {
+    fn indexed_points(
+        &self,
+        field: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         let Some(indexes) = self.field_indexes.get(field) else {
             return Ok(0);
         };
@@ -288,7 +299,7 @@ where
         // We will return minimal number as a worst case, to highlight possible errors in the index early.
         let counts = indexes
             .iter()
-            .map(|index| index.count_indexed_points())
+            .map(|index| index.count_indexed_points(hw_counter))
             .collect::<OperationResult<Vec<_>>>()?;
 
         Ok(counts.into_iter().min().unwrap_or(0))
@@ -307,11 +318,12 @@ where
         field: PayloadKeyTypeRef,
         threshold: usize,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let Some(indexes) = self.field_indexes.get(field) {
             let field_clone = field.to_owned();
             indexes.iter().try_for_each(|field_index| {
-                field_index.for_each_payload_block(threshold, field_clone.clone(), f)
+                field_index.for_each_payload_block(threshold, field_clone.clone(), f, hw_counter)
             })?;
         }
         Ok(())

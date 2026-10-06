@@ -40,16 +40,18 @@ where
         path: PathBuf,
         create_if_missing: bool,
         prefix_index: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = storage_options(N::gridstore_block_size());
-            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open mutable map index on gridstore: {err}"
-                ))
-            })?
+            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking, hw_counter)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable map index on gridstore: {err}"
+                    ))
+                })?
         } else if path.exists() {
-            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking, hw_counter).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
@@ -113,19 +115,26 @@ where
         Ok(())
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if !self.in_memory_index.remove_point(idx) {
             return Ok(());
         }
 
-        self.storage.delete_value(idx)?;
+        self.storage.delete_value(idx, hw_counter)?;
 
         Ok(())
     }
 
     #[inline]
-    pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
-        self.storage.clear().map_err(|err| {
+    pub(in super::super) fn clear(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.clear(hw_counter).map_err(|err| {
             OperationError::service_error(format!("Failed to clear mutable map index: {err}"))
         })
     }
@@ -152,8 +161,8 @@ where
     }
 
     #[inline]
-    pub(in super::super) fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+    pub(in super::super) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
         Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 }

@@ -48,6 +48,7 @@ async fn test_shard_query_rrf_rescoring() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -259,6 +260,7 @@ async fn test_shard_query_vector_rescoring() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -403,6 +405,7 @@ async fn test_shard_query_payload_vector() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

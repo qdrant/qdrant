@@ -34,7 +34,8 @@ impl<'storage> LazyMatrix<'storage> {
         #[cfg(debug_assertions)]
         {
             for (i, vector) in vectors.iter().enumerate() {
-                let stored_vector = storage.get_vector::<Random>(i as u32);
+                let stored_vector =
+                    storage.get_vector::<Random>(i as u32, &hw_measurement_acc.get_counter_cell());
                 assert_eq!(stored_vector.to_owned(), *vector);
             }
         }

@@ -14,8 +14,9 @@ impl<S: UniversalRead> LiveReload for MultivectorOffsetsStorageChunkedRead<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        self.data.live_preload(fs)
+        self.data.live_preload(fs, hw_counter)
     }
 
     /// Pick up offsets a writer appended to the chunked backing.

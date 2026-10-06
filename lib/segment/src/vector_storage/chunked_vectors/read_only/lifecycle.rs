@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     CachedReadFs, Populate, UniversalIoError, UniversalRead, UniversalReadFs,
@@ -19,15 +20,16 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         directory: &Path,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Config file
-        fs.schedule_open(&config_file(directory), None, None);
+        fs.schedule_open(&config_file(directory), None, None, hw_counter);
 
         // Status file
-        fs.schedule_open(&status_file(directory), None, None);
+        fs.schedule_open(&status_file(directory), None, None, hw_counter);
 
         // Chunks
-        preopen_chunks(fs, directory, advice, populate)?;
+        preopen_chunks(fs, directory, advice, populate, hw_counter)?;
         Ok(())
     }
 
@@ -41,9 +43,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         dim: usize,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let config_file = config_file(directory);
-        let config = load_config(fs, &config_file)?.ok_or_else(|| {
+        let config = load_config(fs, &config_file, hw_counter)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "Config file {} is missing",
                 config_file.display(),
@@ -57,8 +60,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             )));
         }
 
-        let len = read_status_len(fs, &status_file(directory))?;
-        let chunks = read_chunks(fs, directory, advice, populate, false)?;
+        let len = read_status_len(fs, &status_file(directory), hw_counter)?;
+        let chunks = read_chunks(fs, directory, advice, populate, false, hw_counter)?;
 
         Ok(Self {
             config,
@@ -84,9 +87,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         vec![config_file(&self.directory)] // TODO: Is config immutable?
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         for chunk in &self.chunks {
-            chunk.populate()?;
+            chunk.populate(hw_counter)?;
         }
         Ok(())
     }
@@ -113,8 +116,9 @@ fn preopen_chunks(
     directory: &Path,
     advice: AdviceSetting,
     populate: Populate,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<(), UniversalIoError> {
-    for listed in fs.list_files(&chunks_prefix(directory))? {
+    for listed in fs.list_files(&chunks_prefix(directory), hw_counter)? {
         let is_chunk = listed
             .path
             .file_name()
@@ -127,6 +131,7 @@ fn preopen_chunks(
                 &listed.path,
                 Some(chunk_open_options(advice, populate, false)),
                 None,
+                hw_counter,
             );
         }
     }

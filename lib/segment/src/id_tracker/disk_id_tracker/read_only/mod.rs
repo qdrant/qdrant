@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::UniversalRead;
 
@@ -65,11 +66,11 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// Manual fallible init (std `OnceLock` has no stable `get_or_try_init`): on a
     /// race both threads read the same on-disk state (`live_reload` needs `&mut`,
     /// so it can't interleave), so the loser's `set` failing is harmless.
-    fn deleted_full(&self) -> OperationResult<&BitVec> {
+    fn deleted_full(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&BitVec> {
         if let Some(materialized) = self.deleted_full.get() {
             return Ok(materialized);
         }
-        let materialized = self.deleted_file.read_all()?.into_owned();
+        let materialized = self.deleted_file.read_all(hw_counter)?.into_owned();
         let _ = self.deleted_full.set(materialized);
         Ok(self.deleted_full.get().expect("just set"))
     }

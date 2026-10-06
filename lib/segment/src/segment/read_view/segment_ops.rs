@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -22,9 +23,10 @@ where
         &self,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         self.id_tracker
-            .internal_id_with_behavior(point_id, deferred_behavior)
+            .internal_id_with_behavior(point_id, deferred_behavior, hw_counter)
             .ok_or(OperationError::PointIdError {
                 missed_point_id: point_id,
             })

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use uuid::Uuid;
 
@@ -30,6 +31,7 @@ where
         uuid: Uuid,
         segment_type: SegmentType,
         is_appendable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> SegmentInfo {
         let mut total_average_vectors_size_bytes: usize = 0;
         let mut num_vectors_total: usize = 0;
@@ -42,11 +44,11 @@ where
             .map(|(key, vector_data)| {
                 let vector_storage = vector_data.vector_storage();
                 let vector_index = vector_data.vector_index();
-                let num_vectors = vector_storage.available_vector_count();
+                let num_vectors = vector_storage.available_vector_count(hw_counter);
                 num_vectors_total += num_vectors;
 
                 let average_vector_size_bytes = vector_index
-                    .size_of_searchable_vectors_in_bytes()
+                    .size_of_searchable_vectors_in_bytes(hw_counter)
                     .checked_div(num_vectors)
                     .unwrap_or(0);
                 total_average_vectors_size_bytes += average_vector_size_bytes;
@@ -71,9 +73,12 @@ where
             })
             .collect();
 
-        let num_points = self.id_tracker.available_point_count();
+        let num_points = self.id_tracker.available_point_count(hw_counter);
         let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
-        let payloads_size_bytes = self.payload_storage.get_storage_size_bytes().unwrap_or(0);
+        let payloads_size_bytes = self
+            .payload_storage
+            .get_storage_size_bytes(hw_counter)
+            .unwrap_or(0);
 
         SegmentInfo {
             uuid,
@@ -83,7 +88,7 @@ where
             num_points,
             num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: Some(self.deferred_deleted_count()),
-            num_deleted_vectors: self.id_tracker.deleted_point_count(),
+            num_deleted_vectors: self.id_tracker.deleted_point_count(hw_counter),
             vectors_size_bytes,  // Considers vector storage, but not indices.
             payloads_size_bytes, // Considers payload storage, but not indices.
             ram_usage_bytes: 0,  // ToDo: Implement.
@@ -102,14 +107,15 @@ where
         uuid: Uuid,
         segment_type: SegmentType,
         is_appendable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SegmentInfo> {
-        let mut info = self.build_size_info(uuid, segment_type, is_appendable);
+        let mut info = self.build_size_info(uuid, segment_type, is_appendable, hw_counter);
         info.index_schema = self
             .payload_index
             .indexed_fields()
             .into_iter()
             .map(|(key, index_schema)| {
-                let points_count = self.payload_index.indexed_points(&key)?;
+                let points_count = self.payload_index.indexed_points(&key, hw_counter)?;
                 Ok((key, PayloadIndexInfo::new(index_schema, points_count)))
             })
             .collect::<OperationResult<_>>()?;
@@ -124,6 +130,7 @@ where
         is_appendable: bool,
         config: &SegmentConfig,
         detail: TelemetryDetail,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SegmentTelemetry> {
         let vector_index_searches = self
             .vector_data
@@ -136,10 +143,10 @@ where
             .collect();
 
         Ok(SegmentTelemetry {
-            info: self.build_info(uuid, segment_type, is_appendable)?,
+            info: self.build_info(uuid, segment_type, is_appendable, hw_counter)?,
             config: config.clone(),
             vector_index_searches,
-            payload_field_indices: self.payload_index.get_telemetry_data()?,
+            payload_field_indices: self.payload_index.get_telemetry_data(hw_counter)?,
         })
     }
 }

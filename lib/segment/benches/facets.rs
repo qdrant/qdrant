@@ -72,7 +72,7 @@ fn build_facet_segment(path: &Path) -> Segment {
     let hw_counter = HardwareCounterCell::new();
     let mut rng = SmallRng::seed_from_u64(SEED);
 
-    let mut segment = build_simple_segment(path, 1, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(path, 1, Distance::Dot, &hw_counter).unwrap();
     let vector = [0.0];
 
     // Uniform: ~1.5 occurrences per unique value (flat distribution).

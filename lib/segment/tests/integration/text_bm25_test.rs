@@ -82,7 +82,14 @@ fn build_text_segment_deferred(
         payload_storage_type: Default::default(),
         id_tracker_memory: None,
     };
-    let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
+    let (mut segment, _) = build_segment(
+        path,
+        &config,
+        deferred_internal_id,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
     let mut op_num: SeqNumberType = 0;
     segment

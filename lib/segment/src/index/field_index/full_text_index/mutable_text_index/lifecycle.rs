@@ -27,21 +27,30 @@ impl MutableFullTextIndex {
         config: TextIndexParams,
         create_if_missing: bool,
         scoring: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Only for the message below: the store takes the path by value.
         let store = if create_if_missing {
-            Blobstore::open_or_create(MmapFs, path.clone(), storage_options(), Populate::Blocking)
-                .map_err(|err| {
+            Blobstore::open_or_create(
+                MmapFs,
+                path.clone(),
+                storage_options(),
+                Populate::Blocking,
+                hw_counter,
+            )
+            .map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable full text index on gridstore: {err}"
                 ))
             })?
         } else if path.exists() {
-            Blobstore::open(MmapFs, path.clone(), Populate::Blocking).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open mutable full text index on gridstore: {err}"
-                ))
-            })?
+            Blobstore::open(MmapFs, path.clone(), Populate::Blocking, hw_counter).map_err(
+                |err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable full text index on gridstore: {err}"
+                    ))
+                },
+            )?
         } else {
             // Files don't exist, cannot load
             return Ok(None);
@@ -99,8 +108,11 @@ impl MutableFullTextIndex {
     }
 
     #[inline]
-    pub(in super::super) fn init(&mut self) -> OperationResult<()> {
-        self.storage.clear().map_err(|err| {
+    pub(in super::super) fn init(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.clear(hw_counter).map_err(|err| {
             OperationError::service_error(
                 format!("Failed to clear mutable full text index: {err}",),
             )
@@ -115,8 +127,8 @@ impl MutableFullTextIndex {
     }
 
     #[inline]
-    pub(in super::super) fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+    pub(in super::super) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
         Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
@@ -177,10 +189,14 @@ impl MutableFullTextIndex {
         Ok(())
     }
 
-    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Update persisted storage
-        if self.inner.inverted_index.remove(id) {
-            self.storage.delete_value(id)?;
+        if self.inner.inverted_index.remove(id, hw_counter) {
+            self.storage.delete_value(id, hw_counter)?;
         }
 
         Ok(())
@@ -223,7 +239,11 @@ impl ValueIndexer for MutableFullTextIndex {
         FullTextIndex::get_value(value)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.remove_point(id, hw_counter)
     }
 }

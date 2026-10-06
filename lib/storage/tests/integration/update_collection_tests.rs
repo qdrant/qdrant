@@ -14,6 +14,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use segment::types::Distance;
@@ -71,6 +72,7 @@ fn update_collection_reject_mid_operation() {
             ),
             FULL_ACCESS,
             None,
+            &HwMeasurementAcc::new(),
         ))
         .unwrap_err();
 
@@ -148,6 +150,7 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
             ChannelService::new(6333, false, None, None),
             0,
             Some(propose_operation_sender),
+            &HwMeasurementAcc::new(),
         )
         .unwrap(),
     );
@@ -188,6 +191,7 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                 ),
                 FULL_ACCESS,
                 None,
+                &HwMeasurementAcc::new(),
             ),
         )
         .unwrap();

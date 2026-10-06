@@ -8,6 +8,9 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use parking_lot::Mutex;
 
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
+use crate::counter::hardware_counter::HardwareCounterCell;
+
 mod async_io;
 
 use crate::mmap::AdviceSetting;
@@ -229,8 +232,11 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
 
 impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
     /// Async counterpart of [`CachedReadFs::cache_file_info`].
-    pub async fn cache_file_info_async(&mut self) -> UioResult<()> {
-        let list = self.fs.list_files_async(&self.prefix_path).await?;
+    pub async fn cache_file_info_async(&mut self, hw_acc: HwMeasurementAcc) -> UioResult<()> {
+        let list = self
+            .fs
+            .list_files_async(&self.prefix_path, hw_acc.clone())
+            .await?;
         self.apply_file_info(list);
         Ok(())
     }
@@ -249,8 +255,8 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     }
 
     /// Take a LIST snapshot of the filesystem and drop prefetched files.
-    fn cache_file_info(&mut self) -> UioResult<()> {
-        let list = self.fs.list_files(&self.prefix_path)?;
+    fn cache_file_info(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        let list = self.fs.list_files(&self.prefix_path, hw_counter)?;
         self.apply_file_info(list);
         Ok(())
     }
@@ -267,6 +273,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
+        hw_counter: &HardwareCounterCell,
     ) {
         let mut files_prefetched = self.files_prefetched.lock();
 
@@ -300,8 +307,11 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         // Clone the fs handle so that the future can own it.
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
-        let mut fut =
-            Box::pin(async move { fs.open_async(path_owned, open_options, open_extra).await });
+        let hw_acc = hw_counter.new_accumulator();
+        let mut fut = Box::pin(async move {
+            fs.open_async(path_owned, open_options, open_extra, hw_acc)
+                .await
+        });
 
         // Poll once, so that real async work begins right away
         let scheduled = match fut.as_mut().now_or_never() {
@@ -317,6 +327,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
+        hw_counter: &HardwareCounterCell,
     ) {
         // Check if their file info is complete and didn't change.
         if self
@@ -332,7 +343,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         }
 
         // Otherwise schedule normally
-        self.schedule_open(path, open_arguments, open_extra)
+        self.schedule_open(path, open_arguments, open_extra, hw_counter)
     }
 
     fn schedule(&self, path: PathBuf, mut fut: BoxFuture<'static, UioResult<Fs::File>>) {
@@ -397,17 +408,21 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         Self::new(Fs::from_context(inner)?, &prefix_path)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
         match &self.files_info {
             Some(_) => Ok(self.cached_list_files(prefix_path)),
-            None => self.fs.list_files(prefix_path),
+            None => self.fs.list_files(prefix_path, hw_counter),
         }
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         match &self.files_info {
             Some(files_info) => Ok(files_info.contains_key(path)),
-            None => self.fs.exists(path),
+            None => self.fs.exists(path, hw_counter),
         }
     }
 
@@ -416,6 +431,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Fs::File> {
         let path = path.as_ref();
 
@@ -424,7 +440,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         // writer must observe the true length), and the snapshot cannot know
         // files this writer created after the LIST.
         if options.writeable {
-            return self.fs.open(path, options, extra);
+            return self.fs.open(path, options, extra, hw_counter);
         }
 
         if let Some(file) = self.files_prefetched.lock().remove(path) {
@@ -457,7 +473,7 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             Some(info) => extra.with_known_len(info.size),
             None => extra,
         };
-        self.fs.open(path, options, extra)
+        self.fs.open(path, options, extra, hw_counter)
     }
 }
 
@@ -486,19 +502,24 @@ where
 {
     type AppendFile = Fs::AppendFile;
 
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
-        self.fs.create(path, expected_length)
+    fn create(
+        &self,
+        path: &Path,
+        expected_length: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.fs.create(path, expected_length, hw_counter)
     }
 
     fn create_dir(&self, path: &Path) -> UioResult<()> {
         self.fs.create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> UioResult<()> {
+    fn remove(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<()> {
         // Drop any prefetched handle so a pooled open cannot resurrect the
         // removed file.
         self.files_prefetched.lock().remove(path);
-        self.fs.remove(path)
+        self.fs.remove(path, hw_counter)
     }
 
     fn remove_dir(&self, path: &Path) -> UioResult<()> {
@@ -508,15 +529,21 @@ where
         self.fs.remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.fs.atomic_save(path, bytes)
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.fs.atomic_save(path, bytes, hw_counter)
     }
 
     fn open_append(
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::AppendFile> {
-        self.fs.open_append(path, options)
+        self.fs.open_append(path, options, hw_counter)
     }
 }

@@ -3,6 +3,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use common::bench_cache::{build_once, cache_path};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
@@ -83,15 +84,22 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         populate: Populate::No,
         advice: AdviceSetting::Global,
     };
-    let storage = fs.open(path, options, Default::default()).unwrap();
+    let storage = fs
+        .open(
+            path,
+            options,
+            Default::default(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
     let mut rng = rand::make_rng::<SmallRng>();
-    assert_eq!(storage.len::<T>().unwrap(), len);
+    assert_eq!(storage.len::<T>(&HardwareCounterCell::new()).unwrap(), len);
 
     let low_mem = std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_some();
 
     if !low_mem {
-        storage.populate().unwrap();
+        storage.populate(&HardwareCounterCell::new()).unwrap();
     }
 
     let prefix = if low_mem { "low-mem/" } else { "" };
@@ -103,7 +111,9 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         b.iter(|| {
             let mut sum = 0u64;
             let offset = rng.random_range(0..len) * size_of::<T>() as u64;
-            let data = storage.read(ReadRange::one(offset), Random).unwrap();
+            let data = storage
+                .read(ReadRange::one(offset), Random, &HardwareCounterCell::new())
+                .unwrap();
             for &item in bytemuck::cast_slice::<T, u64>(&data) {
                 sum = sum.wrapping_add(item);
             }
@@ -122,12 +132,17 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch(ranges, Random, |(), chunk| {
-                    for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                        sum = sum.wrapping_add(item);
-                    }
-                    UioResult::Ok(())
-                })
+                .read_batch(
+                    ranges,
+                    Random,
+                    |(), chunk| {
+                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                            sum = sum.wrapping_add(item);
+                        }
+                        UioResult::Ok(())
+                    },
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
             black_box(sum);
         })
@@ -145,12 +160,17 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch(ranges, Sequential, |(), chunk| {
-                    for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                        sum = sum.wrapping_add(item);
-                    }
-                    UioResult::Ok(())
-                })
+                .read_batch(
+                    ranges,
+                    Sequential,
+                    |(), chunk| {
+                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                            sum = sum.wrapping_add(item);
+                        }
+                        UioResult::Ok(())
+                    },
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
             black_box(sum);
         })
@@ -162,12 +182,17 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
             b.iter(|| {
                 let mut sum = 0u64;
                 storage
-                    .read_batch(ranges_full_file::<T>(), Sequential, |(), chunk| {
-                        for &item in bytemuck::cast_slice::<T, u64>(chunk) {
-                            sum = sum.wrapping_add(item);
-                        }
-                        UioResult::Ok(())
-                    })
+                    .read_batch(
+                        ranges_full_file::<T>(),
+                        Sequential,
+                        |(), chunk| {
+                            for &item in bytemuck::cast_slice::<T, u64>(chunk) {
+                                sum = sum.wrapping_add(item);
+                            }
+                            UioResult::Ok(())
+                        },
+                        &HardwareCounterCell::new(),
+                    )
                     .unwrap();
                 black_box(sum);
             })

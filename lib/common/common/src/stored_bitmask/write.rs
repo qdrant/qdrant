@@ -5,6 +5,7 @@ use std::path::Path;
 use roaring::RoaringBitmap;
 
 use super::format::{BitmaskHeader, Encoding, HEADER_SIZE, MAX_LOGICAL_LEN};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::{UioResult, UniversalIoError, UniversalWriteFs};
 
 /// Atomically persist a bitmask of `logical_len` bits whose set positions are
@@ -17,9 +18,10 @@ pub fn save_bitmask(
     path: &Path,
     logical_len: u64,
     ones: RoaringBitmap,
+    hw_counter: &HardwareCounterCell,
 ) -> UioResult<()> {
     let bytes = bitmask_file_bytes(logical_len, Cow::Owned(ones))?;
-    fs.atomic_save(path, &bytes)
+    fs.atomic_save(path, &bytes, hw_counter)
 }
 
 /// Encode a bitmask of `logical_len` bits whose set positions are `ones` into

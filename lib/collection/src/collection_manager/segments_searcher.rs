@@ -796,7 +796,8 @@ fn execute_batch_search(
         return Err(CollectionError::timeout(timeout, "batch search"));
     };
 
-    let segment_points = read_segment.available_point_count_without_deferred();
+    let segment_points =
+        read_segment.available_point_count_without_deferred(segment_query_context.hw_counter());
     let segment_config = read_segment.config();
 
     let top = if use_sampling {
@@ -943,7 +944,7 @@ mod tests {
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc.clone()),
             TEST_TIMEOUT,
         )
         .await
@@ -1146,7 +1147,7 @@ mod tests {
         use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaParams};
 
         let hw_counter = HardwareCounterCell::new();
-        let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
+        let mut segment = build_simple_segment(path, 4, Distance::Dot, &hw_counter).unwrap();
         let params = TextIndexParams {
             phrase_matching: Some(true),
             ..TextIndexParams::default()

@@ -37,7 +37,7 @@ fn fixture(seed: u64, documents: u32, deleted: &[PointOffsetType]) -> MutableInv
             .unwrap();
     }
     for &idx in deleted {
-        index.remove(idx);
+        index.remove(idx, &hw_counter);
     }
     index
 }
@@ -133,10 +133,17 @@ fn on_disk(
     immutable: &ImmutableInvertedIndex,
     deleted: &BitVec,
 ) -> OnDiskInvertedIndex<MmapFile> {
-    OnDiskInvertedIndex::create(dir.to_path_buf(), immutable).unwrap();
-    OnDiskInvertedIndex::<MmapFile>::open(&MmapFs, dir.to_path_buf(), Populate::No, true, deleted)
-        .unwrap()
-        .unwrap()
+    OnDiskInvertedIndex::create(dir.to_path_buf(), immutable, &HardwareCounterCell::new()).unwrap();
+    OnDiskInvertedIndex::<MmapFile>::open(
+        &MmapFs,
+        dir.to_path_buf(),
+        Populate::No,
+        true,
+        deleted,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap()
 }
 
 fn run<I: InvertedIndex>(
@@ -187,10 +194,11 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
         after_mask.set(idx as usize, true);
     }
     let on_disk = on_disk(dir.path(), &immutable, &after_mask);
-    let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
+    let from_disk =
+        ImmutableInvertedIndex::from_on_disk(&on_disk, &HardwareCounterCell::new()).unwrap();
     for &idx in &deleted_after {
-        mutable.remove(idx);
-        immutable.remove(idx);
+        mutable.remove(idx, &HardwareCounterCell::new());
+        immutable.remove(idx, &HardwareCounterCell::new());
     }
 
     for terms in queries() {
@@ -459,8 +467,8 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
     let mut live = mutable;
     // One document in ten.
     for idx in (0..500).filter(|idx| idx % 10 == 0) {
-        immutable.remove(idx);
-        live.remove(idx);
+        immutable.remove(idx, &hw_counter);
+        live.remove(idx, &hw_counter);
     }
     let terms = ["w0", "w3", "w17", "w30"];
 

@@ -15,6 +15,7 @@ impl<B: DenseVectorBlob> LiveReload for ReadOnlyImmutableDenseVectorStorage<B> {
     fn live_preload<Fs: CachedReadFs<File = B::File>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         // Reload only applies deletes directly from arguments. No file to check.
         Ok(Vec::new())

@@ -25,9 +25,10 @@ impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
         &self,
         operation: CollectionMetaOperations,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         self.general_runtime
-            .block_on(self.perform_collection_meta_op(operation))
+            .block_on(self.perform_collection_meta_op(operation, hw_acc))
     }
 
     /// ## Cancel safety
@@ -36,6 +37,7 @@ impl TableOfContent {
     pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
@@ -67,12 +69,13 @@ impl TableOfContent {
                     &operation.collection_name,
                     operation.create_collection,
                     distribution,
+                    hw_acc,
                 )
                 .await
             }
             CollectionMetaOperations::UpdateCollection(operation) => {
                 log::info!("Updating collection {}", operation.collection_name);
-                self.update_collection(operation).await
+                self.update_collection(operation, hw_acc).await
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
                 log::info!("Deleting collection {}", operation.0);
@@ -85,14 +88,14 @@ impl TableOfContent {
             CollectionMetaOperations::Resharding(collection, operation) => {
                 log::debug!("Resharding {operation:?} of {collection}");
 
-                self.handle_resharding(collection, operation)
+                self.handle_resharding(collection, operation, hw_acc)
                     .await
                     .map(|_| true)
             }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {operation:?} of {collection}");
 
-                self.handle_transfer(collection, operation)
+                self.handle_transfer(collection, operation, hw_acc)
                     .await
                     .map(|()| true)
             }
@@ -129,7 +132,7 @@ impl TableOfContent {
             }
             CollectionMetaOperations::DeleteNamedVector(delete_named_vector) => {
                 log::debug!("Delete named vector {delete_named_vector:?}");
-                self.delete_named_vector(delete_named_vector)
+                self.delete_named_vector(delete_named_vector, hw_acc)
                     .await
                     .map(|()| true)
             }
@@ -150,6 +153,7 @@ impl TableOfContent {
     async fn update_collection(
         &self,
         mut operation: UpdateCollectionOperation,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         let replica_changes = operation.take_shard_replica_changes();
         let collection = self
@@ -224,7 +228,7 @@ impl TableOfContent {
         // stopping the existing optimizers can take a long time (in-flight optimizations are
         // awaited), which would otherwise stall the consensus loop and can take down a cluster.
         if recreate_optimizers {
-            collection.recreate_optimizers_background();
+            collection.recreate_optimizers_background(hw_acc);
         }
         Ok(true)
     }
@@ -350,6 +354,7 @@ impl TableOfContent {
         &self,
         collection_id: CollectionId,
         operation: ReshardingOperation,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
         let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
@@ -394,7 +399,7 @@ impl TableOfContent {
                 };
 
                 collection
-                    .start_resharding(key, consensus, on_finish, on_failure)
+                    .start_resharding(key, consensus, on_finish, on_failure, hw_acc)
                     .await?;
             }
 
@@ -424,6 +429,7 @@ impl TableOfContent {
         &self,
         collection_id: CollectionId,
         transfer_operation: ShardTransferOperations,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
         let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
@@ -521,6 +527,7 @@ impl TableOfContent {
                         temp_dir,
                         on_finish,
                         on_failure,
+                        hw_acc,
                     )
                     .await?;
             }
@@ -603,6 +610,7 @@ impl TableOfContent {
                         temp_dir,
                         on_finish,
                         on_failure,
+                        hw_acc,
                     )
                     .await?;
             }
@@ -779,10 +787,14 @@ impl TableOfContent {
         Ok(())
     }
 
-    async fn delete_named_vector(&self, operation: DeleteNamedVector) -> Result<(), StorageError> {
+    async fn delete_named_vector(
+        &self,
+        operation: DeleteNamedVector,
+        hw_acc: &HwMeasurementAcc,
+    ) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .delete_named_vector(operation.vector_name)
+            .delete_named_vector(operation.vector_name, hw_acc)
             .await?;
 
         Ok(())

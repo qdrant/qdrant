@@ -157,16 +157,24 @@ pub fn run_bench(
 
             run_bench2(
                 c.benchmark_group(format!("search/ram_{}/{name}", $name)),
-                &InvertedIndexCompressedImmutableRam::<$type>::open_ro(&MmapFs, &index_path)
-                    .unwrap(),
+                &InvertedIndexCompressedImmutableRam::<$type>::open_ro(
+                    &MmapFs,
+                    &index_path,
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type, MmapFile>::open_ro(&MmapFs, &index_path)
-                    .unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open_ro(
+                    &MmapFs,
+                    &index_path,
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );

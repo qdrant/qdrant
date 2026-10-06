@@ -24,7 +24,8 @@ mod tests {
     #[test]
     fn test_remove_idempotent() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
-        let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
+        let mut builder =
+            ImmutableNullIndex::builder(dir.path(), 0, &HardwareCounterCell::new()).unwrap();
         let hw_counter = HardwareCounterCell::new();
 
         let null_value = Value::Null;
@@ -40,7 +41,7 @@ mod tests {
             .add_point(3, &[&Value::Bool(true)], &hw_counter)
             .unwrap();
 
-        let mut index = builder.finalize().unwrap();
+        let mut index = builder.finalize(&hw_counter).unwrap();
 
         let key = JsonPath::new("test");
 
@@ -231,19 +232,20 @@ mod tests {
     #[test]
     fn test_remove_reopen() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
-        let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
+        let mut builder =
+            ImmutableNullIndex::builder(dir.path(), 0, &HardwareCounterCell::new()).unwrap();
         let hw_counter = HardwareCounterCell::new();
         builder.add_point(0, &[&json!(true)], &hw_counter).unwrap();
         builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
         builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
 
-        let index = builder.finalize().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
 
         let mut deleted = BitVec::repeat(false, 3);
         deleted.set(1, true);
         drop(index);
 
-        let reopened_index = ImmutableNullIndex::open(dir.path(), 3, &deleted)
+        let reopened_index = ImmutableNullIndex::open(dir.path(), 3, &deleted, &hw_counter)
             .unwrap()
             .unwrap();
 
@@ -267,11 +269,11 @@ mod tests {
                 .collect_vec(),
             vec![0, 2],
         );
-        assert_eq!(reopened_index.count_indexed_points().unwrap(), 3);
+        assert_eq!(reopened_index.count_indexed_points(&hw_counter).unwrap(), 3);
 
         // Direct API parity: deleted point reads as empty; live points don't.
-        assert!(reopened_index.values_is_empty(1).unwrap());
-        assert!(!reopened_index.values_is_empty(0).unwrap());
-        assert!(!reopened_index.values_is_empty(2).unwrap());
+        assert!(reopened_index.values_is_empty(1, &hw_counter).unwrap());
+        assert!(!reopened_index.values_is_empty(0, &hw_counter).unwrap());
+        assert!(!reopened_index.values_is_empty(2, &hw_counter).unwrap());
     }
 }

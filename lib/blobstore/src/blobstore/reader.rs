@@ -44,20 +44,24 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs: &Fs,
         base_path: PathBuf,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         // schedule config file, so the config read in `open` is served from the prefetch pool
         let config_path = base_path.join(CONFIG_FILENAME);
-        fs.schedule_open(&config_path, None, None);
+        fs.schedule_open(&config_path, None, None, hw_counter);
 
         // Don't read config now; instead, probe all modes and ignore not-found errors
         for mode in Mode::iter() {
             match mode {
                 Mode::Mutable => {
-                    GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
+                    GridstoreReader::<V, S>::preopen(fs, &base_path, populate, hw_counter)
+                        .ok_not_found()?;
                 }
                 Mode::AppendOnly => {
-                    LogstoreReader::<V, S, TrackerEnum<S>>::preopen(fs, &base_path, populate)
-                        .ok_not_found()?;
+                    LogstoreReader::<V, S, TrackerEnum<S>>::preopen(
+                        fs, &base_path, populate, hw_counter,
+                    )
+                    .ok_not_found()?;
                 }
             }
         }
@@ -76,14 +80,15 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         fs: &Fs,
         base_path: PathBuf,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        match read_config(fs, &base_path)? {
+        match read_config(fs, &base_path, hw_counter)? {
             StorageConfig::Mutable(config) => {
-                let reader = GridstoreReader::open(fs, base_path, config, populate)?;
+                let reader = GridstoreReader::open(fs, base_path, config, populate, hw_counter)?;
                 Ok(Self::Gridstore(reader))
             }
             StorageConfig::AppendOnly(config) => {
-                let reader = LogstoreReader::open(fs, base_path, config, populate)?;
+                let reader = LogstoreReader::open(fs, base_path, config, populate, hw_counter)?;
                 Ok(Self::Logstore(reader))
             }
         }
@@ -113,10 +118,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// In mutable mode this is the writer-maintained count read from the stored tracker header,
     /// as of the last [`Self::live_reload`] — see
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
-    pub fn max_point_offset(&self) -> Result<PointOffset> {
+    pub fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         match self {
-            Self::Gridstore(reader) => reader.max_point_offset(),
-            Self::Logstore(reader) => reader.max_point_offset(),
+            Self::Gridstore(reader) => reader.max_point_offset(hw_counter),
+            Self::Logstore(reader) => reader.max_point_offset(hw_counter),
         }
     }
 
@@ -171,6 +176,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -179,10 +185,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     {
         match self {
             Self::Gridstore(reader) => {
-                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
             Self::Logstore(reader) => {
-                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
         }
     }
@@ -194,6 +200,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -201,12 +208,18 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         E: From<BlobstoreError>,
     {
         match self {
-            Self::Gridstore(reader) => {
-                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
-            }
-            Self::Logstore(reader) => {
-                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
-            }
+            Self::Gridstore(reader) => reader.read_values_bytes::<P, U, E>(
+                point_offsets,
+                callback,
+                hw_counter_cell,
+                hw_counter,
+            ),
+            Self::Logstore(reader) => reader.read_values_bytes::<P, U, E>(
+                point_offsets,
+                callback,
+                hw_counter_cell,
+                hw_counter,
+            ),
         }
     }
 
@@ -223,10 +236,11 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
         match self {
-            Self::Gridstore(reader) => reader.live_preload(fs),
-            Self::Logstore(reader) => reader.live_preload(fs),
+            Self::Gridstore(reader) => reader.live_preload(fs, hw_counter),
+            Self::Logstore(reader) => reader.live_preload(fs, hw_counter),
         }
     }
 
@@ -238,10 +252,14 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     ///
-    pub fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+    pub fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         match self {
-            Self::Gridstore(reader) => reader.live_reload(fs),
-            Self::Logstore(reader) => reader.live_reload(fs),
+            Self::Gridstore(reader) => reader.live_reload(fs, hw_counter),
+            Self::Logstore(reader) => reader.live_reload(fs, hw_counter),
         }
     }
 }
@@ -271,9 +289,10 @@ impl<V, S: UniversalRead> BlobstoreReader<V, S> {
 pub(super) fn read_config<Fs: UniversalReadFs>(
     fs: &Fs,
     base_path: &std::path::Path,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<StorageConfig> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig = read_json_via(fs, &config_path)?;
+    let config: StorageConfig = read_json_via(fs, &config_path, hw_counter)?;
     config
         .validate()
         .map_err(|message| invalid_config_error(base_path, message))?;

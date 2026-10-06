@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, StoredStruct, UniversalKind, UniversalReadFs, UniversalWrite,
@@ -28,11 +29,12 @@ where
         dim: usize,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(directory)?;
         let status_path = status_file(directory);
-        if !fs.exists(&status_path)? {
-            fs.create(&status_path, size_of::<Status>())?;
+        if !fs.exists(&status_path, hw_counter)? {
+            fs.create(&status_path, size_of::<Status>(), hw_counter)?;
         }
 
         let status: StoredStruct<S, Status> = StoredStruct::open(
@@ -45,10 +47,12 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
 
-        let config = ensure_config::<T, _>(&fs, directory, dim, populate.to_bool::<S>())?;
-        let chunks = read_chunks(&fs, directory, advice, populate, true)?;
+        let config =
+            ensure_config::<T, _>(&fs, directory, dim, populate.to_bool::<S>(), hw_counter)?;
+        let chunks = read_chunks(&fs, directory, advice, populate, true, hw_counter)?;
         let inner = ReadOnlyChunkedVectors {
             config,
             len: status.len,

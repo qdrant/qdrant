@@ -8,6 +8,7 @@ mod memory_reporter;
 pub mod mutable_id_tracker;
 pub mod point_mappings;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 pub use format_detection::IdTrackerFormat;
 pub use id_tracker_base::*;
@@ -48,14 +49,17 @@ pub struct MergedPointId {
 pub fn for_each_unique_point<'a>(
     id_trackers: impl Iterator<Item = &'a (impl IdTracker + ?Sized + 'a)>,
     mut f: impl FnMut(MergedPointId),
+    hw_counter: &HardwareCounterCell,
 ) {
     let mut iter = id_trackers
         .enumerate()
         .map(|(segment_index, id_tracker)| {
-            id_tracker.point_mappings().iter_from(None).filter_map(
-                move |(external_id, internal_id)| {
-                    let version = id_tracker.internal_version(internal_id);
-                    let is_deleted = id_tracker.is_deleted_point(internal_id);
+            id_tracker
+                .point_mappings(hw_counter)
+                .iter_from(None, hw_counter)
+                .filter_map(move |(external_id, internal_id)| {
+                    let version = id_tracker.internal_version(internal_id, hw_counter);
+                    let is_deleted = id_tracker.is_deleted_point(internal_id, hw_counter);
                     // a point without a version had an interrupted flush sequence and should be discarded
                     version.map(|version| MergedPointId {
                         external_id,
@@ -64,8 +68,7 @@ pub fn for_each_unique_point<'a>(
                         version,
                         is_deleted,
                     })
-                },
-            )
+                })
         })
         .kmerge_by(|a, b| a.external_id < b.external_id);
 
@@ -133,15 +136,23 @@ mod tests {
         // ext 7: active@2 is the pre-mutation copy (version 5); deferred@9 is
         // the latest in-place mutation (version 8). The active is shadowed.
         tracker.set_link(p7, 2).unwrap();
-        tracker.set_internal_version(2, 5).unwrap();
+        tracker
+            .set_internal_version(2, 5, &HardwareCounterCell::new())
+            .unwrap();
         tracker.set_link(p7, 9).unwrap();
-        tracker.set_internal_version(9, 8).unwrap();
+        tracker
+            .set_internal_version(9, 8, &HardwareCounterCell::new())
+            .unwrap();
 
         let trackers = [tracker];
         let mut merged = Vec::new();
-        for_each_unique_point(trackers.iter(), |m| {
-            merged.push((m.external_id, m.internal_id, m.version));
-        });
+        for_each_unique_point(
+            trackers.iter(),
+            |m| {
+                merged.push((m.external_id, m.internal_id, m.version));
+            },
+            &HardwareCounterCell::new(),
+        );
 
         // The merge must carry the latest (deferred) copy so the mutation
         // survives optimization. It instead yields the stale active copy
@@ -159,7 +170,9 @@ mod tests {
         let mut rand = StdRng::seed_from_u64(42);
 
         let id_trackers = (0..tracker_count)
-            .map(|_| InMemoryIdTracker::random(&mut rand, 1000, 500, 10))
+            .map(|_| {
+                InMemoryIdTracker::random(&mut rand, 1000, 500, 10, &HardwareCounterCell::new())
+            })
             .collect_vec();
 
         let mut collisions = 0;
@@ -167,9 +180,15 @@ mod tests {
         // Naive HashMap-based implementation of for_each_unique_point.
         let mut expected = HashMap::<ExtendedPointId, MergedPointId>::new();
         for (tracker_index, id_tracker) in id_trackers.iter().enumerate() {
-            for (external_id, internal_id) in id_tracker.point_mappings().iter_from(None) {
-                let version = id_tracker.internal_version(internal_id).unwrap();
-                let is_deleted = id_tracker.is_deleted_point(internal_id);
+            for (external_id, internal_id) in id_tracker
+                .point_mappings(&HardwareCounterCell::new())
+                .iter_from(None, &HardwareCounterCell::new())
+            {
+                let version = id_tracker
+                    .internal_version(internal_id, &HardwareCounterCell::new())
+                    .unwrap();
+                let is_deleted =
+                    id_tracker.is_deleted_point(internal_id, &HardwareCounterCell::new());
                 let merged_point_id = MergedPointId {
                     external_id,
                     tracker_index,
@@ -207,13 +226,17 @@ mod tests {
         // deleted, so drop those from the expected set before comparing.
         expected.retain(|_, v| !v.is_deleted);
 
-        for_each_unique_point(id_trackers.iter(), |merged_point_id| {
-            let v = expected.remove(&merged_point_id.external_id).unwrap();
-            assert_eq!(merged_point_id.tracker_index, v.tracker_index);
-            assert_eq!(merged_point_id.internal_id, v.internal_id);
-            assert_eq!(merged_point_id.version, v.version);
-            assert!(!merged_point_id.is_deleted);
-        });
+        for_each_unique_point(
+            id_trackers.iter(),
+            |merged_point_id| {
+                let v = expected.remove(&merged_point_id.external_id).unwrap();
+                assert_eq!(merged_point_id.tracker_index, v.tracker_index);
+                assert_eq!(merged_point_id.internal_id, v.internal_id);
+                assert_eq!(merged_point_id.version, v.version);
+                assert!(!merged_point_id.is_deleted);
+            },
+            &HardwareCounterCell::new(),
+        );
 
         assert!(expected.is_empty());
     }

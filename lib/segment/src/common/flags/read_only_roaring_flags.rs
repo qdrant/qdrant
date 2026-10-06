@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -64,14 +65,16 @@ fn open_options(populate: Populate) -> OpenOptions {
 fn read_status_len<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     directory: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> UioResult<usize> {
     let file = fs.open(
         status_file(directory),
         open_options(Populate::No),
         Default::default(),
+        hw_counter,
     )?;
     let status = TypedStorage::<S, DynamicFlagsStatus>::new(file);
-    Ok(status.read_whole()?[0].len())
+    Ok(status.read_whole(hw_counter)?[0].len())
 }
 
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
@@ -82,16 +85,18 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         fs: &impl CachedReadFs<File = S>,
         directory: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Status file.
         let status_path = status_file(directory);
-        if !fs.exists(&status_path)? {
+        if !fs.exists(&status_path, hw_counter)? {
             return Ok(false);
         }
         fs.schedule_open(
             &status_path,
             Some(open_options(Populate::PreferBackground)),
             None,
+            hw_counter,
         );
 
         // Bitslice
@@ -99,6 +104,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
+            hw_counter,
         );
 
         Ok(true)
@@ -114,9 +120,10 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // A missing status file means the index isn't present on disk.
-        let Some(len) = read_status_len::<S>(fs, directory).ok_not_found()? else {
+        let Some(len) = read_status_len::<S>(fs, directory, hw_counter).ok_not_found()? else {
             return Ok(None);
         };
 
@@ -125,6 +132,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             directory.join(FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?;
 
         Ok(Some(Self {
@@ -142,7 +150,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     /// to the first query rather than paid per segment open — many segments
     /// hold flag indexes (every payload field carries a null index) that no
     /// query ever touches.
-    fn bitmap(&self) -> OperationResult<&RoaringBitmap> {
+    fn bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
         // `OnceLock::get_or_try_init` is still unstable, so build outside the
         // lock and let `get_or_init` arbitrate. A racing thread's bitmap is
         // simply dropped: both are built from the same bytes.
@@ -151,14 +159,20 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         }
 
         let bitmap = RoaringBitmap::from_sorted_iter(
-            self.storage.iter_ones()?.map(|i| i as PointOffsetType),
+            self.storage
+                .iter_ones(hw_counter)?
+                .map(|i| i as PointOffsetType),
         )
         .expect("iter_ones iterates in sorted order");
 
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let directory = self.directory.as_path();
 
         // Bitslice
@@ -172,6 +186,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             &directory.join(FLAGS_FILE),
             Some(open_options(populate)),
             None,
+            hw_counter,
         );
 
         // Status file.
@@ -179,6 +194,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             &status_file(directory),
             Some(open_options(Populate::PreferBackground)),
             None,
+            hw_counter,
         );
     }
 
@@ -200,18 +216,23 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     /// the eventual first scan reads the fresh storage installed here.
     ///
     /// [1]: crate::common::live_reload::LiveReload
-    pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
+    pub fn live_reload(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if let Some(storage) = StoredBitSlice::<S>::open(
             fs,
             self.directory.join(FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         {
             if let Some(bitmap) = self.bitmap.get_mut() {
                 *bitmap = RoaringBitmap::from_sorted_iter(
-                    storage.iter_ones()?.map(|i| i as PointOffsetType),
+                    storage.iter_ones(hw_counter)?.map(|i| i as PointOffsetType),
                 )
                 .expect("iter_ones iterates in sorted order");
             }
@@ -223,7 +244,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         // length-driven readers (the null index's `iter_falses`) stay correct.
         // Once the index exists its status file always does, so absence here is
         // a genuine not-found (segment removed mid-reload), not a lazy file.
-        if let Some(new_len) = read_status_len(fs, &self.directory).ok_unchanged()? {
+        if let Some(new_len) = read_status_len(fs, &self.directory, hw_counter).ok_unchanged()? {
             self.len = new_len;
         }
 
@@ -236,8 +257,8 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
         self.len
     }
 
-    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
-        self.bitmap()
+    fn get_bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
+        self.bitmap(hw_counter)
     }
 
     fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap> {
@@ -282,9 +303,17 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
-        writer.set_len(&MmapFs, 100).unwrap();
-        writer.set(5, true).unwrap();
+        let mut writer = DynamicStoredFlags::<MmapFile>::open(
+            &MmapFs,
+            &dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        writer
+            .set_len(&MmapFs, 100, &HardwareCounterCell::new())
+            .unwrap();
+        writer.set(5, true, &HardwareCounterCell::new()).unwrap();
         writer.flusher()().unwrap();
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
@@ -292,25 +321,38 @@ mod tests {
             remote: Default::default(),
         })
         .unwrap();
-        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
-            .unwrap()
-            .unwrap();
+        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(
+            &cache_fs,
+            &dir,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
 
         // Materialize the bitmap: scans (and locally caches) the whole
         // preallocated flags file — the pre-write state this test must escape.
-        assert!(flags.get_bitmap().unwrap().contains(5));
+        assert!(
+            flags
+                .get_bitmap(&HardwareCounterCell::new())
+                .unwrap()
+                .contains(5)
+        );
         assert_eq!(flags.len(), 100);
 
         // In-place bit writes within the already-cached capacity, plus growth.
-        writer.set(6, true).unwrap();
-        writer.set(50, true).unwrap();
-        writer.set(5, false).unwrap();
-        writer.set_len(&MmapFs, 120).unwrap();
+        writer.set(6, true, &HardwareCounterCell::new()).unwrap();
+        writer.set(50, true, &HardwareCounterCell::new()).unwrap();
+        writer.set(5, false, &HardwareCounterCell::new()).unwrap();
+        writer
+            .set_len(&MmapFs, 120, &HardwareCounterCell::new())
+            .unwrap();
         writer.flusher()().unwrap();
 
-        flags.live_reload(&cache_fs).unwrap();
+        flags
+            .live_reload(&cache_fs, &HardwareCounterCell::new())
+            .unwrap();
 
-        let bitmap = flags.get_bitmap().unwrap();
+        let bitmap = flags.get_bitmap(&HardwareCounterCell::new()).unwrap();
         assert!(bitmap.contains(6));
         assert!(bitmap.contains(50));
         assert!(
@@ -331,9 +373,17 @@ mod tests {
         fs_err::create_dir_all(&dir).unwrap();
         fs_err::create_dir_all(&local_root).unwrap();
 
-        let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
-        writer.set_len(&MmapFs, 100).unwrap();
-        writer.set(5, true).unwrap();
+        let mut writer = DynamicStoredFlags::<MmapFile>::open(
+            &MmapFs,
+            &dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        writer
+            .set_len(&MmapFs, 100, &HardwareCounterCell::new())
+            .unwrap();
+        writer.set(5, true, &HardwareCounterCell::new()).unwrap();
         writer.flusher()().unwrap();
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
@@ -341,17 +391,23 @@ mod tests {
             remote: Default::default(),
         })
         .unwrap();
-        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
-            .unwrap()
-            .unwrap();
+        let mut flags = ReadOnlyRoaringFlags::<DiskCache<MmapFile>>::open(
+            &cache_fs,
+            &dir,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
 
         // No `get_bitmap` here: the bitmap stays unmaterialized.
-        writer.set(6, true).unwrap();
+        writer.set(6, true, &HardwareCounterCell::new()).unwrap();
         writer.flusher()().unwrap();
 
-        flags.live_reload(&cache_fs).unwrap();
+        flags
+            .live_reload(&cache_fs, &HardwareCounterCell::new())
+            .unwrap();
 
-        let bitmap = flags.get_bitmap().unwrap();
+        let bitmap = flags.get_bitmap(&HardwareCounterCell::new()).unwrap();
         assert!(bitmap.contains(5));
         assert!(bitmap.contains(6));
     }

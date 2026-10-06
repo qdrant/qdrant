@@ -27,11 +27,13 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         &self,
         point_ids: impl IntoIterator<Item = PointIdType>,
         callback: impl FnMut(PointIdType, PointOffsetType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.id_tracker.borrow().resolve_external_ids(
             point_ids,
             DeferredBehavior::WithDeferred,
             callback,
+            hw_counter,
         )
     }
 
@@ -43,6 +45,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     pub fn point_versions(
         &self,
         internal_ids: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashMap<PointOffsetType, SeqNumberType>> {
         let mut versions = AHashMap::with_capacity(internal_ids.len());
 
@@ -51,6 +54,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             |internal_id, version| {
                 versions.insert(internal_id, version);
             },
+            hw_counter,
         )?;
 
         Ok(versions)
@@ -103,6 +107,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                     }
                     stored[position].vectors.push((vector_name.clone(), bytes));
                 },
+                hw_counter,
             )?;
         }
 

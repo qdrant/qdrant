@@ -76,7 +76,9 @@ where
         >,
         mut hardware_counter: HardwareCounterCell,
     ) -> Result<Self, InternalScorerUnsupported> {
-        let Some(query) = quantized_multivector_storage.encode_internal_vector(point_id) else {
+        let Some(query) =
+            quantized_multivector_storage.encode_internal_vector(point_id, &hardware_counter)
+        else {
             return Err(InternalScorerUnsupported(hardware_counter));
         };
 
@@ -113,7 +115,9 @@ where
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
+        let multi_vector_offset = self
+            .quantized_multivector_storage
+            .get_offset(idx, &self.hardware_counter);
         let sub_vectors_count = multi_vector_offset.count as usize;
         self.hardware_counter.vector_io_read().incr_delta(
             size_of::<MultivectorOffset>()

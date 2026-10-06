@@ -13,6 +13,7 @@ use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::CollectionError;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -43,6 +44,7 @@ async fn test_set_resharding_up_replica_dead_drops_shard_and_clears_state() {
             Box::new(NoopReshardingConsensus),
             std::future::ready(()),
             std::future::ready(()),
+            &HwMeasurementAcc::new(),
         )
         .await
         .expect("start_resharding up must succeed");

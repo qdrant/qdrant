@@ -86,14 +86,18 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> Query
         debug_assert_eq!(ids.len(), scores.len());
 
         self.vector_storage
-            .for_each_in_sparse_batch(ids, |idx, vector| {
-                // not exactly correct for Gridstore where the indices are compressed into u8
-                self.hardware_counter
-                    .vector_io_read()
-                    .incr_delta(vector.indices.len() + vector.values.len());
+            .for_each_in_sparse_batch(
+                ids,
+                |idx, vector| {
+                    // not exactly correct for Gridstore where the indices are compressed into u8
+                    self.hardware_counter
+                        .vector_io_read()
+                        .incr_delta(vector.indices.len() + vector.values.len());
 
-                scores[idx] = self.score(&vector);
-            })
+                    scores[idx] = self.score(&vector);
+                },
+                &self.hardware_counter,
+            )
             .expect("sparse vectors read");
     }
 

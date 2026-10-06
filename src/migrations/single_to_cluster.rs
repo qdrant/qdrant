@@ -8,6 +8,7 @@ use collection::collection_state::State;
 use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation, CreateShardKey,
     SetShardReplicaState,
@@ -27,6 +28,7 @@ pub async fn handle_existing_collections(
     dispatcher_arc: Arc<Dispatcher>,
     this_peer_id: PeerId,
     collections: Vec<String>,
+    hw_acc: &HwMeasurementAcc,
 ) {
     let full_access = Access::full("Migration from single to cluster");
     let full_auth = Auth::new_internal(full_access.clone());
@@ -141,7 +143,7 @@ pub async fn handle_existing_collections(
 
         for operation in consensus_operations {
             let _res = dispatcher_arc
-                .submit_collection_meta_op(operation, full_auth.clone(), None)
+                .submit_collection_meta_op(operation, full_auth.clone(), None, hw_acc)
                 .await;
         }
 
@@ -158,6 +160,7 @@ pub async fn handle_existing_collections(
                         }),
                         full_auth.clone(),
                         None,
+                        hw_acc,
                     )
                     .await;
             }

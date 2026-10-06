@@ -20,9 +20,10 @@ impl MutableNullIndex {
     pub fn builder(
         path: &Path,
         total_point_count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<MutableNullIndexBuilder> {
         Ok(MutableNullIndexBuilder(
-            Self::open(path, total_point_count, true)?.ok_or_else(|| {
+            Self::open(path, total_point_count, true, hw_counter)?.ok_or_else(|| {
                 OperationError::service_error(format!(
                     "Failed to create and open mutable null index at path: {}",
                     path.display(),
@@ -41,6 +42,7 @@ impl MutableNullIndex {
         path: &Path,
         total_point_count: usize,
         create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
 
@@ -49,15 +51,20 @@ impl MutableNullIndex {
             return Ok(None);
         }
 
-        Ok(Some(Self::open_or_create(path, total_point_count)?))
+        Ok(Some(Self::open_or_create(
+            path,
+            total_point_count,
+            hw_counter,
+        )?))
     }
 
     pub(in super::super) fn open_immutable(
         path: &Path,
         total_point_count: usize,
         deleted: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        let mutable_null_index = Self::open(path, total_point_count, false)?;
+        let mutable_null_index = Self::open(path, total_point_count, false, hw_counter)?;
         match mutable_null_index {
             Some(mut mutable_null_index) => {
                 for pos in deleted.iter_ones() {
@@ -69,7 +76,11 @@ impl MutableNullIndex {
         }
     }
 
-    fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
+    fn open_or_create(
+        path: &Path,
+        total_point_count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create mutable-null-index directory: {err}, path: {path:?}"
@@ -81,6 +92,7 @@ impl MutableNullIndex {
             &path.join(HAS_VALUES_DIRNAME),
             FlagsMode::from_feature_flags(),
             Populate::No,
+            hw_counter,
         )?;
 
         let is_null_flags = RoaringFlags::open_or_create(
@@ -88,6 +100,7 @@ impl MutableNullIndex {
             &path.join(IS_NULL_DIRNAME),
             FlagsMode::from_feature_flags(),
             Populate::No,
+            hw_counter,
         )?;
 
         let storage = Storage {
@@ -168,9 +181,9 @@ impl PayloadFieldIndex for MutableNullIndex {
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
-        let flush_has_values = self.storage.has_values_flags.flusher();
-        let flush_is_null = self.storage.is_null_flags.flusher();
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let flush_has_values = self.storage.has_values_flags.flusher(hw_counter);
+        let flush_is_null = self.storage.is_null_flags.flusher(hw_counter);
 
         Box::new(move || {
             flush_has_values()?;
@@ -193,7 +206,7 @@ pub struct MutableNullIndexBuilder(pub(super) MutableNullIndex);
 impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
     type FieldIndexType = MutableNullIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // After Self is created, it is already initialized
         Ok(())
     }
@@ -207,9 +220,9 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         self.0.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         // Flush any remaining buffered updates
-        self.0.flusher()()?;
+        self.0.flusher(hw_counter)()?;
         Ok(self.0)
     }
 }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::bitvec::BitSliceExt as _;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::PointOffsetType;
 use itertools::EitherOrBoth;
@@ -48,6 +49,7 @@ pub(in crate::index::hnsw_index) struct OldIndex<'a> {
 
 impl<'a> OldIndexCandidate<'a> {
     /// Evaluate whether we can use the old index.
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn evaluate(
         feature_flags: &FeatureFlags,
         old_index: &'a Arc<AtomicRefCell<VectorIndexEnum>>,
@@ -56,6 +58,7 @@ impl<'a> OldIndexCandidate<'a> {
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         id_tracker: &IdTrackerEnum,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Self> {
         if !feature_flags.incremental_hnsw_building {
             return None;
@@ -89,9 +92,14 @@ impl<'a> OldIndexCandidate<'a> {
         let old_graph = match old_index.graph.as_direct() {
             Some(graph) => graph,
             None => reopened_graph.insert(
-                GraphLayers::load(&old_index.path, GraphLinksResidency::Cold, false)
-                    .inspect_err(|err| log::warn!("Failed to reopen the old HNSW graph: {err}"))
-                    .ok()?,
+                GraphLayers::load(
+                    &old_index.path,
+                    GraphLinksResidency::Cold,
+                    false,
+                    hw_counter,
+                )
+                .inspect_err(|err| log::warn!("Failed to reopen the old HNSW graph: {err}"))
+                .ok()?,
             ),
         };
 
@@ -100,7 +108,7 @@ impl<'a> OldIndexCandidate<'a> {
 
         let healing_enabled = hnsw_global_config.healing_threshold > 0.0;
 
-        if old_id_tracker.deleted_point_count() != 0 {
+        if old_id_tracker.deleted_point_count(hw_counter) != 0 {
             // Old index has deleted points.
             if !healing_enabled {
                 return None;
@@ -122,8 +130,12 @@ impl<'a> OldIndexCandidate<'a> {
         // If we have `in both` case, we need to fill the `old_to_new` mapping.
         // Otherwise, we are interested in counts of "missing" points - which absence in the new
         for item in itertools::merge_join_by(
-            id_tracker.point_mappings().iter_from(None),
-            old_id_tracker.point_mappings().iter_from(None),
+            id_tracker
+                .point_mappings(hw_counter)
+                .iter_from(None, hw_counter),
+            old_id_tracker
+                .point_mappings(hw_counter)
+                .iter_from(None, hw_counter),
             |(new_external_id, _), (old_external_id, _)| new_external_id.cmp(old_external_id),
         ) {
             let (new_offset, old_offset): (Option<PointOffsetType>, Option<PointOffsetType>) =
@@ -151,8 +163,8 @@ impl<'a> OldIndexCandidate<'a> {
                     }
                 }
                 (Some(new_offset), Some(old_offset)) => {
-                    let new_version = id_tracker.internal_version(new_offset);
-                    let old_version = old_id_tracker.internal_version(old_offset);
+                    let new_version = id_tracker.internal_version(new_offset, hw_counter);
+                    let old_version = old_id_tracker.internal_version(old_offset, hw_counter);
 
                     if old_version == new_version {
                         old_to_new[old_offset as usize] = Some(new_offset);
@@ -173,7 +185,9 @@ impl<'a> OldIndexCandidate<'a> {
         // Since loop 1 doesn't detect deleted points, we need to check them explicitly.
         for old_offset in 0..old_id_tracker.total_point_count() {
             let old_offset = old_offset as PointOffsetType;
-            if old_id_tracker.is_deleted_point(old_offset) && old_graph_has_point(old_offset) {
+            if old_id_tracker.is_deleted_point(old_offset, hw_counter)
+                && old_graph_has_point(old_offset)
+            {
                 missing_points += 1;
                 if !healing_enabled {
                     return None;
@@ -205,9 +219,13 @@ impl<'a> OldIndexCandidate<'a> {
         })
     }
 
-    pub(super) fn reuse(self, total_vector_count: usize) -> OldIndex<'a> {
+    pub(super) fn reuse(
+        self,
+        total_vector_count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OldIndex<'a> {
         if let Some(graph) = &self.reopened_graph
-            && let Err(err) = graph.links.populate()
+            && let Err(err) = graph.links.populate(hw_counter)
         {
             log::debug!("Failed to populate the old HNSW graph links: {err}");
         }

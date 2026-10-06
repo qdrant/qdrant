@@ -161,6 +161,7 @@ impl ShardReplicaSet {
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         init_state: Option<ReplicaState>,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
         let local = if local {
@@ -175,6 +176,7 @@ impl ShardReplicaSet {
                 search_runtime.clone(),
                 optimizer_resource_budget.clone(),
                 effective_optimizers_config.clone(),
+                hw_acc,
             )
             .await?;
             Some(Shard::Local(shard))
@@ -257,6 +259,7 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
+        hw_acc: &HwMeasurementAcc,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -310,6 +313,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
+                    hw_acc,
                 )
                 .await;
 
@@ -387,10 +391,10 @@ impl ShardReplicaSet {
     /// signals the periodic flush worker to stop but never triggers a final flush, so
     /// tests that need on-disk consistency without waiting for the periodic tick use this.
     #[cfg(test)]
-    pub(crate) async fn force_flush_local_for_test(&self) {
+    pub(crate) async fn force_flush_local_for_test(&self, hw_acc: &HwMeasurementAcc) {
         use crate::shards::shard::Shard;
         if let Some(Shard::Local(local)) = &*self.local.read().await {
-            local.full_flush();
+            local.full_flush(&hw_acc.get_counter_cell());
         }
     }
 
@@ -636,7 +640,11 @@ impl ShardReplicaSet {
     /// This is cancel safe. If the future is dropped, `local` is left holding a dummy shard rather
     /// than the real thing. That dummy state is picked up like any other initialization failure: a
     /// retried call to this method clears it and tries again.
-    pub async fn init_empty_local_shard(&self, collection_path: &Path) -> CollectionResult<()> {
+    pub async fn init_empty_local_shard(
+        &self,
+        collection_path: &Path,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         // Keep a dummy placeholder because every await below may drop the future early on
@@ -670,6 +678,7 @@ impl ShardReplicaSet {
             self.search_runtime.clone(),
             self.optimizer_resource_budget.clone(),
             self.optimizers_config.clone(),
+            hw_acc,
         )
         .await;
 
@@ -897,6 +906,7 @@ impl ShardReplicaSet {
         &self,
         replicas: HashMap<PeerId, ReplicaState>,
         shard_key: Option<ShardKey>,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         let old_peers = self.replica_state.read().peers().clone();
 
@@ -941,6 +951,7 @@ impl ShardReplicaSet {
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     self.optimizers_config.clone(),
+                    hw_acc,
                 )
                 .await?;
 
@@ -1349,6 +1360,7 @@ impl ShardReplicaSet {
     /// Since this locks all segments you should cache this value in performance critical scenarios!
     pub(crate) async fn calculate_local_shard_stats(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Option<CollectionSizeStats>> {
         let Some(segments) = self.local.read().await.as_ref().and_then(|i| match i {
             Shard::Local(local) => Some(
@@ -1367,13 +1379,14 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
+        let hw_acc = hw_acc.clone();
         let handle = spawn_blocking(move || {
             let mut total_vector_size = 0;
             let mut total_payload_size = 0;
             let mut total_points = 0;
 
             for segment in segments {
-                let size_info = segment.get().read().size_info();
+                let size_info = segment.get().read().size_info(&hw_acc.get_counter_cell());
                 total_vector_size += size_info.vectors_size_bytes;
                 total_payload_size += size_info.payloads_size_bytes;
                 total_points += size_info.num_points;
@@ -1402,6 +1415,7 @@ impl ShardReplicaSet {
     pub async fn optimizations(
         &self,
         options: OptimizationsRequestOptions,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<OptimizationsResponse> {
         let OptimizationsRequestOptions {
             queued: _,
@@ -1410,7 +1424,7 @@ impl ShardReplicaSet {
         } = options;
 
         // Collect from local and remote shards concurrently
-        let local_future = self.local_optimizations(options);
+        let local_future = self.local_optimizations(options, hw_acc);
         let remote_futures = async {
             let remotes = self.remotes.read().await;
             let futures: Vec<_> = remotes
@@ -1449,13 +1463,14 @@ impl ShardReplicaSet {
     /// without querying remote shards (which would cause recursion).
     pub async fn local_memory_report(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         let local = self.local.read().await;
         match local.as_ref() {
-            Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
-            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report().await,
-            Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report().await,
-            Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report().await,
+            Some(Shard::Local(local_shard)) => local_shard.memory_report(hw_acc).await,
+            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report(hw_acc).await,
+            Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report(hw_acc).await,
+            Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report(hw_acc).await,
             Some(Shard::Dummy(_)) | None => {
                 Ok(crate::common::memory_reporter::CollectionMemoryReport::default())
             }
@@ -1465,10 +1480,11 @@ impl ShardReplicaSet {
     /// Collect memory reports from both local and remote shards.
     pub async fn memory_report(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
-        let local_future = self.local_memory_report();
+        let local_future = self.local_memory_report(hw_acc);
         let remote_futures = async {
             let remotes = self.remotes.read().await;
             let futures: Vec<_> = remotes
@@ -1493,6 +1509,7 @@ impl ShardReplicaSet {
     pub async fn local_optimizations(
         &self,
         options: OptimizationsRequestOptions,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<OptimizationsResponse> {
         let OptimizationsRequestOptions {
             queued: with_queued,
@@ -1526,7 +1543,7 @@ impl ShardReplicaSet {
                     }
                 }
             }
-            if let Some(shard_optimizations) = shard.optimizations() {
+            if let Some(shard_optimizations) = shard.optimizations(&hw_acc.get_counter_cell()) {
                 let LocalShardOptimizations {
                     queued: local_queued,
                     idle_segments: local_idle_segments,

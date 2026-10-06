@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::read_json;
 use quantization::EncodedVectorsPQ;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
@@ -28,11 +29,17 @@ impl QuantizedVectors {
         vector_storage: &VectorStorageEnum,
         path: &Path,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let config_path = Self::get_config_path(path);
         if config_path.exists() {
             let config: QuantizedVectorsConfig = read_json(&config_path)?;
-            return Ok(Some(Self::load_impl(config, vector_storage, path)?));
+            return Ok(Some(Self::load_impl(
+                config,
+                vector_storage,
+                path,
+                hw_counter,
+            )?));
         }
 
         // If we don't have an appendable quantization feature, do not create a new one.
@@ -61,6 +68,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             stopped,
+            hw_counter,
         )?;
         Ok(Some(quantized_vectors))
     }
@@ -69,13 +77,18 @@ impl QuantizedVectors {
         config: QuantizedVectorsConfig,
         vector_storage: &VectorStorageEnum,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let quantized_store = match vector_storage.try_multi_vector_config() {
-            Some(multivector_config) => {
-                Self::load_multi(&config, path, multivector_config, on_disk_vector_storage)?
-            }
-            None => Self::load_single(&config, path, on_disk_vector_storage)?,
+            Some(multivector_config) => Self::load_multi(
+                &config,
+                path,
+                multivector_config,
+                on_disk_vector_storage,
+                hw_counter,
+            )?,
+            None => Self::load_single(&config, path, on_disk_vector_storage, hw_counter)?,
         };
 
         let distance = vector_storage.distance();
@@ -95,7 +108,7 @@ impl QuantizedVectors {
             .memory_placement(on_disk_vector_storage)
             == Memory::Cached
         {
-            quantized_vectors.populate()?;
+            quantized_vectors.populate(hw_counter)?;
         }
 
         Ok(quantized_vectors)
@@ -105,6 +118,7 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         path: &Path,
         on_disk_vector_storage: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
@@ -112,43 +126,56 @@ impl QuantizedVectors {
         let in_ram = config.is_ram(on_disk_vector_storage);
 
         // Open the flat (RAM / mmap) or appendable chunked storage selected for this config.
-        let ram =
-            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
-        let chunked =
-            || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
+        let ram = || {
+            QuantizedRamStorage::from_file::<ReadFile>(
+                &READ_FS,
+                data_path.as_path(),
+                size,
+                hw_counter,
+            )
+        };
+        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size, hw_counter);
+        let chunked = || {
+            QuantizedChunkedStorage::<ReadFile>::new(
+                READ_FS,
+                data_path.as_path(),
+                size,
+                in_ram,
+                hw_counter,
+            )
+        };
 
         let storage =
             match config.storage_kind(on_disk_vector_storage)? {
                 QuantizedStorageKind::ScalarRam => QuantizedVectorStorage::ScalarRam(
-                    EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path)?,
+                    EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::ScalarMmap => QuantizedVectorStorage::ScalarMmap(
-                    EncodedVectorsU8::load(&READ_FS, mmap()?, &meta_path)?,
+                    EncodedVectorsU8::load(&READ_FS, mmap()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::PqRam => QuantizedVectorStorage::PQRam(
-                    EncodedVectorsPQ::load(&READ_FS, ram()?, &meta_path)?,
+                    EncodedVectorsPQ::load(&READ_FS, ram()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::PqMmap => QuantizedVectorStorage::PQMmap(
-                    EncodedVectorsPQ::load(&READ_FS, mmap()?, &meta_path)?,
+                    EncodedVectorsPQ::load(&READ_FS, mmap()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::BinaryRam => QuantizedVectorStorage::BinaryRam(
-                    EncodedVectorsBin::load(&READ_FS, ram()?, &meta_path)?,
+                    EncodedVectorsBin::load(&READ_FS, ram()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::BinaryMmap => QuantizedVectorStorage::BinaryMmap(
-                    EncodedVectorsBin::load(&READ_FS, mmap()?, &meta_path)?,
+                    EncodedVectorsBin::load(&READ_FS, mmap()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::BinaryChunked => QuantizedVectorStorage::BinaryChunkedMmap(
-                    EncodedVectorsBin::load(&READ_FS, chunked()?, &meta_path)?,
+                    EncodedVectorsBin::load(&READ_FS, chunked()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::TqRam => QuantizedVectorStorage::TQRam(
-                    EncodedVectorsTQ::load(&READ_FS, ram()?, &meta_path)?,
+                    EncodedVectorsTQ::load(&READ_FS, ram()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::TqMmap => QuantizedVectorStorage::TQMmap(
-                    EncodedVectorsTQ::load(&READ_FS, mmap()?, &meta_path)?,
+                    EncodedVectorsTQ::load(&READ_FS, mmap()?, &meta_path, hw_counter)?,
                 ),
                 QuantizedStorageKind::TqChunked => QuantizedVectorStorage::TQChunkedMmap(
-                    EncodedVectorsTQ::load(&READ_FS, chunked()?, &meta_path)?,
+                    EncodedVectorsTQ::load(&READ_FS, chunked()?, &meta_path, hw_counter)?,
                 ),
             };
         Ok(storage)
@@ -159,6 +186,7 @@ impl QuantizedVectors {
         path: &Path,
         multivector_config: &MultiVectorConfig,
         on_disk_vector_storage: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
@@ -169,19 +197,38 @@ impl QuantizedVectors {
 
         // Open the inner quantized storage and the matching offsets storage for the
         // selected backend.
-        let ram =
-            || QuantizedRamStorage::from_file::<ReadFile>(&READ_FS, data_path.as_path(), size);
-        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size);
-        let chunked =
-            || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
+        let ram = || {
+            QuantizedRamStorage::from_file::<ReadFile>(
+                &READ_FS,
+                data_path.as_path(),
+                size,
+                hw_counter,
+            )
+        };
+        let mmap = || QuantizedStorage::from_file(&READ_FS, data_path.as_path(), size, hw_counter);
+        let chunked = || {
+            QuantizedChunkedStorage::<ReadFile>::new(
+                READ_FS,
+                data_path.as_path(),
+                size,
+                in_ram,
+                hw_counter,
+            )
+        };
         let ram_offsets = || MultivectorOffsetsStorageRam::load(&offsets_path);
-        let mmap_offsets = || MultivectorOffsetsStorageMmap::load(&offsets_path);
-        let chunked_offsets =
-            || MultivectorOffsetsStorageChunked::<ReadFile>::load(READ_FS, &offsets_path, in_ram);
+        let mmap_offsets = || MultivectorOffsetsStorageMmap::load(&offsets_path, hw_counter);
+        let chunked_offsets = || {
+            MultivectorOffsetsStorageChunked::<ReadFile>::load(
+                READ_FS,
+                &offsets_path,
+                in_ram,
+                hw_counter,
+            )
+        };
 
         let storage = match config.storage_kind(on_disk_vector_storage)? {
             QuantizedStorageKind::ScalarRam => {
-                let inner = EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path)?;
+                let inner = EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::ScalarRamMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -190,7 +237,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::ScalarMmap => {
-                let inner = EncodedVectorsU8::load(&READ_FS, mmap()?, &meta_path)?;
+                let inner = EncodedVectorsU8::load(&READ_FS, mmap()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::ScalarMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -199,7 +246,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::PqRam => {
-                let inner = EncodedVectorsPQ::load(&READ_FS, ram()?, &meta_path)?;
+                let inner = EncodedVectorsPQ::load(&READ_FS, ram()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::PQRamMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -208,7 +255,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::PqMmap => {
-                let inner = EncodedVectorsPQ::load(&READ_FS, mmap()?, &meta_path)?;
+                let inner = EncodedVectorsPQ::load(&READ_FS, mmap()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::PQMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -217,7 +264,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::BinaryRam => {
-                let inner = EncodedVectorsBin::load(&READ_FS, ram()?, &meta_path)?;
+                let inner = EncodedVectorsBin::load(&READ_FS, ram()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::BinaryRamMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -226,7 +273,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::BinaryMmap => {
-                let inner = EncodedVectorsBin::load(&READ_FS, mmap()?, &meta_path)?;
+                let inner = EncodedVectorsBin::load(&READ_FS, mmap()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::BinaryMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -235,7 +282,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::BinaryChunked => {
-                let inner = EncodedVectorsBin::load(&READ_FS, chunked()?, &meta_path)?;
+                let inner = EncodedVectorsBin::load(&READ_FS, chunked()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::BinaryChunkedMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -244,7 +291,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::TqRam => {
-                let inner = EncodedVectorsTQ::load(&READ_FS, ram()?, &meta_path)?;
+                let inner = EncodedVectorsTQ::load(&READ_FS, ram()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::TQRamMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -253,7 +300,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::TqMmap => {
-                let inner = EncodedVectorsTQ::load(&READ_FS, mmap()?, &meta_path)?;
+                let inner = EncodedVectorsTQ::load(&READ_FS, mmap()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::TQMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,
@@ -262,7 +309,7 @@ impl QuantizedVectors {
                 ))
             }
             QuantizedStorageKind::TqChunked => {
-                let inner = EncodedVectorsTQ::load(&READ_FS, chunked()?, &meta_path)?;
+                let inner = EncodedVectorsTQ::load(&READ_FS, chunked()?, &meta_path, hw_counter)?;
                 QuantizedVectorStorage::TQChunkedMmapMulti(QuantizedMultivectorStorage::new(
                     dim,
                     inner,

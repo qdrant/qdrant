@@ -2,6 +2,7 @@
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
@@ -47,6 +48,7 @@ mod tests {
                 ScalarQuantizationMethod::Int8,
                 None,
                 &stopped,
+                &HardwareCounterCell::new()
             )
             .err(),
             Some(EncodingError::Stopped)
@@ -78,6 +80,7 @@ mod tests {
                 1,
                 None,
                 &stopped,
+                &HardwareCounterCell::new()
             )
             .err(),
             Some(EncodingError::Stopped)

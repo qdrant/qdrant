@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::MutableStoredBitmask;
@@ -33,6 +34,7 @@ pub(super) fn open_or_create_compact_mask<Fs>(
     fs: &Fs,
     directory: &Path,
     populate: Populate,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<MutableStoredBitmask>
 where
     Fs: UniversalWriteFs,
@@ -46,11 +48,13 @@ where
         populate,
         advice: AdviceSetting::Global,
     };
-    match MutableStoredBitmask::open(fs, &path, options, Default::default()).ok_not_found()? {
+    match MutableStoredBitmask::open(fs, &path, options, Default::default(), hw_counter)
+        .ok_not_found()?
+    {
         Some(mask) => Ok(mask),
         None => {
             let mut mask = MutableStoredBitmask::new(0);
-            mask.save(fs, &path)?;
+            mask.save(fs, &path, hw_counter)?;
             Ok(mask)
         }
     }
@@ -88,15 +92,20 @@ where
     /// Creates the directory and persists an empty mask when the file is
     /// missing, so [`Self::files`] always exist on disk. Errors when the
     /// directory holds dynamic-mode flags instead.
-    pub fn open(fs: S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
-        if FlagsMode::detect(&fs, directory)? == Some(FlagsMode::Dynamic) {
+    pub fn open(
+        fs: S::Fs,
+        directory: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        if FlagsMode::detect(&fs, directory, hw_counter)? == Some(FlagsMode::Dynamic) {
             return Err(OperationError::service_error(format!(
                 "cannot open compact flags in {}: the directory holds flags of the dynamic mode",
                 directory.display(),
             )));
         }
 
-        let mask = open_or_create_compact_mask(&fs, directory, populate)?;
+        let mask = open_or_create_compact_mask(&fs, directory, populate, hw_counter)?;
 
         Ok(Self {
             mask: Arc::new(Mutex::new(mask)),
@@ -154,7 +163,7 @@ where
     /// The write is skipped when nothing effectively changed since the mask
     /// was opened or last flushed. Flushing after the instance was dropped
     /// is cancelled.
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         // The mask persists itself and knows when it is clean: nothing is
         // snapshotted here. Clean right now means this flush cycle has
         // nothing to write; later mutations are for the next cycle.
@@ -168,7 +177,9 @@ where
         let path = self.path.clone();
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let (Some(is_alive_flush_guard), Some(mask_arc)) =
                 (is_alive_flush_lock.lock_if_alive(), mask_weak.upgrade())
             else {
@@ -180,7 +191,7 @@ where
 
             // TODO(serverless): we should not lock here during save
             // TODO(serverless): currently acceptable because readers and writers are completely separate
-            mask_arc.lock().save(&*fs, &path)?;
+            mask_arc.lock().save(&*fs, &path, hw_counter)?;
 
             drop(is_alive_flush_guard);
             Ok(())
@@ -212,6 +223,7 @@ where
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
@@ -222,14 +234,31 @@ mod tests_mod {
     use crate::common::operation_error::OperationError;
 
     fn open(dir: &std::path::Path) -> CompactStoredFlags<S> {
-        CompactStoredFlags::open(Fs::default(), dir, Populate::Blocking).unwrap()
+        CompactStoredFlags::open(
+            Fs::default(),
+            dir,
+            Populate::Blocking,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     }
 
     #[test]
     fn open_refuses_dynamic_directory() {
         let dir = TempDir::new().unwrap();
-        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-        let result = CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No);
+        DynamicStoredFlags::<S>::open(
+            &Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        let result = CompactStoredFlags::<S>::open(
+            Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        );
         assert!(result.is_err(), "expected refusal on a dynamic directory");
     }
 
@@ -257,7 +286,7 @@ mod tests_mod {
             assert!(!flags.set(50, false));
             assert_eq!(flags.len(), 101);
             assert_eq!(flags.count_flags(), 2);
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
         }
         {
             let flags = open(dir.path());
@@ -274,17 +303,17 @@ mod tests_mod {
         let dir = TempDir::new().unwrap();
         let flags = open(dir.path());
         flags.set(1, true);
-        flags.flusher()().unwrap();
+        flags.flusher(&HardwareCounterCell::new())().unwrap();
 
         // A clean flush must not touch storage: with the file deleted behind
         // its back, only an actual write could bring it back.
         fs_err::remove_file(&flags.files()[0]).unwrap();
-        flags.flusher()().unwrap();
+        flags.flusher(&HardwareCounterCell::new())().unwrap();
         assert!(!flags.files()[0].exists());
 
         // The next effective change rewrites the whole mask.
         flags.set(2, true);
-        flags.flusher()().unwrap();
+        flags.flusher(&HardwareCounterCell::new())().unwrap();
         let reopened = open(dir.path());
         assert!(reopened.get(1));
         assert!(reopened.get(2));
@@ -295,7 +324,7 @@ mod tests_mod {
         let dir = TempDir::new().unwrap();
         let flags = open(dir.path());
         flags.set(1, true);
-        let flusher = flags.flusher();
+        let flusher = flags.flusher(&HardwareCounterCell::new());
         flags.set(2, true); // after flusher creation, before the flush
         flusher().unwrap();
 
@@ -309,7 +338,7 @@ mod tests_mod {
         let dir = TempDir::new().unwrap();
         let flags = open(dir.path());
         flags.set(1, true);
-        let flusher = flags.flusher();
+        let flusher = flags.flusher(&HardwareCounterCell::new());
         drop(flags);
         assert!(matches!(flusher(), Err(OperationError::Cancelled { .. })));
     }
@@ -322,7 +351,7 @@ mod tests_mod {
             flags.set_len(10);
             assert_eq!(flags.len(), 10);
             assert_eq!(flags.count_flags(), 0);
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
         }
         let flags = open(dir.path());
         assert_eq!(flags.len(), 10);

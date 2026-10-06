@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
 use common::bitvec::{BitSlice, DeletedBitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::AdviceSetting;
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
@@ -42,14 +43,15 @@ where
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Config
         let config_path = path.join(CONFIG_PATH);
-        if !fs.exists(&config_path)? {
+        if !fs.exists(&config_path, hw_counter)? {
             // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(false);
         }
-        fs.schedule_open(&config_path, None, None);
+        fs.schedule_open(&config_path, None, None, hw_counter);
 
         // Value to points
         let hashmap_path = path.join(HASHMAP_PATH);
@@ -57,13 +59,14 @@ where
             fs,
             &hashmap_path,
             Self::open_options(populate),
+            hw_counter,
         );
 
         // Point to values
-        OnDiskPointToValues::<N, S>::preopen(fs, path, populate);
+        OnDiskPointToValues::<N, S>::preopen(fs, path, populate, hw_counter);
 
         // Prefix index
-        PrefixIndex::preopen(fs, path, populate)?;
+        PrefixIndex::preopen(fs, path, populate, hw_counter)?;
 
         // "No values" mask
         preopen_deleted_mask(
@@ -71,6 +74,7 @@ where
             path,
             DELETED_PATH,
             Self::open_options(Populate::PreferBackground),
+            hw_counter,
         );
 
         Ok(true)
@@ -82,12 +86,14 @@ where
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         let Some(config) =
-            read_json_via::<_, UniversalMapIndexConfig>(fs, &config_path).ok_not_found()?
+            read_json_via::<_, UniversalMapIndexConfig>(fs, &config_path, hw_counter)
+                .ok_not_found()?
         else {
             // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
@@ -98,9 +104,10 @@ where
             &hashmap_path,
             Self::open_options(populate),
             Default::default(),
+            hw_counter,
         )?;
-        let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
-        let prefix_index = PrefixIndex::open(fs, path, populate)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, populate, hw_counter)?;
+        let prefix_index = PrefixIndex::open(fs, path, populate, hw_counter)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -116,6 +123,7 @@ where
             DELETED_PATH,
             Self::open_options(Populate::No),
             &mut deleted,
+            hw_counter,
         )?;
 
         Ok(Some(Self {
@@ -167,11 +175,11 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.value_to_points.populate()?;
-        self.storage.point_to_values.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.value_to_points.populate(hw_counter)?;
+        self.storage.point_to_values.populate(hw_counter)?;
         if let Some(prefix_index) = &self.storage.prefix_index {
-            prefix_index.populate()?;
+            prefix_index.populate(hw_counter)?;
         }
         Ok(())
     }
@@ -214,6 +222,7 @@ where
     }
 
     /// TODO: Use Fs to create config and hashmap files?
+    #[expect(clippy::too_many_arguments)]
     pub fn build(
         fs: &S::Fs,
         path: &Path,
@@ -222,6 +231,7 @@ where
         populate: Populate,
         deleted_points: &BitSlice,
         with_prefix_index: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -275,9 +285,10 @@ where
                 .enumerate()
                 .filter(|(_, values)| values.is_empty())
                 .map(|(idx, _)| idx as PointOffsetType),
+            hw_counter,
         )?;
 
-        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points, hw_counter)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalMapIndex after building it")
         })
     }

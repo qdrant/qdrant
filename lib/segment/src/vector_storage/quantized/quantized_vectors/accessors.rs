@@ -88,20 +88,40 @@ impl QuantizedVectors {
         }
     }
 
-    pub fn get_quantized_vector(&self, id: PointOffsetType) -> Cow<'_, [u8]> {
+    pub fn get_quantized_vector(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
         match &self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::ScalarMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::ScalarChunkedMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::PQRam(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::PQMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::PQChunkedMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::BinaryRam(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::BinaryMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::BinaryChunkedMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::TQRam(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::TQMmap(storage) => storage.get_quantized_vector(id),
-            QuantizedVectorStorage::TQChunkedMmap(storage) => storage.get_quantized_vector(id),
+            QuantizedVectorStorage::ScalarRam(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::ScalarMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::PQRam(storage) => storage.get_quantized_vector(id, hw_counter),
+            QuantizedVectorStorage::PQMmap(storage) => storage.get_quantized_vector(id, hw_counter),
+            QuantizedVectorStorage::PQChunkedMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::BinaryRam(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::BinaryMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
+            QuantizedVectorStorage::TQRam(storage) => storage.get_quantized_vector(id, hw_counter),
+            QuantizedVectorStorage::TQMmap(storage) => storage.get_quantized_vector(id, hw_counter),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => {
+                storage.get_quantized_vector(id, hw_counter)
+            }
             QuantizedVectorStorage::ScalarRamMulti(_)
             | QuantizedVectorStorage::ScalarMmapMulti(_)
             | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
@@ -181,55 +201,63 @@ impl QuantizedVectors {
         files
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(_) => {} // not mmap
-            QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::ScalarChunkedMmap(storage) => storage.storage().populate()?,
+            QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().populate(hw_counter),
+            QuantizedVectorStorage::ScalarChunkedMmap(storage) => {
+                storage.storage().populate(hw_counter)?
+            }
             QuantizedVectorStorage::PQRam(_) => {}
-            QuantizedVectorStorage::PQMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::PQChunkedMmap(storage) => storage.storage().populate()?,
+            QuantizedVectorStorage::PQMmap(storage) => storage.storage().populate(hw_counter),
+            QuantizedVectorStorage::PQChunkedMmap(storage) => {
+                storage.storage().populate(hw_counter)?
+            }
             QuantizedVectorStorage::BinaryRam(_) => {}
-            QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::BinaryChunkedMmap(storage) => storage.storage().populate()?,
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().populate(hw_counter),
+            QuantizedVectorStorage::BinaryChunkedMmap(storage) => {
+                storage.storage().populate(hw_counter)?
+            }
             QuantizedVectorStorage::TQRam(_) => {}
-            QuantizedVectorStorage::TQMmap(storage) => storage.storage().populate(),
-            QuantizedVectorStorage::TQChunkedMmap(storage) => storage.storage().populate()?,
+            QuantizedVectorStorage::TQMmap(storage) => storage.storage().populate(hw_counter),
+            QuantizedVectorStorage::TQChunkedMmap(storage) => {
+                storage.storage().populate(hw_counter)?
+            }
             QuantizedVectorStorage::ScalarRamMulti(_) => {}
             QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                storage.storage().storage().populate();
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter);
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::ScalarChunkedMmapMulti(storage) => {
-                storage.storage().storage().populate()?;
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter)?;
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::PQRamMulti(_) => {}
             QuantizedVectorStorage::PQMmapMulti(storage) => {
-                storage.storage().storage().populate();
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter);
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::PQChunkedMmapMulti(storage) => {
-                storage.storage().storage().populate()?;
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter)?;
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::BinaryRamMulti(_) => {}
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                storage.storage().storage().populate();
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter);
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(storage) => {
-                storage.storage().storage().populate()?;
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter)?;
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::TQRamMulti(_) => {}
             QuantizedVectorStorage::TQMmapMulti(storage) => {
-                storage.storage().storage().populate();
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter);
+                storage.offsets_storage().populate(hw_counter)?;
             }
             QuantizedVectorStorage::TQChunkedMmapMulti(storage) => {
-                storage.storage().storage().populate()?;
-                storage.offsets_storage().populate()?;
+                storage.storage().storage().populate(hw_counter)?;
+                storage.offsets_storage().populate(hw_counter)?;
             }
         }
         Ok(())

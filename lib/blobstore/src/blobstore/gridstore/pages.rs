@@ -5,6 +5,7 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, HashSet};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::maybe_uninit::assume_init_vec;
 use common::mmap::{Advice, AdviceSetting};
@@ -66,9 +67,10 @@ impl<S: UniversalRead> Pages<S> {
         fs: &Fs,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join("page_"))?
+            .list_files(&dir.join("page_"), hw_counter)?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -78,7 +80,12 @@ impl<S: UniversalRead> Pages<S> {
             if !page_files.contains(&page_path) {
                 break;
             }
-            fs.schedule_open(&page_path, Some(page_open_options(populate, false)), None);
+            fs.schedule_open(
+                &page_path,
+                Some(page_open_options(populate, false)),
+                None,
+                hw_counter,
+            );
         }
         Ok(())
     }
@@ -88,11 +95,12 @@ impl<S: UniversalRead> Pages<S> {
         dir: &Path,
         writeable: bool,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join("page_"))?
+            .list_files(&dir.join("page_"), hw_counter)?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -102,7 +110,7 @@ impl<S: UniversalRead> Pages<S> {
             if !page_files.contains(&page_path) {
                 break;
             }
-            pages.attach_page(fs, &page_path, populate)?;
+            pages.attach_page(fs, &page_path, populate, hw_counter)?;
         }
 
         Ok(pages)
@@ -113,11 +121,13 @@ impl<S: UniversalRead> Pages<S> {
         fs: &Fs,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let page = fs.open(
             path,
             page_open_options(populate, self.writeable),
             Default::default(),
+            hw_counter,
         )?;
         self.pages.push(page);
         Ok(())
@@ -270,6 +280,7 @@ impl<S: UniversalRead> Pages<S> {
         &self,
         pointer: ValuePointer,
         config: &GridstoreConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Cow<'_, [u8]>> {
         self.check_pages_exist(pointer, config)?;
 
@@ -296,10 +307,10 @@ impl<S: UniversalRead> Pages<S> {
                 && let Some((offset, page, range)) = reads.next()
             {
                 let range = range.into_byte_range::<u8>();
-                pipeline.schedule::<P>(offset, page, range, align_of::<u8>())?;
+                pipeline.schedule::<P>(offset, page, range, align_of::<u8>(), hw_counter)?;
             }
 
-            let Some((offset, bytes)) = pipeline.wait_bytemuck::<u8>()? else {
+            let Some((offset, bytes)) = pipeline.wait_bytemuck::<u8>(hw_counter)? else {
                 break;
             };
 
@@ -319,6 +330,7 @@ impl<S: UniversalRead> Pages<S> {
         config: &GridstoreConfig,
         pointers: impl Iterator<Item = (U, ValuePointer)>,
         mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<bool, E>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -398,12 +410,12 @@ impl<S: UniversalRead> Pages<S> {
                 let (meta, page, range) = read?;
                 let range = range.into_byte_range::<u8>();
                 pipeline
-                    .schedule::<P>(meta, page, range, align_of::<u8>())
+                    .schedule::<P>(meta, page, range, align_of::<u8>(), hw_counter)
                     .map_err(BlobstoreError::from)?;
             }
 
             let Some((meta, bytes)) = pipeline
-                .wait_bytemuck::<u8>()
+                .wait_bytemuck::<u8>(hw_counter)
                 .map_err(BlobstoreError::from)?
             else {
                 break;
@@ -459,9 +471,9 @@ impl<S: UniversalRead> Pages<S> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
         for page in &self.pages {
-            page.populate()?;
+            page.populate(hw_counter)?;
         }
         Ok(())
     }
@@ -483,6 +495,7 @@ impl<S: UniversalRead> Pages<S> {
         &self,
         fs: &Fs,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
@@ -492,15 +505,25 @@ impl<S: UniversalRead> Pages<S> {
             let page_path = self.page_path(page_id);
 
             // Re-schedule so that unchanged files don't re-fetch.
-            fs.reschedule_open(&page_path, Some(page_open_options(populate, false)), None);
+            fs.reschedule_open(
+                &page_path,
+                Some(page_open_options(populate, false)),
+                None,
+                hw_counter,
+            );
         }
 
         for page_id in next_page_id.. {
             let page_path = self.page_path(page_id);
-            if !fs.exists(&page_path)? {
+            if !fs.exists(&page_path, hw_counter)? {
                 break;
             }
-            fs.schedule_open(&page_path, Some(page_open_options(populate, false)), None);
+            fs.schedule_open(
+                &page_path,
+                Some(page_open_options(populate, false)),
+                None,
+                hw_counter,
+            );
         }
 
         Ok(())
@@ -518,6 +541,7 @@ impl<S: UniversalRead> Pages<S> {
         &mut self,
         fs: &Fs,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let num_pages = self.pages.len();
         let next_page_id = num_pages as PageId;
@@ -531,6 +555,7 @@ impl<S: UniversalRead> Pages<S> {
                     &page_path,
                     page_open_options(populate, self.writeable),
                     Default::default(),
+                    hw_counter,
                 )
                 // data might have not changed.
                 .ok_unchanged()?;
@@ -541,10 +566,10 @@ impl<S: UniversalRead> Pages<S> {
 
         for page_id in next_page_id.. {
             let page_path = self.page_path(page_id);
-            if !fs.exists(&page_path)? {
+            if !fs.exists(&page_path, hw_counter)? {
                 break;
             }
-            self.attach_page(fs, &page_path, populate)?;
+            self.attach_page(fs, &page_path, populate, hw_counter)?;
         }
 
         Ok(())

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use futures::future::BoxFuture;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
 use crate::universal_io::traits::async_io::UniversalReadFsAsync;
@@ -59,10 +60,14 @@ pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
     /// - `./gridstore/page_1.dat` (size in bytes)
     /// - `./gridstore/page_2.dat` (size in bytes)
     /// - `./gridstore/page_3.dat` (size in bytes)
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>>;
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>>;
 
     /// Check whether a file exists at the given path.
-    fn exists(&self, path: &Path) -> UioResult<bool>;
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool>;
 
     /// Open a file for reading.
     ///
@@ -73,6 +78,7 @@ pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::File>;
 
     // When adding provided methods, don't forget to update impls in
@@ -98,7 +104,12 @@ pub trait UniversalWriteFs: UniversalReadFs {
     ///
     /// Local backends use `expected_length` to pre-size the file. Backends
     /// without fixed-size file objects may ignore it.
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()>;
+    fn create(
+        &self,
+        path: &Path,
+        expected_length: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()>;
 
     /// Create a directory at the given path.
     ///
@@ -106,7 +117,7 @@ pub trait UniversalWriteFs: UniversalReadFs {
     fn create_dir(&self, path: &Path) -> UioResult<()>;
 
     /// Remove a file at the given path.
-    fn remove(&self, path: &Path) -> UioResult<()>;
+    fn remove(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<()>;
 
     /// Remove a directory at the given path.
     ///
@@ -117,7 +128,12 @@ pub trait UniversalWriteFs: UniversalReadFs {
     ///
     /// Local backends should use an atomic file replacement. Object-store
     /// backends may overwrite the full object.
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()>;
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()>;
 
     /// Open an existing file for appending, per the [`UniversalAppend`]
     /// contract. The file must exist — [`Self::create`] it first.
@@ -131,6 +147,7 @@ pub trait UniversalWriteFs: UniversalReadFs {
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::AppendFile>;
 
     // When adding provided methods, don't forget to update impls in
@@ -152,7 +169,7 @@ pub trait CachedReadFs: UniversalReadFs {
     /// Take the file listing snapshot. From this point on, listing and
     /// existence checks are answered locally and opens of unlisted paths
     /// fail with `NotFound` without touching the underlying filesystem.
-    fn cache_file_info(&mut self) -> UioResult<()>;
+    fn cache_file_info(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()>;
 
     /// Rotate the cache file info, keeping it as the previous snapshot.
     fn rotate_cache_file_info(&mut self);
@@ -165,6 +182,7 @@ pub trait CachedReadFs: UniversalReadFs {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
+        hw_counter: &HardwareCounterCell,
     );
 
     /// Schedule a prefetch for a file that has been opened already.
@@ -176,6 +194,7 @@ pub trait CachedReadFs: UniversalReadFs {
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Self::OpenExtra>,
+        hw_counter: &HardwareCounterCell,
     );
 
     /// Granular version of `schedule_open` for custom `populate` cases

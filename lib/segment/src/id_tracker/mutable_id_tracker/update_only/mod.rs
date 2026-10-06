@@ -5,6 +5,7 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -91,13 +92,14 @@ impl UpdateOnlyAppendableIdTracker {
         max_claimed_internal_id: Option<PointOffsetType>,
         pending_inserts: impl IntoIterator<Item = PointIdType>,
         mappings_end: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let mut tracker = Self {
             segment_path: segment_path.into(),
             max_claimed_internal_id,
             mappings_end,
         };
-        tracker.retire_pending_inserts(fs, pending_inserts)?;
+        tracker.retire_pending_inserts(fs, pending_inserts, hw_counter)?;
 
         Ok(tracker)
     }
@@ -122,6 +124,7 @@ impl UpdateOnlyAppendableIdTracker {
         fs: &Fs,
         internal_ids: &[PointOffsetType],
         versions: &[SeqNumberType],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if internal_ids.len() != versions.len() {
             return Err(OperationError::service_error(format!(
@@ -136,15 +139,15 @@ impl UpdateOnlyAppendableIdTracker {
         }
 
         let path = versions_path(&self.segment_path);
-        let mut file = Self::open_append(fs, &path)?;
+        let mut file = Self::open_append(fs, &path, hw_counter)?;
 
         // A torn tail is healed rather than refused: those bytes are a slot no reader ever saw, and
         // the entries below take their place. `heal_versions` drops the handle before rewriting.
-        let file_len = Self::end_of_file(&file)?;
+        let file_len = Self::end_of_file(&file, hw_counter)?;
         let committed_len = file_len - file_len % VERSION_ELEMENT_SIZE;
         if committed_len != file_len {
-            Self::heal_versions(fs, &path, file, file_len)?;
-            file = Self::open_append(fs, &path)?;
+            Self::heal_versions(fs, &path, file, file_len, hw_counter)?;
+            file = Self::open_append(fs, &path, hw_counter)?;
         }
         let covered_slots = committed_len / VERSION_ELEMENT_SIZE;
 
@@ -197,6 +200,7 @@ impl UpdateOnlyAppendableIdTracker {
                 .0
                 .iter()
                 .map(|entry| entry.as_slice()),
+            hw_counter,
         )?;
         (file.flusher())()?;
 
@@ -212,6 +216,7 @@ impl UpdateOnlyAppendableIdTracker {
         &mut self,
         fs: &Fs,
         operations: &[MappingOperation],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(PointIdType, PointOffsetType)>> {
         if operations.is_empty() {
             return Ok(Vec::new());
@@ -251,13 +256,13 @@ impl UpdateOnlyAppendableIdTracker {
         }
 
         let path = mappings_path(&self.segment_path);
-        let mut file = Self::open_append(fs, &path)?;
+        let mut file = Self::open_append(fs, &path, hw_counter)?;
 
         // One entry per buffer, appended in order in a single operation, at the end of the log
         // rather than the end of the file. The two part ways only after a write that tore or landed
         // unacknowledged, and this is where that becomes a conflict.
         let batch = || entries.iter().map(|entry| &changes_buffer[entry.clone()]);
-        if let Err(err) = file.append_batch(self.mappings_end, batch()) {
+        if let Err(err) = file.append_batch(self.mappings_end, batch(), hw_counter) {
             if !err.is_append_offset_conflict() {
                 return Err(err.into());
             }
@@ -265,9 +270,9 @@ impl UpdateOnlyAppendableIdTracker {
             // batch appended anew. Drop this handle first, healing replaces the path, which Windows
             // refuses while an mmap is still open.
             drop(file);
-            self.heal_mappings(fs, &path)?;
-            file = Self::open_append(fs, &path)?;
-            file.append_batch(self.mappings_end, batch())?;
+            self.heal_mappings(fs, &path, hw_counter)?;
+            file = Self::open_append(fs, &path, hw_counter)?;
+            file.append_batch(self.mappings_end, batch(), hw_counter)?;
         }
         (file.flusher())()?;
 
@@ -300,8 +305,9 @@ impl UpdateOnlyAppendableIdTracker {
         &mut self,
         fs: &Fs,
         pending_inserts: impl IntoIterator<Item = PointIdType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.delete_points(fs, pending_inserts)
+        self.delete_points(fs, pending_inserts, hw_counter)
     }
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
@@ -310,6 +316,7 @@ impl UpdateOnlyAppendableIdTracker {
         &mut self,
         fs: &Fs,
         point_ids: impl IntoIterator<Item = PointIdType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let operations: Vec<MappingOperation> = point_ids
             .into_iter()
@@ -317,7 +324,7 @@ impl UpdateOnlyAppendableIdTracker {
             .collect();
 
         // Deletes claim no slots, so the returned mappings are empty.
-        self.insert_operations(fs, &operations)?;
+        self.insert_operations(fs, &operations, hw_counter)?;
 
         Ok(())
     }
@@ -334,12 +341,16 @@ impl UpdateOnlyAppendableIdTracker {
     }
 
     /// Open the append handle for `path`, creating the file if it is not there yet.
-    fn open_append<Fs: UniversalAppendFs>(fs: &Fs, path: &Path) -> OperationResult<Fs::AppendFile> {
-        match fs.open_append(path, Self::open_options()) {
+    fn open_append<Fs: UniversalAppendFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Fs::AppendFile> {
+        match fs.open_append(path, Self::open_options(), hw_counter) {
             Ok(file) => Ok(file),
             Err(err) if err.is_not_found() => {
-                fs.create(path, 0)?;
-                Ok(fs.open_append(path, Self::open_options())?)
+                fs.create(path, 0, hw_counter)?;
+                Ok(fs.open_append(path, Self::open_options(), hw_counter)?)
             }
             Err(err) => Err(err.into()),
         }
@@ -349,7 +360,10 @@ impl UpdateOnlyAppendableIdTracker {
     ///
     /// `NotFound` means a lazy backend has not materialized the object yet, so it is empty and the
     /// append at 0 creates it.
-    fn end_of_file<S: UniversalAppend>(file: &S) -> OperationResult<u64> {
-        Ok(file.len::<u8>().ok_not_found()?.unwrap_or(0))
+    fn end_of_file<S: UniversalAppend>(
+        file: &S,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<u64> {
+        Ok(file.len::<u8>(hw_counter).ok_not_found()?.unwrap_or(0))
     }
 }

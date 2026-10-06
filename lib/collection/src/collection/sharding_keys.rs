@@ -21,6 +21,7 @@ impl Collection {
         shard_key: Option<ShardKey>,
         replicas: &[PeerId],
         init_state: Option<ReplicaState>,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<ShardReplicaSet> {
         let is_local = replicas.contains(&self.this_peer_id);
 
@@ -51,6 +52,7 @@ impl Collection {
             self.search_runtime.clone(),
             self.optimizer_resource_budget.clone(),
             Some(init_state.unwrap_or(ReplicaState::Active)),
+            hw_acc,
         )
         .await
     }
@@ -139,6 +141,7 @@ impl Collection {
                     Some(shard_key.clone()),
                     replicas,
                     Some(init_state),
+                    &hw_counter,
                 )
                 .await?;
 

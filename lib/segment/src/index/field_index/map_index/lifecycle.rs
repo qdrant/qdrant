@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -24,6 +25,7 @@ where
         path: &Path,
         memory: Memory,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Low-memory mode degrades the placement at load time (pinned falls back to the
         // pure-mmap variant). Files are shared between variants; the persisted
@@ -31,7 +33,8 @@ where
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) = OnDiskMapIndex::open(&MmapFs, path, populate, deleted_points)?
+        let Some(on_disk_index) =
+            OnDiskMapIndex::open(&MmapFs, path, populate, deleted_points, hw_counter)?
         else {
             return Ok(None);
         };
@@ -49,8 +52,10 @@ where
         dir: PathBuf,
         create_if_missing: bool,
         prefix_index: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        let index = MutableMapIndex::open_gridstore(dir, create_if_missing, prefix_index)?;
+        let index =
+            MutableMapIndex::open_gridstore(dir, create_if_missing, prefix_index, hw_counter)?;
         Ok(index.map(MapIndex::Mutable))
     }
 
@@ -77,9 +82,9 @@ where
         super::builders::MapIndexGridstoreBuilder::new(dir, prefix_index)
     }
 
-    pub(crate) fn flusher(&self) -> Flusher {
+    pub(crate) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            MapIndex::Mutable(index) => index.flusher(),
+            MapIndex::Mutable(index) => index.flusher(hw_counter),
             MapIndex::Immutable(index) => index.flusher(),
             MapIndex::OnDisk(index) => index.flusher(),
         }
@@ -93,9 +98,13 @@ where
         }
     }
 
-    pub(crate) fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    pub(crate) fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.remove_point(id),
+            MapIndex::Mutable(index) => index.remove_point(id, hw_counter),
             MapIndex::Immutable(index) => index.remove_point(id),
             MapIndex::OnDisk(index) => {
                 index.remove_point(id);
@@ -122,11 +131,11 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(_) => {}
             MapIndex::Immutable(_) => {}
-            MapIndex::OnDisk(index) => index.populate()?,
+            MapIndex::OnDisk(index) => index.populate(hw_counter)?,
         }
         Ok(())
     }

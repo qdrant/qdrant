@@ -12,6 +12,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use collection::shards::shard_holder::shard_not_found_error;
 use collection::shards::transfer::RecoveryStage;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
@@ -33,6 +34,7 @@ pub async fn create_shard_snapshot(
     auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = auth.check_collection_access(
         &collection_name,
@@ -47,7 +49,11 @@ pub async fn create_shard_snapshot(
         .measure_scope();
 
     let snapshot = collection
-        .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
+        .create_shard_snapshot(
+            shard_id,
+            &toc.optional_temp_or_snapshot_temp_path()?,
+            hw_acc,
+        )
         .await?;
 
     Ok(snapshot)
@@ -62,6 +68,7 @@ pub async fn stream_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
     manifest: Option<SnapshotManifest>,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<SnapshotStream, StorageError> {
     let collection_pass = auth.check_collection_access(
         &collection_name,
@@ -98,6 +105,7 @@ pub async fn stream_shard_snapshot(
             shard_id,
             manifest,
             &toc.optional_temp_or_snapshot_temp_path()?,
+            hw_acc,
         )
         .await?;
 
@@ -168,12 +176,14 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
     api_key: Option<String>,
     from_peer_id: Option<PeerId>,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<(), StorageError> {
     let collection_pass = auth
         .check_global_access(AccessRequirements::new().manage(), "recover_shard_snapshot")?
         .issue_pass(&collection_name)
         .into_static();
 
+    let hw_acc = hw_acc.clone();
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
@@ -300,7 +310,7 @@ pub async fn recover_shard_snapshot(
             snapshot_priority,
             RecoveryType::Full,
             Some(recovery_guard.progress_handle()),
-            cancel,
+            cancel, &hw_acc
         )
         .await;
 
@@ -328,6 +338,7 @@ pub async fn recover_shard_snapshot_impl(
     recovery_type: RecoveryType,
     recovery_progress: Option<RecoveryProgressHandle>,
     cancel: cancel::CancellationToken,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<(), StorageError> {
     let _recover_tracker_guard = toc
         .snapshot_telemetry_collector(collection.name())
@@ -351,6 +362,7 @@ pub async fn recover_shard_snapshot_impl(
             &toc.optional_temp_or_storage_temp_path()?,
             recovery_progress,
             cancel,
+            hw_acc,
         )
         .await?
         .await?;

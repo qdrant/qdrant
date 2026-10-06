@@ -64,9 +64,13 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.vector_storage
-            .for_each_in_sparse_batch(ids, |idx, vector| {
-                scores[idx] = self.score_ref(&vector);
-            })
+            .for_each_in_sparse_batch(
+                ids,
+                |idx, vector| {
+                    scores[idx] = self.score_ref(&vector);
+                },
+                &self.hardware_counter,
+            )
             .expect("sparse vectors read");
     }
 

@@ -4,6 +4,7 @@
 use std::fmt::Debug;
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalWrite;
@@ -21,12 +22,13 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let has_version = self.internal_to_version.has(internal_id);
         debug_assert!(has_version, "Can't extend version list in disk id tracker");
         if has_version {
             self.internal_to_version.set(internal_id, version);
-            let is_deleted = self.point_deleted(internal_id)?;
+            let is_deleted = self.point_deleted(internal_id, hw_counter)?;
             self.versions_file.set(internal_id, version, is_deleted);
         }
         Ok(())
@@ -40,33 +42,41 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
         panic!("Trying to call a mutating function (`set_link`) of a disk id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Mutating path: propagate lookup/deletion-check errors instead of swallowing.
-        if let Some(internal_id) = self.reader.lookup(external_id)?
-            && !self.point_deleted(internal_id)?
+        if let Some(internal_id) = self.reader.lookup(external_id, hw_counter)?
+            && !self.point_deleted(internal_id, hw_counter)?
         {
             self.deleted.set(internal_id as usize, true);
             self.deleted_wrapper.set(internal_id as usize, true);
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.deleted.set(internal_id as usize, true);
         self.deleted_wrapper.set(internal_id as usize, true);
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         Ok(())
     }
 
     /// Only deletions are flushed; the mapping is immutable.
-    fn mapping_flusher(&self) -> Flusher {
-        self.deleted_wrapper.flusher()
+    fn mapping_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        self.deleted_wrapper.flusher(hw_counter)
     }
 
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         self.versions_file
-            .flusher(&self.path, &self.internal_to_version)
+            .flusher(&self.path, &self.internal_to_version, hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {

@@ -2,6 +2,7 @@ use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::sort_utils::sort_permutation;
 use log::trace;
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -32,8 +33,13 @@ impl SegmentHolder {
     ///
     /// Claims everything the segments hold, so only for flushes that cannot run while an update
     /// operation is being applied. Use [`SegmentHolder::flush_all_up_to`] otherwise.
-    pub fn flush_all(&self, mode: FlushMode, force: bool) -> OperationResult<SeqNumberType> {
-        self.flush_all_up_to(mode, force, None)
+    pub fn flush_all(
+        &self,
+        mode: FlushMode,
+        force: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SeqNumberType> {
+        self.flush_all_up_to(mode, force, None, hw_counter)
     }
 
     /// [`SegmentHolder::flush_all`], but no segment may claim a version past `up_to`.
@@ -48,6 +54,7 @@ impl SegmentHolder {
         mode: FlushMode,
         force: bool,
         up_to: Option<SeqNumberType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SeqNumberType> {
         let sync = match mode {
             FlushMode::Sync => true,
@@ -118,7 +125,7 @@ impl SegmentHolder {
         // Capture all flushers first to improve data consistency
         let flushers: Vec<_> = segment_reads
             .iter()
-            .filter_map(|read_segment| read_segment.flusher(force, up_to))
+            .filter_map(|read_segment| read_segment.flusher(force, up_to, hw_counter))
             .collect();
 
         // Copy-on-write dependencies are only satisfied up to what this pass actually persists.
@@ -189,6 +196,7 @@ impl SegmentHolder {
         &self,
         segment_id: SegmentId,
         segment: &dyn StorageSegmentEntry,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let cow_destinations: Vec<_> = self
             .cow_flush_destinations(segment_id)
@@ -202,9 +210,9 @@ impl SegmentHolder {
             .collect();
         self.with_flush_serialized(|| {
             for destination in &destination_guards {
-                destination.flush(true)?;
+                destination.flush(true, hw_counter)?;
             }
-            segment.flush(true)?;
+            segment.flush(true, hw_counter)?;
             Ok(())
         })
     }

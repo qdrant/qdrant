@@ -2,6 +2,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
@@ -70,11 +71,17 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 
     /// Schedule a prefetch of the tracker file, so a subsequent open is served from the prefetch
     /// pool.
-    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, dir: &Path, populate: Populate) {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) {
         fs.schedule_open(
             &Self::tracker_file_name(dir),
             Some(Self::open_options(populate, false)),
             None,
+            hw_counter,
         );
     }
 
@@ -84,11 +91,13 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         path: &Path,
         populate: Populate,
         writeable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<S> {
         fs.open(
             path,
             Self::open_options(populate, writeable),
             Default::default(),
+            hw_counter,
         )
         .map_err(|err| {
             if err.is_not_found() {
@@ -113,10 +122,11 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
         fs: &Fs,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        let file = Self::open_file(fs, &path, populate, false)?;
-        let len = file.len::<u8>()?;
+        let file = Self::open_file(fs, &path, populate, false, hw_counter)?;
+        let len = file.len::<u8>(hw_counter)?;
 
         Ok(Self {
             path,
@@ -131,8 +141,8 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     }
 
     /// Populate the tracker file into the RAM cache.
-    pub fn populate(&self) -> Result<()> {
-        self.file.populate().map_err(Into::into)
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        self.file.populate(hw_counter).map_err(Into::into)
     }
 
     /// Ask to evict the tracker file from the RAM cache.
@@ -151,11 +161,15 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
 
 impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
     /// Exact, including pending mappings, see [`Self::pointer_count`].
-    fn max_point_offset(&self) -> Result<PointOffset> {
+    fn max_point_offset(&self, _hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         Ok(self.pointer_count())
     }
 
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
         if point_offset >= self.pointer_count() {
             return Ok(None);
         }
@@ -166,7 +180,9 @@ impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
         }
 
         let range = ReadRange::one(u64::from(point_offset) * ENTRY_SIZE);
-        let pointer = self.file.read::<_, OptionalPointer>(range, P::default())?[0];
+        let pointer = self
+            .file
+            .read::<_, OptionalPointer>(range, P::default(), hw_counter)?[0];
         Ok(pointer.to_option())
     }
 
@@ -175,6 +191,7 @@ impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>> {
         let mut pointers = Vec::with_capacity(point_offsets.len());
         let start = point_offsets.start;
@@ -187,7 +204,9 @@ impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
                 byte_offset: u64::from(start) * ENTRY_SIZE,
                 length: u64::from(persisted_end - start),
             };
-            let entries = self.file.read::<_, OptionalPointer>(range, P::default())?;
+            let entries = self
+                .file
+                .read::<_, OptionalPointer>(range, P::default(), hw_counter)?;
             pointers.extend(entries.iter().map(|entry| entry.to_option()));
         }
 
@@ -206,7 +225,11 @@ impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
     /// Issues batched reads against the tracker file through the backend's read pipeline, so
     /// async backends can fetch entries in parallel. Pending mappings and point offsets past the
     /// highest set mapping are yielded directly, without touching the file.
-    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    fn iter<'a, U, I>(
+        &'a self,
+        point_offsets: I,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
@@ -215,6 +238,7 @@ impl<S: UniversalRead> TrackerRead for AppendOnlyTracker<S> {
             point_offsets,
             tracker: self,
             pipeline: S::ReadPipeline::new()?,
+            hw_counter,
         })
     }
 }
@@ -239,14 +263,14 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     /// - Should only be called on read-only instances of the tracker.
     /// - Mappings are append-only, existing entries never change.
     /// - Partial writes are possible, but ignored: a trailing partial entry is not counted.
-    pub fn reload_count(&mut self) -> Result<PendingReload> {
+    pub fn reload_count(&mut self, hw_counter: &HardwareCounterCell) -> Result<PendingReload> {
         debug_assert!(
             self.pending.is_empty(),
             "live reload must only be used on read-only instances",
         );
 
-        self.file.live_reload()?;
-        let len = self.file.len::<u8>()?;
+        self.file.live_reload(hw_counter)?;
+        let len = self.file.len::<u8>(hw_counter)?;
         let new_count = count_from_len(len)?;
 
         if new_count < self.persisted_count {
@@ -275,10 +299,12 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
-        Ok(Box::pin(
-            self.file.live_preload(|path| fs.cached_file_info(path))?,
-        ))
+        Ok(Box::pin(self.file.live_preload(
+            |path| fs.cached_file_info(path),
+            hw_counter,
+        )?))
     }
 }
 
@@ -307,16 +333,17 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     /// exists.
     ///
     /// The directory must exist already.
-    pub fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
+    pub fn new<Fs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let path = Self::tracker_file_name(dir);
-        fs.create(&path, 0)?;
+        fs.create(&path, 0, hw_counter)?;
         let file = fs.open(
             &path,
             Self::open_options(Populate::No, true),
             Default::default(),
+            hw_counter,
         )?;
         Ok(Self {
             path,
@@ -332,21 +359,26 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     ///
     /// A trailing partial entry due to a torn write is truncated away, so that appends always
     /// start at a whole entry offset.
-    pub fn open_writable<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> Result<Self>
+    pub fn open_writable<Fs>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let path = Self::tracker_file_name(dir);
-        let mut file = Self::open_file(fs, &path, populate, true)?;
+        let mut file = Self::open_file(fs, &path, populate, true, hw_counter)?;
 
-        let len = file.len::<u8>()?;
+        let len = file.len::<u8>(hw_counter)?;
         let aligned_len = len - (len % ENTRY_SIZE);
         if aligned_len != len {
             // Recover from a torn write by truncating the partial trailing entry. The handle is
             // opened from scratch afterwards, shrinking is not supported through an open handle.
             drop(file);
-            fs.create(&path, aligned_len as usize)?;
-            file = Self::open_file(fs, &path, populate, true)?;
+            fs.create(&path, aligned_len as usize, hw_counter)?;
+            file = Self::open_file(fs, &path, populate, true, hw_counter)?;
         }
 
         Ok(Self {
@@ -397,7 +429,11 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
     /// would have ended.
     ///
     /// This does not sync the file to disk, invoke a [`flusher`](Self::flusher) afterwards.
-    pub fn write_pending(&mut self, target: PointOffset) -> Result<()> {
+    pub fn write_pending(
+        &mut self,
+        target: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         if target <= self.persisted_count {
             return Ok(());
         }
@@ -412,15 +448,15 @@ impl<S: UniversalAppend> AppendOnlyTracker<S> {
         let offset = u64::from(self.persisted_count) * ENTRY_SIZE;
         let end = offset + count as u64 * ENTRY_SIZE;
 
-        match self.file.append(offset, &self.pending[..count]) {
+        match self.file.append(offset, &self.pending[..count], hw_counter) {
             Ok(()) => {}
             // A retried append after a lost acknowledgement conflicts instead of appending
             // twice. If the file ends exactly where this append would have ended, the mappings
             // landed before; adopt them as persisted. Any other length means the file was
             // modified outside this writer.
             Err(UniversalIoError::AppendOffsetConflict { .. }) => {
-                self.file.live_reload()?;
-                let len = self.file.len::<u8>()?;
+                self.file.live_reload(hw_counter)?;
+                let len = self.file.len::<u8>(hw_counter)?;
                 if len != end {
                     return Err(BlobstoreError::service_error(format!(
                         "append-only tracker file {} was modified outside this writer: it ends \
@@ -455,6 +491,7 @@ where
     point_offsets: I,
     tracker: &'a AppendOnlyTracker<S>,
     pipeline: S::ReadPipeline<'a, U>,
+    hw_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, U, I, S> Iterator for Iter<'a, U, I, S>
@@ -486,6 +523,7 @@ where
                 &self.tracker.file,
                 start..start + ENTRY_SIZE,
                 align_of::<OptionalPointer>(),
+                self.hw_counter,
             );
 
             if let Err(err) = result {
@@ -493,7 +531,9 @@ where
             }
         }
 
-        let result = self.pipeline.wait_bytemuck::<OptionalPointer>();
+        let result = self
+            .pipeline
+            .wait_bytemuck::<OptionalPointer>(self.hw_counter);
 
         let (user_data, entry) = match result {
             Ok(entry) => entry?,
@@ -532,7 +572,8 @@ mod tests {
 
     fn empty_tracker() -> (TempDir, AppendOnlyTracker<MmapFile>) {
         let dir = TempDir::new().unwrap();
-        let tracker = AppendOnlyTracker::new(&MmapFs, dir.path()).unwrap();
+        let tracker =
+            AppendOnlyTracker::new(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
         (dir, tracker)
     }
 
@@ -548,7 +589,12 @@ mod tests {
     fn test_new_tracker_is_empty() {
         let (_dir, tracker) = empty_tracker();
         assert_eq!(tracker.pointer_count(), 0);
-        assert_eq!(tracker.get::<Random>(0).unwrap(), None);
+        assert_eq!(
+            tracker
+                .get::<Random>(0, &HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
         assert_eq!(file_len(&tracker), 0);
     }
 
@@ -556,12 +602,22 @@ mod tests {
     fn test_open_missing_tracker_fails() {
         let dir = TempDir::new().unwrap();
         assert!(
-            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
-                .is_err()
+            AppendOnlyTracker::<MmapFile>::open_writable(
+                &MmapFs,
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new()
+            )
+            .is_err()
         );
         assert!(
-            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
-                .is_err()
+            AppendOnlyTracker::<MmapFile>::open_read_only(
+                &MmapFs,
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new()
+            )
+            .is_err()
         );
     }
 
@@ -575,9 +631,19 @@ mod tests {
 
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
-        assert_eq!(tracker.get::<Random>(5).unwrap(), None);
+        assert_eq!(
+            tracker
+                .get::<Random>(5, &HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
 
         // Nothing is written to the file until flushed
         assert_eq!(file_len(&tracker), 0);
@@ -608,42 +674,79 @@ mod tests {
         tracker.set(4, pointer(4)).unwrap();
 
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get::<Random>(0).unwrap(), Some(pointer(0)));
+        assert_eq!(
+            tracker
+                .get::<Random>(0, &HardwareCounterCell::new())
+                .unwrap(),
+            Some(pointer(0))
+        );
         for n in 1..4 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), None);
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                None
+            );
         }
-        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
+        assert_eq!(
+            tracker
+                .get::<Random>(4, &HardwareCounterCell::new())
+                .unwrap(),
+            Some(pointer(4))
+        );
 
         // Gaps are persisted as zeroed entries
-        tracker.write_pending(tracker.pointer_count()).unwrap();
+        tracker
+            .write_pending(tracker.pointer_count(), &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
-        assert_eq!(tracker.get::<Random>(2).unwrap(), None);
+        assert_eq!(
+            tracker
+                .get::<Random>(2, &HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
     }
 
     #[test]
     fn test_write_pending_and_reopen() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        let mut tracker =
+            AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
-        tracker.write_pending(tracker.pointer_count()).unwrap();
+        tracker
+            .write_pending(tracker.pointer_count(), &HardwareCounterCell::new())
+            .unwrap();
         tracker.flusher()().unwrap();
 
         // The file length matches the exact number of mappings
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         drop(tracker);
 
-        let tracker =
-            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
         assert_eq!(
-            tracker.get_range::<Random>(0..7).unwrap(),
+            tracker
+                .get_range::<Random>(0..7, &HardwareCounterCell::new())
+                .unwrap(),
             (0..5)
                 .map(|n| Some(pointer(n)))
                 .chain([None, None])
@@ -660,18 +763,32 @@ mod tests {
         }
 
         // Flush only the first three mappings
-        tracker.write_pending(3).unwrap();
+        tracker
+            .write_pending(3, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(file_len(&tracker), 3 * ENTRY_SIZE);
         assert_eq!(tracker.pointer_count(), 5);
         for n in 0..5 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
 
         // Then the rest
-        tracker.write_pending(5).unwrap();
+        tracker
+            .write_pending(5, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
         for n in 0..5 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
     }
 
@@ -682,16 +799,27 @@ mod tests {
         for n in 0..3 {
             tracker.set(n, pointer(n)).unwrap();
         }
-        tracker.write_pending(3).unwrap();
+        tracker
+            .write_pending(3, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(file_len(&tracker), 3 * ENTRY_SIZE);
 
         // A stale flush with an old target must not write anything again
-        tracker.write_pending(2).unwrap();
-        tracker.write_pending(3).unwrap();
+        tracker
+            .write_pending(2, &HardwareCounterCell::new())
+            .unwrap();
+        tracker
+            .write_pending(3, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(file_len(&tracker), 3 * ENTRY_SIZE);
         assert_eq!(tracker.pointer_count(), 3);
         for n in 0..3 {
-            assert_eq!(tracker.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                tracker
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
     }
 
@@ -699,11 +827,15 @@ mod tests {
     fn test_torn_write_is_ignored_and_truncated() {
         let dir = TempDir::new().unwrap();
 
-        let mut tracker = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        let mut tracker =
+            AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         for n in 0..5 {
             tracker.set(n, pointer(n)).unwrap();
         }
-        tracker.write_pending(tracker.pointer_count()).unwrap();
+        tracker
+            .write_pending(tracker.pointer_count(), &HardwareCounterCell::new())
+            .unwrap();
         let path = tracker.path.clone();
         drop(tracker);
 
@@ -714,20 +846,38 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 5 * ENTRY_SIZE + 7);
 
         // A read-only open ignores the partial entry, but leaves the file untouched
-        let tracker =
-            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_read_only(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
+        assert_eq!(
+            tracker
+                .get::<Random>(4, &HardwareCounterCell::new())
+                .unwrap(),
+            Some(pointer(4))
+        );
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE + 7);
         drop(tracker);
 
         // A writable open truncates the partial entry away
-        let tracker =
-            AppendOnlyTracker::<MmapFile>::open_writable(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let tracker = AppendOnlyTracker::<MmapFile>::open_writable(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(tracker.pointer_count(), 5);
-        assert_eq!(tracker.get::<Random>(4).unwrap(), Some(pointer(4)));
+        assert_eq!(
+            tracker
+                .get::<Random>(4, &HardwareCounterCell::new())
+                .unwrap(),
+            Some(pointer(4))
+        );
         assert_eq!(file_len(&tracker), 5 * ENTRY_SIZE);
     }
 
@@ -744,7 +894,9 @@ mod tests {
         let entry = OptionalPointer::some(pointer(0));
         fs::write(&tracker.path, bytemuck::bytes_of(&entry)).unwrap();
 
-        tracker.write_pending(1).unwrap();
+        tracker
+            .write_pending(1, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(tracker.persisted_count, 1);
         assert!(tracker.pending.is_empty());
         assert_eq!(
@@ -752,7 +904,12 @@ mod tests {
             ENTRY_SIZE,
             "the mapping must not be appended twice",
         );
-        assert_eq!(tracker.get::<Random>(0).unwrap(), Some(pointer(0)));
+        assert_eq!(
+            tracker
+                .get::<Random>(0, &HardwareCounterCell::new())
+                .unwrap(),
+            Some(pointer(0))
+        );
     }
 
     /// A conflicting append against a file that does not end where the append would have ended
@@ -766,7 +923,9 @@ mod tests {
         // Something else grew the (previously empty) file to an unexpected length
         fs::write(&tracker.path, [9; 7]).unwrap();
 
-        let err = tracker.write_pending(1).unwrap_err();
+        let err = tracker
+            .write_pending(1, &HardwareCounterCell::new())
+            .unwrap_err();
         assert!(matches!(err, BlobstoreError::ServiceError { .. }));
 
         // Nothing was adopted, the pending mapping is kept for a later flush
@@ -778,17 +937,25 @@ mod tests {
     fn test_live_reload() {
         let dir = TempDir::new().unwrap();
 
-        let mut writer = AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path()).unwrap();
+        let mut writer =
+            AppendOnlyTracker::<MmapFile>::new(&MmapFs, dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         for n in 0..3 {
             writer.set(n, pointer(n)).unwrap();
         }
-        writer.write_pending(writer.pointer_count()).unwrap();
+        writer
+            .write_pending(writer.pointer_count(), &HardwareCounterCell::new())
+            .unwrap();
 
-        let mut reader =
-            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let mut reader = AppendOnlyTracker::<MmapFile>::open_read_only(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(reader.pointer_count(), 3);
-        let reload = reader.reload_count().unwrap();
+        let reload = reader.reload_count(&HardwareCounterCell::new()).unwrap();
         assert_eq!(reload.count(), 3);
         reader.commit_reload(reload);
 
@@ -796,22 +963,34 @@ mod tests {
         for n in 3..6 {
             writer.set(n, pointer(n)).unwrap();
         }
-        writer.write_pending(writer.pointer_count()).unwrap();
+        writer
+            .write_pending(writer.pointer_count(), &HardwareCounterCell::new())
+            .unwrap();
 
-        let reload = reader.reload_count().unwrap();
+        let reload = reader.reload_count(&HardwareCounterCell::new()).unwrap();
         assert_eq!(reload.count(), 6);
 
         // Observing alone does not expose them, only committing does
         assert_eq!(reader.pointer_count(), 3);
-        assert_eq!(reader.get::<Random>(3).unwrap(), None);
+        assert_eq!(
+            reader
+                .get::<Random>(3, &HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
 
         reader.commit_reload(reload);
         assert_eq!(reader.pointer_count(), 6);
         for n in 0..6 {
-            assert_eq!(reader.get::<Random>(n).unwrap(), Some(pointer(n)));
+            assert_eq!(
+                reader
+                    .get::<Random>(n, &HardwareCounterCell::new())
+                    .unwrap(),
+                Some(pointer(n))
+            );
         }
 
-        let reload = reader.reload_count().unwrap();
+        let reload = reader.reload_count(&HardwareCounterCell::new()).unwrap();
         assert_eq!(reload.count(), 6);
         reader.commit_reload(reload);
     }
@@ -825,13 +1004,18 @@ mod tests {
         for n in 0..3 {
             tracker.set(n, pointer(n)).unwrap();
         }
-        tracker.write_pending(3).unwrap();
+        tracker
+            .write_pending(3, &HardwareCounterCell::new())
+            .unwrap();
         tracker.set(3, pointer(3)).unwrap();
         tracker.set(6, pointer(6)).unwrap();
 
         let requested = [2, 0, 6, 4, 3, 9];
         let mut collected = tracker
-            .iter(requested.iter().map(|&offset| (offset, offset)))
+            .iter(
+                requested.iter().map(|&offset| (offset, offset)),
+                &HardwareCounterCell::new(),
+            )
             .unwrap()
             .map(|result| result.unwrap())
             .collect::<Vec<_>>();
@@ -857,12 +1041,16 @@ mod tests {
         for n in 0..3 {
             tracker.set(n, pointer(n)).unwrap();
         }
-        tracker.write_pending(3).unwrap();
+        tracker
+            .write_pending(3, &HardwareCounterCell::new())
+            .unwrap();
         tracker.set(3, pointer(3)).unwrap();
         tracker.set(6, pointer(6)).unwrap();
 
         assert_eq!(
-            tracker.get_range::<Random>(0..9).unwrap(),
+            tracker
+                .get_range::<Random>(0..9, &HardwareCounterCell::new())
+                .unwrap(),
             vec![
                 Some(pointer(0)),
                 Some(pointer(1)),
@@ -876,11 +1064,20 @@ mod tests {
             ],
         );
         assert_eq!(
-            tracker.get_range::<Random>(2..4).unwrap(),
+            tracker
+                .get_range::<Random>(2..4, &HardwareCounterCell::new())
+                .unwrap(),
             vec![Some(pointer(2)), Some(pointer(3)),]
         );
-        assert_eq!(tracker.get_range::<Random>(7..9).unwrap(), vec![None, None]);
-        let empty = tracker.get_range::<Random>(3..3).unwrap();
+        assert_eq!(
+            tracker
+                .get_range::<Random>(7..9, &HardwareCounterCell::new())
+                .unwrap(),
+            vec![None, None]
+        );
+        let empty = tracker
+            .get_range::<Random>(3..3, &HardwareCounterCell::new())
+            .unwrap();
         assert!(empty.is_empty());
     }
 }

@@ -12,6 +12,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use super::{MmapFile, MmapFs};
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::read_from_via_read_bytes;
@@ -26,15 +27,17 @@ impl UniversalReadFsAsync for MmapFs {
         path: PathBuf,
         options: OpenOptions,
         extra: (),
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<MmapFile>> + '_ {
-        ready(self.open(&path, options, extra))
+        ready(self.open(&path, options, extra, &hw_acc.get_counter_cell()))
     }
 
     fn list_files_async<'a>(
         &'a self,
         prefix_path: &'a Path,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
-        ready(self.list_files(prefix_path))
+        ready(self.list_files(prefix_path, &hw_acc.get_counter_cell()))
     }
 }
 
@@ -44,19 +47,21 @@ impl UniversalReadAsync for MmapFile {
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
-        ready(self.read_bytes(range, access_pattern, align))
+        ready(self.read_bytes(range, access_pattern, align, &hw_acc.get_counter_cell()))
     }
     fn read_from_into_async<W, I>(
         &self,
         from: u64,
         init: I,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        read_from_via_read_bytes(self, from, init)
+        read_from_via_read_bytes(self, from, init, hw_acc.clone())
     }
 }
 
@@ -67,11 +72,16 @@ impl UniversalWriteFsAsync for MmapFs {
         self.create_dir(&path)
     }
 
-    async fn atomic_save_async(&self, path: PathBuf, bytes: Vec<u8>) -> UioResult<()> {
-        self.atomic_save(&path, &bytes)
+    async fn atomic_save_async(
+        &self,
+        path: PathBuf,
+        bytes: Vec<u8>,
+        hw_acc: HwMeasurementAcc,
+    ) -> UioResult<()> {
+        self.atomic_save(&path, &bytes, &hw_acc.get_counter_cell())
     }
 
-    async fn remove_async(&self, path: PathBuf) -> UioResult<()> {
-        self.remove(&path)
+    async fn remove_async(&self, path: PathBuf, hw_acc: HwMeasurementAcc) -> UioResult<()> {
+        self.remove(&path, &hw_acc.get_counter_cell())
     }
 }

@@ -39,7 +39,11 @@ pub trait ReadSegmentEntry {
     /// Get version of specified point
     ///
     /// Returns `None` if point does not exist or is soft-deleted.
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
+    fn point_version(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType>;
 
     #[allow(clippy::too_many_arguments)]
     fn search_batch(
@@ -186,7 +190,12 @@ pub trait ReadSegmentEntry {
     ) -> OperationResult<Vec<PointIdType>>;
 
     /// Read points in [from; to) range
-    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
+    fn read_range(
+        &self,
+        from: Option<PointIdType>,
+        to: Option<PointIdType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType>;
 
     /// Return all unique values for the given key.
     fn unique_values(
@@ -209,7 +218,12 @@ pub trait ReadSegmentEntry {
     ///
     /// Soft deleted points are excluded. `deferred_behavior` selects whether a
     /// deferred-only point counts as present.
-    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
+    fn has_point(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool;
 
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(
@@ -234,22 +248,29 @@ pub trait ReadSegmentEntry {
     ///
     /// - excludes soft deleted points
     /// - includes deferred points.
-    fn available_point_count(&self) -> usize;
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     /// Number of deleted points
-    fn deleted_point_count(&self) -> usize;
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     /// Similar to `available_point_count()` but excludes all deferred points.
-    fn available_point_count_without_deferred(&self) -> usize;
+    fn available_point_count_without_deferred(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     /// Size of all available vectors in storage
-    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
+    fn available_vectors_size_in_bytes(
+        &self,
+        vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize>;
 
     /// Max value from all `available_vectors_size_in_bytes`
-    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+    fn max_available_vectors_size_in_bytes(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         let mut max_size = 0;
         for vector_name in self.vector_names() {
-            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
+            let inner_size = self.available_vectors_size_in_bytes(&vector_name, hw_counter)?;
             max_size = std::cmp::max(max_size, inner_size);
         }
         Ok(max_size)
@@ -262,11 +283,11 @@ pub trait ReadSegmentEntry {
     fn segment_type(&self) -> SegmentType;
 
     /// Get current stats of the segment
-    fn info(&self) -> OperationResult<SegmentInfo>;
+    fn info(&self, hw_counter: &HardwareCounterCell) -> OperationResult<SegmentInfo>;
 
     /// Get size related stats of the segment.
     /// This returns `SegmentInfo` with some non size-related data (like `schema`) unset to improve performance.
-    fn size_info(&self) -> SegmentInfo;
+    fn size_info(&self, hw_counter: &HardwareCounterCell) -> SegmentInfo;
 
     /// Get segment configuration
     fn config(&self) -> &SegmentConfig;
@@ -281,15 +302,19 @@ pub trait ReadSegmentEntry {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
     // Get collected telemetry data of segment
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry>;
+    fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentTelemetry>;
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()>;
 
     /// Check whether the point is marked as deferred in the segment
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool;
+    fn point_is_deferred(&self, point_id: PointIdType, hw_counter: &HardwareCounterCell) -> bool;
 
     /// Returns external IDs of all deferred points in the segment
-    fn deferred_point_ids(&self) -> Vec<PointIdType>;
+    fn deferred_point_ids(&self, hw_counter: &HardwareCounterCell) -> Vec<PointIdType>;
 
     /// Returns the amount of non-deleted deferred points.
     ///
@@ -327,15 +352,24 @@ pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
     /// segment at `version == persisted_version` with the rest still in memory: every later flush
     /// skips it and the WAL acknowledge moves past the operation, dropping the rest for good
     /// (#10402). Pass `None` only when the flush cannot race an update operation.
-    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher>;
+    fn flusher(
+        &self,
+        force: bool,
+        up_to: Option<SeqNumberType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Flusher>;
 
     /// Immediately flush all changes to disk and return persisted version.
     /// Blocks the current thread.
     ///
     /// Claims everything the segment holds, so only for flushes that cannot race an update
     /// operation. See `flusher`.
-    fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
-        if let Some(flusher) = self.flusher(force, None) {
+    fn flush(
+        &self,
+        force: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SeqNumberType> {
+        if let Some(flusher) = self.flusher(force, None, hw_counter) {
             flusher()?;
         }
         Ok(self.persistent_version())
@@ -441,6 +475,7 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         op_num: SeqNumberType,
         vector_name: &VectorName,
         vector_config: &VectorNameConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     /// Delete a named vector from the segment.
@@ -518,6 +553,7 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn set_payload(

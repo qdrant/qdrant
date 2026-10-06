@@ -1,6 +1,7 @@
 use std::mem::{align_of, size_of};
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::universal_io::{ReadPipeline, UniversalRead, UserData};
 
@@ -20,6 +21,7 @@ where
     storage_len: u64,
     pending_updates: &'a AHashMap<PointOffset, PointerUpdates>,
     pipeline: S::ReadPipeline<'a, U>,
+    hw_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, U, I, S> Iter<'a, U, I, S>
@@ -32,13 +34,15 @@ where
         point_offsets: I,
         storage: &'a S,
         pending_updates: &'a AHashMap<PointOffset, PointerUpdates>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Result<Self> {
         let iter = Self {
             point_offsets,
             storage,
-            storage_len: storage.len::<u8>()?,
+            storage_len: storage.len::<u8>(hw_counter)?,
             pending_updates,
             pipeline: S::ReadPipeline::new()?,
+            hw_counter,
         };
 
         Ok(iter)
@@ -93,6 +97,7 @@ where
                 self.storage,
                 range,
                 align_of::<OptionalPointer>(),
+                self.hw_counter,
             );
 
             if let Err(err) = result {
@@ -100,7 +105,9 @@ where
             }
         }
 
-        let result = self.pipeline.wait_bytemuck::<OptionalPointer>();
+        let result = self
+            .pipeline
+            .wait_bytemuck::<OptionalPointer>(self.hw_counter);
 
         let (user_data, pointer) = match result {
             Ok(pointer) => pointer?,

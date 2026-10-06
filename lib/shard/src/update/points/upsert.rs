@@ -90,14 +90,14 @@ pub(crate) fn retain_conditional_upsert_points(
         }
         UpdateMode::InsertOnly => {
             // Only insert new points, skip all existing points entirely
-            let existing_points = segments.select_existing_points(point_ids);
+            let existing_points = segments.select_existing_points(point_ids, hw_counter);
             points_op.retain_point_ids(|idx| !existing_points.contains(idx));
         }
         UpdateMode::UpdateOnly => {
             // Only update existing points that match the condition, don't insert new points
             let points_to_exclude =
                 select_excluded_by_filter_ids(segments, point_ids.clone(), condition, hw_counter)?;
-            let existing_points = segments.select_existing_points(point_ids);
+            let existing_points = segments.select_existing_points(point_ids, hw_counter);
             // Keep only points that exist AND are not excluded by the condition
             points_op.retain_point_ids(|idx| {
                 existing_points.contains(idx) && !points_to_exclude.contains(idx)
@@ -257,8 +257,9 @@ where
             .filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment =
-                segments.smallest_appendable_segment().ok_or_else(|| {
+            let default_write_segment = segments
+                .smallest_appendable_segment(hw_counter)
+                .ok_or_else(|| {
                     OperationError::service_error(
                         "No appendable segments exist, expected at least one",
                     )

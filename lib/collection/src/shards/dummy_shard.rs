@@ -152,7 +152,7 @@ impl ShardOperation for DummyShard {
         self.dummy("Scroll by ID")
     }
 
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self, _hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
         self.dummy("Get Info")
     }
 

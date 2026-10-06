@@ -78,10 +78,11 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         let mut futs = Vec::new();
         for field_index in self.field_indexes.values().flatten() {
-            futs.extend(field_index.live_preload(fs)?);
+            futs.extend(field_index.live_preload(fs, hw_counter)?);
         }
 
         Ok(futs)

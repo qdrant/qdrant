@@ -157,10 +157,11 @@ impl QueueProxyShard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
             .await
     }
 
@@ -207,10 +208,11 @@ impl QueueProxyShard {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShardTelemetry> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_telemetry_data(detail, timeout)
+            .get_telemetry_data(detail, timeout, hw_acc)
             .await
     }
 
@@ -224,10 +226,14 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+    pub async fn get_size_stats(
+        &self,
+        timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<SizeStats> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_size_stats(timeout)
+            .get_size_stats(timeout, hw_acc)
             .await
     }
 
@@ -290,9 +296,12 @@ impl QueueProxyShard {
         }
     }
 
-    pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
+    pub async fn memory_report(
+        &self,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<CollectionMemoryReport> {
         if let Some(inner) = &self.inner {
-            return inner.wrapped_shard.memory_report().await;
+            return inner.wrapped_shard.memory_report(hw_acc).await;
         }
         Ok(CollectionMemoryReport::default())
     }
@@ -360,8 +369,8 @@ impl ShardOperation for QueueProxyShard {
     }
 
     /// Forward read-only `info` to `wrapped_shard`
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        self.inner_unchecked().info().await
+    async fn info(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
+        self.inner_unchecked().info(hw_acc).await
     }
     async fn core_search(
         &self,
@@ -820,9 +829,9 @@ impl ShardOperation for Inner {
     }
 
     /// Forward read-only `info` to `wrapped_shard`
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
         let local_shard = &self.wrapped_shard;
-        local_shard.info().await
+        local_shard.info(hw_acc).await
     }
 
     /// Forward read-only `search` to `wrapped_shard`

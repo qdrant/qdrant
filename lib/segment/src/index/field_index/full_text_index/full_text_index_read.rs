@@ -162,8 +162,8 @@ pub trait FullTextIndexRead {
     }
 
     fn points_count(&self) -> usize;
-    fn values_count(&self, point_id: PointOffsetType) -> usize;
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize;
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool;
 
     /// Number of tokens indexed for each of `point_ids`, repetitions included:
     /// `|d|` in BM25. `f(index, doc_len)` once per entry, with `index` into
@@ -242,13 +242,19 @@ pub trait FullTextIndexRead {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
-    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool>;
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 
     fn check_match_batch<U: UserData>(
         &self,
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Walk the inverted-index vocab and emit one [`PayloadBlockCondition`] per
@@ -259,6 +265,7 @@ pub trait FullTextIndexRead {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     fn get_storage_type(&self) -> StorageType;
@@ -411,9 +418,10 @@ pub fn default_check_match_batch<T: FullTextIndexRead + ?Sized, U: UserData>(
     query: &ParsedQuery,
     items: impl Iterator<Item = (U, PointOffsetType)>,
     mut on_match: impl FnMut(U, bool),
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     for (tag, point_id) in items {
-        on_match(tag, this.check_match(query, point_id)?);
+        on_match(tag, this.check_match(query, point_id, hw_counter)?);
     }
     Ok(())
 }

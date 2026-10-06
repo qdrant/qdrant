@@ -59,13 +59,17 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         )
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         if self.storage.deleted.is_active(idx) {
             Some(Box::new(
                 self.storage
                     .point_to_values
                     // TODO: Propagate counter upwards
-                    .values_iter(idx, ConditionedCounter::never())
+                    .values_iter(idx, ConditionedCounter::never(hw_counter))
                     .ok()??
                     .map(|v| *v),
             ))
@@ -74,9 +78,16 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         if self.storage.deleted.is_active(idx) {
-            self.storage.point_to_values.get_values_count(idx).ok()?
+            self.storage
+                .point_to_values
+                .get_values_count(idx, hw_counter)
+                .ok()?
         } else {
             None
         }
@@ -84,8 +95,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
 
     /// Returns the number of key-value pairs in the index.
     /// Note that is doesn't count deleted pairs.
-    fn total_unique_values_count(&self) -> OperationResult<usize> {
-        Ok(self.storage.pairs.len()? as usize)
+    fn total_unique_values_count(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        Ok(self.storage.pairs.len(hw_counter)? as usize)
     }
 
     fn values_range<'a>(
@@ -97,7 +111,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         let hw_counter = ConditionedCounter::always(hw_counter);
 
         Ok(self
-            .values_range_iterator(start_bound, end_bound)?
+            .values_range_iterator(start_bound, end_bound, hw_counter.parent())?
             .map(|point| point.idx)
             .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
                 i.payload_index_io_read_counter()
@@ -108,9 +122,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         Ok(self
-            .values_range_iterator(start_bound, end_bound)?
+            .values_range_iterator(start_bound, end_bound, hw_counter)?
             .map(|Point { val, idx, .. }| (val, idx)))
     }
 
@@ -124,9 +139,9 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        let (start, end) = self.values_range_bounds(start_bound, end_bound)?;
+        let (start, end) = self.values_range_bounds(start_bound, end_bound, hw_counter)?;
         Ok(end - start)
     }
 
@@ -171,6 +186,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         bound: &Point<T>,
         lo: usize,
         hi: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Result<usize, usize>> {
         if let Some(block_index) = &self.storage.pairs_block_index {
             let block = block_index.find_block(|elem| elem.cmp(bound));
@@ -187,6 +203,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
                     (block_hi - block_lo) as u64,
                 ),
                 Random,
+                hw_counter,
             )?;
             return Ok(elems
                 .binary_search(bound)
@@ -198,10 +215,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         let mut right = hi;
         while left < right {
             let mid = left + (right - left) / 2;
-            let elem = self
-                .storage
-                .pairs
-                .read(ReadRange::one((mid * size_of::<Point<T>>()) as u64), Random)?;
+            let elem = self.storage.pairs.read(
+                ReadRange::one((mid * size_of::<Point<T>>()) as u64),
+                Random,
+                hw_counter,
+            )?;
             match elem[0].cmp(bound) {
                 std::cmp::Ordering::Less => left = mid + 1,
                 std::cmp::Ordering::Equal => return Ok(Ok(mid)),
@@ -216,14 +234,15 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(usize, usize)> {
-        let len = self.storage.pairs.len()? as usize;
+        let len = self.storage.pairs.len(hw_counter)? as usize;
 
         let start_index = match start_bound {
             Bound::Included(bound) => self
-                .binary_search_pairs(&bound, 0, len)?
+                .binary_search_pairs(&bound, 0, len, hw_counter)?
                 .unwrap_or_else(|idx| idx),
-            Bound::Excluded(bound) => match self.binary_search_pairs(&bound, 0, len)? {
+            Bound::Excluded(bound) => match self.binary_search_pairs(&bound, 0, len, hw_counter)? {
                 Ok(idx) => idx + 1,
                 Err(idx) => idx,
             },
@@ -235,12 +254,14 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         }
 
         let end_index = match end_bound {
-            Bound::Included(bound) => match self.binary_search_pairs(&bound, start_index, len)? {
-                Ok(idx) => idx + 1,
-                Err(idx) => idx,
-            },
+            Bound::Included(bound) => {
+                match self.binary_search_pairs(&bound, start_index, len, hw_counter)? {
+                    Ok(idx) => idx + 1,
+                    Err(idx) => idx,
+                }
+            }
             Bound::Excluded(bound) => self
-                .binary_search_pairs(&bound, start_index, len)?
+                .binary_search_pairs(&bound, start_index, len, hw_counter)?
                 .unwrap_or_else(|idx| idx),
             Bound::Unbounded => len,
         };
@@ -255,14 +276,16 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = Point<T>> + '_> {
-        let (start_pos, end_pos) = self.values_range_bounds(start_bound, end_bound)?;
+        let (start_pos, end_pos) = self.values_range_bounds(start_bound, end_bound, hw_counter)?;
         let count = end_pos - start_pos;
 
         let iter = if count > 0 {
             match self.storage.pairs.read(
                 ReadRange::new((start_pos * size_of::<Point<T>>()) as u64, count as u64),
                 Random,
+                hw_counter,
             )? {
                 Cow::Borrowed(slice) => Either::Left(slice.iter().copied()),
                 Cow::Owned(vec) => Either::Right(vec.into_iter()),

@@ -54,6 +54,7 @@ where
                 resolved_ids.push(point_id);
                 resolved_offsets.push(offset);
             },
+            hw_counter,
         )?;
         self.retrieve_resolved(
             &resolved_ids,
@@ -148,6 +149,7 @@ where
                 resolved_ids.push(point_id);
                 resolved_offsets.push(offset);
             },
+            hw_counter,
         )?;
 
         // One blank record per resolved point; `vectors` is `Some` only when
@@ -289,6 +291,7 @@ where
             |internal_id, external_id| {
                 external_ids.insert(internal_id, external_id);
             },
+            hw_counter,
         )?;
 
         // Deferred versions never reach post-processing — they are excluded in the
@@ -336,6 +339,7 @@ where
             |internal_id, version| {
                 versions.insert(internal_id, version);
             },
+            hw_counter,
         )?;
 
         let mut results = Vec::with_capacity(point_ids.len());
@@ -464,7 +468,10 @@ where
         let filter_context = filter
             .map(|filter| self.payload_index.filter_context(filter, &hw_counter))
             .transpose()?;
-        let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
+        let (cutoff, deleted, shadowed) = self
+            .id_tracker
+            .point_mappings(&hw_counter)
+            .visible_scan_masks();
         let deleted = context.deleted_points().unwrap_or(deleted);
         let accept = |point_id: PointOffsetType| {
             let bit = point_id as usize;
@@ -492,10 +499,11 @@ where
     }
 
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
-        query_context.add_available_point_count(self.available_point_count_without_deferred());
         let hw_counter = query_context
             .hardware_usage_accumulator()
             .get_counter_cell();
+        query_context
+            .add_available_point_count(self.available_point_count_without_deferred(&hw_counter));
         let is_stopped = query_context.is_stopped_handle();
 
         let QueryIdfStats { scopes } = query_context.mut_idf_stats();
@@ -606,7 +614,8 @@ mod tests {
             payload_storage_type: Default::default(),
             id_tracker_memory: None,
         };
-        let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+        let (mut segment, _) =
+            build_segment(path, &config, None, true, &HardwareCounterCell::new()).unwrap();
         let hw_counter = HardwareCounterCell::new();
 
         // Point 1: dense + sparse vectors, with payload.
@@ -831,7 +840,11 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let is_stopped = AtomicBool::new(false);
 
-        assert!(segment.delete_vector(103, 1.into(), DENSE_NAME).unwrap());
+        assert!(
+            segment
+                .delete_vector(103, 1.into(), DENSE_NAME, &hw_counter)
+                .unwrap()
+        );
 
         let point_ids = [1.into(), 2.into()];
         let with_payload = WithPayload {

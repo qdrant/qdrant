@@ -74,7 +74,12 @@ impl<
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         self.hardware_counter.vector_io_read().incr();
-        TMetric::similarity(&self.query, &self.vector_storage.get_dense::<Random>(idx))
+        TMetric::similarity(
+            &self.query,
+            &self
+                .vector_storage
+                .get_dense::<Random>(idx, &self.hardware_counter),
+        )
     }
 
     #[inline]
@@ -85,16 +90,24 @@ impl<
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         self.vector_storage
-            .for_each_in_dense_batch(ids, |idx, vector| {
-                scores[idx] = TMetric::similarity(&self.query, vector);
-            })
+            .for_each_in_dense_batch(
+                ids,
+                |idx, vector| {
+                    scores[idx] = TMetric::similarity(&self.query, vector);
+                },
+                &self.hardware_counter,
+            )
             .expect("read vectors");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
-        let v1 = self.vector_storage.get_dense::<Random>(point_a);
-        let v2 = self.vector_storage.get_dense::<Random>(point_b);
+        let v1 = self
+            .vector_storage
+            .get_dense::<Random>(point_a, &self.hardware_counter);
+        let v2 = self
+            .vector_storage
+            .get_dense::<Random>(point_b, &self.hardware_counter);
         TMetric::similarity(&v1, &v2)
     }
 

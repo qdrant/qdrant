@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
@@ -43,12 +44,12 @@ const FILE_NAME: &str = "compacted_tracker.dat";
 /// receive their filesystem as a generic parameter, not as the file type's `S::Fs`.
 trait TrackerFs: fmt::Debug + Send + Sync {
     /// Atomically replace the whole file at `path`
-    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()>;
+    fn save(&self, path: &Path, bytes: &[u8], hw_counter: &HardwareCounterCell) -> UioResult<()>;
 }
 
 impl<Fs: UniversalWriteFs> TrackerFs for Fs {
-    fn save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.atomic_save(path, bytes)
+    fn save(&self, path: &Path, bytes: &[u8], hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.atomic_save(path, bytes, hw_counter)
     }
 }
 
@@ -91,16 +92,21 @@ impl CompactedTracker {
     }
 
     /// Whether the given directory holds a compacted tracker file.
-    pub fn exists<Fs: UniversalReadFs>(fs: &Fs, dir: &Path) -> Result<bool> {
-        Ok(fs.exists(&Self::tracker_file_name(dir))?)
+    pub fn exists<Fs: UniversalReadFs>(
+        fs: &Fs,
+        dir: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<bool> {
+        Ok(fs.exists(&Self::tracker_file_name(dir), hw_counter)?)
     }
 
     /// Schedule a prefetch for the file a subsequent [`open`](Self::open) reads.
-    pub fn preopen<Fs: CachedReadFs>(fs: &Fs, dir: &Path) {
+    pub fn preopen<Fs: CachedReadFs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell) {
         fs.schedule_open(
             &Self::tracker_file_name(dir),
             Some(Self::open_options()),
             None,
+            hw_counter,
         );
     }
 
@@ -108,10 +114,14 @@ impl CompactedTracker {
     /// RAM.
     ///
     /// If the file does not exist or does not decode, return an error.
-    pub fn open<Fs: UniversalReadFs>(fs: &Fs, dir: &Path) -> Result<Self> {
+    pub fn open<Fs: UniversalReadFs>(
+        fs: &Fs,
+        dir: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
         let file = fs
-            .open(&path, Self::open_options(), Default::default())
+            .open(&path, Self::open_options(), Default::default(), hw_counter)
             .map_err(|err| {
                 if err.is_not_found() {
                     // If config exists and this file doesn't, it should be treated as
@@ -125,7 +135,7 @@ impl CompactedTracker {
                 }
             })?;
 
-        let pointers = format::decode(&file.read_whole::<u8>()?).map_err(|err| {
+        let pointers = format::decode(&file.read_whole::<u8>(hw_counter)?).map_err(|err| {
             BlobstoreError::service_error(format!(
                 "Invalid compacted tracker file {}: {err}",
                 path.display(),
@@ -183,9 +193,13 @@ impl CompactedTracker {
     /// exists.
     ///
     /// The directory must exist already.
-    pub fn new<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> Result<Self> {
+    pub fn new<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
-        fs.atomic_save(&path, &format::encode(&[])?)?;
+        fs.atomic_save(&path, &format::encode(&[])?, hw_counter)?;
         Ok(Self {
             path,
             pointers: Vec::new(),
@@ -200,10 +214,12 @@ impl CompactedTracker {
         fs: &Fs,
         dir: &Path,
         source: &impl TrackerRead,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         Ok(Self {
             path: Self::tracker_file_name(dir),
-            pointers: source.get_range::<Sequential>(0..source.max_point_offset()?)?,
+            pointers: source
+                .get_range::<Sequential>(0..source.max_point_offset(hw_counter)?, hw_counter)?,
             dirty: Arc::new(AtomicBool::new(true)),
             fs: Some(Arc::new(fs.clone())),
         })
@@ -216,8 +232,9 @@ impl CompactedTracker {
     pub fn open_writable<Fs: UniversalReadFs + UniversalWriteFs>(
         fs: &Fs,
         dir: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        let mut tracker = Self::open(fs, dir)?;
+        let mut tracker = Self::open(fs, dir, hw_counter)?;
         tracker.fs = Some(Arc::new(fs.clone()));
         Ok(tracker)
     }
@@ -232,7 +249,7 @@ impl CompactedTracker {
     ///
     /// Rewriting is linear in the number of mappings, which suits a storage that is flushed
     /// once after being built, not one that is flushed after every batch.
-    pub fn flusher(&self, target: PointOffset) -> Flusher {
+    pub fn flusher(&self, target: PointOffset, hw_counter: &HardwareCounterCell) -> Flusher {
         if !self.dirty.swap(false, Ordering::Relaxed) {
             return Box::new(|| Ok(()));
         }
@@ -247,7 +264,9 @@ impl CompactedTracker {
         let pointers = self.pointers[..end].to_vec();
         let dirty = Arc::clone(&self.dirty);
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let Some(fs) = &fs else {
                 dirty.store(true, Ordering::Relaxed);
                 return Err(BlobstoreError::service_error(format!(
@@ -257,7 +276,7 @@ impl CompactedTracker {
             };
             let result = format::encode(&pointers)
                 .map_err(BlobstoreError::from)
-                .and_then(|bytes| Ok(fs.save(&path, &bytes)?));
+                .and_then(|bytes| Ok(fs.save(&path, &bytes, hw_counter)?));
             if result.is_err() {
                 dirty.store(true, Ordering::Relaxed);
             }

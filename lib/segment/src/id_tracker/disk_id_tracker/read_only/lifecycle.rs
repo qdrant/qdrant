@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs};
@@ -49,16 +50,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        if !DiskMappingReader::try_preopen(fs, segment_path, populate)? {
+        if !DiskMappingReader::try_preopen(fs, segment_path, populate, hw_counter)? {
             return Ok(false);
         }
 
-        ReadOnlyVersions::schedule_preopen(fs, segment_path, populate)?;
+        ReadOnlyVersions::schedule_preopen(fs, segment_path, populate, hw_counter)?;
         fs.schedule_open(
             &deleted_path(segment_path),
             Some(Self::deleted_open_options()),
             None,
+            hw_counter,
         );
 
         Ok(true)
@@ -74,8 +77,9 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        Self::try_open(fs, segment_path, populate)?.ok_or_else(|| {
+        Self::try_open(fs, segment_path, populate, hw_counter)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker not found in segment {}",
                 segment_path.display(),
@@ -89,18 +93,21 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        let Some(reader) = DiskMappingReader::try_open(fs, segment_path, populate)? else {
+        let Some(reader) = DiskMappingReader::try_open(fs, segment_path, populate, hw_counter)?
+        else {
             return Ok(None);
         };
 
-        let versions = ReadOnlyVersions::open(fs, segment_path, populate)?;
+        let versions = ReadOnlyVersions::open(fs, segment_path, populate, hw_counter)?;
 
         let deleted_file = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
             Self::deleted_open_options(),
             Default::default(),
+            hw_counter,
         )?;
 
         Ok(Some(Self {

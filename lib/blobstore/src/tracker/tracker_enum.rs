@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     CachedReadFs, Populate, UniversalAppend, UniversalRead, UniversalReadFs, UniversalWriteFs,
@@ -31,11 +32,12 @@ impl<S: UniversalRead> TrackerEnum<S> {
         fs: &Fs,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
-        if CompactedTracker::exists(fs, dir)? {
-            CompactedTracker::preopen(fs, dir);
+        if CompactedTracker::exists(fs, dir, hw_counter)? {
+            CompactedTracker::preopen(fs, dir, hw_counter);
         } else {
-            AppendOnlyTracker::<S>::preopen(fs, dir, populate);
+            AppendOnlyTracker::<S>::preopen(fs, dir, populate, hw_counter);
         }
         Ok(())
     }
@@ -47,11 +49,14 @@ impl<S: UniversalRead> TrackerEnum<S> {
         fs: &Fs,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        if CompactedTracker::exists(fs, dir)? {
-            Ok(Self::Compacted(CompactedTracker::open(fs, dir)?))
+        if CompactedTracker::exists(fs, dir, hw_counter)? {
+            Ok(Self::Compacted(CompactedTracker::open(
+                fs, dir, hw_counter,
+            )?))
         } else {
-            let tracker = AppendOnlyTracker::open_read_only(fs, dir, populate)?;
+            let tracker = AppendOnlyTracker::open_read_only(fs, dir, populate, hw_counter)?;
             Ok(Self::AppendOnly(tracker))
         }
     }
@@ -83,9 +88,9 @@ impl<S: UniversalRead> TrackerEnum<S> {
     }
 
     /// Populate the tracker file into the RAM cache. The compacted tracker lives in RAM already.
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
         match self {
-            Self::AppendOnly(tracker) => tracker.populate(),
+            Self::AppendOnly(tracker) => tracker.populate(hw_counter),
             Self::Compacted(_) => Ok(()),
         }
     }
@@ -104,25 +109,32 @@ impl<S: UniversalAppend> TrackerEnum<S> {
     /// Create a new empty tracker in the given directory, always in the append-only format.
     ///
     /// The directory must exist already.
-    pub fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
+    pub fn new<Fs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        Ok(Self::AppendOnly(AppendOnlyTracker::new(fs, dir)?))
+        Ok(Self::AppendOnly(AppendOnlyTracker::new(
+            fs, dir, hw_counter,
+        )?))
     }
 
     /// Open the tracker in the given directory for writing, in the format found on disk.
     ///
     /// If no tracker file exists, return an error.
-    pub fn open_writable<Fs>(fs: &Fs, dir: &Path, populate: Populate) -> Result<Self>
+    pub fn open_writable<Fs>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        if CompactedTracker::exists(fs, dir)? {
-            let tracker = CompactedTracker::open_writable(fs, dir)?;
+        if CompactedTracker::exists(fs, dir, hw_counter)? {
+            let tracker = CompactedTracker::open_writable(fs, dir, hw_counter)?;
             Ok(Self::Compacted(tracker))
         } else {
-            let tracker = AppendOnlyTracker::open_writable(fs, dir, populate)?;
+            let tracker = AppendOnlyTracker::open_writable(fs, dir, populate, hw_counter)?;
             Ok(Self::AppendOnly(tracker))
         }
     }
@@ -140,9 +152,13 @@ impl<S: UniversalAppend> TrackerEnum<S> {
 
     /// Write pending mappings below `target`, see [`AppendOnlyTracker::write_pending`]. A
     /// compacted tracker writes its whole file in the flusher instead.
-    pub fn write_pending(&mut self, target: PointOffset) -> Result<()> {
+    pub fn write_pending(
+        &mut self,
+        target: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         match self {
-            Self::AppendOnly(tracker) => tracker.write_pending(target),
+            Self::AppendOnly(tracker) => tracker.write_pending(target, hw_counter),
             Self::Compacted(_) => Ok(()),
         }
     }
@@ -151,47 +167,56 @@ impl<S: UniversalAppend> TrackerEnum<S> {
     ///
     /// The append-only tracker syncs what [`Self::write_pending`] wrote up to `target`, the
     /// compacted tracker rewrites its file with the mappings below `target`.
-    pub fn flusher(&self, target: PointOffset) -> Flusher {
+    pub fn flusher(&self, target: PointOffset, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
             Self::AppendOnly(tracker) => tracker.flusher(),
-            Self::Compacted(tracker) => tracker.flusher(target),
+            Self::Compacted(tracker) => tracker.flusher(target, hw_counter),
         }
     }
 }
 
 impl<S: UniversalRead> TrackerRead for TrackerEnum<S> {
-    fn max_point_offset(&self) -> Result<PointOffset> {
+    fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         match self {
-            Self::AppendOnly(tracker) => tracker.max_point_offset(),
-            Self::Compacted(tracker) => tracker.max_point_offset(),
+            Self::AppendOnly(tracker) => tracker.max_point_offset(hw_counter),
+            Self::Compacted(tracker) => tracker.max_point_offset(hw_counter),
         }
     }
 
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
         match self {
-            Self::AppendOnly(tracker) => tracker.get::<P>(point_offset),
-            Self::Compacted(tracker) => tracker.get::<P>(point_offset),
+            Self::AppendOnly(tracker) => tracker.get::<P>(point_offset, hw_counter),
+            Self::Compacted(tracker) => tracker.get::<P>(point_offset, hw_counter),
         }
     }
 
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>> {
         match self {
-            Self::AppendOnly(tracker) => tracker.get_range::<P>(point_offsets),
-            Self::Compacted(tracker) => tracker.get_range::<P>(point_offsets),
+            Self::AppendOnly(tracker) => tracker.get_range::<P>(point_offsets, hw_counter),
+            Self::Compacted(tracker) => tracker.get_range::<P>(point_offsets, hw_counter),
         }
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    fn iter<'a, U, I>(
+        &'a self,
+        point_offsets: I,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
     {
         Ok(match self {
-            Self::AppendOnly(tracker) => Either::Left(tracker.iter(point_offsets)?),
-            Self::Compacted(tracker) => Either::Right(tracker.iter(point_offsets)?),
+            Self::AppendOnly(tracker) => Either::Left(tracker.iter(point_offsets, hw_counter)?),
+            Self::Compacted(tracker) => Either::Right(tracker.iter(point_offsets, hw_counter)?),
         })
     }
 }

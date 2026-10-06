@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::segment::Segment;
@@ -23,6 +25,7 @@ pub fn build_simple_segment(
     path: &Path,
     dim: usize,
     distance: Distance,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Segment> {
     build_segment(
         path,
@@ -45,6 +48,7 @@ pub fn build_simple_segment(
         },
         None,
         true,
+        hw_counter,
     )
     .map(|(segment, _token)| segment)
 }
@@ -54,6 +58,7 @@ pub fn build_simple_segment_with_payload_storage(
     dim: usize,
     distance: Distance,
     payload_storage_type: PayloadStorageType,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Segment> {
     build_segment(
         path,
@@ -76,6 +81,7 @@ pub fn build_simple_segment_with_payload_storage(
         },
         None,
         true,
+        hw_counter,
     )
     .map(|(segment, _token)| segment)
 }
@@ -87,6 +93,7 @@ pub fn build_segment_with_two_named_vecs(
     dim1: usize,
     dim2: usize,
     distance: Distance,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Segment> {
     let mut vectors_config = HashMap::new();
     vectors_config.insert(
@@ -124,6 +131,7 @@ pub fn build_segment_with_two_named_vecs(
         },
         None,
         true,
+        hw_counter,
     )
     .map(|(segment, _token)| segment)
 }
@@ -142,14 +150,18 @@ mod tests {
     #[test]
     fn test_create_simple_segment() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
+        let segment =
+            build_simple_segment(dir.path(), 100, Distance::Dot, &HardwareCounterCell::new())
+                .unwrap();
         eprintln!(" = {:?}", segment.version());
     }
 
     #[test]
     fn test_add_and_search() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+        let mut segment =
+            build_simple_segment(dir.path(), 4, Distance::Dot, &HardwareCounterCell::new())
+                .unwrap();
 
         let wrong_vec = vec![1.0, 1.0, 1.0];
 

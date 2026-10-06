@@ -5,6 +5,7 @@ use std::io::{Seek, Write};
 use common::bitpacking::packed_bits;
 use common::bitpacking_links::{MIN_BITS_PER_VALUE, pack_links};
 use common::bitpacking_ordered;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use integer_encoding::{VarInt, VarIntWriter};
@@ -25,6 +26,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
     format_param: GraphLinksFormatParam,
     hnsw_m: HnswM,
     writer: &mut W,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let bits_per_unsorted =
         packed_bits(u32::try_from(edges.len().saturating_sub(1)).unwrap()).max(MIN_BITS_PER_VALUE);
@@ -127,13 +129,19 @@ pub fn serialize_graph_links<W: Write + Seek>(
 
                     // 1. Base vector (`B` in the doc, only on level 0).
                     if level == 0 {
-                        vectors.for_base_vector(id, &mut |vector_bytes| {
-                            if vector_bytes.len() != vectors_layout.base.size() {
-                                return Err(OperationError::service_error("Vector size mismatch"));
-                            }
-                            writer.write_all(vector_bytes)?;
-                            Ok(())
-                        })?;
+                        vectors.for_base_vector(
+                            id,
+                            &mut |vector_bytes| {
+                                if vector_bytes.len() != vectors_layout.base.size() {
+                                    return Err(OperationError::service_error(
+                                        "Vector size mismatch",
+                                    ));
+                                }
+                                writer.write_all(vector_bytes)?;
+                                Ok(())
+                            },
+                            hw_counter,
+                        )?;
                         offset += vectors_layout.base.size();
                     }
 
@@ -154,7 +162,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
                     // 5. Link vectors (`L` in the doc).
                     // Write them in the same order as `raw_links`.
                     for i in raw_links {
-                        let vector = vectors.get_link_vector(i)?;
+                        let vector = vectors.get_link_vector(i, hw_counter)?;
                         if vector.len() != vectors_layout.link.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }

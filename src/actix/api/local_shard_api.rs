@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CountRequestInternal, PointRequestInternal};
 use collection::operations::verification::{VerificationPass, new_unchecked_verification_pass};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
@@ -100,6 +101,7 @@ async fn scroll_points(
         &path.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -176,6 +178,7 @@ async fn count_points(
         &path.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

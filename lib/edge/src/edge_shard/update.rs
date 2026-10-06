@@ -76,6 +76,7 @@ impl EdgeShard {
                     &segments_guard,
                     operation_id,
                     vector_name_operation,
+                    &hw_counter,
                 );
                 // Keep the edge shard config in sync with storage so queries can
                 // resolve the vector name — but only when storage actually

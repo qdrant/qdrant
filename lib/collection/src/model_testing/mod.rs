@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -547,6 +548,7 @@ pub async fn run(
     disable_snapshots: bool,
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
+    hw_acc: &HwMeasurementAcc,
 ) {
     assert_candidates_predictable();
 
@@ -574,6 +576,7 @@ pub async fn run(
         indexing_threshold_kb,
         on_disk,
         text_params,
+        hw_acc,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
@@ -726,7 +729,7 @@ pub async fn run(
             // dumps captured stdout on failure/timeout — these breadcrumbs are how a hung restart
             // tells us which stage it never left.
             stage_breadcrumb(&bar, &format!("op:{i} Restart"));
-            let (pre_segments, pre_optimized) = verify::run_summary(&collection).await;
+            let (pre_segments, pre_optimized) = verify::run_summary(&collection, hw_acc).await;
             if pre_optimized > 0 {
                 optimizer_ran_during_run = true;
             }
@@ -787,7 +790,7 @@ pub async fn run(
             );
             stage_breadcrumb(&bar, &format!("op:{i} restart: reopen"));
             collection =
-                Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir).await);
+                Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir, hw_acc).await);
             // `Collection::load` returns before tail-of-WAL ops queued to the
             // update worker have been applied — that's an intentional fast-start
             // feature. Wait for the queue to drain so the scroll below observes
@@ -828,9 +831,10 @@ pub async fn run(
                 if pending_snapshot.is_none() {
                     let temp_dir = tempfile::tempdir().expect("failed to create snapshot temp dir");
                     let snapshot_collection = Arc::clone(&collection);
+                    let hw_acc = hw_acc.clone();
                     pending_snapshot = Some(tokio::spawn(async move {
                         let res = snapshot_collection
-                            .create_snapshot(temp_dir.path(), PEER_ID)
+                            .create_snapshot(temp_dir.path(), PEER_ID, &hw_acc)
                             .await;
                         drop(temp_dir); // keep the staging dir alive until the archive is written
                         res
@@ -846,7 +850,15 @@ pub async fn run(
                     && pending_snapshot
                         .as_ref()
                         .is_none_or(JoinHandle::is_finished);
-                apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
+                apply::apply(
+                    &collection,
+                    &mut model,
+                    &mut active_names,
+                    &op,
+                    no_proxies,
+                    hw_acc,
+                )
+                .await;
             }
         }
         // Reap a finished background snapshot (non-blocking check); panics if it errored.
@@ -879,7 +891,7 @@ pub async fn run(
     stage_breadcrumb(&bar, "live: scroll + verify");
     let live = verify::collect_model_from_collection(&collection).await;
     let (live_extra, live_missing) = verify::id_diff(&live, &model);
-    let (mut segments, mut optimized) = verify::run_summary(&collection).await;
+    let (mut segments, mut optimized) = verify::run_summary(&collection, hw_acc).await;
     if optimized > 0 {
         optimizer_ran_during_run = true;
     }
@@ -899,8 +911,8 @@ pub async fn run(
     // already observed optimization earlier in the run (counter resets on restart).
     if !interrupted && !disable_optimizer && !optimizer_ran_during_run {
         stage_breadcrumb(&bar, "live: wait_for_optimizer");
-        verify::wait_for_optimizer(&collection).await;
-        (segments, optimized) = verify::run_summary(&collection).await;
+        verify::wait_for_optimizer(&collection, hw_acc).await;
+        (segments, optimized) = verify::run_summary(&collection, hw_acc).await;
     }
 
     println!(
@@ -926,7 +938,7 @@ pub async fn run(
             .expect("collection still referenced at final reload (undrained background task?)"),
     );
     stage_breadcrumb(&bar, "reload: reopen");
-    let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
+    let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir, hw_acc).await;
     // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
     stage_breadcrumb(&bar, "reload: wait_for_pending_updates");
     verify::wait_for_pending_updates(&collection).await;
@@ -1256,6 +1268,7 @@ mod tests {
             disable_snapshots,
             duration,
             Arc::new(AtomicBool::new(false)),
+            &HwMeasurementAcc::new(),
         )
         .await;
     }

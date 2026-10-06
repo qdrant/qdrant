@@ -4,6 +4,8 @@ use std::assert_matches;
 use std::path::Path;
 
 use bytes::Bytes;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError, UniversalRead};
 use io_bridge::{AsyncRead, BridgeRuntime};
@@ -48,7 +50,9 @@ fn test_open_and_read_whole() {
     let file =
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "hello.bin")
             .expect("open");
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], b"hello rustfs");
 }
 
@@ -68,7 +72,7 @@ fn test_read_range() {
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin")
             .expect("open");
     let bytes = file
-        .read::<_, u8>(ReadRange::new(16, 16), Random)
+        .read::<_, u8>(ReadRange::new(16, 16), Random, &HardwareCounterCell::new())
         .expect("read");
     assert_eq!(bytes.len(), 16);
     assert_eq!(bytes[0], 16);
@@ -90,10 +94,15 @@ fn test_read_batch_parallel() {
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
     let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
-    file.read_batch(inputs, Random, |user_data, slice| {
-        got.insert(user_data, slice.to_vec());
-        UioResult::Ok(())
-    })
+    file.read_batch(
+        inputs,
+        Random,
+        |user_data, slice| {
+            got.insert(user_data, slice.to_vec());
+            UioResult::Ok(())
+        },
+        &HardwareCounterCell::new(),
+    )
     .expect("read_batch");
     assert_eq!(got.len(), 16);
     for i in 0u32..16 {
@@ -120,7 +129,9 @@ fn test_not_found() {
         "does-not-exist",
     )
     .expect("open builds the store without IO");
-    let err = file.read_whole::<u8>().unwrap_err();
+    let err = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .unwrap_err();
     assert_matches!(err, UniversalIoError::NotFound { .. });
 }
 
@@ -146,12 +157,24 @@ fn test_native_append_flow() {
         key.as_str(),
     )
     .expect("open");
-    file.append_bytes(0, Bytes::from_static(b"hello "), None)
-        .expect("first append creates the object");
-    file.append_bytes(6, Bytes::from_static(b"world"), None)
-        .expect("append");
+    file.append_bytes(
+        0,
+        Bytes::from_static(b"hello "),
+        None,
+        &HwMeasurementAcc::new(),
+    )
+    .expect("first append creates the object");
+    file.append_bytes(
+        6,
+        Bytes::from_static(b"world"),
+        None,
+        &HwMeasurementAcc::new(),
+    )
+    .expect("append");
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], b"hello world");
 
     // A second handle appends behind this handle's back...
@@ -159,21 +182,28 @@ fn test_native_append_flow() {
         BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, key.as_str())
             .expect("open");
     interloper
-        .append_bytes(11, Bytes::from_static(b"A"), None)
+        .append_bytes(11, Bytes::from_static(b"A"), None, &HwMeasurementAcc::new())
         .expect("append");
 
     // ...so an append at the stale offset conflicts without writing, and
     // re-deriving the offset from the actual length recovers.
     let err = file
-        .append_bytes(11, Bytes::from_static(b"B"), None)
+        .append_bytes(11, Bytes::from_static(b"B"), None, &HwMeasurementAcc::new())
         .unwrap_err();
     assert_matches!(err, UniversalIoError::AppendOffsetConflict { .. });
-    let eof = file.len::<u8>().expect("len");
+    let eof = file.len::<u8>(&HardwareCounterCell::new()).expect("len");
     assert_eq!(eof, 12);
-    file.append_bytes(eof, Bytes::from_static(b"B"), None)
-        .expect("append");
+    file.append_bytes(
+        eof,
+        Bytes::from_static(b"B"),
+        None,
+        &HwMeasurementAcc::new(),
+    )
+    .expect("append");
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], b"hello worldAB");
 }
 

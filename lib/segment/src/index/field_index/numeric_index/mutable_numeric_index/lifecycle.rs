@@ -68,11 +68,16 @@ impl<T: Encodable + Numericable + Default + StoredValue> InMemoryNumericIndex<T>
     /// Expensive because this reads the full on-disk index.
     pub(in super::super) fn from_on_disk<S: UniversalRead>(
         on_disk_index: &OnDiskNumericIndex<T, S>,
+        hw_counter: &HardwareCounterCell,
     ) -> Self {
         let point_count = on_disk_index.storage.point_to_values.len();
 
         (0..point_count as PointOffsetType)
-            .filter_map(|idx| on_disk_index.get_values(idx).map(|values| (idx, values)))
+            .filter_map(|idx| {
+                on_disk_index
+                    .get_values(idx, hw_counter)
+                    .map(|values| (idx, values))
+            })
             .flat_map(|(idx, values)| values.into_iter().map(move |value| (idx, value)))
             .collect::<InMemoryNumericIndex<T>>()
     }
@@ -159,16 +164,21 @@ where
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, this will return `None` to indicate nothing
     /// could be loaded.
-    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn open_gridstore(
+        path: PathBuf,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
             let options = storage_options::<T>();
-            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open mutable numeric index on gridstore: {err}"
-                ))
-            })?
+            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking, hw_counter)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable numeric index on gridstore: {err}"
+                    ))
+                })?
         } else if path.exists() {
-            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking, hw_counter).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable numeric index on gridstore: {err}"
                 ))
@@ -207,8 +217,11 @@ where
     }
 
     #[inline]
-    pub(in super::super) fn clear(&mut self) -> OperationResult<()> {
-        self.storage.clear().map_err(|err| {
+    pub(in super::super) fn clear(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.clear(hw_counter).map_err(|err| {
             OperationError::service_error(format!("Failed to clear mutable numeric index: {err}",))
         })
     }
@@ -238,8 +251,8 @@ where
     }
 
     #[inline]
-    pub(in super::super) fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+    pub(in super::super) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
         Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
@@ -252,7 +265,7 @@ where
         // Update persisted storage
         if values.is_empty() {
             // An empty value cannot be stored; drop whatever the slot holds
-            self.remove_point(idx)?;
+            self.remove_point(idx, hw_counter)?;
         } else {
             let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             self.storage
@@ -268,14 +281,18 @@ where
         Ok(())
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if !self.in_memory_index.remove_point(idx) {
             // The slot holds nothing, and there is nothing to delete in the
             // storage either: the two are written in lockstep.
             return Ok(());
         }
 
-        self.storage.delete_value(idx)?;
+        self.storage.delete_value(idx, hw_counter)?;
         Ok(())
     }
 }

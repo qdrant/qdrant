@@ -14,9 +14,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlyChunkedTurboVectorStorage<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        let futs = self.storage.live_preload(fs)?;
-        self.deleted.live_preload(fs)?;
+        let futs = self.storage.live_preload(fs, hw_counter)?;
+        self.deleted.live_preload(fs, hw_counter)?;
         Ok(futs)
     }
 
@@ -33,7 +34,8 @@ impl<S: UniversalRead> LiveReload for ReadOnlyChunkedTurboVectorStorage<S> {
         self.storage
             .live_reload(fs, deleted_points, new_points, hw_counter)?;
         self.deleted.insert_all(deleted_points);
-        self.deleted.reload_appended::<S>(fs, new_points)?;
+        self.deleted
+            .reload_appended::<S>(fs, new_points, hw_counter)?;
 
         Ok(())
     }

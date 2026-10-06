@@ -59,6 +59,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -111,6 +112,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -163,6 +165,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -212,6 +215,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -260,6 +264,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -327,6 +332,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -394,6 +400,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -458,6 +465,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -522,6 +530,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -589,6 +598,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -656,6 +666,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -720,6 +731,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 

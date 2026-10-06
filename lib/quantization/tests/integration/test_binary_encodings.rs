@@ -86,6 +86,7 @@ mod tests {
                     QueryEncoding::SameAsStorage,
                     None,
                     &AtomicBool::new(false),
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap()
             })
@@ -188,6 +189,7 @@ mod tests {
                     query_encoding,
                     None,
                     &AtomicBool::new(false),
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap()
             })

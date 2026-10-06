@@ -86,9 +86,11 @@ impl IndexBuilder {
 
     fn finalize(self) -> crate::common::operation_error::OperationResult<GeoIndex> {
         match self {
-            IndexBuilder::MutableGridstore(builder) => builder.finalize(),
-            IndexBuilder::Mmap(builder) => builder.finalize(),
-            IndexBuilder::Immutable(builder) => builder.finalize(),
+            IndexBuilder::MutableGridstore(builder) => {
+                builder.finalize(&HardwareCounterCell::new())
+            }
+            IndexBuilder::Mmap(builder) => builder.finalize(&HardwareCounterCell::new()),
+            IndexBuilder::Immutable(builder) => builder.finalize(&HardwareCounterCell::new()),
         }
     }
 }
@@ -168,9 +170,11 @@ fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
         )),
     };
     match &mut builder {
-        IndexBuilder::MutableGridstore(builder) => builder.init().unwrap(),
-        IndexBuilder::Mmap(builder) => builder.init().unwrap(),
-        IndexBuilder::Immutable(builder) => builder.init().unwrap(),
+        IndexBuilder::MutableGridstore(builder) => {
+            builder.init(&HardwareCounterCell::new()).unwrap()
+        }
+        IndexBuilder::Mmap(builder) => builder.init(&HardwareCounterCell::new()).unwrap(),
+        IndexBuilder::Immutable(builder) => builder.init(&HardwareCounterCell::new()).unwrap(),
     }
     (builder, temp_dir, db)
 }
@@ -205,9 +209,23 @@ fn build_random_index(
 /// deletions, so the deletion bitslice must be re-supplied on reload.
 fn reload_index(index_type: IndexType, temp_dir: &TempDir, deleted: &BitVec) -> GeoIndex {
     match index_type {
-        IndexType::Mutable => GeoIndex::new_mutable(temp_dir.path().to_path_buf(), true),
-        IndexType::OnDisk => GeoIndex::new_immutable(temp_dir.path(), Memory::Cold, deleted),
-        IndexType::Immutable => GeoIndex::new_immutable(temp_dir.path(), Memory::Pinned, deleted),
+        IndexType::Mutable => GeoIndex::new_mutable(
+            temp_dir.path().to_path_buf(),
+            true,
+            &HardwareCounterCell::new(),
+        ),
+        IndexType::OnDisk => GeoIndex::new_immutable(
+            temp_dir.path(),
+            Memory::Cold,
+            deleted,
+            &HardwareCounterCell::new(),
+        ),
+        IndexType::Immutable => GeoIndex::new_immutable(
+            temp_dir.path(),
+            Memory::Pinned,
+            deleted,
+            &HardwareCounterCell::new(),
+        ),
     }
     .unwrap()
     .unwrap()
@@ -394,7 +412,10 @@ fn check_cardinality_match(
     index_type: IndexType,
 ) {
     let (field_index, _, _) = build_random_index(500, 20, index_type);
-    let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
+    let exact_points_for_hashes = field_index
+        .iterator(hashes, &HardwareCounterCell::new())
+        .unwrap()
+        .collect_vec();
     let real_cardinality = exact_points_for_hashes.len();
 
     let hw_counter = HardwareCounterCell::new();
@@ -428,7 +449,7 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
 
         let hw_counter = HardwareCounterCell::new();
-        let mut matched_points = (0..field_index.count_indexed_points().unwrap()
+        let mut matched_points = (0..field_index.count_indexed_points(&hw_counter).unwrap()
             as PointOffsetType)
             .filter_map(|idx| {
                 if field_index
@@ -487,7 +508,10 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
         .points_of_hash(Default::default(), &hw_counter)
         .unwrap();
     assert_eq!(top_level_points, 1_000);
-    let block_hashes = field_index.large_hashes(100).unwrap().collect_vec();
+    let block_hashes = field_index
+        .large_hashes(100, &hw_counter)
+        .unwrap()
+        .collect_vec();
     assert!(!block_hashes.is_empty());
     for (geohash, size) in block_hashes {
         assert_eq!(geohash.len(), 1);
@@ -497,10 +521,15 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 
     let mut blocks = Vec::new();
     field_index
-        .for_each_payload_block(100, JsonPath::new("test"), &mut |block| {
-            blocks.push(block);
-            Ok(())
-        })
+        .for_each_payload_block(
+            100,
+            JsonPath::new("test"),
+            &mut |block| {
+                blocks.push(block);
+                Ok(())
+            },
+            &hw_counter,
+        )
         .unwrap();
     blocks.iter().for_each(|block| {
         let block_points = filtered_points(&field_index, &block.condition);
@@ -586,8 +615,8 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         builder.add_point(2, &payload, &hw_counter).unwrap();
         let mut index = builder.finalize().unwrap();
 
-        index.remove_point(1).unwrap();
-        index.flusher()().unwrap();
+        index.remove_point(1, &hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
 
         assert_eq!(index.points_count(), 1);
         if index_type != IndexType::OnDisk {
@@ -619,8 +648,8 @@ fn same_geo_index_between_points_with_dups_test(#[case] index_type: IndexType) {
         builder.add_point(2, &payload, &hw_counter).unwrap();
         let mut index = builder.finalize().unwrap();
 
-        index.remove_point(1).unwrap();
-        index.flusher()().unwrap();
+        index.remove_point(1, &hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
 
         assert_eq!(index.points_count(), 1);
         if index_type != IndexType::OnDisk {
@@ -776,7 +805,7 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
     assert_eq!(index.points_count(), 2);
     assert_eq!(index.points_values_count(), 3);
 
-    index.remove_point(0).unwrap();
+    index.remove_point(0, &hw_counter).unwrap();
 
     assert_eq!(index.points_count(), 1);
     assert_eq!(index.points_values_count(), 1);
@@ -789,7 +818,7 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
     let results = filtered_points(&index, &field_condition);
     assert_eq!(results, vec![1]);
 
-    index.remove_point(1).unwrap();
+    index.remove_point(1, &hw_counter).unwrap();
 
     assert_eq!(index.points_count(), 0);
     assert_eq!(index.points_values_count(), 0);
@@ -816,7 +845,7 @@ fn test_values_per_hash_drift_on_duplicate_geo_removal() {
     assert_eq!(index.points_values_count(), 3);
 
     // After removal, all counters must return to zero.
-    index.remove_point(0).unwrap();
+    index.remove_point(0, &hw_counter).unwrap();
 
     assert_eq!(index.points_count(), 0);
     assert_eq!(index.points_values_count(), 0);
@@ -869,7 +898,7 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
         index.add_point(i, &[&geo], &hw_counter).unwrap();
         assert_eq!(index.points_count(), 2);
 
-        index.remove_point(i).unwrap();
+        index.remove_point(i, &hw_counter).unwrap();
         assert_eq!(index.points_count(), 1);
     }
 
@@ -886,7 +915,7 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
     let results = filtered_points(&index, &field_condition);
     assert_eq!(results, vec![0]);
 
-    index.remove_point(0).unwrap();
+    index.remove_point(0, &hw_counter).unwrap();
     assert_eq!(index.points_count(), 0);
     assert_eq!(index.points_values_count(), 0);
 }
@@ -921,11 +950,15 @@ fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
 
     if deleted {
         for index in indices.iter_mut() {
-            index.remove_point(10).unwrap();
-            index.remove_point(11).unwrap();
-            index.remove_point(12).unwrap();
-            index.remove_point(100).unwrap();
-            index.remove_point(150).unwrap();
+            index.remove_point(10, &HardwareCounterCell::new()).unwrap();
+            index.remove_point(11, &HardwareCounterCell::new()).unwrap();
+            index.remove_point(12, &HardwareCounterCell::new()).unwrap();
+            index
+                .remove_point(100, &HardwareCounterCell::new())
+                .unwrap();
+            index
+                .remove_point(150, &HardwareCounterCell::new())
+                .unwrap();
         }
     }
 
@@ -954,46 +987,46 @@ fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
         }
         assert_eq!(
             indices[0]
-                .large_hashes(20)
+                .large_hashes(20, &hw_counter)
                 .unwrap()
                 .map(|(hash, _)| hash)
                 .collect::<BTreeSet<_>>(),
             index
-                .large_hashes(20)
+                .large_hashes(20, &hw_counter)
                 .unwrap()
                 .map(|(hash, _)| hash)
                 .collect::<BTreeSet<_>>(),
         );
         assert_eq!(
             indices[0]
-                .iterator(hashes.clone())
+                .iterator(hashes.clone(), &hw_counter)
                 .unwrap()
                 .collect::<HashSet<_>>(),
             index
-                .iterator(hashes.clone())
+                .iterator(hashes.clone(), &hw_counter)
                 .unwrap()
                 .collect::<HashSet<_>>(),
         );
         for point_id in 0..POINT_COUNT {
             assert_eq!(
-                indices[0].values_count(point_id as PointOffsetType),
-                index.values_count(point_id as PointOffsetType),
+                indices[0].values_count(point_id as PointOffsetType, &hw_counter),
+                index.values_count(point_id as PointOffsetType, &hw_counter),
             );
             if !deleted {
                 assert_eq!(
                     indices[0]
-                        .get_values(point_id as PointOffsetType)
+                        .get_values(point_id as PointOffsetType, &hw_counter)
                         .unwrap()
                         .collect::<BTreeSet<_>>(),
                     index
-                        .get_values(point_id as PointOffsetType)
+                        .get_values(point_id as PointOffsetType, &hw_counter)
                         .unwrap()
                         .collect::<BTreeSet<_>>(),
                 );
             }
             assert_eq!(
-                indices[0].values_is_empty(point_id as PointOffsetType),
-                index.values_is_empty(point_id as PointOffsetType),
+                indices[0].values_is_empty(point_id as PointOffsetType, &hw_counter),
+                index.values_is_empty(point_id as PointOffsetType, &hw_counter),
             );
         }
     }
@@ -1077,14 +1110,18 @@ fn test_all_points_congruence() {
                                    phase: &str| {
         for (name, hashes) in cases {
             let hashes = hashes.clone();
-            let mutable_result: HashSet<PointOffsetType> =
-                mutable_index.iterator(hashes.clone()).unwrap().collect();
+            let mutable_result: HashSet<PointOffsetType> = mutable_index
+                .iterator(hashes.clone(), &HardwareCounterCell::new())
+                .unwrap()
+                .collect();
 
-            let immutable_result: HashSet<PointOffsetType> =
-                immutable_index.iterator(hashes.clone()).unwrap().collect();
+            let immutable_result: HashSet<PointOffsetType> = immutable_index
+                .iterator(hashes.clone(), &HardwareCounterCell::new())
+                .unwrap()
+                .collect();
 
             let all_points_result: HashSet<PointOffsetType> = storage_index
-                .all_points(hashes)
+                .all_points(hashes, &HardwareCounterCell::new())
                 .unwrap()
                 .into_iter()
                 .collect();
@@ -1110,9 +1147,15 @@ fn test_all_points_congruence() {
 
     const DELETED_POINT_IDS: &[PointOffsetType] = &[10, 11, 12, 100, 150];
     for &id in DELETED_POINT_IDS {
-        mutable_index.remove_point(id).unwrap();
-        immutable_index.remove_point(id).unwrap();
-        mmap_index.remove_point(id).unwrap();
+        mutable_index
+            .remove_point(id, &HardwareCounterCell::new())
+            .unwrap();
+        immutable_index
+            .remove_point(id, &HardwareCounterCell::new())
+            .unwrap();
+        mmap_index
+            .remove_point(id, &HardwareCounterCell::new())
+            .unwrap();
     }
 
     let GeoIndex::OnDisk(storage_index) = &mmap_index else {
@@ -1155,10 +1198,10 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
 
         let mut index = builder.finalize().unwrap();
 
-        index.remove_point(2).unwrap();
-        index.remove_point(3).unwrap();
-        index.remove_point(6).unwrap();
-        index.flusher()().unwrap();
+        index.remove_point(2, &hw_counter).unwrap();
+        index.remove_point(3, &hw_counter).unwrap();
+        index.remove_point(6, &hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
         assert_eq!(index.points_count(), 4);
         drop(index);
         temp_dir
@@ -1340,10 +1383,17 @@ fn test_block_index_preopen() {
     // Same order as the segment open path: snapshot, then preopen, then open.
     let fs = RoFs::from_context(Default::default()).unwrap();
     let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
-    cached_fs.cache_file_info().unwrap();
+    cached_fs
+        .cache_file_info(&HardwareCounterCell::new())
+        .unwrap();
     assert!(
-        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
-            .unwrap()
+        OnDiskGeoIndex::<Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+            &HardwareCounterCell::new()
+        )
+        .unwrap()
     );
     futures::executor::block_on(cached_fs.wait_all());
 
@@ -1356,6 +1406,7 @@ fn test_block_index_preopen() {
         temp_dir.path(),
         Populate::PreferBackground,
         &deleted,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .unwrap();
@@ -1366,16 +1417,24 @@ fn test_block_index_preopen() {
     // Absent sidecars (segment built before they were introduced): `preopen`
     // must not fail on the missing files and `open` must fall back.
     let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
-    cached_fs.cache_file_info().unwrap();
+    cached_fs
+        .cache_file_info(&HardwareCounterCell::new())
+        .unwrap();
     assert!(
-        OnDiskGeoIndex::<Storage>::preopen(&cached_fs, temp_dir.path(), Populate::PreferBackground)
-            .unwrap()
+        OnDiskGeoIndex::<Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+            &HardwareCounterCell::new()
+        )
+        .unwrap()
     );
     let index = OnDiskGeoIndex::<Storage>::open(
         &cached_fs,
         temp_dir.path(),
         Populate::PreferBackground,
         &deleted,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .unwrap();

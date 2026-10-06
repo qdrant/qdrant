@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
@@ -107,14 +108,18 @@ impl SegmentOptimizer for MergeOptimizer {
         &self.thresholds_config
     }
 
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+    fn plan_optimizations(
+        &self,
+        planner: &mut OptimizationPlanner,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let mut candidates = planner
             .remaining()
             .iter()
             .map(|(&segment_id, segment)| {
                 let size = segment
                     .read()
-                    .max_available_vectors_size_in_bytes()
+                    .max_available_vectors_size_in_bytes(hw_counter)
                     .unwrap_or_default();
                 (segment_id, size)
             })

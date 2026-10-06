@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use quantization::turboquant::TQBits;
 
@@ -19,9 +20,15 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        QuantizedChunkedStorageRead::<S>::preopen(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            populate,
+            hw_counter,
+        )?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
         Ok(())
     }
 
@@ -35,20 +42,22 @@ impl<S: UniversalRead> ReadOnlyChunkedTurboVectorStorage<S> {
         distance: Distance,
         bits: TQBits,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedChunkedStorageRead::open(
             fs,
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
+            hw_counter,
         )?;
 
         // The chunked read backend maps lazily; warm it when the profile asks.
         if !matches!(populate, Populate::No) {
-            storage.populate()?;
+            storage.populate(hw_counter)?;
         }
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
 
         Ok(Self {
             storage,

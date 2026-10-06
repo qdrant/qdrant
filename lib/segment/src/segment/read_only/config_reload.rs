@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::universal_io::{UniversalReadFs, UniversalReadFsAsync, read_json_via};
 
@@ -92,12 +93,16 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     ///
     /// Covers added/removed dense vectors, sparse vectors and payload field
     /// indexes. Vectors whose config changed are reloaded (drop + load).
-    pub fn config_reload_diff(&self, fs: &S::Fs) -> OperationResult<SegmentConfigReloadDiff<S>> {
+    pub fn config_reload_diff(
+        &self,
+        fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentConfigReloadDiff<S>> {
         // Component opens go straight to the raw backend — per-reload
         // caching/prefetch is a later iteration.
-        let new_config = self.read_new_config(fs)?;
-        let (added_vectors, removed_vectors) = self.diff_vectors(fs, &new_config)?;
-        let payload = self.diff_payload(fs)?;
+        let new_config = self.read_new_config(fs, hw_counter)?;
+        let (added_vectors, removed_vectors) = self.diff_vectors(fs, &new_config, hw_counter)?;
+        let payload = self.diff_payload(fs, hw_counter)?;
 
         Ok(SegmentConfigReloadDiff {
             new_config,
@@ -108,9 +113,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     }
 
     /// Re-read the on-disk segment config, verifying the version file is present.
-    fn read_new_config(&self, fs: &S::Fs) -> OperationResult<SegmentConfig> {
+    fn read_new_config(
+        &self,
+        fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentConfig> {
         let segment_path = &self.segment_path;
-        if SegmentVersion::load_universal(fs, segment_path)?.is_none() {
+        if SegmentVersion::load_universal(fs, segment_path, hw_counter)?.is_none() {
             return Err(OperationError::service_error(format!(
                 "Segment version file not found in segment: {}",
                 segment_path.display(),
@@ -121,7 +130,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             initial_version: _,
             version: _,
             config,
-        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
+        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE), hw_counter)?;
         Ok(config)
     }
 
@@ -131,6 +140,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         &self,
         fs: &S::Fs,
         new_config: &SegmentConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(AddedVectors<S>, Vec<VectorNameBuf>)> {
         let mut added = HashMap::new();
         let mut removed = Vec::new();
@@ -139,7 +149,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             diff_config_map(&self.segment_config.vector_data, &new_config.vector_data);
         for name in load {
             let config = &new_config.vector_data[&name];
-            let data = self.load_dense_vector(fs, &name, config, new_config)?;
+            let data = self.load_dense_vector(fs, &name, config, new_config, hw_counter)?;
             added.insert(name, data);
         }
         removed.extend(drop);
@@ -150,7 +160,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         );
         for name in load {
             let config = &new_config.sparse_vector_data[&name];
-            let data = self.load_sparse_vector(fs, &name, config)?;
+            let data = self.load_sparse_vector(fs, &name, config, hw_counter)?;
             added.insert(name, data);
         }
         removed.extend(drop);
@@ -165,17 +175,19 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         name: &VectorName,
         config: &VectorDataConfig,
         new_config: &SegmentConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
         let index_path = get_vector_index_path(&self.segment_path, name);
         // A config reload follows the new config alone: the request-specific
         // load profile of the original open (if any) does not outlive it.
-        let storage = VectorStorageReadEnum::open(fs, config, &path, &index_path, None)?
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Read-only dense vector storage '{name}' was not found, or is corrupted.",
-                ))
-            })?;
+        let storage =
+            VectorStorageReadEnum::open(fs, config, &path, &index_path, None, hw_counter)?
+                .ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "Read-only dense vector storage '{name}' was not found, or is corrupted.",
+                    ))
+                })?;
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_dense(
             fs,
@@ -188,6 +200,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             self.payload_index.clone(),
             storage,
             None,
+            hw_counter,
         )
     }
 
@@ -197,12 +210,14 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &S::Fs,
         name: &VectorName,
         config: &SparseVectorDataConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<ReadOnlyVectorData<S>> {
         let path = get_vector_storage_path(&self.segment_path, name);
         let storage = VectorStorageReadEnum::Sparse(Box::new(ReadOnlySparseVectorStorage::open(
             fs,
             &path,
             super::lifecycle::sparse_storage_populate(config),
+            hw_counter,
         )?));
         let storage = Arc::new(AtomicRefCell::new(storage));
         ReadOnlyVectorData::open_sparse(
@@ -214,6 +229,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             self.payload_index.clone(),
             storage,
             None,
+            hw_counter,
         )
     }
 
@@ -222,19 +238,22 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     fn diff_payload(
         &self,
         fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PayloadIndexReloadDiff<S>> {
         let payload_index_path = get_payload_index_path(&self.segment_path);
         let payload_config_path = PayloadConfig::get_config_path(&payload_index_path);
-        let new_payload_config = PayloadConfig::load_universal(fs, &payload_config_path)?
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Read-only payload index missing config at {}",
-                    payload_config_path.display(),
-                ))
-            })?;
+        let new_payload_config =
+            PayloadConfig::load_universal(fs, &payload_config_path, hw_counter)?.ok_or_else(
+                || {
+                    OperationError::service_error(format!(
+                        "Read-only payload index missing config at {}",
+                        payload_config_path.display(),
+                    ))
+                },
+            )?;
         self.payload_index
             .borrow()
-            .config_reload_diff(fs, new_payload_config)
+            .config_reload_diff(fs, new_payload_config, hw_counter)
     }
 
     /// Install a [`SegmentConfigReloadDiff`] produced by

@@ -2,6 +2,7 @@ use std::array;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::distr::StandardUniform;
@@ -43,8 +44,14 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
     #[cfg(not(target_os = "linux"))]
     assert!(!IO_URING, "async scorer is only supported on Linux");
 
-    let mut storage = open_dense_vector_storage(tmp.path(), DIM, Distance::Dot, Memory::Cold)
-        .expect("vector storage created");
+    let mut storage = open_dense_vector_storage(
+        tmp.path(),
+        DIM,
+        Distance::Dot,
+        Memory::Cold,
+        &HardwareCounterCell::new(),
+    )
+    .expect("vector storage created");
 
     let mut vectors = (0..VECTORS).map(|_| {
         let vector = random_vector(DIM);
@@ -52,10 +59,16 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
     });
 
     let result = match &mut storage {
-        VectorStorageEnum::DenseMemmap(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
-        VectorStorageEnum::DenseGraphInline(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
+        VectorStorageEnum::DenseMemmap(v) => {
+            v.update_from(&mut vectors, &DEFAULT_STOPPED, &HardwareCounterCell::new())
+        }
+        VectorStorageEnum::DenseGraphInline(v) => {
+            v.update_from(&mut vectors, &DEFAULT_STOPPED, &HardwareCounterCell::new())
+        }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(v) => v.update_from(&mut vectors, &DEFAULT_STOPPED),
+        VectorStorageEnum::DenseUring(v) => {
+            v.update_from(&mut vectors, &DEFAULT_STOPPED, &HardwareCounterCell::new())
+        }
         _ => panic!("unexpected dense vector storage variant"),
     };
     result.expect("vector storage populated");
@@ -78,7 +91,7 @@ fn benchmark<const IO_URING: bool, const VECTORS: usize, const BATCH: usize>(c: 
                 BatchFilteredSearcher::new_for_test(
                     &vectors,
                     &storage,
-                    id_tracker.deleted_point_bitslice(),
+                    id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
                     10,
                 )
                 .peek_top_all(&DEFAULT_STOPPED)

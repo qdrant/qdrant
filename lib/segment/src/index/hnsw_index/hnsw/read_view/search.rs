@@ -50,9 +50,10 @@ where
             .unwrap_or(self.config.ef);
         let is_stopped = vector_query_context.is_stopped();
 
-        let deleted_points = vector_query_context
-            .deleted_points()
-            .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+        let deleted_points = vector_query_context.deleted_points().unwrap_or_else(|| {
+            self.id_tracker
+                .deleted_point_bitslice(vector_query_context.hw_counter())
+        });
 
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
@@ -102,19 +103,22 @@ where
             };
 
             uio_trace::mark!("graph_search begin (inline vectors, ef={ef})");
-            let result = self.graph.search(GraphSearchArgs {
-                top,
-                ef: std::cmp::max(ef, oversampled_top),
-                algorithm: SearchAlgorithm::Hnsw,
-                scorers: SearchScorers::WithVectors(GraphWithVectorsScorers {
-                    links: &link_scorer_filtered,
-                    links_bytes: &link_scorer_filtered_bytes,
-                    base: base_scorer_bytes,
-                }),
-                custom_entry_points,
-                filtered_points_reader,
-                is_stopped: &is_stopped,
-            })?;
+            let result = self.graph.search(
+                GraphSearchArgs {
+                    top,
+                    ef: std::cmp::max(ef, oversampled_top),
+                    algorithm: SearchAlgorithm::Hnsw,
+                    scorers: SearchScorers::WithVectors(GraphWithVectorsScorers {
+                        links: &link_scorer_filtered,
+                        links_bytes: &link_scorer_filtered_bytes,
+                        base: base_scorer_bytes,
+                    }),
+                    custom_entry_points,
+                    filtered_points_reader,
+                    is_stopped: &is_stopped,
+                },
+                &hw_counter,
+            )?;
             Ok(Some(result))
         };
 
@@ -135,20 +139,23 @@ where
             )?;
 
             uio_trace::mark!("graph_search begin (ef={ef})");
-            let search_result = self.graph.search(GraphSearchArgs {
-                top: oversampled_top,
-                ef,
-                algorithm,
-                scorers: SearchScorers::Regular(points_scorer),
-                custom_entry_points,
-                filtered_points_reader,
-                is_stopped: &is_stopped,
-            })?;
+            let search_result = self.graph.search(
+                GraphSearchArgs {
+                    top: oversampled_top,
+                    ef,
+                    algorithm,
+                    scorers: SearchScorers::Regular(points_scorer),
+                    custom_entry_points,
+                    filtered_points_reader,
+                    is_stopped: &is_stopped,
+                },
+                &hw_counter,
+            )?;
 
             uio_trace::mark!("postprocess begin");
             postprocess_search_result(
                 search_result,
-                self.id_tracker.deleted_point_bitslice(),
+                self.id_tracker.deleted_point_bitslice(&hw_counter),
                 self.vector_storage,
                 self.quantized_vectors,
                 vector,
@@ -238,8 +245,10 @@ where
         // Scan candidates by combining the deletion bitmaps word by word
         // instead of feeding `iter_internal()` into `peek_top_iter` — the
         // per-id enumeration dominates unfiltered full scans.
-        let (total_points, mapping_deleted) =
-            self.id_tracker.point_mappings().internal_scan_masks();
+        let (total_points, mapping_deleted) = self
+            .id_tracker
+            .point_mappings(vector_query_context.hw_counter())
+            .internal_scan_masks();
         let search_results = batch_filtered_searcher.peek_top_visible(
             Some(total_points),
             mapping_deleted,
@@ -262,9 +271,10 @@ where
         params: Option<&SearchParams>,
         vector_query_context: &'b VectorQueryContext<'b>,
     ) -> OperationResult<BatchFilteredSearcher<'b>> {
-        let deleted_points = vector_query_context
-            .deleted_points()
-            .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+        let deleted_points = vector_query_context.deleted_points().unwrap_or_else(|| {
+            self.id_tracker
+                .deleted_point_bitslice(vector_query_context.hw_counter())
+        });
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
         construct_batch_searcher(
             query_vectors,
@@ -289,7 +299,8 @@ where
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
-                self.id_tracker.deleted_point_bitslice(),
+                self.id_tracker
+                    .deleted_point_bitslice(vector_query_context.hw_counter()),
                 self.vector_storage,
                 self.quantized_vectors,
                 query_vector,

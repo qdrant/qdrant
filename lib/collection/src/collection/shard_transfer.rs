@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults;
 use parking_lot::Mutex;
 use semver::Version;
@@ -116,6 +117,7 @@ impl Collection {
         temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<bool>
     where
         T: Future<Output = ()> + Send + 'static,
@@ -213,6 +215,7 @@ impl Collection {
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     effective_optimizers_config,
+                    hw_acc,
                 )
                 .await?;
 
@@ -230,8 +233,15 @@ impl Collection {
             from_is_local && is_sender
         };
         if do_transfer {
-            self.send_shard(shard_transfer, consensus, temp_dir, on_finish, on_error)
-                .await;
+            self.send_shard(
+                shard_transfer,
+                consensus,
+                temp_dir,
+                on_finish,
+                on_error,
+                hw_acc,
+            )
+            .await;
         }
         Ok(do_transfer)
     }
@@ -243,6 +253,7 @@ impl Collection {
         temp_dir: PathBuf,
         on_finish: OF,
         on_error: OE,
+        hw_acc: &HwMeasurementAcc,
     ) where
         OF: Future<Output = ()> + Send + 'static,
         OE: Future<Output = ()> + Send + 'static,
@@ -292,6 +303,7 @@ impl Collection {
             fallback_method,
             on_finish,
             on_error,
+            hw_acc,
         );
 
         active_transfer_tasks.add_task(
@@ -321,6 +333,7 @@ impl Collection {
     ///
     /// The record is never removed at any point, so a replay always finds it.
     /// If it is missing, this is a stale duplicate restart and is rejected.
+    #[expect(clippy::too_many_arguments)]
     pub async fn restart_shard_transfer<T, F>(
         &self,
         transfer_key: ShardTransferKey,
@@ -329,6 +342,7 @@ impl Collection {
         temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()>
     where
         T: Future<Output = ()> + Send + 'static,
@@ -396,7 +410,9 @@ impl Collection {
             //    proposed as a WAL-delta transfer fallback (never resharding), and the
             //    fallback method fully re-populates the destination.
             if is_receiver {
-                dest_replica_set.init_empty_local_shard(&self.path).await?;
+                dest_replica_set
+                    .init_empty_local_shard(&self.path, hw_acc)
+                    .await?;
             }
 
             // 5. All peers: set the destination replica to the new method's
@@ -412,8 +428,15 @@ impl Collection {
 
         // 7. Sender: (re)spawn the transfer driver for the new transfer.
         if is_sender {
-            self.send_shard(new_transfer, consensus, temp_dir, on_finish, on_error)
-                .await;
+            self.send_shard(
+                new_transfer,
+                consensus,
+                temp_dir,
+                on_finish,
+                on_error,
+                hw_acc,
+            )
+            .await;
         }
 
         Ok(())
@@ -680,11 +703,13 @@ impl Collection {
         &self,
         shard_id: ShardId,
         from_peer_id: Option<PeerId>,
+        hw_acc: &HwMeasurementAcc,
     ) -> impl Future<Output = CollectionResult<()>> + 'static {
         let shards_holder = self.shards_holder.clone();
 
         let collection_path = self.path.clone();
 
+        let hw_acc = hw_acc.clone();
         async move {
             let shards_holder_guard = shards_holder.clone().read_owned().await;
 
@@ -801,7 +826,9 @@ impl Collection {
                 );
                 // Also removes the initializing flag. We can do this without waiting for the
                 // transfer to finish, because if the transfer fails in between, Qdrant will retry it.
-                replica_set.init_empty_local_shard(&collection_path).await?;
+                replica_set
+                    .init_empty_local_shard(&collection_path, &hw_acc)
+                    .await?;
             }
 
             Ok(())

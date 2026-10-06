@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_counter::{ForkingHwCounter, HardwareCounterCell};
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -199,21 +199,31 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
     }
 
     /// Panics if key is out of bounds
-    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T> {
-        self.get_multi_opt::<P>(key).expect("vector not found")
+    fn get_multi<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowMultiVector<'_, T> {
+        self.get_multi_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// None if key is out of bounds
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
     ) -> Option<CowMultiVector<'_, T>> {
         // No sequential optimizations available for in memory storage.
         self.get_multi_impl(key)
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
-    where
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+        _hw_counter: &HardwareCounterCell,
+    ) where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         for (idx, &key) in keys.iter().enumerate() {
@@ -222,8 +232,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
         }
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
-        (0..self.total_vector_count()).flat_map(|key| {
+    fn iterate_inner_vectors(
+        &self,
+        hw_counter: ForkingHwCounter,
+    ) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
+        (0..self.total_vector_count(&hw_counter)).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
             (0..metadata.inner_vectors_count)
                 .map(|i| Cow::Borrowed(self.vectors.get(metadata.start + i)))
@@ -258,11 +271,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorStorage<T> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        if self.total_vector_count(hw_counter) > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+            (total_size as u128 * self.available_vector_count(hw_counter) as u128
+                / self.total_vector_count(hw_counter) as u128) as usize
         } else {
             0
         }
@@ -280,18 +293,28 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
         false
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors_metadata.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
-            CowVector::MultiDense(T::into_float_multivector(multi_dense_vector))
-        })
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
+        self.get_multi_opt::<P>(key, hw_counter)
+            .map(|multi_dense_vector| {
+                CowVector::MultiDense(T::into_float_multivector(multi_dense_vector))
+            })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -310,8 +333,9 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback, hw_counter)
     }
 }
 
@@ -325,7 +349,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorag
         self.insert_vector_impl(key, vector, false, hw_counter)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -333,7 +357,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorag
         vec![]
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         Ok(is_deleted)
     }

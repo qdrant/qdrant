@@ -41,6 +41,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -79,6 +80,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -117,6 +119,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -155,6 +158,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -193,6 +197,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -231,6 +236,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -268,6 +274,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -304,6 +311,7 @@ mod tests {
             1,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -362,6 +370,7 @@ mod tests {
                     5,
                     None,
                     &AtomicBool::new(false),
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap()
             })

@@ -40,6 +40,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
         path: &Path,
         dim: usize,
         distance: Distance,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::open_or_create(
@@ -47,6 +48,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
             Populate::from(!graph.is_on_disk()),
+            hw_counter,
         )?;
         let deleted_count = deleted.count_trues();
         Ok(Self {
@@ -61,8 +63,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
         self.vectors.graph()
     }
 
-    pub fn populate(&self) {
-        self.vectors.populate();
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
+        self.vectors.populate(hw_counter);
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -78,9 +80,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         self.vectors.dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
         self.vectors
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
@@ -88,23 +94,29 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.vectors.for_each_in_batch(keys, f)
+        self.vectors.for_each_in_batch(keys, f, hw_counter)
     }
 
     fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
-        self.vectors.for_each_in_batch(&keys, |idx, vector| {
-            callback(
-                user_data[idx],
-                keys[idx],
-                bytemuck::cast_slice(vector).to_vec(),
-            );
-        })
+        self.vectors.for_each_in_batch(
+            &keys,
+            |idx, vector| {
+                callback(
+                    user_data[idx],
+                    keys[idx],
+                    bytemuck::cast_slice(vector).to_vec(),
+                );
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -115,6 +127,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorage<T>
         &mut self,
         _other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         _stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         Err(OperationError::service_error(
             "Cannot merge into a graph-backed vector storage",
@@ -125,8 +138,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorage<T>
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
     for GraphInlineDenseVectorStorage<T, S>
 {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vectors.dim() * std::mem::size_of::<T>()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter) * self.vectors.dim() * std::mem::size_of::<T>()
     }
 
     fn distance(&self) -> Distance {
@@ -145,31 +158,45 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         self.vectors.graph().io_backend()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.num_vectors()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("Vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("Vector not found")
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
         self.vectors
-            .for_each_in_batch(&keys, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
-                callback(user_data[idx], keys[idx], vector);
-            })
+            .for_each_in_batch(
+                &keys,
+                |idx, vector| {
+                    let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                    callback(user_data[idx], keys[idx], vector);
+                },
+                hw_counter,
+            )
             .expect("read vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         self.vectors
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .map(|vector| CowVector::from(T::slice_to_float_cow(vector)))
     }
 
@@ -189,8 +216,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.read_dense_bytes::<P, U>(keys, callback)
+        self.read_dense_bytes::<P, U>(keys, callback, hw_counter)
     }
 }
 
@@ -206,15 +234,19 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorage
         Err(error_immutable_insert())
     }
 
-    fn flusher(&self) -> Flusher {
-        self.deleted.flusher()
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        self.deleted.flusher(hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {
         self.deleted.files()
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         let was_deleted = self.deleted.set(key, true);
         if !was_deleted {
             self.deleted_count += 1;

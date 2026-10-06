@@ -103,6 +103,7 @@ fn storage_dense(path: &Path) -> AppendableMmapDenseVectorStorage<VectorElementT
         Distance::Dot,
         AdviceSetting::Global,
         true,
+        &HardwareCounterCell::new(),
     )
     .expect("appendable mmap dense storage opened");
 
@@ -118,8 +119,8 @@ fn storage_dense(path: &Path) -> AppendableMmapDenseVectorStorage<VectorElementT
             .expect("vector inserted");
     }
 
-    storage.flusher()().expect("storage flushed");
-    storage.populate().expect("storage populated");
+    storage.flusher(&hw_counter)().expect("storage flushed");
+    storage.populate(&hw_counter).expect("storage populated");
 
     storage
 }
@@ -132,6 +133,7 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
         MultiVectorConfig::default(),
         AdviceSetting::Global,
         true,
+        &HardwareCounterCell::new(),
     )
     .expect("appendable mmap multi dense storage opened");
 
@@ -149,15 +151,15 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
             .expect("vector inserted");
     }
 
-    storage.flusher()().expect("storage flushed");
-    storage.populate().expect("storage populated");
+    storage.flusher(&hw_counter)().expect("storage flushed");
+    storage.populate(&hw_counter).expect("storage populated");
 
     storage
 }
 
 fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
-    let mut storage =
-        MmapSparseVectorStorage::open_or_create(path).expect("mmap sparse storage opened");
+    let mut storage = MmapSparseVectorStorage::open_or_create(path, &HardwareCounterCell::new())
+        .expect("mmap sparse storage opened");
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let hw_counter = HardwareCounterCell::disposable();
@@ -170,8 +172,8 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
             .expect("vector inserted");
     }
 
-    storage.flusher()().expect("storage flushed");
-    storage.populate().expect("storage populated");
+    storage.flusher(&hw_counter)().expect("storage flushed");
+    storage.populate(&hw_counter).expect("storage populated");
 
     storage
 }
@@ -194,9 +196,13 @@ where
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
 
     let mut bytes_read = 0;
-    storage.read_vectors::<P, _>(point_offsets, |_, _, vector| {
-        bytes_read += vector.estimate_size_in_bytes();
-    });
+    storage.read_vectors::<P, _>(
+        point_offsets,
+        |_, _, vector| {
+            bytes_read += vector.estimate_size_in_bytes();
+        },
+        &HardwareCounterCell::new(),
+    );
 
     black_box(bytes_read)
 }

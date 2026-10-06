@@ -38,9 +38,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
     pub fn open(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let storage =
-            UpdateOnlyBlobstore::open(fs, &storage_dir(segment_path), LogstoreConfig::DEFAULT)?;
+        let storage = UpdateOnlyBlobstore::open(
+            fs,
+            &storage_dir(segment_path),
+            LogstoreConfig::DEFAULT,
+            hw_counter,
+        )?;
 
         Ok(Self { storage })
     }
@@ -75,6 +80,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
         }
 
         // Puts only buffer, the flush is what makes them durable.
-        self.storage.flush()
+        self.storage.flush(hw_counter)
     }
 }

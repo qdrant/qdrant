@@ -23,13 +23,14 @@ use crate::segment_holder::{SegmentHolder, SegmentId};
 pub(super) fn deferred_points_to_exclude_by_filter(
     segments: &SegmentHolder,
     per_segment_points: &AHashMap<SegmentId, Vec<PointIdType>>,
+    hw_counter: &HardwareCounterCell,
 ) -> AHashSet<PointIdType> {
     // Find the maximum version for each point across segments where the filter matched.
     let mut max_versions: AHashMap<PointIdType, Option<SeqNumberType>> = Default::default();
     for (segment_id, point_ids) in per_segment_points {
         let segment = segments.get(*segment_id).unwrap().get().read();
         for point_id in point_ids {
-            let version = segment.point_version(*point_id);
+            let version = segment.point_version(*point_id, hw_counter);
             let entry = max_versions.entry(*point_id).or_insert(None);
             *entry = std::cmp::max(*entry, version);
         }
@@ -45,9 +46,9 @@ pub(super) fn deferred_points_to_exclude_by_filter(
             continue;
         }
         for (point_id, max_version) in &max_versions {
-            if segment.has_point(*point_id, DeferredBehavior::WithDeferred)
-                && segment.point_version(*point_id) > *max_version
-                && segment.point_is_deferred(*point_id)
+            if segment.has_point(*point_id, DeferredBehavior::WithDeferred, hw_counter)
+                && segment.point_version(*point_id, hw_counter) > *max_version
+                && segment.point_is_deferred(*point_id, hw_counter)
             {
                 to_exclude.insert(*point_id);
             }
@@ -106,7 +107,8 @@ pub(crate) fn points_by_filter(
     // Deferred points corner case: exclude points where the newest version is deferred
     // and wasn’t matched by the filter (only an old stale copy matched).
     if has_deferred {
-        let to_exclude = deferred_points_to_exclude_by_filter(segments, &per_segment_points);
+        let to_exclude =
+            deferred_points_to_exclude_by_filter(segments, &per_segment_points, hw_counter);
         if !to_exclude.is_empty() {
             affected_points.retain(|id| !to_exclude.contains(id));
         }

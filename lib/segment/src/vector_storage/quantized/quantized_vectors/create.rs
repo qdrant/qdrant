@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::{ForkingHwCounter, HardwareCounterCell};
 use common::fs::atomic_save_json;
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
@@ -32,6 +33,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         match vector_storage {
             VectorStorageEnum::DenseVolatile(v) => Self::create_impl(
@@ -41,6 +43,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileByte(v) => Self::create_impl(
@@ -50,6 +53,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatileHalf(v) => Self::create_impl(
@@ -59,6 +63,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
                 v.as_ref(),
@@ -67,6 +72,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseMemmapByte(v) => Self::create_impl(
                 v.as_ref(),
@@ -75,6 +81,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseMemmapHalf(v) => Self::create_impl(
                 v.as_ref(),
@@ -83,6 +90,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseGraphInline(v) => Self::create_impl(
                 v.as_ref(),
@@ -91,6 +99,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseGraphInlineByte(v) => Self::create_impl(
                 v.as_ref(),
@@ -99,6 +108,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseGraphInlineHalf(v) => Self::create_impl(
                 v.as_ref(),
@@ -107,6 +117,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(v) => Self::create_impl(
@@ -116,6 +127,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringByte(v) => Self::create_impl(
@@ -125,6 +137,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(v) => Self::create_impl(
@@ -134,6 +147,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
                 v.as_ref(),
@@ -142,6 +156,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => Self::create_impl(
                 v.as_ref(),
@@ -150,6 +165,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
                 v.as_ref(),
@@ -158,6 +174,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseTurboMemmap(v) => Self::create_turbo_impl(
                 v.as_ref(),
@@ -166,6 +183,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseTurboGraphInline(v) => Self::create_turbo_impl(
                 v.as_ref(),
@@ -174,6 +192,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(v) => Self::create_turbo_impl(
@@ -183,6 +202,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::DenseTurboAppendableMemmap(v) => Self::create_turbo_impl(
                 v.as_ref(),
@@ -191,6 +211,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::MultiDenseTurbo(v) => Self::create_turbo_multi_impl(
                 v,
@@ -199,6 +220,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
@@ -209,6 +231,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileByte(v) => Self::create_multi_impl(
@@ -218,6 +241,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileHalf(v) => Self::create_multi_impl(
@@ -227,6 +251,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => Self::create_multi_impl(
                 v.as_ref(),
@@ -235,6 +260,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Self::create_multi_impl(
                 v.as_ref(),
@@ -243,6 +269,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Self::create_multi_impl(
                 v.as_ref(),
@@ -251,6 +278,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::EmptyDense(v) => Self::create_impl(
                 v,
@@ -259,6 +287,7 @@ impl QuantizedVectors {
                 path,
                 max_threads,
                 stopped,
+                hw_counter,
             ),
             VectorStorageEnum::EmptySparse(_) => Err(OperationError::WrongSparse),
         }
@@ -274,13 +303,15 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
-        let count = vector_storage.total_vector_count();
+        let count = vector_storage.total_vector_count(hw_counter);
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
-        let vectors = (0..count as PointOffsetType).map(|i| {
-            let vector = vector_storage.get_dense::<Sequential>(i);
+        let fork = ForkingHwCounter::new(hw_counter);
+        let vectors = (0..count as PointOffsetType).map(move |i| {
+            let vector = vector_storage.get_dense::<Sequential>(i, &fork);
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
@@ -298,6 +329,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             stopped,
+            hw_counter,
         )
     }
 
@@ -308,17 +340,19 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
-        let count = vector_storage.total_vector_count();
+        let count = vector_storage.total_vector_count(hw_counter);
         let distance = vector_storage.distance();
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
 
+        let fork = ForkingHwCounter::new(hw_counter);
         let vectors = (0..count as PointOffsetType)
-            .map(move |i| vector_storage.get_dense_for_requantization(i, keep_rotated));
+            .map(move |i| vector_storage.get_dense_for_requantization(i, keep_rotated, &fork));
 
         Self::quantize_dense(
             vectors,
@@ -333,6 +367,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             stopped,
+            hw_counter,
         )
     }
 
@@ -350,6 +385,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let vector_parameters = Self::construct_vector_parameters(
             quantization_config,
@@ -373,6 +409,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 stopped,
+                hw_counter,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq(
@@ -385,6 +422,7 @@ impl QuantizedVectors {
                     on_disk_vector_storage,
                     max_threads,
                     stopped,
+                    hw_counter,
                 )?
             }
             QuantizationConfig::Binary(BinaryQuantization {
@@ -398,6 +436,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 stopped,
+                hw_counter,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
@@ -413,6 +452,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
+                hw_counter,
             )?,
         };
 
@@ -444,22 +484,29 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors = vector_storage.iterate_inner_vectors().map(|vector| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
-        });
+        let vectors = vector_storage
+            .iterate_inner_vectors(ForkingHwCounter::new(hw_counter))
+            .map(|vector| {
+                PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    vector,
+                )
+            });
         let inner_vectors_count = vectors.clone().count();
-        let vectors_count = vector_storage.total_vector_count();
+        let vectors_count = vector_storage.total_vector_count(hw_counter);
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| {
                 vector_storage
-                    .get_multi::<Random>(idx)
+                    .get_multi::<Random>(idx, hw_counter)
                     .as_ref()
                     .vectors_count() as PointOffsetType
             })
@@ -481,6 +528,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             stopped,
+            hw_counter,
         )
     }
 
@@ -492,25 +540,27 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let distance = vector_storage.distance();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors_count = vector_storage.total_vector_count();
+        let vectors_count = vector_storage.total_vector_count(hw_counter);
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
 
+        let fork = ForkingHwCounter::new(hw_counter);
         let vectors = (0..vectors_count as PointOffsetType).flat_map(move |key| {
-            vector_storage.get_inner_dense_for_requantization(key, keep_rotated)
+            vector_storage.get_inner_dense_for_requantization(key, keep_rotated, &fork)
         });
         let inner_vectors_count: usize = (0..vectors_count as PointOffsetType)
-            .map(|key| vector_storage.point_inner_vectors_count(key))
+            .map(|key| vector_storage.point_inner_vectors_count(key, hw_counter))
             .sum();
 
         let offsets = (0..vectors_count as PointOffsetType)
-            .map(|key| vector_storage.point_inner_vectors_count(key) as PointOffsetType)
+            .map(|key| vector_storage.point_inner_vectors_count(key, hw_counter) as PointOffsetType)
             .scan(0, accumulate_offset);
 
         Self::quantize_multi(
@@ -529,6 +579,7 @@ impl QuantizedVectors {
             path,
             max_threads,
             stopped,
+            hw_counter,
         )
     }
 
@@ -550,6 +601,7 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let vector_parameters = Self::construct_vector_parameters(
             quantization_config,
@@ -576,6 +628,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 stopped,
+                hw_counter,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq_multi(
@@ -591,6 +644,7 @@ impl QuantizedVectors {
                     on_disk_vector_storage,
                     max_threads,
                     stopped,
+                    hw_counter,
                 )?
             }
             QuantizationConfig::Binary(BinaryQuantization {
@@ -607,6 +661,7 @@ impl QuantizedVectors {
                 path,
                 on_disk_vector_storage,
                 stopped,
+                hw_counter,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
@@ -625,6 +680,7 @@ impl QuantizedVectors {
                 on_disk_vector_storage,
                 max_threads,
                 stopped,
+                hw_counter,
             )?,
         };
 

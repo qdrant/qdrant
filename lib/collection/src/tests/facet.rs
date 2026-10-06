@@ -179,7 +179,7 @@ async fn apply(shard: &LocalShard, op: CollectionUpdateOperations) {
 async fn wait_for_optimization(shard: &LocalShard) {
     let start = std::time::Instant::now();
     loop {
-        let (status, _) = shard.local_shard_status().await;
+        let (status, _) = shard.local_shard_status(&HwMeasurementAcc::new()).await;
         let has_proxy = shard
             .segments()
             .read()
@@ -241,6 +241,7 @@ async fn build_facet_fixture() -> ShardFixture {
         search_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

@@ -132,7 +132,9 @@ mod tests {
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
         for idx in 0..num_vectors as PointOffsetType {
-            let v = vector_holder.storage().get_vector::<Random>(idx);
+            let v = vector_holder
+                .storage()
+                .get_vector::<Random>(idx, &HardwareCounterCell::new());
             storage
                 .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
@@ -203,10 +205,11 @@ mod tests {
         ef: usize,
         accuracy: f32,
     ) {
-        let graph: GraphLayers = graph.into_graph_layers_ram(GraphLinksFormatParam::Plain);
+        let graph: GraphLayers =
+            graph.into_graph_layers_ram(GraphLinksFormatParam::Plain, &HardwareCounterCell::new());
         let ref_graph: GraphLayers = test
             .graph_layers_builder
-            .into_graph_layers_ram(GraphLinksFormatParam::Plain);
+            .into_graph_layers_ram(GraphLinksFormatParam::Plain, &HardwareCounterCell::new());
 
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();

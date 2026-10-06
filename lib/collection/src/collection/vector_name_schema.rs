@@ -38,7 +38,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
+        self.update_all_local(operation, WaitUntil::from(false), hw_acc.clone(), true)
             .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
@@ -48,12 +48,16 @@ impl Collection {
         // Done in the background: this path is reached from consensus, where blocking can stall the
         // whole cluster. The refresh itself is unchanged - it already ran on a spawned task either
         // way - so this does not widen the window in which the stale config is in effect.
-        self.recreate_optimizers_background();
+        self.recreate_optimizers_background(&hw_acc);
 
         Ok(())
     }
 
-    pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
+    pub async fn delete_named_vector(
+        &self,
+        vector_name: VectorNameBuf,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
         self.update_collection_vector_config(|params| {
             remove_vector_from_config(params, &vector_name);
             Ok(())
@@ -78,7 +82,7 @@ impl Collection {
         //
         // Done in the background: this path is reached from consensus, where blocking can stall the
         // whole cluster.
-        self.recreate_optimizers_background();
+        self.recreate_optimizers_background(hw_acc);
 
         Ok(())
     }

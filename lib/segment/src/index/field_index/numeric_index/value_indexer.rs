@@ -40,8 +40,12 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
         value_to_integer(value)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.inner.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.inner.remove_point(id, hw_counter)
     }
 }
 
@@ -81,8 +85,12 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
         DateTimePayloadType::from_str(value.as_str()?).ok()
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.inner.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.inner.remove_point(id, hw_counter)
     }
 }
 
@@ -118,8 +126,12 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
         value.as_f64()
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.inner.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.inner.remove_point(id, hw_counter)
     }
 }
 
@@ -158,8 +170,12 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
         Uuid::parse_str(value.as_str()?).ok()
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.inner.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.inner.remove_point(id, hw_counter)
     }
 }
 
@@ -179,10 +195,10 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 impl NumericIndex<IntPayloadType, IntPayloadType> {
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            self.get_values(point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .map(|v| Value::Number(Number::from(v)))
@@ -194,10 +210,10 @@ impl NumericIndex<IntPayloadType, IntPayloadType> {
 impl NumericIndex<IntPayloadType, DateTimePayloadType> {
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            self.get_values(point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(DateTimePayloadType::from_timestamp(v)?).ok())
@@ -209,10 +225,10 @@ impl NumericIndex<IntPayloadType, DateTimePayloadType> {
 impl NumericIndex<FloatPayloadType, FloatPayloadType> {
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            self.get_values(point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| Some(Value::Number(Number::from_f64(v)?)))
@@ -224,10 +240,10 @@ impl NumericIndex<FloatPayloadType, FloatPayloadType> {
 impl NumericIndex<UuidIntType, UuidPayloadType> {
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            self.get_values(point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .map(|value| Value::String(UuidPayloadType::from_u128(value).to_string()))

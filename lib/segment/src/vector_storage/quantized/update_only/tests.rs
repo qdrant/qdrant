@@ -120,6 +120,7 @@ fn create_empty_overlay(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             let encoded = EncodedVectorsBin::encode(
@@ -130,6 +131,7 @@ fn create_empty_overlay(
                 query_encoding,
                 Some(meta_path.as_path()),
                 &stopped,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             UpdateOnlyQuantizedVectorStorage::Binary(Box::new(encoded))
@@ -143,6 +145,7 @@ fn create_empty_overlay(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             let encoded = EncodedVectorsTQ::encode(
@@ -157,6 +160,7 @@ fn create_empty_overlay(
                 1,
                 Some(meta_path.as_path()),
                 &stopped,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(encoded))
@@ -173,7 +177,11 @@ fn create_empty_overlay(
     };
     let bytes = serde_json::to_vec(&overlay_config).unwrap();
     MmapFs
-        .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
+        .atomic_save(
+            &QuantizedVectors::get_config_path(path),
+            &bytes,
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     UpdateOnlyQuantizedVectors {
@@ -205,10 +213,14 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
         .unwrap();
     drop(writer);
 
-    let mut writer =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, path, &dense_vector_config())
-            .unwrap()
-            .expect("overlay was already created by the first writer");
+    let mut writer = UpdateOnlyQuantizedVectors::<MmapFs>::open(
+        MmapFs,
+        path,
+        &dense_vector_config(),
+        &hw_counter,
+    )
+    .unwrap()
+    .expect("overlay was already created by the first writer");
     writer
         .append_many(split as u32, as_batch(&vectors[split..]), &hw_counter)
         .unwrap();
@@ -246,12 +258,20 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
     let meta_path = QuantizedVectors::get_meta_path(dir.path());
 
     // Read the persisted bytes back through the standard (non-update-only) reader.
-    let storage =
-        QuantizedChunkedStorage::<MmapFile>::new(MmapFs, &data_path, quantized_vector_size, false)
-            .unwrap();
+    let storage = QuantizedChunkedStorage::<MmapFile>::new(
+        MmapFs,
+        &data_path,
+        quantized_vector_size,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let persisted: EncodedVectorsBin<u128, QuantizedChunkedStorage<MmapFile>> =
-        EncodedVectorsBin::load(&MmapFs, storage, &meta_path).unwrap();
-    assert_eq!(persisted.vectors_count(), vectors.len());
+        EncodedVectorsBin::load(&MmapFs, storage, &meta_path, &HardwareCounterCell::new()).unwrap();
+    assert_eq!(
+        persisted.vectors_count(&HardwareCounterCell::new()),
+        vectors.len()
+    );
 
     // Reference: the same empty-data-fit quantizer (matching a fresh appendable segment),
     // then the same vectors pushed one at a time — isolating what this test actually checks:
@@ -271,6 +291,7 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
         query_encoding,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let hw_counter = HardwareCounterCell::new();
@@ -282,8 +303,8 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
 
     for id in 0..vectors.len() as u32 {
         assert_eq!(
-            persisted.storage().get_vector_data(id),
-            reference.storage().get_vector_data(id),
+            persisted.storage().get_vector_data(id, &hw_counter),
+            reference.storage().get_vector_data(id, &hw_counter),
             "quantized bytes for point {id} diverge between the update-only writer and the \
              standard batch-encode path",
         );
@@ -323,12 +344,20 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
         QuantizedVectors::get_data_path(dir.path(), QuantizedVectorsStorageType::Mutable);
     let meta_path = QuantizedVectors::get_meta_path(dir.path());
 
-    let storage =
-        QuantizedChunkedStorage::<MmapFile>::new(MmapFs, &data_path, quantized_vector_size, false)
-            .unwrap();
+    let storage = QuantizedChunkedStorage::<MmapFile>::new(
+        MmapFs,
+        &data_path,
+        quantized_vector_size,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let persisted: EncodedVectorsTQ<QuantizedChunkedStorage<MmapFile>> =
-        EncodedVectorsTQ::load(&MmapFs, storage, &meta_path).unwrap();
-    assert_eq!(persisted.vectors_count(), vectors.len());
+        EncodedVectorsTQ::load(&MmapFs, storage, &meta_path, &HardwareCounterCell::new()).unwrap();
+    assert_eq!(
+        persisted.vectors_count(&HardwareCounterCell::new()),
+        vectors.len()
+    );
 
     // Reference: the same empty-data-fit quantizer (matching a fresh appendable segment), then
     // the same vectors pushed one at a time — see the module doc comment for why.
@@ -350,6 +379,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
         1,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let hw_counter = HardwareCounterCell::new();
@@ -361,8 +391,8 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
 
     for id in 0..vectors.len() as u32 {
         assert_eq!(
-            persisted.storage().get_vector_data(id),
-            reference.storage().get_vector_data(id),
+            persisted.storage().get_vector_data(id, &hw_counter),
+            reference.storage().get_vector_data(id, &hw_counter),
             "quantized bytes for point {id} diverge between the update-only writer and the \
              standard batch-encode path",
         );
@@ -374,9 +404,13 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
 #[test]
 fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
-    let overlay =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+    let overlay = UpdateOnlyQuantizedVectors::<MmapFs>::open(
+        MmapFs,
+        dir.path(),
+        &dense_vector_config(),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert!(overlay.is_none());
 }
 
@@ -401,8 +435,12 @@ fn reopening_a_nonempty_overlay_works() {
         .unwrap();
     drop(writer);
 
-    let reopened =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+    let reopened = UpdateOnlyQuantizedVectors::<MmapFs>::open(
+        MmapFs,
+        dir.path(),
+        &dense_vector_config(),
+        &hw_counter,
+    )
+    .unwrap();
     assert!(reopened.is_some());
 }

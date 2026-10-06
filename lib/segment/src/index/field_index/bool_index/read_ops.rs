@@ -53,46 +53,79 @@ pub trait BoolIndexRead {
     ///
     /// Fallible: the read-only variant derives it from bitmaps it materializes
     /// on demand. See [`RoaringFlagsRead::get_bitmap`].
-    fn indexed_count(&self) -> OperationResult<usize>;
+    fn indexed_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize>;
 
     /// Per-variant telemetry tag (e.g. `"mmap_bool"`).
     fn telemetry_index_type(&self) -> &'static str;
 
-    fn trues_count(&self) -> OperationResult<usize>;
+    fn trues_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize>;
 
-    fn falses_count(&self) -> OperationResult<usize>;
+    fn falses_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize>;
 
-    fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize> {
-        let has_true = self.trues_flags().get(point_id)?;
-        let has_false = self.falses_flags().get(point_id)?;
+    fn values_count(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        let has_true = self.trues_flags().get(point_id, hw_counter)?;
+        let has_false = self.falses_flags().get(point_id, hw_counter)?;
         Ok(usize::from(has_true) + usize::from(has_false))
     }
 
-    fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> OperationResult<bool> {
+    fn check_values_any(
+        &self,
+        point_id: PointOffsetType,
+        is_true: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         if is_true {
-            self.trues_flags().get(point_id)
+            self.trues_flags().get(point_id, hw_counter)
         } else {
-            self.falses_flags().get(point_id)
+            self.falses_flags().get(point_id, hw_counter)
         }
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        Ok(!self.trues_flags().get(point_id)? && !self.falses_flags().get(point_id)?)
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Ok(!self.trues_flags().get(point_id, hw_counter)?
+            && !self.falses_flags().get(point_id, hw_counter)?)
     }
 
-    fn get_point_values(&self, point_id: PointOffsetType) -> OperationResult<Vec<bool>> {
+    fn get_point_values(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<bool>> {
         Ok([
-            self.trues_flags().get(point_id)?.then_some(true),
-            self.falses_flags().get(point_id)?.then_some(false),
+            self.trues_flags()
+                .get(point_id, hw_counter)?
+                .then_some(true),
+            self.falses_flags()
+                .get(point_id, hw_counter)?
+                .then_some(false),
         ]
         .into_iter()
         .flatten()
         .collect())
     }
 
-    fn iter_values(&self) -> OperationResult<Box<dyn Iterator<Item = bool> + '_>> {
-        let has_false = self.falses_flags().iter_trues()?.next().map(|_| false);
-        let has_true = self.trues_flags().iter_trues()?.next().map(|_| true);
+    fn iter_values(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Box<dyn Iterator<Item = bool> + '_>> {
+        let has_false = self
+            .falses_flags()
+            .iter_trues(hw_counter)?
+            .next()
+            .map(|_| false);
+        let has_true = self
+            .trues_flags()
+            .iter_trues(hw_counter)?
+            .next()
+            .map(|_| true);
         Ok(Box::new([has_false, has_true].into_iter().flatten()))
     }
 
@@ -104,11 +137,11 @@ pub trait BoolIndexRead {
     where
         F: FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     {
-        f(false, &mut self.falses_flags().iter_trues()?)?;
+        f(false, &mut self.falses_flags().iter_trues(hw_counter)?)?;
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(u8::BITS as usize);
-        f(true, &mut self.trues_flags().iter_trues()?)?;
+        f(true, &mut self.trues_flags().iter_trues(hw_counter)?)?;
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(u8::BITS as usize);
@@ -128,9 +161,9 @@ pub trait BoolIndexRead {
     {
         for is_true in values {
             let mut ids = if is_true {
-                self.trues_flags().iter_trues()?
+                self.trues_flags().iter_trues(hw_counter)?
             } else {
-                self.falses_flags().iter_trues()?
+                self.falses_flags().iter_trues(hw_counter)?
             };
             hw_counter
                 .payload_index_io_read_counter()
@@ -144,6 +177,7 @@ pub trait BoolIndexRead {
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(bool, usize) -> OperationResult<()>,
@@ -152,15 +186,18 @@ pub trait BoolIndexRead {
             Some(deferred_internal_id) => {
                 let false_count =
                     self.falses_flags()
-                        .get_bitmap()?
+                        .get_bitmap(hw_counter)?
                         .range_cardinality(..deferred_internal_id) as usize;
                 let true_count =
                     self.trues_flags()
-                        .get_bitmap()?
+                        .get_bitmap(hw_counter)?
                         .range_cardinality(..deferred_internal_id) as usize;
                 (false_count, true_count)
             }
-            None => (self.falses_count()?, self.trues_count()?),
+            None => (
+                self.falses_count(hw_counter)?,
+                self.trues_count(hw_counter)?,
+            ),
         };
         f(false, false_count)?;
         f(true, true_count)
@@ -202,11 +239,14 @@ pub trait BoolIndexRead {
 
     /// Materializes both bitmaps for its counts, unlike the null index's
     /// length-driven telemetry.
-    fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PayloadIndexTelemetry> {
         Ok(PayloadIndexTelemetry {
             field_name: None,
-            points_count: self.indexed_count()?,
-            points_values_count: self.trues_count()? + self.falses_count()?,
+            points_count: self.indexed_count(hw_counter)?,
+            points_values_count: self.trues_count(hw_counter)? + self.falses_count(hw_counter)?,
             histogram_bucket_size: None,
             index_type: self.telemetry_index_type(),
         })
@@ -223,9 +263,9 @@ pub(super) fn filter<'a, N: BoolIndexRead>(
             value: ValueVariants::Bool(value),
         })) => {
             let bitmap = if *value {
-                idx.trues_flags().get_bitmap()?
+                idx.trues_flags().get_bitmap(hw_counter)?
             } else {
-                idx.falses_flags().get_bitmap()?
+                idx.falses_flags().get_bitmap(hw_counter)?
             };
             let iter = bitmap
                 .iter()
@@ -251,9 +291,9 @@ pub(super) fn estimate_cardinality<N: BoolIndexRead>(
             value: ValueVariants::Bool(value),
         })) => {
             let count = if *value {
-                idx.trues_count()?
+                idx.trues_count(hw_counter)?
             } else {
-                idx.falses_count()?
+                idx.falses_count(hw_counter)?
             };
 
             hw_counter
@@ -274,6 +314,7 @@ pub(super) fn for_each_payload_block<N: BoolIndexRead>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let mut handle_block = |cardinality, value: bool, key: PayloadKeyType| {
         if cardinality > threshold {
@@ -286,14 +327,14 @@ pub(super) fn for_each_payload_block<N: BoolIndexRead>(
     };
 
     // just two possible blocks: true and false
-    handle_block(idx.trues_count()?, true, key.clone())?;
-    handle_block(idx.falses_count()?, false, key)
+    handle_block(idx.trues_count(hw_counter)?, true, key.clone())?;
+    handle_block(idx.falses_count(hw_counter)?, false, key)
 }
 
 pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &FieldCondition,
-    _hw_acc: HwMeasurementAcc,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<BoolConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
@@ -316,6 +357,7 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         }) => Some(BoolConditionChecker {
             idx,
             is_true: *is_true,
+            hw_counter: hw_acc.get_counter_cell(),
         }),
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Integer(_),
@@ -337,13 +379,15 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
 pub struct BoolConditionChecker<'a, N> {
     idx: &'a N,
     is_true: bool,
+    hw_counter: HardwareCounterCell,
 }
 
 impl<N: BoolIndexRead> ConditionChecker for BoolConditionChecker<'_, N> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.idx.check_values_any(point_id, self.is_true)
+        self.idx
+            .check_values_any(point_id, self.is_true, &self.hw_counter)
     }
 
     fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>
@@ -365,13 +409,13 @@ impl<N: BoolIndexRead> ConditionChecker for BoolConditionChecker<'_, N> {
 /// [`ReadOnlyFieldIndex::value_retriever`]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub(super) fn value_retriever<'a, N: BoolIndexRead + ?Sized + 'a>(
     idx: &'a N,
-    _hw_counter: &'a HardwareCounterCell,
+    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<VariableRetrieverFn<'a>> {
     // Materialize both bitmaps here rather than inside the closure: the
     // retriever is invoked per point and must not fail, so the one scan that
     // could fail is hoisted to construction time.
-    let trues = idx.trues_flags().get_bitmap()?;
-    let falses = idx.falses_flags().get_bitmap()?;
+    let trues = idx.trues_flags().get_bitmap(hw_counter)?;
+    let falses = idx.falses_flags().get_bitmap(hw_counter)?;
 
     Ok(Box::new(
         move |point_id: PointOffsetType| -> MultiValue<Value> {

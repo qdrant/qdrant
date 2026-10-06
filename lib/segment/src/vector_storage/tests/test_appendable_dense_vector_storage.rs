@@ -51,7 +51,9 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            let was_deleted = storage.delete_vector(i as PointOffsetType).unwrap();
+            let was_deleted = storage
+                .delete_vector(i as PointOffsetType, &hw_counter)
+                .unwrap();
             assert!(was_deleted, "deleting a live vector must return true");
         });
     assert_eq!(
@@ -65,7 +67,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -81,11 +83,15 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     // Delete 1, redelete 2
     assert!(
-        storage.delete_vector(1 as PointOffsetType).unwrap(),
+        storage
+            .delete_vector(1 as PointOffsetType, &hw_counter)
+            .unwrap(),
         "deleting a live vector must return true"
     );
     assert!(
-        !storage.delete_vector(2 as PointOffsetType).unwrap(),
+        !storage
+            .delete_vector(2 as PointOffsetType, &hw_counter)
+            .unwrap(),
         "redeleting a deleted vector must return false"
     );
     assert_eq!(
@@ -99,7 +105,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -116,8 +122,16 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(ids, [0, 4]);
 
     // Delete all
-    assert!(storage.delete_vector(0 as PointOffsetType).unwrap());
-    assert!(storage.delete_vector(4 as PointOffsetType).unwrap());
+    assert!(
+        storage
+            .delete_vector(0 as PointOffsetType, &hw_counter)
+            .unwrap()
+    );
+    assert!(
+        storage
+            .delete_vector(4 as PointOffsetType, &hw_counter)
+            .unwrap()
+    );
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -129,7 +143,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -162,11 +176,19 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
                     .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                     .unwrap();
                 if delete_mask[i] {
-                    storage2.delete_vector(i as PointOffsetType).unwrap();
+                    storage2
+                        .delete_vector(i as PointOffsetType, &hw_counter)
+                        .unwrap();
                 }
             });
         }
-        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
+        merge_from_single_source(
+            storage,
+            &storage2,
+            points.len() as PointOffsetType,
+            &hw_counter,
+        )
+        .unwrap();
     }
 
     assert_eq!(
@@ -181,7 +203,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -196,9 +218,15 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(closest[2].idx, 4);
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
+    storage
+        .delete_vector(0 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(1 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(4 as PointOffsetType, &hw_counter)
+        .unwrap();
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -229,7 +257,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         2,
     );
     let closest = searcher
@@ -248,7 +276,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     };
 
     id_tracker
-        .drop(PointIdType::NumId(u64::from(top_idx)))
+        .drop(PointIdType::NumId(u64::from(top_idx)), &hw_counter)
         .unwrap();
 
     let mut raw_scorer = FilteredScorer::new(
@@ -256,7 +284,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         storage,
         None::<&QuantizedVectors>,
         None,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         HardwareCounterCell::new(),
     )
     .unwrap();
@@ -267,7 +295,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None::<&QuantizedVectors>,
         None,
         2,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         HardwareCounterCell::new(),
     )
     .unwrap();
@@ -298,8 +326,14 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None => panic!("No close vector found!"),
     };
 
-    let all_ids1: Vec<_> = id_tracker.point_mappings().iter_internal().collect();
-    let all_ids2: Vec<_> = id_tracker.point_mappings().iter_internal().collect();
+    let all_ids1: Vec<_> = id_tracker
+        .point_mappings(&hw_counter)
+        .iter_internal()
+        .collect();
+    let all_ids2: Vec<_> = id_tracker
+        .point_mappings(&hw_counter)
+        .iter_internal()
+        .collect();
 
     assert_eq!(all_ids1, all_ids2);
 
@@ -344,6 +378,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         dir.path(),
         1,
         &stopped,
+        &hw_counter,
     )
     .unwrap();
 
@@ -366,9 +401,10 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let quantization_files = quantized_vectors.files();
 
     // test save-load
-    let quantized_vectors = QuantizedVectors::load(&config, storage, dir.path(), &stopped)
-        .unwrap()
-        .unwrap();
+    let quantized_vectors =
+        QuantizedVectors::load(&config, storage, dir.path(), &stopped, &hw_counter)
+            .unwrap()
+            .unwrap();
     assert_eq!(files, storage.files());
     assert_eq!(quantization_files, quantized_vectors.files());
 
@@ -425,10 +461,11 @@ fn test_delete_points_in_appendable_memmap_vector_storages() {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         do_test_delete_points(&mut storage);
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
     }
 
     let _storage = open_appendable_memmap_vector_storage_full(
@@ -437,6 +474,7 @@ fn test_delete_points_in_appendable_memmap_vector_storages() {
         Distance::Dot,
         AdviceSetting::Global,
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 }
@@ -451,11 +489,12 @@ fn test_update_from_delete_points_appendable_memmap_vector_storages() {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
         do_test_update_from_delete_points(&mut storage);
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
     }
 
     let _storage = open_appendable_memmap_vector_storage_full(
@@ -464,6 +503,7 @@ fn test_update_from_delete_points_appendable_memmap_vector_storages() {
         Distance::Dot,
         AdviceSetting::Global,
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 }
@@ -478,10 +518,11 @@ fn test_score_points_in_appendable_memmap_vector_storages() {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         do_test_score_points(&mut storage);
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
     }
 
     let _storage = open_appendable_memmap_vector_storage_full(
@@ -490,6 +531,7 @@ fn test_score_points_in_appendable_memmap_vector_storages() {
         Distance::Dot,
         AdviceSetting::Global,
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 }
@@ -504,10 +546,11 @@ fn test_score_quantized_points_appendable_memmap_vector_storages() {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         test_score_quantized_points(&mut storage);
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
     }
 
     let _storage = open_appendable_memmap_vector_storage_full(
@@ -516,6 +559,7 @@ fn test_score_quantized_points_appendable_memmap_vector_storages() {
         Distance::Dot,
         AdviceSetting::Global,
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 }

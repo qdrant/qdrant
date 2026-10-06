@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Filter, StrictModeConfig};
@@ -138,11 +139,12 @@ impl StrictModeVerification for CollectionQueryRequest {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
         for prefetch in &self.prefetch {
             prefetch
-                .check_strict_mode(collection, strict_mode_config)
+                .check_strict_mode(collection, strict_mode_config, hw_acc)
                 .await?;
         }
 
@@ -191,10 +193,11 @@ impl StrictModeVerification for CollectionPrefetch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
         for prefetch in &self.prefetch {
-            Box::pin(prefetch.check_strict_mode(collection, strict_mode_config)).await?;
+            Box::pin(prefetch.check_strict_mode(collection, strict_mode_config, hw_acc)).await?;
         }
 
         if let Some(query) = self.query.as_ref() {
@@ -240,6 +243,7 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        _hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         if let Some(query) = self.query.as_ref() {
             // check query can perform fullscan when not rescoring

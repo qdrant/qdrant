@@ -64,8 +64,15 @@ fn build_dataset(dim: usize) -> Dataset {
 
     let turbo_dir = TempDir::new().expect("turbo tempdir created");
     let mut turbo = VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
-        open_appendable_turbo_vector_storage(turbo_dir.path(), dim, DISTANCE, TQBits::Bits4, true)
-            .expect("turbo storage created"),
+        open_appendable_turbo_vector_storage(
+            turbo_dir.path(),
+            dim,
+            DISTANCE,
+            TQBits::Bits4,
+            true,
+            &hw_counter,
+        )
+        .expect("turbo storage created"),
     ));
     let mut dense = new_volatile_dense_vector_storage(dim, DISTANCE);
     for i in 0..VECTORS as PointOffsetType {
@@ -93,6 +100,7 @@ fn build_dataset(dim: usize) -> Dataset {
         quantized_dir.path(),
         4,
         &DEFAULT_STOPPED,
+        &hw_counter,
     )
     .expect("quantized vectors created");
 

@@ -26,7 +26,15 @@ fn encoded_vectors_match_the_writable_side() {
 
     // Written by the update-only writer.
     let ours = TempDir::with_prefix("update_only_turbo").unwrap();
-    let mut writer = Writer::open(&MmapFs, ours.path(), DIM, Distance::Dot, TQBits::Bits4).unwrap();
+    let mut writer = Writer::open(
+        &MmapFs,
+        ours.path(),
+        DIM,
+        Distance::Dot,
+        TQBits::Bits4,
+        &hw_counter,
+    )
+    .unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -48,6 +56,7 @@ fn encoded_vectors_match_the_writable_side() {
         Distance::Dot,
         TQBits::Bits4,
         false,
+        &hw_counter,
     )
     .unwrap();
     {
@@ -57,12 +66,18 @@ fn encoded_vectors_match_the_writable_side() {
             .unwrap();
     }
 
-    let ours =
-        open_appendable_turbo_vector_storage(ours.path(), DIM, Distance::Dot, TQBits::Bits4, false)
-            .unwrap();
+    let ours = open_appendable_turbo_vector_storage(
+        ours.path(),
+        DIM,
+        Distance::Dot,
+        TQBits::Bits4,
+        false,
+        &hw_counter,
+    )
+    .unwrap();
     assert_eq!(
-        ours.get_quantized_vector(0),
-        reference.get_quantized_vector(0),
+        ours.get_quantized_vector(0, &hw_counter),
+        reference.get_quantized_vector(0, &hw_counter),
         "the update-only writer must encode exactly as the storage does",
     );
 
@@ -81,8 +96,15 @@ fn batches_resume() {
     let vector: Vec<VectorElementType> = vec![1.0; DIM];
 
     for slot in 0..2 {
-        let mut writer =
-            Writer::open(&MmapFs, dir.path(), DIM, Distance::Dot, TQBits::Bits4).unwrap();
+        let mut writer = Writer::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            &hw_counter,
+        )
+        .unwrap();
         writer
             .append_many(
                 &MmapFs,
@@ -93,12 +115,18 @@ fn batches_resume() {
             .unwrap();
     }
 
-    let storage =
-        open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, TQBits::Bits4, false)
-            .unwrap();
-    assert_eq!(storage.total_vector_count(), 2);
+    let storage = open_appendable_turbo_vector_storage(
+        dir.path(),
+        DIM,
+        Distance::Dot,
+        TQBits::Bits4,
+        false,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(storage.total_vector_count(&hw_counter), 2);
     assert_eq!(
-        storage.get_quantized_vector(0),
-        storage.get_quantized_vector(1),
+        storage.get_quantized_vector(0, &hw_counter),
+        storage.get_quantized_vector(1, &hw_counter),
     );
 }

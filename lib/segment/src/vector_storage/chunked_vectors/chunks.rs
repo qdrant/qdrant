@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{AdviceSetting, MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length};
 use common::universal_io::{
     ListedFile, OpenOptions, Populate, TypedStorage, UniversalIoError, UniversalRead,
@@ -43,17 +44,19 @@ pub fn read_chunks<T: bytemuck::Pod + Send, S: UniversalRead>(
     advice: AdviceSetting,
     populate: Populate,
     writeable: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
-    read_chunks_from(fs, directory, 0, advice, populate, writeable)
+    read_chunks_from(fs, directory, 0, advice, populate, writeable, hw_counter)
 }
 
 /// List the chunk files under `directory`, keyed by chunk id.
 pub(super) fn list_chunk_files(
     fs: &impl UniversalReadFs,
     directory: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<AHashMap<usize, ListedFile>, UniversalIoError> {
     let mut chunks_files = AHashMap::new();
-    for listed in fs.list_files(&chunks_prefix(directory))? {
+    for listed in fs.list_files(&chunks_prefix(directory), hw_counter)? {
         let chunk_id = listed
             .path
             .file_name()
@@ -75,8 +78,9 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
     advice: AdviceSetting,
     populate: Populate,
     writeable: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<Vec<TypedStorage<S, T>>, UniversalIoError> {
-    let mut chunks_files = list_chunk_files(fs, directory)?;
+    let mut chunks_files = list_chunk_files(fs, directory, hw_counter)?;
     let num_chunks = chunks_files.len();
     let mut result = Vec::with_capacity(num_chunks.saturating_sub(start_chunk_id));
     for chunk_id in start_chunk_id..num_chunks {
@@ -95,6 +99,7 @@ pub fn read_chunks_from<T: bytemuck::Pod + Send, S: UniversalRead>(
             &chunk_path,
             chunk_open_options(advice, populate, writeable),
             Default::default(),
+            hw_counter,
         )?;
 
         result.push(chunk);
@@ -113,6 +118,7 @@ pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<TypedStorage<S, T>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
@@ -127,5 +133,6 @@ pub fn create_chunk<T: bytemuck::Pod + Send, S: UniversalWrite>(
             advice: AdviceSetting::Global,
         },
         Default::default(),
+        hw_counter,
     )
 }

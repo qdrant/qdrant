@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Result, anyhow};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{OkNotFound as _, UniversalAppendFs, UniversalReadFs, read_json_via};
 use edge::{
     PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig, PayloadFieldSchema, PayloadSchemaParams,
@@ -26,6 +27,7 @@ pub fn read_schema<Fs: UniversalAppendFs, F: UniversalReadFs>(
     shard: &UpdateOnlyEdgeShard<Fs>,
     fs: &F,
     shard_path: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<ShardSchema> {
     let mut target = None;
 
@@ -55,7 +57,7 @@ pub fn read_schema<Fs: UniversalAppendFs, F: UniversalReadFs>(
     let segment_path = shard_path.join("segments").join(uuid.to_string());
     let payload_config_path = get_payload_index_path(&segment_path).join(PAYLOAD_INDEX_CONFIG_FILE);
     let payload_config: Option<PayloadConfig> =
-        match read_json_via(fs, &payload_config_path).ok_not_found() {
+        match read_json_via(fs, &payload_config_path, hw_counter).ok_not_found() {
             Ok(Some(payload_config)) => Some(payload_config),
             Ok(None) => {
                 log::info!(

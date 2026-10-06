@@ -27,12 +27,12 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         self.inner.points_count()
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inner.values_count(point_id)
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        self.inner.values_count(point_id, hw_counter)
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inner.values_is_empty(point_id)
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.inner.values_is_empty(point_id, hw_counter)
     }
 
     fn doc_len_batch(
@@ -95,8 +95,13 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
             .estimate_query_cardinality(query, condition, hw_counter)
     }
 
-    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.inner.check_match(query, point_id)
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        self.inner.check_match(query, point_id, hw_counter)
     }
 
     fn check_match_batch<U: UserData>(
@@ -104,8 +109,10 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.inner.check_match_batch(query, items, on_match)
+        self.inner
+            .check_match_batch(query, items, on_match, hw_counter)
     }
 
     fn for_each_payload_block_inner(
@@ -113,8 +120,10 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.inner.for_each_payload_block_inner(threshold, key, f)
+        self.inner
+            .for_each_payload_block_inner(threshold, key, f, hw_counter)
     }
 
     fn get_storage_type(&self) -> StorageType {

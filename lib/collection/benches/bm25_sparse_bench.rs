@@ -46,6 +46,7 @@ use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -136,9 +137,9 @@ fn segment_census(shard: &LocalShard) -> (usize, usize, bool) {
         if segment.segment_type() == SegmentType::Special {
             has_proxy = true;
         } else if segment.is_appendable() {
-            appendable += segment.available_point_count();
+            appendable += segment.available_point_count(&HardwareCounterCell::new());
         } else {
-            immutable += segment.available_point_count();
+            immutable += segment.available_point_count(&HardwareCounterCell::new());
         }
     }
     (appendable, immutable, has_proxy)
@@ -244,6 +245,7 @@ fn shard_with(
             search_handle.clone(),
             ResourceBudget::default(),
             optimizer_config,
+            &HwMeasurementAcc::new(),
         ))
         .unwrap();
 

@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::defaults::log_load_timing;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
@@ -47,9 +48,10 @@ pub(super) fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
     load_mode: IndexLoadMode,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Segment> {
     let started = Instant::now();
-    let payload_storage = sp(create_payload_storage(segment_path, config)?);
+    let payload_storage = sp(create_payload_storage(segment_path, config, hw_counter)?);
     log_load_timing(segment_path, "payload_storage", started);
 
     let appendable_flag = config.is_appendable();
@@ -70,6 +72,7 @@ pub(super) fn create_segment(
         segment_path,
         deferred_internal_id,
         id_tracker_populate,
+        hw_counter,
     )?;
     log_load_timing(segment_path, "id_tracker", started);
 
@@ -84,6 +87,7 @@ pub(super) fn create_segment(
             vector_config,
             &vector_storage_path,
             &vector_index_path,
+            hw_counter,
         )?);
         log_load_timing(
             segment_path,
@@ -101,6 +105,7 @@ pub(super) fn create_segment(
         let vector_storage = sp(create_sparse_vector_storage(
             &vector_storage_path,
             &sparse_config.storage_type,
+            hw_counter,
         )?);
         log_load_timing(
             segment_path,
@@ -120,6 +125,7 @@ pub(super) fn create_segment(
         &payload_index_path,
         StorageType::from_appendable(appendable_flag),
         load_mode,
+        hw_counter,
     )?);
     log_load_timing(segment_path, "payload_index", started);
 
@@ -135,6 +141,7 @@ pub(super) fn create_segment(
             &payload_index,
             vector_storage,
             stopped,
+            hw_counter,
         )?;
         vector_data.insert(vector_name.to_owned(), data);
     }
@@ -149,6 +156,7 @@ pub(super) fn create_segment(
             &payload_index,
             vector_storage,
             stopped,
+            hw_counter,
         )?;
         vector_data.insert(vector_name.to_owned(), data);
     }
@@ -191,11 +199,17 @@ fn open_dense_vector_data(
     payload_index: &Arc<AtomicRefCell<StructPayloadIndex>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorData> {
     let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
     let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-    prefill_vector_storage(&vector_storage, id_tracker, &vector_storage_path)?;
+    prefill_vector_storage(
+        &vector_storage,
+        id_tracker,
+        &vector_storage_path,
+        hw_counter,
+    )?;
 
     let started = Instant::now();
     let quantized_vectors = sp(
@@ -206,6 +220,7 @@ fn open_dense_vector_data(
                 &vector_storage.borrow(),
                 &quantized_data_path,
                 stopped,
+                hw_counter,
             )?
         } else {
             None
@@ -227,6 +242,7 @@ fn open_dense_vector_data(
             payload_index: payload_index.clone(),
             quantized_vectors: quantized_vectors.clone(),
         },
+        hw_counter,
     )?);
     log_load_timing(
         segment_path,
@@ -244,6 +260,7 @@ fn open_dense_vector_data(
 }
 
 /// Open one sparse vector's index into a [`VectorData`] (sparse vectors are never quantized).
+#[expect(clippy::too_many_arguments)]
 fn open_sparse_vector_data(
     segment_path: &Path,
     vector_name: &VectorName,
@@ -252,11 +269,17 @@ fn open_sparse_vector_data(
     payload_index: &Arc<AtomicRefCell<StructPayloadIndex>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorData> {
     let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
     let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-    prefill_vector_storage(&vector_storage, id_tracker, &vector_storage_path)?;
+    prefill_vector_storage(
+        &vector_storage,
+        id_tracker,
+        &vector_storage_path,
+        hw_counter,
+    )?;
 
     let started = Instant::now();
     let vector_index = sp(open_or_create_sparse_vector_index(
@@ -270,6 +293,7 @@ fn open_sparse_vector_data(
             stopped,
             tick_progress: || (),
         },
+        hw_counter,
     )?);
     log_load_timing(
         segment_path,
@@ -293,9 +317,10 @@ fn prefill_vector_storage(
     vector_storage: &Arc<AtomicRefCell<VectorStorageEnum>>,
     id_tracker: &Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage_path: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let point_count = id_tracker.borrow().total_point_count();
-    let vector_count = vector_storage.borrow().total_vector_count();
+    let vector_count = vector_storage.borrow().total_vector_count(hw_counter);
     if vector_count != point_count {
         log::debug!(
             "Mismatch of point and vector counts ({point_count} != {vector_count}, storage: {}), pre-filling deleted entries",
@@ -303,7 +328,7 @@ fn prefill_vector_storage(
         );
         vector_storage
             .borrow_mut()
-            .prefill_deleted_entries(point_count)?;
+            .prefill_deleted_entries(point_count, hw_counter)?;
     }
     Ok(())
 }

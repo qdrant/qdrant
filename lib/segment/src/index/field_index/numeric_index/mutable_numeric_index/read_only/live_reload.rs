@@ -23,8 +23,9 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        Ok(self.storage.live_preload(fs)?)
+        Ok(self.storage.live_preload(fs, hw_counter)?)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
@@ -34,7 +35,7 @@ where
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage.live_reload(fs)?;
+        self.storage.live_reload(fs, hw_counter)?;
 
         let in_memory_index = &mut self.in_memory_index;
 
@@ -52,6 +53,7 @@ where
                     Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),
+                hw_counter,
             )?;
 
         Ok(())

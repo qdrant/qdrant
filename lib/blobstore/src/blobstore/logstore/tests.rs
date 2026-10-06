@@ -23,7 +23,13 @@ fn empty_byte_storage(compression: Compression) -> (TempDir, Blobstore<Vec<u8>>)
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression,
     });
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let storage = Blobstore::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     (dir, storage)
 }
 
@@ -40,7 +46,7 @@ fn test_empty_storage() {
     let hw_counter = HardwareCounterCell::new();
     assert_eq!(storage.get_value::<Random>(0, &hw_counter).unwrap(), None);
     assert_eq!(storage.max_point_offset(), 0);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 0);
 
     // Only three files: tracker, page and config
     let files = storage.files();
@@ -74,7 +80,13 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression,
     });
-    let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Payload>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
     let payloads = (0..100)
@@ -99,7 +111,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
         assert_eq!(stored.as_ref(), Some(payload));
     }
 
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // The tracker file length matches the exact number of mappings
     assert_eq!(tracker_file_len(&dir), 100 * TRACKER_ENTRY_SIZE);
@@ -107,7 +119,8 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     // Everything is still there after reopening, the mode is selected automatically
     drop(storage);
     let storage =
-        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     storage.as_logstore();
     assert_eq!(storage.max_point_offset(), 100);
     for (point_offset, payload) in &payloads {
@@ -127,7 +140,13 @@ fn test_put_buffers_value_and_mapping_until_flush() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -147,7 +166,10 @@ fn test_put_buffers_value_and_mapping_until_flush() {
 
     // The buffered values are still fully readable, served from memory
     assert_eq!(storage.max_point_offset(), 3);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 3 * 100);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        3 * 100
+    );
     for point_offset in 0..3 {
         assert_eq!(
             storage
@@ -158,7 +180,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     }
 
     // The flush lands all buffered values and mappings at once, in exactly their extents
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     assert_eq!(
         fs::metadata(&page_path).unwrap().len(),
         3 * 100,
@@ -181,7 +203,8 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     }
     drop(storage);
     let storage =
-        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     assert_eq!(storage.max_point_offset(), 3);
     for point_offset in 0..3 {
         assert_eq!(
@@ -201,7 +224,7 @@ fn test_put_rejects_out_of_order_point_offsets() {
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
     storage.put_value(0, &vec![1; 100], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 100);
 
     // Putting the same point offset twice is rejected
     let err = storage
@@ -218,7 +241,10 @@ fn test_put_rejects_out_of_order_point_offsets() {
     assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
 
     // Rejected puts must not append any value data
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 100);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        2 * 100
+    );
 
     // The stored values are unaffected
     assert_eq!(
@@ -241,7 +267,7 @@ fn test_delete_is_rejected() {
         .put_value(0, &Payload::default(), hw_counter_ref)
         .unwrap();
 
-    let err = storage.delete_value(0).unwrap_err();
+    let err = storage.delete_value(0, &hw_counter).unwrap_err();
     assert!(matches!(err, BlobstoreError::UnsupportedOperation { .. }));
 
     // The value is still there
@@ -321,6 +347,7 @@ fn test_skipped_point_offsets_read_as_none() {
                 Ok(())
             },
             hw_counter.payload_io_read_counter(),
+            &hw_counter,
         )
         .unwrap();
     collected.sort();
@@ -346,17 +373,23 @@ fn test_values_are_byte_packed() {
 
     // Each value starts right after the previous one, without blocks or alignment
     storage.put_value(0, &vec![1; 100], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 100);
     storage.put_value(1, &vec![2; 50], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100 + 50);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        100 + 50
+    );
     storage.put_value(2, &vec![3; 300], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 100 + 50 + 300);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        100 + 50 + 300
+    );
 
-    let pointer = storage.get_pointer(1).unwrap();
+    let pointer = storage.get_pointer(1, &hw_counter).unwrap();
     assert_eq!(pointer.page_id, 0);
     assert_eq!(pointer.block_offset, 100);
     assert_eq!(pointer.length, 50);
-    let pointer = storage.get_pointer(2).unwrap();
+    let pointer = storage.get_pointer(2, &hw_counter).unwrap();
     assert_eq!(pointer.block_offset, 150);
 
     for (point_offset, value) in [(0, vec![1; 100]), (1, vec![2; 50]), (2, vec![3; 300])] {
@@ -378,7 +411,7 @@ fn test_empty_and_huge_values() {
 
     // An empty value takes no space at all
     storage.put_value(0, &vec![], hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 0);
     assert_eq!(
         storage.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![]),
@@ -387,7 +420,10 @@ fn test_empty_and_huge_values() {
     // A huge value simply grows the page file, values never span pages
     let huge = (0..2_000_000).map(|i| i as u8).collect::<Vec<u8>>();
     storage.put_value(1, &huge, hw_counter_ref).unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), huge.len());
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        huge.len()
+    );
     assert_eq!(
         storage.get_value::<Random>(1, &hw_counter).unwrap(),
         Some(huge),
@@ -401,7 +437,13 @@ fn test_unflushed_puts_are_lost_after_reopen() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -416,15 +458,16 @@ fn test_unflushed_puts_are_lost_after_reopen() {
 
     // Without a flush, the puts are gone after reopening, and left nothing behind on disk
     let mut storage =
-        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     assert_eq!(storage.max_point_offset(), 0);
     assert_eq!(storage.get_value::<Random>(0, &hw_counter).unwrap(), None);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 0);
 
     // New puts start from a clean page file
     storage.put_value(0, &vec![9; 10], hw_counter_ref).unwrap();
-    storage.flusher()().unwrap();
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 10);
+    storage.flusher(&hw_counter)().unwrap();
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 10);
     assert_eq!(
         storage.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![9; 10]),
@@ -435,7 +478,13 @@ fn test_unflushed_puts_are_lost_after_reopen() {
 fn test_stale_flusher_is_noop() {
     let dir = TempDir::new().unwrap();
     let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-    let mut storage = Blobstore::<Payload>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Payload>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -445,12 +494,12 @@ fn test_stale_flusher_is_noop() {
             .put_value(point_offset, &Payload::default(), hw_counter_ref)
             .unwrap();
     }
-    let stale_flusher = storage.flusher();
+    let stale_flusher = storage.flusher(&hw_counter);
 
     storage
         .put_value(3, &Payload::default(), hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     assert_eq!(tracker_file_len(&dir), 4 * TRACKER_ENTRY_SIZE);
     let page_len = fs::metadata(dir.path().join("log_page_0.dat"))
         .unwrap()
@@ -469,7 +518,8 @@ fn test_stale_flusher_is_noop() {
 
     drop(storage);
     let storage =
-        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     assert_eq!(storage.max_point_offset(), 4);
     for point_offset in 0..4 {
         assert_eq!(
@@ -491,8 +541,8 @@ fn test_flusher_after_clear_is_cancelled() {
         .put_value(0, &Payload::default(), hw_counter_ref)
         .unwrap();
 
-    let flusher = storage.flusher();
-    storage.clear().unwrap();
+    let flusher = storage.flusher(&hw_counter);
+    storage.clear(&hw_counter).unwrap();
 
     let err = flusher().unwrap_err();
     assert!(matches!(err, BlobstoreError::FlushCancelled));
@@ -510,20 +560,21 @@ fn test_clear_preserves_append_only_mode() {
             .unwrap();
     }
 
-    storage.clear().unwrap();
+    storage.clear(&hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 0);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+    assert_eq!(storage.get_storage_size_bytes(&hw_counter).unwrap(), 0);
 
     // The storage is usable again, and putting restarts at point offset zero
     storage
         .put_value(0, &Payload::default(), hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // The recreated storage is still in append-only mode after reopening
     drop(storage);
     let storage =
-        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Payload>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     storage.as_logstore();
     assert_eq!(storage.max_point_offset(), 1);
 }
@@ -548,8 +599,14 @@ fn test_open_or_create_keeps_mode_on_disk() {
     let path = dir.path().join("storage");
 
     let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-    let storage =
-        Blobstore::<Payload>::open_or_create(MmapFs, path.clone(), config, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open_or_create(
+        MmapFs,
+        path.clone(),
+        config,
+        Populate::No,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     storage.as_logstore();
     drop(storage);
 
@@ -559,6 +616,7 @@ fn test_open_or_create_keeps_mode_on_disk() {
         path,
         default_config(Mode::Mutable),
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     storage.as_logstore();
@@ -571,7 +629,13 @@ fn test_reader_on_append_only_storage() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -580,13 +644,17 @@ fn test_reader_on_append_only_storage() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // The reader selects the append-only mode automatically
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 5);
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 5);
     assert!(reader.is_on_disk());
     // Three values, packed back to back: point offset gaps take no page space
     assert_eq!(reader.get_storage_size_bytes(), 3 * 10);
@@ -632,13 +700,14 @@ fn test_reader_on_append_only_storage() {
                 Ok(())
             },
             hw_counter.payload_io_read_counter(),
+            &hw_counter,
         )
         .unwrap();
     collected.sort();
     assert_eq!(collected, vec![(0, 0, true), (1, 3, false), (2, 4, true)]);
 
     let view = reader.view();
-    assert_eq!(view.max_point_offset().unwrap(), 5);
+    assert_eq!(view.max_point_offset(&hw_counter).unwrap(), 5);
     assert_eq!(view.get_storage_size_bytes(), 3 * 10);
     assert_eq!(
         view.get_value::<Random>(4, &hw_counter).unwrap(),
@@ -648,11 +717,18 @@ fn test_reader_on_append_only_storage() {
 
 /// Replace the append-only tracker file in `dir` with a compacted one holding the same mappings.
 fn compact_tracker(dir: &TempDir) {
-    let tracker =
-        AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, dir.path(), Populate::No).unwrap();
-    let compacted = CompactedTracker::from_tracker(&MmapFs, dir.path(), &tracker).unwrap();
+    let tracker = AppendOnlyTracker::<MmapFile>::open_read_only(
+        &MmapFs,
+        dir.path(),
+        Populate::No,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let compacted =
+        CompactedTracker::from_tracker(&MmapFs, dir.path(), &tracker, &HardwareCounterCell::new())
+            .unwrap();
     drop(tracker);
-    compacted.flusher(PointOffset::MAX)().unwrap();
+    compacted.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
     fs::remove_file(dir.path().join("log_tracker.dat")).unwrap();
 }
 
@@ -667,15 +743,19 @@ fn test_reader_on_compacted_tracker() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     compact_tracker(&dir);
 
     // The reader picks the compacted tracker automatically
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 10);
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 10);
     assert_eq!(reader.get_storage_size_bytes(), 5 * 10);
     for point_offset in 0..11 {
         let expected = point_offsets
@@ -719,8 +799,8 @@ fn test_reader_on_compacted_tracker() {
     );
 
     reader.clear_cache().unwrap();
-    reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 10);
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 10);
     assert_eq!(
         reader.get_value::<Random>(9, &hw_counter).unwrap(),
         Some(vec![9; 10]),
@@ -739,18 +819,19 @@ fn test_writable_open_on_compacted_tracker() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     compact_tracker(&dir);
 
     let mut storage =
-        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     assert_eq!(storage.max_point_offset(), 5);
     assert_eq!(
         storage.get_value::<Random>(4, &hw_counter).unwrap(),
         Some(vec![4; 10]),
     );
-    storage.populate().unwrap();
+    storage.populate(&hw_counter).unwrap();
     storage.clear_cache().unwrap();
 
     storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
@@ -759,7 +840,7 @@ fn test_writable_open_on_compacted_tracker() {
         storage.get_value::<Random>(6, &hw_counter).unwrap(),
         Some(vec![6; 10]),
     );
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     let mut files = storage.files();
     files.sort();
     assert_eq!(
@@ -779,18 +860,23 @@ fn test_writable_open_on_compacted_tracker() {
         dir.path().to_path_buf(),
         LogstoreConfig::DEFAULT,
         Populate::No,
+        &hw_counter,
     )
     .unwrap();
     logstore
         .put_value(&MmapFs, 7, &vec![7; 10], hw_counter_ref)
         .unwrap();
-    logstore.flusher()().unwrap();
+    logstore.flusher(&hw_counter)().unwrap();
     drop(logstore);
 
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 8);
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 8);
     for point_offset in 0..9 {
         let expected = [0, 1, 4, 6, 7]
             .contains(&point_offset)
@@ -807,10 +893,14 @@ fn test_writable_open_on_compacted_tracker() {
 /// Values of the given point offsets, as the tests put them, read through a fresh reader.
 fn assert_reader_values(dir: &TempDir, count: PointOffset, present: &[PointOffset]) {
     let hw_counter = HardwareCounterCell::new();
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), count);
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), count);
     for point_offset in 0..count + 1 {
         let expected = present
             .contains(&point_offset)
@@ -836,11 +926,11 @@ fn test_make_immutable_is_persisted_by_flush() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     storage.put_value(5, &vec![5; 10], hw_counter_ref).unwrap();
     assert_eq!(storage.ram_usage_bytes(), 0);
 
-    storage.make_immutable().unwrap();
+    storage.make_immutable(&hw_counter).unwrap();
     // Every mapping is held in RAM, not only the present ones
     assert!(storage.ram_usage_bytes() >= 6 * size_of::<Option<ValuePointer>>());
     assert!(!dir.path().join("log_tracker.dat").exists());
@@ -850,9 +940,9 @@ fn test_make_immutable_is_persisted_by_flush() {
         Some(vec![5; 10]),
     );
     // Again changes nothing
-    storage.make_immutable().unwrap();
+    storage.make_immutable(&hw_counter).unwrap();
 
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     assert!(dir.path().join("compacted_tracker.dat").exists());
     assert!(
         storage
@@ -863,7 +953,7 @@ fn test_make_immutable_is_persisted_by_flush() {
 
     // Still writable
     storage.put_value(7, &vec![7; 10], hw_counter_ref).unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     assert_reader_values(&dir, 8, &[0, 1, 4, 5, 7]);
 }
@@ -877,14 +967,18 @@ fn test_make_immutable_needs_a_flush() {
     storage
         .put_value(0, &vec![0; 10], hw_counter.ref_payload_io_write_counter())
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    storage.make_immutable().unwrap();
+    storage.make_immutable(&hw_counter).unwrap();
     drop(storage);
 
-    let err =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap_err();
+    let err = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap_err();
     assert!(err.to_string().contains("does not exist"), "{err}");
 }
 
@@ -892,8 +986,8 @@ fn test_make_immutable_needs_a_flush() {
 fn test_make_immutable_leaves_mutable_mode_alone() {
     let (dir, storage) = crate::fixtures::empty_storage();
     let files_before = storage.files();
-    storage.make_immutable().unwrap();
-    storage.flusher()().unwrap();
+    storage.make_immutable(&HardwareCounterCell::new()).unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
     assert_eq!(storage.files(), files_before);
     assert_eq!(storage.ram_usage_bytes(), 0);
     assert!(!dir.path().join("compacted_tracker.dat").exists());
@@ -907,28 +1001,37 @@ fn test_compacted_flusher_skips_later_puts() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &vec![0; 10], hw_counter_ref).unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     compact_tracker(&dir);
 
     let mut storage =
-        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     storage.put_value(1, &vec![1; 10], hw_counter_ref).unwrap();
-    let flusher = storage.flusher();
+    let flusher = storage.flusher(&hw_counter);
     storage.put_value(2, &vec![2; 10], hw_counter_ref).unwrap();
     flusher().unwrap();
 
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 2);
 
     // The next flush persists the rest
-    storage.flusher()().unwrap();
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    storage.flusher(&hw_counter)().unwrap();
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 3);
     assert_eq!(
         reader.get_value::<Random>(2, &hw_counter).unwrap(),
         Some(vec![2; 10]),
@@ -947,18 +1050,19 @@ async fn test_preopen_schedules_compacted_tracker() {
     storage
         .put_value(0, &vec![7; 10], hw_counter.ref_payload_io_write_counter())
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     compact_tracker(&dir);
 
     type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
     let fs = RoFs::from_context(Default::default()).unwrap();
     let mut cached_fs = CachedFs::new(fs, dir.path()).unwrap();
-    cached_fs.cache_file_info().unwrap();
+    cached_fs.cache_file_info(&hw_counter).unwrap();
     BlobstoreReader::<Vec<u8>, ReadOnly<MmapFile>>::preopen(
         &cached_fs,
         dir.path().to_path_buf(),
         Populate::No,
+        &hw_counter,
     )
     .unwrap();
     cached_fs.wait_all().await;
@@ -971,6 +1075,7 @@ async fn test_preopen_schedules_compacted_tracker() {
         &cached_fs,
         dir.path().to_path_buf(),
         Populate::No,
+        &hw_counter,
     )
     .unwrap();
     assert_eq!(
@@ -1001,18 +1106,21 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, path.clone(), config).unwrap();
+    let mut storage =
+        Blobstore::<Vec<u8>>::new(MmapFs, path.clone(), config, &HardwareCounterCell::new())
+            .unwrap();
     let hw_counter = HardwareCounterCell::new();
     storage
         .put_value(0, &vec![7; 10], hw_counter.ref_payload_io_write_counter())
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     let tracker =
-        AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &path, Populate::No).unwrap();
-    let compacted = CompactedTracker::from_tracker(&MmapFs, &path, &tracker).unwrap();
+        AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &path, Populate::No, &hw_counter)
+            .unwrap();
+    let compacted = CompactedTracker::from_tracker(&MmapFs, &path, &tracker, &hw_counter).unwrap();
     drop(tracker);
-    compacted.flusher(PointOffset::MAX)().unwrap();
+    compacted.flusher(PointOffset::MAX, &hw_counter)().unwrap();
     fs::remove_file(path.join("log_tracker.dat")).unwrap();
 
     let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
@@ -1021,19 +1129,24 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
     })
     .unwrap();
     let mut cached_fs = CachedFs::new(cache_fs, &path).unwrap();
-    cached_fs.cache_file_info().unwrap();
+    cached_fs.cache_file_info(&hw_counter).unwrap();
     BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::preopen(
         &cached_fs,
         path.clone(),
         Populate::No,
+        &hw_counter,
     )
     .unwrap();
     cached_fs.wait_all().await;
     fs::remove_file(path.join("compacted_tracker.dat")).unwrap();
 
-    let reader =
-        BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::open(&cached_fs, path, Populate::No)
-            .unwrap();
+    let reader = BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::open(
+        &cached_fs,
+        path,
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
     assert_eq!(
         reader.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![7; 10]),
@@ -1047,7 +1160,13 @@ fn test_reader_live_reload() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1056,16 +1175,20 @@ fn test_reader_live_reload() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 3);
 
     // Without new data, a live reload changes nothing
-    reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 3);
 
     // The writer appends more values, the reader picks them up after a live reload
     for point_offset in 3..6 {
@@ -1073,10 +1196,10 @@ fn test_reader_live_reload() {
             .put_value(point_offset, &vec![point_offset as u8; 10], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 6);
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 6);
     assert_eq!(reader.get_storage_size_bytes(), 6 * 10);
     for point_offset in 0..6 {
         assert_eq!(
@@ -1090,8 +1213,8 @@ fn test_reader_live_reload() {
     // An unflushed put is buffered in the writer and puts nothing on disk, so a live reload
     // sees no change at all
     storage.put_value(6, &vec![6; 10], hw_counter_ref).unwrap();
-    reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 6);
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 6);
     assert_eq!(reader.get_storage_size_bytes(), 6 * 10);
 }
 
@@ -1102,7 +1225,13 @@ fn test_reader_iter_many_values() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1118,11 +1247,15 @@ fn test_reader_iter_many_values() {
             )
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
 
     // Values are read in batches, so the callback may be invoked in any order. Each value
     // encodes its own point offset, so pairing is checked per callback and coverage in bulk.
@@ -1163,7 +1296,13 @@ fn test_open_rejects_truncated_page_file() {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,
         compression: Compression::None,
     });
-    let mut storage = Blobstore::<Vec<u8>>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let mut storage = Blobstore::<Vec<u8>>::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1172,7 +1311,7 @@ fn test_open_rejects_truncated_page_file() {
             .put_value(point_offset, &vec![7; 100], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
 
     // Truncate the page file below what the tracker references, like a partial copy would
@@ -1181,12 +1320,19 @@ fn test_open_rejects_truncated_page_file() {
     file.set_len(100).unwrap();
     drop(file);
 
-    assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
+    assert!(
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .is_err()
+    );
 
     // The reader skips the open check, the dangling mapping fails on read
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
     assert!(reader.get_value::<Random>(2, &hw_counter).is_err());
 }
 
@@ -1199,16 +1345,22 @@ fn test_read_from_pages_rejects_unknown_page() {
     storage
         .put_value(0, &Payload::default(), hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    let reader =
-        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let reader = BlobstoreReader::<Payload, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
 
     // All values live in page 0, a pointer to any other page must not read anything
     let view = reader.view();
     let pointer = ValuePointer::new(1, 0, 8);
-    let err = view.read_from_pages::<Random>(pointer).unwrap_err();
+    let err = view
+        .read_from_pages::<Random>(pointer, &hw_counter)
+        .unwrap_err();
     assert!(matches!(err, BlobstoreError::PageNotFound { page_id: 1 },));
 }
 
@@ -1236,7 +1388,7 @@ fn test_writes_only_append() {
 
     // Write, flush, and snapshot the raw file bytes
     put(&mut storage, 0, "first value");
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     let page_snapshot = fs::read(&page_path).unwrap();
     let tracker_snapshot = fs::read(&tracker_path).unwrap();
     assert!(!page_snapshot.is_empty(), "page must hold the first value");
@@ -1252,7 +1404,7 @@ fn test_writes_only_append() {
     assert_eq!(fs::read(&tracker_path).unwrap(), tracker_snapshot);
 
     // Flushing the puts must only extend both files
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     let page_grown = fs::read(&page_path).unwrap();
     assert!(
@@ -1301,7 +1453,7 @@ fn test_tracker_appends_new_mappings_at_end() {
             .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     let before = fs::read(&tracker_path).unwrap();
     assert_eq!(
@@ -1315,7 +1467,7 @@ fn test_tracker_appends_new_mappings_at_end() {
             .put_value(point_offset, &random_payload(rng, 1), hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     let after = fs::read(&tracker_path).unwrap();
     assert_eq!(
@@ -1354,7 +1506,7 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     let payload_3 = random_payload(rng, 1);
     storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
     storage.put_value(3, &payload_3, hw_counter_ref).unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // The file covers entries 0..=3 exactly; the skipped entries are zero
     let bytes = fs::read(dir.path().join("log_tracker.dat")).unwrap();
@@ -1397,7 +1549,7 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     // Same after reopen; the count is derived from the exact file length
     let path = dir.path().to_path_buf();
     drop(storage);
-    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No, &hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 4);
     assert!(
         storage
@@ -1430,12 +1582,12 @@ fn test_values_are_packed_back_to_back() {
             .put_value(point_offset, &value(point_offset), hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Each value starts at the byte right after the previous value
     let mut expected_start = 0;
     for point_offset in 0..num_values {
-        let pointer = storage.get_pointer(point_offset).unwrap();
+        let pointer = storage.get_pointer(point_offset, &hw_counter).unwrap();
         assert_eq!(pointer.page_id, 0);
         assert_eq!(
             u64::from(pointer.block_offset),
@@ -1453,13 +1605,16 @@ fn test_values_are_packed_back_to_back() {
     }
 
     // The page file ends exactly at the last value, without trailing padding
-    let last_pointer = storage.get_pointer(num_values - 1).unwrap();
+    let last_pointer = storage.get_pointer(num_values - 1, &hw_counter).unwrap();
     let last_end = u64::from(last_pointer.block_offset) + u64::from(last_pointer.length);
     let page_len = fs::metadata(dir.path().join("log_page_0.dat"))
         .unwrap()
         .len();
     assert_eq!(page_len, last_end);
-    assert_eq!(storage.get_storage_size_bytes().unwrap() as u64, last_end);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap() as u64,
+        last_end
+    );
 }
 
 /// Append-only mode never creates or reports the block flag files of the mutable mode.
@@ -1475,7 +1630,7 @@ fn test_has_no_block_flag_files() {
             .put_value(point_offset, &random_payload(rng, 2), hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Not on disk...
     let on_disk: Vec<String> = fs::read_dir(dir.path())
@@ -1519,7 +1674,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
             .unwrap();
     }
 
-    let flusher = storage.flusher();
+    let flusher = storage.flusher(&hw_counter);
 
     for (point_offset, payload) in payloads.iter().enumerate().skip(3) {
         storage
@@ -1532,7 +1687,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
     assert_eq!(tracker_file_len(&dir), 3 * TRACKER_ENTRY_SIZE);
 
     // The page file holds exactly the extent of the values covered by the flusher
-    let covered_pointer = storage.get_pointer(2).unwrap();
+    let covered_pointer = storage.get_pointer(2, &hw_counter).unwrap();
     let covered_extent =
         u64::from(covered_pointer.block_offset) + u64::from(covered_pointer.length);
     assert_eq!(
@@ -1556,7 +1711,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
     // On reopen, only the flushed mappings are left
     let path = dir.path().to_path_buf();
     drop(storage);
-    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No, &hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 3);
     for (point_offset, payload) in payloads.iter().enumerate() {
         let expected = (point_offset < 3).then_some(payload);
@@ -1580,7 +1735,9 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     let path = dir.path().to_path_buf();
 
     let config = default_config(created);
-    let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config).unwrap();
+    let mut storage =
+        Blobstore::<Payload>::new(MmapFs, path.clone(), config, &HardwareCounterCell::new())
+            .unwrap();
     let hw_counter = HardwareCounterCell::new();
     storage
         .put_value(
@@ -1589,7 +1746,7 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
             hw_counter.ref_payload_io_write_counter(),
         )
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
 
     // Tamper with the persisted mode, pointing it at the other mode
@@ -1605,8 +1762,11 @@ fn test_open_wrong_mode_fails(#[case] created: Mode, #[case] tampered: Mode) {
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
 
     // The other mode never finds its own files, so opening fails instead of misreading
-    assert!(Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).is_err());
-    assert!(BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).is_err());
+    assert!(Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No, &hw_counter).is_err());
+    assert!(
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No, &hw_counter)
+            .is_err()
+    );
 }
 
 /// Replaying puts of already persisted point offsets (e.g. a WAL redo after a crash where
@@ -1623,19 +1783,20 @@ fn test_replayed_puts_leave_storage_intact() {
     let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
     {
         let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config).unwrap();
+        let mut storage =
+            Blobstore::<Payload>::new(MmapFs, path.clone(), config, &hw_counter).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
                 .unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
     }
 
     // "Crash" and replay all operations against the reopened storage
-    let mut storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
+    let mut storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No, &hw_counter).unwrap();
     let tracker_snapshot = fs::read(storage.files()[0].clone()).unwrap();
-    let page_len = storage.get_storage_size_bytes().unwrap();
+    let page_len = storage.get_storage_size_bytes(&hw_counter).unwrap();
 
     let resume_at = storage.max_point_offset();
     assert_eq!(resume_at, 3);
@@ -1647,8 +1808,11 @@ fn test_replayed_puts_leave_storage_intact() {
     }
 
     // The rejected replays must not have appended any value data or mappings
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), page_len);
-    storage.flusher()().unwrap();
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        page_len
+    );
+    storage.flusher(&hw_counter)().unwrap();
     assert_eq!(
         fs::read(storage.files()[0].clone()).unwrap(),
         tracker_snapshot,
@@ -1684,13 +1848,14 @@ fn test_zero_extended_tracker_reads_none() {
     let payloads: Vec<_> = (0..3).map(|_| random_payload(rng, 1)).collect();
     {
         let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config).unwrap();
+        let mut storage =
+            Blobstore::<Payload>::new(MmapFs, path.clone(), config, &hw_counter).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
                 .unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
     }
 
     // Simulate a crash mid flush that persisted the grown file length as zeroes
@@ -1703,7 +1868,8 @@ fn test_zero_extended_tracker_reads_none() {
     drop(file);
 
     // The zeroed entries count as mappings without a value
-    let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+    let mut storage =
+        Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No, &hw_counter).unwrap();
     assert_eq!(storage.max_point_offset(), 5);
     assert!(
         storage
@@ -1728,7 +1894,7 @@ fn test_zero_extended_tracker_reads_none() {
         .put_value(5, &random_payload(rng, 1), hw_counter_ref)
         .unwrap();
     assert_eq!(storage.max_point_offset(), 6);
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Data before the zeroed entries is unaffected
     for (point_offset, payload) in payloads.iter().enumerate() {
@@ -1743,8 +1909,10 @@ fn test_zero_extended_tracker_reads_none() {
 
     // The reader agrees on the same view
     drop(storage);
-    let reader = BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 6);
+    let reader =
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No, &hw_counter)
+            .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 6);
     assert!(
         reader
             .get_value::<Random>(4, &hw_counter)
@@ -1766,13 +1934,14 @@ fn test_reader_never_writes() {
     let payloads: Vec<_> = (0..5).map(|_| random_payload(rng, 1)).collect();
     {
         let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-        let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config).unwrap();
+        let mut storage =
+            Blobstore::<Payload>::new(MmapFs, path.clone(), config, &hw_counter).unwrap();
         for (point_offset, payload) in payloads.iter().enumerate() {
             storage
                 .put_value(point_offset as u32, payload, hw_counter_ref)
                 .unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
     }
 
     // Leave a torn trailing entry, as if a writer append was cut short
@@ -1792,9 +1961,10 @@ fn test_reader_never_writes() {
 
     // Open a reader and exercise every read path
     let mut reader =
-        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No, &hw_counter)
+            .unwrap();
     assert_eq!(
-        reader.max_point_offset().unwrap(),
+        reader.max_point_offset(&hw_counter).unwrap(),
         5,
         "torn tail must be ignored"
     );
@@ -1819,7 +1989,7 @@ fn test_reader_never_writes() {
         )
         .unwrap();
     assert_eq!(count, 5);
-    reader.live_reload(&MmapFs).unwrap();
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
     reader.get_storage_size_bytes();
     reader.clear_cache().unwrap();
     drop(reader);
@@ -1840,7 +2010,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
     let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
     let config = StorageConfig::AppendOnly(LogstoreConfig::DEFAULT);
-    let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config).unwrap();
+    let mut storage = Blobstore::<Payload>::new(MmapFs, path.clone(), config, &hw_counter).unwrap();
 
     // The values that must be visible after a reopen
     let mut flushed: Vec<Payload> = Vec::new();
@@ -1857,13 +2027,14 @@ fn test_reopen_always_exposes_flushed_prefix() {
 
         // Only flush every other round
         if round % 2 == 0 {
-            storage.flusher()().unwrap();
+            storage.flusher(&hw_counter)().unwrap();
             flushed.extend(batch);
         }
 
         // Every reopen must expose exactly the flushed values
         drop(storage);
-        storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
+        storage =
+            Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No, &hw_counter).unwrap();
 
         assert_eq!(storage.max_point_offset(), flushed.len() as u32);
         assert_eq!(
@@ -1875,7 +2046,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
         let flushed_extent = flushed
             .len()
             .checked_sub(1)
-            .and_then(|last| storage.get_pointer(last as u32))
+            .and_then(|last| storage.get_pointer(last as u32, &hw_counter))
             .map_or(0, |pointer| {
                 u64::from(pointer.block_offset) + u64::from(pointer.length)
             });
@@ -1912,7 +2083,13 @@ fn small_page_storage(dir: &TempDir, page_size_bytes: usize) -> Blobstore<Vec<u8
         page_capacity_bytes: page_size_bytes,
         compression: Compression::None,
     });
-    Blobstore::new(MmapFs, dir.path().to_path_buf(), config).unwrap()
+    Blobstore::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
 }
 
 /// Once a page is full, the next value starts a new page: values are packed back to back
@@ -1935,14 +2112,17 @@ fn test_full_page_rolls_over_to_new_page() {
     for (point_offset, page_id, offset) in
         [(0, 0, 0), (1, 0, 100), (2, 1, 0), (3, 1, 100), (4, 2, 0)]
     {
-        let pointer = storage.get_pointer(point_offset).unwrap();
+        let pointer = storage.get_pointer(point_offset, &hw_counter).unwrap();
         assert_eq!(
             (pointer.page_id, pointer.block_offset),
             (page_id, offset),
             "value {point_offset} must land at page {page_id} offset {offset}",
         );
     }
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 5 * 100);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        5 * 100
+    );
 
     // All values are readable, before and after a flush, and after a reopen
     let assert_all_readable = |storage: &Blobstore<Vec<u8>>| {
@@ -1959,7 +2139,7 @@ fn test_full_page_rolls_over_to_new_page() {
 
     // A single flush lands the values buffered across the pages, each page file holds exactly
     // its values
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     assert_all_readable(&storage);
     for (page_id, len) in [(0u32, 200u64), (1, 200), (2, 100)] {
         assert_eq!(
@@ -1991,12 +2171,16 @@ fn test_full_page_rolls_over_to_new_page() {
     // Everything is still there after reopening, appends continue on the last page
     drop(storage);
     let mut storage =
-        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .unwrap();
     assert_all_readable(&storage);
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 5 * 100);
+    assert_eq!(
+        storage.get_storage_size_bytes(&hw_counter).unwrap(),
+        5 * 100
+    );
 
     storage.put_value(5, &vec![5; 100], hw_counter_ref).unwrap();
-    let pointer = storage.get_pointer(5).unwrap();
+    let pointer = storage.get_pointer(5, &hw_counter).unwrap();
     assert_eq!((pointer.page_id, pointer.block_offset), (2, 100));
 }
 
@@ -2014,10 +2198,10 @@ fn test_value_larger_than_page_gets_own_page() {
     storage.put_value(0, &vec![1; 100], hw_counter_ref).unwrap();
     storage.put_value(1, &huge, hw_counter_ref).unwrap();
     storage.put_value(2, &vec![2; 100], hw_counter_ref).unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     for (point_offset, page_id) in [(0, 0), (1, 1), (2, 2)] {
-        let pointer = storage.get_pointer(point_offset).unwrap();
+        let pointer = storage.get_pointer(point_offset, &hw_counter).unwrap();
         assert_eq!((pointer.page_id, pointer.block_offset), (page_id, 0));
     }
 
@@ -2055,12 +2239,16 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
             .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 3);
     assert_eq!(reader.get_storage_size_bytes(), 3 * 100);
     for point_offset in 0..3 {
         assert_eq!(
@@ -2084,10 +2272,10 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
             .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    reader.live_reload(&MmapFs).unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 7);
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 7);
     assert_eq!(reader.get_storage_size_bytes(), 7 * 100);
     for point_offset in 0..7 {
         assert_eq!(
@@ -2109,6 +2297,7 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
                 Ok(())
             },
             hw_counter.payload_io_read_counter(),
+            &hw_counter,
         )
         .unwrap();
     assert_eq!(collected.len(), 7);
@@ -2131,18 +2320,25 @@ fn test_open_rejects_missing_page_file() {
             .put_value(point_offset, &vec![point_offset as u8; 100], hw_counter_ref)
             .unwrap();
     }
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
 
     // Remove a page in the middle, like a partial copy would
     fs::remove_file(dir.path().join("log_page_1.dat")).unwrap();
 
-    assert!(Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).is_err());
+    assert!(
+        Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No, &hw_counter)
+            .is_err()
+    );
 
     // The reader skips the open check, the dangling mapping fails on read
-    let reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
     assert!(reader.get_value::<Random>(4, &hw_counter).is_err());
 }
 
@@ -2172,7 +2368,7 @@ fn test_rollover_writes_no_value_data_before_flush() {
         );
     }
 
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     assert_eq!(
         fs::metadata(dir.path().join("log_page_0.dat"))
             .unwrap()
@@ -2203,11 +2399,15 @@ fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
     storage
         .put_value(0, &vec![0u8; 100], hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
 
     // Writer buffers a second value into page 0, then rolls over to page 1 (created on disk,
     // empty), all without flushing
@@ -2220,15 +2420,15 @@ fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
 
     // Reader reloads in the rollover-to-flush window: it adopts the empty page 1, page 0 is no
     // longer the last page
-    reader.live_reload(&MmapFs).unwrap();
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
 
     // The flush appends value 1 to page 0 and value 2 to page 1
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Reader reloads again: only the last page (1) is refreshed, page 0 stays stale
-    reader.live_reload(&MmapFs).unwrap();
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
 
-    assert_eq!(reader.max_point_offset().unwrap(), 3);
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 3);
     assert_eq!(
         reader.get_value::<Random>(1, &hw_counter).unwrap(),
         Some(vec![1u8; 100]),
@@ -2255,13 +2455,13 @@ fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
     storage
         .put_value(0, &vec![0u8; 100], hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Buffer a second value into page 0, capture a flusher BEFORE the rollover
     storage
         .put_value(1, &vec![1u8; 100], hw_counter_ref)
         .unwrap();
-    let flusher = storage.flusher();
+    let flusher = storage.flusher(&hw_counter);
 
     // Rollover: page 1 is created on disk (empty), value 2 stays buffered for it
     storage
@@ -2269,16 +2469,20 @@ fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
         .unwrap();
 
     // Reader opens in the rollover-to-flush window: holds page 0 (100 bytes) and page 1 (empty)
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
 
     // The pre-rollover flusher appends value 1 to page 0 only; page 1 stays empty
     flusher().unwrap();
 
-    reader.live_reload(&MmapFs).unwrap();
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
 
-    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 2);
     assert_eq!(
         reader.get_value::<Random>(1, &hw_counter).unwrap(),
         Some(vec![1u8; 100]),
@@ -2308,19 +2512,23 @@ fn test_failed_page_reload_does_not_publish_mappings() {
     storage
         .put_value(0, &vec![0u8; 100], hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Reader holds page 0 at 100 bytes and a single mapping
-    let mut reader =
-        BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
-            .unwrap();
-    assert_eq!(reader.max_point_offset().unwrap(), 1);
+    let mut reader = BlobstoreReader::<Vec<u8>, MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        &hw_counter,
+    )
+    .unwrap();
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 1);
 
     // Value 1 lands in page 0's tail, so the new mapping only resolves against the grown page
     storage
         .put_value(1, &vec![1u8; 100], hw_counter_ref)
         .unwrap();
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     // Make the page reload fail: the page appears shorter than what the reader already holds
     let page_bytes = fs::read(&page_path).unwrap();
@@ -2328,11 +2536,11 @@ fn test_failed_page_reload_does_not_publish_mappings() {
     fs::write(&page_path, &page_bytes[..50]).unwrap();
 
     reader
-        .live_reload(&MmapFs)
+        .live_reload(&MmapFs, &hw_counter)
         .expect_err("a page shorter than the one held must fail the reload");
 
     assert_eq!(
-        reader.max_point_offset().unwrap(),
+        reader.max_point_offset(&hw_counter).unwrap(),
         1,
         "the observed mapping must stay unpublished, it references value data \
          that failed to load",
@@ -2340,9 +2548,9 @@ fn test_failed_page_reload_does_not_publish_mappings() {
 
     // Undo the sabotage: the same reader recovers on the next reload, nothing was lost
     fs::write(&page_path, &page_bytes).unwrap();
-    reader.live_reload(&MmapFs).unwrap();
+    reader.live_reload(&MmapFs, &hw_counter).unwrap();
 
-    assert_eq!(reader.max_point_offset().unwrap(), 2);
+    assert_eq!(reader.max_point_offset(&hw_counter).unwrap(), 2);
     assert_eq!(
         reader.get_value::<Random>(0, &hw_counter).unwrap(),
         Some(vec![0u8; 100]),

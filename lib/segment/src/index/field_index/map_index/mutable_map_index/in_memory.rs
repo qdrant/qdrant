@@ -147,7 +147,11 @@ where
         )
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         self.point_to_values.get(idx as usize).map(Vec::len)
     }
 
@@ -174,7 +178,11 @@ where
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 
-    fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+    fn for_each_value(
+        &self,
+        mut f: impl FnMut(&N) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.map.keys().try_for_each(|v| f(v.borrow()))
     }
 
@@ -182,6 +190,7 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.map.iter().try_for_each(|(k, v)| {
             let count = match deferred_internal_id {

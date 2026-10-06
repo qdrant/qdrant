@@ -155,13 +155,18 @@ impl ImmutableInvertedIndex {
         }
     }
 
-    fn check_has_subset(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+    fn check_has_subset(
+        &self,
+        tokens: &TokenSet,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         if tokens.is_empty() {
             return false;
         }
 
         // check presence of the document
-        if self.values_is_empty(point_id) {
+        if self.values_is_empty(point_id, hw_counter) {
             return false;
         }
 
@@ -185,13 +190,18 @@ impl ImmutableInvertedIndex {
         }
     }
 
-    fn check_has_any(&self, tokens: &TokenSet, point_id: PointOffsetType) -> bool {
+    fn check_has_any(
+        &self,
+        tokens: &TokenSet,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         if tokens.is_empty() {
             return false;
         }
 
         // check presence of the document
-        if self.values_is_empty(point_id) {
+        if self.values_is_empty(point_id, hw_counter) {
             return false;
         }
 
@@ -300,8 +310,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
         ))
     }
 
-    fn remove(&mut self, idx: PointOffsetType) -> bool {
-        if self.values_is_empty(idx) {
+    fn remove(&mut self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        if self.values_is_empty(idx, hw_counter) {
             return false; // Already removed or never actually existed
         }
         self.point_to_tokens_count[idx as usize] = 0;
@@ -384,6 +394,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn for_each_vocab_with_postings_len(
         &self,
         mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.vocab.iter().try_for_each(|(token, &token_id)| {
             if let Some(len) = self.postings.posting_len(token_id) {
@@ -397,22 +408,27 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let matched = match parsed_query {
-            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id),
+            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
             ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
-            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id),
+            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id, hw_counter),
         };
         Ok(matched)
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.point_to_tokens_count
             .get(point_id as usize)
             .is_none_or(|count| *count == 0)
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType, _hw_counter: &HardwareCounterCell) -> usize {
         self.point_to_tokens_count
             .get(point_id as usize)
             .copied()
@@ -615,24 +631,28 @@ fn create_compressed_postings_with_positions(
             .collect()
 }
 
-impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
-    for ImmutableInvertedIndex
-{
-    type Error = OperationError;
-
-    fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
+impl ImmutableInvertedIndex {
+    pub fn from_on_disk<S: common::universal_io::UniversalRead>(
+        index: &OnDiskInvertedIndex<S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
+            OnDiskPostingsEnum::Ids(postings) => {
+                ImmutablePostings::Ids(postings.all_postings(hw_counter)?)
+            }
             OnDiskPostingsEnum::WithPositions(postings) => {
-                ImmutablePostings::WithPositions(postings.all_postings()?)
+                ImmutablePostings::WithPositions(postings.all_postings(hw_counter)?)
             }
         };
 
         let mut vocab = HashMap::with_capacity(index.storage.vocab.keys_count());
-        index.storage.vocab.for_each_entry(|token_str, token_id| {
-            vocab.insert(token_str.to_owned(), token_id[0]);
-            OperationResult::Ok(())
-        })?;
+        index.storage.vocab.for_each_entry(
+            |token_str, token_id| {
+                vocab.insert(token_str.to_owned(), token_id[0]);
+                OperationResult::Ok(())
+            },
+            hw_counter,
+        )?;
 
         debug_assert!(
             postings.len() == vocab.len(),
@@ -646,7 +666,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
         let mut point_to_tokens_count = index
             .storage
             .point_to_tokens_count
-            .read_whole()?
+            .read_whole(hw_counter)?
             .into_owned();
         for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
             if !index
@@ -666,7 +686,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
         let point_to_doc_len = match &index.storage.point_to_doc_len {
             None => None,
             Some(storage) => {
-                let mut lens = storage.read_whole()?.into_owned();
+                let mut lens = storage.read_whole(hw_counter)?.into_owned();
                 lens.resize(point_to_tokens_count.len(), 0);
                 for (idx, doc_len) in lens.iter_mut().enumerate() {
                     if !index

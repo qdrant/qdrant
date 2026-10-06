@@ -28,7 +28,11 @@ fn test_point_exclusion() {
 
     let segment = build_segment_1(dir.path());
 
-    assert!(segment.has_point(3.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(segment.has_point(
+        3.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
@@ -66,8 +70,8 @@ fn test_point_exclusion() {
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
-    let point_ids1: Vec<_> = segment.iter_points().collect();
-    let point_ids2: Vec<_> = segment.iter_points().collect();
+    let point_ids1: Vec<_> = segment.iter_points(&HardwareCounterCell::new()).collect();
+    let point_ids2: Vec<_> = segment.iter_points(&HardwareCounterCell::new()).collect();
 
     assert!(!point_ids1.is_empty());
     assert!(!point_ids2.is_empty());
@@ -81,7 +85,11 @@ fn test_named_vector_search() {
 
     let segment = build_segment_3(dir.path());
 
-    assert!(segment.has_point(3.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(segment.has_point(
+        3.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
@@ -124,8 +132,8 @@ fn test_named_vector_search() {
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
-    let point_ids1: Vec<_> = segment.iter_points().collect();
-    let point_ids2: Vec<_> = segment.iter_points().collect();
+    let point_ids1: Vec<_> = segment.iter_points(&HardwareCounterCell::new()).collect();
+    let point_ids2: Vec<_> = segment.iter_points(&HardwareCounterCell::new()).collect();
 
     assert!(!point_ids1.is_empty());
     assert!(!point_ids2.is_empty());
@@ -203,11 +211,19 @@ fn ordered_deletion_test() {
         let mut segment = build_segment_1(dir.path());
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
-        segment.flush(false).unwrap();
+        segment.flush(false, &hw_counter).unwrap();
         segment.segment_path.clone()
     };
 
-    let segment = load_segment(&path, Uuid::nil(), None, &AtomicBool::new(false), false).unwrap();
+    let segment = load_segment(
+        &path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+        &hw_counter,
+    )
+    .unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
@@ -237,7 +253,7 @@ mod normalize_segment_dir {
     #[test]
     fn happy_case() {
         let (_tmpdir, original_path, original_uuid) = make_segment();
-        let result = normalize_segment_dir(&original_path).unwrap();
+        let result = normalize_segment_dir(&original_path, &HardwareCounterCell::new()).unwrap();
         assert_eq!(Some((original_path, original_uuid)), result);
     }
 
@@ -246,7 +262,11 @@ mod normalize_segment_dir {
         let (tmpdir, original_path, _original_uuid) = make_segment();
         let deleted_path = original_path.with_extension("deleted");
         fs::rename(&original_path, &deleted_path).unwrap();
-        assert!(normalize_segment_dir(&deleted_path).unwrap().is_none());
+        assert!(
+            normalize_segment_dir(&deleted_path, &HardwareCounterCell::new())
+                .unwrap()
+                .is_none()
+        );
         assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
     }
 
@@ -254,7 +274,11 @@ mod normalize_segment_dir {
     fn missing_version_case() {
         let (tmpdir, original_path, _original_uuid) = make_segment();
         fs::remove_file(original_path.join(common::storage_version::VERSION_FILE)).unwrap();
-        assert!(normalize_segment_dir(&original_path).unwrap().is_none());
+        assert!(
+            normalize_segment_dir(&original_path, &HardwareCounterCell::new())
+                .unwrap()
+                .is_none()
+        );
         assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
     }
 
@@ -264,7 +288,9 @@ mod normalize_segment_dir {
         let non_uuid_path = original_path.with_file_name("not-an-uuid");
         fs::rename(&original_path, &non_uuid_path).unwrap();
         let (normalized_path, normalized_uuid) =
-            normalize_segment_dir(&non_uuid_path).unwrap().unwrap();
+            normalize_segment_dir(&non_uuid_path, &HardwareCounterCell::new())
+                .unwrap()
+                .unwrap();
         let expected_path = tmpdir.path().join(normalized_uuid.to_string());
         assert_ne!(normalized_uuid, original_uuid);
         assert_eq!(normalized_path, expected_path);
@@ -272,7 +298,7 @@ mod normalize_segment_dir {
         assert!(fs::read_dir(&non_uuid_path).is_err());
 
         // Check idempotency
-        let result = normalize_segment_dir(&normalized_path).unwrap();
+        let result = normalize_segment_dir(&normalized_path, &HardwareCounterCell::new()).unwrap();
         assert_eq!(Some((normalized_path, normalized_uuid)), result);
     }
 }
@@ -290,7 +316,7 @@ fn test_update_named_vector() {
     let hw_counter = HardwareCounterCell::new();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
 
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;

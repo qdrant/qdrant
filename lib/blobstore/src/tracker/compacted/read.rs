@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::UserData;
 
@@ -17,17 +18,22 @@ impl CompactedTracker {
 }
 
 impl TrackerRead for CompactedTracker {
-    fn max_point_offset(&self) -> Result<PointOffset> {
+    fn max_point_offset(&self, _hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         Ok(self.pointer_count())
     }
 
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
         Ok(self.pointers.get(point_offset as usize).copied().flatten())
     }
 
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        _hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>> {
         let start = (point_offsets.start as usize).min(self.pointers.len());
         let end = (point_offsets.end as usize).min(self.pointers.len());
@@ -36,7 +42,11 @@ impl TrackerRead for CompactedTracker {
         Ok(pointers)
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    fn iter<U, I>(
+        &self,
+        point_offsets: I,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,

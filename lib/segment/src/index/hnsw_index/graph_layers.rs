@@ -30,6 +30,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::atomic_save;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -634,16 +635,18 @@ impl GraphLayers {
         dir: &Path,
         residency: GraphLinksResidency,
         compress: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         if compress {
             // `convert_to_compressed` writes data, and we don't have a
             // `UniversalWriteFs` yet, so it stays on local mmap IO. It is not
             // enabled as per `super::hnsw::LINK_COMPRESSION_CONVERT_EXISTING`.
-            let graph_data: GraphLayerData = read_bin_via(&MmapFs, GraphLayers::get_path(dir))?;
-            Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0))?;
+            let graph_data: GraphLayerData =
+                read_bin_via(&MmapFs, GraphLayers::get_path(dir), hw_counter)?;
+            Self::convert_to_compressed(dir, HnswM::new(graph_data.m, graph_data.m0), hw_counter)?;
         }
 
-        Self::load_universal(&MmapFs, dir, residency)
+        Self::load_universal(&MmapFs, dir, residency, hw_counter)
     }
 
     /// Format of the links file present in `dir`, probed in the same order as
@@ -651,13 +654,14 @@ impl GraphLayers {
     pub(super) fn probe_links_format(
         fs: &impl UniversalReadFs,
         dir: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<GraphLinksFormat>> {
         for format in [
             GraphLinksFormat::CompressedWithVectors,
             GraphLinksFormat::Compressed,
             GraphLinksFormat::Plain,
         ] {
-            if fs.exists(&Self::get_links_path(dir, format))? {
+            if fs.exists(&Self::get_links_path(dir, format), hw_counter)? {
                 return Ok(Some(format));
             }
         }
@@ -673,16 +677,17 @@ impl GraphLayers {
         fs: &Fs,
         dir: &Path,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
+        let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir), hw_counter)?;
 
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: Self::load_links_universal(fs, dir, residency)?,
+            links: Self::load_links_universal(fs, dir, residency, hw_counter)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
             residency,
@@ -693,14 +698,21 @@ impl GraphLayers {
         fs: &Fs,
         dir: &Path,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GraphLinks>
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        let format = Self::probe_links_format(fs, dir)?
+        let format = Self::probe_links_format(fs, dir, hw_counter)?
             .ok_or_else(|| OperationError::service_error("No links file found"))?;
-        GraphLinks::load_universal(fs, &Self::get_links_path(dir, format), format, residency)
+        GraphLinks::load_universal(
+            fs,
+            &Self::get_links_path(dir, format),
+            format,
+            residency,
+            hw_counter,
+        )
     }
 
     /// Convert the "plain" format into the "compressed" format.
@@ -708,7 +720,11 @@ impl GraphLayers {
     /// supported at the moment, though it is possible to implement.
     /// As far as [`super::hnsw::LINK_COMPRESSION_CONVERT_EXISTING`] is false,
     /// this code is not used in production.
-    fn convert_to_compressed(dir: &Path, hnsw_m: HnswM) -> OperationResult<()> {
+    fn convert_to_compressed(
+        dir: &Path,
+        hnsw_m: HnswM,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let plain_path = Self::get_links_path(dir, GraphLinksFormat::Plain);
         let compressed_path = Self::get_links_path(dir, GraphLinksFormat::Compressed);
         let compressed_with_vectors_path =
@@ -725,11 +741,18 @@ impl GraphLayers {
             &plain_path,
             GraphLinksFormat::Plain,
             GraphLinksResidency::Cold,
+            hw_counter,
         )?;
         let original_size = fs::metadata(&plain_path)?.len();
         atomic_save(&compressed_path, |writer| {
             let edges = links.to_edges();
-            serialize_graph_links(edges, GraphLinksFormatParam::Compressed, hnsw_m, writer)
+            serialize_graph_links(
+                edges,
+                GraphLinksFormatParam::Compressed,
+                hnsw_m,
+                writer,
+                hw_counter,
+            )
         })?;
         let new_size = fs::metadata(&compressed_path)?.len();
 
@@ -748,16 +771,21 @@ impl GraphLayers {
     }
 
     #[cfg(feature = "testing")]
-    pub fn compress_ram(&mut self) {
+    pub fn compress_ram(&mut self, hw_counter: &HardwareCounterCell) {
         assert_eq!(self.links.format(), GraphLinksFormat::Plain);
-        let dummy =
-            GraphLinks::new_from_edges(Vec::new(), GraphLinksFormatParam::Plain, HnswM::new2(0))
-                .unwrap();
+        let dummy = GraphLinks::new_from_edges(
+            Vec::new(),
+            GraphLinksFormatParam::Plain,
+            HnswM::new2(0),
+            hw_counter,
+        )
+        .unwrap();
         let links = std::mem::replace(&mut self.links, dummy);
         self.links = GraphLinks::new_from_edges(
             links.to_edges(),
             GraphLinksFormatParam::Compressed,
             self.hnsw_m,
+            hw_counter,
         )
         .unwrap();
     }
@@ -833,6 +861,7 @@ mod tests {
                 dir.path(),
                 format.with_param_for_tests(graph_links_vectors.as_ref()),
                 false,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -842,8 +871,16 @@ mod tests {
 
         // Same order as the segment open path: snapshot, then preopen, then load.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
-        cached_fs.cache_file_info().unwrap();
-        HnswGraph::<MmapFile>::preopen_universal(&cached_fs, dir.path(), residency).unwrap();
+        cached_fs
+            .cache_file_info(&HardwareCounterCell::new())
+            .unwrap();
+        HnswGraph::<MmapFile>::preopen_universal(
+            &cached_fs,
+            dir.path(),
+            residency,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `load_universal` reads must now come from the prefetch pool.
@@ -851,7 +888,13 @@ mod tests {
             fs_err::remove_file(entry.unwrap().path()).unwrap();
         }
 
-        let graph = GraphLayers::load_universal(&cached_fs, dir.path(), residency).unwrap();
+        let graph = GraphLayers::load_universal(
+            &cached_fs,
+            dir.path(),
+            residency,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(
             search_in_graph(&query, top, &vector_holder, &graph),
             expected
@@ -908,7 +951,13 @@ mod tests {
         let format_param = format.with_param_for_tests(graph_links_vectors.as_ref());
         let graph_layers = GraphLayers {
             hnsw_m,
-            links: GraphLinks::new_from_edges(graph_links.clone(), format_param, hnsw_m).unwrap(),
+            links: GraphLinks::new_from_edges(
+                graph_links.clone(),
+                format_param,
+                hnsw_m,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
             residency: GraphLinksResidency::Pinned,
@@ -975,6 +1024,7 @@ mod tests {
                 dir.path(),
                 initial_format.with_param_for_tests(graph_links_vectors.as_ref()),
                 true,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         assert_eq!(graph1.links.format(), initial_format);
@@ -983,7 +1033,13 @@ mod tests {
         let res1 = search_in_graph(&query, top, &vector_holder, &graph1);
         drop(graph1);
 
-        let graph2 = GraphLayers::load(dir.path(), GraphLinksResidency::Cached, compress).unwrap();
+        let graph2 = GraphLayers::load(
+            dir.path(),
+            GraphLinksResidency::Cached,
+            compress,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         if compress {
             assert_eq!(graph2.links.format(), GraphLinksFormat::Compressed);
         } else {
@@ -1007,7 +1063,12 @@ mod tests {
         let (_vector_holder, graph_layers_builder) =
             create_graph_layer_builder_fixture(100, M, 8, false, true, Distance::Cosine, &mut rng);
         let graph = graph_layers_builder
-            .into_graph_layers(dir.path(), GraphLinksFormatParam::Compressed, on_disk)
+            .into_graph_layers(
+                dir.path(),
+                GraphLinksFormatParam::Compressed,
+                on_disk,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(graph.links.heap_size_bytes(), 0);
     }
@@ -1062,7 +1123,11 @@ mod tests {
         let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
         let scorer = vector_holder.scorer(processed_query);
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+        for idx in 0..vector_holder
+            .storage()
+            .total_vector_count(&HardwareCounterCell::new())
+            as PointOffsetType
+        {
             let score = scorer.score_point(idx);
             reference_top.push(ScoredPointOffset { idx, score });
         }

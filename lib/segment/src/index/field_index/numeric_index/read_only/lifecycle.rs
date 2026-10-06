@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::Encodable;
@@ -23,8 +24,9 @@ where
     pub fn preopen_appendable(
         fs: &impl CachedReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyNumericIndexInner::preopen_appendable(fs, dir)
+        ReadOnlyNumericIndexInner::preopen_appendable(fs, dir, hw_counter)
     }
 
     /// Schedule background prefetch for the immutable (mmap) format, forwarding
@@ -33,8 +35,9 @@ where
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, is_on_disk)
+        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, is_on_disk, hw_counter)
     }
 
     /// Read-only mirror of [`NumericIndex::new_gridstore`][1]: forwards to
@@ -45,9 +48,10 @@ where
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_appendable(fs, dir)?.map(|inner| Self {
+            ReadOnlyNumericIndexInner::open_appendable(fs, dir, hw_counter)?.map(|inner| Self {
                 inner,
                 _phantom: PhantomData,
             }),
@@ -65,15 +69,19 @@ where
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(
-            ReadOnlyNumericIndexInner::open_immutable(fs, path, is_on_disk, deleted_points)?.map(
-                |inner| Self {
-                    inner,
-                    _phantom: PhantomData,
-                },
-            ),
-        )
+        Ok(ReadOnlyNumericIndexInner::open_immutable(
+            fs,
+            path,
+            is_on_disk,
+            deleted_points,
+            hw_counter,
+        )?
+        .map(|inner| Self {
+            inner,
+            _phantom: PhantomData,
+        }))
     }
 
     /// Reports the on-disk format's mutability, forwarding to

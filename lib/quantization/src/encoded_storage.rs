@@ -51,7 +51,7 @@ pub trait EncodedStorageWrite {
         Ok(())
     }
 
-    fn vectors_count(&self) -> usize;
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     fn flusher(&self) -> Flusher;
 
@@ -61,14 +61,23 @@ pub trait EncodedStorageWrite {
 }
 
 pub trait EncodedStorage: EncodedStorageWrite {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
+    fn get_vector_data(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]>;
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
+    fn get_vector_data_opt(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>>;
 
     fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     );
 
     /// True when the storage serves one contiguous slice faster than the same
@@ -124,9 +133,10 @@ pub trait EncodedStorage: EncodedStorageWrite {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
         for (index, &offset) in offsets.iter().enumerate() {
-            callback(index, 1, self.get_vector_data(offset));
+            callback(index, 1, self.get_vector_data(offset, hw_counter));
         }
     }
 
@@ -139,9 +149,10 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
     this: &E,
     offsets: &[u32],
     mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    hw_counter: &HardwareCounterCell,
 ) {
     for (index, &offset) in offsets.iter().enumerate() {
-        callback(index, this.get_vector_data(offset));
+        callback(index, this.get_vector_data(offset, hw_counter));
     }
 }
 
@@ -234,7 +245,7 @@ pub trait EncodedStorageBuilder {
     type Storage: EncodedStorageWrite;
     type Error: std::fmt::Display;
 
-    fn build(self) -> Result<Self::Storage, Self::Error>;
+    fn build(self, hw_counter: &HardwareCounterCell) -> Result<Self::Storage, Self::Error>;
 
     fn push_vector_data(&mut self, other: &[u8]) -> Result<(), Self::Error>;
 }
@@ -253,12 +264,13 @@ pub trait EncodedStorageBuilder {
 pub(crate) fn validate_storage_vector_size(
     storage: &impl EncodedStorage,
     expected_size: usize,
+    hw_counter: &HardwareCounterCell,
 ) -> std::io::Result<()> {
-    if storage.vectors_count() == 0 {
+    if storage.vectors_count(hw_counter) == 0 {
         return Ok(());
     }
 
-    let actual_size = storage.get_vector_data(0).len();
+    let actual_size = storage.get_vector_data(0, hw_counter).len();
     if actual_size != expected_size {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -316,7 +328,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         &mut self,
         id: PointOffsetType,
         vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         if vector.len() != self.quantized_vector_size.get() {
             return Err(std::io::Error::new(
@@ -330,7 +342,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         }
         // Skip hardware counter increment because it's a RAM storage.
         let offset = id as usize * self.quantized_vector_size.get();
-        if id as usize >= self.vectors_count() {
+        if id as usize >= self.vectors_count(hw_counter) {
             self.data
                 .resize(offset + self.quantized_vector_size.get(), 0);
         }
@@ -346,7 +358,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         false
     }
 
-    fn vectors_count(&self) -> usize {
+    fn vectors_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.data.len() / self.quantized_vector_size.get()
     }
 
@@ -367,12 +379,20 @@ impl EncodedStorageWrite for TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index)
+    fn get_vector_data(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index, hw_counter)
             .unwrap_or(Cow::Borrowed(&[]))
     }
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+    fn get_vector_data_opt(
+        &self,
+        index: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>> {
         let start = self
             .quantized_vector_size
             .get()
@@ -389,14 +409,16 @@ impl EncodedStorage for TestEncodedStorage {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        default_for_each_batch(self, offsets, callback);
+        default_for_each_batch(self, offsets, callback, hw_counter);
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+        _hw_counter: &HardwareCounterCell,
     ) {
         for run in consecutive_runs(offsets) {
             let begin = run.start as usize * self.quantized_vector_size.get();
@@ -443,7 +465,7 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
     type Storage = TestEncodedStorage;
     type Error = std::io::Error;
 
-    fn build(self) -> std::io::Result<Self::Storage> {
+    fn build(self, _hw_counter: &HardwareCounterCell) -> std::io::Result<Self::Storage> {
         if let Some(path) = &self.path {
             path.parent()
                 .ok_or_else(|| {
@@ -475,36 +497,42 @@ impl EncodedStorageBuilder for TestEncodedStorageBuilder {
 mod tests {
     use super::*;
 
-    fn storage_with_stride(stride: usize, count: usize) -> TestEncodedStorage {
+    fn storage_with_stride(
+        stride: usize,
+        count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> TestEncodedStorage {
         let mut builder = TestEncodedStorageBuilder::new(None, stride);
         let vector = vec![0u8; stride];
         for _ in 0..count {
             builder.push_vector_data(&vector).unwrap();
         }
-        builder.build().unwrap()
+        builder.build(hw_counter).unwrap()
     }
 
     #[test]
     fn accepts_matching_size() {
-        let storage = storage_with_stride(260, 4);
-        validate_storage_vector_size(&storage, 260).unwrap();
+        let storage = storage_with_stride(260, 4, &HardwareCounterCell::new());
+        validate_storage_vector_size(&storage, 260, &HardwareCounterCell::new()).unwrap();
     }
 
     #[test]
     fn rejects_mismatched_size() {
-        let storage = storage_with_stride(260, 4);
+        let storage = storage_with_stride(260, 4, &HardwareCounterCell::new());
         // Both a smaller and a larger expected size must be rejected (exact match required).
         for expected_size in [130, 520] {
-            let err = validate_storage_vector_size(&storage, expected_size).unwrap_err();
+            let err =
+                validate_storage_vector_size(&storage, expected_size, &HardwareCounterCell::new())
+                    .unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         }
     }
 
     #[test]
     fn skips_empty_storage() {
-        let storage = storage_with_stride(260, 0);
+        let storage = storage_with_stride(260, 0, &HardwareCounterCell::new());
         // With no stored vectors there is nothing to check, so any size is accepted.
-        validate_storage_vector_size(&storage, 999).unwrap();
+        validate_storage_vector_size(&storage, 999, &HardwareCounterCell::new()).unwrap();
     }
 
     /// Runs must cover `offsets` in order, split only at non-consecutive ids.
@@ -567,12 +595,16 @@ mod tests {
         for i in 0..10u8 {
             builder.push_vector_data(&[i, i, i]).unwrap();
         }
-        let storage = builder.build().unwrap();
+        let storage = builder.build(&HardwareCounterCell::new()).unwrap();
 
         let mut runs = Vec::new();
-        storage.for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
-            runs.push((first, len, bytes.into_owned()));
-        });
+        storage.for_each_run(
+            &[2, 3, 4, 8, 9, 1],
+            |first, len, bytes| {
+                runs.push((first, len, bytes.into_owned()));
+            },
+            &HardwareCounterCell::new(),
+        );
         assert_eq!(
             runs,
             vec![

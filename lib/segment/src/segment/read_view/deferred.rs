@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use crate::id_tracker::IdTrackerRead;
@@ -39,32 +40,41 @@ where
         })
     }
 
-    pub fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+    pub fn point_is_deferred(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         if let Some(deferred_from) = self.deferred_internal_id()
-            && let Some(internal_id) = self
-                .id_tracker
-                .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
+            && let Some(internal_id) = self.id_tracker.internal_id_with_behavior(
+                point_id,
+                DeferredBehavior::WithDeferred,
+                hw_counter,
+            )
         {
             return self.appendable_flag && internal_id >= deferred_from;
         };
         false
     }
 
-    pub fn deferred_point_ids(&self) -> Vec<PointIdType> {
+    pub fn deferred_point_ids(&self, hw_counter: &HardwareCounterCell) -> Vec<PointIdType> {
         if self.deferred_point_count() == 0 {
             return vec![];
         }
 
         self.id_tracker
-            .point_mappings()
+            .point_mappings(hw_counter)
             .iter_deferred()
-            .filter_map(|internal_id| self.id_tracker.external_id(internal_id))
+            .filter_map(|internal_id| self.id_tracker.external_id(internal_id, hw_counter))
             .collect()
     }
 
-    pub fn available_point_count_without_deferred(&self) -> usize {
+    pub fn available_point_count_without_deferred(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> usize {
         self.id_tracker
-            .available_point_count()
+            .available_point_count(hw_counter)
             .saturating_sub(self.deferred_point_count())
     }
 }

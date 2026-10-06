@@ -63,6 +63,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         dir.path(),
         Populate::Blocking,
         &deleted_points,
+        &hw_counter,
     )
     .unwrap();
 

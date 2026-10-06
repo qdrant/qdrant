@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::fs::read_json;
 use common::storage_version::StorageVersion as _;
 use common::tar_ext::BuilderExt;
@@ -57,6 +58,7 @@ impl Collection {
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
@@ -112,6 +114,7 @@ impl Collection {
                             SnapshotFormat::Regular,
                             None,
                             save_wal,
+                            hw_acc,
                         )
                         .await?;
                     futures.push(future);
@@ -259,6 +262,7 @@ impl Collection {
         recovery_type: RecoveryType,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<bool> {
         // TODO:
         //   Check that shard snapshot is compatible with the collection
@@ -276,6 +280,7 @@ impl Collection {
                 &self.path,
                 shard_id,
                 cancel,
+                hw_acc,
             )
             .await?;
 
@@ -297,12 +302,19 @@ impl Collection {
         &self,
         shard_id: ShardId,
         temp_dir: &Path,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_creator = self
             .shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshots_path, self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(
+                &self.snapshots_path,
+                self.name(),
+                shard_id,
+                temp_dir,
+                hw_acc,
+            )
             .await?;
         // We don't hold shards_holder lock here on purpose,
         // because snapshot creation may take a long time,
@@ -315,6 +327,7 @@ impl Collection {
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
             self.shards_holder.clone().read_owned().await,
@@ -322,7 +335,8 @@ impl Collection {
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
-        ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir).await
+        ShardHolder::stream_shard_snapshot(shard, self.name(), shard_id, manifest, temp_dir, hw_acc)
+            .await
     }
 
     /// # Cancel safety
@@ -339,6 +353,7 @@ impl Collection {
         temp_dir: &Path,
         recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
         // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
         // when token is triggered
@@ -349,6 +364,7 @@ impl Collection {
 
         let temp_dir = temp_dir.to_path_buf();
 
+        let hw_acc = hw_acc.clone();
         // `ShardHolder::restore_shard_snapshot` is *not* cancel safe, so we spawn it onto runtime,
         // so that it won't be cancelled if current future is dropped
         let restore = self.update_runtime.spawn(async move {
@@ -364,6 +380,7 @@ impl Collection {
                     &temp_dir,
                     recovery_progress,
                     cancel,
+                    &hw_acc,
                 )
                 .await?;
 

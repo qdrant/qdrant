@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
@@ -28,6 +29,7 @@ pub fn for_each_vector<P, T, U, S>(
     vectors: &ReadOnlyChunkedVectors<T, S>,
     keys: impl IntoIterator<Item = (U, PointOffsetType)>,
     mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()>
 where
     P: AccessPattern,
@@ -42,24 +44,30 @@ where
     // Resolve the per-point multi-vector offsets first, then read the flattened
     // vectors in a single batched pass over `vectors`.
     let mut vector_offsets = Vec::new();
-    offsets.for_each_vector::<P, _>(point_offsets, |user_data, multi_offset| {
-        let &[multi_offset] = multi_offset.as_ref() else {
-            unreachable!("multi-vector offsets are stored as vectors of length 1");
-        };
+    offsets.for_each_vector::<P, _>(
+        point_offsets,
+        |user_data, multi_offset| {
+            let &[multi_offset] = multi_offset.as_ref() else {
+                unreachable!("multi-vector offsets are stored as vectors of length 1");
+            };
 
-        let MultivectorMmapOffset {
-            offset,
-            count,
-            capacity: _,
-        } = multi_offset;
+            let MultivectorMmapOffset {
+                offset,
+                count,
+                capacity: _,
+            } = multi_offset;
 
-        vector_offsets.push((user_data, offset, count));
-        Ok(())
-    })?;
+            vector_offsets.push((user_data, offset, count));
+            Ok(())
+        },
+        hw_counter,
+    )?;
 
-    vectors.for_each_vector::<P, _>(vector_offsets.into_iter(), |user_data, vector| {
-        callback(user_data, vector.as_ref())
-    })
+    vectors.for_each_vector::<P, _>(
+        vector_offsets.into_iter(),
+        |user_data, vector| callback(user_data, vector.as_ref()),
+        hw_counter,
+    )
 }
 
 #[cfg(test)]
@@ -119,6 +127,7 @@ mod tests {
                     MultiVectorConfig::default(),
                     AdviceSetting::Global,
                     false,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
             for (id, multivec) in multivectors.iter().enumerate() {
@@ -128,11 +137,13 @@ mod tests {
             }
             for id in 0..POINT_COUNT {
                 if rng.random_bool(0.1) {
-                    storage.delete_vector(id).unwrap();
+                    storage
+                        .delete_vector(id, &HardwareCounterCell::new())
+                        .unwrap();
                     deleted_ids.push(id);
                 }
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = ReadOnlyChunkedMultiDenseVectorStorage::<VectorElementType, MmapFile>::open(
@@ -143,17 +154,21 @@ mod tests {
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
-        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
 
         for id in 0..POINT_COUNT {
             assert_eq!(storage.is_deleted_vector(id), deleted_ids.contains(&id));
 
-            let stored = storage.get_vector::<Random>(id);
+            let stored = storage.get_vector::<Random>(id, &HardwareCounterCell::new());
             let multi: TypedMultiDenseVectorRef<VectorElementType> =
                 stored.as_vec_ref().try_into().unwrap();
             assert_eq!(
@@ -194,6 +209,7 @@ mod tests {
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for (id, multivec) in first.iter().enumerate() {
@@ -201,7 +217,7 @@ mod tests {
                 .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader =
             ReadOnlyChunkedMultiDenseVectorStorage::<VectorElementType, MmapFile>::open(
@@ -212,9 +228,13 @@ mod tests {
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
-        assert_eq!(reader.total_vector_count(), first.len());
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len()
+        );
 
         for (offset, multivec) in second.iter().enumerate() {
             writer
@@ -227,9 +247,11 @@ mod tests {
         }
         let deleted_ids: Vec<PointOffsetType> = vec![1, 75, 149];
         for &id in &deleted_ids {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
             .map(|offset| offset as PointOffsetType)
@@ -243,11 +265,15 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), first.len() + second.len());
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len() + second.len()
+        );
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
 
         // The appended multivector is visible and correct.
-        let stored = reader.get_vector::<Random>(first.len() as PointOffsetType);
+        let stored = reader
+            .get_vector::<Random>(first.len() as PointOffsetType, &HardwareCounterCell::new());
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
             stored.as_vec_ref().try_into().unwrap();
         assert_eq!(multi.to_owned(), second[0]);
@@ -278,12 +304,13 @@ mod tests {
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&multi(1.0)), &hw)
             .unwrap();
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader =
             ReadOnlyChunkedMultiDenseVectorStorage::<VectorElementType, MmapFile>::open(
@@ -294,14 +321,17 @@ mod tests {
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
         writer
             .insert_vector(1, VectorRef::from(&multi(0.0)), &hw)
             .unwrap();
-        writer.delete_vector(1).unwrap();
-        writer.flusher()().unwrap();
+        writer
+            .delete_vector(1, &HardwareCounterCell::new())
+            .unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = vec![1];
@@ -314,7 +344,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 2);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 2);
         assert!(reader.is_deleted_vector(1));
     }
 }

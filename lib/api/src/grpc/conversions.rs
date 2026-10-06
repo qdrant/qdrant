@@ -3547,6 +3547,8 @@ impl From<HwMeasurementAcc> for HardwareUsage {
             payload_index_io_write,
             vector_io_read,
             vector_io_write,
+            object_store_read_requests: _,
+            object_store_write_requests: _,
         } = value.hw_data();
 
         Self {
@@ -3581,6 +3583,8 @@ impl From<HardwareUsage> for HardwareData {
             payload_index_io_write: payload_index_io_write as usize,
             vector_io_read: vector_io_read as usize,
             vector_io_write: vector_io_write as usize,
+            object_store_read_requests: 0,
+            object_store_write_requests: 0,
         }
     }
 }

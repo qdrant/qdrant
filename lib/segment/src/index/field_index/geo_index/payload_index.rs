@@ -57,9 +57,13 @@ impl ValueIndexer for GeoIndex {
         }
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            GeoIndex::Mutable(index) => index.remove_point(id),
+            GeoIndex::Mutable(index) => index.remove_point(id, hw_counter),
             GeoIndex::Immutable(index) => index.remove_point(id),
             GeoIndex::OnDisk(index) => {
                 index.remove_point(id);
@@ -72,10 +76,10 @@ impl ValueIndexer for GeoIndex {
 impl GeoIndex {
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            GeoIndexRead::get_values(self, point_id)
+            GeoIndexRead::get_values(self, point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .filter_map(|v| serde_json::to_value(v).ok())
@@ -93,9 +97,9 @@ impl PayloadFieldIndex for GeoIndex {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            GeoIndex::Mutable(index) => index.flusher(),
+            GeoIndex::Mutable(index) => index.flusher(hw_counter),
             GeoIndex::Immutable(index) => index.flusher(),
             GeoIndex::OnDisk(index) => index.flusher(),
         }
@@ -111,7 +115,7 @@ impl PayloadFieldIndex for GeoIndex {
 }
 
 impl PayloadFieldIndexRead for GeoIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.points_count())
     }
 
@@ -136,8 +140,9 @@ impl PayloadFieldIndexRead for GeoIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

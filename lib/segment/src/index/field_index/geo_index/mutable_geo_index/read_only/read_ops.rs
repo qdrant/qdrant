@@ -50,26 +50,33 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyAppendableGeoIndex<S> {
             .check_values_any(idx, hw_counter, check_fn)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
-        self.in_memory_index.values_count(idx)
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        self.in_memory_index.values_count(idx, hw_counter)
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        self.in_memory_index.get_values(idx)
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        self.in_memory_index.get_values(idx, hw_counter)
     }
 
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        self.in_memory_index.iterator(values)
+        self.in_memory_index.iterator(values, hw_counter)
     }
 
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        self.in_memory_index.points_per_hash_filtered(filter)
+        self.in_memory_index
+            .points_per_hash_filtered(filter, hw_counter)
     }
 
     fn get_storage_type(&self) -> StorageType {
@@ -84,7 +91,7 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyAppendableGeoIndex<S> {
         false
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 

@@ -83,6 +83,7 @@ mod tests {
     use std::time::Duration;
 
     use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::save_on_disk::SaveOnDisk;
     use futures::future;
     use tempfile::Builder;
@@ -121,6 +122,7 @@ mod tests {
             search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
+            &HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -171,6 +173,7 @@ mod tests {
             search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
+            &HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -223,6 +226,7 @@ mod tests {
             search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
+            &HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -237,6 +241,7 @@ mod tests {
             search_runtime.clone(),
             ResourceBudget::default(),
             config.optimizer_config.clone(),
+            &HwMeasurementAcc::new(),
         )
         .await
         .unwrap();

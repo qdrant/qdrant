@@ -81,7 +81,8 @@ pub fn delete_points_by_filter(
     // If the latest version of a point is deferred and does not match the filter,
     // we need to skip deletion for all copies and let deduplication during optimization delete old points.
     if has_deferred {
-        let points_to_keep = deferred_points_to_exclude_by_filter(segments, &points_to_delete);
+        let points_to_keep =
+            deferred_points_to_exclude_by_filter(segments, &points_to_delete, hw_counter);
 
         // Expand per-segment lists to include all segments that have each matched point,
         // so that ALL copies get deleted (not just the segment where the filter matched).
@@ -95,7 +96,7 @@ pub fn delete_points_by_filter(
                 .iter()
                 .copied()
                 .filter(|point_id| {
-                    segment.has_point(*point_id, DeferredBehavior::WithDeferred)
+                    segment.has_point(*point_id, DeferredBehavior::WithDeferred, hw_counter)
                         && !points_to_keep.contains(point_id)
                 })
                 .collect();

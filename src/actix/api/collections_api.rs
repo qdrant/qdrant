@@ -6,6 +6,7 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Deserialize;
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::collection_meta_ops::{
@@ -70,6 +71,7 @@ async fn get_collection(
         &auth,
         &collection.collection_name,
         None,
+        &HwMeasurementAcc::disposable(),
     ))
     .await
 }
@@ -129,6 +131,7 @@ async fn create_collection(
             CollectionMetaOperations::CreateCollection(create_collection_op),
             auth,
             query.timeout(),
+            &HwMeasurementAcc::disposable(),
         )
         .await;
     process_response(response, timing, None)
@@ -155,6 +158,7 @@ async fn update_collection(
             CollectionMetaOperations::UpdateCollection(update_collection_op),
             auth,
             query.timeout(),
+            &HwMeasurementAcc::disposable(),
         )
         .await;
     process_response(response, timing, None)
@@ -175,6 +179,7 @@ async fn delete_collection(
             )),
             auth,
             query.timeout(),
+            &HwMeasurementAcc::disposable(),
         )
         .await;
     process_response(response, timing, None)
@@ -193,6 +198,7 @@ async fn update_aliases(
             CollectionMetaOperations::ChangeAliases(operation.0),
             auth,
             query.timeout(),
+            &HwMeasurementAcc::disposable(),
         )
         .await;
     process_response(response, timing, None)
@@ -231,6 +237,7 @@ async fn update_collection_cluster(
         operation.0,
         auth,
         wait_timeout,
+        &HwMeasurementAcc::disposable(),
     )
     .await;
     process_response(response, timing, None)
@@ -295,7 +302,7 @@ fn get_optimizations(
             .toc(&auth, &pass)
             .get_collection(&collection_pass)
             .await?
-            .optimizations(options)
+            .optimizations(options, &HwMeasurementAcc::disposable())
             .await?)
     })
 }
@@ -317,7 +324,7 @@ fn get_collection_memory(
             .toc(&auth, &pass)
             .get_collection(&collection_pass)
             .await?
-            .memory_report()
+            .memory_report(&HwMeasurementAcc::disposable())
             .await?)
     })
 }

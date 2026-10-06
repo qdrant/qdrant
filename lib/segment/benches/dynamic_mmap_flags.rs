@@ -2,6 +2,7 @@ use std::hint::black_box;
 use std::iter;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
@@ -22,9 +23,16 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
 
     // Build dynamic mmap flags with random deletions
     let populate = Populate::No;
-    let mut dynamic_flags =
-        DynamicStoredFlags::<MmapFile>::open(&MmapFs, dir.path(), populate).unwrap();
-    dynamic_flags.set_len(&MmapFs, FLAG_COUNT).unwrap();
+    let mut dynamic_flags = DynamicStoredFlags::<MmapFile>::open(
+        &MmapFs,
+        dir.path(),
+        populate,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    dynamic_flags
+        .set_len(&MmapFs, FLAG_COUNT, &HardwareCounterCell::new())
+        .unwrap();
     dynamic_flags
         .set_ascending_bits(
             random_flags
@@ -32,6 +40,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
                 .enumerate()
                 .filter(|(_, flag)| **flag)
                 .map(|(i, _)| (i as u64, true)),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -44,7 +53,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0;
             for i in 0..FLAG_COUNT {
-                if dynamic_flags.get(i).unwrap() {
+                if dynamic_flags.get(i, &HardwareCounterCell::new()).unwrap() {
                     count += 1;
                 }
                 check_process_stopped(&stopped).unwrap();
@@ -58,7 +67,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0;
             for i in 0..FLAG_COUNT {
-                if dynamic_flags.get(i).unwrap() {
+                if dynamic_flags.get(i, &HardwareCounterCell::new()).unwrap() {
                     count += 1;
                 }
             }
@@ -69,7 +78,9 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
 
     group.bench_function("count-ones", |b| {
         b.iter(|| {
-            let count = dynamic_flags.count_flags().unwrap();
+            let count = dynamic_flags
+                .count_flags(&HardwareCounterCell::new())
+                .unwrap();
             assert_eq!(count, real_count);
             black_box(count)
         });

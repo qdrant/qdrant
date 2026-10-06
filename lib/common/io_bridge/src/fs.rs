@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::uio_trace::{self, Op};
 use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
@@ -74,8 +76,9 @@ impl<A: AsyncRead + Clone> BlobFs<A> {
     pub(crate) fn list_files_traced(
         &self,
         prefix_path: &Path,
+        hw_acc: &HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
-        let request = self.stats.request(Op::List, prefix_path, 0..0);
+        let request = self.stats.request(Op::List, prefix_path, 0..0, hw_acc);
         let inner = self.inner.clone();
         let prefix_path = prefix_path.to_path_buf();
         async move {
@@ -101,18 +104,22 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         &self,
         path: PathBuf,
         bytes: Vec<u8>,
+        hw_acc: &HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        let request = self.stats.request(Op::Save, &path, 0..bytes.len() as u64);
+        let request = self
+            .stats
+            .request(Op::Save, &path, 0..bytes.len() as u64, hw_acc);
         self.spawn(async move { request.wrap(inner.save(&path, Bytes::from(bytes))).await })
     }
 
     pub fn remove_async(
         &self,
         path: PathBuf,
+        hw_acc: &HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        let request = self.stats.request(Op::Remove, &path, 0..0);
+        let request = self.stats.request(Op::Remove, &path, 0..0, hw_acc);
         self.spawn(async move { request.wrap(inner.remove(&path)).await })
     }
 }
@@ -128,16 +135,21 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
         Ok(Self::new(A::open(&config)?, BridgeRuntime::global()))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.runtime.block_on(self.list_files_traced(prefix_path))
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
+        self.runtime
+            .block_on(self.list_files_traced(prefix_path, &hw_counter.new_accumulator()))
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let result = self.runtime.block_on(
             self.stats
-                .request(Op::Exists, path, 0..0)
+                .request(Op::Exists, path, 0..0, &hw_counter.new_accumulator())
                 .wrap(self.inner.exists(path)),
         );
         if let Some(start_time) = start_time {
@@ -158,6 +170,7 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         _extra: (),
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<BlobFile<A>> {
         Ok(
             BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
@@ -175,27 +188,32 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
 ///
 /// [`UniversalWriteFs`]: common::universal_io::UniversalWriteFs
 impl<A: AsyncWrite + Clone> BlobFs<A> {
-    pub fn create(&self, path: &Path) -> UioResult<()> {
+    pub fn create(&self, path: &Path, hw_acc: &HwMeasurementAcc) -> UioResult<()> {
         self.runtime.block_on(
             self.stats
-                .request(Op::Create, path, 0..0)
+                .request(Op::Create, path, 0..0, hw_acc)
                 .wrap(self.inner.create(path)),
         )
     }
 
-    pub fn remove(&self, path: &Path) -> UioResult<()> {
+    pub fn remove(&self, path: &Path, hw_acc: &HwMeasurementAcc) -> UioResult<()> {
         self.runtime.block_on(
             self.stats
-                .request(Op::Remove, path, 0..0)
+                .request(Op::Remove, path, 0..0, hw_acc)
                 .wrap(self.inner.remove(path)),
         )
     }
 
     /// A whole-object put, atomic on object stores.
-    pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+    pub fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        hw_acc: &HwMeasurementAcc,
+    ) -> UioResult<()> {
         self.runtime.block_on(
             self.stats
-                .request(Op::Save, path, 0..bytes.len() as u64)
+                .request(Op::Save, path, 0..bytes.len() as u64, hw_acc)
                 .wrap(self.inner.save(path, Bytes::copy_from_slice(bytes))),
         )
     }

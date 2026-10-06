@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     ReadBytesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest,
     ReadWholeResponse,
 };
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
@@ -58,11 +59,15 @@ where
         let path = Self::resolve_path(&base, &collections_root, &path)?;
 
         let fs = Arc::clone(&self.fs);
-        let exists = tokio::task::spawn_blocking(move || match fs.exists(&path) {
-            Ok(exists) => Ok(exists),
-            Err(UniversalIoError::NotFound { .. }) => Ok(false),
-            Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(io_error_to_status(e)),
+        let exists = tokio::task::spawn_blocking(move || {
+            match fs.exists(&path, &HardwareCounterCell::disposable()) {
+                Ok(exists) => Ok(exists),
+                Err(UniversalIoError::NotFound { .. }) => Ok(false),
+                Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(false)
+                }
+                Err(e) => Err(io_error_to_status(e)),
+            }
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -89,10 +94,12 @@ where
         let prefix_path = Self::resolve_path(&base, &collections_root, &prefix_path)?;
 
         let fs = Arc::clone(&self.fs);
-        let files = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
-            .await
-            .map_err(|e| Status::internal(format!("Task join error: {e}")))?
-            .map_err(io_error_to_status)?;
+        let files = tokio::task::spawn_blocking(move || {
+            fs.list_files(&prefix_path, &HardwareCounterCell::disposable())
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))?
+        .map_err(io_error_to_status)?;
 
         let files = files
             .into_iter()
@@ -148,9 +155,16 @@ where
         let fs = Arc::clone(&self.fs);
         let length = tokio::task::spawn_blocking(move || {
             let storage = fs
-                .open(&path, open_options, Default::default())
+                .open(
+                    &path,
+                    open_options,
+                    Default::default(),
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
-            storage.len::<u8>().map_err(io_error_to_status)
+            storage
+                .len::<u8>(&HardwareCounterCell::disposable())
+                .map_err(io_error_to_status)
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -187,10 +201,19 @@ where
         let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
             let storage = fs
-                .open(&path, open_options, Default::default())
+                .open(
+                    &path,
+                    open_options,
+                    Default::default(),
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
             let cow = storage
-                .read(ReadRange::new(byte_offset, length), Random)
+                .read(
+                    ReadRange::new(byte_offset, length),
+                    Random,
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
@@ -233,9 +256,16 @@ where
         let fs = Arc::clone(&self.fs);
         let (storage, range) = tokio::task::spawn_blocking(move || {
             let s = fs
-                .open(&path, open_options, Default::default())
+                .open(
+                    &path,
+                    open_options,
+                    Default::default(),
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
-            let file_len = s.len::<u8>().map_err(io_error_to_status)?;
+            let file_len = s
+                .len::<u8>(&HardwareCounterCell::disposable())
+                .map_err(io_error_to_status)?;
             validate_range(range, file_len).map_err(io_error_to_status)?;
             Ok::<_, Status>((s, range))
         })
@@ -256,7 +286,11 @@ where
 
                 let data = tokio::task::spawn_blocking(move || {
                     storage_for_read
-                        .read(ReadRange::new(current_offset, chunk_size), Random)
+                        .read(
+                            ReadRange::new(current_offset, chunk_size),
+                            Random,
+                            &HardwareCounterCell::disposable(),
+                        )
                         .map(|cow| cow.into_owned())
                         .map_err(io_error_to_status)
                 })
@@ -299,9 +333,16 @@ where
         let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
             let storage = fs
-                .open(&path, open_options, Default::default())
+                .open(
+                    &path,
+                    open_options,
+                    Default::default(),
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
-            let cow = storage.read_whole::<u8>().map_err(io_error_to_status)?;
+            let cow = storage
+                .read_whole::<u8>(&HardwareCounterCell::disposable())
+                .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
         .await
@@ -342,14 +383,24 @@ where
         let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
             let storage = fs
-                .open(&path, open_options, Default::default())
+                .open(
+                    &path,
+                    open_options,
+                    Default::default(),
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
             let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             storage
-                .read_batch(ranges.into_iter().enumerate(), Random, |idx, chunk| {
-                    results[idx].extend_from_slice(chunk);
-                    Ok(())
-                })
+                .read_batch(
+                    ranges.into_iter().enumerate(),
+                    Random,
+                    |idx, chunk| {
+                        results[idx].extend_from_slice(chunk);
+                        Ok(())
+                    },
+                    &HardwareCounterCell::disposable(),
+                )
                 .map_err(io_error_to_status)?;
 
             Ok::<_, Status>(results)

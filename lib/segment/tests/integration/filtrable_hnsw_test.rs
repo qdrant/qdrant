@@ -74,7 +74,7 @@ fn _test_filterable_hnsw(
     let int_key = "int";
 
     let hw_counter = HardwareCounterCell::new();
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -123,10 +123,15 @@ fn _test_filterable_hnsw(
     let mut blocks = Vec::new();
     borrowed_payload_index
         .with_view(|v| {
-            v.for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
-                blocks.push(block);
-                Ok(())
-            })
+            v.for_each_payload_block(
+                &JsonPath::new(int_key),
+                indexing_threshold,
+                &mut |block| {
+                    blocks.push(block);
+                    Ok(())
+                },
+                &hw_counter,
+            )
         })
         .unwrap();
     for block in &blocks {
@@ -183,6 +188,7 @@ fn _test_filterable_hnsw(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
@@ -268,7 +274,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let int_key = "int";
 
     let hw_counter = HardwareCounterCell::new();
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -317,10 +323,15 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let mut blocks = Vec::new();
     borrowed_payload_index
         .with_view(|v| {
-            v.for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
-                blocks.push(block);
-                Ok(())
-            })
+            v.for_each_payload_block(
+                &JsonPath::new(int_key),
+                indexing_threshold,
+                &mut |block| {
+                    blocks.push(block);
+                    Ok(())
+                },
+                &hw_counter,
+            )
         })
         .unwrap();
     for block in &blocks {
@@ -352,6 +363,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
@@ -387,7 +399,7 @@ fn acorn_searches_are_counted_separately() {
     let int_key = "int";
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let vector = random_vector(&mut rng, dim);
         // The payload is the point's own id, so a range filter keeps a known share of them.
@@ -452,6 +464,7 @@ fn acorn_searches_are_counted_separately() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

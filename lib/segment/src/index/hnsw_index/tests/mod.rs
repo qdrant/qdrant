@@ -1,6 +1,7 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
@@ -64,6 +65,7 @@ pub(crate) fn create_graph_layer_fixture<R: Rng + ?Sized>(
     );
     let graph_layers = graph_layers_builder.into_graph_layers_ram(
         format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+        &HardwareCounterCell::new(),
     );
     (vector_holder, graph_layers)
 }

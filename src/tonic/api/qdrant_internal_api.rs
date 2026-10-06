@@ -10,6 +10,7 @@ use api::grpc::{
     PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use chrono::DateTime;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
@@ -112,7 +113,13 @@ impl QdrantInternal for QdrantInternalService {
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector
-            .prepare_data(&auth, detail, only_collections, Some(timeout))
+            .prepare_data(
+                &auth,
+                detail,
+                only_collections,
+                Some(timeout),
+                &HwMeasurementAcc::disposable(),
+            )
             .await?;
 
         let response = GetTelemetryResponse {

@@ -10,6 +10,7 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 
@@ -29,11 +30,16 @@ pub trait GraphLinksVectors {
         &self,
         point_id: PointOffsetType,
         f: &mut dyn FnMut(&[u8]) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Link vectors will be included for each link per point.
     /// The layout of each vector must correspond to [`GraphLinksVectorsLayout::link`].
-    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>>;
+    fn get_link_vector(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Cow<'_, [u8]>>;
 
     /// Get the layout of base and link vectors.
     fn vectors_layout(&self) -> GraphLinksVectorsLayout;
@@ -79,9 +85,10 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
         &self,
         point_id: PointOffsetType,
         f: &mut dyn FnMut(&[u8]) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.vector_storage
-            .with_vector_bytes_opt::<Sequential, _>(point_id, f)?
+            .with_vector_bytes_opt::<Sequential, _>(point_id, f, hw_counter)?
             .unwrap_or_else(|| {
                 Err(OperationError::service_error(format!(
                     "Point {point_id} not found in vector storage"
@@ -90,8 +97,14 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
     }
 
     /// Note: unlike base vectors, link vectors are written in a random order.
-    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
-        Ok(self.quantized_vectors.get_quantized_vector(point_id))
+    fn get_link_vector(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Cow<'_, [u8]>> {
+        Ok(self
+            .quantized_vectors
+            .get_quantized_vector(point_id, hw_counter))
     }
 
     fn vectors_layout(&self) -> GraphLinksVectorsLayout {

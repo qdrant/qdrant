@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::mem::MaybeUninit;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
@@ -91,6 +92,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         chunk_idx: usize,
         range: ReadRange,
         force_sequential: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Cow<'_, [T]>> {
         let chunk = self.chunks.get(chunk_idx)?;
 
@@ -98,9 +100,9 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             force_sequential || range.length as usize * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
-            chunk.read(range, Sequential).ok()
+            chunk.read(range, Sequential, hw_counter).ok()
         } else {
-            chunk.read(range, Random).ok()
+            chunk.read(range, Random, hw_counter).ok()
         }
     }
 
@@ -115,14 +117,15 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         start_key: VectorOffsetType,
         count: usize,
         force_sequential: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Cow<'_, [T]>> {
         let mut parts = self.read_ranges(start_key, count)?;
 
         let (chunk_idx, range) = parts.next()?;
-        let mut vectors = self.read_part(chunk_idx, range, force_sequential)?;
+        let mut vectors = self.read_part(chunk_idx, range, force_sequential, hw_counter)?;
 
         for (chunk_idx, range) in parts {
-            let part = self.read_part(chunk_idx, range, force_sequential)?;
+            let part = self.read_part(chunk_idx, range, force_sequential, hw_counter)?;
             vectors.to_mut().extend_from_slice(&part);
         }
 
@@ -130,8 +133,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     }
 
     #[inline]
-    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<Cow<'_, [T]>> {
-        self.get_many_impl(key, 1, P::IS_SEQUENTIAL)
+    pub fn get<P: AccessPattern>(
+        &self,
+        key: VectorOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [T]>> {
+        self.get_many_impl(key, 1, P::IS_SEQUENTIAL, hw_counter)
     }
 
     #[inline]
@@ -139,14 +146,16 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         &self,
         key: VectorOffsetType,
         count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Cow<'_, [T]>> {
-        self.get_many_impl(key, count, P::IS_SEQUENTIAL)
+        self.get_many_impl(key, count, P::IS_SEQUENTIAL, hw_counter)
     }
 
     pub fn for_each_in_batch<F>(
         &self,
         keys: &[PointOffsetType],
         mut callback: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
@@ -158,10 +167,14 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
                 .enumerate()
                 .map(|(index, point_offset)| (index, point_offset, 1));
 
-            return self.for_each_vector::<Random, _>(point_offsets, |idx, vectors| {
-                callback(idx, vectors.as_ref());
-                Ok(())
-            });
+            return self.for_each_vector::<Random, _>(
+                point_offsets,
+                |idx, vectors| {
+                    callback(idx, vectors.as_ref());
+                    Ok(())
+                },
+                hw_counter,
+            );
         }
 
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
@@ -175,7 +188,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             let (vectors, _) = maybe_uninit_fill_from(
                 &mut vectors_buffer,
                 keys.iter().map(|&key| {
-                    self.get_many_impl(key.offset(), 1, force_sequential)
+                    self.get_many_impl(key.offset(), 1, force_sequential, hw_counter)
                         .expect("vectors read")
                 }),
             );
@@ -199,6 +212,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         &self,
         mut offsets: impl Iterator<Item = (U, PointOffsetType, u32)>,
         mut callback: impl FnMut(U, Cow<'_, [T]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         P: AccessPattern,
@@ -266,10 +280,11 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
                     &chunk.inner,
                     range.into_byte_range::<T>(),
                     align_of::<T>(),
+                    hw_counter,
                 )?;
             }
 
-            let Some((tag, vectors)) = pipeline.wait_bytemuck::<T>()? else {
+            let Some((tag, vectors)) = pipeline.wait_bytemuck::<T>(hw_counter)? else {
                 debug_assert!(queued.is_empty(), "scheduling left reads behind");
                 debug_assert!(split_runs.is_empty(), "a run never got all its parts");
                 break;

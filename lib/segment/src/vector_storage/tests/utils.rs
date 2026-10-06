@@ -20,7 +20,7 @@ pub fn insert_distributed_vectors(
     vectors: usize,
     sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> Result<()> {
-    let start = storage.total_vector_count() as u32;
+    let start = storage.total_vector_count(&HardwareCounterCell::new()) as u32;
     let end = start + vectors as u32;
 
     let mut vector = vec![0.; dim];
@@ -44,11 +44,15 @@ pub fn delete_random_vectors(
     id_tracker: &mut impl IdTracker,
     vectors: usize,
 ) -> Result<()> {
-    let offsets = (0..storage.total_vector_count() as _).sample(rng, vectors);
+    let offsets =
+        (0..storage.total_vector_count(&HardwareCounterCell::new()) as _).sample(rng, vectors);
 
     for offset in offsets {
-        storage.delete_vector(offset)?;
-        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()))?;
+        storage.delete_vector(offset, &HardwareCounterCell::new())?;
+        id_tracker.drop(
+            crate::types::ExtendedPointId::NumId(offset.into()),
+            &HardwareCounterCell::new(),
+        )?;
     }
 
     Ok(())

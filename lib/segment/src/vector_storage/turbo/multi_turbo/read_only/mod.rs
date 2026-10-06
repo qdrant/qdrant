@@ -91,12 +91,13 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&multi(1.0)), &hw)
             .unwrap();
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedMultiTurboVectorStorage::<MmapFile>::open(
             &MmapFs,
@@ -107,14 +108,17 @@ mod tests {
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
         writer
             .insert_vector(1, VectorRef::from(&multi(0.0)), &hw)
             .unwrap();
-        writer.delete_vector(1).unwrap();
-        writer.flusher()().unwrap();
+        writer
+            .delete_vector(1, &HardwareCounterCell::new())
+            .unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = vec![1];
@@ -127,7 +131,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 2);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 2);
         assert!(reader.is_deleted_vector(1));
     }
 }

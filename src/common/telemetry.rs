@@ -5,6 +5,7 @@ use ahash::HashSet;
 use api::grpc;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::telemetry::CollectionTelemetry;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -100,6 +101,7 @@ impl TelemetryCollector {
         detail: TelemetryDetail,
         only_collections: Option<HashSet<String>>,
         timeout: Option<Duration>,
+        hw_acc: &HwMeasurementAcc,
     ) -> StorageResult<TelemetryData> {
         // Do not log access to telemetry
         let access = auth.unlogged_access();
@@ -116,6 +118,7 @@ impl TelemetryCollector {
             let runtime_handle = toc.general_runtime_handle().clone();
             let access_collection = access.clone();
 
+            let hw_acc = hw_acc.clone();
             let handle = runtime_handle.spawn_blocking(move || {
                 // Re-enter the async runtime in this blocking thread
                 tokio::runtime::Handle::current().block_on(async move {
@@ -126,6 +129,7 @@ impl TelemetryCollector {
                         &toc,
                         timeout,
                         &is_stopped,
+                        &hw_acc,
                     )
                     .await
                 })

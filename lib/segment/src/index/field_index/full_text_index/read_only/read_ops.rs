@@ -49,11 +49,11 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.values_count(point_id),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.values_count(point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.values_count(point_id),
+            ReadOnlyFullTextIndex::Appendable(index) => index.values_count(point_id, hw_counter),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.values_count(point_id, hw_counter),
+            ReadOnlyFullTextIndex::Immutable(index) => index.values_count(point_id, hw_counter),
         }
     }
 
@@ -115,11 +115,11 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.values_is_empty(point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.values_is_empty(point_id),
+            ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id, hw_counter),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.values_is_empty(point_id, hw_counter),
+            ReadOnlyFullTextIndex::Immutable(index) => index.values_is_empty(point_id, hw_counter),
         }
     }
 
@@ -169,11 +169,20 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.check_match(query, point_id),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.check_match(query, point_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.check_match(query, point_id),
+            ReadOnlyFullTextIndex::Appendable(index) => {
+                index.check_match(query, point_id, hw_counter)
+            }
+            ReadOnlyFullTextIndex::OnDisk(index) => index.check_match(query, point_id, hw_counter),
+            ReadOnlyFullTextIndex::Immutable(index) => {
+                index.check_match(query, point_id, hw_counter)
+            }
         }
     }
 
@@ -182,14 +191,17 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => {
-                index.check_match_batch(query, items, on_match)
+                index.check_match_batch(query, items, on_match, hw_counter)
             }
-            ReadOnlyFullTextIndex::OnDisk(index) => index.check_match_batch(query, items, on_match),
+            ReadOnlyFullTextIndex::OnDisk(index) => {
+                index.check_match_batch(query, items, on_match, hw_counter)
+            }
             ReadOnlyFullTextIndex::Immutable(index) => {
-                index.check_match_batch(query, items, on_match)
+                index.check_match_batch(query, items, on_match, hw_counter)
             }
         }
     }
@@ -199,16 +211,17 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => {
-                index.for_each_payload_block_inner(threshold, key, f)
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
             }
             ReadOnlyFullTextIndex::OnDisk(index) => {
-                index.for_each_payload_block_inner(threshold, key, f)
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
             }
             ReadOnlyFullTextIndex::Immutable(index) => {
-                index.for_each_payload_block_inner(threshold, key, f)
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
             }
         }
     }
@@ -239,7 +252,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
 }
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(FullTextIndexRead::points_count(self))
     }
 
@@ -264,8 +277,9 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

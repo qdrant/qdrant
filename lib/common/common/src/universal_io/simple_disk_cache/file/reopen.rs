@@ -13,6 +13,7 @@ use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 
 use super::{DiskCache, ScheduledReopen, State};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Sequential;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::pipeline::REMOTE_READ_ALIGNMENT;
@@ -26,14 +27,14 @@ where
     R: DiskCacheRemote,
 {
     /// Body of [`UniversalRead::live_reload`](crate::universal_io::UniversalRead::live_reload).
-    pub(super) fn reopen_impl(&mut self) -> UioResult<()> {
-        if self.resolve_pending_reload()? {
+    pub(super) fn reopen_impl(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        if self.resolve_pending_reload(hw_counter)? {
             return Ok(());
         }
 
         // If not previously done, schedule and wait blockingly
-        futures::executor::block_on(self.live_preload_with_len(None)?);
-        self.resolve_pending_reload()?;
+        futures::executor::block_on(self.live_preload_with_len(None, hw_counter)?);
+        self.resolve_pending_reload(hw_counter)?;
 
         Ok(())
     }
@@ -41,7 +42,7 @@ where
     // Apply whatever `live_preload` staged, if anything.
     //
     // Returns `true` if a pending reopen was resolved, `false` otherwise.
-    fn resolve_pending_reload(&mut self) -> UioResult<bool> {
+    fn resolve_pending_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         let State::Ready {
             remote,
             local,
@@ -62,7 +63,7 @@ where
             ScheduledReopen::Unchanged => {}
             ScheduledReopen::Resize { target_len } => {
                 // reopen remote, so we can read up to the new length.
-                remote.live_reload()?;
+                remote.live_reload(hw_counter)?;
 
                 local.resize(&self.local_path, target_len)?;
             }
@@ -111,7 +112,7 @@ where
                     Err(_) => panic!("sender is never dropped before sending"),
                 };
 
-                let local_len = local.mmap().len::<u8>()?;
+                let local_len = local.mmap().len::<u8>(hw_counter)?;
                 check_not_shrunk(local_len, total_len)?;
 
                 // Resize only after the fetch succeeded
@@ -135,9 +136,11 @@ where
     pub(super) fn live_preload_impl<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         let file_info = get_file_info(&self.remote_path);
-        let fut = self.live_preload_with_len(file_info.as_ref().map(|info| info.size))?;
+        let fut =
+            self.live_preload_with_len(file_info.as_ref().map(|info| info.size), hw_counter)?;
         if let Some(file_info) = file_info {
             self.set_etag(file_info.etag);
         }
@@ -155,12 +158,13 @@ where
     pub(super) fn live_preload_with_len(
         &self,
         known_len: Option<u64>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         // Wait for scheduled prefill, if any.
         //
         // warn: this will do a length request if uninit, but when using a
         // cached fs to create the file it should never be uninit.
-        self.init_state()?;
+        self.init_state(hw_counter)?;
 
         let mut state = self.state.lock();
         let State::Ready {
@@ -172,7 +176,7 @@ where
             unreachable!("init_state drives state to Ready");
         };
 
-        let local_len = local.mmap().len::<u8>()?;
+        let local_len = local.mmap().len::<u8>(hw_counter)?;
 
         // Already staged for this request: reuse the staged signal so callers
         // still observe its completion.
@@ -195,17 +199,22 @@ where
                         *scheduled_reopen = Some(ScheduledReopen::Unchanged);
                         Ok(async {}.boxed().shared())
                     } else {
-                        self.schedule_bounded_tail(scheduled_reopen, local_len, remote_len)
+                        self.schedule_bounded_tail(
+                            scheduled_reopen,
+                            local_len,
+                            remote_len,
+                            hw_counter,
+                        )
                     }
                 }
-                None => self.schedule_unbounded_tail(scheduled_reopen, local_len),
+                None => self.schedule_unbounded_tail(scheduled_reopen, local_len, hw_counter),
             },
             Populate::Auto | Populate::No | Populate::Partial(_) => {
                 let remote_len = match known_len {
                     Some(known_len) => known_len,
                     None => {
-                        remote.live_reload()?;
-                        remote.len::<u8>()?
+                        remote.live_reload(hw_counter)?;
+                        remote.len::<u8>(hw_counter)?
                     }
                 };
 
@@ -229,17 +238,19 @@ where
         scheduled_reopen: &mut Option<ScheduledReopen<R>>,
         local_len: u64,
         remote_len: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         let (blocks_range, byte_range) = block_aligned_fetch(local_len..remote_len, remote_len)
             .expect("the byte range is non-empty");
 
-        let new_remote = self.open_remote()?;
+        let new_remote = self.open_remote(hw_counter)?;
+        let hw_acc = hw_counter.new_accumulator();
         let (tx, rx) = futures::channel::oneshot::channel();
         let future = {
             async move {
                 let fetch = || async {
                     Ok(new_remote
-                        .read_bytes_async(byte_range, Sequential, REMOTE_READ_ALIGNMENT)
+                        .read_bytes_async(byte_range, Sequential, REMOTE_READ_ALIGNMENT, hw_acc)
                         .await?
                         .into_owned(REMOTE_READ_ALIGNMENT))
                 };
@@ -264,25 +275,31 @@ where
         &self,
         scheduled_reopen: &mut Option<ScheduledReopen<R>>,
         local_len: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Shared<BoxFuture<'static, ()>>> {
         let from = (local_len / BLOCK_SIZE as u64) * BLOCK_SIZE as u64;
 
-        let new_remote = self.open_remote()?;
+        let new_remote = self.open_remote(hw_counter)?;
+        let hw_acc = hw_counter.new_accumulator();
         let (tx, rx) = futures::channel::oneshot::channel();
         let future = {
             async move {
                 let fetch = || async {
                     let collector = new_remote
-                        .read_from_into_async(from, move |total_len| {
-                            let tail_len = (total_len.saturating_sub(from)) as usize;
-                            let mut buffer = AVec::new(REMOTE_READ_ALIGNMENT);
-                            buffer.resize(tail_len, 0);
-                            Ok(TailCollector {
-                                from,
-                                total_len,
-                                buffer,
-                            })
-                        })
+                        .read_from_into_async(
+                            from,
+                            move |total_len| {
+                                let tail_len = (total_len.saturating_sub(from)) as usize;
+                                let mut buffer = AVec::new(REMOTE_READ_ALIGNMENT);
+                                buffer.resize(tail_len, 0);
+                                Ok(TailCollector {
+                                    from,
+                                    total_len,
+                                    buffer,
+                                })
+                            },
+                            hw_acc,
+                        )
                         .await?;
                     Ok((new_remote, collector.total_len, collector.buffer))
                 };

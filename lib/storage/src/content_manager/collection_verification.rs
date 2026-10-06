@@ -5,6 +5,7 @@ use collection::operations::verification::{
     StrictModeVerification, VerificationPass, check_resident_memory, check_search_batch_size,
     check_timeout, new_unchecked_verification_pass,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use super::errors::StorageError;
 use super::toc::TableOfContent;
@@ -22,6 +23,7 @@ pub async fn check_strict_mode_toc_batch<'a, I>(
     collection_name: &str,
     toc: &TableOfContent,
     auth: &Auth,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<VerificationPass, StorageError>
 where
     I: StrictModeVerification + 'a,
@@ -55,7 +57,7 @@ where
         any_consumes_memory |= request.consumes_memory();
         if let Some(strict_mode_config) = &strict_mode_config {
             request
-                .check_strict_mode(&collection, strict_mode_config)
+                .check_strict_mode(&collection, strict_mode_config, hw_acc)
                 .await?;
         }
     }
@@ -82,12 +84,22 @@ pub async fn check_strict_mode_batch<'a, I>(
     collection_name: &str,
     dispatcher: &Dispatcher,
     auth: &Auth,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<VerificationPass, StorageError>
 where
     I: StrictModeVerification + 'a,
 {
     let toc = get_toc_without_verification_pass(dispatcher, auth);
-    check_strict_mode_toc_batch(requests, timeout, batch_size, collection_name, toc, auth).await
+    check_strict_mode_toc_batch(
+        requests,
+        timeout,
+        batch_size,
+        collection_name,
+        toc,
+        auth,
+        hw_acc,
+    )
+    .await
 }
 
 pub async fn check_strict_mode(
@@ -96,6 +108,7 @@ pub async fn check_strict_mode(
     collection_name: &str,
     dispatcher: &Dispatcher,
     auth: &Auth,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<VerificationPass, StorageError> {
     check_strict_mode_batch(
         iter::once(request),
@@ -104,6 +117,7 @@ pub async fn check_strict_mode(
         collection_name,
         dispatcher,
         auth,
+        hw_acc,
     )
     .await
 }
@@ -118,6 +132,7 @@ pub async fn check_strict_mode_toc(
     collection_name: &str,
     toc: &TableOfContent,
     auth: &Auth,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<VerificationPass, StorageError> {
     check_strict_mode_toc_batch(
         iter::once(request),
@@ -126,6 +141,7 @@ pub async fn check_strict_mode_toc(
         collection_name,
         toc,
         auth,
+        hw_acc,
     )
     .await
 }

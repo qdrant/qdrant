@@ -123,7 +123,7 @@ fn plain_segment(
         id_tracker_memory: None,
     };
     let hw_counter = HardwareCounterCell::new();
-    let (mut segment, _) = build_segment(dir, &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir, &config, None, true, &hw_counter).unwrap();
     for (idx, vector) in vectors.iter().enumerate() {
         segment
             .upsert_point(
@@ -144,6 +144,7 @@ fn build_indexed(dir: &std::path::Path, sources: &[&Segment], config: &SegmentCo
         config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     builder
@@ -320,13 +321,22 @@ fn test_graph_inline_storage_contract(
 }
 
 fn graph_inline_lookup_segment_opens(writable: &Segment) {
-    let lookup = LookupSegment::<MmapFs>::open(MmapFs, &writable.segment_path, None).unwrap();
+    let lookup = LookupSegment::<MmapFs>::open(
+        MmapFs,
+        &writable.segment_path,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let storage = lookup.vector_data[DEFAULT_VECTOR_NAME].borrow();
     assert!(!lookup.appendable);
-    assert_eq!(storage.total_vector_count(), NUM_VECTORS);
+    assert_eq!(
+        storage.total_vector_count(&HardwareCounterCell::new()),
+        NUM_VECTORS
+    );
     let vector: Vec<f32> = storage
-        .get_vector::<Random>(42)
+        .get_vector::<Random>(42, &HardwareCounterCell::new())
         .to_owned()
         .try_into()
         .unwrap();
@@ -348,7 +358,7 @@ fn graph_inline_deletes_and_remerge(
         );
     }
     assert_eq!(
-        graph_backed.available_point_count(),
+        graph_backed.available_point_count(&hw_counter),
         NUM_VECTORS - deleted.len(),
     );
     for &id in &deleted {
@@ -386,7 +396,7 @@ fn graph_inline_deletes_and_remerge(
         &indexed_config(true, datatype, storage_type),
     );
     assert_eq!(
-        merged.available_point_count(),
+        merged.available_point_count(&hw_counter),
         NUM_VECTORS - deleted.len() + extra_vectors.len(),
     );
     let merged_control_dir = Builder::new().prefix("merged_control").tempdir().unwrap();
@@ -416,6 +426,7 @@ fn test_graph_inline_storage_flag_off() {
         &indexed_config(true, None, VectorStorageType::Mmap),
         &HnswGlobalConfig::default(),
         FeatureFlags::default().tap_mut(|flags| flags.combined_vector_storage = false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     builder

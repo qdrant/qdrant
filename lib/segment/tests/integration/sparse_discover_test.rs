@@ -156,8 +156,22 @@ fn sparse_index_discover_test() {
         sparse_vector_data: Default::default(),
     };
 
-    let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
-    let (mut dense_segment, _) = build_segment(dir.path(), &dense_config, None, true).unwrap();
+    let (mut sparse_segment, _) = build_segment(
+        dir.path(),
+        &sparse_config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let (mut dense_segment, _) = build_segment(
+        dir.path(),
+        &dense_config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -176,21 +190,24 @@ fn sparse_index_discover_test() {
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
-    let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
-        fs: &MmapFs,
-        config: SparseIndexConfig {
-            memory: None,
-            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-            index_type: SparseIndexType::ImmutableRam,
-            datatype: Some(VectorStorageDatatype::Float32),
+    let sparse_index = create_sparse_vector_index_test(
+        SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
+            config: SparseIndexConfig {
+                memory: None,
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::ImmutableRam,
+                datatype: Some(VectorStorageDatatype::Float32),
+            },
+            id_tracker: sparse_segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            payload_index: payload_index_ptr,
+            path: index_dir.path(),
+            stopped: &stopped,
+            tick_progress: || (),
         },
-        id_tracker: sparse_segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        payload_index: payload_index_ptr,
-        path: index_dir.path(),
-        stopped: &stopped,
-        tick_progress: || (),
-    })
+        &hw_counter,
+    )
     .unwrap();
 
     let top = 3;
@@ -282,7 +299,14 @@ fn sparse_index_hardware_measurement_test() {
         id_tracker_memory: None,
     };
 
-    let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
+    let (mut sparse_segment, _) = build_segment(
+        dir.path(),
+        &sparse_config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -297,21 +321,24 @@ fn sparse_index_hardware_measurement_test() {
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
-    let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
-        fs: &MmapFs,
-        config: SparseIndexConfig {
-            memory: None,
-            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-            index_type: SparseIndexType::ImmutableRam,
-            datatype: Some(VectorStorageDatatype::Float32),
+    let sparse_index = create_sparse_vector_index_test(
+        SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
+            config: SparseIndexConfig {
+                memory: None,
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::ImmutableRam,
+                datatype: Some(VectorStorageDatatype::Float32),
+            },
+            id_tracker: sparse_segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            payload_index: payload_index_ptr,
+            path: index_dir.path(),
+            stopped: &stopped,
+            tick_progress: || (),
         },
-        id_tracker: sparse_segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        payload_index: payload_index_ptr,
-        path: index_dir.path(),
-        stopped: &stopped,
-        tick_progress: || (),
-    })
+        &hw_counter,
+    )
     .unwrap();
 
     let query_vec = QueryVector::Nearest(VectorInternal::Sparse(

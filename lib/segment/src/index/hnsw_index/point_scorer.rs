@@ -195,8 +195,8 @@ impl<'a> FilteredScorer<'a> {
     {
         // This is a fallback function, which is used if quantized vector storage
         // is not capable of reconstructing the query vector.
-        let original_query_fn = || {
-            let query = vectors.get_vector::<Random>(point_id);
+        let original_query_fn = |hw_counter: &HardwareCounterCell| {
+            let query = vectors.get_vector::<Random>(point_id, hw_counter);
             let query: QueryVector = query.as_vec_ref().into();
             query
         };
@@ -204,10 +204,11 @@ impl<'a> FilteredScorer<'a> {
             Some(quantized_vectors) => quantized_vectors
                 .raw_internal_scorer(point_id, hardware_counter)
                 .or_else(|InternalScorerUnsupported(hardware_counter)| {
-                    quantized_vectors.raw_scorer(original_query_fn(), hardware_counter)
+                    quantized_vectors
+                        .raw_scorer(original_query_fn(&hardware_counter), hardware_counter)
                 })?,
             None => {
-                let query = original_query_fn();
+                let query = original_query_fn(&hardware_counter);
                 vectors.build_raw_scorer(query, hardware_counter)?
             }
         };
@@ -605,7 +606,9 @@ mod tests {
         }
         for i in 0..TOTAL {
             if rng.random_bool(0.15) {
-                storage.delete_vector(i as PointOffsetType).unwrap();
+                storage
+                    .delete_vector(i as PointOffsetType, &hw_counter)
+                    .unwrap();
             }
         }
 

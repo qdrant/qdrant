@@ -90,6 +90,7 @@ where
                     |_, offset| {
                         segment_ids.insert(offset);
                     },
+                    hw_counter,
                 )?;
                 ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
@@ -159,15 +160,20 @@ where
                 ConditionCheckerEnum::Dyn(Box::new(SliceConditionChecker {
                     id_tracker,
                     slice: slice_condition.slice,
+                    hw_counter: hw_counter.fork(),
                 }))
             }
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
-                    .point_mappings()
-                    .iter_external()
+                    .point_mappings(hw_counter)
+                    .iter_external(hw_counter)
                     .filter(|&point_id| cond.0.check(point_id))
                     .filter_map(|external_id| {
-                        id_tracker.internal_id_with_behavior(external_id, deferred_behavior)
+                        id_tracker.internal_id_with_behavior(
+                            external_id,
+                            deferred_behavior,
+                            hw_counter,
+                        )
                     })
                     .collect();
 
@@ -265,6 +271,7 @@ impl ConditionChecker for IdsConditionChecker {
 struct SliceConditionChecker<'a, I: IdTrackerRead> {
     id_tracker: &'a I,
     slice: Slice,
+    hw_counter: HardwareCounterCell,
 }
 
 impl<I: IdTrackerRead> ConditionChecker for SliceConditionChecker<'_, I> {
@@ -273,7 +280,7 @@ impl<I: IdTrackerRead> ConditionChecker for SliceConditionChecker<'_, I> {
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         Ok(self
             .id_tracker
-            .external_id(point_id)
+            .external_id(point_id, &self.hw_counter)
             .is_some_and(|external_id| self.slice.check(external_id)))
     }
 

@@ -92,6 +92,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
             AdaptiveSearchHandle::new_fixed(handle.clone()),
             ResourceBudget::default(),
             optimizers_config,
+            &HwMeasurementAcc::new(),
         ))
         .unwrap();
 

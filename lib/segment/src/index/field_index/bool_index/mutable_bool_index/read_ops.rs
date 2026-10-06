@@ -24,7 +24,7 @@ impl BoolIndexRead for MutableBoolIndex {
         &self.storage.falses_flags
     }
 
-    fn indexed_count(&self) -> OperationResult<usize> {
+    fn indexed_count(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.indexed_count)
     }
 
@@ -34,18 +34,18 @@ impl BoolIndexRead for MutableBoolIndex {
 
     // Override the default impls to use precomputed counts maintained by the
     // write path, avoiding a bitmap scan on every read.
-    fn trues_count(&self) -> OperationResult<usize> {
+    fn trues_count(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.trues_count)
     }
 
-    fn falses_count(&self) -> OperationResult<usize> {
+    fn falses_count(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.falses_count)
     }
 }
 
 impl PayloadFieldIndexRead for MutableBoolIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
-        self.indexed_count()
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.indexed_count(hw_counter)
     }
 
     fn filter<'a>(
@@ -69,8 +69,9 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

@@ -12,7 +12,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 400;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let vector = vec![0.1f32; 400];
 
@@ -45,13 +46,13 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("segment-info", |b| {
         b.iter(|| {
-            let _ = segment.info();
+            let _ = segment.info(&hw_counter);
         })
     });
 
     c.bench_function("segment-size-info", |b| {
         b.iter(|| {
-            let _ = segment.size_info();
+            let _ = segment.size_info(&hw_counter);
         })
     });
 }

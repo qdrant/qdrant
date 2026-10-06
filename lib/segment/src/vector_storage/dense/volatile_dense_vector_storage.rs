@@ -82,7 +82,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for VolatileDenseVecto
         self.dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
         Cow::Borrowed(self.vectors.get(key as VectorOffsetType))
     }
 
@@ -90,8 +94,9 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for VolatileDenseVecto
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_for_each_in_dense_batch(self, keys, f)
+        default_for_each_in_dense_batch(self, keys, f, hw_counter)
     }
 }
 
@@ -100,6 +105,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for (other_vector, other_deleted) in other_vectors {
@@ -113,8 +119,8 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage<T> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter) * self.vector_dim() * std::mem::size_of::<T>()
     }
 
     fn distance(&self) -> Distance {
@@ -129,16 +135,25 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
         false
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Get vector by key, if it exists.
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         // In memory so no optimization to be done for access pattern
         self.vectors
             .get_opt(key as VectorOffsetType)
@@ -161,8 +176,9 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback, hw_counter)
     }
 }
 
@@ -181,7 +197,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -189,7 +205,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> 
         vec![]
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         Ok(is_deleted)
     }

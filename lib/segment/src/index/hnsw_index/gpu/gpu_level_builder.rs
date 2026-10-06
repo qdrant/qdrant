@@ -99,6 +99,7 @@ fn gpu_batched_apply_entries(batch: &Batch, new_entries: Vec<PointOffsetType>) {
 mod tests {
     use std::borrow::Borrow;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use rstest::rstest;
 
@@ -144,6 +145,7 @@ mod tests {
             None,
             false,
             &false.into(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 

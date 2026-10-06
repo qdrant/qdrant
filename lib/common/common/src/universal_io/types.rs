@@ -6,6 +6,7 @@ use serde::de::DeserializeOwned;
 
 use super::UniversalIoError;
 use super::traits::UniversalReadFs;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::mmap::{Advice, AdviceSetting};
 use crate::universal_io::{UniversalRead, UserData};
 
@@ -265,6 +266,7 @@ pub fn read_whole_via<Fs, T>(
     fs: &Fs,
     path: impl AsRef<Path>,
     callback: impl FnOnce(Cow<'_, [u8]>) -> UioResult<T>,
+    hw_counter: &HardwareCounterCell,
 ) -> UioResult<T>
 where
     Fs: UniversalReadFs,
@@ -276,8 +278,8 @@ where
         populate: Populate::No,
         advice: AdviceSetting::Advice(Advice::Sequential),
     };
-    let storage = fs.open(path, options, Default::default())?;
-    let bytes = storage.read_whole::<u8>()?;
+    let storage = fs.open(path, options, Default::default(), hw_counter)?;
+    let bytes = storage.read_whole::<u8>(hw_counter)?;
 
     let callback_t = callback(bytes)?;
 
@@ -290,26 +292,40 @@ where
 ///
 /// Uses a single logical read when the backend overrides
 /// [`UniversalRead::read_whole`](super::UniversalRead::read_whole).
-pub fn read_json_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> UioResult<T>
+pub fn read_json_via<Fs, T>(
+    fs: &Fs,
+    path: impl AsRef<Path>,
+    hw_counter: &HardwareCounterCell,
+) -> UioResult<T>
 where
     Fs: UniversalReadFs,
     T: DeserializeOwned,
 {
-    read_whole_via(fs, path, |bytes| {
-        serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
-    })
+    read_whole_via(
+        fs,
+        path,
+        |bytes| serde_json::from_slice(&bytes).map_err(UniversalIoError::from),
+        hw_counter,
+    )
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as bincode.
 ///
 /// Uses a single logical read when the backend overrides
 /// [`UniversalRead::read_whole`](super::UniversalRead::read_whole).
-pub fn read_bin_via<Fs, T>(fs: &Fs, path: impl AsRef<Path>) -> UioResult<T>
+pub fn read_bin_via<Fs, T>(
+    fs: &Fs,
+    path: impl AsRef<Path>,
+    hw_counter: &HardwareCounterCell,
+) -> UioResult<T>
 where
     Fs: UniversalReadFs,
     T: DeserializeOwned,
 {
-    read_whole_via(fs, path, |bytes| {
-        bincode::deserialize(&bytes).map_err(UniversalIoError::from)
-    })
+    read_whole_via(
+        fs,
+        path,
+        |bytes| bincode::deserialize(&bytes).map_err(UniversalIoError::from),
+        hw_counter,
+    )
 }

@@ -1,6 +1,7 @@
 //! Live-reload: pick up deletions written by the leader after open.
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
@@ -16,11 +17,13 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         fs.reschedule_open(
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
             None,
+            hw_counter,
         );
         Ok(Vec::new())
     }
@@ -40,12 +43,14 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<LiveReloadResult> {
         let Some(fresh) = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         else {
@@ -55,7 +60,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             });
         };
 
-        let new: BitVec = fresh.read_all()?.into_owned();
+        let new: BitVec = fresh.read_all(hw_counter)?.into_owned();
         self.deleted_file = fresh;
 
         let baseline = self.deleted_full.take();

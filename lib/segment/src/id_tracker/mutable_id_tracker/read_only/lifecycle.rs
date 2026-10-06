@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -31,11 +32,25 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Either file may not exist yet — the writer only creates them once it
     /// flushes the first point, and [`open`](Self::open) treats a missing file
     /// as an empty storage — so absence is tolerated here too.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let options = Self::open_options();
 
-        fs.schedule_open(&mappings_path(segment_path), Some(options), None);
-        fs.schedule_open(&versions_path(segment_path), Some(options), None);
+        fs.schedule_open(
+            &mappings_path(segment_path),
+            Some(options),
+            None,
+            hw_counter,
+        );
+        fs.schedule_open(
+            &versions_path(segment_path),
+            Some(options),
+            None,
+            hw_counter,
+        );
     }
 
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every
@@ -55,6 +70,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         // The bootstrap below opens through the raw fs passed here, bypassing
         // any prefetch pool. Later reloads open through the fs their caller
@@ -81,7 +97,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
-        tracker.live_reload(fs, None)?;
+        tracker.live_reload(fs, None, hw_counter)?;
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
@@ -127,8 +143,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub(super) fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<S>> {
         let options = Self::open_options();
-        Ok(fs.open(path, options, Default::default()).ok_not_found()?)
+        Ok(fs
+            .open(path, options, Default::default(), hw_counter)
+            .ok_not_found()?)
     }
 }

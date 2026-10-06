@@ -1,5 +1,6 @@
 use collection::operations::types::CollectionError;
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use tempfile::Builder;
 
 use crate::common::{NoopReshardingConsensus, simple_collection_fixture};
@@ -25,6 +26,7 @@ async fn transfer_start_rejection_does_not_register_transfer() {
             dir.path().join("transfer-temp"),
             std::future::ready(()),
             std::future::ready(()),
+            &HwMeasurementAcc::new(),
         )
         .await;
 

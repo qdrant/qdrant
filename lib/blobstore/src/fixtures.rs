@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 use rand::distr::{Distribution, Uniform};
 use rand::{Rng, RngExt};
@@ -46,7 +47,13 @@ pub fn empty_storage_append_only() -> (TempDir, Blobstore<Payload>) {
 /// Create an empty storage in the given mode with the default configuration
 pub fn empty_storage_mode(mode: Mode) -> (TempDir, Blobstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), default_config(mode)).unwrap();
+    let storage = Blobstore::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        default_config(mode),
+        &HardwareCounterCell::disposable(),
+    )
+    .unwrap();
     (dir, storage)
 }
 
@@ -70,7 +77,13 @@ pub fn empty_storage_sized(
         region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
         compression,
     });
-    let storage = Blobstore::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
+    let storage = Blobstore::new(
+        MmapFs,
+        dir.path().to_path_buf(),
+        config,
+        &HardwareCounterCell::disposable(),
+    )
+    .unwrap();
     (dir, storage)
 }
 

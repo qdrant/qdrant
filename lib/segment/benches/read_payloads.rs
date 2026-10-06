@@ -82,8 +82,9 @@ where
     S::Fs: Default,
 {
     let storage_exists = storage_dir(path).exists();
-    let mut storage = PayloadStorageImpl::open_or_create(path.to_path_buf(), false)
-        .expect("payload storage opened");
+    let mut storage =
+        PayloadStorageImpl::open_or_create(path.to_path_buf(), false, &HardwareCounterCell::new())
+            .expect("payload storage opened");
 
     if !storage_exists {
         let mut rng = SmallRng::seed_from_u64(RNG_SEED);
@@ -97,10 +98,12 @@ where
                 .expect("payload inserted");
         }
 
-        storage.flusher()().expect("storage flushed");
+        storage.flusher(&hw_counter)().expect("storage flushed");
     }
 
-    storage.populate().expect("storage populated");
+    storage
+        .populate(&HardwareCounterCell::new())
+        .expect("storage populated");
     storage
 }
 

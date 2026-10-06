@@ -127,46 +127,58 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::values_count(index, idx),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::values_count(index, idx),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_count(index, idx),
+            ReadOnlyGeoIndex::Appendable(index) => {
+                GeoIndexRead::values_count(index, idx, hw_counter)
+            }
+            ReadOnlyGeoIndex::Immutable(index) => {
+                GeoIndexRead::values_count(index, idx, hw_counter)
+            }
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_count(index, idx, hw_counter),
         }
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::get_values(index, idx),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx),
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::get_values(index, idx, hw_counter),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx, hw_counter),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx, hw_counter),
         }
     }
 
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::iterator(index, values),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
+            ReadOnlyGeoIndex::Appendable(index) => {
+                GeoIndexRead::iterator(index, values, hw_counter)
+            }
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values, hw_counter),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values, hw_counter),
         }
     }
 
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::points_per_hash_filtered(index, filter)
+                GeoIndexRead::points_per_hash_filtered(index, filter, hw_counter)
             }
             ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::points_per_hash_filtered(index, filter)
+                GeoIndexRead::points_per_hash_filtered(index, filter, hw_counter)
             }
             ReadOnlyGeoIndex::OnDisk(index) => {
-                GeoIndexRead::points_per_hash_filtered(index, filter)
+                GeoIndexRead::points_per_hash_filtered(index, filter, hw_counter)
             }
         }
     }
@@ -195,11 +207,11 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::populate(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::populate(index),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::populate(index),
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::populate(index, hw_counter),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::populate(index, hw_counter),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::populate(index, hw_counter),
         }
     }
 
@@ -237,7 +249,7 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
 }
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(GeoIndexRead::points_count(self))
     }
 
@@ -262,8 +274,9 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

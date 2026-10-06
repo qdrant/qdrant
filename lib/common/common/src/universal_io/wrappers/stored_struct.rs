@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::is_alive_lock::IsAliveLock;
 use crate::universal_io::{
     Flusher, OpenOptions, TypedStorage, UioResult, UniversalReadFs, UniversalWrite,
@@ -29,9 +30,10 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let storage = TypedStorage::<S, T>::open(fs, path, options, extra)?;
-        let inner = storage.read_whole()?[0];
+        let storage = TypedStorage::<S, T>::open(fs, path, options, extra, hw_counter)?;
+        let inner = storage.read_whole(hw_counter)?[0];
         Ok(Self {
             inner,
             storage: Arc::new(Mutex::new(storage)),

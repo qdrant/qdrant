@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyPayloadStorage;
@@ -13,9 +14,10 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
         fs: &impl CachedReadFs<File = S>,
         path: PathBuf,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let path = storage_dir(path);
-        BlobstoreReader::<Payload, S>::preopen(fs, path, populate)?;
+        BlobstoreReader::<Payload, S>::preopen(fs, path, populate, hw_counter)?;
         Ok(())
     }
 
@@ -27,9 +29,10 @@ impl<S: UniversalRead> ReadOnlyPayloadStorage<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let path = storage_dir(path);
-        let storage = BlobstoreReader::<Payload, S>::open(fs, path, populate)?;
+        let storage = BlobstoreReader::<Payload, S>::open(fs, path, populate, hw_counter)?;
 
         Ok(Self { storage })
     }

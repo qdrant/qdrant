@@ -25,7 +25,7 @@ impl<T: NumericIndexValue, S: UniversalReadExt> PayloadFieldIndexRead
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.get_points_count())
     }
 
@@ -50,8 +50,9 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        query::for_each_payload_block(self, threshold, key, f)
+        query::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

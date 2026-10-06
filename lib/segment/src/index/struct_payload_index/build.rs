@@ -36,7 +36,8 @@ impl StructPayloadIndex {
         let mut builders = selector.index_builder(
             field,
             payload_schema,
-            id_tracker_borrow.deleted_point_bitslice(),
+            id_tracker_borrow.deleted_point_bitslice(hw_counter),
+            hw_counter,
         )?;
 
         // Special null index complements every index. Seed it with the segment's total
@@ -44,11 +45,11 @@ impl StructPayloadIndex {
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
         let total_point_count = self.id_tracker.borrow().total_point_count();
-        let null_index = selector.null_builder(field, total_point_count)?;
+        let null_index = selector.null_builder(field, total_point_count, hw_counter)?;
         builders.push(null_index);
 
         for index in &mut builders {
-            index.init()?;
+            index.init(hw_counter)?;
             if !self.journaled {
                 index.disable_journal();
             }
@@ -67,7 +68,7 @@ impl StructPayloadIndex {
 
         builders
             .into_iter()
-            .map(|builder| builder.finalize())
+            .map(|builder| builder.finalize(hw_counter))
             .collect()
     }
 
@@ -84,14 +85,15 @@ impl StructPayloadIndex {
         let loaded = {
             let selector = self.selector(payload_schema);
             let id_tracker = self.id_tracker.borrow();
-            let deleted_points = id_tracker.deleted_point_bitslice();
-            match selector.new_index(field, payload_schema, false, deleted_points)? {
+            let deleted_points = id_tracker.deleted_point_bitslice(hw_counter);
+            match selector.new_index(field, payload_schema, false, deleted_points, hw_counter)? {
                 Some(mut indexes) => {
                     if let Some(null_index) = selector.new_null_index(
                         field,
                         false,
                         &id_tracker,
                         selector.default_mutability(),
+                        hw_counter,
                     )? {
                         indexes.push(null_index);
                     }
@@ -114,10 +116,11 @@ impl StructPayloadIndex {
     pub(super) fn clear_index_for_point(
         &mut self,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values_mut() {
             for index in field_indexes {
-                index.remove_point(point_id)?;
+                index.remove_point(point_id, hw_counter)?;
             }
         }
         Ok(())

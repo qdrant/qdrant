@@ -14,12 +14,13 @@ where
     T: bytemuck::Pod + Send,
     S: UniversalWrite + Send + 'static,
 {
-    fn add_chunk(&mut self) -> OperationResult<()> {
+    fn add_chunk(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         let chunk = create_chunk(
             &self.fs,
             &self.inner.directory,
             self.inner.chunks.len(),
             self.inner.config.chunk_size_bytes,
+            hw_counter,
         )?;
 
         self.inner.chunks.push(chunk);
@@ -55,7 +56,7 @@ where
         // does not need `&mut self`
         let last_key = start_key + count.saturating_sub(1);
         while self.inner.config.get_chunk_index(last_key) >= self.inner.chunks.len() {
-            self.add_chunk()?;
+            self.add_chunk(hw_counter)?;
         }
 
         let mut rest = vectors;

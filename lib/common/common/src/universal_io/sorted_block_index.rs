@@ -5,6 +5,7 @@ use std::path::Path;
 use super::traits::UniversalReadFs;
 use super::types::read_whole_via;
 use super::{OkNotFound, UioResult};
+use crate::counter::hardware_counter::HardwareCounterCell;
 
 /// Target size of one logical block of the indexed array, in bytes.
 ///
@@ -106,9 +107,10 @@ impl<T: bytemuck::Pod> SortedBlockIndex<T> {
         fs: &Fs,
         path: &Path,
         expected_len: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Option<Self>> {
-        let parsed =
-            read_whole_via(fs, path, |bytes| Ok(Self::parse(&bytes, path))).ok_not_found()?;
+        let parsed = read_whole_via(fs, path, |bytes| Ok(Self::parse(&bytes, path)), hw_counter)
+            .ok_not_found()?;
         let Some(index) = parsed.flatten() else {
             return Ok(None);
         };
@@ -235,12 +237,17 @@ mod tests {
 
         // A stale index (wrong array length) must be rejected.
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, data.len() + 1)
-                .unwrap()
-                .is_none()
+            SortedBlockIndex::<Pair>::open(
+                &MmapFs,
+                &path,
+                data.len() + 1,
+                &HardwareCounterCell::new()
+            )
+            .unwrap()
+            .is_none()
         );
 
-        SortedBlockIndex::open(&MmapFs, &path, data.len())
+        SortedBlockIndex::open(&MmapFs, &path, data.len(), &HardwareCounterCell::new())
             .unwrap()
             .unwrap()
     }
@@ -291,7 +298,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("missing.bin");
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -308,7 +315,7 @@ mod tests {
         // Too short
         fs_err::write(&path, &valid[..HEADER_SIZE - 1]).unwrap();
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -318,7 +325,7 @@ mod tests {
         corrupted[0] ^= 0xff;
         fs_err::write(&path, &corrupted).unwrap();
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -328,14 +335,14 @@ mod tests {
         corrupted[8..12].copy_from_slice(&(FORMAT_VERSION + 1).to_le_bytes());
         fs_err::write(&path, &corrupted).unwrap();
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
 
         // Element size of a different type
         assert!(
-            SortedBlockIndex::<u64>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<u64>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -343,7 +350,7 @@ mod tests {
         // Truncated firsts section
         fs_err::write(&path, &valid[..valid.len() - 1]).unwrap();
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -351,7 +358,7 @@ mod tests {
         // Intact file still opens
         fs_err::write(&path, &valid).unwrap();
         assert!(
-            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100)
+            SortedBlockIndex::<Pair>::open(&MmapFs, &path, 100, &HardwareCounterCell::new())
                 .unwrap()
                 .is_some()
         );

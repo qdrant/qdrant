@@ -168,6 +168,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             new_segments,
             self.load_profile.as_ref(),
             is_stopped,
+            hw_counter,
         )?;
 
         // The swap below and the config re-derivation that follows it are one indivisible step:

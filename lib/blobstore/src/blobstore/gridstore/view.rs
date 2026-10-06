@@ -40,12 +40,16 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     ///
     /// Exact for the writable tracker; the stored header count as of the last
     /// reload for the read-only one — see [`TrackerRead::max_point_offset`].
-    pub fn max_point_offset(&self) -> Result<PointOffset> {
-        self.tracker.max_point_offset()
+    pub fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
+        self.tracker.max_point_offset(hw_counter)
     }
 
-    fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        self.tracker.get::<Random>(point_offset)
+    fn get_pointer(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
+        self.tracker.get::<Random>(point_offset, hw_counter)
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).
@@ -57,8 +61,10 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Cow<'_, [u8]>> {
-        self.pages.read_from_pages::<P>(pointer, self.config)
+        self.pages
+            .read_from_pages::<P>(pointer, self.config, hw_counter)
     }
 }
 
@@ -89,11 +95,11 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(pointer) = self.get_pointer(point_offset)? else {
+        let Some(pointer) = self.get_pointer(point_offset, hw_counter)? else {
             return Ok(None);
         };
 
-        let raw = self.read_from_pages::<P>(pointer)?;
+        let raw = self.read_from_pages::<P>(pointer, hw_counter)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         Ok(Some(self.decompress(raw)?))
@@ -104,6 +110,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -117,6 +124,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
                 callback(user_data, point_offset, value)
             },
             hw_counter_cell,
+            hw_counter,
         )
     }
 
@@ -127,6 +135,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -138,7 +147,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
 
         let mut pointers = Vec::new();
 
-        for result in self.tracker.iter(point_offsets)? {
+        for result in self.tracker.iter(point_offsets, hw_counter)? {
             let ((user_data, point_offset), pointer) = result?;
 
             let PointerItem::Valid(pointer) = pointer else {
@@ -161,6 +170,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
                 let decompressed = self.decompress(bytes)?;
                 callback(user_data, point_offset, Some(&decompressed))
             },
+            hw_counter,
         )
     }
 }

@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::universal_io::{MmapFs, UniversalWriteFs};
 use tempfile::TempDir;
@@ -34,7 +35,8 @@ fn packed_pointers(
 
 fn tracker_with(pointers: &[Option<ValuePointer>]) -> (TempDir, CompactedTracker) {
     let dir = TempDir::new().unwrap();
-    let mut tracker = CompactedTracker::new(&MmapFs, dir.path()).unwrap();
+    let mut tracker =
+        CompactedTracker::new(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     for (point_offset, pointer) in pointers.iter().enumerate() {
         if let Some(pointer) = pointer {
             tracker.set(point_offset as PointOffset, *pointer);
@@ -46,28 +48,55 @@ fn tracker_with(pointers: &[Option<ValuePointer>]) -> (TempDir, CompactedTracker
 fn assert_reads(tracker: &CompactedTracker, expected: &[Option<ValuePointer>]) {
     let count = expected.len() as PointOffset;
     assert_eq!(tracker.pointer_count(), count);
-    assert_eq!(tracker.max_point_offset().unwrap(), count);
+    assert_eq!(
+        tracker
+            .max_point_offset(&HardwareCounterCell::new())
+            .unwrap(),
+        count
+    );
 
     for (point_offset, pointer) in expected.iter().enumerate() {
         assert_eq!(
-            tracker.get::<Random>(point_offset as PointOffset).unwrap(),
+            tracker
+                .get::<Random>(point_offset as PointOffset, &HardwareCounterCell::new())
+                .unwrap(),
             *pointer,
         );
     }
-    assert_eq!(tracker.get::<Random>(count).unwrap(), None);
-    assert_eq!(tracker.get::<Random>(count + 100).unwrap(), None);
+    assert_eq!(
+        tracker
+            .get::<Random>(count, &HardwareCounterCell::new())
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        tracker
+            .get::<Random>(count + 100, &HardwareCounterCell::new())
+            .unwrap(),
+        None
+    );
 
     // Range crossing the end is padded, range past the end is all None
     let mut padded = expected.to_vec();
     padded.resize(expected.len() + 2, None);
-    assert_eq!(tracker.get_range::<Random>(0..count + 2).unwrap(), padded);
     assert_eq!(
-        tracker.get_range::<Random>(count + 1..count + 3).unwrap(),
+        tracker
+            .get_range::<Random>(0..count + 2, &HardwareCounterCell::new())
+            .unwrap(),
+        padded
+    );
+    assert_eq!(
+        tracker
+            .get_range::<Random>(count + 1..count + 3, &HardwareCounterCell::new())
+            .unwrap(),
         [None, None]
     );
 
     let items = tracker
-        .iter((0..count + 1).map(|point_offset| (point_offset, point_offset)))
+        .iter(
+            (0..count + 1).map(|point_offset| (point_offset, point_offset)),
+            &HardwareCounterCell::new(),
+        )
         .unwrap()
         .map(|item| item.unwrap())
         .collect::<Vec<_>>();
@@ -83,8 +112,9 @@ fn assert_reads(tracker: &CompactedTracker, expected: &[Option<ValuePointer>]) {
 
 /// Flush, reopen, and check that the reopened tracker serves `expected`.
 fn assert_roundtrip(tracker: &CompactedTracker, dir: &TempDir, expected: &[Option<ValuePointer>]) {
-    tracker.flusher(PointOffset::MAX)().unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, expected);
     assert_eq!(reopened.files(), vec![dir.path().join(FILE_NAME)]);
 }
@@ -95,14 +125,15 @@ fn test_new_tracker_is_empty_and_reopens() {
     assert!(dir.path().join(FILE_NAME).exists());
     assert_reads(&tracker, &[]);
 
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &[]);
 }
 
 #[test]
 fn test_open_missing_tracker_fails() {
     let dir = TempDir::new().unwrap();
-    let err = CompactedTracker::open(&MmapFs, dir.path()).unwrap_err();
+    let err = CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap_err();
     assert!(err.to_string().contains("does not exist"), "{err}");
 }
 
@@ -153,10 +184,11 @@ fn test_set_any_order_and_overwrite() {
 fn test_unflushed_mappings_are_not_persisted() {
     let expected = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, mut tracker) = tracker_with(&expected);
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
 
     tracker.set(3, ValuePointer::new(0, 6, 4));
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &expected);
 }
 
@@ -164,17 +196,19 @@ fn test_unflushed_mappings_are_not_persisted() {
 fn test_flusher_snapshots_and_rewrites_whole_file() {
     let first = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, mut tracker) = tracker_with(&first);
-    let flusher = tracker.flusher(PointOffset::MAX);
+    let flusher = tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new());
 
     // Set after the flusher was created, not part of its snapshot
     tracker.set(3, ValuePointer::new(0, 6, 4));
     flusher().unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &first);
 
     // The next flush rewrites the file with everything
-    tracker.flusher(PointOffset::MAX)().unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     let mut second = first;
     second.push(Some(ValuePointer::new(0, 6, 4)));
     assert_reads(&reopened, &second);
@@ -187,25 +221,26 @@ fn test_clean_tracker_flush_is_noop() {
     assert!(!tracker.is_dirty());
 
     // A clean flush does not touch the disk: a removed file stays removed
-    MmapFs.remove(&path).unwrap();
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    MmapFs.remove(&path, &HardwareCounterCell::new()).unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
     assert!(!path.exists());
 
     tracker.set(0, ValuePointer::new(0, 0, 1));
     assert!(tracker.is_dirty());
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
     assert!(path.exists());
     assert!(!tracker.is_dirty());
 
     // Clean again after the flush
-    MmapFs.remove(&path).unwrap();
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    MmapFs.remove(&path, &HardwareCounterCell::new()).unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
     assert!(!path.exists());
 
     // Opening a file makes a clean tracker as well
     tracker.set(1, ValuePointer::new(0, 1, 1));
-    tracker.flusher(PointOffset::MAX)().unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert!(!reopened.is_dirty());
 }
 
@@ -213,14 +248,16 @@ fn test_clean_tracker_flush_is_noop() {
 fn test_failed_flush_leaves_tracker_dirty() {
     let (dir, mut tracker) = tracker_with(&[]);
     tracker.set(0, ValuePointer::new(0, 0, 1));
-    let flusher = tracker.flusher(PointOffset::MAX);
+    let flusher = tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new());
     assert!(
         !tracker.is_dirty(),
         "taking the copy marks the tracker clean"
     );
 
     // Without the directory the file cannot be written
-    MmapFs.remove(&dir.path().join(FILE_NAME)).unwrap();
+    MmapFs
+        .remove(&dir.path().join(FILE_NAME), &HardwareCounterCell::new())
+        .unwrap();
     MmapFs.remove_dir(dir.path()).unwrap();
     assert!(flusher().is_err());
     assert!(
@@ -229,9 +266,10 @@ fn test_failed_flush_leaves_tracker_dirty() {
     );
 
     MmapFs.create_dir(dir.path()).unwrap();
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
     assert!(!tracker.is_dirty());
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &[Some(ValuePointer::new(0, 0, 1))]);
 }
 
@@ -239,23 +277,27 @@ fn test_failed_flush_leaves_tracker_dirty() {
 fn test_read_only_tracker_flush_fails_only_when_dirty() {
     let expected = packed_pointers(&[1, 2, 3], &[], 1024);
     let (dir, tracker) = tracker_with(&expected);
-    tracker.flusher(PointOffset::MAX)().unwrap();
+    tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
 
-    let mut read_only = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
-    read_only.flusher(PointOffset::MAX)().unwrap();
+    let mut read_only =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
+    read_only.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
 
     read_only.set(3, ValuePointer::new(0, 6, 4));
-    let err = read_only.flusher(PointOffset::MAX)().unwrap_err();
+    let err = read_only.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap_err();
     assert!(err.to_string().contains("read-only"), "{err}");
     assert!(read_only.is_dirty(), "the mapping is still unpersisted");
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &expected);
 
     // Opened writable, the same mapping persists
-    let mut writable = CompactedTracker::open_writable(&MmapFs, dir.path()).unwrap();
+    let mut writable =
+        CompactedTracker::open_writable(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     writable.set(3, ValuePointer::new(0, 6, 4));
-    writable.flusher(PointOffset::MAX)().unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    writable.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &packed_pointers(&[1, 2, 3, 4], &[], 1024));
 }
 
@@ -301,9 +343,14 @@ fn test_invalid_files_are_rejected() {
     ];
     for (name, bytes) in cases {
         MmapFs
-            .atomic_save(&dir.path().join(FILE_NAME), &bytes)
+            .atomic_save(
+                &dir.path().join(FILE_NAME),
+                &bytes,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
-        let err = CompactedTracker::open(&MmapFs, dir.path()).unwrap_err();
+        let err =
+            CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap_err();
         assert!(
             err.to_string().contains("Invalid compacted tracker"),
             "{name}: {err}"
@@ -312,9 +359,14 @@ fn test_invalid_files_are_rejected() {
 
     // And the untouched encoding still opens
     MmapFs
-        .atomic_save(&dir.path().join(FILE_NAME), &valid)
+        .atomic_save(
+            &dir.path().join(FILE_NAME),
+            &valid,
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_reads(&reopened, &expected);
 }
 
@@ -355,22 +407,46 @@ fn test_convert_real_tracker() {
 
     let start = Instant::now();
     let (source_file, tracker) = if source_dir.join("log_tracker.dat").exists() {
-        let source =
-            AppendOnlyTracker::<MmapFile>::open_read_only(&MmapFs, &source_dir, Populate::No)
-                .unwrap();
-        let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
-        tracker.flusher(PointOffset::MAX)().unwrap();
+        let source = AppendOnlyTracker::<MmapFile>::open_read_only(
+            &MmapFs,
+            &source_dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        let tracker = CompactedTracker::from_tracker(
+            &MmapFs,
+            dir.path(),
+            &source,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
         (source.files().remove(0), tracker)
     } else {
-        let source = Tracker::<MmapFile>::open(&MmapFs, &source_dir, Populate::No, false).unwrap();
-        let tracker = CompactedTracker::from_tracker(&MmapFs, dir.path(), &source).unwrap();
-        tracker.flusher(PointOffset::MAX)().unwrap();
+        let source = Tracker::<MmapFile>::open(
+            &MmapFs,
+            &source_dir,
+            Populate::No,
+            false,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        let tracker = CompactedTracker::from_tracker(
+            &MmapFs,
+            dir.path(),
+            &source,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        tracker.flusher(PointOffset::MAX, &HardwareCounterCell::new())().unwrap();
         (source.files().remove(0), tracker)
     };
     let convert_time = start.elapsed();
 
     let start = Instant::now();
-    let reopened = CompactedTracker::open(&MmapFs, dir.path()).unwrap();
+    let reopened =
+        CompactedTracker::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     let open_time = start.elapsed();
     assert_eq!(reopened.pointers, tracker.pointers);
 

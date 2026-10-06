@@ -5,6 +5,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use super::super::read_err;
 use super::{BucketOffset, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, UniversalHashMap};
 use crate::aligned_buf::AlignedBuf;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Random;
 use crate::persisted_hashmap::uio::parse_bucket_offset;
 use crate::universal_io::{ReadPipeline, UioResult, UniversalIoError, UniversalRead, UserData};
@@ -86,6 +87,7 @@ where
         entry_kind: MaybeIncompleteEntryKind,
         requests: I,
         mut f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         U: UserData,
@@ -93,7 +95,7 @@ where
         F: FnMut(U, Option<MaybeIncompleteEntry<'_, K, V>>) -> Result<(), E>,
         E: From<UniversalIoError>,
     {
-        let mut sparse = PipelineDriver::new(self, entry_kind)?;
+        let mut sparse = PipelineDriver::new(self, entry_kind, hw_counter)?;
         let mut pipeline = S::ReadPipeline::new()?;
         let mut requests = requests.into_iter();
         loop {
@@ -107,9 +109,10 @@ where
                     &self.storage.inner,
                     range,
                     align_of::<u128>(),
+                    hw_counter,
                 )?;
             }
-            let Some((entry, data)) = pipeline.wait()? else {
+            let Some((entry, data)) = pipeline.wait(hw_counter)? else {
                 break;
             };
             sparse.process(entry, &data, &mut f)?;
@@ -130,13 +133,14 @@ where
     fn new(
         map: &'map UniversalHashMap<K, V, S>,
         entry_kind: MaybeIncompleteEntryKind,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
         Ok(Self {
             map,
             entry_kind,
             queue: Vec::new(),
             entry_read_size_est: entry_kind.estimated_size::<K, V>() as u64,
-            file_len: map.storage.len()?,
+            file_len: map.storage.len(hw_counter)?,
         })
     }
 

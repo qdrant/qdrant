@@ -5,6 +5,7 @@ use std::path::Path;
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
@@ -197,7 +198,14 @@ fn bench_uio_batch<Fs: UniversalReadFs>(
         populate: Populate::Blocking,
         advice: AdviceSetting::Global,
     };
-    let storage = fs.open(path, options, Default::default()).unwrap();
+    let storage = fs
+        .open(
+            path,
+            options,
+            Default::default(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
     let len = reader.decompressed_len();
     let mut rng = SmallRng::seed_from_u64(42);
@@ -207,7 +215,10 @@ fn bench_uio_batch<Fs: UniversalReadFs>(
             || random_batch(&mut rng, len),
             |indices| {
                 let out = &mut out[..indices.len()];
-                for result in reader.read_pairs_iter(&storage, 0, &indices).unwrap() {
+                for result in reader
+                    .read_pairs_iter(&storage, 0, &indices, &HardwareCounterCell::new())
+                    .unwrap()
+                {
                     let (position, pair) = result.unwrap();
                     out[position] = pair;
                 }

@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
 use super::placeholder::PlaceholderRegistry;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
@@ -67,6 +68,7 @@ impl LocalState {
                 advice,
             },
             (),
+            &HardwareCounterCell::disposable(),
         )?;
 
         Ok(LocalState {
@@ -79,7 +81,7 @@ impl LocalState {
 
     pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> UioResult<()> {
         let mmap = self.mmap.get_mut();
-        let current_len = mmap.len::<u8>()?;
+        let current_len = mmap.len::<u8>(&HardwareCounterCell::disposable())?;
         if current_len == new_len {
             return Ok(());
         }
@@ -125,7 +127,7 @@ impl LocalState {
     pub(super) fn mark_fully_fetched(&self) {
         let len = self
             .mmap()
-            .len::<u8>()
+            .len::<u8>(&HardwareCounterCell::disposable())
             .expect("MmapFile::len is infallible");
         let blocks = u32::try_from(len.div_ceil(BLOCK_SIZE as u64))
             .expect("file too large for block cache (>70 TiB)");
@@ -186,7 +188,7 @@ impl LocalState {
         let byte_offset = (blocks_range.start as usize * BLOCK_SIZE) as u64;
 
         let max_len = mmap
-            .len::<u8>()
+            .len::<u8>(&HardwareCounterCell::disposable())
             .expect("MmapFile::len is infallible")
             .saturating_sub(byte_offset);
         assert_eq!(
@@ -201,7 +203,7 @@ impl LocalState {
 
         // If every block is now populated, turn `fully_populated` on.
         let total_blocks = mmap
-            .len::<u8>()
+            .len::<u8>(&HardwareCounterCell::disposable())
             .expect("MmapFile::len is infallible")
             .div_ceil(BLOCK_SIZE as u64);
         if fetched.len() == total_blocks {

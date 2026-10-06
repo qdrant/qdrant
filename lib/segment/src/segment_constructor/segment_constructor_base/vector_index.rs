@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use rand::Rng;
@@ -47,6 +48,7 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
 pub(crate) fn open_vector_index(
     vector_config: &VectorDataConfig,
     open_args: VectorIndexOpenArgs,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorIndexEnum> {
     let VectorIndexOpenArgs {
         path,
@@ -62,14 +64,17 @@ pub(crate) fn open_vector_index(
             quantized_vectors,
             payload_index,
         )),
-        Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::open(HnswIndexOpenArgs {
-            path,
-            id_tracker,
-            vector_storage,
-            quantized_vectors,
-            payload_index,
-            hnsw_config: *hnsw_config,
-        })?),
+        Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::open(
+            HnswIndexOpenArgs {
+                path,
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
+                hnsw_config: *hnsw_config,
+            },
+            hw_counter,
+        )?),
     })
 }
 
@@ -77,6 +82,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
     vector_config: &VectorDataConfig,
     open_args: VectorIndexOpenArgs,
     build_args: VectorIndexBuildArgs<R>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorIndexEnum> {
     let VectorIndexOpenArgs {
         path,
@@ -102,6 +108,7 @@ pub(crate) fn build_vector_index<R: Rng + ?Sized>(
                 hnsw_config: *hnsw_config,
             },
             build_args,
+            hw_counter,
         )?),
     })
 }

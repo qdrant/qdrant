@@ -34,8 +34,8 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
-        MapIndex::flusher(self)
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        MapIndex::flusher(self, hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -48,7 +48,7 @@ impl PayloadFieldIndex for MapIndex<str> {
 }
 
 impl PayloadFieldIndexRead for MapIndex<str> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -73,8 +73,9 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -91,7 +92,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<str, S>
 where
     Vec<<str as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -116,8 +117,9 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -147,14 +149,18 @@ where
 fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
     substring: &str,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<EcoString>> {
     let mut keys = Vec::new();
-    index.for_each_value(|key| {
-        if key.contains(substring) {
-            keys.push(EcoString::from(key));
-        }
-        Ok(())
-    })?;
+    index.for_each_value(
+        |key| {
+            if key.contains(substring) {
+                keys.push(EcoString::from(key));
+            }
+            Ok(())
+        },
+        hw_counter,
+    )?;
     Ok(keys)
 }
 
@@ -203,7 +209,7 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
                 // No key dictionary on this index instance: enumerate the map
                 // index keys rather than leave the condition to the per-point
                 // checker.
-                None => scan_keys_for_substring(index, substring)?,
+                None => scan_keys_for_substring(index, substring, hw_counter)?,
             };
             Some(index.iter_for_values(keys.into_iter(), hw_counter)?)
         }
@@ -329,26 +335,30 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixR
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     // Prefix blocks are disjoint from each other and from the exact-value
     // blocks (see `heavy_prefix_blocks`), so emission order doesn't matter;
     // blocks come largest-first for determinism.
     for_each_prefix_payload_block(index, threshold, &key, f)?;
 
-    index.for_each_value(|value| {
-        let count = index
-            // `for_each_payload_block` is only used while building HNSW, which
-            // intentionally bypasses hardware measurement.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
-        if count > threshold {
-            f(PayloadBlockCondition {
-                condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
-                cardinality: count,
-            })?;
-        }
-        Ok(())
-    })
+    index.for_each_value(
+        |value| {
+            let count = index
+                // `for_each_payload_block` is only used while building HNSW, which
+                // intentionally bypasses hardware measurement.
+                .get_count_for_value(value, &HardwareCounterCell::disposable())
+                .unwrap_or(0);
+            if count > threshold {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
+                    cardinality: count,
+                })?;
+            }
+            Ok(())
+        },
+        hw_counter,
+    )
 }
 
 /// Emit a payload block per "heavy" prefix, so HNSW builds additional links

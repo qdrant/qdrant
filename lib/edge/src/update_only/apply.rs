@@ -165,7 +165,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         // 1-3. Locate, read, materialize — the decision stage shared with
         // `preview_batch`, so a preview cannot drift from the real apply.
         let instant = std::time::Instant::now();
-        let resolved = resolve_batch(&segments, plan, &self.pool)?;
+        let resolved = resolve_batch(&segments, plan, &self.pool, &hw_counter)?;
         log::trace!(target: LOG_TARGET, "resolve_batch took {:?}", instant.elapsed());
 
         let mut outcome = UpdateBatchOutcome::default();
@@ -308,14 +308,14 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
-                writer.tombstone_points(&points)?;
+                writer.tombstone_points(&points, &hw_counter)?;
             }
             written.push(uuid);
         }
 
         let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
         for (uuid, points) in to_tombstone {
-            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
+            get_writer(&mut self.writers, uuid)?.tombstone_points(&points, &hw_counter)?;
             written.push(uuid);
         }
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());
@@ -363,7 +363,9 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     segments: &LookupSegmentHolder<Fs>,
     plan: &UpdateBatchPlan,
     pool: &ThreadPool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
+    let hw_acc = hw_counter.new_accumulator();
     let ids: Vec<PointIdType> = plan.point_ids().collect();
 
     let per_segment: Vec<Vec<(PointIdType, PointLocation)>> = pool.install(|| {
@@ -372,16 +374,21 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
             .collect::<Vec<_>>()
             .into_par_iter()
             .map(|(uuid, segment)| {
+                let hw_counter = &hw_acc.get_counter_cell();
                 let segment = segment.read();
                 let appendable = segment.appendable;
 
                 let mut found_ids = Vec::new();
                 let mut internal_ids = Vec::new();
-                segment.locate_points(ids.iter().copied(), |id, internal_id| {
-                    found_ids.push(id);
-                    internal_ids.push(internal_id);
-                })?;
-                let versions = segment.point_versions(&internal_ids)?;
+                segment.locate_points(
+                    ids.iter().copied(),
+                    |id, internal_id| {
+                        found_ids.push(id);
+                        internal_ids.push(internal_id);
+                    },
+                    hw_counter,
+                )?;
+                let versions = segment.point_versions(&internal_ids, hw_counter)?;
 
                 let located = found_ids
                     .into_iter()

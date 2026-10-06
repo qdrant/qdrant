@@ -41,21 +41,30 @@ pub struct MultivectorOffset {
 }
 
 pub trait MultivectorOffsets {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset;
 }
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset;
 
     /// Invoke `callback(index, offset)` for each `ids[index]`, in order.
     fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
         callback: impl FnMut(usize, MultivectorOffset),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn len(&self) -> usize;
+    fn len(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     fn upsert_offset(
         &mut self,
@@ -230,16 +239,20 @@ where
         let mut sub_vector_offsets = Vec::with_capacity(point_ids.len());
 
         self.offsets
-            .for_each_offset(point_ids, |point_index, offset| {
-                for _ in 0..offset.count {
-                    owners.push(SubVectorOwner {
-                        point_index: point_index as u32,
-                        multi_vector_len: offset.count,
-                    });
-                }
+            .for_each_offset(
+                point_ids,
+                |point_index, offset| {
+                    for _ in 0..offset.count {
+                        owners.push(SubVectorOwner {
+                            point_index: point_index as u32,
+                            multi_vector_len: offset.count,
+                        });
+                    }
 
-                sub_vector_offsets.extend(offset.start..offset.start + offset.count);
-            })
+                    sub_vector_offsets.extend(offset.start..offset.start + offset.count);
+                },
+                hw_counter,
+            )
             .expect("multi-vector offsets read");
 
         hw_counter
@@ -287,6 +300,7 @@ where
                     callback(point_index as _, &multi_vector);
                 }
             },
+            hw_counter,
         );
 
         debug_assert!(partial_multi_vectors.is_empty());
@@ -331,14 +345,15 @@ where
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let offset = self.offsets.get_offset(point_id);
+        let offset = self.offsets.get_offset(point_id, hw_counter);
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
 
-        self.quantized_storage
-            .for_each_batch(&offsets, |_, vector| {
+        self.quantized_storage.for_each_batch(
+            &offsets,
+            |_, vector| {
                 for (query_idx, query) in query.iter().enumerate() {
                     let sim = self.quantized_storage.score(query, &vector, hw_counter);
 
@@ -346,7 +361,9 @@ where
                         max_sim[query_idx] = sim;
                     }
                 }
-            });
+            },
+            hw_counter,
+        );
 
         max_sim.into_iter().sum()
     }
@@ -358,8 +375,8 @@ where
         vector_b_index: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let offset_a = self.offsets.get_offset(vector_a_index);
-        let offset_b = self.offsets.get_offset(vector_b_index);
+        let offset_a = self.offsets.get_offset(vector_a_index, hw_counter);
+        let offset_b = self.offsets.get_offset(vector_b_index, hw_counter);
         let mut sum = 0.0;
         for a in 0..offset_a.count {
             let mut max_sim = ScoreType::NEG_INFINITY;
@@ -384,12 +401,16 @@ where
         &self.quantized_storage
     }
 
-    pub fn inner_vector_offset(&self, id: PointOffsetType) -> MultivectorOffset {
-        self.offsets.get_offset(id)
+    pub fn inner_vector_offset(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
+        self.offsets.get_offset(id, hw_counter)
     }
 
-    pub fn vectors_count(&self) -> usize {
-        self.offsets.len()
+    pub fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.offsets.len(hw_counter)
     }
 }
 
@@ -421,7 +442,12 @@ where
             .collect()
     }
 
-    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, Cow<'_, [u8]>)) {
+    fn for_each_batch(
+        &self,
+        _: &[PointOffsetType],
+        _: impl FnMut(usize, Cow<'_, [u8]>),
+        _hw_counter: &HardwareCounterCell,
+    ) {
         unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 
@@ -458,12 +484,16 @@ where
     fn encode_internal_vector(
         &self,
         id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
-        let offset = self.offsets.get_offset(id);
+        let offset = self.offsets.get_offset(id, hw_counter);
         let mut query = Vec::with_capacity(offset.count as usize);
         for i in 0..offset.count {
             let internal_id = offset.start + i;
-            query.push(self.quantized_storage.encode_internal_vector(internal_id)?)
+            query.push(
+                self.quantized_storage
+                    .encode_internal_vector(internal_id, hw_counter)?,
+            )
         }
         Some(query)
     }
@@ -479,9 +509,10 @@ where
             flattened_vectors: vector,
         };
 
-        let inner_vectors_count = self.quantized_storage.vectors_count() as PointOffsetType;
-        let offset = if (id as usize) < self.offsets.len() {
-            let old_offset = self.offsets.get_offset(id);
+        let inner_vectors_count =
+            self.quantized_storage.vectors_count(hw_counter) as PointOffsetType;
+        let offset = if (id as usize) < self.offsets.len(hw_counter) {
+            let old_offset = self.offsets.get_offset(id, hw_counter);
             if multi_vector.vectors_count() <= old_offset.count as usize {
                 // If the new vector has less or equal number of inner vectors, we can reuse the old offset
                 MultivectorOffset {
@@ -513,8 +544,8 @@ where
         Ok(())
     }
 
-    fn vectors_count(&self) -> usize {
-        self.offsets.len()
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.offsets.len(hw_counter)
     }
 
     fn flusher(&self) -> Flusher {
@@ -568,7 +599,11 @@ where
     QuantizedStorage: EncodedVectors,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self.offsets.get_offset(idx)
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
+        self.offsets.get_offset(idx, hw_counter)
     }
 }

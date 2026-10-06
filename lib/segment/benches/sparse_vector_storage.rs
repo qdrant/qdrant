@@ -39,8 +39,8 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     group.bench_function("read-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec =
-                    volatile_sparse_vector_storage.get_vector_opt::<Random>(idx as PointOffsetType);
+                let vec = volatile_sparse_vector_storage
+                    .get_vector_opt::<Random>(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })
@@ -50,7 +50,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
 
     let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut mmap_sparse_vector_storage =
-        MmapSparseVectorStorage::open_or_create(storage_dir.path()).unwrap();
+        MmapSparseVectorStorage::open_or_create(storage_dir.path(), &hw_counter).unwrap();
 
     group.bench_function("insert-mmap-compression", |b| {
         b.iter(|| {
@@ -66,8 +66,8 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     group.bench_function("read-mmap-compression", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec =
-                    mmap_sparse_vector_storage.get_vector_opt::<Random>(idx as PointOffsetType);
+                let vec = mmap_sparse_vector_storage
+                    .get_vector_opt::<Random>(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })

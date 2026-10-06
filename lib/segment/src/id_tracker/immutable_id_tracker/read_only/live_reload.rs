@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
@@ -13,8 +14,14 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        fs.reschedule_open(&deleted_path(&self.path), Some(Self::open_options()), None);
+        fs.reschedule_open(
+            &deleted_path(&self.path),
+            Some(Self::open_options()),
+            None,
+            hw_counter,
+        );
         Ok(Vec::new())
     }
 
@@ -31,12 +38,14 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<LiveReloadResult> {
         let Some(fresh) = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         else {
@@ -49,7 +58,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         // `mappings` already reflects every previously reported deletion, so
         // it is the diff baseline: a set bit not yet dropped there is new.
         let newly_deleted: Vec<PointOffsetType> = {
-            let deleted = fresh.read_all()?;
+            let deleted = fresh.read_all(hw_counter)?;
             deleted
                 .iter_ones()
                 .map(|internal_id| internal_id as PointOffsetType)

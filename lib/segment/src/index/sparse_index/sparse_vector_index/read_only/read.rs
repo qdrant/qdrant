@@ -35,7 +35,7 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
         self.with_view(|view| view.indexed_vector_count())
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.with_view(|view| view.size_of_searchable_vectors_in_bytes())
     }
 

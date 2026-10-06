@@ -62,6 +62,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
                 callback(user_data, payload)
             },
             hw_counter.payload_io_read_counter(),
+            hw_counter,
         )
     }
 
@@ -75,6 +76,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
             point_offsets,
             |user_data, _, bytes| callback(user_data, bytes),
             hw_counter.payload_io_read_counter(),
+            hw_counter,
         )
     }
 
@@ -82,7 +84,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        let max_id = self.storage.max_point_offset()?;
+        let max_id = self.storage.max_point_offset(hw_counter)?;
         self.storage.iter(
             max_id,
             |point_id, payload| callback(point_id, &payload),
@@ -90,7 +92,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         )
     }
 
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+    fn get_storage_size_bytes(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.storage.get_storage_size_bytes())
     }
 

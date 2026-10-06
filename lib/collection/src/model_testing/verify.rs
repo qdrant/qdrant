@@ -177,7 +177,10 @@ pub(super) fn assert_clocks_match(pre: &ClockTicks, post: &ClockTicks, ctx: &str
 }
 
 /// Returns `(segment_count, total_optimized_points)` summed across every local shard.
-pub(super) async fn run_summary(collection: &Collection) -> (usize, usize) {
+pub(super) async fn run_summary(
+    collection: &Collection,
+    hw_acc: &HwMeasurementAcc,
+) -> (usize, usize) {
     // Level4 is needed for the per-segment telemetry to be populated; lower levels return
     // an empty `segments` Vec (see `local_shard/telemetry.rs:24`).
     let detail = TelemetryDetail {
@@ -186,7 +189,7 @@ pub(super) async fn run_summary(collection: &Collection) -> (usize, usize) {
         per_collection: false,
     };
     let telemetry = collection
-        .get_telemetry_data(detail, Duration::from_secs(5))
+        .get_telemetry_data(detail, Duration::from_secs(5), hw_acc)
         .await
         .expect("telemetry failed");
     let mut segments = 0;
@@ -240,7 +243,7 @@ pub(super) async fn wait_for_pending_updates(collection: &Collection) {
     }
 }
 
-pub(super) async fn wait_for_optimizer(collection: &Collection) {
+pub(super) async fn wait_for_optimizer(collection: &Collection, hw_acc: &HwMeasurementAcc) {
     let detail = TelemetryDetail {
         level: DetailsLevel::Level3,
         histograms: false,
@@ -250,7 +253,7 @@ pub(super) async fn wait_for_optimizer(collection: &Collection) {
     loop {
         collection.trigger_optimizers().await;
         let telemetry = collection
-            .get_telemetry_data(detail, Duration::from_secs(5))
+            .get_telemetry_data(detail, Duration::from_secs(5), hw_acc)
             .await
             .expect("telemetry failed");
         let optimized: usize = telemetry

@@ -94,14 +94,18 @@ mod tests {
 
         // `test_config` sets no `scoring`, so nothing records a length.
         {
-            let mut index =
-                FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
-                    .unwrap()
-                    .unwrap();
+            let mut index = FullTextIndex::new_gridstore(
+                dir.path().to_path_buf(),
+                config.clone(),
+                true,
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap();
             index
                 .add_point(0, &[&serde_json::json!("the quick brown fox")], &hw_counter)
                 .unwrap();
-            index.flusher()().unwrap();
+            index.flusher(&hw_counter)().unwrap();
         }
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -112,6 +116,7 @@ mod tests {
             dir.path().to_path_buf(),
             config.clone(),
             false,
+            &hw_counter,
         )
         .unwrap();
         assert!(
@@ -125,6 +130,7 @@ mod tests {
             dir.path().to_path_buf(),
             config,
             true,
+            &hw_counter,
         )
         .unwrap();
         assert!(
@@ -158,11 +164,11 @@ mod tests {
                 &deleted,
                 scoring,
             );
-            builder.init().unwrap();
+            builder.init(&hw_counter).unwrap();
             builder
                 .add_many(0, vec!["the quick brown fox".to_string()], &hw_counter)
                 .unwrap();
-            drop(builder.finalize().unwrap());
+            drop(builder.finalize(&hw_counter).unwrap());
         };
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -174,6 +180,7 @@ mod tests {
                 config(scoring),
                 is_on_disk,
                 &deleted,
+                &hw_counter,
             )
             .unwrap()
         };
@@ -209,16 +216,20 @@ mod tests {
         ];
 
         {
-            let mut index =
-                FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
-                    .unwrap()
-                    .unwrap();
+            let mut index = FullTextIndex::new_gridstore(
+                dir.path().to_path_buf(),
+                config.clone(),
+                true,
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap();
             for (idx, payload) in payloads.iter().enumerate() {
                 index
                     .add_point(idx as u32, &[payload], &hw_counter)
                     .unwrap();
             }
-            index.flusher()().unwrap();
+            index.flusher(&hw_counter)().unwrap();
         }
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, named via the
@@ -227,9 +238,14 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                config,
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyFullTextIndex::Appendable(_)));
@@ -237,7 +253,10 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every document was indexed (3 points), and `brown` matches the two
         // that contain it while `lazy` matches only the second.
-        assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
+        assert_eq!(
+            index.count_indexed_points(&hw_counter).unwrap(),
+            payloads.len()
+        );
 
         let key = JsonPath::new("test");
         let brown = FieldCondition::new_match(key.clone(), Match::new_text("brown"));
@@ -289,34 +308,43 @@ mod tests {
             serde_json::json!("the fox and the fox again"),
         ];
 
-        let mut writer =
-            FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
-                .unwrap()
-                .unwrap();
+        let mut writer = FullTextIndex::new_gridstore(
+            dir.path().to_path_buf(),
+            config.clone(),
+            true,
+            &hw_counter,
+        )
+        .unwrap()
+        .unwrap();
         for (idx, payload) in initial.iter().enumerate() {
             writer
                 .add_point(idx as u32, &[payload], &hw_counter)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&hw_counter)().unwrap();
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=2, taken before the writer continues.
         let mut reloaded: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config.clone())
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                config.clone(),
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap();
 
         // Writer's delta: drop point 1, append points 3 and 4.
-        writer.remove_point(1).unwrap();
+        writer.remove_point(1, &hw_counter).unwrap();
         for (offset, payload) in appended.iter().enumerate() {
             writer
                 .add_point((3 + offset) as u32, &[payload], &hw_counter)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&hw_counter)().unwrap();
 
         let deleted: [PointOffsetType; 1] = [1];
         let added: [PointOffsetType; 2] = [3, 4];
@@ -330,13 +358,18 @@ mod tests {
             .unwrap();
 
         let fresh: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                config,
+                &hw_counter,
+            )
+            .unwrap()
+            .unwrap();
 
         assert_eq!(
-            reloaded.count_indexed_points().unwrap(),
-            fresh.count_indexed_points().unwrap(),
+            reloaded.count_indexed_points(&hw_counter).unwrap(),
+            fresh.count_indexed_points(&hw_counter).unwrap(),
         );
 
         let key = JsonPath::new("test");

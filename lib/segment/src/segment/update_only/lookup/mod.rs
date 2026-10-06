@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedFs, UniversalReadFsAsync};
 
 use super::{AppendableIdTrackerState, DeleteOnlyIdTrackerState, WriterIdTrackerState};
@@ -49,7 +50,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// land on a different state than the batch resolved against. The deleted
     /// mask is handed over only when already in memory — the disk-resident
     /// tracker deliberately avoids materializing it.
-    pub fn writer_state(&self) -> WriterIdTrackerState {
+    pub fn writer_state(&self, hw_counter: &HardwareCounterCell) -> WriterIdTrackerState {
         match &*self.id_tracker.borrow() {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
                 WriterIdTrackerState::Appendable(AppendableIdTrackerState {
@@ -60,7 +61,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             }
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
                 WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::Immutable(Some(
-                    id_tracker.deleted_point_bitslice().to_bitvec(),
+                    id_tracker.deleted_point_bitslice(hw_counter).to_bitvec(),
                 )))
             }
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {

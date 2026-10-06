@@ -68,8 +68,14 @@ mod tests {
 
         let mut deleted_ids = Vec::new();
         {
-            let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
+            let mut storage = open_dense_vector_storage(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                Memory::Cold,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
@@ -77,19 +83,37 @@ mod tests {
                     .unwrap();
             }
             for id in (0..POINT_COUNT).step_by(11) {
-                staging.delete_vector(id).unwrap();
+                staging
+                    .delete_vector(id, &HardwareCounterCell::new())
+                    .unwrap();
                 deleted_ids.push(id);
             }
-            merge_from_single_source(&mut storage, &staging, POINT_COUNT).unwrap();
-            storage.flusher()().unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &staging,
+                POINT_COUNT,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = ReadOnlyImmutableDenseVectorStorage::<
             ImmutableDenseVectorData<VectorElementType, MmapFile>,
-        >::open(&MmapFs, dir.path(), DIM, Distance::Dot, Populate::No)
+        >::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
-        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
 
@@ -97,7 +121,7 @@ mod tests {
         for id in 0..POINT_COUNT {
             assert_eq!(storage.is_deleted_vector(id), deleted_ids.contains(&id));
             let got: DenseVector = storage
-                .get_vector::<Random>(id)
+                .get_vector::<Random>(id, &HardwareCounterCell::new())
                 .to_owned()
                 .try_into()
                 .unwrap();
@@ -121,8 +145,14 @@ mod tests {
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
-        let mut writer =
-            open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
+        let mut writer = open_dense_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
@@ -130,22 +160,37 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            merge_from_single_source(&mut writer, &staging, POINT_COUNT).unwrap();
-            writer.flusher()().unwrap();
+            merge_from_single_source(
+                &mut writer,
+                &staging,
+                POINT_COUNT,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            writer.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let mut reader = ReadOnlyImmutableDenseVectorStorage::<
             ImmutableDenseVectorData<VectorElementType, MmapFile>,
-        >::open(&MmapFs, dir.path(), DIM, Distance::Dot, Populate::No)
+        >::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
         assert_eq!(reader.deleted_vector_count(), 0);
 
         // Delete points through the writer, then feed the delta to the reader.
         let deleted_ids: Vec<PointOffsetType> = vec![1, 7, 42, 199];
         for &id in &deleted_ids {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         reader
             .live_reload(
@@ -156,7 +201,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), POINT_COUNT as usize);
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
         for &id in &deleted_ids {
             assert!(reader.is_deleted_vector(id));
@@ -166,7 +214,7 @@ mod tests {
 
         // Vector data is immutable: an untouched point still reads back correctly.
         let got: DenseVector = reader
-            .get_vector::<Random>(2)
+            .get_vector::<Random>(2, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();

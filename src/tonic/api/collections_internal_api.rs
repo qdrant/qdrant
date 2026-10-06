@@ -8,6 +8,7 @@ use api::grpc::qdrant::{
     GetShardOptimizationsResponse, GetShardRecoveryPointRequest, GetShardRecoveryPointResponse,
     InitiateShardTransferRequest, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::{AccessRequirements, Auth, CollectionPass};
@@ -57,6 +58,7 @@ impl CollectionsInternal for CollectionsInternalService {
             get_collection_info_request,
             &auth,
             Some(shard_id),
+            &HwMeasurementAcc::disposable(),
         )
         .await
     }
@@ -77,7 +79,12 @@ impl CollectionsInternal for CollectionsInternalService {
 
         // TODO: Ensure cancel safety!
         self.toc
-            .initiate_receiving_shard(collection_name, shard_id, from_peer_id)
+            .initiate_receiving_shard(
+                collection_name,
+                shard_id,
+                from_peer_id,
+                &HwMeasurementAcc::disposable(),
+            )
             .await?;
 
         let response = CollectionOperationResponse {
@@ -248,7 +255,7 @@ impl CollectionsInternal for CollectionsInternalService {
             })?;
 
         let optimizations_response = collection_read
-            .local_shard_optimizations(shard_id, options)
+            .local_shard_optimizations(shard_id, options, &HwMeasurementAcc::disposable())
             .await
             .map_err(|err| {
                 Status::internal(format!(
@@ -291,7 +298,7 @@ impl CollectionsInternal for CollectionsInternalService {
             })?;
 
         let memory_report = collection_read
-            .local_shard_memory_report(shard_id)
+            .local_shard_memory_report(shard_id, &HwMeasurementAcc::disposable())
             .await
             .map_err(|err| {
                 Status::internal(format!(

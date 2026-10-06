@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 
 use super::local_state::LocalState;
 use super::{DiskCacheFs, DiskCacheRemote};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
 
@@ -221,11 +222,12 @@ where
         *self.etag.lock() = etag;
     }
 
-    pub(super) fn open_remote(&self) -> UioResult<R> {
+    pub(super) fn open_remote(&self, hw_counter: &HardwareCounterCell) -> UioResult<R> {
         self.remote_fs.open(
             &self.remote_path,
             REMOTE_OPEN_OPTIONS,
             self.remote_extra.clone(),
+            hw_counter,
         )
     }
 }

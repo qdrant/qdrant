@@ -10,6 +10,7 @@ use super::pipeline::DiskCachePipeline;
 use super::{
     BLOCK_SIZE, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, DiskCacheRemote,
 };
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::{Random, Sequential};
 use crate::mmap::AdviceSetting;
 use crate::universal_io::cached_fs::FileInfo;
@@ -101,6 +102,7 @@ impl Scenario {
                     advice: AdviceSetting::Global,
                 },
                 Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap()
     }
@@ -126,6 +128,7 @@ impl Scenario {
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap()
     }
@@ -144,7 +147,9 @@ impl Scenario {
         <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
         let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
-        cached_fs.cache_file_info().unwrap();
+        cached_fs
+            .cache_file_info(&HardwareCounterCell::new())
+            .unwrap();
         move |path| cached_fs.file_info(path).cloned()
     }
 
@@ -170,7 +175,7 @@ fn drain_pipeline<R: DiskCacheRemote>(
     pipeline: &mut DiskCachePipeline<'_, R, u32>,
 ) -> HashMap<u32, Vec<u8>> {
     let mut results = HashMap::new();
-    while let Some((user_data, bytes)) = pipeline.wait().unwrap() {
+    while let Some((user_data, bytes)) = pipeline.wait(&HardwareCounterCell::new()).unwrap() {
         let previous = results.insert(user_data, bytes.to_vec());
         assert!(previous.is_none(), "duplicate result for {user_data}");
     }
@@ -188,6 +193,7 @@ mod tests_mod {
     use std::sync::atomic::Ordering;
 
     use super::*;
+    use crate::counter::hardware_counter::HardwareCounterCell;
     #[cfg_predicate]
     use crate::universal_io::R;
     use crate::universal_io::UioResult;
@@ -201,14 +207,22 @@ mod tests_mod {
 
         // Read inside the first block.
         let bytes = file
-            .read::<_, u8>(ReadRange::new(10, 20), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(10, 20),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[10..30]);
 
         // Last block includes the 100-byte tail.
         let last = scn.data.len() as u64;
         let bytes = file
-            .read::<_, u8>(ReadRange::new(last - 50, 50), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(last - 50, 50),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[scn.data.len() - 50..]);
     }
@@ -223,9 +237,9 @@ mod tests_mod {
         let scn = Scenario::new(0);
         let file = scn.open::<R>(PREFILL);
 
-        let bytes = file.read_whole::<u8>().unwrap();
+        let bytes = file.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert!(bytes.is_empty());
-        assert_eq!(file.len::<u8>().unwrap(), 0);
+        assert_eq!(file.len::<u8>(&HardwareCounterCell::new()).unwrap(), 0);
     }
 
     #[test]
@@ -236,7 +250,11 @@ mod tests_mod {
         let start = (BLOCK_SIZE - 50) as u64;
         let len = (BLOCK_SIZE + 100) as u64;
         let bytes = file
-            .read::<_, u8>(ReadRange::new(start, len), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(start, len),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         let start = start as usize;
         let end = start + len as usize;
@@ -266,7 +284,9 @@ mod tests_mod {
         );
 
         // Trigger one read. This must bring up the local file.
-        let _ = file.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = file
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         assert!(
             expected_local.exists(),
@@ -284,10 +304,14 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 3 + 100);
         let file = scn.open::<R>(PREFILL);
 
-        file.populate().unwrap();
+        file.populate(&HardwareCounterCell::new()).unwrap();
 
         let bytes = file
-            .read::<_, u8>(ReadRange::new(0, scn.data.len() as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, scn.data.len() as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
     }
@@ -298,7 +322,11 @@ mod tests_mod {
         let file = scn.open::<R>(PREFILL);
 
         let err = file
-            .read::<_, u8>(ReadRange::new(1000, 100), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(1000, 100),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap_err();
         assert_matches!(
             err,
@@ -317,7 +345,11 @@ mod tests_mod {
         let first = scn.open::<R>(PREFILL);
         let read_all = |cache: &DiskCache<R>| {
             cache
-                .read::<_, u8>(ReadRange::new(0, scn.data.len() as u64), Sequential)
+                .read::<_, u8>(
+                    ReadRange::new(0, scn.data.len() as u64),
+                    Sequential,
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap()
                 .to_vec()
         };
@@ -338,7 +370,9 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE);
         let cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let local_path = cache.local_path.clone();
         assert!(local_path.exists());
@@ -354,31 +388,39 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 3);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let (len_before, populated_before, fetched_before) = {
-            let local = cache.state().expect("local initialized after read").local;
+            let local = cache
+                .state(&HardwareCounterCell::new())
+                .expect("local initialized after read")
+                .local;
             (
-                local.mmap().len::<u8>().unwrap(),
+                local.mmap().len::<u8>(&HardwareCounterCell::new()).unwrap(),
                 local.fully_populated.load(Ordering::Acquire),
                 local.fetched.lock().clone(),
             )
         };
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
         let local = if PREFILL {
             // in case of Populate::PreferBackground, we need to await for
             // completion to get the local_state back.
-            cache.state().unwrap().local
+            cache.state(&HardwareCounterCell::new()).unwrap().local
         } else {
             // in case of Populate::No, local_state should still be there
             // without forcing (re)initialization.
             assert!(cache.is_ready(), "local must still be initialized");
-            cache.state().unwrap().local
+            cache.state(&HardwareCounterCell::new()).unwrap().local
         };
 
-        assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
+        assert_eq!(
+            local.mmap().len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            len_before
+        );
         assert_eq!(
             local.fully_populated.load(Ordering::Acquire),
             populated_before,
@@ -395,22 +437,32 @@ mod tests_mod {
 
         let original_len = scn.data.len() as u64;
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
         let err = cache
-            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(original_len, BLOCK_SIZE as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap_err();
         assert_matches!(
             err,
             crate::universal_io::UniversalIoError::OutOfBounds { .. },
         );
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
         let bytes = cache
-            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(original_len, BLOCK_SIZE as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &new_data[original_len as usize..]);
     }
@@ -427,13 +479,17 @@ mod tests_mod {
         // Touch the partial tail so block 1 ends up in the `fetched` bitmap
         // (its fetch is clamped to the old EOF).
         let _ = cache
-            .read::<_, u8>(ReadRange::one(BLOCK_SIZE as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::one(BLOCK_SIZE as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
 
         // Grow remote past the old tail block boundary.
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
         // Read covers both the originally-partial range [BLOCK_SIZE..old_len)
         // and the newly-grown tail [old_len..BLOCK_SIZE*2). Without the
@@ -442,6 +498,7 @@ mod tests_mod {
             .read::<_, u8>(
                 ReadRange::new(BLOCK_SIZE as u64, BLOCK_SIZE as u64),
                 Sequential,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         assert_eq!(&*bytes, &new_data[BLOCK_SIZE..BLOCK_SIZE * 2]);
@@ -456,28 +513,40 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
 
         let original_len = scn.data.len() as u64;
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new());
 
         // Nothing changed yet: same length, and the appended region is still
         // out of bounds.
-        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            original_len
+        );
         let err = cache
-            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(original_len, BLOCK_SIZE as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap_err();
         assert_matches!(err, UniversalIoError::OutOfBounds { .. });
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
         // A populated cache staged the tail fetch, so the appended block is
         // already local; a lazy one only learned the new length.
         let new_block = (original_len / BLOCK_SIZE as u64) as u32;
         assert_eq!(
             cache
-                .state()
+                .state(&HardwareCounterCell::new())
                 .unwrap()
                 .local
                 .contains(new_block..new_block + 1),
@@ -485,7 +554,11 @@ mod tests_mod {
         );
 
         let bytes = cache
-            .read::<_, u8>(ReadRange::new(original_len, BLOCK_SIZE as u64), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(original_len, BLOCK_SIZE as u64),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &new_data[original_len as usize..]);
     }
@@ -496,17 +569,24 @@ mod tests_mod {
     fn live_preload_within_executor() {
         let mut scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
         futures::executor::block_on(async {
-            let staged = cache.live_preload(scn.snapshot_file_info::<R>()).unwrap();
+            let staged = cache
+                .live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new())
+                .unwrap();
             staged.await;
         });
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
-        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &new_data[..]);
     }
 
@@ -518,17 +598,23 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
         assert!(!cache.is_ready());
 
-        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new());
 
         assert!(cache.is_ready());
-        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            scn.data.len() as u64
+        );
 
         // A later reopen (nothing staged — the length didn't grow) must
         // leave the mirror alone.
-        cache.live_reload().unwrap();
-        assert_eq!(cache.len::<u8>().unwrap(), scn.data.len() as u64);
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            scn.data.len() as u64
+        );
 
-        let bytes = cache.read_whole::<u8>().unwrap();
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
     }
 
@@ -539,20 +625,25 @@ mod tests_mod {
         let scn = Scenario::new(BLOCK_SIZE * 3);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
         let (len_before, fetched_before) = {
-            let local = cache.state().unwrap().local;
+            let local = cache.state(&HardwareCounterCell::new()).unwrap().local;
             (
-                local.mmap().len::<u8>().unwrap(),
+                local.mmap().len::<u8>(&HardwareCounterCell::new()).unwrap(),
                 local.fetched.lock().clone(),
             )
         };
 
-        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
-        cache.live_reload().unwrap();
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new());
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        let local = cache.state().unwrap().local;
-        assert_eq!(local.mmap().len::<u8>().unwrap(), len_before);
+        let local = cache.state(&HardwareCounterCell::new()).unwrap().local;
+        assert_eq!(
+            local.mmap().len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            len_before
+        );
         assert_eq!(*local.fetched.lock(), fetched_before);
     }
 
@@ -563,17 +654,22 @@ mod tests_mod {
         let mut scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         scn.grow_remote(BLOCK_SIZE);
-        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new());
         let new_data = scn.grow_remote(BLOCK_SIZE);
-        let _ = cache.live_preload(scn.snapshot_file_info::<R>());
+        let _ = cache.live_preload(scn.snapshot_file_info::<R>(), &HardwareCounterCell::new());
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
-        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &new_data[..]);
     }
 
@@ -584,18 +680,23 @@ mod tests_mod {
         let mut scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
 
         let new_data = scn.grow_remote(BLOCK_SIZE);
         let get_file_info = scn.snapshot_file_info::<R>();
 
-        let _ = cache.live_preload(&get_file_info);
-        let _ = cache.live_preload(&get_file_info);
+        let _ = cache.live_preload(&get_file_info, &HardwareCounterCell::new());
+        let _ = cache.live_preload(&get_file_info, &HardwareCounterCell::new());
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
-        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &new_data[..]);
     }
 
@@ -609,19 +710,29 @@ mod tests_mod {
         let mut cache = scn.open::<R>(PREFILL);
 
         let original_len = scn.data.len() as u64;
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
-        let staged = cache.live_preload(|_| None).unwrap();
+        let staged = cache
+            .live_preload(|_| None, &HardwareCounterCell::new())
+            .unwrap();
         futures::executor::block_on(staged);
 
         // Before live_reload, local file is not resized yet
-        assert_eq!(cache.len::<u8>().unwrap(), original_len);
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            original_len
+        );
 
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
-        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &new_data[..]);
     }
 
@@ -630,19 +741,28 @@ mod tests_mod {
         let mut scn = Scenario::new(BLOCK_SIZE * 2);
         let mut cache = scn.open::<R>(PREFILL);
 
-        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+        let _ = cache
+            .read::<_, u8>(ReadRange::one(0), Sequential, &HardwareCounterCell::new())
+            .unwrap();
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
-        let staged1 = cache.live_preload(|_| None).unwrap();
-        let staged2 = cache.live_preload(|_| None).unwrap();
+        let staged1 = cache
+            .live_preload(|_| None, &HardwareCounterCell::new())
+            .unwrap();
+        let staged2 = cache
+            .live_preload(|_| None, &HardwareCounterCell::new())
+            .unwrap();
         futures::executor::block_on(async {
             staged1.await;
             staged2.await;
         });
-        cache.live_reload().unwrap();
+        cache.live_reload(&HardwareCounterCell::new()).unwrap();
 
-        assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
-        let bytes = cache.read_whole::<u8>().unwrap();
+        assert_eq!(
+            cache.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            new_data.len() as u64
+        );
+        let bytes = cache.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&*bytes, &new_data[..]);
     }
 
@@ -662,7 +782,11 @@ mod tests_mod {
 
         // A read within the prefetched range is served from the local mirror.
         let bytes = file
-            .read::<_, u8>(ReadRange::new(10, 20), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(10, 20),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[10..30]);
 
@@ -670,7 +794,7 @@ mod tests_mod {
         // cached — not the whole file, proving the populate was partial.
         assert!(expected_local.exists());
         {
-            let local = file.state().unwrap().local;
+            let local = file.state(&HardwareCounterCell::new()).unwrap().local;
             assert!(!local.fully_populated.load(Ordering::Acquire));
             assert!(local.fetched.lock().contains_range(0..2));
             assert!(!local.fetched.lock().contains(2));
@@ -680,10 +804,21 @@ mod tests_mod {
         // A read outside the prefetched range faults its block in on demand.
         let start = (BLOCK_SIZE * 2) as u64;
         let bytes = file
-            .read::<_, u8>(ReadRange::new(start, 30), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(start, 30),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[start as usize..start as usize + 30]);
-        assert!(file.state().unwrap().local.fetched.lock().contains(2));
+        assert!(
+            file.state(&HardwareCounterCell::new())
+                .unwrap()
+                .local
+                .fetched
+                .lock()
+                .contains(2)
+        );
     }
 
     /// An empty `Populate::Partial` range prefetches nothing but still opens a
@@ -695,10 +830,17 @@ mod tests_mod {
 
         // Nothing prefetched, so the first read must fault its block in.
         let bytes = file
-            .read::<_, u8>(ReadRange::new(0, 16), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, 16),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[0..16]);
-        assert_eq!(file.len::<u8>().unwrap(), scn.data.len() as u64);
+        assert_eq!(
+            file.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            scn.data.len() as u64
+        );
     }
 
     /// A `Populate::Partial` range starting past EOF has nothing valid to
@@ -709,10 +851,14 @@ mod tests_mod {
         let file = scn.open_partial::<R>(BLOCK_SIZE as u64 * 4..BLOCK_SIZE as u64 * 5);
 
         let bytes = file
-            .read::<_, u8>(ReadRange::new(0, 100), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, 100),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
-        assert_eq!(file.len::<u8>().unwrap(), 100);
+        assert_eq!(file.len::<u8>(&HardwareCounterCell::new()).unwrap(), 100);
     }
 
     #[test]
@@ -721,9 +867,13 @@ mod tests_mod {
         let file = scn.open::<R>(false);
 
         let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
+        pipeline
+            .schedule::<Random>(0, &file, 10..30, 1, &HardwareCounterCell::new())
+            .unwrap();
         // Same block as above: piggybacks even if the remote queue is full.
-        pipeline.schedule::<Random>(1, &file, 100..200, 1).unwrap();
+        pipeline
+            .schedule::<Random>(1, &file, 100..200, 1, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(pipeline.in_flight_fetches(), 1);
 
         let results = drain_pipeline(&mut pipeline);
@@ -743,10 +893,10 @@ mod tests_mod {
         // Contained in block 1.
         let contained = (BLOCK_SIZE + 100) as u64..(BLOCK_SIZE + 200) as u64;
         pipeline
-            .schedule::<Random>(0, &file, spanning.clone(), 1)
+            .schedule::<Random>(0, &file, spanning.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
         pipeline
-            .schedule::<Random>(1, &file, contained.clone(), 1)
+            .schedule::<Random>(1, &file, contained.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
         assert_eq!(pipeline.in_flight_fetches(), 1);
 
@@ -773,13 +923,13 @@ mod tests_mod {
         // Reaches the partial tail block, ending exactly at EOF.
         let tail = (BLOCK_SIZE * 3 - 50) as u64..eof;
         pipeline
-            .schedule::<Random>(0, &file, spanning.clone(), 1)
+            .schedule::<Random>(0, &file, spanning.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
         pipeline
-            .schedule::<Random>(1, &file, middle.clone(), 1)
+            .schedule::<Random>(1, &file, middle.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
         pipeline
-            .schedule::<Random>(2, &file, tail.clone(), 1)
+            .schedule::<Random>(2, &file, tail.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
         assert_eq!(pipeline.in_flight_fetches(), 1);
 
@@ -803,11 +953,12 @@ mod tests_mod {
         // Needs blocks 1..3: block 2 is not covered by the fetch above.
         let second = (BLOCK_SIZE + 100) as u64..(BLOCK_SIZE * 2 + 100) as u64;
         pipeline
-            .schedule::<Random>(0, &file, first.clone(), 1)
+            .schedule::<Random>(0, &file, first.clone(), 1, &HardwareCounterCell::new())
             .unwrap();
 
         let mut results = HashMap::new();
-        match pipeline.schedule::<Random>(1, &file, second.clone(), 1) {
+        match pipeline.schedule::<Random>(1, &file, second.clone(), 1, &HardwareCounterCell::new())
+        {
             // Queued backends: a separate fetch was scheduled.
             Ok(()) => assert_eq!(pipeline.in_flight_fetches(), 2),
             // Single-slot backends (mmap remote): the read went for the remote
@@ -818,7 +969,7 @@ mod tests_mod {
                 // as block 2 is not local even after the first fetch commits.
                 results.extend(drain_pipeline(&mut pipeline));
                 pipeline
-                    .schedule::<Random>(1, &file, second.clone(), 1)
+                    .schedule::<Random>(1, &file, second.clone(), 1, &HardwareCounterCell::new())
                     .unwrap();
                 assert_eq!(pipeline.in_flight_fetches(), 1);
             }
@@ -838,8 +989,10 @@ mod tests_mod {
         let file_b = scn.open::<R>(false);
 
         let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-        pipeline.schedule::<Random>(0, &file_a, 10..30, 1).unwrap();
-        match pipeline.schedule::<Random>(1, &file_b, 10..30, 1) {
+        pipeline
+            .schedule::<Random>(0, &file_a, 10..30, 1, &HardwareCounterCell::new())
+            .unwrap();
+        match pipeline.schedule::<Random>(1, &file_b, 10..30, 1, &HardwareCounterCell::new()) {
             Ok(()) => assert_eq!(pipeline.in_flight_fetches(), 2),
             // Single-slot backends: the identical range on another file went
             // to the remote queue instead of piggybacking on `file_a`'s fetch.
@@ -861,11 +1014,15 @@ mod tests_mod {
         let file = scn.open::<R>(false);
 
         let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-        pipeline.schedule::<Random>(0, &file, 10..30, 1).unwrap();
+        pipeline
+            .schedule::<Random>(0, &file, 10..30, 1, &HardwareCounterCell::new())
+            .unwrap();
         let results = drain_pipeline(&mut pipeline);
         assert_eq!(results[&0], &scn.data[10..30]);
 
-        pipeline.schedule::<Random>(1, &file, 40..60, 1).unwrap();
+        pipeline
+            .schedule::<Random>(1, &file, 40..60, 1, &HardwareCounterCell::new())
+            .unwrap();
         // Served locally: no remote fetch in flight.
         assert_eq!(pipeline.in_flight_fetches(), 0);
         let results = drain_pipeline(&mut pipeline);
@@ -887,7 +1044,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 1);
 
             t1_ready_tx.send(()).unwrap();
@@ -901,7 +1060,7 @@ mod tests_mod {
             t1_ready_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline
-                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .schedule::<Random>(2, &file_clone, 20..40, 1, &HardwareCounterCell::new())
                 .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
@@ -930,7 +1089,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 1);
 
             t1_scheduled_tx.send(()).unwrap();
@@ -945,7 +1106,7 @@ mod tests_mod {
             t1_scheduled_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline
-                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .schedule::<Random>(2, &file_clone, 20..40, 1, &HardwareCounterCell::new())
                 .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
@@ -972,7 +1133,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 1);
 
             t1_scheduled_tx.send(()).unwrap();
@@ -985,7 +1148,7 @@ mod tests_mod {
             t1_scheduled_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline
-                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .schedule::<Random>(2, &file_clone, 20..40, 1, &HardwareCounterCell::new())
                 .unwrap();
             assert_eq!(pipeline.in_flight_fetches(), 0);
 
@@ -1015,7 +1178,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             t1_sched_tx.send(()).unwrap();
             t1_to_t3_tx.send(()).unwrap();
             t2_wait_rx.recv().unwrap();
@@ -1027,19 +1192,23 @@ mod tests_mod {
         let handle2 = std::thread::spawn(move || {
             t1_sched_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(2, &file_2, 20..40, 1).unwrap();
+            pipeline
+                .schedule::<Random>(2, &file_2, 20..40, 1, &HardwareCounterCell::new())
+                .unwrap();
             t2_wait_tx.send(()).unwrap();
 
             // Enters wait, gets promoted when handle1 drops, but drops pipeline without completing
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = pipeline.wait();
+                let _ = pipeline.wait(&HardwareCounterCell::new());
             }));
         });
 
         let handle3 = std::thread::spawn(move || {
             t1_to_t3_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(3, &file_3, 30..45, 1).unwrap();
+            pipeline
+                .schedule::<Random>(3, &file_3, 30..45, 1, &HardwareCounterCell::new())
+                .unwrap();
             t3_wait_tx.send(()).unwrap();
 
             let results = drain_pipeline(&mut pipeline);
@@ -1065,7 +1234,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline1 = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline1.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline1
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             assert_eq!(pipeline1.in_flight_fetches(), 1);
             t1_sched_tx.send(()).unwrap();
             t2_sched_rx.recv().unwrap();
@@ -1077,7 +1248,7 @@ mod tests_mod {
             t1_sched_rx.recv().unwrap();
             let mut pipeline2 = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline2
-                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .schedule::<Random>(2, &file_clone, 20..40, 1, &HardwareCounterCell::new())
                 .unwrap();
             assert_eq!(pipeline2.in_flight_fetches(), 0);
             t2_sched_tx.send(()).unwrap();
@@ -1108,7 +1279,9 @@ mod tests_mod {
 
         let handle1 = std::thread::spawn(move || {
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
-            pipeline.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+            pipeline
+                .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+                .unwrap();
             t1_sched_tx.send(()).unwrap();
 
             // Keep pipeline alive without driving it
@@ -1120,7 +1293,7 @@ mod tests_mod {
             t1_sched_rx.recv().unwrap();
             let mut pipeline = DiskCachePipeline::<R, u32>::new().unwrap();
             pipeline
-                .schedule::<Random>(2, &file_clone, 20..40, 1)
+                .schedule::<Random>(2, &file_clone, 20..40, 1, &HardwareCounterCell::new())
                 .unwrap();
 
             // Follower enters wait(), times out waiting for handle1 (100ms in test),
@@ -1146,11 +1319,15 @@ mod tests_mod {
         let file = scn.open::<R>(false);
 
         let mut outer = DiskCachePipeline::<R, u32>::new().unwrap();
-        outer.schedule::<Random>(1, &file, 10..50, 1).unwrap();
+        outer
+            .schedule::<Random>(1, &file, 10..50, 1, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(outer.in_flight_fetches(), 1);
 
         let mut inner = DiskCachePipeline::<R, u32>::new().unwrap();
-        inner.schedule::<Random>(2, &file, 20..40, 1).unwrap();
+        inner
+            .schedule::<Random>(2, &file, 20..40, 1, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(inner.in_flight_fetches(), 1);
 
         let inner_res = drain_pipeline(&mut inner);
@@ -1178,13 +1355,18 @@ mod tests_mod {
             .collect();
 
         let mut seen = vec![false; ranges.len()];
-        file.read_batch(ranges.clone(), Random, |i, bytes: &[u8]| {
-            let start = ranges[i].1.byte_offset as usize;
-            assert_eq!(bytes, &scn.data[start..start + 100]);
-            assert!(!seen[i]);
-            seen[i] = true;
-            UioResult::Ok(())
-        })
+        file.read_batch(
+            ranges.clone(),
+            Random,
+            |i, bytes: &[u8]| {
+                let start = ranges[i].1.byte_offset as usize;
+                assert_eq!(bytes, &scn.data[start..start + 100]);
+                assert!(!seen[i]);
+                seen[i] = true;
+                UioResult::Ok(())
+            },
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
         assert!(seen.iter().all(|&s| s));
     }
@@ -1207,6 +1389,7 @@ mod tests_mod {
                     advice: AdviceSetting::Global,
                 },
                 Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap_err();
         assert_matches!(
@@ -1226,6 +1409,8 @@ mod tests_async {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use crate::counter::hardware_accumulator::HwMeasurementAcc;
+    use crate::counter::hardware_counter::HardwareCounterCell;
     use crate::ext::aligned_vec::ACow;
     use crate::generic_consts::AccessPattern;
     use crate::universal_io::traits::read_from_via_read_bytes;
@@ -1265,6 +1450,7 @@ mod tests_async {
             _file: &'file AsyncOnlyRemote,
             _range: Range<u64>,
             _align: usize,
+            _hw_counter: &HardwareCounterCell,
         ) -> UioResult<()> {
             Err(sync_read_error())
         }
@@ -1274,11 +1460,15 @@ mod tests_async {
             _user_data: U,
             _file: &'file AsyncOnlyRemote,
             _from: u64,
+            _hw_counter: &HardwareCounterCell,
         ) -> UioResult<()> {
             Err(sync_read_error())
         }
 
-        fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
+        fn wait(
+            &mut self,
+            _hw_counter: &HardwareCounterCell,
+        ) -> UioResult<Option<(U, ACow<'file>)>> {
             Ok(None)
         }
     }
@@ -1295,12 +1485,16 @@ mod tests_async {
             Ok(Self(MmapFs::from_context(ctx)?))
         }
 
-        fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-            self.0.list_files(prefix_path)
+        fn list_files(
+            &self,
+            prefix_path: &Path,
+            hw_counter: &HardwareCounterCell,
+        ) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files(prefix_path, hw_counter)
         }
 
-        fn exists(&self, path: &Path) -> UioResult<bool> {
-            self.0.exists(path)
+        fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
+            self.0.exists(path, hw_counter)
         }
 
         fn open(
@@ -1308,9 +1502,10 @@ mod tests_async {
             path: impl AsRef<Path>,
             options: OpenOptions,
             extra: (),
+            hw_counter: &HardwareCounterCell,
         ) -> UioResult<AsyncOnlyRemote> {
             Ok(AsyncOnlyRemote {
-                inner: self.0.open(path, options, extra)?,
+                inner: self.0.open(path, options, extra, hw_counter)?,
                 async_reads: AtomicUsize::new(0),
             })
         }
@@ -1322,15 +1517,23 @@ mod tests_async {
             path: PathBuf,
             options: OpenOptions,
             extra: Self::OpenExtra,
+            hw_acc: HwMeasurementAcc,
         ) -> UioResult<Self::File> {
             Ok(AsyncOnlyRemote {
-                inner: self.0.open_async(path, options, extra).await?,
+                inner: self
+                    .0
+                    .open_async(path, options, extra, hw_acc.clone())
+                    .await?,
                 async_reads: AtomicUsize::new(0),
             })
         }
 
-        async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-            self.0.list_files_async(prefix_path).await
+        async fn list_files_async(
+            &self,
+            prefix_path: &Path,
+            hw_acc: HwMeasurementAcc,
+        ) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files_async(prefix_path, hw_acc.clone()).await
         }
     }
 
@@ -1343,8 +1546,8 @@ mod tests_async {
             Self: 'a,
             U: UserData;
 
-        fn live_reload(&mut self) -> UioResult<()> {
-            self.inner.live_reload()
+        fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+            self.inner.live_reload(hw_counter)
         }
 
         fn read_bytes<P: AccessPattern>(
@@ -1352,15 +1555,16 @@ mod tests_async {
             _range: Range<u64>,
             _access_pattern: P,
             _align: usize,
+            _hw_counter: &HardwareCounterCell,
         ) -> UioResult<ACow<'_>> {
             Err(sync_read_error())
         }
 
-        fn len<T>(&self) -> UioResult<u64> {
-            self.inner.len::<T>()
+        fn len<T>(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64> {
+            self.inner.len::<T>(hw_counter)
         }
 
-        fn populate(&self) -> UioResult<()> {
+        fn populate(&self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
             Ok(())
         }
 
@@ -1383,23 +1587,26 @@ mod tests_async {
             range: Range<u64>,
             access_pattern: P,
             align: usize,
+            hw_acc: HwMeasurementAcc,
         ) -> UioResult<ACow<'_>> {
             // Suspend once so concurrent reads interleave like a real async remote.
             tokio::task::yield_now().await;
             self.async_reads.fetch_add(1, Ordering::Relaxed);
-            self.inner.read_bytes(range, access_pattern, align)
+            self.inner
+                .read_bytes(range, access_pattern, align, &hw_acc.get_counter_cell())
         }
 
         fn read_from_into_async<W, I>(
             &self,
             from: u64,
             init: I,
+            hw_acc: HwMeasurementAcc,
         ) -> impl Future<Output = UioResult<W>> + Send
         where
             I: FnOnce(u64) -> UioResult<W> + Send + 'static,
             W: ChunkSink + Send + 'static,
         {
-            read_from_via_read_bytes(self, from, init)
+            read_from_via_read_bytes(self, from, init, hw_acc.clone())
         }
     }
 
@@ -1412,12 +1619,12 @@ mod tests_async {
 
         let range = 10u64..30;
         let bytes = file
-            .read_bytes_async(range.clone(), Random, 1)
+            .read_bytes_async(range.clone(), Random, 1, HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(&*bytes, scn.slice(&range));
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
         assert!(state.local.contains(0..1));
     }
@@ -1431,7 +1638,7 @@ mod tests_async {
 
         let first = 10u64..30;
         let bytes = file
-            .read_bytes_async(first.clone(), Random, 1)
+            .read_bytes_async(first.clone(), Random, 1, HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(&*bytes, scn.slice(&first));
@@ -1439,12 +1646,12 @@ mod tests_async {
         // Different range, same block: no second fetch.
         let second = 100u64..200;
         let bytes = file
-            .read_bytes_async(second.clone(), Random, 1)
+            .read_bytes_async(second.clone(), Random, 1, HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(&*bytes, scn.slice(&second));
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
     }
 
@@ -1458,12 +1665,12 @@ mod tests_async {
 
         let range = (BLOCK_SIZE * 3 - 50) as u64..eof;
         let bytes = file
-            .read_bytes_async(range.clone(), Sequential, 1)
+            .read_bytes_async(range.clone(), Sequential, 1, HwMeasurementAcc::new())
             .await
             .unwrap();
         assert_eq!(&*bytes, scn.slice(&range));
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
         assert!(state.local.contains(2..4));
     }
@@ -1475,16 +1682,19 @@ mod tests_async {
         let scn = Scenario::new(1024);
         let file = scn.open::<AsyncOnlyRemote>(false);
 
-        let bytes = file.read_bytes_async(5..5, Sequential, 1).await.unwrap();
+        let bytes = file
+            .read_bytes_async(5..5, Sequential, 1, HwMeasurementAcc::new())
+            .await
+            .unwrap();
         assert!(bytes.is_empty());
 
         let err = file
-            .read_bytes_async(1000..1100, Sequential, 1)
+            .read_bytes_async(1000..1100, Sequential, 1, HwMeasurementAcc::new())
             .await
             .unwrap_err();
         assert_matches!(err, UniversalIoError::OutOfBounds { .. });
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
     }
 
@@ -1504,16 +1714,20 @@ mod tests_async {
                     advice: AdviceSetting::Global,
                 },
                 Default::default(),
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
         assert!(state.local.contains(0..6));
 
         let eof = scn.data.len() as u64;
-        let bytes = file.read_bytes_async(0..eof, Sequential, 1).await.unwrap();
+        let bytes = file
+            .read_bytes_async(0..eof, Sequential, 1, HwMeasurementAcc::new())
+            .await
+            .unwrap();
         assert_eq!(&*bytes, &scn.data[..]);
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 1);
     }
@@ -1536,14 +1750,15 @@ mod tests_async {
                     advice: AdviceSetting::Global,
                 },
                 Default::default(),
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
 
-        let state = file.state().unwrap();
+        let state = file.state(&HardwareCounterCell::new()).unwrap();
         assert_eq!(state.remote.async_reads.load(Ordering::Relaxed), 0);
         assert!(
-            file.read_bytes_async(0..0, Sequential, 1)
+            file.read_bytes_async(0..0, Sequential, 1, HwMeasurementAcc::new())
                 .await
                 .unwrap()
                 .is_empty()

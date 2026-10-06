@@ -1,8 +1,10 @@
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
 use crate::id_tracker::id_tracker_base::{IdTracker as _, IdTrackerEnum};
 
 impl MemoryReporter for IdTrackerEnum {
-    fn memory_usage(&self) -> ComponentMemoryUsage {
+    fn memory_usage(&self, _hw_counter: &HardwareCounterCell) -> ComponentMemoryUsage {
         match self {
             IdTrackerEnum::MutableIdTracker(tracker) => {
                 // All mappings and versions live in RAM.

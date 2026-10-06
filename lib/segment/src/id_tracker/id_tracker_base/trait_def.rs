@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::UniversalRead;
 use rand::rngs::StdRng;
@@ -32,6 +33,7 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Set mapping
@@ -42,17 +44,25 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     ) -> OperationResult<()>;
 
     /// Drop mapping
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Same as `drop`, but by internal ID
     /// If mapping doesn't exist, still removes( unsets ) version.
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Flush id mapping to disk
-    fn mapping_flusher(&self) -> Flusher;
+    fn mapping_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher;
 
     /// Flush points versions to disk
-    fn versions_flusher(&self) -> Flusher;
+    fn versions_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher;
 
     /// Finds inconsistencies between id mapping and versions storage.
     /// It might happen that point doesn't have version due to un-flushed WAL.
@@ -60,7 +70,10 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     ///
     /// Returns a list of internal ids, that have non-zero versions, but are missing in the id mapping.
     /// Those points should be removed from all other parts of the segment.
-    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+    fn fix_inconsistencies(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         // Points with mapping, but no version.
         // Can happen if insertion didn't complete.
         // We need to remove mapping and assume the point is going to be re-inserted by WAL.
@@ -71,15 +84,17 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
         // We return those points to the caller to clean up the storage.
         let mut to_return = Vec::new();
 
-        for (internal_id, version) in self.iter_internal_versions()? {
-            if version != DELETED_POINT_VERSION && self.external_id(internal_id).is_none() {
+        for (internal_id, version) in self.iter_internal_versions(hw_counter)? {
+            if version != DELETED_POINT_VERSION
+                && self.external_id(internal_id, hw_counter).is_none()
+            {
                 to_return.push(internal_id);
             }
         }
 
-        for internal_id in self.point_mappings().iter_internal() {
-            if self.internal_version(internal_id).is_none() {
-                if let Some(external_id) = self.external_id(internal_id) {
+        for internal_id in self.point_mappings(hw_counter).iter_internal() {
+            if self.internal_version(internal_id, hw_counter).is_none() {
+                if let Some(external_id) = self.external_id(internal_id, hw_counter) {
                     to_remove.push(external_id);
                     to_return.push(internal_id);
                 } else {
@@ -88,7 +103,7 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
             }
         }
         for external_id in to_remove {
-            self.drop(external_id)?;
+            self.drop(external_id, hw_counter)?;
             #[cfg(debug_assertions)]
             log::debug!("dropped mapping for point {external_id} without version");
         }
@@ -132,9 +147,16 @@ pub trait IdTrackerRead {
     type Backend: UniversalRead;
 
     /// Get a reference to the point mappings, which provides iteration methods.
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend>;
+    fn point_mappings(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend>;
 
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType>;
 
     /// Batch counterpart of [`internal_version`](Self::internal_version):
     /// `callback` receives each `(internal_id, version)` as it resolves; ids
@@ -148,6 +170,7 @@ pub trait IdTrackerRead {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Returns the internal ID of the point under explicit deferred
@@ -159,12 +182,17 @@ pub trait IdTrackerRead {
         &self,
         external_id: PointIdType,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType>;
 
     /// Return external ID for internal point, defined by user
     ///
     /// Excludes soft deleted points.
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType>;
 
     /// Batch counterpart of [`external_id`](Self::external_id), streaming
     /// each `(internal_id, external_id)` pair to `callback`. Deleted and
@@ -178,6 +206,7 @@ pub trait IdTrackerRead {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Number of total points
@@ -188,21 +217,25 @@ pub trait IdTrackerRead {
     /// Number of available points
     ///
     /// - excludes soft deleted points
-    fn available_point_count(&self) -> usize {
-        self.total_point_count() - self.deleted_point_count()
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.total_point_count() - self.deleted_point_count(hw_counter)
     }
 
     /// Number of deleted points
-    fn deleted_point_count(&self) -> usize;
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     /// Get [`BitSlice`] representation for deleted points with deletion flags
     ///
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
-    fn deleted_point_bitslice(&self) -> &BitSlice;
+    fn deleted_point_bitslice(&self, hw_counter: &HardwareCounterCell) -> &BitSlice;
 
     /// Check whether the given point is soft deleted
-    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
+    fn is_deleted_point(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool;
 
     fn name(&self) -> &'static str;
 
@@ -213,6 +246,7 @@ pub trait IdTrackerRead {
     fn sample_ids<'a>(
         &'a self,
         deleted_vector_bitslice: Option<&'a BitSlice>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Use seeded randomness, prevents 'inconsistencies' in search results with sampling
         let mut rng = StdRng::seed_from_u64(SEED);
@@ -227,7 +261,7 @@ pub trait IdTrackerRead {
                         .and_then(|d| d.get_bit(x as usize))
                         .unwrap_or(false)
                         // Also check point deletion for integrity
-                        && !self.is_deleted_point(x)
+                        && !self.is_deleted_point(x, hw_counter)
                 }),
         )
     }
@@ -239,6 +273,7 @@ pub trait IdTrackerRead {
     /// read error surfaces instead of truncating the iteration.
     fn iter_internal_versions(
         &self,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>>;
 
     /// Internal-id threshold above which points are hidden from reads.
@@ -275,6 +310,7 @@ pub trait IdTrackerRead {
         point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: DeferredBehavior,
         mut callback: impl FnMut(PointIdType, PointOffsetType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // For VisibleOnly, the deferred-aware lookup returns the active head
         // only — there's no need for the post-lookup cutoff filter the
@@ -282,7 +318,9 @@ pub trait IdTrackerRead {
         // deferred head over a shadowed active so each ext yields its
         // latest version exactly once.
         for point_id in point_ids {
-            if let Some(internal_id) = self.internal_id_with_behavior(point_id, deferred_behavior) {
+            if let Some(internal_id) =
+                self.internal_id_with_behavior(point_id, deferred_behavior, hw_counter)
+            {
                 callback(point_id, internal_id);
             }
         }
@@ -297,9 +335,10 @@ pub fn default_external_ids_batch<T: IdTrackerRead + ?Sized>(
     this: &T,
     internal_ids: impl IntoIterator<Item = PointOffsetType>,
     mut callback: impl FnMut(PointOffsetType, PointIdType),
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     for internal_id in internal_ids {
-        if let Some(external_id) = this.external_id(internal_id) {
+        if let Some(external_id) = this.external_id(internal_id, hw_counter) {
             callback(internal_id, external_id);
         }
     }
@@ -313,9 +352,10 @@ pub fn default_internal_versions_batch<T: IdTrackerRead + ?Sized>(
     this: &T,
     internal_ids: impl IntoIterator<Item = PointOffsetType>,
     mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     for internal_id in internal_ids {
-        if let Some(version) = this.internal_version(internal_id) {
+        if let Some(version) = this.internal_version(internal_id, hw_counter) {
             callback(internal_id, version);
         }
     }

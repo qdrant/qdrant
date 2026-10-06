@@ -1,4 +1,5 @@
 use api::rest::{SearchGroupsRequestInternal, SearchRequestInternal};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::{StrictModeVerification, check_grouping_field};
@@ -54,6 +55,7 @@ impl StrictModeVerification for SearchRequestBatch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         super::check_limit_opt(
             Some(self.searches.len()),
@@ -64,7 +66,7 @@ impl StrictModeVerification for SearchRequestBatch {
         for search_request in &self.searches {
             search_request
                 .search_request
-                .check_strict_mode(collection, strict_mode_config)
+                .check_strict_mode(collection, strict_mode_config, hw_acc)
                 .await?;
         }
         Ok(())
@@ -96,6 +98,7 @@ impl StrictModeVerification for SearchGroupsRequestInternal {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        _hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         // check for unindexed fields targeted by group_by
         check_grouping_field(&self.group_request.group_by, collection, strict_mode_config)?;

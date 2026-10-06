@@ -9,11 +9,17 @@ use super::hardware_counter::HardwareCounterCell;
 #[derive(Copy, Clone)]
 pub struct HwMetricRefCounter<'a> {
     counter: &'a CounterCell,
+    parent: &'a HardwareCounterCell,
 }
 
 impl<'a> HwMetricRefCounter<'a> {
-    fn new(counter: &'a CounterCell) -> Self {
-        Self { counter }
+    fn new(counter: &'a CounterCell, parent: &'a HardwareCounterCell) -> Self {
+        Self { counter, parent }
+    }
+
+    /// 🤖 The whole counter this metric belongs to.
+    pub fn parent(&self) -> &'a HardwareCounterCell {
+        self.parent
     }
 }
 
@@ -29,26 +35,26 @@ impl Deref for HwMetricRefCounter<'_> {
 impl HardwareCounterCell {
     #[inline]
     pub fn ref_payload_io_write_counter(&self) -> HwMetricRefCounter<'_> {
-        HwMetricRefCounter::new(&self.payload_io_write_counter)
+        HwMetricRefCounter::new(&self.payload_io_write_counter, self)
     }
 
     #[inline]
     pub fn ref_payload_io_read_counter(&self) -> HwMetricRefCounter<'_> {
-        HwMetricRefCounter::new(&self.payload_io_read_counter)
+        HwMetricRefCounter::new(&self.payload_io_read_counter, self)
     }
 
     #[inline]
     pub fn ref_vector_io_write_counter(&self) -> HwMetricRefCounter<'_> {
-        HwMetricRefCounter::new(&self.vector_io_write_counter)
+        HwMetricRefCounter::new(&self.vector_io_write_counter, self)
     }
 
     #[inline]
     pub fn ref_payload_index_io_write_counter(&self) -> HwMetricRefCounter<'_> {
-        HwMetricRefCounter::new(&self.payload_index_io_write_counter)
+        HwMetricRefCounter::new(&self.payload_index_io_write_counter, self)
     }
 
     #[inline]
     pub fn ref_payload_index_io_read_counter(&self) -> HwMetricRefCounter<'_> {
-        HwMetricRefCounter::new(&self.payload_index_io_read_counter)
+        HwMetricRefCounter::new(&self.payload_index_io_read_counter, self)
     }
 }

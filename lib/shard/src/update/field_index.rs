@@ -44,7 +44,11 @@ pub fn create_field_index(
         if !already_indexed {
             // Also flushes the destinations of pending copy-on-write moves out of this
             // segment first; see `SegmentHolder::flush_segment_with_cow_destinations`.
-            segments.flush_segment_with_cow_destinations(segment_id, &**write_segment)?;
+            segments.flush_segment_with_cow_destinations(
+                segment_id,
+                &**write_segment,
+                hw_counter,
+            )?;
         }
 
         let (schema, indexes) =

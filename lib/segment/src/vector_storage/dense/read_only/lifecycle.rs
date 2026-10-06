@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
@@ -23,6 +24,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         path: &Path,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Vectors
         ReadOnlyChunkedVectors::<T, S>::preopen(
@@ -30,10 +32,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
             &path.join(VECTORS_DIR_PATH),
             advice,
             populate,
+            hw_counter,
         )?;
 
         // Deleted flags
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
 
         Ok(())
     }
@@ -48,11 +51,18 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedDenseVectorStor
         distance: Distance,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let vectors =
-            ReadOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
+        let vectors = ReadOnlyChunkedVectors::open(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            dim,
+            advice,
+            populate,
+            hw_counter,
+        )?;
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
 
         Ok(Self {
             vectors,

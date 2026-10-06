@@ -1063,6 +1063,7 @@ mod tests {
             search_runtime,
             ResourceBudget::default(),
             None,
+            &HwMeasurementAcc::new(),
         )
         .await
         .unwrap()

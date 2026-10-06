@@ -1362,7 +1362,7 @@ impl ShardOperation for RemoteShard {
         ))
     }
 
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self, _hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
         let get_collection_info_request = GetCollectionInfoRequest {
             collection_name: self.collection_id.clone(),
         };

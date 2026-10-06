@@ -244,7 +244,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let per_segment = self.par_map_segments(|segment| {
             let segment = segment.read_segment();
 
-            let point_count = segment.available_point_count_without_deferred();
+            let point_count = segment
+                .available_point_count_without_deferred(&hw_measurement_acc.get_counter_cell());
             let point_ids = segment.read_random_filtered(
                 limit,
                 filter,

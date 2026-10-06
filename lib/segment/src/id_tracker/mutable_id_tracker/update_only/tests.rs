@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::Builder;
@@ -41,43 +42,63 @@ fn log_end(segment_path: &Path) -> u64 {
 fn allocates_consecutive_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Deletes are recorded but claim no slot, so only inserts come back.
     assert_eq!(
         tracker.insert_operations(
             &MmapFs,
-            &[Insert(num(10)), Delete(num(20)), Insert(uuid(11))]
+            &[Insert(num(10)), Delete(num(20)), Insert(uuid(11))],
+            &HardwareCounterCell::new()
         ),
         Ok(vec![(num(10), 0), (uuid(11), 1)]),
     );
     // A batch of deletes alone allocates nothing, and the next insert still
     // takes the slot right above the last one claimed.
     assert_eq!(
-        tracker.insert_operations(&MmapFs, &[Delete(num(10))]),
+        tracker.insert_operations(&MmapFs, &[Delete(num(10))], &HardwareCounterCell::new()),
         Ok(Vec::new()),
     );
     assert_eq!(
-        tracker.insert_operations(&MmapFs, &[Insert(num(12))]),
+        tracker.insert_operations(&MmapFs, &[Insert(num(12))], &HardwareCounterCell::new()),
         Ok(vec![(num(12), 2)]),
     );
 
     // Re-inserting a live id moves it to a fresh slot rather than rewriting its mapping.
     assert_eq!(
-        tracker.insert_operations(&MmapFs, &[Insert(uuid(11))]),
+        tracker.insert_operations(&MmapFs, &[Insert(uuid(11))], &HardwareCounterCell::new()),
         Ok(vec![(uuid(11), 3)]),
     );
 
     // A fresh tracker resuming from slot 3, and from the end of the log that handed it out,
     // continues above both.
-    let mut resumed = Tracker::new(&MmapFs, dir.path(), Some(3), [], log_end(dir.path())).unwrap();
+    let mut resumed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        Some(3),
+        [],
+        log_end(dir.path()),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_eq!(
-        resumed.insert_operations(&MmapFs, &[Insert(num(13))]),
+        resumed.insert_operations(&MmapFs, &[Insert(num(13))], &HardwareCounterCell::new()),
         Ok(vec![(num(13), 4)]),
     );
 
     // Nothing to record, nothing written.
-    assert_eq!(tracker.insert_operations(&MmapFs, &[]), Ok(Vec::new()));
+    assert_eq!(
+        tracker.insert_operations(&MmapFs, &[], &HardwareCounterCell::new()),
+        Ok(Vec::new())
+    );
 }
 
 /// Append a torn entry to the mappings log: a valid entry header and part of the payload it
@@ -99,19 +120,34 @@ fn heals_a_torn_mappings_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = mappings_path(dir.path());
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new())
         .unwrap();
 
     let committed = fs_err::read(&path).unwrap();
     tear_the_log(dir.path());
 
     // A writer resumes from the log's end, which is below the torn bytes.
-    let mut resumed =
-        Tracker::new(&MmapFs, dir.path(), Some(0), [], committed.len() as u64).unwrap();
+    let mut resumed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        Some(0),
+        [],
+        committed.len() as u64,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_eq!(
-        resumed.insert_operations(&MmapFs, &[Insert(num(11))]),
+        resumed.insert_operations(&MmapFs, &[Insert(num(11))], &HardwareCounterCell::new()),
         Ok(vec![(num(11), 1)]),
     );
 
@@ -144,15 +180,36 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
 
     // One writer gets through the batch; another is left believing it did not, and runs the same
     // batch against the file the first one wrote.
-    let mut writer = Tracker::new(&MmapFs, landed.path(), None, [], 0).unwrap();
-    let inserted = writer.insert_operations(&MmapFs, &batch).unwrap();
+    let mut writer = Tracker::new(
+        &MmapFs,
+        landed.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let inserted = writer
+        .insert_operations(&MmapFs, &batch, &HardwareCounterCell::new())
+        .unwrap();
 
     fs_err::copy(mappings_path(landed.path()), mappings_path(retried.path())).unwrap();
-    let mut retry = Tracker::new(&MmapFs, retried.path(), None, [], 0).unwrap();
+    let mut retry = Tracker::new(
+        &MmapFs,
+        retried.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Same slots, and the same bytes in the log: the second attempt is the first one, not a
     // duplicate of it.
-    assert_eq!(retry.insert_operations(&MmapFs, &batch), Ok(inserted));
+    assert_eq!(
+        retry.insert_operations(&MmapFs, &batch, &HardwareCounterCell::new()),
+        Ok(inserted)
+    );
     assert_eq!(
         fs_err::read(mappings_path(retried.path())).unwrap(),
         fs_err::read(mappings_path(landed.path())).unwrap(),
@@ -165,9 +222,17 @@ fn re_appends_a_batch_that_landed_unacknowledged() {
 fn rejects_a_mappings_file_shorter_than_the_log() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), None, [], 64).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        64,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new())
         .expect_err("a log longer than its file must be rejected");
 
     assert_eq!(log_end(dir.path()), 0, "nothing may be appended");
@@ -181,33 +246,41 @@ fn versions_reject_rewrites_duplicates_and_unclaimed_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), Some(2), [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        Some(2),
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .set_internal_versions(&MmapFs, &[0, 1], &[100, 101])
+        .set_internal_versions(&MmapFs, &[0, 1], &[100, 101], &HardwareCounterCell::new())
         .unwrap();
 
     // The log claimed up to slot 2, so slot 3 is nobody's.
     tracker
-        .set_internal_versions(&MmapFs, &[3], &[103])
+        .set_internal_versions(&MmapFs, &[3], &[103], &HardwareCounterCell::new())
         .expect_err("an unclaimed slot must be rejected");
     // Slot 1 is already committed.
     tracker
-        .set_internal_versions(&MmapFs, &[1], &[111])
+        .set_internal_versions(&MmapFs, &[1], &[111], &HardwareCounterCell::new())
         .expect_err("a rewrite must be rejected");
     // The same slot twice in one call.
     tracker
-        .set_internal_versions(&MmapFs, &[2, 2], &[102, 102])
+        .set_internal_versions(&MmapFs, &[2, 2], &[102, 102], &HardwareCounterCell::new())
         .expect_err("a duplicate must be rejected");
     // One id short of the versions it is paired with.
     tracker
-        .set_internal_versions(&MmapFs, &[2], &[102, 103])
+        .set_internal_versions(&MmapFs, &[2], &[102, 103], &HardwareCounterCell::new())
         .expect_err("mismatched lengths must be rejected");
 
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101]);
 
     // The rejections left the array appendable.
     tracker
-        .set_internal_versions(&MmapFs, &[2], &[102])
+        .set_internal_versions(&MmapFs, &[2], &[102], &HardwareCounterCell::new())
         .unwrap();
     assert_eq!(load_versions(&path).unwrap(), vec![100, 101, 102]);
 }
@@ -215,13 +288,15 @@ fn versions_reject_rewrites_duplicates_and_unclaimed_slots() {
 /// Resume a writer from what a reader makes of the segment on disk, the way a caller reopening the
 /// segment has to.
 fn resume(segment_path: &Path) -> Tracker {
-    let reader = ReadOnlyTracker::open(&MmapFs, segment_path, None).unwrap();
+    let reader =
+        ReadOnlyTracker::open(&MmapFs, segment_path, None, &HardwareCounterCell::new()).unwrap();
     Tracker::new(
         &MmapFs,
         segment_path,
         reader.max_claimed_internal_id(),
         reader.pending_inserts(),
         reader.mappings_read_to(),
+        &HardwareCounterCell::new(),
     )
     .unwrap()
 }
@@ -235,7 +310,15 @@ fn fills_skipped_slots() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
         .insert_operations(
             &MmapFs,
@@ -245,12 +328,13 @@ fn fills_skipped_slots() {
                 Insert(num(12)),
                 Insert(num(13)),
             ],
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
     // Slots 1 and 2 are skipped, one below the committed slot and one between.
     tracker
-        .set_internal_versions(&MmapFs, &[0, 3], &[100, 103])
+        .set_internal_versions(&MmapFs, &[0, 3], &[100, 103], &HardwareCounterCell::new())
         .unwrap();
 
     assert_eq!(
@@ -266,19 +350,32 @@ fn fills_skipped_slots() {
 fn resumes_above_a_slot_claimed_and_then_deleted() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut crashed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     crashed
-        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new())
         .unwrap();
     crashed
-        .set_internal_versions(&MmapFs, &[0], &[100])
+        .set_internal_versions(&MmapFs, &[0], &[100], &HardwareCounterCell::new())
         .unwrap();
     // Slot 1 is claimed, never versioned, and then retired.
     crashed
-        .insert_operations(&MmapFs, &[Insert(num(11)), Delete(num(11))])
+        .insert_operations(
+            &MmapFs,
+            &[Insert(num(11)), Delete(num(11))],
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
-    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    let reader =
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None, &HardwareCounterCell::new()).unwrap();
     assert_eq!(reader.max_claimed_internal_id(), Some(1));
     assert_eq!(
         reader.pending_inserts().count(),
@@ -286,13 +383,21 @@ fn resumes_above_a_slot_claimed_and_then_deleted() {
         "nothing left to retire"
     );
     assert_eq!(
-        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(11),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None,
         "the point is gone, but its slot is not free",
     );
 
     assert_eq!(
-        resume(dir.path()).insert_operations(&MmapFs, &[Insert(num(12))]),
+        resume(dir.path()).insert_operations(
+            &MmapFs,
+            &[Insert(num(12))],
+            &HardwareCounterCell::new()
+        ),
         Ok(vec![(num(12), 2)]),
     );
 }
@@ -308,19 +413,28 @@ fn resumes_above_a_slot_claimed_and_then_deleted() {
 fn retires_inherited_pending_inserts() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut crashed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     crashed
-        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new())
         .unwrap();
     crashed
-        .set_internal_versions(&MmapFs, &[0], &[100])
+        .set_internal_versions(&MmapFs, &[0], &[100], &HardwareCounterCell::new())
         .unwrap();
     // Slot 1 is claimed and its data left half-written; the writer stops here.
     crashed
-        .insert_operations(&MmapFs, &[Insert(num(11))])
+        .insert_operations(&MmapFs, &[Insert(num(11))], &HardwareCounterCell::new())
         .unwrap();
 
-    let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    let inherited =
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None, &HardwareCounterCell::new()).unwrap();
     assert_eq!(
         inherited.pending_inserts().collect::<Vec<_>>(),
         vec![num(11)],
@@ -329,7 +443,7 @@ fn retires_inherited_pending_inserts() {
     // Construction alone retired it, before this writer has been asked to do anything.
     let mut resumed = resume(dir.path());
     assert_eq!(
-        ReadOnlyTracker::open(&MmapFs, dir.path(), None)
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None, &HardwareCounterCell::new())
             .unwrap()
             .pending_inserts()
             .count(),
@@ -338,30 +452,43 @@ fn retires_inherited_pending_inserts() {
 
     // Slot 1 has to be covered for slot 2 to be published, and gets a version of its own here.
     assert_eq!(
-        resumed.insert_operations(&MmapFs, &[Insert(num(12))]),
+        resumed.insert_operations(&MmapFs, &[Insert(num(12))], &HardwareCounterCell::new()),
         Ok(vec![(num(12), 2)]),
     );
     resumed
-        .set_internal_versions(&MmapFs, &[1, 2], &[101, 102])
+        .set_internal_versions(&MmapFs, &[1, 2], &[101, 102], &HardwareCounterCell::new())
         .unwrap();
 
-    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    let reader =
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None, &HardwareCounterCell::new()).unwrap();
     assert_eq!(
-        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(11),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None,
         "an abandoned point must not surface once its slot is covered",
     );
-    assert!(reader.is_deleted_point(1));
+    assert!(reader.is_deleted_point(1, &HardwareCounterCell::new()));
     assert_eq!(
-        reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(10),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(0),
     );
     assert_eq!(
-        reader.internal_id_with_behavior(num(12), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(12),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(2),
     );
     assert_eq!(reader.total_point_count(), 3);
-    assert_eq!(reader.available_point_count(), 2);
+    assert_eq!(reader.available_point_count(&HardwareCounterCell::new()), 2);
 }
 
 /// An update whose new slot is abandoned costs the point, not just the unacknowledged update: the
@@ -371,38 +498,55 @@ fn retires_inherited_pending_inserts() {
 fn an_abandoned_update_retires_the_point() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
-    let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let mut crashed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     crashed
-        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new())
         .unwrap();
     crashed
-        .set_internal_versions(&MmapFs, &[0], &[100])
+        .set_internal_versions(&MmapFs, &[0], &[100], &HardwareCounterCell::new())
         .unwrap();
     // Re-inserting moves the id to a fresh slot; the writer stops before the version that would
     // publish it.
     assert_eq!(
-        crashed.insert_operations(&MmapFs, &[Insert(num(10))]),
+        crashed.insert_operations(&MmapFs, &[Insert(num(10))], &HardwareCounterCell::new()),
         Ok(vec![(num(10), 1)]),
     );
 
     let mut resumed = resume(dir.path());
     resumed
-        .insert_operations(&MmapFs, &[Insert(num(11))])
+        .insert_operations(&MmapFs, &[Insert(num(11))], &HardwareCounterCell::new())
         .unwrap();
     resumed
-        .set_internal_versions(&MmapFs, &[2], &[102])
+        .set_internal_versions(&MmapFs, &[2], &[102], &HardwareCounterCell::new())
         .unwrap();
 
-    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    let reader =
+        ReadOnlyTracker::open(&MmapFs, dir.path(), None, &HardwareCounterCell::new()).unwrap();
     assert_eq!(
-        reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(10),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None,
         "neither the abandoned slot nor the one it superseded may be served",
     );
-    assert!(reader.is_deleted_point(0));
-    assert!(reader.is_deleted_point(1));
+    assert!(reader.is_deleted_point(0, &HardwareCounterCell::new()));
+    assert!(reader.is_deleted_point(1, &HardwareCounterCell::new()));
     assert_eq!(
-        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        reader.internal_id_with_behavior(
+            num(11),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(2),
     );
 }
@@ -414,9 +558,17 @@ fn heals_a_partial_versions_tail() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let path = versions_path(dir.path());
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), Some(3), [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        Some(3),
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .set_internal_versions(&MmapFs, &[0, 1], &[100, 101])
+        .set_internal_versions(&MmapFs, &[0, 1], &[100, 101], &HardwareCounterCell::new())
         .unwrap();
 
     // Three bytes into slot 2, as a torn write would leave it.
@@ -425,7 +577,7 @@ fn heals_a_partial_versions_tail() {
     fs_err::write(&path, &torn).unwrap();
 
     tracker
-        .set_internal_versions(&MmapFs, &[2, 3], &[102, 103])
+        .set_internal_versions(&MmapFs, &[2, 3], &[102, 103], &HardwareCounterCell::new())
         .unwrap();
 
     // The committed slots survived, and the appended ones landed where the stray bytes were rather
@@ -446,9 +598,17 @@ fn heals_a_versions_file_of_only_a_partial_tail() {
 
     fs_err::write(&path, [0xFF; 5]).unwrap();
 
-    let mut tracker = Tracker::new(&MmapFs, dir.path(), Some(0), [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        Some(0),
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .set_internal_versions(&MmapFs, &[0], &[100])
+        .set_internal_versions(&MmapFs, &[0], &[100], &HardwareCounterCell::new())
         .unwrap();
 
     assert_eq!(load_versions(&path).unwrap(), vec![100]);
@@ -464,9 +624,22 @@ fn both_writers_produce_the_same_versions_file() {
     let internal_ids: Vec<PointOffsetType> = vec![0, 1, 2, 3];
     let versions: Vec<SeqNumberType> = vec![100, 7, u64::MAX, 0];
 
-    let mut tracker = Tracker::new(&MmapFs, appended.path(), Some(3), [], 0).unwrap();
+    let mut tracker = Tracker::new(
+        &MmapFs,
+        appended.path(),
+        Some(3),
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker
-        .set_internal_versions(&MmapFs, &internal_ids, &versions)
+        .set_internal_versions(
+            &MmapFs,
+            &internal_ids,
+            &versions,
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     let changes: BTreeMap<PointOffsetType, SeqNumberType> = internal_ids
@@ -502,29 +675,29 @@ fn both_writers_produce_the_same_versions_file() {
 fn assert_trackers_agree(appended: &ReadOnlyTracker, mutated: &ReadOnlyTracker) {
     assert_eq!(appended.total_point_count(), mutated.total_point_count());
     assert_eq!(
-        appended.available_point_count(),
-        mutated.available_point_count(),
+        appended.available_point_count(&HardwareCounterCell::new()),
+        mutated.available_point_count(&HardwareCounterCell::new()),
     );
     assert_eq!(
-        appended.deleted_point_count(),
-        mutated.deleted_point_count()
+        appended.deleted_point_count(&HardwareCounterCell::new()),
+        mutated.deleted_point_count(&HardwareCounterCell::new())
     );
 
     for slot in 0..appended.total_point_count() as PointOffsetType {
         assert_eq!(
-            appended.is_deleted_point(slot),
-            mutated.is_deleted_point(slot),
+            appended.is_deleted_point(slot, &HardwareCounterCell::new()),
+            mutated.is_deleted_point(slot, &HardwareCounterCell::new()),
             "deleted state mismatch at slot {slot}",
         );
         assert_eq!(
-            appended.external_id(slot),
-            mutated.external_id(slot),
+            appended.external_id(slot, &HardwareCounterCell::new()),
+            mutated.external_id(slot, &HardwareCounterCell::new()),
             "external id mismatch at slot {slot}",
         );
-        if !appended.is_deleted_point(slot) {
+        if !appended.is_deleted_point(slot, &HardwareCounterCell::new()) {
             assert_eq!(
-                appended.internal_version(slot),
-                mutated.internal_version(slot),
+                appended.internal_version(slot, &HardwareCounterCell::new()),
+                mutated.internal_version(slot, &HardwareCounterCell::new()),
                 "version mismatch at slot {slot}",
             );
         }
@@ -539,7 +712,15 @@ fn matches_the_mutable_tracker() {
     let appended_dir = Builder::new().prefix("update_only").tempdir().unwrap();
     let mutated_dir = Builder::new().prefix("mutable").tempdir().unwrap();
 
-    let mut writer = Tracker::new(&MmapFs, appended_dir.path(), None, [], 0).unwrap();
+    let mut writer = Tracker::new(
+        &MmapFs,
+        appended_dir.path(),
+        None,
+        [],
+        0,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let mut mutable = MutableIdTracker::open(mutated_dir.path(), None).unwrap();
 
     // The append-only writer hands out the slots; the mutable tracker is told to use exactly the
@@ -554,52 +735,89 @@ fn matches_the_mutable_tracker() {
                 Insert(num(12)),
                 Delete(num(99)),
             ],
+            &HardwareCounterCell::new(),
         )
         .unwrap();
     let versions: Vec<SeqNumberType> = vec![100, 101, 102];
     let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
     writer
-        .set_internal_versions(&MmapFs, &slots, &versions)
+        .set_internal_versions(&MmapFs, &slots, &versions, &HardwareCounterCell::new())
         .unwrap();
 
     for ((external_id, slot), version) in inserted.iter().zip(&versions) {
         mutable.set_link(*external_id, *slot).unwrap();
-        mutable.set_internal_version(*slot, *version).unwrap();
+        mutable
+            .set_internal_version(*slot, *version, &HardwareCounterCell::new())
+            .unwrap();
     }
-    mutable.drop(num(99)).unwrap();
+    mutable.drop(num(99), &HardwareCounterCell::new()).unwrap();
 
     // Then retire a live point through both.
     writer
-        .insert_operations(&MmapFs, &[Delete(uuid(11))])
+        .insert_operations(&MmapFs, &[Delete(uuid(11))], &HardwareCounterCell::new())
         .unwrap();
-    mutable.drop(uuid(11)).unwrap();
+    mutable.drop(uuid(11), &HardwareCounterCell::new()).unwrap();
 
-    mutable.mapping_flusher()().unwrap();
-    mutable.versions_flusher()().unwrap();
+    mutable.mapping_flusher(&HardwareCounterCell::new())().unwrap();
+    mutable.versions_flusher(&HardwareCounterCell::new())().unwrap();
 
-    let from_appended = ReadOnlyTracker::open(&MmapFs, appended_dir.path(), None).unwrap();
-    let from_mutated = ReadOnlyTracker::open(&MmapFs, mutated_dir.path(), None).unwrap();
+    let from_appended = ReadOnlyTracker::open(
+        &MmapFs,
+        appended_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let from_mutated = ReadOnlyTracker::open(
+        &MmapFs,
+        mutated_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     assert_trackers_agree(&from_appended, &from_mutated);
 
     for external_id in [num(10), uuid(11), num(12), num(99)] {
         assert_eq!(
-            from_appended.internal_id_with_behavior(external_id, DeferredBehavior::VisibleOnly),
-            from_mutated.internal_id_with_behavior(external_id, DeferredBehavior::VisibleOnly),
+            from_appended.internal_id_with_behavior(
+                external_id,
+                DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new()
+            ),
+            from_mutated.internal_id_with_behavior(
+                external_id,
+                DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new()
+            ),
             "resolution mismatch for {external_id}",
         );
     }
 
     // Three points were committed, one of them since retired.
     assert_eq!(from_appended.total_point_count(), 3);
-    assert_eq!(from_appended.available_point_count(), 2);
     assert_eq!(
-        from_appended.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        from_appended.available_point_count(&HardwareCounterCell::new()),
+        2
+    );
+    assert_eq!(
+        from_appended.internal_id_with_behavior(
+            num(10),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(0),
     );
     assert_eq!(
-        from_appended.internal_id_with_behavior(uuid(11), DeferredBehavior::VisibleOnly),
+        from_appended.internal_id_with_behavior(
+            uuid(11),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None,
     );
-    assert_eq!(from_appended.internal_version(2), Some(102));
+    assert_eq!(
+        from_appended.internal_version(2, &HardwareCounterCell::new()),
+        Some(102)
+    );
 }

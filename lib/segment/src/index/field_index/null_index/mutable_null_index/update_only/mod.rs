@@ -21,10 +21,14 @@ pub struct UpdateOnlyNullIndex {
 
 impl UpdateOnlyNullIndex {
     /// Open the index at `dir` for writing, reading both masks into memory.
-    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            has_values: UpdateOnlyStoredFlags::open(fs, &dir.join(HAS_VALUES_DIRNAME))?,
-            is_null: UpdateOnlyStoredFlags::open(fs, &dir.join(IS_NULL_DIRNAME))?,
+            has_values: UpdateOnlyStoredFlags::open(fs, &dir.join(HAS_VALUES_DIRNAME), hw_counter)?,
+            is_null: UpdateOnlyStoredFlags::open(fs, &dir.join(IS_NULL_DIRNAME), hw_counter)?,
         })
     }
 

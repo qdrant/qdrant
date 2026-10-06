@@ -89,7 +89,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: false,
                 }),
                 None,
-                hw_acc,
+                hw_acc.clone(),
                 DeferredBehavior::WithDeferred,
             )
             .await?
@@ -145,7 +145,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         let transfer_size = count_result.count / new_shard_count;
         progress.lock().set(0, transfer_size);
 
-        replica_set.transfer_indexes().await?;
+        replica_set.transfer_indexes(&hw_acc).await?;
 
         // Take our last seen clocks as cutoff point right before doing content batch transfers
         cutoff = replica_set.shard_recovery_point().await?;

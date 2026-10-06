@@ -55,11 +55,17 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         Ok(())
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>>;
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell)
+    -> Option<usize>;
 
-    fn total_unique_values_count(&self) -> OperationResult<usize>;
+    fn total_unique_values_count(&self, hw_counter: &HardwareCounterCell)
+    -> OperationResult<usize>;
 
     fn values_range<'a>(
         &'a self,
@@ -72,6 +78,7 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 
     /// Number of `(value, point)` pairs in the given range.
@@ -109,8 +116,8 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
 
     // Default-method helpers derived from the required methods above.
 
-    fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        self.values_count(idx).unwrap_or(0) == 0
+    fn values_is_empty(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.values_count(idx, hw_counter).unwrap_or(0) == 0
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {

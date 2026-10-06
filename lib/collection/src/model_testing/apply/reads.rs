@@ -1419,6 +1419,7 @@ pub(super) async fn apply_query_text(
     no_proxies: bool,
     filter_num: Option<i64>,
     filter_url_prefix: Option<&str>,
+    hw_acc: &HwMeasurementAcc,
 ) {
     // Query terms count once: the scorer deduplicates them. Tokenized as the shard does.
     let tokenizer = text_tokenizer(collection);
@@ -1479,7 +1480,7 @@ pub(super) async fn apply_query_text(
     let mut layouts_before = Vec::with_capacity(shard_count as usize);
     let mut before = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
-        layouts_before.push(exact_stats_layout(collection, shard_id).await);
+        layouts_before.push(exact_stats_layout(collection, shard_id, hw_acc).await);
         before.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
     }
     let points = run(ShardSelectorInternal::All, limit).await;
@@ -1502,7 +1503,7 @@ pub(super) async fn apply_query_text(
     let mut layouts_after = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
         after.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
-        layouts_after.push(exact_stats_layout(collection, shard_id).await);
+        layouts_after.push(exact_stats_layout(collection, shard_id, hw_acc).await);
     }
 
     // Across the collection. Exactly the matches only below the undersampling threshold: from
@@ -1837,6 +1838,7 @@ fn check_merge(points: &[ScoredPoint], shards: &[Vec<ScoredPoint>], limit: usize
 async fn exact_stats_layout(
     collection: &Collection,
     shard_id: u32,
+    hw_acc: &HwMeasurementAcc,
 ) -> Option<Vec<(SegmentId, bool, usize)>> {
     let holder = collection.shards_holder.read().await;
     let segments = holder
@@ -1852,10 +1854,14 @@ async fn exact_stats_layout(
             return None;
         }
         let appendable = segment.is_appendable();
-        if !appendable && segment.deleted_point_count() > 0 {
+        if !appendable && segment.deleted_point_count(&hw_acc.get_counter_cell()) > 0 {
             return None;
         }
-        layout.push((id, appendable, segment.available_point_count()));
+        layout.push((
+            id,
+            appendable,
+            segment.available_point_count(&hw_acc.get_counter_cell()),
+        ));
     }
     layout.sort_unstable();
     Some(layout)

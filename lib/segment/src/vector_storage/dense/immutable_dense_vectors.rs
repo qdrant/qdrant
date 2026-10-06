@@ -5,6 +5,7 @@ use std::path::Path;
 
 use bytemuck::TransparentWrapper;
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
@@ -56,9 +57,15 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         fs: &impl CachedReadFs<File = S>,
         vectors_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Vector data
-        fs.schedule_open(vectors_path, Some(Self::open_options(populate)), None);
+        fs.schedule_open(
+            vectors_path,
+            Some(Self::open_options(populate)),
+            None,
+            hw_counter,
+        );
 
         Ok(())
     }
@@ -70,18 +77,19 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         vectors_path: &Path,
         dim: usize,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let options = Self::open_options(populate);
-        let read_only =
-            ReadOnly::open(fs, vectors_path, options, Default::default()).map_err(|e| {
-                crate::common::operation_error::OperationError::service_error(format!(
-                    "Failed to open vector mmap at {}: {e}",
-                    vectors_path.display()
-                ))
-            })?;
+        let read_only = ReadOnly::open(fs, vectors_path, options, Default::default(), hw_counter)
+            .map_err(|e| {
+            crate::common::operation_error::OperationError::service_error(format!(
+                "Failed to open vector mmap at {}: {e}",
+                vectors_path.display()
+            ))
+        })?;
         // Vector count from the length read through `fs` — the backing store may
         // be remote, so never stat the path locally.
-        let file_len = read_only.len::<u8>().map_err(|e| {
+        let file_len = read_only.len::<u8>(hw_counter).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to read length of vector file {}: {e}",
                 vectors_path.display()
@@ -115,35 +123,49 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
     }
 
     /// Read one vector from storage at the given byte offset.
-    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
+    fn raw_vector_offset<P: AccessPattern>(
+        &self,
+        byte_offset: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
         let range = ReadRange {
             byte_offset: byte_offset as u64,
             length: self.dim as u64,
         };
 
         self.storage
-            .read(range, P::default())
+            .read(range, P::default(), hw_counter)
             .expect("vector read from storage failed")
     }
 
     /// Returns vector data by key
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Returns an optional vector data by key
-    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
+    pub fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [T]>> {
         self.data_offset(key)
-            .map(|offset| self.raw_vector_offset::<P>(offset))
+            .map(|offset| self.raw_vector_offset::<P>(offset, hw_counter))
     }
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(
         &self,
         keys: &[PointOffsetType],
         mut f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if TypedStorage::<ReadOnly<S>, T>::kind().can_be_async() {
-            return self.for_each_in_batch_async(keys, f);
+            return self.for_each_in_batch_async(keys, f, hw_counter);
         }
 
         // The `f` is most likely a scorer function. Fetching all vectors first, and then scoring
@@ -155,13 +177,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
             let vectors = if is_read_with_prefetch_efficient(keys) {
                 let iter = keys
                     .iter()
-                    .map(|&point_offset| self.get_vector::<Sequential>(point_offset));
+                    .map(|&point_offset| self.get_vector::<Sequential>(point_offset, hw_counter));
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
                 let iter = keys
                     .iter()
-                    .map(|&point_offset| self.get_vector::<Random>(point_offset));
+                    .map(|&point_offset| self.get_vector::<Random>(point_offset, hw_counter));
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             };
@@ -180,6 +202,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         &self,
         keys: &[PointOffsetType],
         mut callback: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
@@ -199,12 +222,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         };
 
         // access pattern does not matter for io_uring
-        self.storage.read_batch(ranges, Random, callback)?;
+        self.storage
+            .read_batch(ranges, Random, callback, hw_counter)?;
         Ok(())
     }
 
-    pub fn populate(&self) {
-        if let Err(err) = self.storage.populate() {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
+        if let Err(err) = self.storage.populate(hw_counter) {
             log::error!("Failed to populate vector storage: {err}");
         }
     }
@@ -241,12 +265,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         deleted_path: &Path,
         dim: usize,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
 
-        let data = ImmutableDenseVectorData::open(fs, vectors_path, dim, populate)?;
+        let data = ImmutableDenseVectorData::open(fs, vectors_path, dim, populate, hw_counter)?;
         let num_vectors = data.num_vectors;
 
         // Allocate/open deleted mmap
@@ -286,16 +311,21 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
     }
 
     /// Returns an optional vector data by key
-    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
-        self.data.get_vector_opt::<P>(key)
+    pub fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [T]>> {
+        self.data.get_vector_opt::<P>(key, hw_counter)
     }
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.data.for_each_in_batch(keys, f)
+        self.data.for_each_in_batch(keys, f, hw_counter)
     }
 
     /// Marks the key as deleted.
@@ -321,8 +351,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         &self.deleted
     }
 
-    pub fn populate(&self) {
-        self.data.populate();
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
+        self.data.populate(hw_counter);
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {

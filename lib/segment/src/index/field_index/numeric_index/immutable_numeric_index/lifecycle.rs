@@ -2,6 +2,7 @@ use std::ops::Bound;
 use std::path::PathBuf;
 
 use blobstore::Blob;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -30,7 +31,10 @@ where
     /// Numeric's body has no fallible reads to propagate (`from_mmap` is
     /// infallible; `clear_cache` errors are warn-and-continue, matching the
     /// other variants).
-    pub(in super::super) fn load_from_on_disk(index: OnDiskNumericIndex<T, S>) -> Self {
+    pub(in super::super) fn load_from_on_disk(
+        index: OnDiskNumericIndex<T, S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Self {
         // Load in-memory index from mmap storage
         let InMemoryNumericIndex {
             map,
@@ -38,7 +42,7 @@ where
             points_count,
             max_values_per_point,
             point_to_values,
-        } = InMemoryNumericIndex::from_on_disk(&index);
+        } = InMemoryNumericIndex::from_on_disk(&index, hw_counter);
 
         // Index is now loaded into memory, clear cache of backing storage
         if let Err(err) = index.clear_cache() {

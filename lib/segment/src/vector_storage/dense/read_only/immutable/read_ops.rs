@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -20,9 +21,13 @@ impl<B: DenseVectorBlob> DenseVectorStorageRead<B::Element>
         self.vectors.dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [B::Element]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [B::Element]> {
         self.vectors
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .expect("vector not found")
     }
 
@@ -30,27 +35,35 @@ impl<B: DenseVectorBlob> DenseVectorStorageRead<B::Element>
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
-        self.vectors.for_each_in_batch(&keys, |idx, dense| {
-            let user_data = user_data[idx];
-            let key = keys[idx];
-            callback(user_data, key, bytemuck::cast_slice(dense).to_vec());
-        })
+        self.vectors.for_each_in_batch(
+            &keys,
+            |idx, dense| {
+                let user_data = user_data[idx];
+                let key = keys[idx];
+                callback(user_data, key, bytemuck::cast_slice(dense).to_vec());
+            },
+            hw_counter,
+        )
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[B::Element])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.vectors.for_each_in_batch(keys, f)
+        self.vectors.for_each_in_batch(keys, f, hw_counter)
     }
 }
 
 impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStorage<B> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<B::Element>()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter)
+            * self.vector_dim()
+            * std::mem::size_of::<B::Element>()
     }
 
     fn distance(&self) -> Distance {
@@ -65,13 +78,17 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
         !self.populate.to_bool::<B::File>()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.num_vectors()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         self.vectors
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .map(|vector| CowVector::from(B::Element::slice_to_float_cow(vector)))
             .expect("Vector not found")
     }
@@ -80,22 +97,32 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice, but we still want `user_data[idx]` in the callback.
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.vectors
-            .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector = CowVector::from(B::Element::slice_to_float_cow(Cow::Borrowed(vector)));
-                callback(user_data[idx], point_offsets[idx], vector);
-            })
+            .for_each_in_batch(
+                &point_offsets,
+                |idx, vector| {
+                    let vector =
+                        CowVector::from(B::Element::slice_to_float_cow(Cow::Borrowed(vector)));
+                    callback(user_data[idx], point_offsets[idx], vector);
+                },
+                hw_counter,
+            )
             .expect("read vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         self.vectors
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .map(|vector| CowVector::from(B::Element::slice_to_float_cow(vector)))
     }
 
@@ -103,8 +130,9 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.read_dense_bytes::<P, U>(keys, callback)
+        self.read_dense_bytes::<P, U>(keys, callback, hw_counter)
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {

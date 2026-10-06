@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
@@ -25,15 +26,17 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         load_profile: Option<&LoadProfile>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PayloadConfig> {
         // Config
         let config_path = PayloadConfig::get_config_path(path);
-        let config = PayloadConfig::load_universal(fs, &config_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Read-only payload index missing config at {}",
-                config_path.display()
-            ))
-        })?;
+        let config =
+            PayloadConfig::load_universal(fs, &config_path, hw_counter)?.ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Read-only payload index missing config at {}",
+                    config_path.display()
+                ))
+            })?;
 
         // Payload indexes
         for (field, indexed) in config.indices.iter() {
@@ -47,6 +50,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
                     &indexed.schema,
                     index_type,
                     populate_override,
+                    hw_counter,
                 )?;
             }
         }
@@ -58,6 +62,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// index through `fs` (never builds/migrates/writes). `config` is the one
     /// [`preopen`](Self::preopen) already read; `load_profile` mirrors the
     /// preopen's per-field placement decisions.
+    #[expect(clippy::too_many_arguments)]
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         payload: Arc<AtomicRefCell<ReadOnlyPayloadStorage<S>>>,
@@ -66,11 +71,12 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         path: &Path,
         config: PayloadConfig,
         load_profile: Option<&LoadProfile>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let field_indexes = {
             let id_tracker = id_tracker.borrow();
             let total_point_count = id_tracker.total_point_count();
-            let deleted_points = id_tracker.deleted_point_bitslice();
+            let deleted_points = id_tracker.deleted_point_bitslice(hw_counter);
 
             let mut field_indexes: ReadOnlyIndexesMap<S> = Default::default();
             for (field, indexed) in config.indices.iter() {
@@ -87,6 +93,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
                         total_point_count,
                         deleted_points,
                         populate_override,
+                        hw_counter,
                     )? {
                         indexes.push(index);
                     }

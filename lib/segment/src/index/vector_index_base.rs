@@ -43,7 +43,7 @@ pub trait VectorIndexRead {
     fn indexed_vector_count(&self) -> usize;
 
     /// Total size of all searchable vectors in bytes.
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize;
+    fn size_of_searchable_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     /// Augment the IDF stats for the given dimensions over the given corpus
     /// and return the number of documents contributing to them: indexed
@@ -139,17 +139,17 @@ impl VectorIndexEnum {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             Self::Plain(_) => {}
-            Self::Hnsw(index) => index.populate()?,
+            Self::Hnsw(index) => index.populate(hw_counter)?,
             Self::SparseRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().populate(hw_counter)?,
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().populate(hw_counter)?,
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().populate(hw_counter)?,
         };
         Ok(())
     }
@@ -258,23 +258,29 @@ impl VectorIndexRead for VectorIndexEnum {
         }
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
+            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
+            Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
             Self::SparseCompressedImmutableRamF16(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
             Self::SparseCompressedImmutableRamU8(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
-            Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedMmapF32(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
+            Self::SparseCompressedMmapF16(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
+            Self::SparseCompressedMmapU8(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
         }
     }
 

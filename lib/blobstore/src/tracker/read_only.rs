@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
@@ -53,9 +54,10 @@ impl<S: UniversalRead> ReadOnlyTracker<S> {
         fs: &Fs,
         base_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let path = Tracker::<S>::tracker_file_name(base_path);
-        let storage = Tracker::open_storage(fs, &path, populate, false)?;
+        let storage = Tracker::open_storage(fs, &path, populate, false, hw_counter)?;
         Ok(Self {
             path,
             storage,
@@ -63,14 +65,22 @@ impl<S: UniversalRead> ReadOnlyTracker<S> {
         })
     }
 
-    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) {
-        Tracker::preopen(fs, &self.path, self.populate);
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        Tracker::preopen(fs, &self.path, self.populate, hw_counter);
     }
 
     /// Refresh to the current on-disk state by opening a fresh storage handle
     /// and swapping it in. See the type docs for why `reopen()` is not enough.
-    pub fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
-        self.storage = Tracker::open_storage(fs, &self.path, self.populate, false)?;
+    pub fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
+        self.storage = Tracker::open_storage(fs, &self.path, self.populate, false, hw_counter)?;
         Ok(())
     }
 
@@ -83,26 +93,40 @@ impl<S: UniversalRead> TrackerRead for ReadOnlyTracker<S> {
     /// The writer-maintained count from the stored header, read as plain data
     /// through the current handle — i.e. as of the last
     /// [`Self::live_reload`]. Not kept as in-memory state.
-    fn max_point_offset(&self) -> Result<PointOffset> {
-        Ok(Tracker::read_header(&self.storage)?.next_pointer_offset)
+    fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
+        Ok(Tracker::read_header(&self.storage, hw_counter)?.next_pointer_offset)
     }
 
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        read_slot::<P, _>(&self.storage, point_offset)
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
+        read_slot::<P, _>(&self.storage, point_offset, hw_counter)
     }
 
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>> {
-        read_slots::<P, _>(&self.storage, point_offsets)
+        read_slots::<P, _>(&self.storage, point_offsets, hw_counter)
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    fn iter<'a, U, I>(
+        &'a self,
+        point_offsets: I,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
     {
-        Iter::new(point_offsets, &self.storage, no_pending_updates())
+        Iter::new(
+            point_offsets,
+            &self.storage,
+            no_pending_updates(),
+            hw_counter,
+        )
     }
 }

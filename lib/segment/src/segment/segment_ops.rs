@@ -352,7 +352,7 @@ impl Segment {
             if storage.is_deleted_vector(old_id) {
                 continue;
             }
-            if let Some(bytes) = storage.vector_bytes_opt::<Random>(old_id)? {
+            if let Some(bytes) = storage.vector_bytes_opt::<Random>(old_id, hw_counter)? {
                 raw_vectors.insert(vector_name.clone(), bytes);
             }
         }
@@ -472,6 +472,7 @@ impl Segment {
                     Ok((op_result, Some(existing_internal_id)))
                 }
             },
+            hw_counter,
         )
     }
 
@@ -547,6 +548,7 @@ impl Segment {
         point_id: PointIdType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
@@ -566,7 +568,7 @@ impl Segment {
             } // else: Re-try operation
         }
 
-        let res = self.handle_point_version(op_num, op_point_offset, operation);
+        let res = self.handle_point_version(op_num, op_point_offset, operation, hw_counter);
 
         match get_service_error(&res) {
             None => {
@@ -628,6 +630,7 @@ impl Segment {
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
@@ -637,7 +640,7 @@ impl Segment {
             && self
                 .id_tracker
                 .borrow()
-                .internal_version(point_offset)
+                .internal_version(point_offset, hw_counter)
                 .is_some_and(|current_version| current_version > op_num)
         {
             return Ok(false);
@@ -649,7 +652,7 @@ impl Segment {
         if let Some(internal_id) = internal_id {
             self.id_tracker
                 .borrow_mut()
-                .set_internal_version(internal_id, op_num)?;
+                .set_internal_version(internal_id, op_num, hw_counter)?;
         }
 
         Ok(applied)
@@ -671,7 +674,10 @@ impl Segment {
             // deleted bitslice (see
             // `PointMappingsRefEnum::filter_deferred_and_deleted`). Payload
             // storage is untouched, so the version tracker is not bumped.
-            return self.id_tracker.borrow_mut().drop_internal(internal_id);
+            return self
+                .id_tracker
+                .borrow_mut()
+                .drop_internal(internal_id, hw_counter);
         }
 
         // Mark point as deleted, drop mapping
@@ -684,7 +690,7 @@ impl Segment {
         // `drop_internal` updates the id tracker's deferred-deleted counter when
         // the point sits at or above the deferred threshold, with double-delete
         // protection inside `PointMappings::drop`.
-        id_tracker.drop_internal(internal_id)?;
+        id_tracker.drop_internal(internal_id, hw_counter)?;
         drop(id_tracker);
 
         self.version_tracker.set_payload(op_num);
@@ -708,16 +714,22 @@ impl Segment {
         self.version.replace(max(op_num, self.version.unwrap_or(0)));
     }
 
-    pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
+    pub fn get_internal_id(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<PointOffsetType> {
         // Proxy/transfer callers pair this with `point_is_deferred`; they need
         // the latest head, so resolve with deferred preference.
-        self.id_tracker
-            .borrow()
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
+        self.id_tracker.borrow().internal_id_with_behavior(
+            point_id,
+            DeferredBehavior::WithDeferred,
+            hw_counter,
+        )
     }
 
-    pub fn get_deleted_points_bitvec(&self) -> BitVec {
-        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
+    pub fn get_deleted_points_bitvec(&self, hw_counter: &HardwareCounterCell) -> BitVec {
+        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice(hw_counter))
     }
 
     pub(super) fn get_state(&self) -> SegmentState {
@@ -766,9 +778,12 @@ impl Segment {
 
     /// Check consistency of the segment's data and repair it if possible.
     /// Removes partially persisted points.
-    pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
+    pub fn check_consistency_and_repair(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Get rid of mappingless points.
-        let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
+        let ids_to_clean = self.fix_id_tracker_inconsistencies(hw_counter)?;
 
         // There are some leftovers to clean from segment.
         // After that we need to set internal version to 0, so that
@@ -787,7 +802,7 @@ impl Segment {
                 self.delete_point_internal(internal_id, None, &disposable_hw_counter)?;
             }
 
-            self.flush(true)?;
+            self.flush(true, hw_counter)?;
 
             // We do not drop version here, because it is already not loaded into memory.
             // There are no explicit mapping between internal ID and version, so all dangling
@@ -856,13 +871,13 @@ impl Segment {
     /// A shard can still be consistent with an inconsistent segment as points are merged based on their version.
     ///
     /// Returns an error if any inconsistency is found
-    pub fn check_data_consistency(&self) -> OperationResult<()> {
+    pub fn check_data_consistency(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         let id_tracker = self.id_tracker.borrow();
 
         // dangling internal ids
         let mut has_dangling_internal_ids = false;
-        for internal_id in id_tracker.point_mappings().iter_internal() {
-            if id_tracker.external_id(internal_id).is_none() {
+        for internal_id in id_tracker.point_mappings(hw_counter).iter_internal() {
+            if id_tracker.external_id(internal_id, hw_counter).is_none() {
                 log::error!("Internal id {internal_id} without external id");
                 has_dangling_internal_ids = true
             }
@@ -870,11 +885,14 @@ impl Segment {
 
         // dangling external ids
         let mut has_dangling_external_ids = false;
-        for external_id in id_tracker.point_mappings().iter_external() {
+        for external_id in id_tracker
+            .point_mappings(hw_counter)
+            .iter_external(hw_counter)
+        {
             // Dangling check: a point is fine as long as *some* head resolves,
             // so prefer the deferred head and fall back to active.
             if id_tracker
-                .internal_id_with_behavior(external_id, DeferredBehavior::WithDeferred)
+                .internal_id_with_behavior(external_id, DeferredBehavior::WithDeferred, hw_counter)
                 .is_none()
             {
                 log::error!("External id {external_id} without internal id");
@@ -884,8 +902,11 @@ impl Segment {
 
         // checking internal id without version
         let mut has_internal_ids_without_version = false;
-        for internal_id in id_tracker.point_mappings().iter_internal() {
-            if id_tracker.internal_version(internal_id).is_none() {
+        for internal_id in id_tracker.point_mappings(hw_counter).iter_internal() {
+            if id_tracker
+                .internal_version(internal_id, hw_counter)
+                .is_none()
+            {
                 log::error!("Internal id {internal_id} without version");
                 has_internal_ids_without_version = true;
             }
@@ -893,18 +914,20 @@ impl Segment {
 
         // check that non deleted points exist in vector storage
         let mut has_internal_ids_without_vector = false;
-        for internal_id in id_tracker.point_mappings().iter_internal() {
+        for internal_id in id_tracker.point_mappings(hw_counter).iter_internal() {
             for (vector_name, vector_data) in &self.vector_data {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
-                let is_vector_deleted_tracker = id_tracker.is_deleted_point(internal_id);
-                let vector_stored = vector_storage.get_vector_opt::<Random>(internal_id);
+                let is_vector_deleted_tracker =
+                    id_tracker.is_deleted_point(internal_id, hw_counter);
+                let vector_stored =
+                    vector_storage.get_vector_opt::<Random>(internal_id, hw_counter);
                 if !is_vector_deleted_storage
                     && !is_vector_deleted_tracker
                     && vector_stored.is_none()
                 {
-                    let point_id = id_tracker.external_id(internal_id);
-                    let point_version = id_tracker.internal_version(internal_id);
+                    let point_id = id_tracker.external_id(internal_id, hw_counter);
+                    let point_version = id_tracker.internal_version(internal_id, hw_counter);
                     // ignoring initial version because the WAL replay can resurrect un-flushed points by assigning them a new initial version
                     // those points will be deleted by the next deduplication process
                     if point_version != Some(0) {
@@ -931,7 +954,11 @@ impl Segment {
         }
     }
 
-    pub fn available_vector_count(&self, vector_name: &VectorName) -> OperationResult<usize> {
+    pub fn available_vector_count(
+        &self,
+        vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         Ok(self
             .vector_data
@@ -939,7 +966,7 @@ impl Segment {
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?
             .vector_storage
             .borrow()
-            .available_vector_count())
+            .available_vector_count(hw_counter))
     }
 
     pub fn total_point_count(&self) -> usize {
@@ -948,8 +975,11 @@ impl Segment {
 
     /// Fixes inconsistencies in the ID tracker, if any.
     /// Returns list of IDs without mappings which should be removed from segment
-    pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
-        self.id_tracker.borrow_mut().fix_inconsistencies()
+    pub fn fix_id_tracker_inconsistencies(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        self.id_tracker.borrow_mut().fix_inconsistencies(hw_counter)
     }
 }
 

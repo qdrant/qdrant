@@ -177,7 +177,7 @@ impl PayloadIndex for StructPayloadIndex {
                 }
             } else {
                 for index in field_index {
-                    index.remove_point(point_id)?;
+                    index.remove_point(point_id, hw_counter)?;
                 }
             }
         }
@@ -216,7 +216,7 @@ impl PayloadIndex for StructPayloadIndex {
                 }
             } else {
                 for index in field_index {
-                    index.remove_point(point_id)?;
+                    index.remove_point(point_id, hw_counter)?;
                 }
             }
         }
@@ -231,7 +231,7 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
             for index in indexes {
-                index.remove_point(point_id)?;
+                index.remove_point(point_id, hw_counter)?;
             }
         }
         self.payload.borrow_mut().delete(point_id, key, hw_counter)
@@ -242,21 +242,21 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
-        self.clear_index_for_point(point_id)?;
+        self.clear_index_for_point(point_id, hw_counter)?;
         self.payload.borrow_mut().clear(point_id, hw_counter)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         // Most field indices have either 2 or 3 indices (including null), we also have an extra
         // payload storage flusher. Overallocate to save potential reallocations.
         let mut field_flushers = Vec::with_capacity(self.field_indexes.len() * 3);
 
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                field_flushers.push(index.flusher());
+                field_flushers.push(index.flusher(hw_counter));
             }
         }
-        let payload_flusher = self.payload.borrow().flusher();
+        let payload_flusher = self.payload.borrow().flusher(hw_counter);
 
         Box::new(move || {
             for flusher in field_flushers {

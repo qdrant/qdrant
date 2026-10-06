@@ -61,7 +61,7 @@ where
         quantized_data: &'a TEncodedVectors,
         mut hardware_counter: HardwareCounterCell,
     ) -> Result<Self, InternalScorerUnsupported> {
-        let Some(query) = quantized_data.encode_internal_vector(point_id) else {
+        let Some(query) = quantized_data.encode_internal_vector(point_id, &hardware_counter) else {
             return Err(InternalScorerUnsupported(hardware_counter));
         };
 

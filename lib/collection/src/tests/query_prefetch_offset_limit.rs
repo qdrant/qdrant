@@ -93,6 +93,7 @@ async fn fixture() -> Collection {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

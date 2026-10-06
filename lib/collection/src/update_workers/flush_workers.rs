@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
@@ -49,10 +50,15 @@ impl UpdateWorkers {
     fn flush_segments(
         segments: LockedSegmentHolder,
         applied_up_to: Option<SeqNumberType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        let flushed_version =
-            read_segments.flush_all_up_to(FlushMode::Background, false, applied_up_to)?;
+        let flushed_version = read_segments.flush_all_up_to(
+            FlushMode::Background,
+            false,
+            applied_up_to,
+            hw_counter,
+        )?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
@@ -66,6 +72,7 @@ impl UpdateWorkers {
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         applied_seq_handler: Arc<AppliedSeqHandler>,
+        hw_counter: &HardwareCounterCell,
     ) {
         log::trace!("Attempting flushing");
         let wal_flush_job = wal.blocking_lock().flush_async();
@@ -96,7 +103,8 @@ impl UpdateWorkers {
         // raise the cap for segments this pass already captured half of.
         let applied_up_to = applied_seq_handler.applied_op_num();
 
-        let confirmed_version = Self::flush_segments(segments.clone(), Some(applied_up_to));
+        let confirmed_version =
+            Self::flush_segments(segments.clone(), Some(applied_up_to), hw_counter);
         let confirmed_version = match confirmed_version {
             Ok(version) => version,
             Err(err) => {
@@ -165,6 +173,7 @@ impl UpdateWorkers {
                     clocks_clone,
                     shard_path_clone,
                     applied_seq_handler_clone,
+                    &HardwareCounterCell::disposable(), // 🤖 Internal operation
                 )
             })
             .await

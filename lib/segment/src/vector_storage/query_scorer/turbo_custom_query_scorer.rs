@@ -67,7 +67,9 @@ where
         // Read the stored vector once (one vector of IO), then score every
         // sub-query against it — each sub-query is one vector of CPU work.
         // The per-vector byte cost is the counter multiplier set in `new`.
-        let bytes = self.storage.get_quantized_vector(idx);
+        let bytes = self
+            .storage
+            .get_quantized_vector(idx, &self.hardware_counter);
         self.hardware_counter.vector_io_read().incr();
 
         let cpu_counter = self.hardware_counter.cpu_counter();
@@ -87,12 +89,16 @@ where
         let cpu_counter = self.hardware_counter.cpu_counter();
 
         self.storage
-            .for_each_in_dense_tq_batch(ids, |idx, bytes| {
-                scores[idx] = self.query.score_by(|query| {
-                    cpu_counter.incr();
-                    self.storage.score_query_bytes(query, bytes)
-                });
-            })
+            .for_each_in_dense_tq_batch(
+                ids,
+                |idx, bytes| {
+                    scores[idx] = self.query.score_by(|query| {
+                        cpu_counter.incr();
+                        self.storage.score_query_bytes(query, bytes)
+                    });
+                },
+                &self.hardware_counter,
+            )
             .expect("read TQ vectors");
     }
 

@@ -20,11 +20,12 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
-            Self::Appendable(index) => index.live_preload(fs),
-            Self::Immutable(index) => index.live_preload(fs),
-            Self::OnDisk(index) => index.live_preload(fs),
+            Self::Appendable(index) => index.live_preload(fs, hw_counter),
+            Self::Immutable(index) => index.live_preload(fs, hw_counter),
+            Self::OnDisk(index) => index.live_preload(fs, hw_counter),
         }
     }
 

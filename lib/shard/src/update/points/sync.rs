@@ -114,7 +114,7 @@ where
     // 1. Retrieve existing points for a range
     let stored_point_ids: AHashSet<_> = segments
         .iter()
-        .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
+        .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id, hw_counter))
         .collect();
     // 2. Remove points, which are not present in the sync operation
     let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
@@ -147,6 +147,7 @@ where
 
             Ok(updated)
         },
+        hw_counter,
     )?;
 
     // 4. Select new points

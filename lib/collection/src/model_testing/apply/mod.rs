@@ -19,6 +19,7 @@ pub(super) async fn apply(
     active: &mut BTreeSet<VectorNameBuf>,
     op: &Op,
     no_proxies: bool,
+    hw_acc: &HwMeasurementAcc,
 ) {
     match op {
         Op::Upsert(id, vecs, payload) => {
@@ -148,7 +149,7 @@ pub(super) async fn apply(
             writes::apply_create_vector_name(collection, active, name, config).await
         }
         Op::DeleteVectorName(name) => {
-            writes::apply_delete_vector_name(collection, model, active, name).await
+            writes::apply_delete_vector_name(collection, model, active, name, hw_acc).await
         }
         Op::SetPayloadByFilter { num, payload } => {
             writes::apply_set_payload_by_filter(collection, model, *num, payload).await
@@ -212,7 +213,9 @@ pub(super) async fn apply(
         Op::CreateSnapshot => {
             unreachable!("CreateSnapshot is handled in the run loop, not apply()")
         }
-        Op::SetFlushInterval(sec) => writes::apply_set_flush_interval(collection, *sec).await,
+        Op::SetFlushInterval(sec) => {
+            writes::apply_set_flush_interval(collection, *sec, hw_acc).await
+        }
         Op::QueryText {
             text,
             limit,
@@ -232,6 +235,7 @@ pub(super) async fn apply(
                 no_proxies,
                 *filter_num,
                 filter_url_prefix.as_deref(),
+                hw_acc,
             )
             .await
         }

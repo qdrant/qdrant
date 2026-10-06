@@ -33,6 +33,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::Path;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -53,7 +54,13 @@ mod tests {
 
     fn test_segment_config(dim: usize) -> SegmentOptimizerConfig {
         let temp_dir = Builder::new().prefix("segment_cfg_dir").tempdir().unwrap();
-        let segment = build_simple_segment(temp_dir.path(), dim, Distance::Dot).unwrap();
+        let segment = build_simple_segment(
+            temp_dir.path(),
+            dim,
+            Distance::Dot,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let mut dense_vectors = HashMap::new();
         for (vector_name, vector_data) in &segment.segment_config.vector_data {
             dense_vectors.insert(
@@ -124,7 +131,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .max_segment_size_kb = 100;
 
-        let check_result_empty = merge_optimizer.plan_optimizations_for_test(&locked_holder);
+        let check_result_empty = merge_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
 
         assert!(check_result_empty.is_empty());
 
@@ -132,7 +140,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .max_segment_size_kb = 200;
 
-        let check_result = merge_optimizer.plan_optimizations_for_test(&locked_holder);
+        let check_result = merge_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let check_result = check_result.into_iter().exactly_one().unwrap();
 
         assert_eq!(check_result.len(), 3);
@@ -163,7 +172,8 @@ mod tests {
 
         let locked_holder = LockedSegmentHolder::new(holder);
 
-        let suggested_to_merge = merge_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_merge = merge_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let suggested_for_merge = suggested_to_merge.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_for_merge.len(), 4);
 
@@ -197,7 +207,13 @@ mod tests {
             if !other_segment_ids.contains(&segment_id) {
                 let holder_guard = locked_holder.read();
                 let new_segment = holder_guard.get(segment_id).unwrap();
-                assert_eq!(new_segment.get().read().available_point_count(), 3 * 3 + 10);
+                assert_eq!(
+                    new_segment
+                        .get()
+                        .read()
+                        .available_point_count(&HardwareCounterCell::new()),
+                    3 * 3 + 10
+                );
             }
         }
 
@@ -206,7 +222,7 @@ mod tests {
         // `SegmentHolder::register_post_flush_action`). Flush to run the action before asserting.
         locked_holder
             .read()
-            .flush_all(FlushMode::Sync, true)
+            .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
             .expect("failed to flush segment holder");
 
         // Check if optimized segments removed from disk
@@ -276,7 +292,7 @@ mod tests {
                 .max_segment_size_kb = max_segment_size; // 1 KiB == 1 vector
             merge_optimizer.set_default_segments_number_for_test(default_segment_number);
             let result = merge_optimizer
-                .plan_optimizations_for_test(&locked_holder)
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new())
                 .into_iter()
                 .map(|batch| {
                     let it = batch.iter().map(|id| segment_id_to_size[id]);

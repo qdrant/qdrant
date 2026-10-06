@@ -22,6 +22,7 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         Ok(Vec::new())
     }

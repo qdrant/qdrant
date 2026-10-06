@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use collection::operations::verification::StrictModeVerification;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch, check_strict_mode_toc, check_strict_mode_toc_batch,
 };
@@ -91,8 +92,15 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         timeout: Option<usize>,
         auth: &Auth,
     ) -> Result<&Arc<TableOfContent>, StorageError> {
-        let pass =
-            check_strict_mode(request, timeout, collection_name, self.dispatcher, auth).await?;
+        let pass = check_strict_mode(
+            request,
+            timeout,
+            collection_name,
+            self.dispatcher,
+            auth,
+            &HwMeasurementAcc::disposable(),
+        )
+        .await?;
         Ok(self.dispatcher.toc(auth, &pass))
     }
 
@@ -114,6 +122,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
             collection_name,
             self.dispatcher,
             auth,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
         Ok(self.dispatcher.toc(auth, &pass))
@@ -142,7 +151,15 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         timeout: Option<usize>,
         auth: &Auth,
     ) -> Result<&Arc<TableOfContent>, StorageError> {
-        check_strict_mode_toc(request, timeout, collection_name, self.toc, auth).await?;
+        check_strict_mode_toc(
+            request,
+            timeout,
+            collection_name,
+            self.toc,
+            auth,
+            &HwMeasurementAcc::disposable(),
+        )
+        .await?;
         Ok(self.toc)
     }
 
@@ -164,6 +181,7 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
             collection_name,
             self.toc,
             auth,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
         Ok(self.toc)

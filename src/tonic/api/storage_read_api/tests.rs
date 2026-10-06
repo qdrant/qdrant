@@ -12,6 +12,7 @@ use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use futures::StreamExt as _;
@@ -109,6 +110,7 @@ fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
             ChannelService::new(6333, false, None, None),
             0,
             None,
+            &HwMeasurementAcc::new(),
         )
         .unwrap(),
     );

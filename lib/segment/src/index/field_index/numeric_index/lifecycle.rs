@@ -33,8 +33,9 @@ where
         path: &Path,
         memory: Memory,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        let index = NumericIndexInner::new_mmap(path, memory, deleted_points)?;
+        let index = NumericIndexInner::new_mmap(path, memory, deleted_points, hw_counter)?;
 
         Ok(index.map(|inner| Self {
             inner,
@@ -42,8 +43,12 @@ where
         }))
     }
 
-    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
-        let index = NumericIndexInner::new_gridstore(dir, create_if_missing)?;
+    pub fn new_mutable(
+        dir: PathBuf,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
+        let index = NumericIndexInner::new_gridstore(dir, create_if_missing, hw_counter)?;
 
         Ok(index.map(|inner| Self {
             inner,
@@ -112,24 +117,28 @@ where
         self.inner.get_telemetry_data()
     }
 
-    pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        self.inner.values_count(idx).unwrap_or_default()
+    pub fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        self.inner.values_count(idx, hw_counter).unwrap_or_default()
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        self.inner.get_values(idx)
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        self.inner.get_values(idx, hw_counter)
     }
 
-    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        self.inner.values_is_empty(idx)
+    pub fn values_is_empty(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.inner.values_is_empty(idx, hw_counter)
     }
 
     pub fn is_on_disk(&self) -> bool {
         self.inner.is_on_disk()
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.inner.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.inner.populate(hw_counter)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {

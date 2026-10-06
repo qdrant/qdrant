@@ -40,6 +40,7 @@ pub(crate) fn load_segments_parallel<S>(
     segments: impl IntoIterator<Item = (Uuid, PathBuf)>,
     load_profile: Option<&LoadProfile>,
     is_stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<(Uuid, ReadOnlySegment<S>)>>
 where
     S: UniversalReadExt + 'static,
@@ -47,7 +48,9 @@ where
 {
     // Stage every open: LIST all segments concurrently, then preopen each one.
     let listed_futs = segments.into_iter().map(|(uuid, path)| async move {
-        let cached_fs = ReadOnlySegment::<S>::build_cached_fs_async(fs, &path).await;
+        let cached_fs =
+            ReadOnlySegment::<S>::build_cached_fs_async(fs, &path, hw_counter.new_accumulator())
+                .await;
         (uuid, path, cached_fs)
     });
     check_process_stopped(is_stopped)?;
@@ -64,6 +67,7 @@ where
                 None,
                 load_profile,
                 is_stopped,
+                hw_counter,
             )
         });
         match staged_open {
@@ -85,18 +89,21 @@ where
 
     // Assemble from the resolved handles on the pool.
     let ctx = uio_trace::Context::current();
+    let hw_acc = hw_counter.new_accumulator();
     let loaded = pool.install(|| {
         staged
             .into_par_iter()
-            .filter_map(|(uuid, staged)| match ctx.in_scope(|| staged.finish(fs)) {
-                Ok(segment) => Some(Ok((uuid, segment))),
-                Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
-                Err(err) => {
-                    log::log!(
-                        skip_level(&err),
-                        "read-only open: skipping unloadable segment {uuid}: {err}"
-                    );
-                    None
+            .filter_map(|(uuid, staged)| {
+                match ctx.in_scope(|| staged.finish(fs, &hw_acc.get_counter_cell())) {
+                    Ok(segment) => Some(Ok((uuid, segment))),
+                    Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
+                    Err(err) => {
+                        log::log!(
+                            skip_level(&err),
+                            "read-only open: skipping unloadable segment {uuid}: {err}"
+                        );
+                        None
+                    }
                 }
             })
             .collect::<OperationResult<Vec<_>>>()
@@ -156,7 +163,10 @@ where
     check_process_stopped(is_stopped)?;
     let preloads = futures::executor::block_on(join_all(segments.iter().map(
         |(uuid, segment)| async move {
-            let res = segment.read().live_preload(is_stopped).await;
+            let res = segment
+                .read()
+                .live_preload(is_stopped, hw_counter.new_accumulator())
+                .await;
             if let Err(ref err) = res
                 && !matches!(err, OperationError::Cancelled { .. })
             {

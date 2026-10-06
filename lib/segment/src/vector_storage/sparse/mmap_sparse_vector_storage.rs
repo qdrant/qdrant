@@ -46,28 +46,29 @@ pub struct MmapSparseVectorStorage {
 }
 
 impl MmapSparseVectorStorage {
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, hw_counter: &HardwareCounterCell) -> OperationResult<Self> {
         let deleted_dir = path.join(DELETED_DIRNAME);
         if deleted_dir.is_dir() {
             // Storage already exists, open it
-            return Self::open(path);
+            return Self::open(path, hw_counter);
         }
 
-        Self::create(path)
+        Self::create(path, hw_counter)
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, hw_counter: &HardwareCounterCell) -> OperationResult<Self> {
         // Sparse vector storage does not need to be populated
         // as it is not required in the index search step
         let populate = Populate::No;
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Blobstore::open(MmapFs, storage_dir, populate).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to open mmap sparse vector storage: {err}"
-            ))
-        })?;
+        let storage =
+            Blobstore::open(MmapFs, storage_dir, populate, hw_counter).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to open mmap sparse vector storage: {err}"
+                ))
+            })?;
 
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
@@ -76,6 +77,7 @@ impl MmapSparseVectorStorage {
             &deleted_path,
             FlagsMode::from_feature_flags(),
             populate,
+            hw_counter,
         )?;
 
         let deleted_count = deleted.count_trues();
@@ -94,7 +96,7 @@ impl MmapSparseVectorStorage {
         })
     }
 
-    fn create(path: &Path) -> OperationResult<Self> {
+    fn create(path: &Path, hw_counter: &HardwareCounterCell) -> OperationResult<Self> {
         let path = path.to_path_buf();
 
         // Storage
@@ -107,11 +109,12 @@ impl MmapSparseVectorStorage {
             compression: Compression::None,
         });
 
-        let storage = Blobstore::new(MmapFs, storage_dir, storage_options).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to create storage for mmap sparse vectors: {err}"
-            ))
-        })?;
+        let storage =
+            Blobstore::new(MmapFs, storage_dir, storage_options, hw_counter).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to create storage for mmap sparse vectors: {err}"
+                ))
+            })?;
 
         // Payload storage does not need to be populated
         // as it is not required in the index search step
@@ -124,6 +127,7 @@ impl MmapSparseVectorStorage {
             &deleted_path,
             FlagsMode::from_feature_flags(),
             Populate::from(populate),
+            hw_counter,
         )?;
 
         Ok(Self {
@@ -172,7 +176,7 @@ impl MmapSparseVectorStorage {
             )?;
         } else if (key as usize) < self.next_point_offset {
             // delete vector
-            self.storage.delete_value(key)?;
+            self.storage.delete_value(key, hw_counter)?;
         }
         // else: nothing was ever stored at this key, nothing to delete
 
@@ -183,9 +187,9 @@ impl MmapSparseVectorStorage {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // deleted bitvec is already in-memory
-        self.storage.populate()?;
+        self.storage.populate(hw_counter)?;
         Ok(())
     }
 
@@ -223,6 +227,7 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         keys: &[PointOffsetType],
         mut callback: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector),
@@ -241,6 +246,7 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
             point_offsets,
             callback,
             HardwareCounterCell::disposable().vector_io_read(),
+            hw_counter,
         )
     }
 }
@@ -272,7 +278,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
 }
 
 impl VectorStorageRead for MmapSparseVectorStorage {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         unreachable!("Mmap sparse storage does not know its total size, get from index instead")
     }
 
@@ -288,12 +294,16 @@ impl VectorStorageRead for MmapSparseVectorStorage {
         true
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.next_point_offset
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key)
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
             .unwrap_or_else(CowVector::default_sparse)
     }
 
@@ -301,6 +311,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
             let Some(sparse_vector) = sparse_vector else {
@@ -317,6 +328,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
                 keys.into_iter(),
                 callback,
                 HardwareCounterCell::disposable().vector_io_read(),
+                hw_counter,
             )
             .expect("sparse vectors read")
     }
@@ -324,7 +336,11 @@ impl VectorStorageRead for MmapSparseVectorStorage {
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         match self.get_sparse_opt::<P>(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
@@ -347,6 +363,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Same batched pass as `read_vectors`, re-serializing the stored form
         // instead of decoding it into a `SparseVector`.
@@ -362,6 +379,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
                 Ok(())
             },
             HardwareCounterCell::disposable().vector_io_read(),
+            hw_counter,
         )
     }
 }
@@ -380,9 +398,9 @@ impl VectorStorage for MmapSparseVectorStorage {
         Ok(())
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
-        let storage_flusher = self.storage.flusher();
-        let deleted_flags_flusher = self.deleted.flusher();
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> crate::common::Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
+        let deleted_flags_flusher = self.deleted.flusher(hw_counter);
         Box::new(move || {
             deleted_flags_flusher()?;
             storage_flusher().map_err(|err| {
@@ -408,6 +426,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     fn delete_vector(
         &mut self,
         key: common::types::PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true);
 
@@ -474,7 +493,9 @@ mod test {
             .prefix("test_storage")
             .tempdir()
             .unwrap();
-        let storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
+        let storage =
+            MmapSparseVectorStorage::open_or_create(tmp_dir.path(), &HardwareCounterCell::new())
+                .unwrap();
 
         let mut existing_files = HashSet::new();
         visit_files_recursively(tmp_dir.path(), &mut |path| {
@@ -502,7 +523,11 @@ mod test {
             values: vec![0.1, 0.2, 0.3],
         };
         {
-            let mut storage = MmapSparseVectorStorage::open_or_create(temp_dir.path()).unwrap();
+            let mut storage = MmapSparseVectorStorage::open_or_create(
+                temp_dir.path(),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let stopped = AtomicBool::new(false);
 
             let mut entries = vec![
@@ -511,13 +536,14 @@ mod test {
             ]
             .into_iter();
             storage.update_from(&mut entries, &stopped).unwrap();
-            assert_eq!(storage.total_vector_count(), 2); // correct in-session
-            storage.flusher()().unwrap();
+            assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 2); // correct in-session
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
         // On reload it must still be 2 (it returned 1 before the fix)
-        let storage = MmapSparseVectorStorage::open(temp_dir.path()).unwrap();
+        let storage =
+            MmapSparseVectorStorage::open(temp_dir.path(), &HardwareCounterCell::new()).unwrap();
         assert_eq!(
-            storage.total_vector_count(),
+            storage.total_vector_count(&HardwareCounterCell::new()),
             2,
             "reload must count the trailing deleted-only offset"
         );
@@ -538,7 +564,8 @@ mod test {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
+            let mut storage =
+                MmapSparseVectorStorage::open_or_create(tmp_dir.path(), &hw_counter).unwrap();
 
             storage
                 .insert_vector(0, VectorRef::from(&vector), &hw_counter)
@@ -549,11 +576,11 @@ mod test {
             storage
                 .insert_vector(4, VectorRef::from(&vector), &hw_counter)
                 .unwrap();
-            storage.flusher()().unwrap();
+            storage.flusher(&hw_counter)().unwrap();
         }
 
-        let storage = MmapSparseVectorStorage::open(tmp_dir.path()).unwrap();
-        let result_vector = storage.get_vector::<Random>(0);
+        let storage = MmapSparseVectorStorage::open(tmp_dir.path(), &hw_counter).unwrap();
+        let result_vector = storage.get_vector::<Random>(0, &hw_counter);
 
         match result_vector {
             crate::data_types::named_vectors::CowVector::Sparse(sparse) => {
@@ -570,7 +597,9 @@ mod test {
         const DIM: usize = 1024;
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+        let mut storage =
+            MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new())
+                .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
         let hw_counter = HardwareCounterCell::disposable();
@@ -586,9 +615,9 @@ mod test {
             if !rng.random_bool(0.1) {
                 continue;
             }
-            storage.delete_vector(internal_id).unwrap();
+            storage.delete_vector(internal_id, &hw_counter).unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
 

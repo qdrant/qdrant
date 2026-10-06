@@ -1,6 +1,8 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
@@ -31,14 +33,15 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate)? {
+        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate, hw_counter)? {
             return Ok(());
         }
-        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
+        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path, hw_counter)? {
             return Ok(());
         }
-        ReadOnlyAppendableIdTracker::preopen(fs, segment_path);
+        ReadOnlyAppendableIdTracker::preopen(fs, segment_path, hw_counter);
         Ok(())
     }
 
@@ -54,17 +57,21 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
+        if let Some(tracker) =
+            ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate, hw_counter)?
+        {
             return Ok(Self::DiskResident(tracker));
         }
-        if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {
+        if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path, hw_counter)? {
             return Ok(Self::Immutable(tracker));
         }
         Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
             fs,
             segment_path,
             deferred_internal_id,
+            hw_counter,
         )?))
     }
 
@@ -72,9 +79,10 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
         &self,
         inner_fs: &Fs,
+        hw_acc: &HwMeasurementAcc,
     ) -> OperationResult<TrackerProbe> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.probe_committed(inner_fs).await,
+            Self::Appendable(id_tracker) => id_tracker.probe_committed(inner_fs, hw_acc).await,
             Self::Immutable(_) | Self::DiskResident(_) => Ok(TrackerProbe::Unknown),
         }
     }
@@ -83,11 +91,12 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.live_preload(fs),
-            Self::Immutable(id_tracker) => id_tracker.live_preload(fs),
-            Self::DiskResident(id_tracker) => id_tracker.live_preload(fs),
+            Self::Immutable(id_tracker) => id_tracker.live_preload(fs, hw_counter),
+            Self::DiskResident(id_tracker) => id_tracker.live_preload(fs, hw_counter),
         }
     }
 
@@ -100,11 +109,14 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         &mut self,
         fs: &Fs,
         max_committed_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
-            Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
-            Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
+            Self::Appendable(id_tracker) => {
+                id_tracker.live_reload(fs, max_committed_id, hw_counter)
+            }
+            Self::Immutable(id_tracker) => id_tracker.live_reload(fs, hw_counter),
+            Self::DiskResident(id_tracker) => id_tracker.live_reload(fs, hw_counter),
         }
     }
 }
@@ -112,24 +124,33 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
     type Backend = S;
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+    fn point_mappings(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.point_mappings(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.point_mappings(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.point_mappings(),
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.point_mappings(hw_counter),
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.point_mappings(hw_counter),
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.point_mappings(hw_counter)
+            }
         }
     }
 
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
-                id_tracker.internal_version(internal_id)
+                id_tracker.internal_version(internal_id, hw_counter)
             }
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
-                id_tracker.internal_version(internal_id)
+                id_tracker.internal_version(internal_id, hw_counter)
             }
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                id_tracker.internal_version(internal_id)
+                id_tracker.internal_version(internal_id, hw_counter)
             }
         }
     }
@@ -138,25 +159,36 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         &self,
         external_id: PointIdType,
         deferred_behavior: common::types::DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
             ReadOnlyIdTrackerEnum::Immutable(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
             ReadOnlyIdTrackerEnum::DiskResident(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
         }
     }
 
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.external_id(internal_id),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.external_id(internal_id),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.external_id(internal_id),
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
         }
     }
 
@@ -164,16 +196,17 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => {
-                t.internal_versions_batch(internal_ids, callback)
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
             }
             ReadOnlyIdTrackerEnum::Immutable(t) => {
-                t.internal_versions_batch(internal_ids, callback)
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
             }
             ReadOnlyIdTrackerEnum::DiskResident(t) => {
-                t.internal_versions_batch(internal_ids, callback)
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
             }
         }
     }
@@ -182,11 +215,18 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(t) => t.external_ids_batch(internal_ids, callback),
-            ReadOnlyIdTrackerEnum::Immutable(t) => t.external_ids_batch(internal_ids, callback),
-            ReadOnlyIdTrackerEnum::DiskResident(t) => t.external_ids_batch(internal_ids, callback),
+            ReadOnlyIdTrackerEnum::Appendable(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
         }
     }
 
@@ -195,16 +235,17 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
             ReadOnlyIdTrackerEnum::Immutable(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
             ReadOnlyIdTrackerEnum::DiskResident(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
         }
     }
@@ -217,40 +258,62 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
         }
     }
 
-    fn available_point_count(&self) -> usize {
-        match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.available_point_count(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.available_point_count(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.available_point_count(),
-        }
-    }
-
-    fn deleted_point_count(&self) -> usize {
-        match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.deleted_point_count(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deleted_point_count(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.deleted_point_count(),
-        }
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.deleted_point_bitslice(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.deleted_point_bitslice(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.deleted_point_bitslice(),
-        }
-    }
-
-    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool {
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
+                id_tracker.available_point_count(hw_counter)
             }
             ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
+                id_tracker.available_point_count(hw_counter)
             }
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
+                id_tracker.available_point_count(hw_counter)
+            }
+        }
+    }
+
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                id_tracker.deleted_point_count(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                id_tracker.deleted_point_count(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.deleted_point_count(hw_counter)
+            }
+        }
+    }
+
+    fn deleted_point_bitslice(&self, hw_counter: &HardwareCounterCell) -> &BitSlice {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+        }
+    }
+
+    fn is_deleted_point(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        match self {
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
             }
         }
     }
@@ -265,11 +328,18 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {
 
     fn iter_internal_versions(
         &self,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         match self {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => id_tracker.iter_internal_versions(),
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => id_tracker.iter_internal_versions(),
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => id_tracker.iter_internal_versions(),
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
         }
     }
 

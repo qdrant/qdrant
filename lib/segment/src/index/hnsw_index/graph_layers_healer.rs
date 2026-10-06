@@ -221,29 +221,34 @@ impl<'a> GraphLayersHealer<'a> {
         quantized_vectors: Option<&QuantizedVectors>,
         stopped: &AtomicBool,
         counter: &AtomicU64,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let hw_acc = hw_counter.new_accumulator();
         pool.install(|| {
             std::mem::take(&mut self.to_heal)
                 .into_par_iter()
                 .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                .try_for_each(|(offset, level)| {
-                    check_process_stopped(stopped)?;
+                .try_for_each_init(
+                    || hw_acc.get_counter_cell(),
+                    |hw_counter, (offset, level)| {
+                        check_process_stopped(stopped)?;
 
-                    // Internal operation. No measurements needed.
-                    let internal_hardware_counter = HardwareCounterCell::disposable();
-                    let query = vector_storage
-                        .get_vector::<Random>(offset)
-                        .as_vec_ref()
-                        .into();
-                    let scorer = if let Some(quantized_vectors) = quantized_vectors {
-                        quantized_vectors.raw_scorer(query, internal_hardware_counter)?
-                    } else {
-                        new_raw_scorer(query, vector_storage, internal_hardware_counter)?
-                    };
-                    self.heal_point_on_level(offset, level, scorer.as_ref());
-                    counter.fetch_add(1, Ordering::Relaxed);
-                    Ok(())
-                })
+                        // Internal operation. No measurements needed.
+                        let internal_hardware_counter = HardwareCounterCell::disposable();
+                        let query = vector_storage
+                            .get_vector::<Random>(offset, &*hw_counter)
+                            .as_vec_ref()
+                            .into();
+                        let scorer = if let Some(quantized_vectors) = quantized_vectors {
+                            quantized_vectors.raw_scorer(query, internal_hardware_counter)?
+                        } else {
+                            new_raw_scorer(query, vector_storage, internal_hardware_counter)?
+                        };
+                        self.heal_point_on_level(offset, level, scorer.as_ref());
+                        counter.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    },
+                )
         })
     }
 

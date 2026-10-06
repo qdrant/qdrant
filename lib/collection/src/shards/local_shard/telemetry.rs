@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::types::SizeStats;
@@ -18,6 +19,7 @@ impl LocalShard {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShardTelemetry> {
         let start = std::time::Instant::now();
         let segments = self.segments.clone();
@@ -27,6 +29,7 @@ impl LocalShard {
             let locked_collection_config = self.collection_config.clone();
             let is_stopped_guard = StoppingGuard::new();
             let is_stopped = is_stopped_guard.get_is_stopped();
+            let hw_acc = hw_acc.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
                 let segments: Vec<_> = {
@@ -50,12 +53,16 @@ impl LocalShard {
                         return Err(CollectionError::timeout(timeout, "shard telemetry"));
                     };
 
-                    segments_telemetry.push(segment_guard.get_telemetry_data(detail)?)
+                    segments_telemetry
+                        .push(segment_guard.get_telemetry_data(detail, &hw_acc.get_counter_cell())?)
                 }
 
                 let collection_config = locked_collection_config.blocking_read();
-                let indexed_only_excluded_vectors =
-                    indexed_only::get_index_only_excluded_vectors(&segments, &collection_config);
+                let indexed_only_excluded_vectors = indexed_only::get_index_only_excluded_vectors(
+                    &segments,
+                    &collection_config,
+                    &hw_acc.get_counter_cell(),
+                );
 
                 Ok((segments_telemetry, indexed_only_excluded_vectors))
             });
@@ -87,7 +94,7 @@ impl LocalShard {
             payloads_size_bytes,
             num_points,
         } = self
-            .get_size_stats(timeout.saturating_sub(start.elapsed()))
+            .get_size_stats(timeout.saturating_sub(start.elapsed()), hw_acc)
             .await?;
 
         Ok(LocalShardTelemetry {
@@ -137,9 +144,14 @@ impl LocalShard {
         AbortOnDropHandle::new(status).await?
     }
 
-    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+    pub async fn get_size_stats(
+        &self,
+        timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<SizeStats> {
         let segments = self.segments.clone();
 
+        let hw_acc = hw_acc.clone();
         let stats = tokio::task::spawn_blocking(move || {
             // blocking sync lock
             let Some(segments) = segments.try_read_for(timeout) else {
@@ -157,7 +169,7 @@ impl LocalShard {
             for (_, segment) in segments.iter() {
                 // `size_info`, not `info`: only size fields are read here, and it
                 // does not materialize the lazily-built payload index bitmaps.
-                let info = segment.get().read().size_info();
+                let info = segment.get().read().size_info(&hw_acc.get_counter_cell());
                 num_points += info.num_points;
                 num_vectors += info.num_vectors;
                 vectors_size_bytes += info.vectors_size_bytes;

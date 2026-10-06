@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
 
@@ -47,10 +48,10 @@ where
         }
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            Self::Dynamic(storage) => storage.flusher(),
-            Self::Compact(storage) => storage.flusher(),
+            Self::Dynamic(storage) => storage.flusher(hw_counter),
+            Self::Compact(storage) => storage.flusher(hw_counter),
         }
     }
 

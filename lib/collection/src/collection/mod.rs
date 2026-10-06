@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
 use common::universal_io::MmapFs;
@@ -123,6 +124,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Self> {
         let start_time = std::time::Instant::now();
 
@@ -166,6 +168,7 @@ impl Collection {
                     .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
                 None,
+                hw_acc,
             )
             .await?;
 
@@ -177,7 +180,7 @@ impl Collection {
         let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&shared_shard_holder).await?,
+            Self::estimate_collection_size_stats(&shared_shard_holder, hw_acc).await?,
         );
 
         // Once the config is persisted - the collection is considered to be successfully created.
@@ -225,11 +228,13 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        hw_acc: &HwMeasurementAcc,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let stored_version = CollectionVersion::load_universal(&MmapFs, path)
-            .expect("Can't read collection version")
-            .expect("Collection version is not found");
+        let stored_version =
+            CollectionVersion::load_universal(&MmapFs, path, &hw_acc.get_counter_cell())
+                .expect("Can't read collection version")
+                .expect("Collection version is not found");
 
         let app_version = CollectionVersion::current();
 
@@ -293,13 +298,14 @@ impl Collection {
                     .clone()
                     .unwrap_or_else(AdaptiveSearchHandle::current),
                 optimizer_resource_budget.clone(),
+                hw_acc,
             )
             .await;
 
         let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&shared_shard_holder)
+            Self::estimate_collection_size_stats(&shared_shard_holder, hw_acc)
                 .await
                 .expect("Failed to load collection size stats"),
         );
@@ -632,6 +638,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
         options: OptimizationsRequestOptions,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<OptimizationsResponse> {
         let shard_holder_read = self.shards_holder.read().await;
 
@@ -639,12 +646,13 @@ impl Collection {
         let replica_set =
             shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
-        replica_set.local_optimizations(options).await
+        replica_set.local_optimizations(options, hw_acc).await
     }
 
     /// Collect memory report across all shards (local + remote).
     pub async fn memory_report(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
@@ -655,7 +663,7 @@ impl Collection {
 
         let mut futures: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
-            .map(|(shard, _shard_key)| shard.memory_report())
+            .map(|(shard, _shard_key)| shard.memory_report(hw_acc))
             .collect();
 
         let mut reports = Vec::new();
@@ -669,6 +677,7 @@ impl Collection {
     pub async fn local_shard_memory_report(
         &self,
         shard_id: ShardId,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         let shard_holder_read = self.shards_holder.read().await;
 
@@ -676,7 +685,7 @@ impl Collection {
         let replica_set =
             shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
-        replica_set.local_memory_report().await
+        replica_set.local_memory_report(hw_acc).await
     }
 
     pub async fn state(&self) -> State {
@@ -941,6 +950,7 @@ impl Collection {
     pub async fn get_aggregated_telemetry_data(
         &self,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CollectionsAggregatedTelemetry> {
         let start = std::time::Instant::now();
         let shards_holder = self.shards_holder.read().await;
@@ -959,7 +969,7 @@ impl Collection {
 
             shard_optimization_statuses.push(shard_optimization_status);
             let size_stats = shard
-                .get_size_stats(timeout.saturating_sub(start.elapsed()))
+                .get_size_stats(timeout.saturating_sub(start.elapsed()), hw_acc)
                 .await?;
             vectors += size_stats.num_vectors;
         }
@@ -1004,18 +1014,22 @@ impl Collection {
 
     async fn estimate_collection_size_stats(
         shards_holder: &SharedShardHolder,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Option<CollectionSizeStats>> {
         let shard_lock = shards_holder.read().await;
-        shard_lock.estimate_collection_size_stats().await
+        shard_lock.estimate_collection_size_stats(hw_acc).await
     }
 
     /// Returns estimations of collection sizes. This values are cached and might be not 100% up to date.
     /// The cache gets updated every 32 calls.
     pub(crate) async fn estimated_collection_stats(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Option<&CollectionSizeAtomicStats>> {
         self.collection_stats_cache
-            .get_or_update_cache(|| Self::estimate_collection_size_stats(&self.shards_holder))
+            .get_or_update_cache(|| {
+                Self::estimate_collection_size_stats(&self.shards_holder, hw_acc)
+            })
             .await
     }
 }

@@ -235,7 +235,8 @@ fn test_multivector_quantization_hnsw(
 
     let int_key = "int";
 
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -302,6 +303,7 @@ fn test_multivector_quantization_hnsw(
                 quantized_data_path,
                 4,
                 &stopped,
+                &hw_counter,
             )
             .unwrap();
         }
@@ -311,6 +313,7 @@ fn test_multivector_quantization_hnsw(
             &vector_storage.vector_storage.borrow(),
             quantized_data_path,
             &stopped,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
@@ -354,6 +357,7 @@ fn test_multivector_quantization_hnsw(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

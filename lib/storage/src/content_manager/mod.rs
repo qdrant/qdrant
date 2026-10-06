@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use collection::collection_state;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use self::alias_mapping::AliasMapping;
 use self::collection_meta_ops::CollectionMetaOperations;
@@ -216,11 +217,16 @@ pub trait CollectionContainer {
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError>;
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;
 
-    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
+    fn apply_collections_snapshot(
+        &self,
+        data: CollectionsSnapshot,
+        hw_acc: &HwMeasurementAcc,
+    ) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 

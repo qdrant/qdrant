@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use quantization::EncodedVectors;
@@ -68,11 +69,12 @@ impl GpuMultivectors {
             QuantizedStorage,
             TMultivectorOffsetsStorage,
         >,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,
-            (0..quantized_storage.vectors_count())
-                .map(|id| quantized_storage.inner_vector_offset(id as PointOffsetType))
+            (0..quantized_storage.vectors_count(hw_counter))
+                .map(|id| quantized_storage.inner_vector_offset(id as PointOffsetType, hw_counter))
                 .map(|x| GpuMultivectorOffset {
                     start: x.start,
                     count: x.count,
@@ -84,15 +86,16 @@ impl GpuMultivectors {
     pub fn new_multidense<T: PrimitiveVectorElement, TVectorStorage: MultiVectorStorage<T>>(
         device: Arc<gpu::Device>,
         vector_storage: &TVectorStorage,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,
             Self::counts_to_offsets(
-                (0..vector_storage.total_vector_count())
+                (0..vector_storage.total_vector_count(hw_counter))
                     // map ID to count of vectors in multivector
                     .map(|id| {
                         vector_storage
-                            .get_multi::<Random>(id as PointOffsetType)
+                            .get_multi::<Random>(id as PointOffsetType, hw_counter)
                             .as_ref()
                             .vectors_count()
                     }),
@@ -109,12 +112,14 @@ impl GpuMultivectors {
     pub fn new_turbo_multi(
         device: Arc<gpu::Device>,
         vector_storage: &AppendableMmapMultiTurboVectorStorage,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GpuMultivectors> {
         Self::new_impl(
             device,
             Self::counts_to_offsets(
-                (0..vector_storage.total_vector_count())
-                    .map(|id| vector_storage.point_inner_vectors_count(id as PointOffsetType)),
+                (0..vector_storage.total_vector_count(hw_counter)).map(|id| {
+                    vector_storage.point_inner_vectors_count(id as PointOffsetType, hw_counter)
+                }),
             ),
         )
     }

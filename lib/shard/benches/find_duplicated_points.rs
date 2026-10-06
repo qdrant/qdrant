@@ -54,14 +54,14 @@ pub fn duplicate_bench(c: &mut Criterion) {
     println!(
         "Duplicates: {}",
         holder
-            .find_duplicated_points()
+            .find_duplicated_points(&hw_counter)
             .values()
             .map(|ids| ids.len())
             .sum::<usize>(),
     );
 
     c.bench_function("find duplicates", |b| {
-        b.iter(|| holder.find_duplicated_points());
+        b.iter(|| holder.find_duplicated_points(&hw_counter));
     });
 }
 

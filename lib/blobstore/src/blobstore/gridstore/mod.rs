@@ -103,13 +103,18 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new(fs: &S::Fs, base_path: PathBuf, config: GridstoreConfig) -> Result<Self> {
+    pub(super) fn new(
+        fs: &S::Fs,
+        base_path: PathBuf,
+        config: GridstoreConfig,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = Bitmask::create(fs, &base_path, config.clone())?;
+        let bitmask = Bitmask::create(fs, &base_path, config.clone(), hw_counter)?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(fs, &base_path, None)?)),
+            tracker: Arc::new(RwLock::new(Tracker::new(fs, &base_path, None, hw_counter)?)),
             pages: Arc::new(RwLock::new(Pages::new(base_path.clone(), true))),
             base_path,
             config,
@@ -121,11 +126,14 @@ where
 
         let new_page_id = storage.next_page_id();
         let path = page_path(&storage.base_path, new_page_id);
-        storage.create_page_file(fs, &path)?;
-        storage.pages.write().attach_page(fs, &path, Populate::No)?;
+        storage.create_page_file(fs, &path, hw_counter)?;
+        storage
+            .pages
+            .write()
+            .attach_page(fs, &path, Populate::No, hw_counter)?;
 
         let config_bytes = serde_json::to_vec(&StorageConfig::Mutable(storage.config.clone()))?;
-        fs.atomic_save(&config_path, &config_bytes)?;
+        fs.atomic_save(&config_path, &config_bytes, hw_counter)?;
 
         Ok(storage)
     }
@@ -138,14 +146,15 @@ where
         base_path: PathBuf,
         config: GridstoreConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let mut tracker = Tracker::open(fs, &base_path, populate, true)?;
-        tracker.replay_journal()?;
-        let mut bitmask = Bitmask::open(fs, &base_path, config.clone())?;
+        let mut tracker = Tracker::open(fs, &base_path, populate, true, hw_counter)?;
+        tracker.replay_journal(hw_counter)?;
+        let mut bitmask = Bitmask::open(fs, &base_path, config.clone(), hw_counter)?;
         let num_pages = bitmask.infer_num_pages();
 
-        let pages = Pages::open(fs, &base_path, true, populate)?;
+        let pages = Pages::open(fs, &base_path, true, populate, hw_counter)?;
         let loaded_pages = pages.num_pages();
 
         if loaded_pages != num_pages {
@@ -161,12 +170,12 @@ where
         // comparison. Content-level staleness is still repaired lazily, see
         // `find_or_create_available_blocks`.
         let mut gaps_rebuilt = false;
-        if bitmask.gaps_length_mismatch()?.is_some() {
+        if bitmask.gaps_length_mismatch(hw_counter)?.is_some() {
             log::warn!(
                 "Detected region gaps length mismatch for Gridstore bitmask at {base_path:?}, rebuilding gaps from the bitmask",
             );
             // Replaces the gaps file, which must happen before anything else can map it.
-            bitmask = bitmask.into_rebuilt_gaps(fs)?;
+            bitmask = bitmask.into_rebuilt_gaps(fs, hw_counter)?;
             gaps_rebuilt = true;
         }
 
@@ -192,19 +201,30 @@ where
 
     /// Create a new page and return its id.
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn create_new_page(&mut self, fs: &S::Fs) -> Result<u32> {
+    pub(super) fn create_new_page(
+        &mut self,
+        fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = page_path(&self.base_path, new_page_id);
-        self.create_page_file(fs, &path)?;
-        self.pages.write().attach_page(fs, &path, Populate::No)?;
+        self.create_page_file(fs, &path, hw_counter)?;
+        self.pages
+            .write()
+            .attach_page(fs, &path, Populate::No, hw_counter)?;
 
-        self.bitmask.write().cover_new_page()?;
+        self.bitmask.write().cover_new_page(hw_counter)?;
 
         Ok(new_page_id)
     }
 
-    fn create_page_file(&self, fs: &S::Fs, path: &std::path::Path) -> Result<()> {
-        fs.create(path, self.config.page_size_bytes)?;
+    fn create_page_file(
+        &self,
+        fs: &S::Fs,
+        path: &std::path::Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
+        fs.create(path, self.config.page_size_bytes, hw_counter)?;
         Ok(())
     }
 
@@ -212,10 +232,13 @@ where
         &mut self,
         fs: &S::Fs,
         num_blocks: u32,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(PageId, BlockOffset)> {
         debug_assert!(num_blocks > 0, "num_blocks must be greater than 0");
 
-        if let Some(available) = self.try_find_or_create_available_blocks(fs, num_blocks)? {
+        if let Some(available) =
+            self.try_find_or_create_available_blocks(fs, num_blocks, hw_counter)?
+        {
             return Ok(available);
         }
 
@@ -235,10 +258,10 @@ where
             "Detected inconsistent region gaps for Gridstore bitmask at {:?}, rebuilding gaps from the bitmask",
             self.base_path,
         );
-        self.bitmask.write().rebuild_gaps()?;
+        self.bitmask.write().rebuild_gaps(hw_counter)?;
 
         Ok(self
-            .try_find_or_create_available_blocks(fs, num_blocks)?
+            .try_find_or_create_available_blocks(fs, num_blocks, hw_counter)?
             .expect("New page has just been created and gaps have just been rebuilt"))
     }
 
@@ -250,12 +273,15 @@ where
         &mut self,
         fs: &S::Fs,
         num_blocks: u32,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<(PageId, BlockOffset)>> {
         let bitmask_guard = self.bitmask.read();
-        if let Some((page_id, block_offset)) = bitmask_guard.find_available_blocks(num_blocks)? {
+        if let Some((page_id, block_offset)) =
+            bitmask_guard.find_available_blocks(num_blocks, hw_counter)?
+        {
             return Ok(Some((page_id, block_offset)));
         }
-        let trailing_free_blocks = bitmask_guard.trailing_free_blocks()?;
+        let trailing_free_blocks = bitmask_guard.trailing_free_blocks(hw_counter)?;
 
         drop(bitmask_guard);
 
@@ -264,10 +290,12 @@ where
         let num_pages =
             (missing_blocks * self.config.block_size_bytes).div_ceil(self.config.page_size_bytes);
         for _ in 0..num_pages {
-            self.create_new_page(fs)?;
+            self.create_new_page(fs, hw_counter)?;
         }
 
-        self.bitmask.read().find_available_blocks(num_blocks)
+        self.bitmask
+            .read()
+            .find_available_blocks(num_blocks, hw_counter)
     }
 
     /// Write value into a new cell, considering that it can span more than one page.
@@ -365,16 +393,20 @@ where
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
-            self.find_or_create_available_blocks(fs, required_blocks)?;
+            self.find_or_create_available_blocks(fs, required_blocks, hw_counter.parent())?;
 
         self.write_into_pages(&comp_value, start_page_id, block_offset)?;
 
-        self.bitmask
-            .write()
-            .mark_blocks(start_page_id, block_offset, required_blocks, true)?;
+        self.bitmask.write().mark_blocks(
+            start_page_id,
+            block_offset,
+            required_blocks,
+            true,
+            hw_counter.parent(),
+        )?;
 
         let mut tracker_guard = self.tracker.write();
-        let is_update = tracker_guard.has_pointer(point_offset)?;
+        let is_update = tracker_guard.has_pointer(point_offset, hw_counter.parent())?;
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -388,13 +420,17 @@ where
     /// Returns None if the point_offset, page, or value was not found.
     /// Returns the deleted value otherwise.
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        let Some(pointer) = self.tracker.write().unset(point_offset)? else {
+    pub(super) fn delete_value(
+        &mut self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<V>> {
+        let Some(pointer) = self.tracker.write().unset(point_offset, hw_counter)? else {
             return Ok(None);
         };
 
         self.with_view(|view| {
-            let raw = view.read_from_pages::<Random>(pointer)?;
+            let raw = view.read_from_pages::<Random>(pointer, hw_counter)?;
             let decompressed = view.decompress(raw)?;
             let value = V::from_bytes(&decompressed)?;
             Ok(Some(value))
@@ -404,14 +440,14 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it with a single empty page.
-    pub(super) fn clear(&mut self, fs: &S::Fs) -> Result<()> {
+    pub(super) fn clear(&mut self, fs: &S::Fs, hw_counter: &HardwareCounterCell) -> Result<()> {
         self.is_alive_flush_lock.blocking_mark_dead();
         self.pages.write().clear();
 
         fs.remove_dir(&self.base_path)?;
         fs.create_dir(&self.base_path)?;
 
-        *self = Self::new(fs, self.base_path.clone(), self.config.clone())?;
+        *self = Self::new(fs, self.base_path.clone(), self.config.clone(), hw_counter)?;
 
         Ok(())
     }
@@ -440,8 +476,8 @@ where
     }
 
     /// Return the storage size in bytes (precise, based on bitmask occupancy).
-    pub(super) fn get_storage_size_bytes(&self) -> Result<usize> {
-        self.bitmask.read().get_storage_size_bytes()
+    pub(super) fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
+        self.bitmask.read().get_storage_size_bytes(hw_counter)
     }
 
     pub(super) fn get_value<P: AccessPattern>(
@@ -474,6 +510,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -488,6 +525,7 @@ where
                     Ok(true)
                 },
                 hw_counter_cell,
+                hw_counter,
             )
         })?;
 
@@ -500,6 +538,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -514,6 +553,7 @@ where
                     Ok(true)
                 },
                 hw_counter_cell,
+                hw_counter,
             )
         })?;
 
@@ -521,11 +561,15 @@ where
     }
 
     #[cfg(test)]
-    pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+    pub(super) fn get_pointer(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ValuePointer> {
         use crate::tracker::TrackerRead as _;
         self.tracker
             .read()
-            .get::<common::generic_consts::Random>(point_offset)
+            .get::<common::generic_consts::Random>(point_offset, hw_counter)
             .ok()
             .flatten()
     }
@@ -558,7 +602,7 @@ where
             // - https://github.com/qdrant/qdrant/pull/7983
             // - https://github.com/qdrant/qdrant/pull/8248
             self.with_view(|view| -> Result<_, E> {
-                max_offset = view.max_point_offset()?;
+                max_offset = view.max_point_offset(hw_counter.parent())?;
 
                 if current_offset >= max_offset {
                     return Ok(());
@@ -581,6 +625,7 @@ where
                         callback(point_offset, value)
                     },
                     &hw_counter,
+                    hw_counter.parent(),
                 )?;
 
                 if should_continue {
@@ -606,7 +651,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     }
 
     /// Create flusher that durably persists all pending changes when invoked.
-    pub(super) fn flusher(&self) -> Flusher {
+    pub(super) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
         let pages = Arc::downgrade(&self.pages);
@@ -616,7 +661,9 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let (Some(is_alive_flush_guard), Some(pages), Some(tracker), Some(bitmask)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 pages.upgrade(),
@@ -633,13 +680,13 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             let pages_flusher = pages.read().flusher();
             pages_flusher()?;
 
-            let old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
+            let old_pointers = Self::flush_tracker(&tracker, pending_updates, hw_counter)?;
 
             if old_pointers.is_empty() {
                 return Ok(());
             }
 
-            Self::flush_free_blocks(&bitmask, old_pointers, block_size_bytes)?;
+            Self::flush_free_blocks(&bitmask, old_pointers, block_size_bytes, hw_counter)?;
 
             drop(is_alive_flush_guard);
 
@@ -651,6 +698,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     fn flush_tracker(
         tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
+        hw_counter: &HardwareCounterCell,
     ) -> crate::Result<Vec<ValuePointer>> {
         // Journal the pointer writes first, so opening can repair a torn write to the tracker.
         // Not holding the tracker lock during the sync
@@ -661,7 +709,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates)?;
+            let old_pointers = guard.write_pending(pending_updates, hw_counter)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };
@@ -682,6 +730,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
         bitmask: &Arc<RwLock<Bitmask<S>>>,
         old_pointers: Vec<ValuePointer>,
         block_size_bytes: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> crate::Result<()> {
         let bitmask_flusher = {
             let mut guard = bitmask.write();
@@ -694,7 +743,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
                         + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
                     start as usize..end as usize
                 });
-                guard.mark_blocks_batch(page_id, local_ranges, false)?;
+                guard.mark_blocks_batch(page_id, local_ranges, false, hw_counter)?;
             }
             guard.flusher()
         };
@@ -703,10 +752,10 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     }
 
     /// Populate all pages, tracker, and bitmask in the mmap.
-    pub(super) fn populate(&self) -> Result<()> {
-        self.pages.read().populate()?;
-        self.tracker.read().populate()?;
-        self.bitmask.read().populate()?;
+    pub(super) fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        self.pages.read().populate(hw_counter)?;
+        self.tracker.read().populate(hw_counter)?;
+        self.bitmask.read().populate(hw_counter)?;
         Ok(())
     }
 

@@ -43,7 +43,7 @@ where
 
         // Calculate expected number of condition checks required for
         // this scroll request with stream strategy.
-        let available_points = self.id_tracker.available_point_count() + 1 /* + 1 for division-by-zero */;
+        let available_points = self.id_tracker.available_point_count(hw_counter) + 1 /* + 1 for division-by-zero */;
         // Expected number of successful checks per point
         let check_probability =
             (query_cardinality.exp as f64 + 1.0/* protect from zero */) / available_points as f64;
@@ -61,10 +61,11 @@ where
         offset: Option<PointIdType>,
         limit: Option<usize>,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         self.id_tracker
-            .point_mappings()
-            .iter_from_with_behavior(offset, deferred_behavior)
+            .point_mappings(hw_counter)
+            .iter_from_with_behavior(offset, deferred_behavior, hw_counter)
             .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
@@ -102,8 +103,9 @@ where
         // callback-fed stream).
         let mut page: Vec<PointIdType> = Vec::new();
         let mut top = limit.map(FixedLengthPriorityQueue::new);
-        self.id_tracker
-            .external_ids_batch(internal_ids, |_, external_id| {
+        self.id_tracker.external_ids_batch(
+            internal_ids,
+            |_, external_id| {
                 let past_offset = match offset {
                     Some(offset) => external_id >= offset,
                     None => true,
@@ -117,7 +119,9 @@ where
                     }
                     None => page.push(external_id),
                 }
-            })?;
+            },
+            hw_counter,
+        )?;
         if let Some(top) = top {
             page = top
                 .into_sorted_vec()
@@ -140,8 +144,8 @@ where
     ) -> OperationResult<Vec<PointIdType>> {
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
         self.id_tracker
-            .point_mappings()
-            .iter_from_with_behavior(offset, deferred_behavior)
+            .point_mappings(hw_counter)
+            .iter_from_with_behavior(offset, deferred_behavior, hw_counter)
             .stop_if(is_stopped)
             .try_filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map_ok(|(external_id, _)| external_id)
@@ -159,7 +163,7 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
+            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior, hw_counter)),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit, hw_counter)? {
                     self.filtered_read_by_index(

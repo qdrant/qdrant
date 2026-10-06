@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalRead, UniversalWrite};
 use roaring::RoaringBitmap;
@@ -32,7 +33,7 @@ pub trait RoaringFlagsRead {
     /// first use, by scanning its backing file — see
     /// [`ReadOnlyRoaringFlags`](super::read_only_roaring_flags::ReadOnlyRoaringFlags).
     /// Once materialized the bitmap is cached, so repeated calls are free.
-    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap>;
+    fn get_bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap>;
 
     /// The bitmap if it is already in RAM, without materializing it.
     ///
@@ -41,29 +42,39 @@ pub trait RoaringFlagsRead {
     /// which an unmaterialized bitmap genuinely occupies nothing.
     fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap>;
 
-    fn get(&self, index: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.get_bitmap()?.contains(index))
+    fn get(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Ok(self.get_bitmap(hw_counter)?.contains(index))
     }
 
-    fn iter_trues(&self) -> OperationResult<roaring::bitmap::Iter<'_>> {
-        Ok(self.get_bitmap()?.iter())
+    fn iter_trues(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<roaring::bitmap::Iter<'_>> {
+        Ok(self.get_bitmap(hw_counter)?.iter())
     }
 
-    fn iter_falses(&self) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    fn iter_falses(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         // potential optimization:
         //      Create custom iterator which leverages bitmap's iterator for knowing ranges where the flags are false.
         //      This will help by not checking the bitmap for indices that are already known to be false.
         let len = self.len() as PointOffsetType;
-        let bitmap = self.get_bitmap()?;
+        let bitmap = self.get_bitmap(hw_counter)?;
         Ok(Box::new((0..len).filter(move |i| !bitmap.contains(*i))))
     }
 
-    fn count_trues(&self) -> OperationResult<usize> {
-        Ok(self.get_bitmap()?.len() as usize)
+    fn count_trues(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        Ok(self.get_bitmap(hw_counter)?.len() as usize)
     }
 
-    fn count_falses(&self) -> OperationResult<usize> {
-        Ok(self.len().saturating_sub(self.count_trues()?))
+    fn count_falses(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        Ok(self.len().saturating_sub(self.count_trues(hw_counter)?))
     }
 
     /// RAM held by the in-memory bitmap. Zero while it is not materialized.
@@ -120,7 +131,7 @@ where
         self.len
     }
 
-    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
+    fn get_bitmap(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
         Ok(&self.bitmap)
     }
 
@@ -158,22 +169,27 @@ where
         directory: &Path,
         mode_if_create: FlagsMode,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        match FlagsMode::detect(&fs, directory)?.unwrap_or(mode_if_create) {
+        match FlagsMode::detect(&fs, directory, hw_counter)?.unwrap_or(mode_if_create) {
             FlagsMode::Dynamic => {
-                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate)?;
-                Self::new(fs, dynamic_flags)
+                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate, hw_counter)?;
+                Self::new(fs, dynamic_flags, hw_counter)
             }
             FlagsMode::Compact => {
-                let compact_flags = CompactStoredFlags::open(fs, directory, populate)?;
+                let compact_flags = CompactStoredFlags::open(fs, directory, populate, hw_counter)?;
                 Ok(Self::from_compact(compact_flags))
             }
         }
     }
 
-    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
+    pub fn new(
+        fs: S::Fs,
+        dynamic_flags: DynamicStoredFlags<S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         // load flags into memory
-        let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues()?)
+        let bitmap = RoaringBitmap::from_sorted_iter(dynamic_flags.iter_trues(hw_counter)?)
             .expect("iter_trues iterates in sorted order");
 
         if let Err(err) = dynamic_flags.clear_cache() {
@@ -236,8 +252,8 @@ where
         }
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.storage.flusher()
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        self.storage.flusher(hw_counter)
     }
 }
 
@@ -250,6 +266,7 @@ where
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use common::universal_io::Populate;
     #[cfg_predicate]
@@ -269,9 +286,16 @@ mod tests_mod {
 
         // Create and update flags
         {
-            let dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            let mut roaring_flags = RoaringFlags::new(Fs::default(), dynamic_flags).unwrap();
+            let dynamic_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            let mut roaring_flags =
+                RoaringFlags::new(Fs::default(), dynamic_flags, &HardwareCounterCell::new())
+                    .unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -284,33 +308,57 @@ mod tests_mod {
             roaring_flags.set(7, false); // This should be no-op since default is false
 
             // Flush
-            let flusher = roaring_flags.flusher();
+            let flusher = roaring_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
-            let roaring_flags = RoaringFlags::new(Fs::default(), mmap_flags).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            let roaring_flags =
+                RoaringFlags::new(Fs::default(), mmap_flags, &HardwareCounterCell::new()).unwrap();
 
             // Verify iteration consistency after reload
-            let iter_trues: Vec<_> = roaring_flags.iter_trues().unwrap().collect();
+            let iter_trues: Vec<_> = roaring_flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
 
             // Verify expected values
             assert_eq!(iter_trues, vec![0, 5, 10, 15]);
 
             // Verify count consistency
-            assert_eq!(roaring_flags.count_trues().unwrap(), 4);
             assert_eq!(
-                roaring_flags.count_falses().unwrap(),
-                roaring_flags.len() - roaring_flags.count_trues().unwrap()
+                roaring_flags
+                    .count_trues(&HardwareCounterCell::new())
+                    .unwrap(),
+                4
+            );
+            assert_eq!(
+                roaring_flags
+                    .count_falses(&HardwareCounterCell::new())
+                    .unwrap(),
+                roaring_flags.len()
+                    - roaring_flags
+                        .count_trues(&HardwareCounterCell::new())
+                        .unwrap()
             );
 
             // Verify iteration covers all indices
-            let all_trues: Vec<_> = roaring_flags.iter_trues().unwrap().collect();
-            let all_falses: Vec<_> = roaring_flags.iter_falses().unwrap().collect();
+            let all_trues: Vec<_> = roaring_flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
+            let all_falses: Vec<_> = roaring_flags
+                .iter_falses(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
             let mut all_indices = all_trues;
             all_indices.extend(all_falses);
             all_indices.sort();
@@ -333,6 +381,7 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Compact,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert!(!flags.set(3, true));
@@ -344,7 +393,7 @@ mod tests_mod {
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with(COMPACT_FLAGS_FILE));
 
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         // Requesting dynamic mode on existing flags keeps the compact mode.
@@ -354,14 +403,21 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Dynamic,
                 Populate::Blocking,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert_eq!(flags.files().len(), 1);
             assert_eq!(flags.len(), 8);
-            assert_eq!(flags.count_trues().unwrap(), 1);
-            assert_eq!(flags.iter_trues().unwrap().collect::<Vec<_>>(), vec![3]);
-            assert!(flags.get(3).unwrap());
-            assert!(!flags.get(7).unwrap());
+            assert_eq!(flags.count_trues(&HardwareCounterCell::new()).unwrap(), 1);
+            assert_eq!(
+                flags
+                    .iter_trues(&HardwareCounterCell::new())
+                    .unwrap()
+                    .collect::<Vec<_>>(),
+                vec![3]
+            );
+            assert!(flags.get(3, &HardwareCounterCell::new()).unwrap());
+            assert!(!flags.get(7, &HardwareCounterCell::new()).unwrap());
         }
     }
 
@@ -378,10 +434,11 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Dynamic,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             flags.set(1, true);
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
 
             // dynamic stack: flags file plus status file
             assert!(flags.files().len() > 1);
@@ -393,11 +450,12 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Compact,
                 Populate::Blocking,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert!(flags.files().len() > 1);
             assert_eq!(flags.len(), 2);
-            assert!(flags.get(1).unwrap());
+            assert!(flags.get(1, &HardwareCounterCell::new()).unwrap());
         }
     }
 }

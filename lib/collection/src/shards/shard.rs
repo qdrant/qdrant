@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use futures::future::Either;
@@ -97,22 +98,33 @@ impl Shard {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShardTelemetry> {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
-                let mut shard_telemetry = local_shard.get_telemetry_data(detail, timeout).await?;
+                let mut shard_telemetry = local_shard
+                    .get_telemetry_data(detail, timeout, hw_acc)
+                    .await?;
 
                 // can't take sync locks in async fn so local_shard_status() has to be
                 // called outside get_telemetry_data()
-                shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
+                shard_telemetry.status = Some(local_shard.local_shard_status(hw_acc).await.0);
                 shard_telemetry
             }
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail, timeout).await?,
+            Shard::Proxy(proxy_shard) => {
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, hw_acc)
+                    .await?
+            }
             Shard::ForwardProxy(proxy_shard) => {
-                proxy_shard.get_telemetry_data(detail, timeout).await?
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, hw_acc)
+                    .await?
             }
             Shard::QueueProxy(proxy_shard) => {
-                proxy_shard.get_telemetry_data(detail, timeout).await?
+                proxy_shard
+                    .get_telemetry_data(detail, timeout, hw_acc)
+                    .await?
             }
             Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
@@ -135,12 +147,18 @@ impl Shard {
         }
     }
 
-    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+    pub async fn get_size_stats(
+        &self,
+        timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<SizeStats> {
         match self {
-            Shard::Local(local_shard) => local_shard.get_size_stats(timeout).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(timeout).await,
+            Shard::Local(local_shard) => local_shard.get_size_stats(timeout, hw_acc).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(timeout, hw_acc).await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(timeout, hw_acc).await,
+            Shard::QueueProxy(queue_proxy_shard) => {
+                queue_proxy_shard.get_size_stats(timeout, hw_acc).await
+            }
             Shard::Dummy(dummy_shard) => Ok(dummy_shard.get_size_stats()),
         }
     }
@@ -152,26 +170,27 @@ impl Shard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let future = match self {
             Shard::Local(local_shard) => Either::Left(Either::Left(
                 local_shard
-                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
                     .await?,
             )),
             Shard::Proxy(proxy_shard) => Either::Left(Either::Right(
                 proxy_shard
-                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
                     .await?,
             )),
             Shard::ForwardProxy(proxy_shard) => Either::Right(Either::Left(
                 proxy_shard
-                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
                     .await?,
             )),
             Shard::QueueProxy(proxy_shard) => Either::Right(Either::Right(
                 proxy_shard
-                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal, hw_acc)
                     .await?,
             )),
             Shard::Dummy(dummy_shard) => {
@@ -271,12 +290,15 @@ impl Shard {
         Some(optimizers_log)
     }
 
-    pub fn optimizations(&self) -> Option<LocalShardOptimizations> {
+    pub fn optimizations(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<LocalShardOptimizations> {
         Some(match self {
-            Self::Local(local_shard) => local_shard.optimizations(),
-            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
-            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
-            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.optimizations(),
+            Self::Local(local_shard) => local_shard.optimizations(hw_counter),
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(hw_counter),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(hw_counter),
+            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.optimizations(hw_counter),
             Self::Dummy(_) => return None,
         })
     }

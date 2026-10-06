@@ -75,7 +75,11 @@ pub trait PayloadIndexRead {
     /// Fallible: see [`PayloadFieldIndexRead::count_indexed_points`].
     ///
     /// [`PayloadFieldIndexRead::count_indexed_points`]: crate::index::field_index::PayloadFieldIndexRead::count_indexed_points
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize>;
+    fn indexed_points(
+        &self,
+        field: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize>;
 
     fn filter_context<'a>(
         &'a self,
@@ -121,7 +125,10 @@ pub trait PayloadIndexRead {
     ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     /// Per-field-index telemetry data.
-    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>>;
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PayloadIndexTelemetry>>;
 
     /// Build a per-query formula scorer that evaluates the given parsed
     /// formula against this index's payload, using the prefetch scores as
@@ -154,6 +161,7 @@ pub trait PayloadIndexRead {
         field: PayloadKeyTypeRef,
         threshold: usize,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Get payload for point
@@ -263,7 +271,7 @@ pub trait PayloadIndex {
     ) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
 

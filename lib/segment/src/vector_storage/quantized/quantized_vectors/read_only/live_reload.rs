@@ -14,8 +14,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        self.storage_impl.live_preload(fs)
+        self.storage_impl.live_preload(fs, hw_counter)
     }
 
     /// Reload appended quantized vectors from disk (chunked layouts only).
@@ -37,6 +38,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         let mut futs = Vec::new();
         match self {
@@ -58,18 +60,18 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
             | ReadOnlyQuantizedVectorStorage::TQRamMulti(_)
             | ReadOnlyQuantizedVectorStorage::TQMmapMulti(_) => {}
             ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => {
-                futs.extend(q.storage().live_preload(fs)?);
+                futs.extend(q.storage().live_preload(fs, hw_counter)?);
             }
             ReadOnlyQuantizedVectorStorage::TQChunked(q) => {
-                futs.extend(q.storage().live_preload(fs)?);
+                futs.extend(q.storage().live_preload(fs, hw_counter)?);
             }
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                futs.extend(q.storage().storage().live_preload(fs)?);
-                futs.extend(q.offsets_storage().live_preload(fs)?);
+                futs.extend(q.storage().storage().live_preload(fs, hw_counter)?);
+                futs.extend(q.offsets_storage().live_preload(fs, hw_counter)?);
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                futs.extend(q.storage().storage().live_preload(fs)?);
-                futs.extend(q.offsets_storage().live_preload(fs)?);
+                futs.extend(q.storage().storage().live_preload(fs, hw_counter)?);
+                futs.extend(q.offsets_storage().live_preload(fs, hw_counter)?);
             }
         }
         Ok(futs)

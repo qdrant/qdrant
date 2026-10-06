@@ -86,6 +86,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -117,7 +118,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             true,
             None,
             WriteOrdering::default(),
-            hw_counter,
+            hw_counter.clone(),
         )
         .await
         .unwrap();
@@ -125,7 +126,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     // Take a snapshot
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     let snapshot_description = collection
-        .create_snapshot(snapshots_temp_dir.path(), 0)
+        .create_snapshot(snapshots_temp_dir.path(), 0, &hw_counter)
         .await
         .unwrap();
 
@@ -150,6 +151,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        &hw_counter,
     )
     .await;
 

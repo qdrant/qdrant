@@ -149,7 +149,7 @@ where
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .and_then(|id_tracker| id_tracker.external_id(point_id, hw_counter))
             .is_some_and(|id| has_id.has_id.contains(&id)),
         Condition::HasVector(has_vector) => {
             if let Some(vector_storage) = vector_storages.get(&has_vector.has_vector) {
@@ -179,11 +179,11 @@ where
         }
 
         Condition::Slice(slice_condition) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .and_then(|id_tracker| id_tracker.external_id(point_id, hw_counter))
             .is_some_and(|external_id| slice_condition.slice.check(external_id)),
 
         Condition::CustomIdChecker(cond) => id_tracker
-            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .and_then(|id_tracker| id_tracker.external_id(point_id, hw_counter))
             .is_some_and(|point_id| cond.0.check(point_id)),
 
         Condition::Filter(_) => unreachable!(),
@@ -786,7 +786,7 @@ mod tests {
         };
 
         let mut ft_index =
-            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true, &hw_counter)
                 .unwrap()
                 .unwrap();
 

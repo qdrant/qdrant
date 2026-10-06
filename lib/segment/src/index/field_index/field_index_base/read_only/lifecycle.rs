@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::ReadOnlyFieldIndex;
@@ -63,6 +64,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         payload_schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
@@ -84,14 +86,17 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 
         let preopened = match index_type.index_type {
             PayloadIndexType::KeywordIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyMapIndex::<str, S>::preopen_appendable(fs, map_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyMapIndex::<str, S>::preopen_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<str, S>::preopen_immutable(
                         fs,
                         &map_dir(dir, field),
                         is_on_disk,
+                        hw_counter,
                     )?
                 }
             },
@@ -99,24 +104,29 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                 ReadMode::Appendable => ReadOnlyMapIndex::<IntPayloadType, S>::preopen_appendable(
                     fs,
                     map_dir(dir, field),
+                    hw_counter,
                 )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::preopen_immutable(
                         fs,
                         &map_dir(dir, field),
                         is_on_disk,
+                        hw_counter,
                     )?
                 }
             },
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyMapIndex::<UuidIntType, S>::preopen_appendable(fs, map_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyMapIndex::<UuidIntType, S>::preopen_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<UuidIntType, S>::preopen_immutable(
                         fs,
                         &map_dir(dir, field),
                         is_on_disk,
+                        hw_counter,
                     )?
                 }
             },
@@ -125,6 +135,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::preopen_appendable(
                         fs,
                         numeric_dir(dir, field),
+                        hw_counter,
                     )?
                 }
                 ReadMode::Immutable { is_on_disk } => {
@@ -132,6 +143,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         &numeric_dir(dir, field),
                         is_on_disk,
+                        hw_counter,
                     )?
                 }
             },
@@ -141,14 +153,17 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     DateTimePayloadType,
                     S,
                 >::preopen_appendable(
-                    fs, numeric_dir(dir, field)
+                    fs, numeric_dir(dir, field), hw_counter
                 )?,
                 ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
                     IntPayloadType,
                     DateTimePayloadType,
                     S,
                 >::preopen_immutable(
-                    fs, &numeric_dir(dir, field), is_on_disk
+                    fs,
+                    &numeric_dir(dir, field),
+                    is_on_disk,
+                    hw_counter,
                 )?,
             },
             PayloadIndexType::FloatIndex => match mode {
@@ -157,34 +172,43 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     FloatPayloadType,
                     S,
                 >::preopen_appendable(
-                    fs, numeric_dir(dir, field)
+                    fs, numeric_dir(dir, field), hw_counter
                 )?,
                 ReadMode::Immutable { is_on_disk } => ReadOnlyNumericIndex::<
                     FloatPayloadType,
                     FloatPayloadType,
                     S,
                 >::preopen_immutable(
-                    fs, &numeric_dir(dir, field), is_on_disk
+                    fs,
+                    &numeric_dir(dir, field),
+                    is_on_disk,
+                    hw_counter,
                 )?,
             },
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
                 ReadMode::Appendable => {
-                    ReadOnlyGeoIndex::<S>::preopen_appendable(fs, map_dir(dir, field))?
+                    ReadOnlyGeoIndex::<S>::preopen_appendable(fs, map_dir(dir, field), hw_counter)?
                 }
-                ReadMode::Immutable { is_on_disk } => {
-                    ReadOnlyGeoIndex::<S>::preopen_immutable(fs, &map_dir(dir, field), is_on_disk)?
-                }
+                ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::<S>::preopen_immutable(
+                    fs,
+                    &map_dir(dir, field),
+                    is_on_disk,
+                    hw_counter,
+                )?,
             },
             PayloadIndexType::FullTextIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyFullTextIndex::<S>::preopen_appendable(fs, text_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyFullTextIndex::<S>::preopen_appendable(
+                    fs,
+                    text_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyFullTextIndex::<S>::preopen_immutable(
                         fs,
                         &text_dir(dir, field),
                         is_on_disk,
+                        hw_counter,
                     )?
                 }
             },
@@ -192,11 +216,11 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             // param based on schema placement.
             PayloadIndexType::BoolIndex => {
                 let populate = schema_populate();
-                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field), populate)?
+                ReadOnlyBoolIndex::<S>::preopen(fs, &bool_dir(dir, field), populate, hw_counter)?
             }
             PayloadIndexType::NullIndex => {
                 let populate = schema_populate();
-                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field), populate)?
+                ReadOnlyNullIndex::<S>::preopen(fs, &null_dir(dir, field), populate, hw_counter)?
             }
         };
 
@@ -233,6 +257,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         total_point_count: usize,
         deleted_points: &BitSlice,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let mode = match index_type.storage_type {
             StorageType::Gridstore => ReadMode::Appendable,
@@ -242,27 +267,33 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 
         let index = match index_type.index_type {
             PayloadIndexType::KeywordIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyMapIndex::<str, S>::open_appendable(fs, map_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyMapIndex::<str, S>::open_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => ReadOnlyMapIndex::<str, S>::open_immutable(
                     fs,
                     &map_dir(dir, field),
                     is_on_disk,
                     deleted_points,
+                    hw_counter,
                 )?,
             }
             .map(Self::KeywordIndex),
             PayloadIndexType::IntMapIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyMapIndex::<IntPayloadType, S>::open_appendable(fs, map_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyMapIndex::<IntPayloadType, S>::open_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::open_immutable(
                         fs,
                         &map_dir(dir, field),
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?
                 }
             }
@@ -272,15 +303,18 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             // `MapIndex<UuidIntType>` and wraps it in `FieldIndex::UuidMapIndex`
             // — the `UuidIndex` discriminant is historically map-backed.
             PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyMapIndex::<UuidIntType, S>::open_appendable(fs, map_dir(dir, field))?
-                }
+                ReadMode::Appendable => ReadOnlyMapIndex::<UuidIntType, S>::open_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    hw_counter,
+                )?,
                 ReadMode::Immutable { is_on_disk } => {
                     ReadOnlyMapIndex::<UuidIntType, S>::open_immutable(
                         fs,
                         &map_dir(dir, field),
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?
                 }
             }
@@ -290,6 +324,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     ReadOnlyNumericIndex::<IntPayloadType, IntPayloadType, S>::open_appendable(
                         fs,
                         numeric_dir(dir, field),
+                        hw_counter,
                     )?
                 }
                 ReadMode::Immutable { is_on_disk } => {
@@ -298,6 +333,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         &numeric_dir(dir, field),
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?
                 }
             }
@@ -307,6 +343,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     ReadOnlyNumericIndex::<IntPayloadType, DateTimePayloadType, S>::open_appendable(
                         fs,
                         numeric_dir(dir, field),
+                        hw_counter,
                     )?
                 }
                 ReadMode::Immutable { is_on_disk } => {
@@ -315,6 +352,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         &numeric_dir(dir, field),
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?
                 }
             }
@@ -324,6 +362,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     ReadOnlyNumericIndex::<FloatPayloadType, FloatPayloadType, S>::open_appendable(
                         fs,
                         numeric_dir(dir, field),
+                        hw_counter,
                     )?
                 }
                 ReadMode::Immutable { is_on_disk } => {
@@ -332,33 +371,41 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         &numeric_dir(dir, field),
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?
                 }
             }
             .map(Self::FloatIndex),
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
-                ReadMode::Appendable => ReadOnlyGeoIndex::open_appendable(fs, map_dir(dir, field))?,
+                ReadMode::Appendable => {
+                    ReadOnlyGeoIndex::open_appendable(fs, map_dir(dir, field), hw_counter)?
+                }
                 ReadMode::Immutable { is_on_disk } => ReadOnlyGeoIndex::open_immutable(
                     fs,
                     &map_dir(dir, field),
                     is_on_disk,
                     deleted_points,
+                    hw_counter,
                 )?,
             }
             .map(Self::GeoIndex),
             PayloadIndexType::FullTextIndex => {
                 let config = TextIndexParams::try_from(payload_schema)?;
                 match mode {
-                    ReadMode::Appendable => {
-                        ReadOnlyFullTextIndex::open_appendable(fs, text_dir(dir, field), config)?
-                    }
+                    ReadMode::Appendable => ReadOnlyFullTextIndex::open_appendable(
+                        fs,
+                        text_dir(dir, field),
+                        config,
+                        hw_counter,
+                    )?,
                     ReadMode::Immutable { is_on_disk } => ReadOnlyFullTextIndex::open_immutable(
                         fs,
                         text_dir(dir, field),
                         config,
                         is_on_disk,
                         deleted_points,
+                        hw_counter,
                     )?,
                 }
                 .map(Self::FullTextIndex)
@@ -367,12 +414,16 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             // serves both modes (neither consumes the immutable-only
             // `is_on_disk` / `deleted_points`).
             PayloadIndexType::BoolIndex => {
-                ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field))?.map(Self::BoolIndex)
+                ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field), hw_counter)?
+                    .map(Self::BoolIndex)
             }
-            PayloadIndexType::NullIndex => {
-                ReadOnlyNullIndex::<S>::open(fs, &null_dir(dir, field), total_point_count)?
-                    .map(Self::NullIndex)
-            }
+            PayloadIndexType::NullIndex => ReadOnlyNullIndex::<S>::open(
+                fs,
+                &null_dir(dir, field),
+                total_point_count,
+                hw_counter,
+            )?
+            .map(Self::NullIndex),
         };
         Ok(index)
     }

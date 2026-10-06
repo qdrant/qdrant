@@ -13,6 +13,7 @@ pub use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 mod tests {
     use std::collections::HashMap;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::{ReadSegmentEntry, StorageSegmentEntry};
@@ -184,8 +185,8 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
@@ -215,8 +216,8 @@ mod tests {
         );
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
@@ -352,8 +353,8 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(suggested_to_optimize.len(), 0);
 
         let mut hnsw_config_vector2_changed = hnsw_config_collection;
@@ -382,8 +383,8 @@ mod tests {
         );
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
@@ -525,8 +526,8 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Mismatch optimizer should not optimize yet, quantization config is not changed yet
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed quantization config for vector2, update it in the optimizer
@@ -559,8 +560,8 @@ mod tests {
         );
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
@@ -653,7 +654,8 @@ mod tests {
             vec![IdTrackerFormat::Immutable],
         );
         for memory in [None, Some(Memory::Pinned)] {
-            let planned = mismatch_optimizer(memory).plan_optimizations_for_test(&locked_holder);
+            let planned = mismatch_optimizer(memory)
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
             assert!(
                 planned.is_empty(),
                 "{memory:?} must not plan a rebuild: {planned:?}"
@@ -663,7 +665,7 @@ mod tests {
         // Requesting the on-disk tracker rebuilds the segment into the disk format...
         let optimizer = mismatch_optimizer(Some(Memory::Cold));
         let suggested = optimizer
-            .plan_optimizations_for_test(&locked_holder)
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new())
             .into_iter()
             .exactly_one()
             .unwrap();
@@ -676,14 +678,14 @@ mod tests {
         // ...and the rebuilt segment satisfies the request, so it is not planned again
         assert!(
             optimizer
-                .plan_optimizations_for_test(&locked_holder)
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new())
                 .is_empty()
         );
 
         // Switching back rebuilds into the in-RAM tracker
         let optimizer = mismatch_optimizer(Some(Memory::Pinned));
         let suggested = optimizer
-            .plan_optimizations_for_test(&locked_holder)
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new())
             .into_iter()
             .exactly_one()
             .unwrap();

@@ -55,7 +55,7 @@ impl EdgeShard {
     /// behavior follows `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
-        if has_existing_segments(path) {
+        if has_existing_segments(path, &HardwareCounterCell::disposable()) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
             ));
@@ -70,7 +70,12 @@ impl EdgeShard {
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
-        ensure_appendable_segment(&mut segments, &segments_path, &config)?;
+        ensure_appendable_segment(
+            &mut segments,
+            &segments_path,
+            &config,
+            &HardwareCounterCell::disposable(),
+        )?;
 
         let search_pool = build_segment_pool(
             "edge-search",
@@ -130,7 +135,8 @@ impl EdgeShard {
             .unwrap_or_default();
         let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
 
-        let (mut segments, derived) = load_segments(&segments_path)?;
+        let (mut segments, derived) =
+            load_segments(&segments_path, &HardwareCounterCell::disposable())?;
 
         let config = match (resolved, derived) {
             (Some(resolved), Some(derived)) => {
@@ -155,7 +161,12 @@ impl EdgeShard {
             }
         };
 
-        ensure_appendable_segment(&mut segments, &segments_path, &config)?;
+        ensure_appendable_segment(
+            &mut segments,
+            &segments_path,
+            &config,
+            &HardwareCounterCell::disposable(),
+        )?;
 
         let search_pool = build_segment_pool(
             "edge-search",
@@ -271,7 +282,11 @@ impl EdgeShard {
             .flush()
             .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
-        self.segments.read().flush_all(FlushMode::Sync, true)?;
+        self.segments.read().flush_all(
+            FlushMode::Sync,
+            true,
+            &HardwareCounterCell::disposable(),
+        )?;
 
         Ok(())
     }
@@ -311,7 +326,7 @@ fn init_segment_manifest(
     Ok(Some(manifest))
 }
 
-fn has_existing_segments(path: &Path) -> bool {
+fn has_existing_segments(path: &Path, hw_counter: &HardwareCounterCell) -> bool {
     let segments_path = path.join(SEGMENTS_PATH);
     let Ok(entries) = fs::read_dir(&segments_path) else {
         return false;
@@ -327,7 +342,11 @@ fn has_existing_segments(path: &Path) -> bool {
         {
             continue;
         }
-        if normalize_segment_dir(&p).ok().flatten().is_some() {
+        if normalize_segment_dir(&p, hw_counter)
+            .ok()
+            .flatten()
+            .is_some()
+        {
             return true;
         }
     }
@@ -383,7 +402,10 @@ fn resolve_initial_config(
 /// Skips non-directories, hidden (`.`-prefixed) entries, and (via [`normalize_segment_dir`])
 /// `.deleted` leftovers and segments without a written `version.info`. Shared by [`EdgeShard`]
 /// loading and by the read-only follower's live_reload, so both observe the same segment set.
-pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap<Uuid, PathBuf>> {
+pub(crate) fn scan_segment_dirs(
+    segments_path: &Path,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<HashMap<Uuid, PathBuf>> {
     let segments_dir = fs::read_dir(segments_path).map_err(|err| {
         OperationError::service_error(format!("failed to read segments directory: {err}"))
     })?;
@@ -419,7 +441,8 @@ pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap
             continue;
         }
 
-        let Some((segment_path, segment_uuid)) = normalize_segment_dir(&segment_path)? else {
+        let Some((segment_path, segment_uuid)) = normalize_segment_dir(&segment_path, hw_counter)?
+        else {
             continue;
         };
 
@@ -433,11 +456,16 @@ pub(crate) fn scan_segment_dirs(segments_path: &Path) -> OperationResult<HashMap
 /// derived-from-segments layer of the config fallback chain. Segments are folded in UUID order so
 /// the derivation is deterministic, and each segment is checked for compatibility against the
 /// previously loaded ones.
-fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option<EdgeConfig>)> {
+fn load_segments(
+    segments_path: &Path,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(SegmentHolder, Option<EdgeConfig>)> {
     let mut segments = SegmentHolder::default();
     let mut derived: Option<EdgeConfig> = None;
 
-    let mut segment_dirs: Vec<_> = scan_segment_dirs(segments_path)?.into_iter().collect();
+    let mut segment_dirs: Vec<_> = scan_segment_dirs(segments_path, hw_counter)?
+        .into_iter()
+        .collect();
     segment_dirs.sort_unstable_by_key(|(segment_uuid, _)| *segment_uuid);
 
     for (segment_uuid, segment_path) in segment_dirs {
@@ -447,6 +475,7 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
             None,
             &AtomicBool::new(false),
             false,
+            hw_counter,
         )
         .map_err(|err| {
             OperationError::service_error(format!(
@@ -467,12 +496,14 @@ fn load_segments(segments_path: &Path) -> OperationResult<(SegmentHolder, Option
         }
         derived = Some(EdgeConfig::fold_from_segment_config(derived, segment_cfg));
 
-        segment.check_consistency_and_repair().map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to repair segment {}: {err}",
-                segment_path.display(),
-            ))
-        })?;
+        segment
+            .check_consistency_and_repair(hw_counter)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to repair segment {}: {err}",
+                    segment_path.display(),
+                ))
+            })?;
 
         // Replay pending changes persisted by proxy segments onto this segment. Buffered proxy
         // state that made it to disk does not hold back the WAL acknowledge, so it must be
@@ -513,6 +544,7 @@ fn ensure_appendable_segment(
     segments: &mut SegmentHolder,
     segments_path: &Path,
     config: &EdgeConfig,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     if segments.has_appendable_segment() {
         return Ok(());
@@ -526,8 +558,13 @@ fn ensure_appendable_segment(
         .flat_map(|(_, segment)| segment.get().read().get_indexed_fields())
         .collect();
 
-    let (mut segment, token) =
-        build_segment(segments_path, &config.plain_segment_config(), None, true)?;
+    let (mut segment, token) = build_segment(
+        segments_path,
+        &config.plain_segment_config(),
+        None,
+        true,
+        hw_counter,
+    )?;
     let hw_counter = HardwareCounterCell::disposable();
     for (key, schema) in &indexed_fields {
         segment.create_field_index(0, key, Some(schema), &hw_counter)?;

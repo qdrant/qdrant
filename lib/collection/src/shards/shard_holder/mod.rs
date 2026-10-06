@@ -14,6 +14,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::fs::sync_parent_dir_async;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
@@ -987,6 +988,7 @@ impl ShardHolder {
         update_runtime: Handle,
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
+        hw_acc: &HwMeasurementAcc,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -1056,6 +1058,7 @@ impl ShardHolder {
                     update_runtime,
                     search_runtime,
                     optimizer_resource_budget,
+                    hw_acc,
                 )
                 .await;
 
@@ -1223,6 +1226,7 @@ impl ShardHolder {
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<SnapshotDescription>> + use<>> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is canceled
@@ -1263,6 +1267,7 @@ impl ShardHolder {
                 SnapshotFormat::Regular,
                 None,
                 false,
+                hw_acc,
             )
             .await?;
 
@@ -1303,6 +1308,7 @@ impl ShardHolder {
         shard_id: ShardId,
         manifest: Option<SnapshotManifest>,
         temp_dir: &Path,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<SnapshotStream> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is cancelled
@@ -1340,6 +1346,7 @@ impl ShardHolder {
                 SnapshotFormat::Streamable,
                 manifest,
                 false,
+                hw_acc,
             )
             .await?;
 
@@ -1389,6 +1396,7 @@ impl ShardHolder {
         temp_dir: &Path,
         recovery_progress: Option<RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         if !self.contains_shard(shard_id) {
             return Err(shard_not_found_error(shard_id));
@@ -1458,6 +1466,7 @@ impl ShardHolder {
                 collection_path,
                 shard_id,
                 cancel,
+                hw_acc,
             )
             .await?;
 
@@ -1466,7 +1475,7 @@ impl ShardHolder {
         }
 
         if recovery_type.is_partial() {
-            self.update_payload_index_schema().await.map_err(|err| {
+            self.update_payload_index_schema(hw_acc).await.map_err(|err| {
                 CollectionError::service_error(format!(
                     "failed to update payload index schema after recovering partial snapshot: {err}"
                 ))
@@ -1486,6 +1495,7 @@ impl ShardHolder {
         collection_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<bool> {
         // TODO:
         //   Check that shard snapshot is compatible with the collection
@@ -1497,13 +1507,22 @@ impl ShardHolder {
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(snapshot_shard_path, recovery_type, collection_path, cancel)
+            .restore_local_replica_from(
+                snapshot_shard_path,
+                recovery_type,
+                collection_path,
+                cancel,
+                hw_acc,
+            )
             .await?;
 
         Ok(res)
     }
 
-    pub async fn update_payload_index_schema(&self) -> CollectionResult<()> {
+    pub async fn update_payload_index_schema(
+        &self,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
         let payload_index_schema = self
             .all_shards()
             .next()
@@ -1514,7 +1533,7 @@ impl ShardHolder {
             return Ok(());
         };
 
-        let schema = self.common_payload_index_schema().await?;
+        let schema = self.common_payload_index_schema(hw_acc).await?;
 
         payload_index_schema.write(|payload_index_schema| {
             *payload_index_schema = PayloadIndexSchema { schema };
@@ -1525,12 +1544,13 @@ impl ShardHolder {
 
     async fn common_payload_index_schema(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<HashMap<JsonPath, PayloadFieldSchema>> {
         let mut schema = HashMap::new();
 
         for (shard_idx, shard) in self.all_shards().enumerate() {
             let shard_schema: HashMap<_, _> = shard
-                .info(true)
+                .info(true, hw_acc)
                 .await?
                 .payload_schema
                 .into_iter()
@@ -1637,11 +1657,12 @@ impl ShardHolder {
     /// Estimates the collections size based on local shard data. Returns `None` if no shard for the collection was found locally.
     pub async fn estimate_collection_size_stats(
         &self,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Option<CollectionSizeStats>> {
         if self.is_distributed().await {
             // In distributed, we estimate the whole collection size by using a single local shard and multiply by amount of shards in the collection.
             for shard in self.shards.iter() {
-                if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await? {
+                if let Some(shard_stats) = shard.1.calculate_local_shard_stats(hw_acc).await? {
                     // TODO(resharding) take into account the ongoing resharding and exclude shards that are being filled from multiplication.
                     // Project the single shards size to the full collection.
                     let collection_estimate = shard_stats.multiplied_with(self.shards.len());
@@ -1655,7 +1676,7 @@ impl ShardHolder {
         // Local mode: return collection size estimations using all shards.
         let mut stats = CollectionSizeStats::default();
         for shard in self.shards.iter() {
-            if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await? {
+            if let Some(shard_stats) = shard.1.calculate_local_shard_stats(hw_acc).await? {
                 stats.accumulate_metrics_from(&shard_stats);
             }
         }

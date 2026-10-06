@@ -222,7 +222,7 @@ pub trait InvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn remove(&mut self, idx: PointOffsetType) -> bool;
+    fn remove(&mut self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool;
 
     fn filter<'a>(
         &'a self,
@@ -382,6 +382,7 @@ pub trait InvertedIndex {
     fn for_each_vocab_with_postings_len(
         &self,
         f: impl FnMut(&str, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     fn for_each_payload_block(
@@ -389,29 +390,34 @@ pub trait InvertedIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        self.for_each_vocab_with_postings_len(|token, postings_len| {
-            if postings_len >= threshold {
-                f(PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
-                    cardinality: postings_len,
-                })?;
-            }
-            Ok(())
-        })
+        self.for_each_vocab_with_postings_len(
+            |token, postings_len| {
+                if postings_len >= threshold {
+                    f(PayloadBlockCondition {
+                        condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
+                        cardinality: postings_len,
+                    })?;
+                }
+                Ok(())
+            },
+            hw_counter,
+        )
     }
 
     fn check_match(
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool;
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize;
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize;
 
     fn points_count(&self) -> usize;
 
@@ -570,7 +576,7 @@ mod tests {
         let mut points_to_delete = (0..indexed_count).collect::<Vec<_>>();
         points_to_delete.shuffle(&mut rand::rng());
         for idx in &points_to_delete[..deleted_count as usize] {
-            index.remove(*idx);
+            index.remove(*idx, &hw_counter);
         }
 
         index
@@ -635,7 +641,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable, &hw_counter).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -643,11 +649,13 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
 
-        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        let imm_mmap =
+            ImmutableInvertedIndex::from_on_disk(&mmap, &HardwareCounterCell::new()).unwrap();
 
         // Check same vocabulary
         let assert_same_id = |expected: TokenId, actual: Option<TokenId>| {
@@ -669,7 +677,12 @@ mod tests {
                 .collect::<HashSet<_>>();
 
             // Check mutable vs mmap
-            let mmap_ids = mmap.storage.postings.iter_ids(token_id).unwrap().collect();
+            let mmap_ids = mmap
+                .storage
+                .postings
+                .iter_ids(token_id, &hw_counter)
+                .unwrap()
+                .collect();
             assert_eq!(mutable_ids, mmap_ids);
 
             // Check mutable vs immutable mmap
@@ -684,7 +697,7 @@ mod tests {
         let mmap_counts = mmap
             .storage
             .point_to_tokens_count
-            .read_whole()
+            .read_whole(&hw_counter)
             .unwrap()
             .into_owned();
         let mmap_doc_lens = mmap
@@ -692,7 +705,7 @@ mod tests {
             .point_to_doc_len
             .as_ref()
             .expect("sidecar written for a scoring index")
-            .read_whole()
+            .read_whole(&hw_counter)
             .unwrap()
             .into_owned();
         let immutable_doc_lens = immutable
@@ -747,7 +760,12 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(
+            mmap_dir.path().into(),
+            &immutable,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let empty_deleted = BitVec::new();
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
 
@@ -758,6 +776,7 @@ mod tests {
                 Populate::No,
                 phrase_matching,
                 &empty_deleted,
+                &HardwareCounterCell::new(),
             )
         };
 
@@ -795,7 +814,12 @@ mod tests {
             .expect("the fixture records lengths");
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(
+            mmap_dir.path().into(),
+            &immutable,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         // A point that is live and non-empty on disk, deleted only at runtime.
         let victim = lens_at_build
@@ -811,6 +835,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
@@ -820,7 +845,7 @@ mod tests {
             .point_to_doc_len
             .as_ref()
             .unwrap()
-            .read_whole()
+            .read_whole(&HardwareCounterCell::new())
             .unwrap()
             .into_owned();
         assert_eq!(
@@ -828,7 +853,8 @@ mod tests {
             "the file itself is written once and keeps the original length",
         );
 
-        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        let imm_mmap =
+            ImmutableInvertedIndex::from_on_disk(&mmap, &HardwareCounterCell::new()).unwrap();
         assert_eq!(
             imm_mmap.point_to_doc_len.as_ref().unwrap()[victim],
             0,
@@ -867,7 +893,7 @@ mod tests {
 
         let with_lengths =
             ImmutableInvertedIndex::from(mutable_inverted_index(64, 0, phrase_matching));
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &with_lengths).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &with_lengths, &hw_counter).unwrap();
         assert!(sidecar.exists());
 
         // The same points, indexed by a build that records nothing.
@@ -879,7 +905,7 @@ mod tests {
                 .unwrap();
         }
         let without_lengths = ImmutableInvertedIndex::from(without_lengths);
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &without_lengths).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &without_lengths, &hw_counter).unwrap();
 
         assert!(
             !sidecar.exists(),
@@ -891,6 +917,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
@@ -907,7 +934,12 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(
+            mmap_dir.path().into(),
+            &immutable,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let full = fs_err::metadata(&sidecar).unwrap().len();
@@ -925,6 +957,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .expect("the index still opens");
@@ -942,7 +975,12 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(
+            mmap_dir.path().into(),
+            &immutable,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let full = fs_err::metadata(&sidecar).unwrap().len();
@@ -960,6 +998,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .expect("the index still opens");
@@ -977,7 +1016,12 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(
+            mmap_dir.path().into(),
+            &immutable,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let postings = mmap_dir.path().join(POSTINGS_FILE);
         let mut bytes = fs_err::read(&postings).unwrap();
@@ -992,6 +1036,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .expect("the index still opens");
@@ -1013,7 +1058,7 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable, &hw_counter).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1021,10 +1066,12 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
-        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        let imm_mmap =
+            ImmutableInvertedIndex::from_on_disk(&mmap, &HardwareCounterCell::new()).unwrap();
 
         // Every point, deleted or empty included, then out of order, repeated
         // and past the index.
@@ -1091,7 +1138,7 @@ mod tests {
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable, &hw_counter).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1099,6 +1146,7 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
@@ -1124,7 +1172,7 @@ mod tests {
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
 
         let immutable = ImmutableInvertedIndex::from(mut_index.clone());
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable, &hw_counter).unwrap();
         let empty_deleted = BitVec::new();
         let mut mmap_index = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1132,11 +1180,13 @@ mod tests {
             Populate::No,
             phrase_matching,
             &empty_deleted,
+            &hw_counter,
         )
         .unwrap()
         .unwrap();
 
-        let mut imm_mmap_index = ImmutableInvertedIndex::try_from(&mmap_index).unwrap();
+        let mut imm_mmap_index =
+            ImmutableInvertedIndex::from_on_disk(&mmap_index, &HardwareCounterCell::new()).unwrap();
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 
@@ -1159,9 +1209,9 @@ mod tests {
             .map(|_| rand::rng().random_range(0..indexed_count))
             .collect();
         for point_id in &points_to_delete {
-            mut_index.remove(*point_id);
-            mmap_index.remove(*point_id);
-            imm_mmap_index.remove(*point_id);
+            mut_index.remove(*point_id, &hw_counter);
+            mmap_index.remove(*point_id, &hw_counter);
+            imm_mmap_index.remove(*point_id, &hw_counter);
         }
 
         // Check congruence after deletion

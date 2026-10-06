@@ -40,12 +40,13 @@ impl PointIdGenerator {
 }
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot).unwrap()
+    build_simple_segment(path, 4, Distance::Dot, &HardwareCounterCell::new()).unwrap()
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
     let mut id_gen = PointIdGenerator::default();
-    let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(path, dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     let mut rnd = rand::rng();
     let payload_key = "number";
     let hw_counter = HardwareCounterCell::new();
@@ -191,6 +192,7 @@ pub fn empty_segment_with_deferred(path: &Path, deferred_internal_id: u32) -> Se
         },
         Some(deferred_internal_id),
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .0
@@ -230,6 +232,7 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
         },
         Some(deferred_internal_id),
         true,
+        &hw_counter,
     )
     .unwrap();
 
@@ -278,23 +281,23 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
 
     // Validate which points are deferred
     assert!(
-        !segment.point_is_deferred(1.into()),
+        !segment.point_is_deferred(1.into(), &hw_counter),
         "Point 1 should not be deferred"
     );
     assert!(
-        !segment.point_is_deferred(2.into()),
+        !segment.point_is_deferred(2.into(), &hw_counter),
         "Point 2 should not be deferred"
     );
     assert!(
-        !segment.point_is_deferred(3.into()),
+        !segment.point_is_deferred(3.into(), &hw_counter),
         "Point 3 should not be deferred"
     );
     assert!(
-        segment.point_is_deferred(4.into()),
+        segment.point_is_deferred(4.into(), &hw_counter),
         "Point 4 should be deferred"
     );
     assert!(
-        segment.point_is_deferred(5.into()),
+        segment.point_is_deferred(5.into(), &hw_counter),
         "Point 5 should be deferred"
     );
 

@@ -28,12 +28,16 @@ pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
 pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
     /// See [`InvertedIndex::open_ro`].
-    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> UioResult<Self>;
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self>;
 }
 
 pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
     /// See [`InvertedIndex::open_rw`].
-    fn open_rw_impl(fs: &S::Fs, path: &Path) -> UioResult<Self>;
+    fn open_rw_impl(fs: &S::Fs, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<Self>;
 
     /// See [`InvertedIndex::from_ram_index`].
     fn from_ram_index_impl<P: AsRef<Path>>(
@@ -53,11 +57,15 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn is_on_disk(&self) -> bool;
 
     /// Open existing index based on path.
-    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
+    fn open_ro<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self>
     where
         Self: InvertedIndexReadOnly<Fs::File>,
     {
-        Self::open_ro_impl(fs, path)
+        Self::open_ro_impl(fs, path, hw_counter)
     }
 
     /// Open existing index based on path.
@@ -67,12 +75,16 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     /// TODO(uio): probably, this can be refactored into a single `open` with
     /// boolean parameter, if we add something like
     /// `UniversalReadFs::try_write(&self) -> Option<&impl UniversalWriteFs>`.
-    fn open_rw<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
+    fn open_rw<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self>
     where
         Self: InvertedIndexReadWrite<Fs::File>,
         Fs::File: UniversalWrite<Fs = Fs>,
     {
-        Self::open_rw_impl(fs, path)
+        Self::open_rw_impl(fs, path, hw_counter)
     }
 
     /// Save index

@@ -84,9 +84,11 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
             let mut applied = 0;
 
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
+                let version = segment
+                    .point_version(id, &hw_measurement_acc.get_counter_cell())
+                    .ok_or_else(|| {
+                        OperationError::service_error(format!("No version for point {id}"))
+                    })?;
 
                 // If we already have the latest point version, keep that and continue
                 let version_entry = point_version.entry(id);
@@ -113,6 +115,7 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
 
             Ok(applied)
         },
+        &hw_measurement_acc.get_counter_cell(),
     )?;
 
     Ok(point_records)
@@ -176,9 +179,11 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
             let mut applied = 0;
 
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
+                let version = segment
+                    .point_version(id, &hw_measurement_acc.get_counter_cell())
+                    .ok_or_else(|| {
+                        OperationError::service_error(format!("No version for point {id}"))
+                    })?;
 
                 // If we already have the latest point version, keep that and continue
                 let version_entry = point_version.entry(id);
@@ -204,6 +209,7 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
 
             Ok(applied)
         },
+        &hw_measurement_acc.get_counter_cell(),
     )?;
 
     Ok(point_records)

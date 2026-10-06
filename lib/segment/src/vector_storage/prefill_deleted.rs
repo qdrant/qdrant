@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::vector_storage_base::VectorStorageEnum;
@@ -22,11 +23,12 @@ fn fill_dense<T: PrimitiveVectorElement>(
     storage: &mut impl DenseVectorStorage<T>,
     count: usize,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let dim = storage.vector_dim();
     let placeholder: Cow<[T]> = Cow::Owned(vec![T::default(); dim]);
     let mut iter = std::iter::repeat_n((placeholder, true), count);
-    storage.update_from(&mut iter, stopped)?;
+    storage.update_from(&mut iter, stopped, hw_counter)?;
     Ok(())
 }
 
@@ -34,11 +36,12 @@ pub(super) fn fill_turbo(
     storage: &mut impl DenseTQVectorStorage,
     count: usize,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let size = storage.quantized_vector_size();
     let placeholder: Cow<[u8]> = Cow::Owned(vec![0u8; size]);
     let mut iter = std::iter::repeat_n((placeholder, true), count);
-    storage.update_from(&mut iter, stopped)?;
+    storage.update_from(&mut iter, stopped, hw_counter)?;
     Ok(())
 }
 
@@ -46,13 +49,14 @@ pub(super) fn fill_turbo_multi(
     storage: &mut impl MultiTQVectorStorage,
     count: usize,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     // One zero inner record per placeholder point; the deleted flag is carried
     // separately, so the content is irrelevant.
     let size = storage.quantized_vector_size();
     let placeholder: Cow<[u8]> = Cow::Owned(vec![0u8; size]);
     let mut iter = std::iter::repeat_n((placeholder, true), count);
-    storage.update_from(&mut iter, stopped)?;
+    storage.update_from(&mut iter, stopped, hw_counter)?;
     Ok(())
 }
 
@@ -86,12 +90,16 @@ impl VectorStorageEnum {
     /// This is needed when a new named vector is added to a segment that
     /// already contains points — the storage must be sized to match the
     /// id_tracker's point count.
-    pub fn prefill_deleted_entries(&mut self, num_points: usize) -> OperationResult<()> {
-        if num_points == 0 || self.total_vector_count() >= num_points {
+    pub fn prefill_deleted_entries(
+        &mut self,
+        num_points: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        if num_points == 0 || self.total_vector_count(hw_counter) >= num_points {
             return Ok(());
         }
 
-        let count = num_points - self.total_vector_count();
+        let count = num_points - self.total_vector_count(hw_counter);
         let stopped = AtomicBool::new(false);
 
         match self {
@@ -105,41 +113,65 @@ impl VectorStorageEnum {
                 Ok(())
             }
 
-            VectorStorageEnum::DenseVolatile(v) => fill_dense(v, count, &stopped),
+            VectorStorageEnum::DenseVolatile(v) => fill_dense(v, count, &stopped, hw_counter),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => fill_dense(v, count, &stopped),
+            VectorStorageEnum::DenseVolatileByte(v) => fill_dense(v, count, &stopped, hw_counter),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => fill_dense(v, count, &stopped),
-            VectorStorageEnum::DenseMemmap(v) => fill_dense(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseMemmapByte(v) => fill_dense(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseMemmapHalf(v) => fill_dense(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseGraphInline(v) => fill_dense(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseGraphInlineByte(v) => fill_dense(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => fill_dense(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseVolatileHalf(v) => fill_dense(v, count, &stopped, hw_counter),
+            VectorStorageEnum::DenseMemmap(v) => fill_dense(&mut **v, count, &stopped, hw_counter),
+            VectorStorageEnum::DenseMemmapByte(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::DenseMemmapHalf(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::DenseGraphInline(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::DenseGraphInlineByte(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::DenseGraphInlineHalf(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => fill_dense(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseUring(v) => fill_dense(&mut **v, count, &stopped, hw_counter),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => fill_dense(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseUringByte(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => fill_dense(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseUringHalf(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
 
-            VectorStorageEnum::DenseAppendableMemmap(v) => fill_dense(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
+                fill_dense(&mut **v, count, &stopped, hw_counter)
+            }
             VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                fill_dense(&mut **v, count, &stopped)
+                fill_dense(&mut **v, count, &stopped, hw_counter)
             }
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                fill_dense(&mut **v, count, &stopped)
+                fill_dense(&mut **v, count, &stopped, hw_counter)
             }
 
-            VectorStorageEnum::DenseTurboMemmap(v) => fill_turbo(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseTurboGraphInline(v) => fill_turbo(&mut **v, count, &stopped),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => fill_turbo(&mut **v, count, &stopped),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
-                fill_turbo(&mut **v, count, &stopped)
+            VectorStorageEnum::DenseTurboMemmap(v) => {
+                fill_turbo(&mut **v, count, &stopped, hw_counter)
             }
-            VectorStorageEnum::MultiDenseTurbo(v) => fill_turbo_multi(&mut **v, count, &stopped),
+            VectorStorageEnum::DenseTurboGraphInline(v) => {
+                fill_turbo(&mut **v, count, &stopped, hw_counter)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => {
+                fill_turbo(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
+                fill_turbo(&mut **v, count, &stopped, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseTurbo(v) => {
+                fill_turbo_multi(&mut **v, count, &stopped, hw_counter)
+            }
 
             VectorStorageEnum::MultiDenseVolatile(v) => fill_multi(v, count, &stopped),
             #[cfg(test)]
@@ -161,6 +193,6 @@ impl VectorStorageEnum {
         }?;
 
         // Make sure any buffered updates are persisted.
-        self.flusher()()
+        self.flusher(hw_counter)()
     }
 }

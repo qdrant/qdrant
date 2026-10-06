@@ -6,17 +6,25 @@ use tempfile::TempDir;
 use super::format::{BitmaskContent, Encoding};
 use super::{StoredBitmask, save_bitmask};
 use crate::bitvec::BitVec;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::{MmapFile, MmapFs, OpenOptions};
 
 fn open(path: &Path) -> StoredBitmask<MmapFile> {
-    StoredBitmask::open(&MmapFs, path, OpenOptions::new_for_test(), ()).unwrap()
+    StoredBitmask::open(
+        &MmapFs,
+        path,
+        OpenOptions::new_for_test(),
+        (),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
 }
 
 /// Decode the whole mask into a dense [`BitVec`] of [`StoredBitmask::bit_len`]
 /// bits.
 fn read_to_bitvec(mask: &StoredBitmask<MmapFile>) -> BitVec {
     let len = mask.bit_len() as usize;
-    match mask.read().unwrap() {
+    match mask.read(&HardwareCounterCell::new()).unwrap() {
         BitmaskContent::Dense(bits) => bits.into_owned(),
         BitmaskContent::Ones(ones) => {
             let mut bits = BitVec::repeat(false, len);
@@ -38,7 +46,14 @@ fn read_to_bitvec(mask: &StoredBitmask<MmapFile>) -> BitVec {
 fn roundtrip(logical_len: u64, ones: &RoaringBitmap) -> (StoredBitmask<MmapFile>, TempDir) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("mask.bin");
-    save_bitmask(&MmapFs, &path, logical_len, ones.clone()).unwrap();
+    save_bitmask(
+        &MmapFs,
+        &path,
+        logical_len,
+        ones.clone(),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     (open(&path), dir)
 }
 
@@ -60,7 +75,10 @@ fn sparse_ones_stored_as_roaring_ones() {
     let ones = RoaringBitmap::from_sorted_iter([1u32, 7, 63, 64, 100_000]).unwrap();
     let (mask, _dir) = roundtrip(1_000_000, &ones);
     assert_eq!(mask.encoding, Encoding::RoaringOnes);
-    assert!(matches!(mask.read().unwrap(), BitmaskContent::Ones(_)));
+    assert!(matches!(
+        mask.read(&HardwareCounterCell::new()).unwrap(),
+        BitmaskContent::Ones(_)
+    ));
     assert_bits(&mask, 1_000_000, &ones);
     // Orders of magnitude below the 125_000-byte dense representation.
     assert!(mask.payload_len < 1_000);
@@ -76,7 +94,7 @@ fn mostly_ones_stored_as_roaring_zeros() {
     }
     let (mask, _dir) = roundtrip(len, &ones);
     assert_eq!(mask.encoding, Encoding::RoaringZeros);
-    match mask.read().unwrap() {
+    match mask.read(&HardwareCounterCell::new()).unwrap() {
         BitmaskContent::Zeros(zeros) => {
             assert_eq!(
                 zeros.iter().collect::<Vec<_>>(),
@@ -168,7 +186,7 @@ fn read_ones_normalizes_every_encoding() {
     ] {
         let (mask, _dir) = roundtrip(len, ones);
         assert_eq!(mask.encoding, expected_encoding);
-        assert_eq!(&mask.read_ones().unwrap(), ones);
+        assert_eq!(&mask.read_ones(&HardwareCounterCell::new()).unwrap(), ones);
     }
 }
 
@@ -178,10 +196,17 @@ fn overwrite_replaces_previous_snapshot() {
     let path = dir.path().join("mask.bin");
 
     let first = RoaringBitmap::from_sorted_iter(0..50_000u32).unwrap();
-    save_bitmask(&MmapFs, &path, 100_000, first).unwrap();
+    save_bitmask(&MmapFs, &path, 100_000, first, &HardwareCounterCell::new()).unwrap();
 
     let second = RoaringBitmap::from_sorted_iter([42u32]).unwrap();
-    save_bitmask(&MmapFs, &path, 100_000, second.clone()).unwrap();
+    save_bitmask(
+        &MmapFs,
+        &path,
+        100_000,
+        second.clone(),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     assert_bits(&open(&path), 100_000, &second);
 }
@@ -210,7 +235,7 @@ fn rejects_positions_beyond_logical_len() {
     fs_err::write(&path, bytes).unwrap();
 
     let mask = open(&path); // header itself is valid
-    assert!(mask.read().is_err());
+    assert!(mask.read(&HardwareCounterCell::new()).is_err());
 }
 
 #[test]
@@ -221,24 +246,46 @@ fn rejects_foreign_files() {
     let path = dir.path().join("short.bin");
     fs_err::write(&path, b"QBMK").unwrap();
     assert!(
-        StoredBitmask::<MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).is_err()
+        StoredBitmask::<MmapFile>::open(
+            &MmapFs,
+            &path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new()
+        )
+        .is_err()
     );
 
     // Right size, wrong magic (e.g. a legacy dense bitslice file).
     let path = dir.path().join("legacy.bin");
     fs_err::write(&path, vec![0u8; 64]).unwrap();
     assert!(
-        StoredBitmask::<MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).is_err()
+        StoredBitmask::<MmapFile>::open(
+            &MmapFs,
+            &path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new()
+        )
+        .is_err()
     );
 }
 
 mod mutable {
     use super::*;
+    use crate::counter::hardware_counter::HardwareCounterCell;
     use crate::stored_bitmask::MutableStoredBitmask;
     use crate::universal_io::{IsNotFound, OkNotFound};
 
     fn open_mutable(path: &Path) -> MutableStoredBitmask {
-        MutableStoredBitmask::open(&MmapFs, path, OpenOptions::new_for_test(), ()).unwrap()
+        MutableStoredBitmask::open(
+            &MmapFs,
+            path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -248,7 +295,8 @@ mod mutable {
 
         let mut mask = MutableStoredBitmask::new(100);
         assert!(mask.is_dirty());
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
         assert!(!mask.is_dirty());
 
         assert_bits(&open(&path), 100, &RoaringBitmap::new());
@@ -277,7 +325,14 @@ mod mutable {
         ] {
             let dir = TempDir::new().unwrap();
             let path = dir.path().join("mask.bin");
-            save_bitmask(&MmapFs, &path, len, ones.clone()).unwrap();
+            save_bitmask(
+                &MmapFs,
+                &path,
+                len,
+                ones.clone(),
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
 
             let mask = open_mutable(&path);
             assert!(!mask.is_dirty());
@@ -295,15 +350,27 @@ mod mutable {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("missing.bin");
 
-        let err = MutableStoredBitmask::open(&MmapFs, &path, OpenOptions::new_for_test(), ())
-            .unwrap_err();
+        let err = MutableStoredBitmask::open(
+            &MmapFs,
+            &path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap_err();
         assert!(err.is_not_found());
 
         // The supported caller composition: fall back to an empty mask.
-        let mask = MutableStoredBitmask::open(&MmapFs, &path, OpenOptions::new_for_test(), ())
-            .ok_not_found()
-            .unwrap()
-            .unwrap_or_else(|| MutableStoredBitmask::new(100));
+        let mask = MutableStoredBitmask::open(
+            &MmapFs,
+            &path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .ok_not_found()
+        .unwrap()
+        .unwrap_or_else(|| MutableStoredBitmask::new(100));
         assert!(mask.is_dirty());
         assert_eq!(mask.bit_len(), 100);
     }
@@ -325,7 +392,7 @@ mod mutable {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("mask.bin");
         let ones = RoaringBitmap::from_sorted_iter([20u32]).unwrap();
-        save_bitmask(&MmapFs, &path, 100, ones).unwrap();
+        save_bitmask(&MmapFs, &path, 100, ones, &HardwareCounterCell::new()).unwrap();
 
         let mut mask = open_mutable(&path);
         assert!(mask.set(20, true));
@@ -340,18 +407,21 @@ mod mutable {
 
         let mut mask = MutableStoredBitmask::new(100);
         mask.set(42, true);
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
 
         // A clean save must not touch storage: with the file deleted behind
         // its back, only an actual write could bring it back.
         fs_err::remove_file(&path).unwrap();
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
         assert!(!path.exists());
 
         // The next effective change writes again — the whole mask, not a
         // delta on the (gone) previous file.
         mask.set(43, true);
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
         assert_bits(
             &open(&path),
             100,
@@ -364,7 +434,14 @@ mod mutable {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("mask.bin");
         let mut expected = RoaringBitmap::from_sorted_iter(0..50u32).unwrap();
-        save_bitmask(&MmapFs, &path, 200, expected.clone()).unwrap();
+        save_bitmask(
+            &MmapFs,
+            &path,
+            200,
+            expected.clone(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let mut mask = open_mutable(&path);
         for (index, value) in [(10u32, false), (49, false), (50, true), (199, true)] {
@@ -375,7 +452,8 @@ mod mutable {
                 expected.remove(index);
             }
         }
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
         assert!(!mask.is_dirty());
 
         assert_bits(&open(&path), 200, &expected);
@@ -391,6 +469,7 @@ mod mutable {
             &path,
             100_000,
             RoaringBitmap::from_sorted_iter([3u32, 500]).unwrap(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         assert_eq!(open(&path).encoding, Encoding::RoaringOnes);
@@ -401,7 +480,8 @@ mod mutable {
             mask.set(index, true);
         }
         mask.set(3, false);
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
 
         let reopened = open(&path);
         assert_eq!(reopened.encoding, Encoding::Dense);
@@ -415,7 +495,14 @@ mod mutable {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("mask.bin");
         let ones = RoaringBitmap::from_sorted_iter([0u32, 99]).unwrap();
-        save_bitmask(&MmapFs, &path, 100, ones.clone()).unwrap();
+        save_bitmask(
+            &MmapFs,
+            &path,
+            100,
+            ones.clone(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let mut mask = open_mutable(&path);
         mask.set_len(100); // equal length: still clean
@@ -424,7 +511,8 @@ mod mutable {
         // Growth alone must persist: the length is part of the file.
         mask.set_len(150);
         assert!(mask.is_dirty());
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
 
         assert_bits(&open(&path), 150, &ones);
         let mut reopened = open_mutable(&path);
@@ -460,7 +548,8 @@ mod mutable {
         let mut mask = MutableStoredBitmask::new(1 << 32);
         assert!(!mask.set(u32::MAX, true));
         assert!(mask.get(u32::MAX));
-        mask.save(&MmapFs, &path).unwrap();
+        mask.save(&MmapFs, &path, &HardwareCounterCell::new())
+            .unwrap();
 
         let reopened = open_mutable(&path);
         assert!(!reopened.is_dirty());

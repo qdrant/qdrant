@@ -53,7 +53,8 @@ fn write(
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
-    let mut writer = Writer::open(&MmapFs, dir, &field(), schema, &index_type).unwrap();
+    let mut writer =
+        Writer::open(&MmapFs, dir, &field(), schema, &index_type, &hw_counter).unwrap();
     for (slot, value) in points {
         writer
             .add_point(&MmapFs, *slot, &[value], &hw_counter)
@@ -83,9 +84,13 @@ fn int_index_round_trip() {
         ],
     );
 
-    let index = MutableNumericIndex::<IntPayloadType>::open_gridstore(storage, false)
-        .unwrap()
-        .unwrap();
+    let index = MutableNumericIndex::<IntPayloadType>::open_gridstore(
+        storage,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap();
     let index = index.into_in_memory_index();
 
     assert_eq!(index.point_to_values[0], vec![7]);
@@ -103,10 +108,14 @@ fn float_index_round_trip() {
         &[(0, json!(1.5)), (2, json!([2.5, 3.5]))],
     );
 
-    let index = MutableNumericIndex::<FloatPayloadType>::open_gridstore(storage, false)
-        .unwrap()
-        .unwrap()
-        .into_in_memory_index();
+    let index = MutableNumericIndex::<FloatPayloadType>::open_gridstore(
+        storage,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap()
+    .into_in_memory_index();
 
     assert_eq!(index.point_to_values[0], vec![1.5]);
     assert_eq!(index.point_to_values[2], vec![2.5, 3.5]);
@@ -125,10 +134,14 @@ fn datetime_index_round_trip() {
         &[(0, json!("2026-08-09T12:00:00Z"))],
     );
 
-    let index = MutableNumericIndex::<IntPayloadType>::open_gridstore(storage, false)
-        .unwrap()
-        .unwrap()
-        .into_in_memory_index();
+    let index = MutableNumericIndex::<IntPayloadType>::open_gridstore(
+        storage,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap()
+    .into_in_memory_index();
 
     // Taken from the payload type's own encoding: the index stores microseconds
     let expected = DateTimePayloadType::from_str("2026-08-09T12:00:00Z")
@@ -147,9 +160,10 @@ fn keyword_index_round_trip() {
         &[(0, json!("alpha")), (1, json!(["beta", "gamma"]))],
     );
 
-    let index = MutableMapIndex::<str>::open_gridstore(storage, false, false)
-        .unwrap()
-        .unwrap();
+    let index =
+        MutableMapIndex::<str>::open_gridstore(storage, false, false, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let values = |slot| {
@@ -175,9 +189,14 @@ fn uuid_map_index_round_trip() {
         &[(0, json!(uuid.to_string()))],
     );
 
-    let index = MutableMapIndex::<UuidIntType>::open_gridstore(storage, false, false)
-        .unwrap()
-        .unwrap();
+    let index = MutableMapIndex::<UuidIntType>::open_gridstore(
+        storage,
+        false,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     assert_eq!(
@@ -198,9 +217,14 @@ fn geo_index_round_trip() {
         &[(0, json!({"lon": 13.4, "lat": 52.5}))],
     );
 
-    let index = MutableGeoIndex::open(storage, false).unwrap().unwrap();
+    let index = MutableGeoIndex::open(storage, false, &HardwareCounterCell::new())
+        .unwrap()
+        .unwrap();
 
-    let stored = index.get_values(0).unwrap().collect::<Vec<_>>();
+    let stored = index
+        .get_values(0, &HardwareCounterCell::new())
+        .unwrap()
+        .collect::<Vec<_>>();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].lon, 13.4);
     assert_eq!(stored[0].lat, 52.5);
@@ -220,6 +244,7 @@ fn rewriting_a_slot_is_rejected() {
         &field(),
         &schema,
         &index_type(PayloadIndexType::IntIndex),
+        &hw_counter,
     )
     .unwrap();
 
@@ -252,13 +277,34 @@ fn bool_index_round_trip() {
         ],
     );
 
-    let index = MutableBoolIndex::open(&storage, false).unwrap().unwrap();
+    let index = MutableBoolIndex::open(&storage, false, &HardwareCounterCell::new())
+        .unwrap()
+        .unwrap();
 
-    assert_eq!(index.get_point_values(0).unwrap(), vec![true]);
-    assert_eq!(index.get_point_values(1).unwrap(), vec![true, false]);
-    assert_eq!(index.get_point_values(2).unwrap(), vec![false]);
-    assert!(index.values_is_empty(3).unwrap());
-    assert_eq!(index.indexed_count().unwrap(), 3);
+    assert_eq!(
+        index
+            .get_point_values(0, &HardwareCounterCell::new())
+            .unwrap(),
+        vec![true]
+    );
+    assert_eq!(
+        index
+            .get_point_values(1, &HardwareCounterCell::new())
+            .unwrap(),
+        vec![true, false]
+    );
+    assert_eq!(
+        index
+            .get_point_values(2, &HardwareCounterCell::new())
+            .unwrap(),
+        vec![false]
+    );
+    assert!(
+        index
+            .values_is_empty(3, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert_eq!(index.indexed_count(&HardwareCounterCell::new()).unwrap(), 3);
 }
 
 /// The null index records two bits for every point of the batch, including the
@@ -279,21 +325,59 @@ fn null_index_round_trip() {
         ],
     );
 
-    let index = MutableNullIndex::open(&storage, 4, false).unwrap().unwrap();
+    let index = MutableNullIndex::open(&storage, 4, false, &HardwareCounterCell::new())
+        .unwrap()
+        .unwrap();
 
-    assert!(!index.values_is_empty(0).unwrap());
-    assert!(!index.values_is_null(0).unwrap());
+    assert!(
+        !index
+            .values_is_empty(0, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .values_is_null(0, &HardwareCounterCell::new())
+            .unwrap()
+    );
 
-    assert!(index.values_is_empty(1).unwrap());
-    assert!(index.values_is_null(1).unwrap());
+    assert!(
+        index
+            .values_is_empty(1, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .values_is_null(1, &HardwareCounterCell::new())
+            .unwrap()
+    );
 
-    assert!(!index.values_is_empty(2).unwrap());
-    assert!(index.values_is_null(2).unwrap());
+    assert!(
+        !index
+            .values_is_empty(2, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .values_is_null(2, &HardwareCounterCell::new())
+            .unwrap()
+    );
 
     // An empty array is neither, and a point past the batch was never seen
-    assert!(index.values_is_empty(3).unwrap());
-    assert!(!index.values_is_null(3).unwrap());
-    assert!(index.values_is_empty(9).unwrap());
+    assert!(
+        index
+            .values_is_empty(3, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .values_is_null(3, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .values_is_empty(9, &HardwareCounterCell::new())
+            .unwrap()
+    );
 }
 
 /// A second writer picks the mask up where the first left it, rather than
@@ -316,7 +400,19 @@ fn bitmask_writers_resume() {
         &[(1, json!(false))],
     );
 
-    let index = MutableBoolIndex::open(&storage, false).unwrap().unwrap();
-    assert_eq!(index.get_point_values(0).unwrap(), vec![true]);
-    assert_eq!(index.get_point_values(1).unwrap(), vec![false]);
+    let index = MutableBoolIndex::open(&storage, false, &HardwareCounterCell::new())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        index
+            .get_point_values(0, &HardwareCounterCell::new())
+            .unwrap(),
+        vec![true]
+    );
+    assert_eq!(
+        index
+            .get_point_values(1, &HardwareCounterCell::new())
+            .unwrap(),
+        vec![false]
+    );
 }

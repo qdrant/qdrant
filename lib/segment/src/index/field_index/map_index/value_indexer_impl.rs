@@ -43,8 +43,12 @@ impl ValueIndexer for MapIndex<str> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.remove_point(id, hw_counter)
     }
 }
 
@@ -72,8 +76,12 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         value_to_integer(value)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.remove_point(id, hw_counter)
     }
 }
 
@@ -101,8 +109,12 @@ impl ValueIndexer for MapIndex<UuidIntType> {
         Some(Uuid::parse_str(value.as_str()?).ok()?.as_u128())
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.remove_point(id)
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.remove_point(id, hw_counter)
     }
 }
 

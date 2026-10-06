@@ -10,6 +10,7 @@ use collection::operations::types::CollectionError;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use tempfile::Builder;
 
 use crate::common::simple_collection_fixture;
@@ -77,7 +78,7 @@ async fn test_initiate_shard_transfer_refuses_unregistered_sender() {
     // right away rather than waiting for it until the timeout.
     let result = tokio::time::timeout(
         Duration::from_secs(10),
-        collection.initiate_shard_transfer(SHARD_ID, Some(STALE_PEER_ID)),
+        collection.initiate_shard_transfer(SHARD_ID, Some(STALE_PEER_ID), &HwMeasurementAcc::new()),
     )
     .await
     .expect("refusing an unregistered sender must not wait for its transfer");
@@ -88,7 +89,7 @@ async fn test_initiate_shard_transfer_refuses_unregistered_sender() {
 
     // The registered source may
     collection
-        .initiate_shard_transfer(SHARD_ID, Some(SOURCE_PEER_ID))
+        .initiate_shard_transfer(SHARD_ID, Some(SOURCE_PEER_ID), &HwMeasurementAcc::new())
         .await
         .unwrap();
 }

@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::sync::atomic::Ordering;
 
 use super::{DiskCache, State};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::simple_disk_cache::{DiskCacheRemote, to_block_range};
 use crate::universal_io::{OwnedPipeline, UioResult};
@@ -24,9 +25,9 @@ where
     R: DiskCacheRemote,
 {
     /// Return the materialized [`State::Ready`], initializing it on first call.
-    pub(crate) fn state(&self) -> UioResult<ReadyRef<'_, R>> {
+    pub(crate) fn state(&self, hw_counter: &HardwareCounterCell) -> UioResult<ReadyRef<'_, R>> {
         if !self.is_ready() {
-            self.init_state()?;
+            self.init_state(hw_counter)?;
         }
 
         // SAFETY: self.ready tracks whether `state` is `State::Ready`, to make reads "lock-free".
@@ -49,7 +50,7 @@ where
 
     /// Drive `state` to [`State::Ready`] under the lock, consuming whichever
     /// pre-init variant is staged. Idempotent: a no-op once `ready` is set.
-    pub(super) fn init_state(&self) -> UioResult<()> {
+    pub(super) fn init_state(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
         let mut state = self.state.lock();
 
         // Another thread may have materialized while we waited for the lock.
@@ -59,10 +60,10 @@ where
         }
 
         let (remote, local) = match std::mem::replace(&mut *state, State::Uninit) {
-            State::Uninit => self.init_from_scratch(self.open_remote()?)?,
-            State::OpenPrefill { pipeline } => self.init_from_open_prefill(pipeline)?,
+            State::Uninit => self.init_from_scratch(self.open_remote(hw_counter)?, hw_counter)?,
+            State::OpenPrefill { pipeline } => self.init_from_open_prefill(pipeline, hw_counter)?,
             State::PartialPrefill { pipeline, len } => {
-                self.init_from_partial_prefill(pipeline, len)?
+                self.init_from_partial_prefill(pipeline, len, hw_counter)?
             }
             State::Ready { .. } => {
                 unreachable!("We just observed `!ready` while holding the mutex lock")
@@ -77,8 +78,12 @@ where
 
     /// Build an empty local mmap sized from the remote length; reads fault blocks
     /// in on demand. The lazy cold-start path ([`State::Uninit`]).
-    fn init_from_scratch(&self, remote: R) -> UioResult<(R, LocalState)> {
-        let len = remote.len::<u8>()?;
+    fn init_from_scratch(
+        &self,
+        remote: R,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<(R, LocalState)> {
+        let len = remote.len::<u8>(hw_counter)?;
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
         Ok((remote, local))
     }
@@ -88,8 +93,9 @@ where
     pub(super) fn init_from_open_prefill(
         &self,
         mut pipeline: OwnedPipeline<R, ()>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<(R, LocalState)> {
-        match pipeline.wait()? {
+        match pipeline.wait(hw_counter)? {
             Some((_, bytes)) => {
                 // `bytes` covers the whole file, so its length is the remote length.
                 let local =
@@ -103,7 +109,7 @@ where
             // `None` means the whole-object read scheduled nothing — the remote
             // is empty (`schedule_whole` from offset 0 against EOF 0). Fall back
             // to a from-scratch, zero-length mirror.
-            None => self.init_from_scratch(pipeline.into_inner()),
+            None => self.init_from_scratch(pipeline.into_inner(), hw_counter),
         }
     }
 
@@ -116,10 +122,11 @@ where
         &self,
         mut pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<(R, LocalState)> {
         let local = LocalState::new(&self.local_path, len, self.open_options)?;
 
-        match pipeline.wait()? {
+        match pipeline.wait(hw_counter)? {
             Some((blocks_range, bytes)) if !bytes.is_empty() => {
                 // SAFETY: `start` is block-aligned and `bytes` covers
                 // `blocks_range` exactly (up to EOF), and the remote is
@@ -139,7 +146,7 @@ where
     /// instead of a separate `len` call followed by lazy faulting.
     ///
     /// [`read_whole`]: crate::universal_io::UniversalRead::read_whole
-    pub(super) fn prefill_if_uninit(&self) -> UioResult<()> {
+    pub(super) fn prefill_if_uninit(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
         if self.is_ready() {
             return Ok(());
         }
@@ -147,8 +154,8 @@ where
         let mut state = self.state.lock();
         if state.is_uninit() {
             // Use the remote's `schedule_whole` to avoid an extra `len` call.
-            let mut pipeline = OwnedPipeline::new(self.open_remote()?)?;
-            pipeline.schedule_whole((), 0)?;
+            let mut pipeline = OwnedPipeline::new(self.open_remote(hw_counter)?)?;
+            pipeline.schedule_whole((), 0, hw_counter)?;
             *state = State::OpenPrefill { pipeline };
         }
 

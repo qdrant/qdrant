@@ -30,14 +30,22 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        ReadOnlyChunkedVectors::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
+        ReadOnlyChunkedVectors::<u8, S>::preopen(
+            fs,
+            path,
+            AdviceSetting::Global,
+            populate,
+            hw_counter,
+        )
     }
 
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let data = ReadOnlyChunkedVectors::open(
             fs,
@@ -45,12 +53,13 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
             quantized_vector_size,
             AdviceSetting::Global,
             Populate::No, // TODO(uio): consider `always_in_ram`?
+            hw_counter,
         )?;
         Ok(Self { data })
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.data.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.data.populate(hw_counter)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -64,8 +73,10 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         &self,
         index: PointOffsetType,
         count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Cow<'_, [u8]>> {
-        self.data.get_many::<P>(index as VectorOffsetType, count)
+        self.data
+            .get_many::<P>(index as VectorOffsetType, count, hw_counter)
     }
 
     /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
@@ -75,8 +86,10 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         &self,
         ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,
         callback: impl FnMut(U, Cow<'_, [u8]>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.data.for_each_vector::<P, _>(ranges, callback)
+        self.data
+            .for_each_vector::<P, _>(ranges, callback, hw_counter)
     }
 }
 
@@ -101,7 +114,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedSto
         self.data.is_on_disk()
     }
 
-    fn vectors_count(&self) -> usize {
+    fn vectors_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.data.len()
     }
 
@@ -116,18 +129,29 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedSto
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageRead<S> {
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).unwrap_or_default()
+    fn get_vector_data(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index, hw_counter)
+            .unwrap_or_default()
     }
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        self.data.get::<Random>(index as VectorOffsetType)
+    fn get_vector_data_opt(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>> {
+        self.data
+            .get::<Random>(index as VectorOffsetType, hw_counter)
     }
 
     fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let offsets = offsets
             .iter()
@@ -135,10 +159,14 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
             .map(|(index, &offset)| (index, offset, 1));
 
         self.data
-            .for_each_vector::<Random, _>(offsets, |index, vector| {
-                callback(index, vector);
-                Ok(())
-            })
+            .for_each_vector::<Random, _>(
+                offsets,
+                |index, vector| {
+                    callback(index, vector);
+                    Ok(())
+                },
+                hw_counter,
+            )
             .expect("vectors read");
     }
 
@@ -146,10 +174,11 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
-                .get_many::<Random>(run.start, run.len)
+                .get_many::<Random>(run.start, run.len, hw_counter)
                 .expect("vectors read");
             callback(run.first, run.len, bytes);
         }

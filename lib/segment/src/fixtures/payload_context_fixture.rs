@@ -29,7 +29,9 @@ pub fn create_id_tracker_fixture(num_points: usize) -> IdTrackerEnum {
         let external_id = PointIdType::NumId(i as u64);
         let internal_id = i as PointOffsetType;
         id_tracker.set_link(external_id, internal_id).unwrap();
-        id_tracker.set_internal_version(internal_id, 0).unwrap();
+        id_tracker
+            .set_internal_version(internal_id, 0, &HardwareCounterCell::new())
+            .unwrap();
     }
     IdTrackerEnum::InMemoryIdTracker(id_tracker)
 }
@@ -113,6 +115,7 @@ pub fn create_struct_payload_index(
         path,
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

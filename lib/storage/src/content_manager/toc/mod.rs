@@ -32,7 +32,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwSharedDrain;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::cpu::get_num_cpus;
 use common::fs::safe_delete_in_tmp;
 use dashmap::DashMap;
@@ -123,6 +123,7 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
+        hw_acc: &HwMeasurementAcc,
     ) -> StorageResult<Self> {
         let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
         fs::create_dir_all(&collections_path)?;
@@ -234,6 +235,7 @@ impl TableOfContent {
                     Some(update_runtime_handle),
                     optimizer_resource_budget,
                     storage_config.optimizers_overwrite.clone(),
+                    hw_acc,
                 )
                 .await;
                 (collection_name.clone(), collection)
@@ -617,13 +619,14 @@ impl TableOfContent {
         collection_name: String,
         shard_id: ShardId,
         from_peer_id: Option<PeerId>,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
         let initiate_shard_transfer_future = self
             .get_collection_unchecked(&collection_name)
             .await?
-            .initiate_shard_transfer(shard_id, from_peer_id);
+            .initiate_shard_transfer(shard_id, from_peer_id, hw_acc);
         initiate_shard_transfer_future.await?;
         Ok(())
     }

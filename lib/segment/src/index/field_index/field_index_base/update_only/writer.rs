@@ -52,8 +52,9 @@ impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<
         fs: &impl UniversalAppendFs<AppendFile = S>,
         dir: &Path,
         kind: K,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let storage = UpdateOnlyBlobstore::open(fs, dir, INDEX_LOGSTORE_CONFIG)?;
+        let storage = UpdateOnlyBlobstore::open(fs, dir, INDEX_LOGSTORE_CONFIG, hw_counter)?;
         Ok(Self { kind, storage })
     }
 
@@ -86,7 +87,7 @@ impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<
     }
 
     /// Persist everything buffered since the last flush.
-    pub fn flush(&mut self) -> OperationResult<()> {
-        self.storage.flush()
+    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.flush(hw_counter)
     }
 }

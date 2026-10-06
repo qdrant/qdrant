@@ -64,7 +64,8 @@ fn test_search_batch_equivalence_single() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -131,7 +132,7 @@ fn test_from_filter_attributes() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot, &hw_counter).unwrap();
     segment
         .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();
@@ -217,7 +218,8 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(segment_base_dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
 
     segment
         .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
@@ -245,7 +247,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         .and_then(|f| f.to_str())
         .unwrap();
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
 
     // snapshotting!
     let tar =
@@ -293,6 +295,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
 
@@ -302,15 +305,15 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         restored_segment.total_point_count(),
     );
     assert_eq!(
-        segment.available_point_count(),
-        restored_segment.available_point_count(),
+        segment.available_point_count(&hw_counter),
+        restored_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        segment.deleted_point_count(),
-        restored_segment.deleted_point_count(),
+        segment.deleted_point_count(&hw_counter),
+        restored_segment.deleted_point_count(&hw_counter),
     );
 
-    for id in segment.iter_points() {
+    for id in segment.iter_points(&hw_counter) {
         let vectors = segment.all_vectors(id, &hw_counter).unwrap();
         let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);
@@ -344,7 +347,8 @@ fn test_snapshot_streamable_without_files_wrapper() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(segment_base_dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
 
     segment
         .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
@@ -372,7 +376,7 @@ fn test_snapshot_streamable_without_files_wrapper() {
         .unwrap()
         .to_string();
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
 
     // Take a streamable snapshot, which produces a `<segment_id>/files/...` layout.
     let tar =
@@ -406,6 +410,7 @@ fn test_snapshot_streamable_without_files_wrapper() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
 
@@ -414,15 +419,15 @@ fn test_snapshot_streamable_without_files_wrapper() {
         restored_segment.total_point_count(),
     );
     assert_eq!(
-        segment.available_point_count(),
-        restored_segment.available_point_count(),
+        segment.available_point_count(&hw_counter),
+        restored_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        segment.deleted_point_count(),
-        restored_segment.deleted_point_count(),
+        segment.deleted_point_count(&hw_counter),
+        restored_segment.deleted_point_count(&hw_counter),
     );
 
-    for id in segment.iter_points() {
+    for id in segment.iter_points(&hw_counter) {
         let vectors = segment.all_vectors(id, &hw_counter).unwrap();
         let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);
@@ -439,7 +444,8 @@ fn test_check_consistency() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -453,7 +459,7 @@ fn test_check_consistency() {
         .unwrap();
 
     // first pass on consistent data
-    segment.check_consistency_and_repair().unwrap();
+    segment.check_consistency_and_repair(&hw_counter).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = segment
@@ -479,11 +485,15 @@ fn test_check_consistency() {
     );
 
     let internal_id = segment
-        .with_view(|v| v.lookup_internal_id(6.into(), DeferredBehavior::VisibleOnly))
+        .with_view(|v| v.lookup_internal_id(6.into(), DeferredBehavior::VisibleOnly, &hw_counter))
         .unwrap();
 
     // make id_tracker inconsistent
-    segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
+    segment
+        .id_tracker
+        .borrow_mut()
+        .drop(6.into(), &hw_counter)
+        .unwrap();
 
     let search_result = segment
         .search(
@@ -514,7 +524,7 @@ fn test_check_consistency() {
     );
 
     // fix segment's data
-    segment.check_consistency_and_repair().unwrap();
+    segment.check_consistency_and_repair(&hw_counter).unwrap();
 
     // querying by internal id now consistent
     matches!(
@@ -529,7 +539,8 @@ fn test_point_vector_count() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -540,19 +551,19 @@ fn test_point_vector_count() {
     segment
         .upsert_point(101, 6.into(), only_default_vector(&[0.6]), &hw_counter)
         .unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete nonexistent point, counts should remain the same
     segment.delete_point(102, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete point 4, counts should decrease by 1
     segment.delete_point(103, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
@@ -571,8 +582,14 @@ fn test_point_vector_count_multivec() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
-    let mut segment =
-        build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(
+        dir.path(),
+        dim,
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -615,37 +632,41 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete nonexistent point, counts should remain the same
     segment.delete_point(104, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete point 4, counts should decrease by 1
     segment.delete_point(105, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
-    segment.delete_vector(106, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info().unwrap();
+    segment
+        .delete_vector(106, 6.into(), VECTOR1_NAME, &hw_counter)
+        .unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Deleting it again shouldn't chain anything
-    segment.delete_vector(107, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info().unwrap();
+    segment
+        .delete_vector(107, 6.into(), VECTOR1_NAME, &hw_counter)
+        .unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Replace vector 'a' for point 8, counts should remain the same
     let internal_8 = segment
-        .with_view(|v| v.lookup_internal_id(8.into(), DeferredBehavior::VisibleOnly))
+        .with_view(|v| v.lookup_internal_id(8.into(), DeferredBehavior::VisibleOnly, &hw_counter))
         .unwrap();
     segment
         .replace_all_vectors(
@@ -655,7 +676,7 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
@@ -671,7 +692,7 @@ fn test_point_vector_count_multivec() {
             &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info().unwrap();
+    let segment_info = segment.info(&hw_counter).unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6);
 }
@@ -684,7 +705,8 @@ fn test_retrieve_raw_dense_bytes() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
@@ -744,6 +766,7 @@ fn test_retrieve_raw_multivec_bytes() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let hw_counter = HardwareCounterCell::new();
@@ -811,6 +834,7 @@ fn test_retrieve_raw_sparse_bytes() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -879,8 +903,20 @@ fn test_upsert_raw_dense_roundtrip() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let dim = 4;
 
-    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
-    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let mut src = build_simple_segment(
+        src_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let mut dst = build_simple_segment(
+        dst_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
@@ -936,8 +972,20 @@ fn test_upsert_raw_append_only_replace() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let dim = 4;
 
-    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
-    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let mut src = build_simple_segment(
+        src_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let mut dst = build_simple_segment(
+        dst_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     dst.append_only_mutations = true;
     let hw_counter = HardwareCounterCell::new();
 
@@ -948,7 +996,7 @@ fn test_upsert_raw_append_only_replace() {
     dst.set_full_payload(101, 7.into(), &payload, &hw_counter)
         .unwrap();
     let old_internal_id = dst
-        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly, &hw_counter))
         .unwrap();
 
     let new_vec = vec![0.1_f32, 0.2, 0.3, 0.4];
@@ -966,7 +1014,7 @@ fn test_upsert_raw_append_only_replace() {
 
     // The point moved to a fresh internal id (old slot tombstoned)...
     let new_internal_id = dst
-        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly, &hw_counter))
         .unwrap();
     assert_ne!(old_internal_id, new_internal_id);
     // ...carrying the replaced vector (byte-identical) and the old payload.
@@ -994,8 +1042,20 @@ fn test_append_only_clone_stamps_payload_version() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let dim = 4;
 
-    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
-    let mut segment = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let mut src = build_simple_segment(
+        src_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let mut segment = build_simple_segment(
+        dst_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     segment.append_only_mutations = true;
     let hw_counter = HardwareCounterCell::new();
 
@@ -1039,7 +1099,8 @@ fn test_append_only_clone_stamps_payload_version() {
 
     // In-place payload operations (append-only off) still stamp.
     let plain_dir = Builder::new().prefix("segment_plain").tempdir().unwrap();
-    let mut plain = build_simple_segment(plain_dir.path(), dim, Distance::Dot).unwrap();
+    let mut plain =
+        build_simple_segment(plain_dir.path(), dim, Distance::Dot, &hw_counter).unwrap();
     plain
         .upsert_point(100, 7.into(), only_default_vector(&vec), &hw_counter)
         .unwrap();
@@ -1065,7 +1126,8 @@ fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
     let dir = Builder::new().prefix("segment").tempdir().unwrap();
     let dim = 4;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
@@ -1077,7 +1139,7 @@ fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
         .set_full_payload(101, 7.into(), &payload, &hw_counter)
         .unwrap();
 
-    let internal_id = segment.get_internal_id(7.into()).unwrap();
+    let internal_id = segment.get_internal_id(7.into(), &hw_counter).unwrap();
 
     // Emulate a non-appendable segment in an append-only deployment.
     segment.appendable_flag = false;
@@ -1086,7 +1148,12 @@ fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
     assert!(segment.delete_point(102, 7.into(), &hw_counter).unwrap());
 
     // The point is masked via the id tracker...
-    assert!(segment.id_tracker.borrow().is_deleted_point(internal_id));
+    assert!(
+        segment
+            .id_tracker
+            .borrow()
+            .is_deleted_point(internal_id, &hw_counter)
+    );
     // ...but its payload row is untouched: committed state of the old offset
     // must not be mutated in place while readers may still resolve to it.
     let stored = segment
@@ -1110,8 +1177,20 @@ fn test_upsert_moved_point_single_slot() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let dim = 4;
 
-    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
-    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let mut src = build_simple_segment(
+        src_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let mut dst = build_simple_segment(
+        dst_dir.path(),
+        dim,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     dst.append_only_mutations = true;
     let hw_counter = HardwareCounterCell::new();
 
@@ -1177,7 +1256,8 @@ fn test_append_only_every_step_clones() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     segment.append_only_mutations = true;
     let hw_counter = HardwareCounterCell::new();
 
@@ -1238,8 +1318,22 @@ fn test_upsert_raw_multivec_roundtrip() {
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
-    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
-    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let (mut src, _) = build_segment(
+        src_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let (mut dst, _) = build_segment(
+        dst_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     // Two inner vectors of `dim` elements each, flattened.
@@ -1294,8 +1388,22 @@ fn test_upsert_raw_sparse_roundtrip() {
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
-    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
-    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let (mut src, _) = build_segment(
+        src_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let (mut dst, _) = build_segment(
+        dst_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
@@ -1351,8 +1459,22 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
         };
         let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
         let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
-        let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
-        let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+        let (mut src, _) = build_segment(
+            src_dir.path(),
+            &config,
+            None,
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        let (mut dst, _) = build_segment(
+            dst_dir.path(),
+            &config,
+            None,
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let hw_counter = HardwareCounterCell::new();
 
         // Values exactly representable in both u8 and f16.
@@ -1390,7 +1512,8 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
 fn test_upsert_raw_malformed_blob_rejected() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), 4, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     // 3 bytes is not a valid packed-[f32; 4] blob.
@@ -1451,7 +1574,8 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
         id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let mut rng = StdRng::seed_from_u64(42);
@@ -1494,7 +1618,7 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
 
     check_quantized_scores(&segment);
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     let segment_path = segment.segment_path.clone();
     drop(segment);
     let segment = load_segment(
@@ -1503,6 +1627,7 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
     check_quantized_scores(&segment);
@@ -1535,8 +1660,22 @@ fn test_upsert_raw_dense_turbo_bytes() {
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
-    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
-    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let (mut src, _) = build_segment(
+        src_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let (mut dst, _) = build_segment(
+        dst_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let vec: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
@@ -1591,8 +1730,22 @@ fn test_upsert_raw_multivec_turbo_bytes() {
     };
     let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
-    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
-    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let (mut src, _) = build_segment(
+        src_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let (mut dst, _) = build_segment(
+        dst_dir.path(),
+        &config,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     // Three inner vectors of `dim` elements each, flattened.
@@ -1672,7 +1825,8 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
         id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
     segment.append_only_mutations = true;
 
     let hw_counter = HardwareCounterCell::new();
@@ -1705,7 +1859,9 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
     let mut drift = Vec::new();
     for round in 0..ROUNDS {
         let old_internal_id = segment
-            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .with_view(|v| {
+                v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly, &hw_counter)
+            })
             .unwrap();
         segment
             .set_payload(101 + round, point_id, &payload, &None, &hw_counter)
@@ -1714,7 +1870,9 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
         // The op must have taken the append-only clone-and-tombstone path
         // (fresh internal id), not the in-place path.
         let new_internal_id = segment
-            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .with_view(|v| {
+                v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly, &hw_counter)
+            })
             .unwrap();
         assert_ne!(old_internal_id, new_internal_id);
 
@@ -1742,7 +1900,14 @@ fn test_vector_compatibility_checks() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut segment = build_segment_with_two_named_vecs(dir.path(), 4, 2, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(
+        dir.path(),
+        4,
+        2,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -1760,7 +1925,7 @@ fn test_vector_compatibility_checks() {
         )
         .unwrap();
     let internal_id = segment
-        .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+        .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly, &hw_counter))
         .unwrap();
 
     // A set of broken vectors
@@ -1877,10 +2042,13 @@ fn test_vector_compatibility_checks() {
             .err()
             .unwrap();
         segment
-            .delete_vector(101, point_id, wrong_name)
+            .delete_vector(101, point_id, wrong_name, &hw_counter)
             .err()
             .unwrap();
-        segment.available_vector_count(wrong_name).err().unwrap();
+        segment
+            .available_vector_count(wrong_name, &hw_counter)
+            .err()
+            .unwrap();
         segment
             .with_view(|v| v.vector_by_offset(wrong_name, internal_id, &hw_counter))
             .err()
@@ -1905,7 +2073,7 @@ fn test_handle_point_version() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot, &hw_counter).unwrap();
     segment
         .upsert_point(
             100,
@@ -1917,33 +2085,33 @@ fn test_handle_point_version() {
 
     // Do not handle operation on existing point when providing an old version
     let applied = segment
-        .handle_point_version(99, Some(0), |_segment| Ok((true, None)))
+        .handle_point_version(99, Some(0), |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(!applied);
 
     // Do handle operation on existing point when providing the current version
     let applied = segment
-        .handle_point_version(100, Some(0), |_segment| Ok((true, None)))
+        .handle_point_version(100, Some(0), |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(applied);
 
     // Do handle operation on existing point when providing a newer version
     let applied = segment
-        .handle_point_version(101, Some(0), |_segment| Ok((true, None)))
+        .handle_point_version(101, Some(0), |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(applied);
 
     // Always handle operations on non-existent points
     let applied = segment
-        .handle_point_version(99, None, |_segment| Ok((true, None)))
+        .handle_point_version(99, None, |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(applied);
     let applied = segment
-        .handle_point_version(100, None, |_segment| Ok((true, None)))
+        .handle_point_version(100, None, |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(applied);
     let applied = segment
-        .handle_point_version(101, None, |_segment| Ok((true, None)))
+        .handle_point_version(101, None, |_segment| Ok((true, None)), &hw_counter)
         .unwrap();
     assert!(applied);
 }
@@ -2008,6 +2176,7 @@ fn create_deferred_segment(
         },
         deferred_internal_id,
         true,
+        &hw_counter,
     )
     .unwrap();
 
@@ -2015,7 +2184,7 @@ fn create_deferred_segment(
     assert!(!segment.has_deferred_points());
     for i in 0..n_vectors {
         assert!(
-            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            !segment.point_is_deferred(PointIdType::from(i as u64), &hw_counter),
             "Point {i} should not be deferred in an empty segment"
         );
     }
@@ -2112,7 +2281,7 @@ fn create_deferred_segment(
     // Points 1 to n_vectors should NOT be deferred
     for i in 1..=n_vectors {
         assert!(
-            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            !segment.point_is_deferred(PointIdType::from(i as u64), &hw_counter),
             "Point {i} should not be deferred"
         );
         // Check the `is-deferred` payload is correct.
@@ -2128,7 +2297,7 @@ fn create_deferred_segment(
     for i in (n_vectors + 1)..=total_vectors {
         let point_id = PointIdType::from(i as u64);
         assert!(
-            segment.point_is_deferred(point_id),
+            segment.point_is_deferred(point_id, &hw_counter),
             "Point {i} should be deferred"
         );
 
@@ -2144,13 +2313,16 @@ fn create_deferred_segment(
 
     // Non-existent point should be non deferred
     assert!(
-        !segment.point_is_deferred(PointIdType::from(total_vectors as u64 + 1)),
+        !segment.point_is_deferred(PointIdType::from(total_vectors as u64 + 1), &hw_counter),
         "Non-existent point should not be deferred"
     );
 
     // Test deferred point count estimation.
     assert_eq!(segment.deferred_point_count(), n_deferred);
-    assert_eq!(segment.available_point_count_without_deferred(), n_vectors);
+    assert_eq!(
+        segment.available_point_count_without_deferred(&hw_counter),
+        n_vectors
+    );
 
     segment
 }
@@ -2166,7 +2338,7 @@ fn test_dense_deferred_points() {
     // Points 1-13 (internal_ids 0-12) should NOT be deferred
     for i in 1..=13 {
         assert!(
-            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            !segment.point_is_deferred(PointIdType::from(i as u64), &HardwareCounterCell::new()),
             "Point {i} should not be deferred"
         );
     }
@@ -2174,14 +2346,14 @@ fn test_dense_deferred_points() {
     // Points 14+ (internal_ids 13+) should be deferred
     for i in 14..=20 {
         assert!(
-            segment.point_is_deferred(PointIdType::from(i as u64)),
+            segment.point_is_deferred(PointIdType::from(i as u64), &HardwareCounterCell::new()),
             "Point {i} should be deferred"
         );
     }
 
     // Point 100 (non-existent) should not be deferred
     assert!(
-        !segment.point_is_deferred(PointIdType::from(100)),
+        !segment.point_is_deferred(PointIdType::from(100), &HardwareCounterCell::new()),
         "Non-existent point should not be deferred"
     );
 
@@ -2189,14 +2361,21 @@ fn test_dense_deferred_points() {
     segment.version = Some(20);
 
     // Close segment
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     let path = segment.segment_path.clone();
 
     drop(segment);
 
     // Reopen segment to ensure deferred points are loaded correctly from disk
-    let segment =
-        load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false), false).unwrap();
+    let segment = load_segment(
+        &path,
+        Uuid::nil(),
+        Some(13),
+        &AtomicBool::new(false),
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Deferred points should still be the same after reopening
     assert!(
@@ -2367,7 +2546,7 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Retrieve",
         |segment, _| {
-            let point_ids: Vec<_> = (1..=segment.available_point_count())
+            let point_ids: Vec<_> = (1..=segment.available_point_count(&hw_counter))
                 .map(|i| ExtendedPointId::NumId(i as u64))
                 .collect();
 
@@ -2427,6 +2606,7 @@ fn test_deferred_point_with_deferred_reads() {
         },
         Some(0),
         true,
+        &hw_counter,
     )
     .unwrap();
 
@@ -2443,7 +2623,7 @@ fn test_deferred_point_with_deferred_reads() {
         .unwrap();
 
     assert!(
-        segment.point_is_deferred(point_id),
+        segment.point_is_deferred(point_id, &hw_counter),
         "point must be deferred for this regression scenario",
     );
 
@@ -2769,7 +2949,7 @@ fn assert_deferred_points_excluded<F, R, T>(
             // All points in result must always be non deferred.
             for id_t in &search_res_deferred {
                 let external_id = to_external_id(id_t);
-                assert!(!segment.point_is_deferred(external_id));
+                assert!(!segment.point_is_deferred(external_id, &HardwareCounterCell::new()));
             }
 
             // Disable deferred points and search again.
@@ -2825,7 +3005,10 @@ fn test_deleted_deferred_point_count() {
             continue;
         }
 
-        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+        assert_eq!(
+            segment.available_point_count_without_deferred(&hw_counter),
+            N_POINTS
+        );
 
         for d in 0..n_deferred {
             let delete_id = segment.id_tracker.borrow().deferred_internal_id().unwrap() + d as u32;
@@ -2858,7 +3041,10 @@ fn test_deleted_deferred_point_count() {
                 deleted_count
             );
 
-            assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+            assert_eq!(
+                segment.available_point_count_without_deferred(&hw_counter),
+                N_POINTS
+            );
         }
 
         // We delete all deferred points in the segment.
@@ -2867,7 +3053,10 @@ fn test_deleted_deferred_point_count() {
             segment.id_tracker.borrow().deferred_deleted_count(),
             n_deferred
         );
-        assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
+        assert_eq!(
+            segment.available_point_count_without_deferred(&hw_counter),
+            N_POINTS
+        );
     }
 }
 
@@ -2882,7 +3071,7 @@ fn test_flush_does_not_claim_an_unfinished_operation() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();
-    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot, &hw_counter).unwrap();
 
     segment
         .upsert_point(
@@ -2895,7 +3084,7 @@ fn test_flush_does_not_claim_an_unfinished_operation() {
 
     // Operation 10 is still being applied, so the last finished operation is 9.
     let flusher = segment
-        .flusher(false, Some(9))
+        .flusher(false, Some(9), &hw_counter)
         .expect("segment has unflushed changes");
     flusher().expect("flush must not fail");
 
@@ -2908,9 +3097,9 @@ fn test_flush_does_not_claim_an_unfinished_operation() {
 
     // The segment is therefore not clean, and the next pass flushes the rest of operation 10
     // instead of skipping it. A skip would leave the persisted version at 9.
-    assert_eq!(segment.flush(false).unwrap(), 10);
+    assert_eq!(segment.flush(false, &hw_counter).unwrap(), 10);
     assert!(
-        segment.flusher(false, None).is_none(),
+        segment.flusher(false, None, &hw_counter).is_none(),
         "a fully persisted segment must not be flushed again",
     );
 }
@@ -2923,7 +3112,7 @@ fn test_flush_of_unfinished_operation_reloads_dirty() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();
-    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot, &hw_counter).unwrap();
     let segment_path = segment.segment_path.clone();
 
     segment
@@ -2935,7 +3124,7 @@ fn test_flush_of_unfinished_operation_reloads_dirty() {
         )
         .unwrap();
     segment
-        .flusher(false, Some(9))
+        .flusher(false, Some(9), &hw_counter)
         .expect("segment has unflushed changes")()
     .expect("flush must not fail");
     drop(segment);
@@ -2946,6 +3135,7 @@ fn test_flush_of_unfinished_operation_reloads_dirty() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
 
@@ -2966,7 +3156,8 @@ fn test_flush_of_unfinished_operation_reloads_dirty() {
 fn test_flush_survives_concurrent_field_index_drop() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), 4, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     segment
@@ -2993,7 +3184,7 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // Capture the flushers (as the background flush thread does), then drop the
     // index before executing them.
     let flusher = segment
-        .flusher(true, None)
+        .flusher(true, None, &hw_counter)
         .expect("segment has unflushed changes");
     segment
         .delete_field_index(4, &JsonPath::new("num"))

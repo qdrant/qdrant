@@ -110,7 +110,7 @@ pub(super) async fn transfer_stream_records(
                     exact: false,
                 }),
                 None, // no timeout
-                hw_acc,
+                hw_acc.clone(),
                 DeferredBehavior::WithDeferred,
             )
             .await?
@@ -121,7 +121,7 @@ pub(super) async fn transfer_stream_records(
         };
         progress.lock().set(0, count_result.count);
 
-        replica_set.transfer_indexes().await?;
+        replica_set.transfer_indexes(&hw_acc).await?;
 
         // Take our last seen clocks as cutoff point right before doing content batch transfers
         cutoff = replica_set.shard_recovery_point().await?;

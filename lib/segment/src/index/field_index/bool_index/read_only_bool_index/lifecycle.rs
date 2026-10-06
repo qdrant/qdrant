@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
@@ -21,9 +22,12 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let trues = ReadOnlyFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate)?;
-        let falses = ReadOnlyFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate)?;
+        let trues =
+            ReadOnlyFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate, hw_counter)?;
+        let falses =
+            ReadOnlyFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate, hw_counter)?;
         Ok(trues || falses)
     }
 
@@ -43,11 +47,15 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
-        let falses_flags = ReadOnlyFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
+        let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME), hw_counter)?;
+        let falses_flags = ReadOnlyFlags::<S>::open(fs, &path.join(FALSES_DIRNAME), hw_counter)?;
 
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.

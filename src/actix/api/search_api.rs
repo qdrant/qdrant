@@ -6,6 +6,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
@@ -44,6 +45,7 @@ async fn search_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -103,6 +105,7 @@ async fn batch_search_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -185,6 +188,7 @@ async fn search_point_groups(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -242,6 +246,7 @@ async fn search_points_matrix_pairs(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -300,6 +305,7 @@ async fn search_points_matrix_offsets(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

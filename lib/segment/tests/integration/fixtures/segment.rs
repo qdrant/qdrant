@@ -17,7 +17,7 @@ use segment::types::{
 use sparse::common::sparse_vector::SparseVector;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot).unwrap()
+    build_simple_segment(path, 4, Distance::Dot, &HardwareCounterCell::new()).unwrap()
 }
 
 pub const PAYLOAD_KEY: &str = "color";
@@ -175,6 +175,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -273,6 +274,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -368,6 +370,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

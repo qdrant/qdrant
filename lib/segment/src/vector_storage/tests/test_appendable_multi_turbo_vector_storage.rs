@@ -71,9 +71,15 @@ fn open_both_appendable(
     AppendableMmapTurboVectorStorage,
     AppendableMmapMultiTurboVectorStorage,
 ) {
-    let dense =
-        open_appendable_turbo_vector_storage(dense_dir, dim, distance, TQBits::Bits4, in_ram)
-            .unwrap();
+    let dense = open_appendable_turbo_vector_storage(
+        dense_dir,
+        dim,
+        distance,
+        TQBits::Bits4,
+        in_ram,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let multi = open_appendable_turbo_multi_vector_storage(
         multi_dir,
         dim,
@@ -81,6 +87,7 @@ fn open_both_appendable(
         TQBits::Bits4,
         MultiVectorConfig::default(),
         in_ram,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     (dense, multi)
@@ -106,8 +113,12 @@ fn delete_both(
     multi: &mut AppendableMmapMultiTurboVectorStorage,
     key: PointOffsetType,
 ) {
-    let dense_was_live = dense.delete_vector(key).unwrap();
-    let multi_was_live = multi.delete_vector(key).unwrap();
+    let dense_was_live = dense
+        .delete_vector(key, &HardwareCounterCell::new())
+        .unwrap();
+    let multi_was_live = multi
+        .delete_vector(key, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(
         dense_was_live, multi_was_live,
         "delete_vector({key}) result"
@@ -130,23 +141,27 @@ fn assert_congruent(
         "{ctx}: quantized_vector_size",
     );
 
-    let total = dense.total_vector_count();
-    assert_eq!(total, multi.total_vector_count(), "{ctx}: total count");
+    let total = dense.total_vector_count(&HardwareCounterCell::new());
+    assert_eq!(
+        total,
+        multi.total_vector_count(&HardwareCounterCell::new()),
+        "{ctx}: total count"
+    );
     assert_eq!(
         dense.deleted_vector_count(),
         multi.deleted_vector_count(),
         "{ctx}: deleted count",
     );
     assert_eq!(
-        dense.available_vector_count(),
-        multi.available_vector_count(),
+        dense.available_vector_count(&HardwareCounterCell::new()),
+        multi.available_vector_count(&HardwareCounterCell::new()),
         "{ctx}: available count",
     );
     // Equality here also proves count=1 overwrites never leak garbage inner
     // records: the multi estimate is proportional to the inner-record count.
     assert_eq!(
-        dense.size_of_available_vectors_in_bytes(),
-        multi.size_of_available_vectors_in_bytes(),
+        dense.size_of_available_vectors_in_bytes(&HardwareCounterCell::new()),
+        multi.size_of_available_vectors_in_bytes(&HardwareCounterCell::new()),
         "{ctx}: available size in bytes",
     );
 
@@ -171,14 +186,18 @@ fn assert_congruent(
 
         // A count=1 blob is exactly one encoded record.
         assert_eq!(
-            dense.get_dense_tq::<Random>(key).as_ref(),
-            multi.get_multi_tq::<Random>(key).as_ref(),
+            dense
+                .get_dense_tq::<Random>(key, &HardwareCounterCell::new())
+                .as_ref(),
+            multi
+                .get_multi_tq::<Random>(key, &HardwareCounterCell::new())
+                .as_ref(),
             "{ctx}: encoded bytes at {key}",
         );
 
         // Identical bytes through identical dequantize ops: f32-exact agreement.
-        let dense_vec = to_dense(dense.get_vector::<Random>(key));
-        let multi_vec = to_multi(multi.get_vector::<Random>(key));
+        let dense_vec = to_dense(dense.get_vector::<Random>(key, &HardwareCounterCell::new()));
+        let multi_vec = to_multi(multi.get_vector::<Random>(key, &HardwareCounterCell::new()));
         assert_eq!(
             multi_vec.dim,
             dense_vec.len(),
@@ -195,9 +214,17 @@ fn assert_congruent(
         );
 
         // `get_vector_opt` agrees with `get_vector` on both sides.
-        let dense_opt = to_dense(dense.get_vector_opt::<Random>(key).expect("present key"));
+        let dense_opt = to_dense(
+            dense
+                .get_vector_opt::<Random>(key, &HardwareCounterCell::new())
+                .expect("present key"),
+        );
         assert_eq!(dense_opt, dense_vec, "{ctx}: dense get_vector_opt at {key}");
-        let multi_opt = to_multi(multi.get_vector_opt::<Random>(key).expect("present key"));
+        let multi_opt = to_multi(
+            multi
+                .get_vector_opt::<Random>(key, &HardwareCounterCell::new())
+                .expect("present key"),
+        );
         assert_eq!(
             multi_opt.flattened_vectors, multi_vec.flattened_vectors,
             "{ctx}: multi get_vector_opt at {key}",
@@ -207,13 +234,13 @@ fn assert_congruent(
     // Reads at the first absent key miss on both.
     assert!(
         dense
-            .get_vector_opt::<Random>(total as PointOffsetType)
+            .get_vector_opt::<Random>(total as PointOffsetType, &HardwareCounterCell::new())
             .is_none(),
         "{ctx}: dense opt past end",
     );
     assert!(
         multi
-            .get_vector_opt::<Random>(total as PointOffsetType)
+            .get_vector_opt::<Random>(total as PointOffsetType, &HardwareCounterCell::new())
             .is_none(),
         "{ctx}: multi opt past end",
     );
@@ -250,8 +277,8 @@ fn congruent_upsert_read_all_distances() {
                 let ctx = format!("live (dim {dim}, {distance:?}, seed {seed:#x})");
                 assert_congruent(&dense, &multi, &ctx);
 
-                dense.flusher()().unwrap();
-                multi.flusher()().unwrap();
+                dense.flusher(&HardwareCounterCell::new())().unwrap();
+                multi.flusher(&HardwareCounterCell::new())().unwrap();
                 drop(dense);
                 drop(multi);
                 let (dense, multi) =
@@ -315,8 +342,8 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
             }
             // Flush + drop + reload both, toggling in_ram.
             _ => {
-                dense.flusher()().unwrap();
-                multi.flusher()().unwrap();
+                dense.flusher(&HardwareCounterCell::new())().unwrap();
+                multi.flusher(&HardwareCounterCell::new())().unwrap();
                 drop(dense);
                 drop(multi);
                 in_ram = !in_ram;
@@ -328,8 +355,8 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     }
 
     // Final flush/drop/reload of the sources.
-    dense.flusher()().unwrap();
-    multi.flusher()().unwrap();
+    dense.flusher(&HardwareCounterCell::new())().unwrap();
+    multi.flusher(&HardwareCounterCell::new())().unwrap();
     drop(dense);
     drop(multi);
     let (dense, multi) =
@@ -337,13 +364,14 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     assert_congruent(&dense, &multi, "source final");
 
     // Optimizer-style copy: byte-identical encoded streams plus deleted flags.
-    let total = dense.total_vector_count() as PointOffsetType;
+    let total = dense.total_vector_count(&HardwareCounterCell::new()) as PointOffsetType;
     let mut dense_dst = open_appendable_turbo_vector_storage(
         dense_dst_dir.path(),
         dim,
         distance,
         TQBits::Bits4,
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let mut multi_dst = open_appendable_turbo_multi_vector_storage(
@@ -353,30 +381,35 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
         TQBits::Bits4,
         MultiVectorConfig::default(),
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     {
         let mut it = (0..total).map(|k| {
             (
-                dense.get_dense_tq::<Sequential>(k),
+                dense.get_dense_tq::<Sequential>(k, &HardwareCounterCell::new()),
                 dense.is_deleted_vector(k),
             )
         });
-        let dense_range = dense_dst.update_from(&mut it, &stopped).unwrap();
+        let dense_range = dense_dst
+            .update_from(&mut it, &stopped, &HardwareCounterCell::new())
+            .unwrap();
         let mut it = (0..total).map(|k| {
             (
-                multi.get_multi_tq::<Sequential>(k),
+                multi.get_multi_tq::<Sequential>(k, &HardwareCounterCell::new()),
                 multi.is_deleted_vector(k),
             )
         });
-        let multi_range = multi_dst.update_from(&mut it, &stopped).unwrap();
+        let multi_range = multi_dst
+            .update_from(&mut it, &stopped, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(dense_range, multi_range, "update_from range");
         assert_eq!(dense_range, 0..total, "update_from range bounds");
     }
     assert_congruent(&dense_dst, &multi_dst, "dst after copy");
 
-    dense_dst.flusher()().unwrap();
-    multi_dst.flusher()().unwrap();
+    dense_dst.flusher(&HardwareCounterCell::new())().unwrap();
+    multi_dst.flusher(&HardwareCounterCell::new())().unwrap();
     drop(dense_dst);
     drop(multi_dst);
     let dense_dst = open_appendable_turbo_vector_storage(
@@ -385,6 +418,7 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
         distance,
         TQBits::Bits4,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let multi_dst = open_appendable_turbo_multi_vector_storage(
@@ -394,6 +428,7 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
         TQBits::Bits4,
         MultiVectorConfig::default(),
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     assert_congruent(&dense_dst, &multi_dst, "dst after reload");

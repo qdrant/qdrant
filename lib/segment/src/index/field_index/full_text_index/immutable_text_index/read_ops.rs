@@ -27,12 +27,12 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         self.inverted_index.points_count()
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inverted_index.values_count(point_id)
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        self.inverted_index.values_count(point_id, hw_counter)
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inverted_index.values_is_empty(point_id)
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.inverted_index.values_is_empty(point_id, hw_counter)
     }
 
     fn doc_len_batch(
@@ -95,8 +95,13 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
             .estimate_cardinality(query, condition, hw_counter)
     }
 
-    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.inverted_index.check_match(query, point_id)
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        self.inverted_index.check_match(query, point_id, hw_counter)
     }
 
     fn check_match_batch<U: UserData>(
@@ -104,8 +109,9 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_check_match_batch(self, query, items, on_match)
+        default_check_match_batch(self, query, items, on_match, hw_counter)
     }
 
     fn for_each_payload_block_inner(
@@ -113,9 +119,10 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.inverted_index
-            .for_each_payload_block(threshold, key, f)
+            .for_each_payload_block(threshold, key, f, hw_counter)
     }
 
     fn get_storage_type(&self) -> StorageType {

@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
@@ -44,160 +45,161 @@ pub(crate) fn merge_from<'a>(
     points: &'a [PointData],
     sources: &'a [&'a VectorStorageEnum],
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Range<PointOffsetType>> {
     match target {
         VectorStorageEnum::DenseVolatile(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(test)]
         VectorStorageEnum::DenseVolatileHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_half);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_half, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseMemmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseMemmapByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseMemmapHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_half);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_half, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseGraphInline(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseGraphInlineByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseGraphInlineHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_half);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_half, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUring(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseUringHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_half);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_half, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseAppendableMemmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_f32);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_f32, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseAppendableMemmapByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_byte);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_byte, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseAppendableMemmapHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_half);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_half, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseTurboMemmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseTurboGraphInline(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         #[cfg(target_os = "linux")]
         VectorStorageEnum::DenseTurboUring(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::DenseTurboAppendableMemmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_dense_tq);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_dense_tq, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::MultiDenseTurbo(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_tq);
-            let range = target.update_from(&mut reader, stopped);
+            let mut reader = BatchedReader::new(points, sources, read_multi_tq, hw_counter);
+            let range = target.update_from(&mut reader, stopped, hw_counter);
             reader.finish(range)
         }
         VectorStorageEnum::SparseVolatile(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_sparse);
+            let mut reader = BatchedReader::new(points, sources, read_sparse, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         VectorStorageEnum::SparseMmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_sparse);
+            let mut reader = BatchedReader::new(points, sources, read_sparse, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         VectorStorageEnum::MultiDenseVolatile(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_f32);
+            let mut reader = BatchedReader::new(points, sources, read_multi_f32, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_byte);
+            let mut reader = BatchedReader::new(points, sources, read_multi_byte, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatileHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_half);
+            let mut reader = BatchedReader::new(points, sources, read_multi_half, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         VectorStorageEnum::MultiDenseAppendableMemmap(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_f32);
+            let mut reader = BatchedReader::new(points, sources, read_multi_f32, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapByte(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_byte);
+            let mut reader = BatchedReader::new(points, sources, read_multi_byte, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(target) => {
-            let mut reader = BatchedReader::new(points, sources, read_multi_half);
+            let mut reader = BatchedReader::new(points, sources, read_multi_half, hw_counter);
             let range = target.update_from(&mut reader, stopped);
             reader.finish(range)
         }
         // Empty storages are read-only placeholders: their `update_from` always
         // errors, so there is no source vector to read and no reader to build.
         VectorStorageEnum::EmptyDense(target) => {
-            target.update_from(&mut std::iter::empty(), stopped)
+            target.update_from(&mut std::iter::empty(), stopped, hw_counter)
         }
         VectorStorageEnum::EmptySparse(target) => {
             target.update_from(&mut std::iter::empty(), stopped)
@@ -212,6 +214,7 @@ pub(crate) fn merge_from_single_source(
     target: &mut VectorStorageEnum,
     source: &VectorStorageEnum,
     count: PointOffsetType,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Range<PointOffsetType>> {
     use crate::types::PointIdType;
 
@@ -225,7 +228,13 @@ pub(crate) fn merge_from_single_source(
         })
         .collect();
     let sources = [source];
-    merge_from(target, &points, &sources, &AtomicBool::default())
+    merge_from(
+        target,
+        &points,
+        &sources,
+        &AtomicBool::default(),
+        hw_counter,
+    )
 }
 
 // --- internal merge machinery -------------------------------------------------
@@ -237,7 +246,8 @@ const BATCH_SIZE: usize = 256;
 /// variants of that kind are accepted, so e.g. a volatile source can feed an
 /// mmap target without an f32 round-trip. A source of the wrong kind/element
 /// type yields a service error.
-type ReadFn<'a, V> = fn(&'a VectorStorageEnum, PointOffsetType) -> OperationResult<(V, bool)>;
+type ReadFn<'a, V> =
+    fn(&'a VectorStorageEnum, PointOffsetType, &HardwareCounterCell) -> OperationResult<(V, bool)>;
 
 /// Batched iterator over points to insert, reading each source vector in its
 /// **native** representation `V` — no `f32` round-trip.
@@ -256,6 +266,7 @@ struct BatchedReader<'a, V> {
     /// Global position of the iterator.
     /// From 0 to `points.len()`.
     position: usize,
+    hw_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, V> BatchedReader<'a, V> {
@@ -263,6 +274,7 @@ impl<'a, V> BatchedReader<'a, V> {
         points: &'a [PointData],
         sources: &'a [&'a VectorStorageEnum],
         read: ReadFn<'a, V>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> BatchedReader<'a, V> {
         // We don't know the vector type's size, so pre-size the buffer with
         // empty slots and fill them per batch.
@@ -276,6 +288,7 @@ impl<'a, V> BatchedReader<'a, V> {
             seg_to_points_buffer: AHashMap::default(),
             error: None,
             position: 0,
+            hw_counter,
         }
     }
 
@@ -299,7 +312,11 @@ impl<'a, V> BatchedReader<'a, V> {
         for (segment_index, points) in self.seg_to_points_buffer.drain() {
             let source = self.sources[segment_index.get() as usize];
             for (point_data, offset_in_batch) in points {
-                self.buffer[offset_in_batch] = Some((self.read)(source, point_data.internal_id)?);
+                self.buffer[offset_in_batch] = Some((self.read)(
+                    source,
+                    point_data.internal_id,
+                    self.hw_counter,
+                )?);
             }
         }
 
@@ -349,19 +366,20 @@ impl<'a, V> Iterator for BatchedReader<'a, V> {
 // kind/element type are accepted; a source of any other kind/element type is a
 // merge between incompatible storages and yields a service error.
 
-fn read_dense_f32(
-    source: &VectorStorageEnum,
+fn read_dense_f32<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, [VectorElementType]>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, [VectorElementType]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
-        VectorStorageEnum::DenseVolatile(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseMemmap(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseGraphInline(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseVolatile(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseMemmap(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseGraphInline(v) => v.get_dense::<Sequential>(key, hw_counter),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseAppendableMemmap(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::EmptyDense(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseUring(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseAppendableMemmap(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::EmptyDense(v) => v.get_dense::<Sequential>(key, hw_counter),
         VectorStorageEnum::DenseMemmapByte(_)
         | VectorStorageEnum::DenseGraphInlineByte(_)
         | VectorStorageEnum::DenseMemmapHalf(_)
@@ -404,19 +422,22 @@ fn read_dense_f32(
     Ok((vector, deleted))
 }
 
-fn read_dense_byte(
-    source: &VectorStorageEnum,
+fn read_dense_byte<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, [VectorElementTypeByte]>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, [VectorElementTypeByte]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         #[cfg(test)]
-        VectorStorageEnum::DenseVolatileByte(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseMemmapByte(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseGraphInlineByte(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseVolatileByte(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseMemmapByte(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseGraphInlineByte(v) => v.get_dense::<Sequential>(key, hw_counter),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringByte(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseUringByte(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+            v.get_dense::<Sequential>(key, hw_counter)
+        }
         // Placeholder for a vector added to an existing segment: every slot is
         // deleted, but the destination still needs one zero vector per slot.
         VectorStorageEnum::EmptyDense(v) => {
@@ -464,19 +485,22 @@ fn read_dense_byte(
     Ok((vector, deleted))
 }
 
-fn read_dense_half(
-    source: &VectorStorageEnum,
+fn read_dense_half<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, [VectorElementTypeHalf]>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, [VectorElementTypeHalf]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         #[cfg(test)]
-        VectorStorageEnum::DenseVolatileHalf(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseMemmapHalf(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseGraphInlineHalf(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseVolatileHalf(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseMemmapHalf(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseGraphInlineHalf(v) => v.get_dense::<Sequential>(key, hw_counter),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringHalf(v) => v.get_dense::<Sequential>(key),
-        VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_dense::<Sequential>(key),
+        VectorStorageEnum::DenseUringHalf(v) => v.get_dense::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+            v.get_dense::<Sequential>(key, hw_counter)
+        }
         // Placeholder for a vector added to an existing segment: every slot is
         // deleted, but the destination still needs one zero vector per slot.
         VectorStorageEnum::EmptyDense(v) => Cow::Owned(vec![
@@ -525,17 +549,22 @@ fn read_dense_half(
     Ok((vector, deleted))
 }
 
-fn read_dense_tq(
-    source: &VectorStorageEnum,
+fn read_dense_tq<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, [u8]>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, [u8]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
-        VectorStorageEnum::DenseTurboMemmap(v) => v.get_dense_tq::<Sequential>(key),
-        VectorStorageEnum::DenseTurboGraphInline(v) => v.get_dense_tq::<Sequential>(key),
+        VectorStorageEnum::DenseTurboMemmap(v) => v.get_dense_tq::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseTurboGraphInline(v) => {
+            v.get_dense_tq::<Sequential>(key, hw_counter)
+        }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key),
-        VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
+        VectorStorageEnum::DenseTurboUring(v) => v.get_dense_tq::<Sequential>(key, hw_counter),
+        VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
+            v.get_dense_tq::<Sequential>(key, hw_counter)
+        }
         // Placeholder for a vector added to an existing segment: every slot is
         // deleted, but the destination still needs one zero record per slot.
         // The record size depends only on dim, distance and datatype, which the
@@ -591,13 +620,14 @@ fn read_dense_tq(
     Ok((vector, deleted))
 }
 
-fn read_multi_tq(
-    source: &VectorStorageEnum,
+fn read_multi_tq<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, [u8]>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, [u8]>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
-        VectorStorageEnum::MultiDenseTurbo(v) => v.get_multi_tq::<Sequential>(key),
+        VectorStorageEnum::MultiDenseTurbo(v) => v.get_multi_tq::<Sequential>(key, hw_counter),
         // Named multivector added to an existing segment: all slots are deleted,
         // but the destination still needs one zero inner record per slot.
         VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
@@ -655,18 +685,21 @@ fn read_multi_tq(
     Ok((vector, deleted))
 }
 
-fn read_multi_f32(
-    source: &VectorStorageEnum,
+fn read_multi_f32<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(CowMultiVector<'_, VectorElementType>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(CowMultiVector<'a, VectorElementType>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
-        VectorStorageEnum::MultiDenseVolatile(v) => v.get_multi::<Sequential>(key),
-        VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_multi::<Sequential>(key),
+        VectorStorageEnum::MultiDenseVolatile(v) => v.get_multi::<Sequential>(key, hw_counter),
+        VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+            v.get_multi::<Sequential>(key, hw_counter)
+        }
         // Named multivector added to an existing segment: all slots are deleted,
         // but the destination still needs a placeholder per slot to stay aligned.
         VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
-            v.get_multi::<Sequential>(key)
+            v.get_multi::<Sequential>(key, hw_counter)
         }
         VectorStorageEnum::DenseVolatile(_)
         | VectorStorageEnum::DenseMemmap(_)
@@ -714,15 +747,18 @@ fn read_multi_f32(
     Ok((vector, deleted))
 }
 
-fn read_multi_byte(
-    source: &VectorStorageEnum,
+fn read_multi_byte<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(CowMultiVector<'_, VectorElementTypeByte>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(CowMultiVector<'a, VectorElementTypeByte>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         #[cfg(test)]
-        VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_multi::<Sequential>(key),
-        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_multi::<Sequential>(key),
+        VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_multi::<Sequential>(key, hw_counter),
+        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+            v.get_multi::<Sequential>(key, hw_counter)
+        }
         VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
             CowMultiVector::Owned(TypedMultiDenseVector::placeholder(
                 DenseVectorStorageRead::vector_dim(v),
@@ -774,15 +810,18 @@ fn read_multi_byte(
     Ok((vector, deleted))
 }
 
-fn read_multi_half(
-    source: &VectorStorageEnum,
+fn read_multi_half<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(CowMultiVector<'_, VectorElementTypeHalf>, bool)> {
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<(CowMultiVector<'a, VectorElementTypeHalf>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         #[cfg(test)]
-        VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_multi::<Sequential>(key),
-        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_multi::<Sequential>(key),
+        VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_multi::<Sequential>(key, hw_counter),
+        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+            v.get_multi::<Sequential>(key, hw_counter)
+        }
         VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
             CowMultiVector::Owned(TypedMultiDenseVector::placeholder(
                 DenseVectorStorageRead::vector_dim(v),
@@ -834,10 +873,11 @@ fn read_multi_half(
     Ok((vector, deleted))
 }
 
-fn read_sparse(
-    source: &VectorStorageEnum,
+fn read_sparse<'a>(
+    source: &'a VectorStorageEnum,
     key: PointOffsetType,
-) -> OperationResult<(Cow<'_, SparseVector>, bool)> {
+    _hw_counter: &HardwareCounterCell,
+) -> OperationResult<(Cow<'a, SparseVector>, bool)> {
     let deleted = source.is_deleted_vector(key);
     let vector = match source {
         // A deleted/absent vector reads as `None`; the placeholder is fine
@@ -922,7 +962,12 @@ mod tests {
         let mut dense_target = new_volatile_dense_vector_storage(4, Distance::Dot);
         let sparse_source = new_volatile_sparse_vector_storage();
 
-        let result = merge_from_single_source(&mut dense_target, &sparse_source, 1);
+        let result = merge_from_single_source(
+            &mut dense_target,
+            &sparse_source,
+            1,
+            &HardwareCounterCell::new(),
+        );
 
         assert!(
             result.is_err(),
@@ -972,6 +1017,7 @@ mod tests {
             &config,
             &dir.path().join("storage"),
             &dir.path().join("index"),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let source = new_empty_dense_vector_storage(
@@ -983,11 +1029,15 @@ mod tests {
             POINTS as usize,
         );
 
-        let range = merge_from_single_source(&mut target, &source, POINTS)
-            .expect("merging an empty placeholder must succeed");
+        let range =
+            merge_from_single_source(&mut target, &source, POINTS, &HardwareCounterCell::new())
+                .expect("merging an empty placeholder must succeed");
 
         assert_eq!(range, 0..POINTS);
-        assert_eq!(target.total_vector_count(), POINTS as usize);
+        assert_eq!(
+            target.total_vector_count(&HardwareCounterCell::new()),
+            POINTS as usize
+        );
         assert_eq!(target.deleted_vector_count(), POINTS as usize);
     }
 }

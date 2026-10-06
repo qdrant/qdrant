@@ -1,4 +1,5 @@
 use common::bench_cache::{build_once, cache_path};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use rand::SeedableRng as _;
@@ -69,11 +70,22 @@ where
 
         fs::create_dir_all(path).unwrap();
         graph_layers_builder
-            .into_graph_layers(path, GraphLinksFormatParam::Plain, false)
+            .into_graph_layers(
+                path,
+                GraphLinksFormatParam::Plain,
+                false,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
     });
 
-    let graph_layers = GraphLayers::load(&path, GraphLinksResidency::Cached, false).unwrap();
+    let graph_layers = GraphLayers::load(
+        &path,
+        GraphLinksResidency::Cached,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     (vector_holder, graph_layers)
 }

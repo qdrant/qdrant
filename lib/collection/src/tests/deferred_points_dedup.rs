@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;
@@ -109,6 +110,7 @@ async fn build_shard() -> (LocalShard, TempDir) {
         current_runtime.clone(),
         ResourceBudget::default(),
         optimizer_config,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -120,7 +122,7 @@ async fn build_shard() -> (LocalShard, TempDir) {
 async fn wait_optimization(shard: &LocalShard, timeout: Duration) {
     let start = std::time::Instant::now();
     loop {
-        let (status, _) = shard.local_shard_status().await;
+        let (status, _) = shard.local_shard_status(&HwMeasurementAcc::new()).await;
         let has_proxy = shard
             .segments()
             .read()
@@ -157,8 +159,8 @@ fn assert_no_duplicate_point_ids(shard: &LocalShard) {
             }
         };
         let seg_read = original.read();
-        for pid in seg_read.iter_points() {
-            let is_deferred = seg_read.point_is_deferred(pid);
+        for pid in seg_read.iter_points(&HardwareCounterCell::new()) {
+            let is_deferred = seg_read.point_is_deferred(pid, &HardwareCounterCell::new());
             point_occurrences
                 .entry(pid)
                 .or_default()
@@ -261,11 +263,14 @@ async fn test_deferred_points_dedup_after_optimization() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
-    let has_deferred = shard
-        .segments()
-        .read()
-        .iter()
-        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    let has_deferred = shard.segments().read().iter().any(|segment| {
+        !segment
+            .1
+            .get()
+            .read()
+            .deferred_point_ids(&hw_acc.get_counter_cell())
+            .is_empty()
+    });
     assert!(
         has_deferred,
         "Expected to have deferred points after updates, but found none"
@@ -290,11 +295,14 @@ async fn test_deferred_points_dedup_after_optimization() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
-    let has_deferred = shard
-        .segments()
-        .read()
-        .iter()
-        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    let has_deferred = shard.segments().read().iter().any(|segment| {
+        !segment
+            .1
+            .get()
+            .read()
+            .deferred_point_ids(&hw_acc.get_counter_cell())
+            .is_empty()
+    });
     assert!(
         has_deferred,
         "Expected to have deferred points after updates, but found none"
@@ -323,7 +331,12 @@ fn total_point_count(shard: &LocalShard) -> usize {
     let holder = segments.read();
     holder
         .iter()
-        .map(|(_, segment)| segment.get().read().available_point_count())
+        .map(|(_, segment)| {
+            segment
+                .get()
+                .read()
+                .available_point_count(&HardwareCounterCell::new())
+        })
         .sum()
 }
 
@@ -364,11 +377,14 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Verify we actually have deferred points, otherwise the test scenario is invalid
-    let has_deferred = shard
-        .segments()
-        .read()
-        .iter()
-        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    let has_deferred = shard.segments().read().iter().any(|segment| {
+        !segment
+            .1
+            .get()
+            .read()
+            .deferred_point_ids(&hw_acc.get_counter_cell())
+            .is_empty()
+    });
     assert!(
         has_deferred,
         "Expected deferred points after overwrites, but found none"

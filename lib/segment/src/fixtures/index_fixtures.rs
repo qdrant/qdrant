@@ -66,6 +66,7 @@ impl TestRawScorerProducer {
                 tempfile::tempdir().unwrap().path(),
                 1,
                 &AtomicBool::new(false),
+                &hw_counter,
             )
             .unwrap()
         });

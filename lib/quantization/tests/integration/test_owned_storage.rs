@@ -48,9 +48,9 @@ mod tests {
             inner.upsert_vector(id, vector, hw_counter)
         }
 
-        fn vectors_count(&self) -> usize {
+        fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
             let Self(inner) = self;
-            inner.vectors_count()
+            inner.vectors_count(hw_counter)
         }
 
         fn flusher(&self) -> Flusher {
@@ -65,22 +65,33 @@ mod tests {
     }
 
     impl EncodedStorage for OwnedStorage {
-        fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        fn get_vector_data(
+            &self,
+            index: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
+        ) -> Cow<'_, [u8]> {
             let Self(inner) = self;
-            Cow::Owned(inner.get_vector_data(index).into_owned())
+            Cow::Owned(inner.get_vector_data(index, hw_counter).into_owned())
         }
 
-        fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+        fn get_vector_data_opt(
+            &self,
+            index: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
+        ) -> Option<Cow<'_, [u8]>> {
             let Self(inner) = self;
-            Some(Cow::Owned(inner.get_vector_data_opt(index)?.into_owned()))
+            Some(Cow::Owned(
+                inner.get_vector_data_opt(index, hw_counter)?.into_owned(),
+            ))
         }
 
         fn for_each_batch(
             &self,
             offsets: &[PointOffsetType],
             callback: impl FnMut(usize, Cow<'_, [u8]>),
+            hw_counter: &HardwareCounterCell,
         ) {
-            default_for_each_batch(self, offsets, callback);
+            default_for_each_batch(self, offsets, callback, hw_counter);
         }
 
         fn files(&self) -> Vec<PathBuf> {
@@ -100,9 +111,9 @@ mod tests {
         type Storage = OwnedStorage;
         type Error = std::io::Error;
 
-        fn build(self) -> std::io::Result<Self::Storage> {
+        fn build(self, hw_counter: &HardwareCounterCell) -> std::io::Result<Self::Storage> {
             let Self(inner) = self;
-            Ok(OwnedStorage(inner.build()?))
+            Ok(OwnedStorage(inner.build(hw_counter)?))
         }
 
         fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
@@ -140,6 +151,7 @@ mod tests {
             ScalarQuantizationMethod::Int8,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let encoded_borrowed = EncodedVectorsU8::encode(
@@ -151,6 +163,7 @@ mod tests {
             ScalarQuantizationMethod::Int8,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -160,9 +173,10 @@ mod tests {
         // storages, and the code must have the quantized vector size minus the offset constant.
         let code_size = encoded_borrowed.quantized_vector_size() - size_of::<f32>();
         for i in 0..vectors_count as PointOffsetType {
-            let (offset_owned, code_owned) = encoded_owned.get_quantized_vector_offset_and_code(i);
-            let (offset_borrowed, code_borrowed) =
-                encoded_borrowed.get_quantized_vector_offset_and_code(i);
+            let (offset_owned, code_owned) =
+                encoded_owned.get_quantized_vector_offset_and_code(i, &HardwareCounterCell::new());
+            let (offset_borrowed, code_borrowed) = encoded_borrowed
+                .get_quantized_vector_offset_and_code(i, &HardwareCounterCell::new());
             assert_eq!(offset_owned, offset_borrowed);
             assert_eq!(code_owned, code_borrowed);
             assert_eq!(code_owned.len(), code_size);
@@ -178,8 +192,12 @@ mod tests {
         }
 
         // Queries encoded from a stored vector must score identically as well.
-        let query_owned = encoded_owned.encode_internal_vector(0).unwrap();
-        let query_borrowed = encoded_borrowed.encode_internal_vector(0).unwrap();
+        let query_owned = encoded_owned
+            .encode_internal_vector(0, &HardwareCounterCell::new())
+            .unwrap();
+        let query_borrowed = encoded_borrowed
+            .encode_internal_vector(0, &HardwareCounterCell::new())
+            .unwrap();
         for i in 0..vectors_count as PointOffsetType {
             assert_eq!(
                 encoded_owned.score_point(&query_owned, i, &counter),

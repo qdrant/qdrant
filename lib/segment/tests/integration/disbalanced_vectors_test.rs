@@ -22,8 +22,22 @@ fn test_rebuild_with_removed_vectors() {
 
     let stopped = AtomicBool::new(false);
 
-    let mut segment1 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
-    let mut segment2 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
+    let mut segment1 = build_segment_with_two_named_vecs(
+        dir.path(),
+        4,
+        6,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    let mut segment2 = build_segment_with_two_named_vecs(
+        dir.path(),
+        4,
+        6,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -59,15 +73,15 @@ fn test_rebuild_with_removed_vectors() {
     for i in 0..NUM_VECTORS_2 {
         if i % 3 == 0 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME, &hw_counter)
                 .unwrap();
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME, &hw_counter)
                 .unwrap();
         }
         if i % 3 == 1 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME, &hw_counter)
                 .unwrap();
         }
         if i % 2 == 0 {
@@ -93,6 +107,7 @@ fn test_rebuild_with_removed_vectors() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -104,7 +119,7 @@ fn test_rebuild_with_removed_vectors() {
 
     let merged_segment = builder.build_for_test(dir.path());
 
-    let merged_points_count = merged_segment.available_point_count();
+    let merged_points_count = merged_segment.available_point_count(&hw_counter);
 
     assert_eq!(
         merged_points_count,
@@ -117,14 +132,14 @@ fn test_rebuild_with_removed_vectors() {
         .unwrap()
         .vector_storage
         .borrow()
-        .available_vector_count();
+        .available_vector_count(&hw_counter);
     let vec2_count = merged_segment
         .vector_data
         .get(VECTOR2_NAME)
         .unwrap()
         .vector_storage
         .borrow()
-        .available_vector_count();
+        .available_vector_count(&hw_counter);
 
     assert_ne!(vec1_count, vec2_count);
 

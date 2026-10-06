@@ -5,6 +5,7 @@ use std::path::Path;
 
 use bytemuck::TransparentWrapper;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
@@ -44,7 +45,6 @@ impl<S, T> TypedStorage<S, T> {
     }
 }
 
-#[expect(clippy::len_without_is_empty)]
 impl<S, T> TypedStorage<S, T>
 where
     S: UniversalRead,
@@ -64,19 +64,21 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        fs.open(path, options, extra).map(Self::new)
+        fs.open(path, options, extra, hw_counter).map(Self::new)
     }
 
-    pub fn live_reload(&mut self) -> UioResult<()> {
-        self.inner.live_reload()
+    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.inner.live_reload(hw_counter)
     }
 
     pub fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &mut self,
         get_file_info: F,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Future<Output = ()>> {
-        self.inner.live_preload(get_file_info)
+        self.inner.live_preload(get_file_info, hw_counter)
     }
 
     #[inline]
@@ -84,13 +86,14 @@ where
         &self,
         range: ReadRange,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Cow<'_, [T]>> {
-        self.inner.read(range, access_pattern)
+        self.inner.read(range, access_pattern, hw_counter)
     }
 
     #[inline]
-    pub fn read_whole(&self) -> UioResult<Cow<'_, [T]>> {
-        self.inner.read_whole::<T>()
+    pub fn read_whole(&self, hw_counter: &HardwareCounterCell) -> UioResult<Cow<'_, [T]>> {
+        self.inner.read_whole::<T>(hw_counter)
     }
 
     #[inline]
@@ -99,8 +102,10 @@ where
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         access_pattern: P,
         callback: impl FnMut(U, &[T]) -> Result<(), E>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E> {
-        self.inner.read_batch(ranges, access_pattern, callback)
+        self.inner
+            .read_batch(ranges, access_pattern, callback, hw_counter)
     }
 
     #[inline]
@@ -108,22 +113,23 @@ where
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         U: UserData,
     {
-        self.inner.read_iter(ranges, access_pattern)
+        self.inner.read_iter(ranges, access_pattern, hw_counter)
     }
 
     #[inline]
-    pub fn len(&self) -> UioResult<u64> {
-        self.inner.len::<T>()
+    pub fn len(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64> {
+        self.inner.len::<T>(hw_counter)
     }
 
     #[inline]
-    pub fn populate(&self) -> UioResult<()> {
-        self.inner.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.inner.populate(hw_counter)
     }
 
     #[inline]
@@ -189,8 +195,13 @@ where
     /// Append `data` at exactly byte offset `offset`, which must equal the
     /// current end of file.
     #[inline]
-    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
-        self.inner.append::<T>(offset, data)
+    pub fn append(
+        &mut self,
+        offset: ByteOffset,
+        data: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.inner.append::<T>(offset, data, hw_counter)
     }
 
     /// Append several buffers contiguously, starting at exactly byte offset
@@ -200,10 +211,11 @@ where
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()>
     where
         T: 'a,
     {
-        self.inner.append_batch::<T>(offset, items)
+        self.inner.append_batch::<T>(offset, items, hw_counter)
     }
 }

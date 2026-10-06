@@ -88,9 +88,13 @@ pub trait GeoIndexRead {
         Ok(())
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize;
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize;
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>>;
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>>;
 
     /// Iterator over point IDs covered by any of the given top-level hash
     /// prefixes. Point IDs may repeat across prefixes; callers that need
@@ -98,6 +102,7 @@ pub trait GeoIndexRead {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
 
     /// Materialise (geohash, points_count) pairs filtered by `filter`. The
@@ -106,6 +111,7 @@ pub trait GeoIndexRead {
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>>;
 
     fn get_storage_type(&self) -> StorageType;
@@ -114,7 +120,7 @@ pub trait GeoIndexRead {
 
     fn is_on_disk(&self) -> bool;
 
-    fn populate(&self) -> OperationResult<()>;
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     fn clear_cache(&self) -> OperationResult<()>;
 
@@ -125,8 +131,8 @@ pub trait GeoIndexRead {
     /// Per-variant telemetry tag (e.g. `"mutable_geo"`).
     fn telemetry_index_type(&self) -> &'static str;
 
-    fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        self.values_count(idx) == 0
+    fn values_is_empty(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.values_count(idx, hw_counter) == 0
     }
 
     /// Cardinality estimation for a set of geo-hash regions. Mirrors the
@@ -188,9 +194,10 @@ pub trait GeoIndexRead {
     fn large_hashes(
         &self,
         threshold: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (GeoHash, usize)>>> {
         let filter = |pair: &(GeoHash, usize)| pair.1 > threshold && !pair.0.is_empty();
-        let mut large_regions = self.points_per_hash_filtered(&filter)?;
+        let mut large_regions = self.points_per_hash_filtered(&filter, hw_counter)?;
 
         // smallest regions first
         large_regions.sort_by(|a, b| b.cmp(a));
@@ -227,40 +234,40 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     if let Some(geo_bounding_box) = &condition.geo_bounding_box {
         let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_bounding_box;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
+        return Ok(Some(Box::new(
+            geo.iterator(geo_hashes, hw_counter)?.filter(move |&point| {
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+            }),
+        )));
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
         let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = *geo_radius;
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
+        return Ok(Some(Box::new(
+            geo.iterator(geo_hashes, hw_counter)?.filter(move |&point| {
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+            }),
+        )));
     }
 
     if let Some(geo_polygon) = &condition.geo_polygon {
         let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
         let geo_condition_copy = geo_polygon.convert();
-        return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
-            move |&point| {
+        return Ok(Some(Box::new(
+            geo.iterator(geo_hashes, hw_counter)?.filter(move |&point| {
                 geo.check_values_any(point, hw_counter, &|geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
                 .unwrap_or(false) // TODO(uio): handle errors
-            },
-        ))));
+            }),
+        )));
     }
 
     Ok(None)
@@ -331,8 +338,9 @@ pub(super) fn for_each_payload_block<G: GeoIndexRead + ?Sized>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    geo.large_hashes(threshold)?
+    geo.large_hashes(threshold, hw_counter)?
         .try_for_each(|(geo_hash, size)| {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_geo_bounding_box(

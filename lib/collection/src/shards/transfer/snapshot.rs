@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults;
 use parking_lot::Mutex;
 use semver::Version;
@@ -165,6 +166,7 @@ pub(super) async fn transfer_snapshot(
     snapshots_path: &Path,
     collection_id: &CollectionId,
     temp_dir: &Path,
+    hw_acc: &HwMeasurementAcc,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -211,7 +213,7 @@ pub(super) async fn transfer_snapshot(
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
         let snapshot_description = shard_holder_read
-            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
+            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir, hw_acc)
             .await?
             .await?;
 

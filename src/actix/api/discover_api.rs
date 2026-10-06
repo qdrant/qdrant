@@ -2,6 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -38,6 +39,7 @@ async fn discover_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -101,6 +103,7 @@ async fn discover_batch_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

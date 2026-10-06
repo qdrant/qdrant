@@ -48,7 +48,8 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let int_key = "int";
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, distance, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -69,6 +70,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         MultiVectorConfig::default(),
         AdviceSetting::Global,
         true,
+        &hw_counter,
     )
     .unwrap();
 
@@ -96,7 +98,11 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let internal_id = segment
             .id_tracker
             .borrow()
-            .internal_id_with_behavior(idx, common::types::DeferredBehavior::VisibleOnly)
+            .internal_id_with_behavior(
+                idx,
+                common::types::DeferredBehavior::VisibleOnly,
+                &hw_counter,
+            )
             .unwrap();
         multi_storage
             .insert_vector(
@@ -151,19 +157,23 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
     let multi_storage = Arc::new(AtomicRefCell::new(multi_storage));
 
-    let hnsw_index_multi = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: multi_storage,
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: segment.payload_index.clone(),
-        hnsw_config,
-    })
+    let hnsw_index_multi = HNSWIndex::open(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: multi_storage,
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        &hw_counter,
+    )
     .unwrap();
 
     for _ in 0..10 {

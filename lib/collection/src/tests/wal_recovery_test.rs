@@ -76,6 +76,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -115,7 +116,7 @@ async fn test_delete_from_indexed_payload() {
         .await
         .unwrap();
 
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
     let number_of_indexed_points = info
         .payload_schema
@@ -138,6 +139,7 @@ async fn test_delete_from_indexed_payload() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -171,11 +173,12 @@ async fn test_delete_from_indexed_payload() {
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
 
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
 
     let number_of_indexed_points_after_load = info
@@ -217,6 +220,7 @@ async fn test_partial_flush_recovery() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -248,7 +252,7 @@ async fn test_partial_flush_recovery() {
 
     shard.stop_flush_worker().await;
 
-    shard.full_flush();
+    shard.full_flush(&hw_acc.get_counter_cell());
 
     let delete_point_op = delete_point_operation(4);
     shard
@@ -262,7 +266,7 @@ async fn test_partial_flush_recovery() {
         .unwrap();
 
     // This only flushed id-tracker-mapping, but not the storage change
-    shard.partial_flush();
+    shard.partial_flush(&hw_acc.get_counter_cell());
 
     shard.stop_gracefully().await;
 
@@ -279,11 +283,12 @@ async fn test_partial_flush_recovery() {
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
 
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
 
     let number_of_indexed_points_after_load = info
@@ -326,6 +331,7 @@ async fn test_truncate_unapplied_wal() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -444,7 +450,7 @@ async fn test_truncate_unapplied_wal() {
     eprintln!("Update after truncate succeeded: {update_result:?}");
 
     // Verify the shard is still functional
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     assert_eq!(
         info.points_count.unwrap_or(0),
         applied_count + 1,
@@ -491,6 +497,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -565,6 +572,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -605,7 +613,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Verify all points are present after processing
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     let points_count = info.points_count.unwrap_or(0);
     assert_eq!(
         points_count, total_ops as usize,
@@ -669,6 +677,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -721,6 +730,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -729,7 +739,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
     // drain, no polling. Both samples are taken before asserting, so the visible count is the
     // earliest observation possible rather than one taken after the queue check gave the worker
     // time to catch up.
-    let visible_points = shard.info().await.unwrap().points_count.unwrap_or(0);
+    let visible_points = shard.info(&hw_acc).await.unwrap().points_count.unwrap_or(0);
     let pending_updates = shard.local_update_queue_info().await.length;
 
     // The symptom: every one of these was acknowledged as visible before the restart.
@@ -789,6 +799,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -853,6 +864,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .expect("shard load must tolerate a corrupt WAL entry in the deferred tail");
@@ -876,7 +888,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Every readable operation around the corrupt entry is applied.
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     let points_count = info.points_count.unwrap_or(0);
     assert_eq!(
         points_count, total_ops as usize,
@@ -930,6 +942,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -960,7 +973,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     shard
         .segments()
         .read()
-        .flush_all(FlushMode::Sync, true)
+        .flush_all(FlushMode::Sync, true, &hw_acc.get_counter_cell())
         .unwrap();
 
     shard.stop_gracefully().await;
@@ -1001,6 +1014,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .expect("shard load must tolerate a WAL truncated past the applied_seq upper bound");
@@ -1023,7 +1037,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // All points are present: everything before the truncated prefix was durably flushed.
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     let points_count = info.points_count.unwrap_or(0);
     assert_eq!(
         points_count, total_ops as usize,
@@ -1070,6 +1084,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -1147,6 +1162,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -1169,7 +1185,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
     shard.plunge_async().await.unwrap().await.unwrap();
 
     // Verify all points are present after processing
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     let points_count = info.points_count.unwrap_or(0);
     assert_eq!(
         points_count, total_ops as usize,
@@ -1218,6 +1234,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -1333,6 +1350,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -1400,6 +1418,7 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -1456,6 +1475,7 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
@@ -1534,6 +1554,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -1565,6 +1586,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
         update_runtime,
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .expect("shard must recover: the bad op is skipped, not crash-looped");
@@ -1806,6 +1828,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -1848,7 +1871,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
         let mut segments_write = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_read);
         for (segment_id, proxy) in proxies {
             segments_write
-                .replace(segment_id, proxy.finalize())
+                .replace(segment_id, proxy.finalize(&hw_acc.get_counter_cell()))
                 .unwrap();
         }
     }
@@ -1875,7 +1898,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
     let flushed_version = shard
         .segments()
         .read()
-        .flush_all(FlushMode::Sync, true)
+        .flush_all(FlushMode::Sync, true, &hw_acc.get_counter_cell())
         .unwrap();
     assert_eq!(
         flushed_version,
@@ -1928,10 +1951,11 @@ async fn test_proxy_pending_changes_crash_recovery() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
-    let points_count = shard.info().await.unwrap().points_count.unwrap_or(0);
+    let points_count = shard.info(&hw_acc).await.unwrap().points_count.unwrap_or(0);
     assert_eq!(
         points_count as u64,
         total_points - 1,
@@ -1958,6 +1982,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
         update_runtime.clone(),
         current_runtime.clone(),
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();

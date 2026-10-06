@@ -41,38 +41,51 @@ where
     S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
-    pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
+    pub fn open_or_create(
+        path: PathBuf,
+        populate: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let path = storage_dir(path);
         if path.exists() {
-            Self::open(path, populate)
+            Self::open(path, populate, hw_counter)
         } else {
             // create folder if it does not exist
             fs::create_dir_all(&path).map_err(|_| {
                 OperationError::service_error("Failed to create mmap payload storage directory")
             })?;
-            Ok(Self::new(path, populate)?)
+            Ok(Self::new(path, populate, hw_counter)?)
         }
     }
 
-    fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
+    fn open(
+        path: PathBuf,
+        populate: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         // TODO(uio): use Populate as argument and propagate in callers
-        let storage =
-            Blobstore::open(S::Fs::default(), path, Populate::from(populate)).map_err(|err| {
+        let storage = Blobstore::open(S::Fs::default(), path, Populate::from(populate), hw_counter)
+            .map_err(|err| {
                 OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
             })?;
 
         Ok(Self { storage, populate })
     }
 
-    fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
+    fn new(
+        path: PathBuf,
+        populate: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let storage = Blobstore::new(
             S::Fs::default(),
             path,
             crate::common::blobstore_config::storage_config(CreateOptions::DEFAULT),
+            hw_counter,
         )?;
 
         if populate {
-            storage.populate()?;
+            storage.populate(hw_counter)?;
         }
 
         Ok(Self { storage, populate })
@@ -80,8 +93,8 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.populate(hw_counter)?;
         Ok(())
     }
 
@@ -103,8 +116,8 @@ where
 
     /// Switch to a layout for a storage that is only read from now on, persisted by the next
     /// flush, see [`Blobstore::make_immutable`].
-    pub fn make_immutable(&self) -> OperationResult<()> {
-        self.storage.make_immutable()?;
+    pub fn make_immutable(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.make_immutable(hw_counter)?;
         Ok(())
     }
 }
@@ -161,6 +174,7 @@ where
                 callback(user_data, payload)
             },
             hw_counter.payload_io_read_counter(),
+            hw_counter,
         )
     }
 
@@ -174,6 +188,7 @@ where
             point_offsets,
             |user_data, _, bytes| callback(user_data, bytes),
             hw_counter.payload_io_read_counter(),
+            hw_counter,
         )
     }
 
@@ -187,8 +202,8 @@ where
         )
     }
 
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        Ok(self.storage.get_storage_size_bytes()?)
+    fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        Ok(self.storage.get_storage_size_bytes(hw_counter)?)
     }
 
     fn is_on_disk(&self) -> bool {
@@ -292,21 +307,21 @@ where
     fn clear(
         &mut self,
         point_id: PointOffsetType,
-        _: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
-        let res = self.storage.delete_value(point_id)?;
+        let res = self.storage.delete_value(point_id, hw_counter)?;
         Ok(res)
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.storage.clear().map_err(|err| {
+    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.clear(hw_counter).map_err(|err| {
             OperationError::service_error(format!("Failed to clear mmap payload storage: {err}"))
         })
     }
 
-    fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
         Box::new(move || {
             storage_flusher().map_err(|err| {
                 OperationError::service_error(format!(

@@ -14,16 +14,20 @@ impl ImmutableNullIndex {
     pub fn builder(
         path: &Path,
         total_point_count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<ImmutableNullIndexBuilder> {
         Ok(ImmutableNullIndexBuilder(
-            MutableNullIndex::open(path, total_point_count, true)?.ok_or_else(|| {
-                OperationError::service_error("Failed to create and open MutableNullIndex")
-            })?,
+            MutableNullIndex::open(path, total_point_count, true, hw_counter)?.ok_or_else(
+                || OperationError::service_error("Failed to create and open MutableNullIndex"),
+            )?,
         ))
     }
 
-    pub fn from_mutable(mutable_index: MutableNullIndex) -> OperationResult<Self> {
-        mutable_index.flusher()()?;
+    pub fn from_mutable(
+        mutable_index: MutableNullIndex,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        mutable_index.flusher(hw_counter)()?;
         Ok(Self(mutable_index))
     }
 
@@ -31,8 +35,12 @@ impl ImmutableNullIndex {
         path: &Path,
         total_point_count: usize,
         deleted: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(MutableNullIndex::open_immutable(path, total_point_count, deleted)?.map(Self))
+        Ok(
+            MutableNullIndex::open_immutable(path, total_point_count, deleted, hw_counter)?
+                .map(Self),
+        )
     }
 
     #[inline]
@@ -59,7 +67,7 @@ impl PayloadFieldIndex for ImmutableNullIndex {
     }
 
     #[inline]
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> crate::common::Flusher {
         Box::new(|| Ok(())) // No op for an immutable index.
     }
 }
@@ -69,7 +77,7 @@ pub struct ImmutableNullIndexBuilder(pub(super) MutableNullIndex);
 impl FieldIndexBuilderTrait for ImmutableNullIndexBuilder {
     type FieldIndexType = ImmutableNullIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // After Self is created, it is already initialized
         Ok(())
     }
@@ -83,8 +91,8 @@ impl FieldIndexBuilderTrait for ImmutableNullIndexBuilder {
         self.0.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.flusher()()?; // Immutable index has noop flusher, so we have to ensure the data is flushed now.
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
+        self.0.flusher(hw_counter)()?; // Immutable index has noop flusher, so we have to ensure the data is flushed now.
         Ok(ImmutableNullIndex(self.0))
     }
 }

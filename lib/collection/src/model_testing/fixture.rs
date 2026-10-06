@@ -117,6 +117,7 @@ pub(super) const INITIAL_FLUSH_INTERVAL_SEC: u64 = 5;
 /// `snapshots/` subdirs, wiping any pre-existing contents — each soak run starts from a
 /// clean slate. If you need to preserve a crashed run's state for post-mortem, copy the
 /// directory out before re-running.
+#[expect(clippy::too_many_arguments)]
 pub(super) async fn fixture(
     shard_count: u32,
     storage_path: &Path,
@@ -125,6 +126,7 @@ pub(super) async fn fixture(
     indexing_threshold_kb: usize,
     on_disk: bool,
     text_params: TextIndexParams,
+    hw_acc: &HwMeasurementAcc,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
     let snapshots_dir = storage_path.join("snapshots");
@@ -246,6 +248,7 @@ pub(super) async fn fixture(
         None,
         ResourceBudget::default(),
         None,
+        hw_acc,
     )
     .await
     .unwrap();
@@ -341,7 +344,11 @@ pub(super) fn text_index_params(seed: u64) -> TextIndexParams {
     }
 }
 
-pub(super) async fn reopen_collection(collection_dir: &Path, snapshots_dir: &Path) -> Collection {
+pub(super) async fn reopen_collection(
+    collection_dir: &Path,
+    snapshots_dir: &Path,
+    hw_acc: &HwMeasurementAcc,
+) -> Collection {
     Collection::load(
         COLLECTION_NAME.to_string(),
         PEER_ID,
@@ -356,6 +363,7 @@ pub(super) async fn reopen_collection(collection_dir: &Path, snapshots_dir: &Pat
         None,
         ResourceBudget::default(),
         None,
+        hw_acc,
     )
     .await
 }

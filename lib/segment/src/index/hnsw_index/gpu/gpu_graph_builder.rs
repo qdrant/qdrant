@@ -104,6 +104,8 @@ pub fn build_hnsw_on_gpu<'a, 'b>(
 mod tests {
     use std::borrow::Borrow;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
+
     use super::*;
     use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -129,6 +131,7 @@ mod tests {
             None,
             false,
             &false.into(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 

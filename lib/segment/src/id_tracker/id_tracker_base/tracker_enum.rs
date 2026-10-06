@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
@@ -23,16 +24,24 @@ pub enum IdTrackerEnum {
 }
 
 impl IdTrackerRead for IdTrackerEnum {
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.internal_version(internal_id, hw_counter)
+            }
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.internal_version(internal_id)
+                id_tracker.internal_version(internal_id, hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.internal_version(internal_id)
+                id_tracker.internal_version(internal_id, hw_counter)
             }
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.internal_version(internal_id, hw_counter)
+            }
         }
     }
 
@@ -40,29 +49,42 @@ impl IdTrackerRead for IdTrackerEnum {
         &self,
         external_id: PointIdType,
         deferred_behavior: common::types::DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType> {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
             IdTrackerEnum::ImmutableIdTracker(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
             IdTrackerEnum::DiskIdTracker(t) => {
-                t.internal_id_with_behavior(external_id, deferred_behavior)
+                t.internal_id_with_behavior(external_id, deferred_behavior, hw_counter)
             }
         }
     }
 
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.external_id(internal_id),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.external_id(internal_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.external_id(internal_id, hw_counter)
+            }
         }
     }
 
@@ -70,16 +92,21 @@ impl IdTrackerRead for IdTrackerEnum {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
+            IdTrackerEnum::MutableIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
+            }
             IdTrackerEnum::ImmutableIdTracker(t) => {
-                t.internal_versions_batch(internal_ids, callback)
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(t) => {
-                t.internal_versions_batch(internal_ids, callback)
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
             }
-            IdTrackerEnum::DiskIdTracker(t) => t.internal_versions_batch(internal_ids, callback),
+            IdTrackerEnum::DiskIdTracker(t) => {
+                t.internal_versions_batch(internal_ids, callback, hw_counter)
+            }
         }
     }
 
@@ -87,12 +114,21 @@ impl IdTrackerRead for IdTrackerEnum {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
-            IdTrackerEnum::ImmutableIdTracker(t) => t.external_ids_batch(internal_ids, callback),
-            IdTrackerEnum::InMemoryIdTracker(t) => t.external_ids_batch(internal_ids, callback),
-            IdTrackerEnum::DiskIdTracker(t) => t.external_ids_batch(internal_ids, callback),
+            IdTrackerEnum::MutableIdTracker(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(t) => {
+                t.external_ids_batch(internal_ids, callback, hw_counter)
+            }
         }
     }
 
@@ -101,31 +137,35 @@ impl IdTrackerRead for IdTrackerEnum {
         point_ids: impl IntoIterator<Item = PointIdType>,
         deferred_behavior: common::types::DeferredBehavior,
         callback: impl FnMut(PointIdType, PointOffsetType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
             IdTrackerEnum::ImmutableIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
             IdTrackerEnum::DiskIdTracker(t) => {
-                t.resolve_external_ids(point_ids, deferred_behavior, callback)
+                t.resolve_external_ids(point_ids, deferred_behavior, callback, hw_counter)
             }
         }
     }
 
     type Backend = MmapFile;
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+    fn point_mappings(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.point_mappings(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.point_mappings(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.point_mappings(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.point_mappings(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.point_mappings(hw_counter),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.point_mappings(hw_counter),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.point_mappings(hw_counter),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.point_mappings(hw_counter),
         }
     }
 
@@ -138,34 +178,56 @@ impl IdTrackerRead for IdTrackerEnum {
         }
     }
 
-    fn deleted_point_count(&self) -> usize {
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-        }
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-        }
-    }
-
-    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.deleted_point_count(hw_counter)
+            }
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
+                id_tracker.deleted_point_count(hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.is_deleted_point(internal_id)
+                id_tracker.deleted_point_count(hw_counter)
             }
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.deleted_point_count(hw_counter),
+        }
+    }
+
+    fn deleted_point_bitslice(&self, hw_counter: &HardwareCounterCell) -> &BitSlice {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.deleted_point_bitslice(hw_counter)
+            }
+        }
+    }
+
+    fn is_deleted_point(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.is_deleted_point(internal_id, hw_counter)
+            }
         }
     }
 
@@ -180,12 +242,21 @@ impl IdTrackerRead for IdTrackerEnum {
 
     fn iter_internal_versions(
         &self,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.iter_internal_versions(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.iter_internal_versions(hw_counter)
+            }
         }
     }
 
@@ -213,19 +284,20 @@ impl IdTracker for IdTrackerEnum {
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
+                id_tracker.set_internal_version(internal_id, version, hw_counter)
             }
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
+                id_tracker.set_internal_version(internal_id, version, hw_counter)
             }
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
+                id_tracker.set_internal_version(internal_id, version, hw_counter)
             }
             IdTrackerEnum::DiskIdTracker(id_tracker) => {
-                id_tracker.set_internal_version(internal_id, version)
+                id_tracker.set_internal_version(internal_id, version, hw_counter)
             }
         }
     }
@@ -251,48 +323,79 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop(external_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id, hw_counter),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.drop(external_id, hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.drop(external_id, hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop(external_id, hw_counter),
         }
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, hw_counter)
+            }
         }
     }
 
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(hw_counter),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(hw_counter),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(hw_counter),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.mapping_flusher(hw_counter),
         }
     }
 
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.versions_flusher(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(hw_counter),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.versions_flusher(hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(hw_counter),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.versions_flusher(hw_counter),
         }
     }
 
-    fn fix_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
+    fn fix_inconsistencies(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.fix_inconsistencies(),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.fix_inconsistencies(hw_counter)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.fix_inconsistencies(hw_counter)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.fix_inconsistencies(hw_counter)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.fix_inconsistencies(hw_counter),
         }
     }
 

@@ -4,6 +4,7 @@
 
 use std::ops::Range;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{DiskCache, ReadPipeline, UioResult, UniversalRead, UserData};
@@ -39,9 +40,10 @@ impl<'file, A: AsyncRead + Clone, U: UserData> ReadPipeline<'file, U>
         file: &'file Self::File,
         range: Range<u64>,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         self.inner
-            .schedule::<P>(user_data, &file.cache, range, align)
+            .schedule::<P>(user_data, &file.cache, range, align, hw_counter)
     }
 
     fn schedule_whole(
@@ -49,11 +51,13 @@ impl<'file, A: AsyncRead + Clone, U: UserData> ReadPipeline<'file, U>
         user_data: U,
         file: &'file Self::File,
         from: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
-        self.inner.schedule_whole(user_data, &file.cache, from)
+        self.inner
+            .schedule_whole(user_data, &file.cache, from, hw_counter)
     }
 
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
-        self.inner.wait()
+    fn wait(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>> {
+        self.inner.wait(hw_counter)
     }
 }

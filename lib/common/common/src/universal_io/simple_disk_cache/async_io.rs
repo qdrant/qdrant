@@ -14,6 +14,7 @@ use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
@@ -31,6 +32,7 @@ where
         path: PathBuf,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<Self::File> {
         let populate = if crate::low_memory::low_memory_mode().skip_populate() {
             Populate::No
@@ -45,13 +47,14 @@ where
         let state = match populate {
             Populate::Auto | Populate::No => match extra.known_len {
                 Some(len) => State::ready(
-                    self.open_remote(&path, remote_extra.clone())?,
+                    self.open_remote(&path, remote_extra.clone(), &hw_acc.get_counter_cell())?,
                     LocalState::new(&local_path, len, options)?,
                 ),
                 None => State::Uninit,
             },
             Populate::PreferBackground | Populate::Blocking => {
-                let remote = self.open_remote(&path, remote_extra.clone())?;
+                let remote =
+                    self.open_remote(&path, remote_extra.clone(), &hw_acc.get_counter_cell())?;
                 let local = if extra.known_len == Some(0) {
                     LocalState::new(&local_path, 0, options)?
                 } else {
@@ -59,10 +62,14 @@ where
                     // from `known_len` when the file was replaced since it was observed.
                     let mirror_path = local_path.clone();
                     let MirrorWriter(local, mut file) = remote
-                        .read_from_into_async(0, move |len| {
-                            let file = TempPath::try_from_path(mirror_path)?;
-                            Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
-                        })
+                        .read_from_into_async(
+                            0,
+                            move |len| {
+                                let file = TempPath::try_from_path(mirror_path)?;
+                                Ok(MirrorWriter(LocalState::new(&file, len, options)?, file))
+                            },
+                            hw_acc.clone(),
+                        )
                         .await?;
                     // The `DiskCache` removes the mirror from here on.
                     file.disable_cleanup(true);
@@ -72,17 +79,23 @@ where
                 State::ready(remote, local)
             }
             Populate::Partial(read_range) => {
-                let remote = self.open_remote(&path, remote_extra.clone())?;
+                let remote =
+                    self.open_remote(&path, remote_extra.clone(), &hw_acc.get_counter_cell())?;
                 let file_len = match extra.known_len {
                     Some(len) => len,
-                    None => remote.len::<u8>()?,
+                    None => remote.len::<u8>(&hw_acc.get_counter_cell())?,
                 };
                 let byte_range = read_range.into_byte_range::<u8>();
                 let (block_range, fetch_range) =
                     block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
 
                 let content = remote
-                    .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                    .read_bytes_async(
+                        fetch_range.clone(),
+                        Sequential,
+                        REMOTE_READ_ALIGNMENT,
+                        hw_acc.clone(),
+                    )
                     .await?;
 
                 let local = LocalState::new(&local_path, file_len, options)?;
@@ -102,8 +115,14 @@ where
         ))
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files_async(prefix_path).await
+    async fn list_files_async(
+        &self,
+        prefix_path: &Path,
+        hw_acc: HwMeasurementAcc,
+    ) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs
+            .list_files_async(prefix_path, hw_acc.clone())
+            .await
     }
 }
 
@@ -127,20 +146,23 @@ where
         range: Range<u64>,
         access_pattern: P,
         _align: usize,
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<ACow<'_>> {
         // warn: first-touch init (`state()`) still does blocking I/O; only the
         // block fetch itself is async.
         //
         // TODO(uio): This is a targeted use of async, but maybe later we'd want
         // a proper async pipeline
-        let state = self.state()?;
+        let state = self.state(&hw_acc.get_counter_cell())?;
         match pick_source::<P>(state.local, range.clone())? {
             Source::Local {
                 range,
                 is_sequential,
             } => {
                 // SAFETY: Source::Local confirms the range is local (or empty).
-                let bytes = unsafe { read_local::<R>(self, range, is_sequential)? };
+                let bytes = unsafe {
+                    read_local::<R>(self, range, is_sequential, &hw_acc.get_counter_cell())?
+                };
                 Ok(ACow::Borrowed(bytes))
             }
             Source::Remote {
@@ -149,7 +171,12 @@ where
             } => {
                 let bytes = state
                     .remote
-                    .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
+                    .read_bytes_async(
+                        blocks_byte_range,
+                        access_pattern,
+                        REMOTE_READ_ALIGNMENT,
+                        hw_acc.clone(),
+                    )
                     .await?;
                 // SAFETY: `bytes` is the remote content of `blocks_range`
                 // (clamped to EOF), which covers `range`.
@@ -167,11 +194,12 @@ where
         &self,
         from: u64,
         init: I,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        read_from_via_read_bytes(self, from, init)
+        read_from_via_read_bytes(self, from, init, hw_acc.clone())
     }
 }

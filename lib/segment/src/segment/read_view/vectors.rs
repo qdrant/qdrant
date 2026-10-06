@@ -57,7 +57,7 @@ where
         mut callback: impl FnMut(U, PointOffsetType, VectorInternal),
     ) -> OperationResult<()> {
         let vector_storage = self.vector_storage_for(vector_name)?;
-        let live_keys = self.filter_live_keys(&*vector_storage, keys);
+        let live_keys = self.filter_live_keys(&*vector_storage, keys, hw_counter);
 
         vector_storage.read_vectors::<Random, U>(
             live_keys,
@@ -69,6 +69,7 @@ where
                 }
                 callback(user_data, point_offset, cow_vector.to_owned());
             },
+            hw_counter,
         );
 
         Ok(())
@@ -87,15 +88,19 @@ where
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
     ) -> OperationResult<()> {
         let vector_storage = self.vector_storage_for(vector_name)?;
-        let live_keys = self.filter_live_keys(&*vector_storage, keys);
+        let live_keys = self.filter_live_keys(&*vector_storage, keys, hw_counter);
 
         vector_storage
-            .read_vector_bytes::<Random, U>(live_keys, |user_data, point_offset, bytes| {
-                if vector_storage.is_on_disk() {
-                    hw_counter.vector_io_read().incr_delta(bytes.len());
-                }
-                callback(user_data, point_offset, bytes);
-            })
+            .read_vector_bytes::<Random, U>(
+                live_keys,
+                |user_data, point_offset, bytes| {
+                    if vector_storage.is_on_disk() {
+                        hw_counter.vector_io_read().incr_delta(bytes.len());
+                    }
+                    callback(user_data, point_offset, bytes);
+                },
+                hw_counter,
+            )
             .map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to read raw bytes of vector {vector_name:?}: {err}"
@@ -122,20 +127,21 @@ where
         &'a self,
         vector_storage: &'a S,
         keys: impl IntoIterator<Item = (U, PointOffsetType), IntoIter: 'a>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (U, PointOffsetType)> + 'a {
-        let total_vectors = vector_storage.total_vector_count();
+        let total_vectors = vector_storage.total_vector_count(hw_counter);
         let id_tracker = self.id_tracker;
         keys.into_iter().filter(move |&(_, point_offset)| {
             if total_vectors <= point_offset as usize {
                 debug_assert!(
                     false,
                     "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
-                    id_tracker.external_id(point_offset),
+                    id_tracker.external_id(point_offset, hw_counter),
                 );
                 return false;
             }
             let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
-            let is_point_deleted = id_tracker.is_deleted_point(point_offset);
+            let is_point_deleted = id_tracker.is_deleted_point(point_offset, hw_counter);
             !is_vector_deleted && !is_point_deleted
         })
     }
@@ -168,7 +174,7 @@ where
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        let internal_id = self.lookup_internal_id(point_id, deferred_behavior)?;
+        let internal_id = self.lookup_internal_id(point_id, deferred_behavior, hw_counter)?;
         self.vector_by_offset(vector_name, internal_id, hw_counter)
     }
 
@@ -176,6 +182,7 @@ where
     pub fn available_vectors_size_in_bytes(
         &self,
         vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         check_vector_name(vector_name, self.segment_config)?;
         let vector_data = self
@@ -184,7 +191,7 @@ where
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let size = vector_data
             .vector_index()
-            .size_of_searchable_vectors_in_bytes();
+            .size_of_searchable_vectors_in_bytes(hw_counter);
         Ok(size)
     }
 }

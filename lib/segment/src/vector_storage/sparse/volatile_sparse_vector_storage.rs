@@ -113,6 +113,7 @@ impl SparseVectorStorageRead for VolatileSparseVectorStorage {
         &self,
         keys: &[PointOffsetType],
         mut callback: F,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector),
@@ -147,7 +148,7 @@ impl SparseVectorStorage for VolatileSparseVectorStorage {
 }
 
 impl VectorStorageRead for VolatileSparseVectorStorage {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         if self.total_vector_count == 0 {
             return 0;
         }
@@ -169,19 +170,27 @@ impl VectorStorageRead for VolatileSparseVectorStorage {
         false
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.total_vector_count
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        let vector = self.get_vector_opt::<P>(key);
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        let vector = self.get_vector_opt::<P>(key, hw_counter);
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// ignore any error
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         // In memory, so no sequential read optimization.
         match self.get_sparse_opt::<P>(key) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
@@ -205,8 +214,9 @@ impl VectorStorageRead for VolatileSparseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback, hw_counter)
     }
 }
 
@@ -225,7 +235,7 @@ impl VectorStorage for VolatileSparseVectorStorage {
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -233,7 +243,11 @@ impl VectorStorage for VolatileSparseVectorStorage {
         vec![]
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
             let old_vector = self.get_sparse_opt::<Random>(key).ok().flatten();

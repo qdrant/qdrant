@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFile, MmapFs, UniversalFlush as _};
 use rstest::rstest;
 use tempfile::Builder;
@@ -16,7 +17,12 @@ impl TestTracker {
     pub fn mapping_len(&self) -> Result<usize> {
         let mut count = 0;
         for i in 0..self.next_pointer_offset {
-            if self.get::<Random>(i).ok().flatten().is_some() {
+            if self
+                .get::<Random>(i, &HardwareCounterCell::new())
+                .ok()
+                .flatten()
+                .is_some()
+            {
                 count += 1;
             }
         }
@@ -30,14 +36,14 @@ impl TestTracker {
     /// Return the size of the underlying file
     pub fn mmap_file_size(&self) -> Result<usize> {
         self.storage
-            .len::<u8>()
+            .len::<u8>(&HardwareCounterCell::new())
             .map(|u| u as usize)
             .map_err(Into::into)
     }
 
     pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(pending_updates)?;
+        let res = self.write_pending(pending_updates, &HardwareCounterCell::new())?;
         self.storage.flusher()()?;
         Ok(res)
     }
@@ -54,7 +60,7 @@ fn test_file_name() {
 fn test_page_tracker_files() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let tracker = TestTracker::new(&MmapFs, path, None, &HardwareCounterCell::new()).unwrap();
     let files = tracker.files();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0], path.join(TestTracker::FILE_NAME));
@@ -64,7 +70,7 @@ fn test_page_tracker_files() {
 fn test_new_tracker() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let tracker = TestTracker::new(&MmapFs, path, None, &HardwareCounterCell::new()).unwrap();
     assert!(tracker.is_empty());
     assert_eq!(tracker.mapping_len().unwrap(), 0);
     assert_eq!(tracker.pointer_count(), 0);
@@ -77,7 +83,13 @@ fn test_new_tracker() {
 fn test_mapping_len_tracker(#[case] initial_tracker_size: usize) {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(
+        &MmapFs,
+        path,
+        Some(initial_tracker_size),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert!(tracker.is_empty());
     tracker.set(0, ValuePointer::new(1, 1, 1));
 
@@ -101,7 +113,13 @@ fn test_mapping_len_tracker(#[case] initial_tracker_size: usize) {
 fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(
+        &MmapFs,
+        path,
+        Some(initial_tracker_size),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     tracker.set(0, ValuePointer::new(1, 1, 1));
     tracker.set(1, ValuePointer::new(2, 2, 2));
     tracker.set(2, ValuePointer::new(3, 3, 3));
@@ -113,31 +131,47 @@ fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
     assert_eq!(tracker.pointer_count(), 11); // accounts for empty slots
 
     assert_eq!(
-        tracker.get_raw(0).unwrap(),
+        tracker.get_raw(0, &HardwareCounterCell::new()).unwrap(),
         Some(ValuePointer::new(1, 1, 1))
     );
     assert_eq!(
-        tracker.get_raw(1).unwrap(),
+        tracker.get_raw(1, &HardwareCounterCell::new()).unwrap(),
         Some(ValuePointer::new(2, 2, 2))
     );
     assert_eq!(
-        tracker.get_raw(2).unwrap(),
+        tracker.get_raw(2, &HardwareCounterCell::new()).unwrap(),
         Some(ValuePointer::new(3, 3, 3))
     );
-    assert_eq!(tracker.get_raw(3).unwrap(), None); // intermediate empty slot
     assert_eq!(
-        tracker.get_raw(10).unwrap(),
+        tracker.get_raw(3, &HardwareCounterCell::new()).unwrap(),
+        None
+    ); // intermediate empty slot
+    assert_eq!(
+        tracker.get_raw(10, &HardwareCounterCell::new()).unwrap(),
         Some(ValuePointer::new(10, 10, 10))
     );
-    assert_eq!(tracker.get_raw(100_000).unwrap(), None); // out of bounds
+    assert_eq!(
+        tracker
+            .get_raw(100_000, &HardwareCounterCell::new())
+            .unwrap(),
+        None
+    ); // out of bounds
 
-    tracker.unset(1).unwrap();
+    tracker.unset(1, &HardwareCounterCell::new()).unwrap();
 
     tracker.write_pending_and_flush_internal().unwrap();
 
     // the value has been cleared but the entry is still there
-    assert_eq!(tracker.get_raw(1).unwrap(), None);
-    assert_eq!(tracker.get::<Random>(1).unwrap(), None);
+    assert_eq!(
+        tracker.get_raw(1, &HardwareCounterCell::new()).unwrap(),
+        None
+    );
+    assert_eq!(
+        tracker
+            .get::<Random>(1, &HardwareCounterCell::new())
+            .unwrap(),
+        None
+    );
 
     assert_eq!(tracker.mapping_len().unwrap(), 3);
     assert_eq!(tracker.pointer_count(), 11);
@@ -149,11 +183,15 @@ fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
     tracker.write_pending_and_flush_internal().unwrap();
 
     assert_eq!(
-        tracker.get::<Random>(0).unwrap(),
+        tracker
+            .get::<Random>(0, &HardwareCounterCell::new())
+            .unwrap(),
         Some(ValuePointer::new(10, 10, 10))
     );
     assert_eq!(
-        tracker.get::<Random>(2).unwrap(),
+        tracker
+            .get::<Random>(2, &HardwareCounterCell::new())
+            .unwrap(),
         Some(ValuePointer::new(30, 30, 30))
     );
 }
@@ -168,7 +206,13 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
 
     let value_count: usize = 1000;
 
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(initial_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(
+        &MmapFs,
+        path,
+        Some(initial_tracker_size),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     for i in 0..value_count {
         // save only half of the values
@@ -188,7 +232,14 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
     drop(tracker);
 
     // reopen the tracker
-    let tracker = TestTracker::open(&MmapFs, path, Populate::No, true).unwrap();
+    let tracker = TestTracker::open(
+        &MmapFs,
+        path,
+        Populate::No,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), value_count / 2);
     assert_eq!(tracker.pointer_count(), value_count as u32 - 1);
 
@@ -196,11 +247,18 @@ fn test_persist_and_open_tracker(#[case] initial_tracker_size: usize) {
     for i in 0..value_count {
         if i % 2 == 0 {
             assert_eq!(
-                tracker.get::<Random>(i as u32).unwrap(),
+                tracker
+                    .get::<Random>(i as u32, &HardwareCounterCell::new())
+                    .unwrap(),
                 Some(ValuePointer::new(i as u32, i as u32, i as u32 + 1))
             );
         } else {
-            assert_eq!(tracker.get::<Random>(i as u32).unwrap(), None);
+            assert_eq!(
+                tracker
+                    .get::<Random>(i as u32, &HardwareCounterCell::new())
+                    .unwrap(),
+                None
+            );
         }
     }
 }
@@ -217,7 +275,13 @@ fn test_page_tracker_resize(
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
 
-    let mut tracker = TestTracker::new(&MmapFs, path, Some(desired_tracker_size)).unwrap();
+    let mut tracker = TestTracker::new(
+        &MmapFs,
+        path,
+        Some(desired_tracker_size),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), 0);
     assert_eq!(tracker.mmap_file_size().unwrap(), actual_tracker_size);
 
@@ -236,14 +300,19 @@ fn test_track_non_sequential_large_offset() {
     let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
     let path = file.path();
 
-    let mut tracker = TestTracker::new(&MmapFs, path, None).unwrap();
+    let mut tracker = TestTracker::new(&MmapFs, path, None, &HardwareCounterCell::new()).unwrap();
     assert_eq!(tracker.mapping_len().unwrap(), 0);
 
     let page_pointer = ValuePointer::new(1, 1, 1);
     let key = 1_000_000;
 
     tracker.set(key, page_pointer);
-    assert_eq!(tracker.get::<Random>(key).unwrap(), Some(page_pointer));
+    assert_eq!(
+        tracker
+            .get::<Random>(key, &HardwareCounterCell::new())
+            .unwrap(),
+        Some(page_pointer)
+    );
 }
 
 #[test]
@@ -438,7 +507,8 @@ fn test_layout_compatibility() {
 fn test_get_range() {
     let dir = Builder::new().prefix("test-tracker").tempdir().unwrap();
     // Header plus exactly five slots
-    let mut tracker = TestTracker::new(&MmapFs, dir.path(), Some(64)).unwrap();
+    let mut tracker =
+        TestTracker::new(&MmapFs, dir.path(), Some(64), &HardwareCounterCell::new()).unwrap();
     assert_eq!(tracker.mmap_file_size().unwrap(), 64);
 
     for offset in 0..3 {
@@ -446,10 +516,16 @@ fn test_get_range() {
     }
     tracker.write_pending_and_flush_internal().unwrap();
 
-    let read_only = ReadOnlyTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+    let read_only = ReadOnlyTracker::<MmapFile>::open(
+        &MmapFs,
+        dir.path(),
+        Populate::No,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Pending unset and set, invisible to the read-only tracker
-    tracker.unset(1).unwrap();
+    tracker.unset(1, &HardwareCounterCell::new()).unwrap();
     tracker.set(3, ValuePointer::new(3, 3, 3));
     assert_eq!(
         tracker.mmap_file_size().unwrap(),
@@ -457,7 +533,13 @@ fn test_get_range() {
         "pending updates must not grow the file"
     );
 
-    let expected_writable: Vec<_> = (0..8).map(|i| tracker.get::<Random>(i).unwrap()).collect();
+    let expected_writable: Vec<_> = (0..8)
+        .map(|i| {
+            tracker
+                .get::<Random>(i, &HardwareCounterCell::new())
+                .unwrap()
+        })
+        .collect();
     assert_eq!(
         expected_writable,
         [
@@ -472,18 +554,36 @@ fn test_get_range() {
         ],
     );
     assert_eq!(
-        tracker.get_range::<Random>(0..8).unwrap(),
+        tracker
+            .get_range::<Random>(0..8, &HardwareCounterCell::new())
+            .unwrap(),
         expected_writable
     );
     assert_eq!(
-        tracker.get_range::<Random>(2..4).unwrap(),
+        tracker
+            .get_range::<Random>(2..4, &HardwareCounterCell::new())
+            .unwrap(),
         expected_writable[2..4]
     );
-    assert_eq!(tracker.get_range::<Random>(6..8).unwrap(), [None, None]);
-    assert!(tracker.get_range::<Random>(3..3).unwrap().is_empty());
+    assert_eq!(
+        tracker
+            .get_range::<Random>(6..8, &HardwareCounterCell::new())
+            .unwrap(),
+        [None, None]
+    );
+    assert!(
+        tracker
+            .get_range::<Random>(3..3, &HardwareCounterCell::new())
+            .unwrap()
+            .is_empty()
+    );
 
     let expected_read_only: Vec<_> = (0..8)
-        .map(|i| read_only.get::<Random>(i).unwrap())
+        .map(|i| {
+            read_only
+                .get::<Random>(i, &HardwareCounterCell::new())
+                .unwrap()
+        })
         .collect();
     assert_eq!(
         expected_read_only,
@@ -499,7 +599,9 @@ fn test_get_range() {
         ],
     );
     assert_eq!(
-        read_only.get_range::<Random>(0..8).unwrap(),
+        read_only
+            .get_range::<Random>(0..8, &HardwareCounterCell::new())
+            .unwrap(),
         expected_read_only
     );
 }

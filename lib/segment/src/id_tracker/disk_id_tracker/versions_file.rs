@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::types::PointOffsetType;
@@ -51,14 +52,18 @@ pub(super) enum VersionsFile<S: UniversalWrite> {
 impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
     /// Open the versions file of the segment at `segment_path` in whichever
     /// format it was written, and read all versions into RAM.
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<(CompressedVersions, Self)> {
+    pub fn open(
+        fs: &S::Fs,
+        segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<(CompressedVersions, Self)> {
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
             populate: Populate::Blocking,
             advice: AdviceSetting::Global,
         };
-        if let Some(versions) = compact_versions::load(fs, segment_path, options)? {
+        if let Some(versions) = compact_versions::load(fs, segment_path, options, hw_counter)? {
             return Ok((versions, Self::compact(fs)));
         }
         let file = TypedStorage::<S, SeqNumberType>::open(
@@ -66,11 +71,12 @@ impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
             version_mapping_path(segment_path),
             options,
             Default::default(),
+            hw_counter,
         )?;
-        let versions = CompressedVersions::from_slice(&file.read_whole()?);
+        let versions = CompressedVersions::from_slice(&file.read_whole(hw_counter)?);
         Ok((
             versions,
-            Self::Flat(SliceBufferedUpdateWrapper::new(file.inner)?),
+            Self::Flat(SliceBufferedUpdateWrapper::new(file.inner, hw_counter)?),
         ))
     }
 
@@ -82,13 +88,14 @@ impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
         versions: &[SeqNumberType],
         count: usize,
         format: VersionsFormat,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(CompressedVersions, Self)> {
         match format {
             VersionsFormat::Compact => {
                 let mut padded = versions.to_vec();
                 padded.resize(count, 0);
                 let versions = CompressedVersions::from_slice(&padded);
-                compact_versions::save(fs, segment_path, &versions)?;
+                compact_versions::save(fs, segment_path, &versions, hw_counter)?;
                 Ok((versions, Self::compact(fs)))
             }
             VersionsFormat::Flat => {
@@ -104,10 +111,11 @@ impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
                         advice: AdviceSetting::Global,
                     },
                     Default::default(),
+                    hw_counter,
                 )?;
                 file.write(0, versions)?;
-                let versions = CompressedVersions::from_slice(&file.read_whole()?);
-                let wrapper = SliceBufferedUpdateWrapper::new(file.inner)?;
+                let versions = CompressedVersions::from_slice(&file.read_whole(hw_counter)?);
+                let wrapper = SliceBufferedUpdateWrapper::new(file.inner, hw_counter)?;
                 wrapper.flusher()()?;
                 Ok((versions, Self::Flat(wrapper)))
             }
@@ -144,7 +152,12 @@ impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
 
     /// Flush pending changes; `versions` are the resident versions of the
     /// segment at `segment_path`.
-    pub fn flusher(&self, segment_path: &Path, versions: &CompressedVersions) -> Flusher {
+    pub fn flusher(
+        &self,
+        segment_path: &Path,
+        versions: &CompressedVersions,
+        hw_counter: &HardwareCounterCell,
+    ) -> Flusher {
         match self {
             Self::Flat(wrapper) => {
                 let flusher = wrapper.flusher();
@@ -158,8 +171,10 @@ impl<S: UniversalWrite + Send + Sync + 'static> VersionsFile<S> {
                 let dirty = Arc::clone(dirty);
                 let segment_path = segment_path.to_path_buf();
                 let versions = versions.clone();
+                let hw_acc = hw_counter.new_accumulator();
                 Box::new(move || {
-                    compact_versions::save(&fs, &segment_path, &versions)
+                    let hw_counter = &hw_acc.get_counter_cell();
+                    compact_versions::save(&fs, &segment_path, &versions, hw_counter)
                         .inspect_err(|_| dirty.store(true, Ordering::Relaxed))
                 })
             }

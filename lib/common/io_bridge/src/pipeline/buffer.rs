@@ -2,6 +2,7 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::uio_trace::Op;
 use common::universal_io::{ChunkSink, IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
@@ -23,9 +24,12 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
     file: &BlobFile<A>,
     range: Range<u64>,
     align: usize,
+    hw_acc: &HwMeasurementAcc,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
     let len = (range.end - range.start) as usize;
-    let request = file.stats.request(Op::Read, &file.path, range.clone());
+    let request = file
+        .stats
+        .request(Op::Read, &file.path, range.clone(), hw_acc);
     let stream_fut = file.inner.read_range(&file.path, range);
     request.wrap(async move {
         let stream = stream_fut.await?;
@@ -38,8 +42,9 @@ pub fn read_into_byte_buffer<A: AsyncRead>(
 pub fn read_whole_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     align: usize,
+    hw_acc: &HwMeasurementAcc,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
-    read_from_into_byte_buffer(file, 0, align)
+    read_from_into_byte_buffer(file, 0, align, hw_acc)
 }
 
 /// Like [`read_into_byte_buffer`], but fetches everything from byte offset
@@ -51,8 +56,9 @@ pub fn read_from_into_byte_buffer<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
     align: usize,
+    hw_acc: &HwMeasurementAcc,
 ) -> impl Future<Output = UioResult<AVec<u8, RuntimeAlign>>> + Send + 'static {
-    let tail = read_tail(file, from);
+    let tail = read_tail(file, from, hw_acc);
     async move {
         let (mut request, tail) = tail.await;
         let (size, stream) = tail?;
@@ -77,13 +83,14 @@ pub fn read_from_into_sink<A, W, I>(
     file: &BlobFile<A>,
     from: u64,
     init: I,
+    hw_acc: &HwMeasurementAcc,
 ) -> impl Future<Output = UioResult<(W, u64)>> + Send + 'static
 where
     A: AsyncRead + Clone,
     I: FnOnce(u64) -> UioResult<W> + Send + 'static,
     W: ChunkSink + Send + 'static,
 {
-    let tail = read_tail(file, from);
+    let tail = read_tail(file, from, hw_acc);
     async move {
         let (mut request, tail) = tail.await;
         let (size, stream) = tail?;
@@ -108,14 +115,18 @@ where
 fn read_tail<A: AsyncRead + Clone>(
     file: &BlobFile<A>,
     from: u64,
+    hw_acc: &HwMeasurementAcc,
 ) -> impl Future<Output = (RequestObserver, UioResult<(u64, Option<OffsetByteStream>)>)> + Send + 'static
 {
-    let mut request = file.stats.request(Op::ReadFrom, &file.path, from..from);
+    let mut request = file
+        .stats
+        .request(Op::ReadFrom, &file.path, from..from, hw_acc);
     let read_fut = file.inner.read_from(&file.path, from);
     // Cloned for the cold disambiguation path only; building the `len` future is
     // deferred until a read error actually occurs.
     let inner = file.inner.clone();
     let stats = file.stats.clone();
+    let hw_acc = hw_acc.clone();
     let path = file.path.clone();
     async move {
         request.start();
@@ -132,7 +143,7 @@ fn read_tail<A: AsyncRead + Clone>(
             return (request, Err(err));
         }
         let eof = stats
-            .request(Op::Len, &path, 0..0)
+            .request(Op::Len, &path, 0..0, &hw_acc)
             .wrap(inner.len(&path))
             .await;
         match eof {

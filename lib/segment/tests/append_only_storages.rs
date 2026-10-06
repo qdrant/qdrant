@@ -51,7 +51,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     let hw_counter = HardwareCounterCell::new();
 
     // The segment lives in a uuid subdirectory of `dir`.
-    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot, &hw_counter).unwrap();
     let segment_path = segment.data_path();
     assert!(segment.append_only_mutations, "forced by the storages flag");
 
@@ -130,7 +130,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         .set_payload(7, 4.into(), &payload_json! { "num": 7 }, &None, &hw_counter)
         .unwrap();
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     drop(segment);
 
     // Everything survives a reload through the ordinary loader.
@@ -140,6 +140,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
     assert!(segment.append_only_mutations);
@@ -147,15 +148,15 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     // The repair every shard loader runs; deleting the leftovers it finds would
     // fail here, leaving the segment permanently unopenable.
     segment
-        .check_consistency_and_repair()
+        .check_consistency_and_repair(&hw_counter)
         .expect("append-only leftovers must not be reported as inconsistencies");
 
-    assert_eq!(segment.available_point_count(), 5);
+    assert_eq!(segment.available_point_count(&hw_counter), 5);
     let payload = segment.payload(3.into(), &hw_counter).unwrap();
     assert_eq!(payload, payload_json! { "kind": "updated" });
     let payload = segment.payload(6.into(), &hw_counter).unwrap();
     assert_eq!(payload, payload_json! { "kind": "multi-step" });
-    assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred));
+    assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred, &hw_counter));
 }
 
 /// The sparse vector storage created under the flag is append-only, deleting
@@ -171,7 +172,7 @@ fn sparse_storage_is_append_only() {
         .unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+    let mut storage = MmapSparseVectorStorage::open_or_create(dir.path(), &hw_counter).unwrap();
     assert_eq!(storage_mode(&dir.path().join("store")), "append_only");
 
     let vector = SparseVector::new(vec![1, 3], vec![1.0, 2.0]).unwrap();
@@ -180,10 +181,10 @@ fn sparse_storage_is_append_only() {
         .unwrap();
 
     // Nothing was ever stored at key 5.
-    storage.delete_vector(5).unwrap();
+    storage.delete_vector(5, &hw_counter).unwrap();
 
     // Key 0 holds a vector; an append-only storage cannot remove it.
-    assert!(storage.delete_vector(0).is_err());
+    assert!(storage.delete_vector(0, &hw_counter).is_err());
 }
 
 /// Tracker files under `dir` with the given name, at any depth.
@@ -260,7 +261,8 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
     assert!(appendable.is_appendable());
     assert!(!non_appendable.is_appendable());
 
-    let (mut source, _token) = build_segment(dir.path(), &appendable, None, true).unwrap();
+    let (mut source, _token) =
+        build_segment(dir.path(), &appendable, None, true, &hw_counter).unwrap();
     for id in 1..=5u64 {
         let dense = vec![id as f32; DIM];
         let sparse = SparseVector::new(vec![id as u32], vec![id as f32]).unwrap();
@@ -280,6 +282,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
             config,
             &HnswGlobalConfig::default(),
             common::flags::feature_flags(),
+            &hw_counter,
         )
         .unwrap();
         builder.update(&[&source], &stopped, &hw_counter).unwrap();
@@ -292,7 +295,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
     let payload_ram = built
         .payload_storage
         .borrow()
-        .memory_usage()
+        .memory_usage(&hw_counter)
         .extra_ram_bytes;
     assert!(payload_ram.unwrap() >= 5 * 16, "{payload_ram:?}");
     assert_eq!(count_files(&built_path, "compacted_tracker.dat"), 1);
@@ -312,9 +315,10 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
-    assert_eq!(reloaded.available_point_count(), 5);
+    assert_eq!(reloaded.available_point_count(&hw_counter), 5);
     for id in 1..=5u64 {
         assert_eq!(
             reloaded.payload(id.into(), &hw_counter).unwrap(),
@@ -322,14 +326,14 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         );
         let sparse = reloaded.vector("sparse", id.into(), &hw_counter).unwrap();
         assert!(sparse.is_some(), "sparse vector of point {id}");
-        assert_eq!(reloaded.point_version(id.into()), Some(2));
+        assert_eq!(reloaded.point_version(id.into(), &hw_counter), Some(2));
     }
 
     let built = build(&appendable);
     let payload_ram = built
         .payload_storage
         .borrow()
-        .memory_usage()
+        .memory_usage(&hw_counter)
         .extra_ram_bytes;
     assert_eq!(payload_ram, Some(0));
     assert_eq!(count_files(&built.data_path(), "compacted_tracker.dat"), 0);

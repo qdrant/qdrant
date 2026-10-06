@@ -105,6 +105,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
     bits: TQBits,
     multi_vector_config: MultiVectorConfig,
     in_ram: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<AppendableMmapMultiTurboVectorStorage> {
     fs_err::create_dir_all(path)?;
 
@@ -117,6 +118,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
         &path.join(VECTORS_DIR_PATH),
         quantizer.quantized_size(),
         in_ram,
+        hw_counter,
     )?;
 
     let offsets = ChunkedVectors::open(
@@ -125,6 +127,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
         1,
         AdviceSetting::Global,
         populate,
+        hw_counter,
     )?;
 
     let deleted = BitvecFlags::open_or_create(
@@ -132,6 +135,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
         &path.join(DELETED_DIR_PATH),
         FlagsMode::from_feature_flags(),
         populate,
+        hw_counter,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -152,8 +156,12 @@ pub fn open_appendable_turbo_multi_vector_storage(
 
 impl AppendableMmapMultiTurboVectorStorage {
     /// Offset record for `key`, if the point exists.
-    fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
-        let record = self.offsets.get::<P>(key as VectorOffsetType)?;
+    fn get_offset<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<MultivectorMmapOffset> {
+        let record = self.offsets.get::<P>(key as VectorOffsetType, hw_counter)?;
         let &[offset] = record.as_ref() else {
             debug_assert!(
                 false,
@@ -191,8 +199,12 @@ impl AppendableMmapMultiTurboVectorStorage {
         );
     }
 
-    pub fn point_inner_vectors_count(&self, key: PointOffsetType) -> usize {
-        self.get_offset::<Random>(key)
+    pub fn point_inner_vectors_count(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> usize {
+        self.get_offset::<Random>(key, hw_counter)
             .map_or(0, |offset| offset.count as usize)
     }
 
@@ -200,13 +212,14 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         key: PointOffsetType,
         keep_rotated: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<DenseVector> {
-        let Some(offset) = self.get_offset::<Random>(key) else {
+        let Some(offset) = self.get_offset::<Random>(key, hw_counter) else {
             return Vec::new();
         };
         (offset.offset..offset.offset + offset.count)
             .map(|inner_id| {
-                let encoded = self.storage.get_vector_data(inner_id);
+                let encoded = self.storage.get_vector_data(inner_id, hw_counter);
                 if keep_rotated {
                     // No inverse rotation — dequantize straight into `f32`,
                     // skipping the intermediate `Vec<f64>` (rotation needs an
@@ -227,10 +240,14 @@ impl AppendableMmapMultiTurboVectorStorage {
     }
 
     /// Decode the full multivector behind an offset record.
-    fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
+    fn dequantize_multi(
+        &self,
+        offset: MultivectorMmapOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         let records = self
             .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
+            .get_many::<Random>(offset.offset, offset.count as usize, hw_counter)
             .expect("Multivector not found");
         self.dequantize_records(&records)
     }
@@ -254,26 +271,33 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, &[u8]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let offset_keys = keys
             .into_iter()
             .map(|(user_data, key)| ((user_data, key), key, 1));
 
         let mut ranges = Vec::with_capacity(offset_keys.size_hint().0);
-        self.offsets
-            .for_each_vector::<P, _>(offset_keys, |(user_data, key), record| {
+        self.offsets.for_each_vector::<P, _>(
+            offset_keys,
+            |(user_data, key), record| {
                 let &[offset] = record.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
                 ranges.push(((user_data, key), offset.offset, offset.count));
                 Ok(())
-            })?;
+            },
+            hw_counter,
+        )?;
 
-        self.storage
-            .for_each_many::<P, _>(ranges.into_iter(), |(user_data, key), records| {
+        self.storage.for_each_many::<P, _>(
+            ranges.into_iter(),
+            |(user_data, key), records| {
                 callback(user_data, key, records.as_ref());
                 Ok(())
-            })
+            },
+            hw_counter,
+        )
     }
 
     /// Record range for upserting `count` records at `key`: reuse the existing
@@ -283,16 +307,17 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         key: PointOffsetType,
         count: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> MultivectorMmapOffset {
         let mut offset = self
             .offsets
-            .get::<Random>(key as VectorOffsetType)
+            .get::<Random>(key as VectorOffsetType, hw_counter)
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 
         if count > offset.capacity {
             offset = MultivectorMmapOffset {
-                offset: self.storage.vectors_count() as PointOffsetType,
+                offset: self.storage.vectors_count(hw_counter) as PointOffsetType,
                 count,
                 capacity: count,
             };
@@ -312,7 +337,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         assert_eq!(multi_vector.dim, self.dim);
 
         let count = multi_vector.vectors_count() as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count);
+        let offset = self.record_range_for_upsert(key, count, hw_counter);
 
         for (i, inner) in multi_vector
             .flattened_vectors
@@ -354,7 +379,7 @@ impl AppendableMmapMultiTurboVectorStorage {
         }
 
         let count = (bytes.len() / record_size) as PointOffsetType;
-        let offset = self.record_range_for_upsert(key, count);
+        let offset = self.record_range_for_upsert(key, count, hw_counter);
 
         for (i, encoded) in bytes.chunks_exact(record_size).enumerate() {
             self.storage.upsert_vector(
@@ -371,10 +396,10 @@ impl AppendableMmapMultiTurboVectorStorage {
     }
 
     /// Populate all pages of the encoded vectors and offsets into the page cache.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // deleted bitvec is already loaded
-        self.storage.populate()?;
-        self.offsets.populate()?;
+        self.storage.populate(hw_counter)?;
+        self.offsets.populate(hw_counter)?;
         Ok(())
     }
 
@@ -452,14 +477,14 @@ impl AppendableMmapMultiTurboVectorStorage {
         key: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
+        let Some(offset) = self.get_offset::<Random>(key, hw_counter) else {
             log::error!("Multivector not found");
             return ScoreType::NEG_INFINITY;
         };
 
         let records = self
             .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
+            .get_many::<Random>(offset.offset, offset.count as usize, hw_counter)
             .expect("Multivector not found");
 
         hw_counter
@@ -480,8 +505,8 @@ impl AppendableMmapMultiTurboVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let (Some(offset_a), Some(offset_b)) = (
-            self.get_offset::<Random>(point_a),
-            self.get_offset::<Random>(point_b),
+            self.get_offset::<Random>(point_a, hw_counter),
+            self.get_offset::<Random>(point_b, hw_counter),
         ) else {
             log::error!("Multivector not found");
             return ScoreType::NEG_INFINITY;
@@ -489,12 +514,12 @@ impl AppendableMmapMultiTurboVectorStorage {
 
         let records_a = self
             .storage
-            .get_many::<Random>(offset_a.offset, offset_a.count as usize)
+            .get_many::<Random>(offset_a.offset, offset_a.count as usize, hw_counter)
             .expect("Multivector not found");
 
         let records_b = self
             .storage
-            .get_many::<Random>(offset_b.offset, offset_b.count as usize)
+            .get_many::<Random>(offset_b.offset, offset_b.count as usize, hw_counter)
             .expect("Multivector not found");
 
         hw_counter
@@ -533,16 +558,25 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         self.storage.is_on_disk()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.offsets.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        Some(self.dequantize_multi(self.get_offset::<P>(key)?))
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
+        Some(self.dequantize_multi(self.get_offset::<P>(key, hw_counter)?, hw_counter))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -557,11 +591,12 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         self.deleted.get_bitslice()
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
-            let total_size = self.storage.vectors_count() * self.quantizer.quantized_size();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        if self.total_vector_count(hw_counter) > 0 {
+            let total_size =
+                self.storage.vectors_count(hw_counter) * self.quantizer.quantized_size();
+            (total_size as u128 * self.available_vector_count(hw_counter) as u128
+                / self.total_vector_count(hw_counter) as u128) as usize
         } else {
             0
         }
@@ -571,10 +606,15 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
-            callback(user_data, key, self.dequantize_records(records));
-        })
+        self.for_each_record_range::<P, _>(
+            keys,
+            |user_data, key, records| {
+                callback(user_data, key, self.dequantize_records(records));
+            },
+            hw_counter,
+        )
         .expect("read TQ multivectors");
     }
 
@@ -582,11 +622,16 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
-            // Concatenated encoded records per point
-            callback(user_data, key, records.to_vec());
-        })
+        self.for_each_record_range::<P, _>(
+            keys,
+            |user_data, key, records| {
+                // Concatenated encoded records per point
+                callback(user_data, key, records.to_vec());
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -601,10 +646,10 @@ impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
         self.insert_multi(key, multi_vector, hw_counter)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         let storage_flusher = self.storage.flusher();
         let offsets_flusher = self.offsets.flusher();
-        let deleted_flusher = self.deleted.flusher();
+        let deleted_flusher = self.deleted.flusher(hw_counter);
 
         Box::new(move || {
             storage_flusher()?;
@@ -627,7 +672,11 @@ impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
         files
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(!self.set_deleted(key, true))
     }
 }
@@ -667,8 +716,11 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, &[u8]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        AppendableMmapMultiTurboVectorStorage::for_each_record_range::<P, _>(self, keys, callback)
+        AppendableMmapMultiTurboVectorStorage::for_each_record_range::<P, _>(
+            self, keys, callback, hw_counter,
+        )
     }
 }
 
@@ -685,11 +737,15 @@ impl MultiTQVectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         &self.multi_vector_config
     }
 
-    fn get_multi_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_offset::<P>(key)
+    fn get_multi_tq<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.get_offset::<P>(key, hw_counter)
             .and_then(|offset| {
                 self.storage
-                    .get_many::<P>(offset.offset, offset.count as usize)
+                    .get_many::<P>(offset.offset, offset.count as usize, hw_counter)
             })
             .expect("Multivector not found")
     }
@@ -700,6 +756,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
         let disposed_hw = HardwareCounterCell::disposable();
@@ -716,7 +773,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
             let count = (blob.len() / record_size) as u32;
             let key = self.offsets.len() as PointOffsetType;
-            let inner_start = self.storage.vectors_count() as PointOffsetType;
+            let inner_start = self.storage.vectors_count(hw_counter) as PointOffsetType;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
                 self.storage.upsert_vector(
                     inner_start + i as PointOffsetType,
@@ -877,11 +934,12 @@ mod tests {
                         TQBits::Bits4,
                         MultiVectorConfig::default(),
                         false,
+                        &hw_counter,
                     )
                     .unwrap();
                     insert_all(&mut storage, &inputs, &hw_counter);
-                    assert_eq!(storage.total_vector_count(), COUNT);
-                    storage.flusher()().unwrap();
+                    assert_eq!(storage.total_vector_count(&hw_counter), COUNT);
+                    storage.flusher(&hw_counter)().unwrap();
                 }
 
                 // Load path: reopen in RAM and verify against the oracle.
@@ -892,9 +950,10 @@ mod tests {
                     TQBits::Bits4,
                     MultiVectorConfig::default(),
                     true,
+                    &hw_counter,
                 )
                 .unwrap();
-                assert_eq!(storage.total_vector_count(), COUNT);
+                assert_eq!(storage.total_vector_count(&hw_counter), COUNT);
                 assert_eq!(storage.distance(), distance);
                 assert_eq!(storage.datatype(), VectorStorageDatatype::Turbo4);
 
@@ -903,7 +962,7 @@ mod tests {
                     assert!(!storage.is_deleted_vector(key));
 
                     // Lossy round-trip: count and dim are exact, directions within tolerance.
-                    let retrieved = to_multi(storage.get_vector::<Random>(key));
+                    let retrieved = to_multi(storage.get_vector::<Random>(key, &hw_counter));
                     assert_eq!(retrieved.dim, dim, "dim mismatch at {i} (seed {seed:#x})");
                     assert_eq!(
                         retrieved.multi_vectors().count(),
@@ -935,7 +994,7 @@ mod tests {
                     // `get_vector_opt` agrees for present keys.
                     let opt = to_multi(
                         storage
-                            .get_vector_opt::<Random>(key)
+                            .get_vector_opt::<Random>(key, &hw_counter)
                             .expect("present key must be Some"),
                     );
                     assert_eq!(opt.flattened_vectors, retrieved.flattened_vectors);
@@ -943,7 +1002,7 @@ mod tests {
 
                 assert!(
                     storage
-                        .get_vector_opt::<Random>(COUNT as PointOffsetType)
+                        .get_vector_opt::<Random>(COUNT as PointOffsetType, &hw_counter)
                         .is_none()
                 );
             }
@@ -993,6 +1052,7 @@ mod tests {
                         TQBits::Bits4,
                         MultiVectorConfig::default(),
                         false,
+                        &HardwareCounterCell::new(),
                     )
                     .unwrap();
 
@@ -1001,7 +1061,9 @@ mod tests {
                         (Cow::from(blob.as_slice()), i as PointOffsetType == DELETED)
                     });
                     assert_eq!(
-                        storage.update_from(&mut first, &stopped).unwrap(),
+                        storage
+                            .update_from(&mut first, &stopped, &HardwareCounterCell::new())
+                            .unwrap(),
                         0..(split as PointOffsetType),
                     );
 
@@ -1010,12 +1072,17 @@ mod tests {
                         (Cow::from(blob.as_slice()), offset == DELETED_LATE)
                     });
                     assert_eq!(
-                        storage.update_from(&mut second, &stopped).unwrap(),
+                        storage
+                            .update_from(&mut second, &stopped, &HardwareCounterCell::new())
+                            .unwrap(),
                         (split as PointOffsetType)..(COUNT as PointOffsetType),
                     );
 
-                    assert_eq!(storage.total_vector_count(), COUNT);
-                    storage.flusher()().unwrap();
+                    assert_eq!(
+                        storage.total_vector_count(&HardwareCounterCell::new()),
+                        COUNT
+                    );
+                    storage.flusher(&HardwareCounterCell::new())().unwrap();
                 }
 
                 let storage = open_appendable_turbo_multi_vector_storage(
@@ -1025,9 +1092,13 @@ mod tests {
                     TQBits::Bits4,
                     MultiVectorConfig::default(),
                     true,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
-                assert_eq!(storage.total_vector_count(), COUNT);
+                assert_eq!(
+                    storage.total_vector_count(&HardwareCounterCell::new()),
+                    COUNT
+                );
                 assert_eq!(storage.deleted_vector_count(), 2);
                 assert!(storage.is_deleted_vector(DELETED));
                 assert!(storage.is_deleted_vector(DELETED_LATE));
@@ -1036,12 +1107,15 @@ mod tests {
                     let key = i as PointOffsetType;
                     // Bytes round-trip verbatim, soft-deleted data included.
                     assert_eq!(
-                        storage.get_multi_tq::<Random>(key).as_ref(),
+                        storage
+                            .get_multi_tq::<Random>(key, &HardwareCounterCell::new())
+                            .as_ref(),
                         blob.as_slice(),
                         "blob mismatch at {i} (seed {seed:#x}, dim {dim})",
                     );
                     // The placeholder decodes without panicking and keeps the dim.
-                    let retrieved = to_multi(storage.get_vector::<Random>(key));
+                    let retrieved =
+                        to_multi(storage.get_vector::<Random>(key, &HardwareCounterCell::new()));
                     assert_eq!(retrieved.dim, dim);
                     assert!(retrieved.flattened_vectors.iter().all(|x| x.is_finite()));
                 }
@@ -1070,11 +1144,12 @@ mod tests {
                 TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
+                &hw_counter,
             )
             .unwrap();
             insert_all(&mut src, &make_multi_vectors(DIM, COUNT, seed), &hw_counter);
-            src.delete_vector(2).unwrap();
-            src.delete_vector(7).unwrap();
+            src.delete_vector(2, &hw_counter).unwrap();
+            src.delete_vector(7, &hw_counter).unwrap();
 
             let mut dst = open_appendable_turbo_multi_vector_storage(
                 dst_dir.path(),
@@ -1083,19 +1158,24 @@ mod tests {
                 TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
+                &hw_counter,
             )
             .unwrap();
             {
-                let mut it = (0..COUNT as PointOffsetType)
-                    .map(|k| (src.get_multi_tq::<Sequential>(k), src.is_deleted_vector(k)));
-                let range = dst.update_from(&mut it, &stopped).unwrap();
+                let mut it = (0..COUNT as PointOffsetType).map(|k| {
+                    (
+                        src.get_multi_tq::<Sequential>(k, &hw_counter),
+                        src.is_deleted_vector(k),
+                    )
+                });
+                let range = dst.update_from(&mut it, &stopped, &hw_counter).unwrap();
                 assert_eq!(range, 0..COUNT as PointOffsetType);
             }
 
             for k in 0..COUNT as PointOffsetType {
                 assert_eq!(
-                    dst.get_multi_tq::<Random>(k).as_ref(),
-                    src.get_multi_tq::<Random>(k).as_ref(),
+                    dst.get_multi_tq::<Random>(k, &hw_counter).as_ref(),
+                    src.get_multi_tq::<Random>(k, &hw_counter).as_ref(),
                     "copy: blob diverges at {k} (seed {seed:#x})",
                 );
                 assert_eq!(dst.is_deleted_vector(k), src.is_deleted_vector(k));
@@ -1119,6 +1199,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let record_size = storage.quantized_vector_size();
@@ -1127,7 +1208,9 @@ mod tests {
             let blob = vec![0u8; bad_len];
             let mut it = std::iter::once((Cow::from(blob.as_slice()), false));
             assert!(
-                storage.update_from(&mut it, &stopped).is_err(),
+                storage
+                    .update_from(&mut it, &stopped, &HardwareCounterCell::new())
+                    .is_err(),
                 "blob of {bad_len} bytes must be rejected",
             );
         }
@@ -1166,19 +1249,20 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &hw_counter,
         )
         .unwrap();
         let record_size = storage.quantized_vector_size();
         // Inner record count probe; valid while nothing is deleted.
         let inner_records = |s: &AppendableMmapMultiTurboVectorStorage| {
-            s.size_of_available_vectors_in_bytes() / record_size
+            s.size_of_available_vectors_in_bytes(&hw_counter) / record_size
         };
         let oracle = Oracle::new(DIM, distance);
         // Byte-exact stored blob vs the oracle encoding of `m`.
         let assert_blob = |s: &AppendableMmapMultiTurboVectorStorage,
                            m: &MultiDenseVectorInternal| {
             assert_eq!(
-                s.get_multi_tq::<Random>(0).as_ref(),
+                s.get_multi_tq::<Random>(0, &hw_counter).as_ref(),
                 oracle.encode_multi(m).concat().as_slice(),
             );
         };
@@ -1192,9 +1276,12 @@ mod tests {
                 &hw_counter,
             )
             .unwrap();
-        assert_eq!(storage.total_vector_count(), 1);
+        assert_eq!(storage.total_vector_count(&hw_counter), 1);
         assert_eq!(inner_records(&storage), 3);
-        assert_eq!(storage.get_multi_tq::<Random>(0).len(), 3 * record_size);
+        assert_eq!(
+            storage.get_multi_tq::<Random>(0, &hw_counter).len(),
+            3 * record_size
+        );
         assert_blob(&storage, &initial);
 
         // Shrink to count=2: in place, no inner-space growth, capacity stays 3,
@@ -1208,9 +1295,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(inner_records(&storage), 3);
-        assert_eq!(storage.get_multi_tq::<Random>(0).len(), 2 * record_size);
         assert_eq!(
-            to_multi(storage.get_vector::<Random>(0))
+            storage.get_multi_tq::<Random>(0, &hw_counter).len(),
+            2 * record_size
+        );
+        assert_eq!(
+            to_multi(storage.get_vector::<Random>(0, &hw_counter))
                 .multi_vectors()
                 .count(),
             2
@@ -1227,7 +1317,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(inner_records(&storage), 3);
-        assert_eq!(storage.get_multi_tq::<Random>(0).len(), 3 * record_size);
+        assert_eq!(
+            storage.get_multi_tq::<Random>(0, &hw_counter).len(),
+            3 * record_size
+        );
         assert_blob(&storage, &regrown);
 
         // Grow to count=5: re-append, old range becomes garbage (3 + 5 records).
@@ -1239,9 +1332,12 @@ mod tests {
                 &hw_counter,
             )
             .unwrap();
-        assert_eq!(storage.total_vector_count(), 1);
+        assert_eq!(storage.total_vector_count(&hw_counter), 1);
         assert_eq!(inner_records(&storage), 8);
-        assert_eq!(storage.get_multi_tq::<Random>(0).len(), 5 * record_size);
+        assert_eq!(
+            storage.get_multi_tq::<Random>(0, &hw_counter).len(),
+            5 * record_size
+        );
 
         // The re-appended content is the new multivector, byte-exact vs the oracle.
         assert_blob(&storage, &grown);
@@ -1267,6 +1363,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &hw_counter,
         )
         .unwrap();
         let record_size = storage.quantized_vector_size();
@@ -1278,8 +1375,11 @@ mod tests {
         // bulk point of raw zero records (no quantization cost).
         let filler = vec![0u8; (records_per_chunk - 1) * record_size];
         let mut it = std::iter::once((Cow::from(filler.as_slice()), false));
-        storage.update_from(&mut it, &stopped).unwrap();
-        assert_eq!(storage.storage.vectors_count(), records_per_chunk - 1);
+        storage.update_from(&mut it, &stopped, &hw_counter).unwrap();
+        assert_eq!(
+            storage.storage.vectors_count(&hw_counter),
+            records_per_chunk - 1
+        );
 
         // count=3 does not fit the chunk's single remaining slot, so the run
         // continues into the next chunk. No slot is skipped.
@@ -1291,13 +1391,16 @@ mod tests {
                 &hw_counter,
             )
             .unwrap();
-        let offset = storage.get_offset::<Random>(1).unwrap();
+        let offset = storage.get_offset::<Random>(1, &hw_counter).unwrap();
         assert_eq!(offset.offset as usize, records_per_chunk - 1);
         assert_eq!(offset.count, 3);
-        assert_eq!(storage.storage.vectors_count(), records_per_chunk + 2);
+        assert_eq!(
+            storage.storage.vectors_count(&hw_counter),
+            records_per_chunk + 2
+        );
 
         // Straddling reads copy, and the bytes are exact.
-        let blob = storage.get_multi_tq::<Random>(1);
+        let blob = storage.get_multi_tq::<Random>(1, &hw_counter);
         assert!(matches!(blob, Cow::Owned(_)));
         assert_eq!(
             blob.as_ref(),
@@ -1313,12 +1416,15 @@ mod tests {
             oracle.encode_multi(&straddling).concat(),
         ];
         let mut it = blobs.iter().map(|b| (Cow::from(b.as_slice()), false));
-        storage.update_from(&mut it, &stopped).unwrap();
-        let offset = storage.get_offset::<Random>(3).unwrap();
+        storage.update_from(&mut it, &stopped, &hw_counter).unwrap();
+        let offset = storage.get_offset::<Random>(3, &hw_counter).unwrap();
         assert_eq!(offset.offset as usize, 2 * records_per_chunk - 1);
-        assert_eq!(storage.storage.vectors_count(), 2 * records_per_chunk + 2);
+        assert_eq!(
+            storage.storage.vectors_count(&hw_counter),
+            2 * records_per_chunk + 2
+        );
 
-        let blob = storage.get_multi_tq::<Random>(3);
+        let blob = storage.get_multi_tq::<Random>(3, &hw_counter);
         assert!(matches!(blob, Cow::Owned(_)));
         assert_eq!(
             blob.as_ref(),
@@ -1346,6 +1452,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &hw_counter,
         )
         .unwrap();
         let record_size = storage.quantized_vector_size();
@@ -1355,9 +1462,12 @@ mod tests {
         // One record past a whole chunk, so the range covers two of them
         let blob = vec![0u8; (records_per_chunk + 1) * record_size];
         let mut it = std::iter::once((Cow::from(blob.as_slice()), false));
-        assert_eq!(storage.update_from(&mut it, &stopped).unwrap(), 0..1);
+        assert_eq!(
+            storage.update_from(&mut it, &stopped, &hw_counter).unwrap(),
+            0..1
+        );
 
-        let read = storage.get_multi_tq::<Random>(0);
+        let read = storage.get_multi_tq::<Random>(0, &hw_counter);
         assert!(matches!(read, Cow::Owned(_)), "straddling read must copy");
         assert_eq!(read.as_ref(), blob.as_slice());
 
@@ -1371,9 +1481,9 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(storage.total_vector_count(), 2);
+        assert_eq!(storage.total_vector_count(&hw_counter), 2);
         assert_eq!(
-            storage.get_multi_tq::<Random>(1).as_ref(),
+            storage.get_multi_tq::<Random>(1, &hw_counter).as_ref(),
             oracle.encode_multi(&multi).concat().as_slice(),
         );
     }
@@ -1398,6 +1508,7 @@ mod tests {
                 TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
+                &hw_counter,
             )
             .unwrap();
             let inputs = make_multi_vectors(DIM, 2, seed);
@@ -1406,8 +1517,8 @@ mod tests {
             assert_eq!(storage.deleted_vector_count(), 0);
 
             // First deletion reports "newly deleted"; the second does not.
-            assert!(storage.delete_vector(0).unwrap());
-            assert!(!storage.delete_vector(0).unwrap());
+            assert!(storage.delete_vector(0, &hw_counter).unwrap());
+            assert!(!storage.delete_vector(0, &hw_counter).unwrap());
             assert_eq!(storage.deleted_vector_count(), 1);
             assert!(storage.is_deleted_vector(0));
 
@@ -1445,6 +1556,7 @@ mod tests {
                 TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
+                &hw_counter,
             )
             .unwrap();
             insert_all(
@@ -1457,18 +1569,18 @@ mod tests {
             // make_multi_vectors gives point i (i % 4) + 1 inner vectors.
             let total_inner: usize = (0..COUNT).map(|i| (i % 4) + 1).sum();
 
-            assert_eq!(storage.available_vector_count(), COUNT);
+            assert_eq!(storage.available_vector_count(&hw_counter), COUNT);
             assert_eq!(
-                storage.size_of_available_vectors_in_bytes(),
+                storage.size_of_available_vectors_in_bytes(&hw_counter),
                 total_inner * record_size,
             );
 
             // Soft-delete one point: total unchanged, proportional estimate shrinks.
-            assert!(storage.delete_vector(0).unwrap());
-            assert_eq!(storage.total_vector_count(), COUNT);
-            assert_eq!(storage.available_vector_count(), COUNT - 1);
+            assert!(storage.delete_vector(0, &hw_counter).unwrap());
+            assert_eq!(storage.total_vector_count(&hw_counter), COUNT);
+            assert_eq!(storage.available_vector_count(&hw_counter), COUNT - 1);
             assert_eq!(
-                storage.size_of_available_vectors_in_bytes(),
+                storage.size_of_available_vectors_in_bytes(&hw_counter),
                 (total_inner * record_size) * (COUNT - 1) / COUNT,
             );
         }
@@ -1491,14 +1603,25 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
-        assert_eq!(storage.total_vector_count(), 0);
+        assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 0);
         assert_eq!(storage.deleted_vector_count(), 0);
-        assert_eq!(storage.available_vector_count(), 0);
-        assert_eq!(storage.size_of_available_vectors_in_bytes(), 0);
-        assert!(storage.get_vector_opt::<Random>(0).is_none());
+        assert_eq!(
+            storage.available_vector_count(&HardwareCounterCell::new()),
+            0
+        );
+        assert_eq!(
+            storage.size_of_available_vectors_in_bytes(&HardwareCounterCell::new()),
+            0
+        );
+        assert!(
+            storage
+                .get_vector_opt::<Random>(0, &HardwareCounterCell::new())
+                .is_none()
+        );
         assert_eq!(storage.multi_vector_config(), &MultiVectorConfig::default());
         assert_eq!(storage.vector_dim(), DIM);
     }
@@ -1525,6 +1648,7 @@ mod tests {
                 TQBits::Bits4,
                 MultiVectorConfig::default(),
                 true,
+                &hw_counter,
             )
             .unwrap();
             insert_all(
@@ -1538,9 +1662,13 @@ mod tests {
                 (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
             let mut seen: Vec<(usize, PointOffsetType, MultiDenseVectorInternal)> = Vec::new();
-            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-                seen.push((tag, offset, to_multi(vector)));
-            });
+            storage.read_vectors::<Random, usize>(
+                keys.iter().copied(),
+                |tag, offset, vector| {
+                    seen.push((tag, offset, to_multi(vector)));
+                },
+                &hw_counter,
+            );
 
             // Order is not guaranteed (the trait permits parallel reads), so check
             // each callback against its own offset, not its arrival position.
@@ -1552,7 +1680,7 @@ mod tests {
                     *offset as usize * 10,
                     "user data not threaded to its offset (seed {seed:#x})"
                 );
-                let direct = to_multi(storage.get_vector::<Random>(*offset));
+                let direct = to_multi(storage.get_vector::<Random>(*offset, &hw_counter));
                 assert_eq!(
                     multi.flattened_vectors, direct.flattened_vectors,
                     "read_vectors disagrees with get_vector (seed {seed:#x})"
@@ -1600,13 +1728,21 @@ mod tests {
         ctx: &str,
     ) {
         let live = model.iter().filter(|s| !s.deleted).count();
-        assert_eq!(storage.total_vector_count(), model.len(), "{ctx}: total");
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            model.len(),
+            "{ctx}: total"
+        );
         assert_eq!(
             storage.deleted_vector_count(),
             model.len() - live,
             "{ctx}: deleted",
         );
-        assert_eq!(storage.available_vector_count(), live, "{ctx}: available");
+        assert_eq!(
+            storage.available_vector_count(&HardwareCounterCell::new()),
+            live,
+            "{ctx}: available"
+        );
 
         for (i, slot) in model.iter().enumerate() {
             let key = i as PointOffsetType;
@@ -1617,14 +1753,15 @@ mod tests {
             );
 
             let expected_blob = slot.encoded.concat();
-            let blob = storage.get_multi_tq::<Random>(key);
+            let blob = storage.get_multi_tq::<Random>(key, &HardwareCounterCell::new());
             assert_eq!(
                 blob.as_ref(),
                 expected_blob.as_slice(),
                 "{ctx}: blob at {i}"
             );
 
-            let retrieved = to_multi(storage.get_vector::<Random>(key));
+            let retrieved =
+                to_multi(storage.get_vector::<Random>(key, &HardwareCounterCell::new()));
             let expected_flattened: Vec<f32> = slot
                 .encoded
                 .iter()
@@ -1639,7 +1776,10 @@ mod tests {
 
         assert!(
             storage
-                .get_vector_opt::<Random>(model.len() as PointOffsetType)
+                .get_vector_opt::<Random>(
+                    model.len() as PointOffsetType,
+                    &HardwareCounterCell::new()
+                )
                 .is_none(),
             "{ctx}: opt past end",
         );
@@ -1668,6 +1808,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             in_ram,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -1712,14 +1853,16 @@ mod tests {
                     let k = rng.random_range(0..model.len());
                     let was_live = !model[k].deleted;
                     assert_eq!(
-                        storage.delete_vector(k as PointOffsetType).unwrap(),
+                        storage
+                            .delete_vector(k as PointOffsetType, &HardwareCounterCell::new())
+                            .unwrap(),
                         was_live
                     );
                     model[k].deleted = true;
                 }
                 // Flush + drop + reload (toggling in_ram), then a full check.
                 _ => {
-                    storage.flusher()().unwrap();
+                    storage.flusher(&HardwareCounterCell::new())().unwrap();
                     drop(storage);
                     in_ram = !in_ram;
                     storage = open_appendable_turbo_multi_vector_storage(
@@ -1729,6 +1872,7 @@ mod tests {
                         TQBits::Bits4,
                         MultiVectorConfig::default(),
                         in_ram,
+                        &HardwareCounterCell::new(),
                     )
                     .unwrap();
                     assert_matches_model(&storage, &model, &oracle, "after reload");
@@ -1736,11 +1880,14 @@ mod tests {
             }
 
             let live = model.iter().filter(|s| !s.deleted).count();
-            assert_eq!(storage.total_vector_count(), model.len());
+            assert_eq!(
+                storage.total_vector_count(&HardwareCounterCell::new()),
+                model.len()
+            );
             assert_eq!(storage.deleted_vector_count(), model.len() - live);
         }
 
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
         drop(storage);
         let storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1749,6 +1896,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             in_ram,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         assert_matches_model(&storage, &model, &oracle, "source final");
@@ -1762,20 +1910,25 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         {
-            let total = storage.total_vector_count() as PointOffsetType;
+            let total = storage.total_vector_count(&HardwareCounterCell::new()) as PointOffsetType;
             let mut it = (0..total).map(|k| {
                 (
-                    storage.get_multi_tq::<Sequential>(k),
+                    storage.get_multi_tq::<Sequential>(k, &HardwareCounterCell::new()),
                     storage.is_deleted_vector(k),
                 )
             });
-            assert_eq!(dst.update_from(&mut it, &stopped).unwrap(), 0..total);
+            assert_eq!(
+                dst.update_from(&mut it, &stopped, &HardwareCounterCell::new())
+                    .unwrap(),
+                0..total
+            );
         }
         assert_matches_model(&dst, &model, &oracle, "dst after copy");
-        dst.flusher()().unwrap();
+        dst.flusher(&HardwareCounterCell::new())().unwrap();
         drop(dst);
         let dst = open_appendable_turbo_multi_vector_storage(
             dst_dir.path(),
@@ -1784,6 +1937,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         assert_matches_model(&dst, &model, &oracle, "dst after reload");
@@ -1840,6 +1994,7 @@ mod tests {
             TQBits::Bits4,
             MultiVectorConfig::default(),
             true,
+            &hw_counter,
         )
         .unwrap();
         insert_all(
@@ -1910,6 +2065,7 @@ mod tests {
                         TQBits::Bits4,
                         MultiVectorConfig::default(),
                         true,
+                        &hw_counter,
                     )
                     .unwrap();
                     let inputs = make_multi_vectors(dim, COUNT, seed);
@@ -1973,6 +2129,7 @@ mod tests {
                         TQBits::Bits4,
                         MultiVectorConfig::default(),
                         true,
+                        &hw_counter,
                     )
                     .unwrap();
                     let inputs = make_multi_vectors(dim, COUNT, seed);

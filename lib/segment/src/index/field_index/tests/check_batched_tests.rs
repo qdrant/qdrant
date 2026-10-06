@@ -198,20 +198,20 @@ fn check_index<T: Serialize>(
 
             // Build index
             let mut builders = IndexSelector::NonAppendable { dir, memory }
-                .index_builder(&field, schema, &baked)
+                .index_builder(&field, schema, &baked, &HardwareCounterCell::new())
                 .unwrap();
             assert_eq!(builders.len(), 1);
             let mut builder = builders.pop().unwrap();
-            builder.init().unwrap();
+            builder.init(&HardwareCounterCell::new()).unwrap();
             for (id, (row, _, _, _)) in (0u32..).zip(points) {
                 builder
                     .add_point(id, &row.iter().collect_vec(), &HardwareCounterCell::new())
                     .unwrap();
             }
-            let mut index = builder.finalize().unwrap();
+            let mut index = builder.finalize(&HardwareCounterCell::new()).unwrap();
             for (id, &(_, _, removed, _)) in (0u32..).zip(points) {
                 if removed {
-                    index.remove_point(id).unwrap();
+                    index.remove_point(id, &HardwareCounterCell::new()).unwrap();
                 }
             }
 
@@ -226,8 +226,17 @@ fn check_index<T: Serialize>(
 
             let r#type = index.get_full_index_type();
 
-            let index =
-                ReadOnlyFieldIndex::open(&MmapFs, dir, &field, schema, &r#type, n, &deleted, None);
+            let index = ReadOnlyFieldIndex::open(
+                &MmapFs,
+                dir,
+                &field,
+                schema,
+                &r#type,
+                n,
+                &deleted,
+                None,
+                &HardwareCounterCell::new(),
+            );
             let index = index.unwrap().unwrap();
             let checker = index.condition_checker(condition, HwMeasurementAcc::new());
             assert_congruence(&checker.unwrap().unwrap(), n as _, &mut rng);

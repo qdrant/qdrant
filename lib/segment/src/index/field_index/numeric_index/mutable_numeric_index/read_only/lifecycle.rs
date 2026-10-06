@@ -18,10 +18,14 @@ where
     /// Schedule background prefetch of the Gridstore files [`open`](Self::open)
     /// will read. Returns whether the on-disk directory exists (`false` = the
     /// index is not in the appendable format).
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         // Blobstore reader
         Ok(
-            BlobstoreReader::<Vec<T>, S>::preopen(fs, dir, Populate::PreferBackground)
+            BlobstoreReader::<Vec<T>, S>::preopen(fs, dir, Populate::PreferBackground, hw_counter)
                 .ok_not_found()?
                 .is_some(),
         )
@@ -45,9 +49,11 @@ where
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            BlobstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+            BlobstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking, hw_counter)
+                .ok_not_found()?
         else {
             // Files don't exist, cannot load
             return Ok(None);
@@ -57,7 +63,7 @@ where
         let hw_counter = HardwareCounterCell::disposable();
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset(&hw_counter)?,
                 |idx, values: Vec<T>| {
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)

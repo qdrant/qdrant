@@ -40,9 +40,14 @@ pub struct UpdateOnlyQuantizedChunkedStorage<Fs: UniversalAppendFs> {
 }
 
 impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedChunkedStorage<Fs> {
-    pub fn open(fs: Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
+    pub fn open(
+        fs: Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            vectors: UpdateOnlyChunkedVectors::open(&fs, path, quantized_vector_size)?,
+            vectors: UpdateOnlyChunkedVectors::open(&fs, path, quantized_vector_size, hw_counter)?,
             fs,
         })
     }
@@ -84,8 +89,8 @@ impl<Fs: UniversalAppendFs> EncodedStorageWrite for UpdateOnlyQuantizedChunkedSt
             .map_err(std::io::Error::other)
     }
 
-    fn vectors_count(&self) -> usize {
-        self.vectors.stored_len(&self.fs).unwrap_or(0)
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.vectors.stored_len(&self.fs, hw_counter).unwrap_or(0)
     }
 
     fn flusher(&self) -> Flusher {
@@ -107,9 +112,19 @@ pub struct UpdateOnlyQuantizedChunkedStorageBuilder<Fs: UniversalAppendFs> {
 }
 
 impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedChunkedStorageBuilder<Fs> {
-    pub fn new(fs: Fs, path: &Path, quantized_vector_size: usize) -> OperationResult<Self> {
+    pub fn new(
+        fs: Fs,
+        path: &Path,
+        quantized_vector_size: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            storage: UpdateOnlyQuantizedChunkedStorage::open(fs, path, quantized_vector_size)?,
+            storage: UpdateOnlyQuantizedChunkedStorage::open(
+                fs,
+                path,
+                quantized_vector_size,
+                hw_counter,
+            )?,
         })
     }
 }
@@ -118,7 +133,7 @@ impl<Fs: UniversalAppendFs> EncodedStorageBuilder for UpdateOnlyQuantizedChunked
     type Storage = UpdateOnlyQuantizedChunkedStorage<Fs>;
     type Error = std::io::Error;
 
-    fn build(self) -> std::io::Result<Self::Storage> {
+    fn build(self, _hw_counter: &HardwareCounterCell) -> std::io::Result<Self::Storage> {
         Ok(self.storage)
     }
 

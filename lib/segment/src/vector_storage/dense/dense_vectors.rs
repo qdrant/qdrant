@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
@@ -19,12 +20,14 @@ pub trait DenseVectorBlob {
     fn get_vector_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Cow<'_, [Self::Element]>>;
 
     fn for_each_in_batch<F: FnMut(usize, &[Self::Element])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 }
 
@@ -42,15 +45,20 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorBlob
         self.num_vectors
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
-        ImmutableDenseVectorData::get_vector_opt::<P>(self, key)
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [T]>> {
+        ImmutableDenseVectorData::get_vector_opt::<P>(self, key, hw_counter)
     }
 
     fn for_each_in_batch<F: FnMut(usize, &[T])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        ImmutableDenseVectorData::for_each_in_batch(self, keys, f)
+        ImmutableDenseVectorData::for_each_in_batch(self, keys, f, hw_counter)
     }
 }

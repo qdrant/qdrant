@@ -65,28 +65,34 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         OnDiskGeoIndex::for_each_matching_value(self, items, hw_counter, check_fn, on_match)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
-        OnDiskGeoIndex::values_count(self, idx)
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        OnDiskGeoIndex::values_count(self, idx, hw_counter)
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        OnDiskGeoIndex::get_values(self, idx)
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        OnDiskGeoIndex::get_values(self, idx, hw_counter)
             .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = GeoPoint> + '_>)
     }
 
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let points = self.all_points(values)?;
+        let points = self.all_points(values, hw_counter)?;
         Ok(Box::new(points.into_iter()))
     }
 
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        OnDiskGeoIndex::points_per_hash(self, |pair| filter(pair))
+        OnDiskGeoIndex::points_per_hash(self, |pair| filter(pair), hw_counter)
     }
 
     fn get_storage_type(&self) -> StorageType {
@@ -103,8 +109,8 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         true
     }
 
-    fn populate(&self) -> OperationResult<()> {
-        OnDiskGeoIndex::populate(self)
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        OnDiskGeoIndex::populate(self, hw_counter)
     }
 
     fn clear_cache(&self) -> OperationResult<()> {

@@ -5,6 +5,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{OpenOptions, Populate, UniversalWrite};
@@ -29,16 +30,28 @@ where
         fs: &S::Fs,
         in_memory_tracker: InMemoryIdTracker,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
         let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
-        Self::new(fs, path, &internal_to_version, compressed_mappings)
+        Self::new(
+            fs,
+            path,
+            &internal_to_version,
+            compressed_mappings,
+            hw_counter,
+        )
     }
 
     /// Open an existing disk-resident id tracker: `deleted` and `versions` are
     /// read into RAM (small, mutated in place), the mapping stays on disk;
     /// `populate` says whether to prime the page cache with it.
-    pub fn open(fs: &S::Fs, segment_path: &Path, populate: Populate) -> OperationResult<Self> {
+    pub fn open(
+        fs: &S::Fs,
+        segment_path: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -49,14 +62,16 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
         let mut deleted = BitVec::new();
-        deleted.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+        deleted.extend_from_bitslice(deleted_storage.read_all(hw_counter)?.as_ref());
         let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
-        let (internal_to_version, versions_file) = VersionsFile::open(fs, segment_path)?;
+        let (internal_to_version, versions_file) =
+            VersionsFile::open(fs, segment_path, hw_counter)?;
 
-        let reader = DiskMappingReader::open(fs, segment_path, populate)?;
+        let reader = DiskMappingReader::open(fs, segment_path, populate, hw_counter)?;
 
         Ok(Self {
             path: segment_path.to_path_buf(),
@@ -75,9 +90,10 @@ where
         path: &Path,
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let format = VersionsFormat::from_feature_flags();
-        Self::new_with_versions_format(fs, path, internal_to_version, mappings, format)
+        Self::new_with_versions_format(fs, path, internal_to_version, mappings, format, hw_counter)
     }
 
     pub(super) fn new_with_versions_format(
@@ -86,6 +102,7 @@ where
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
         versions_format: VersionsFormat,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let total = mappings.total_point_count();
         debug_assert!(mappings.deleted().len() <= total);
@@ -108,10 +125,12 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
-        deleted_storage.write_bitslice(mappings.deleted())?;
+        deleted_storage.write_bitslice(mappings.deleted(), hw_counter)?;
         deleted_storage.set_ascending_bits_batch(
             (mappings.deleted().len()..total).map(|i| (i as u64, true)),
+            hw_counter,
         )?;
         deleted_storage.flusher()()?;
 
@@ -131,19 +150,20 @@ where
             internal_to_version,
             versions_count,
             versions_format,
+            hw_counter,
         )?;
         debug_assert_eq!(internal_to_version.len(), versions_count);
 
         // Mapping files (immutable): i2e + e2i + the is_uuid sidecar.
         write_mapping_file(i2e_path(path), |writer| store_i2e(&mappings, writer))?;
         write_mapping_file(e2i_path(path), |writer| store_e2i(&mappings, writer))?;
-        store_is_uuid(fs, path, &mappings)?;
+        store_is_uuid(fs, path, &mappings, hw_counter)?;
 
-        deleted_wrapper.flusher()()?;
+        deleted_wrapper.flusher(hw_counter)()?;
 
         // Just written, so cached already; the configured placement applies
         // when the built segment is loaded.
-        let reader = DiskMappingReader::open(fs, path, Populate::No)?;
+        let reader = DiskMappingReader::open(fs, path, Populate::No, hw_counter)?;
 
         Ok(Self {
             path: path.to_path_buf(),

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -25,6 +26,7 @@ pub(crate) fn tombstone_points_in_stored_mask<Fs>(
     segment_path: &Path,
     seed: &mut Option<BitVec>,
     points: &[(PointIdType, PointOffsetType)],
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()>
 where
     Fs: UniversalWriteFs,
@@ -59,5 +61,6 @@ where
             }
             Ok(())
         },
+        hw_counter,
     )?
 }

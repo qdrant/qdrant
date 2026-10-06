@@ -34,7 +34,8 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
         id_tracker_memory: None,
     };
 
-    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(path, &config, None, true, &HardwareCounterCell::new()).unwrap();
     let hw_counter = HardwareCounterCell::new();
 
     let mut op_num: SeqNumberType = 0;

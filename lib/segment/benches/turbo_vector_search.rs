@@ -87,6 +87,7 @@ fn build_dataset(dir: &Path) {
         DISTANCE,
         TQBits::Bits4,
         true,
+        &hw_counter,
     )
     .expect("encoder storage created");
     for i in 0..VECTORS {
@@ -102,11 +103,12 @@ fn build_dataset(dir: &Path) {
         DISTANCE,
         TQBits::Bits4,
         false,
+        &hw_counter,
     )
     .expect("single-file storage created");
-    let mut encoded =
-        (0..VECTORS as PointOffsetType).map(|key| (encoder.get_quantized_vector(key), false));
-    DenseTQVectorStorage::update_from(&mut storage, &mut encoded, &DEFAULT_STOPPED)
+    let mut encoded = (0..VECTORS as PointOffsetType)
+        .map(|key| (encoder.get_quantized_vector(key, &hw_counter), false));
+    DenseTQVectorStorage::update_from(&mut storage, &mut encoded, &DEFAULT_STOPPED, &hw_counter)
         .expect("dataset built");
 }
 
@@ -131,7 +133,9 @@ fn bench_subset(
 ) {
     for &(label, batched, storage) in modes {
         if !clear_cache {
-            storage.populate().expect("storage populated");
+            storage
+                .populate(&HardwareCounterCell::new())
+                .expect("storage populated");
         }
         group.bench_function(label, |b| {
             b.iter_batched(
@@ -176,6 +180,7 @@ fn benchmark(c: &mut Criterion) {
         TQBits::Bits4,
         false,
         false,
+        &HardwareCounterCell::new(),
     )
     .expect("mmap storage opened");
 
@@ -193,6 +198,7 @@ fn benchmark(c: &mut Criterion) {
                 TQBits::Bits4,
                 false,
                 true,
+                &HardwareCounterCell::new(),
             )
             .expect("uring storage opened");
 
@@ -209,7 +215,7 @@ fn benchmark(c: &mut Criterion) {
     bench_subset(
         &mut warm,
         &modes,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
         false,
     );
     warm.finish();
@@ -217,7 +223,12 @@ fn benchmark(c: &mut Criterion) {
     let mut cold = c.benchmark_group("tq-scoring-cold");
     cold.sample_size(10);
     cold.warm_up_time(Duration::from_secs(1));
-    bench_subset(&mut cold, &modes, id_tracker.deleted_point_bitslice(), true);
+    bench_subset(
+        &mut cold,
+        &modes,
+        id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
+        true,
+    );
     cold.finish();
 
     // Context group: full ascending scan over everything, page-cache warm —
@@ -225,7 +236,9 @@ fn benchmark(c: &mut Criterion) {
     let mut scan = c.benchmark_group("tq-scoring-scan-warm");
     scan.sample_size(20);
     for &(label, batched, storage) in &modes {
-        storage.populate().expect("storage populated");
+        storage
+            .populate(&HardwareCounterCell::new())
+            .expect("storage populated");
         scan.bench_function(label, |b| {
             b.iter_batched(
                 random_query,
@@ -234,7 +247,7 @@ fn benchmark(c: &mut Criterion) {
                         let results = BatchFilteredSearcher::new_for_test(
                             std::slice::from_ref(&query),
                             storage,
-                            id_tracker.deleted_point_bitslice(),
+                            id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
                             TOP,
                         )
                         .peek_top_all(&DEFAULT_STOPPED)

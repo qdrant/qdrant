@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -26,18 +27,23 @@ pub(crate) fn create_segment_id_tracker(
     segment_path: &Path,
     deferred_internal_id: Option<PointOffsetType>,
     populate: Populate,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
-    let id_tracker = match format {
-        IdTrackerFormat::Mutable => IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
-            segment_path,
-            deferred_internal_id,
-        )?),
-        IdTrackerFormat::Immutable => {
-            IdTrackerEnum::ImmutableIdTracker(ImmutableIdTracker::open(&MmapFs, segment_path)?)
-        }
-        IdTrackerFormat::Disk => {
-            IdTrackerEnum::DiskIdTracker(DiskIdTracker::open(&MmapFs, segment_path, populate)?)
-        }
-    };
+    let id_tracker =
+        match format {
+            IdTrackerFormat::Mutable => IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+                segment_path,
+                deferred_internal_id,
+            )?),
+            IdTrackerFormat::Immutable => IdTrackerEnum::ImmutableIdTracker(
+                ImmutableIdTracker::open(&MmapFs, segment_path, hw_counter)?,
+            ),
+            IdTrackerFormat::Disk => IdTrackerEnum::DiskIdTracker(DiskIdTracker::open(
+                &MmapFs,
+                segment_path,
+                populate,
+                hw_counter,
+            )?),
+        };
     Ok(sp(id_tracker))
 }

@@ -212,6 +212,7 @@ async fn scroll_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

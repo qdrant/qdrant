@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::BoxStream;
 
@@ -102,8 +103,12 @@ fn blob_fs() -> (BlobFs<TimerWriteSource>, Arc<AtomicUsize>, BridgeRuntime) {
 fn a_save_resolves_on_a_bare_executor() {
     let (fs, saves, _runtime) = blob_fs();
 
-    futures::executor::block_on(fs.save_async("object".into(), vec![1, 2, 3]))
-        .expect("the save resolves without an ambient runtime");
+    futures::executor::block_on(fs.save_async(
+        "object".into(),
+        vec![1, 2, 3],
+        &HwMeasurementAcc::new(),
+    ))
+    .expect("the save resolves without an ambient runtime");
 
     assert_eq!(saves.load(Ordering::SeqCst), 1);
 }
@@ -112,7 +117,7 @@ fn a_save_resolves_on_a_bare_executor() {
 fn a_remove_resolves_on_a_bare_executor() {
     let (fs, _saves, _runtime) = blob_fs();
 
-    futures::executor::block_on(fs.remove_async("object".into()))
+    futures::executor::block_on(fs.remove_async("object".into(), &HwMeasurementAcc::new()))
         .expect("the remove resolves without an ambient runtime");
 }
 
@@ -121,7 +126,7 @@ fn a_remove_resolves_on_a_bare_executor() {
 fn a_save_does_not_start_until_polled() {
     let (fs, saves, _runtime) = blob_fs();
 
-    let save = fs.save_async("object".into(), vec![1]);
+    let save = fs.save_async("object".into(), vec![1], &HwMeasurementAcc::new());
     std::thread::sleep(Duration::from_millis(20));
     assert_eq!(saves.load(Ordering::SeqCst), 0);
 

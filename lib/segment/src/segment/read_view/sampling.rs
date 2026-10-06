@@ -22,10 +22,14 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
-    pub fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
+    pub fn read_by_random_id(
+        &self,
+        limit: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType> {
         self.id_tracker
-            .point_mappings()
-            .iter_random_visible()
+            .point_mappings(hw_counter)
+            .iter_random_visible(hw_counter)
             .map(|x| x.0)
             .take(limit)
             .collect()
@@ -50,7 +54,7 @@ where
                 is_stopped,
                 DeferredBehavior::VisibleOnly,
             )?
-            .filter_map(|internal_id| self.id_tracker.external_id(internal_id));
+            .filter_map(|internal_id| self.id_tracker.external_id(internal_id, hw_counter));
 
         let mut rng = rand::rng();
         let mut shuffled = ids_iterator.sample(&mut rng, limit);
@@ -67,8 +71,8 @@ where
     ) -> OperationResult<Vec<PointIdType>> {
         let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
         self.id_tracker
-            .point_mappings()
-            .iter_random_visible()
+            .point_mappings(hw_counter)
+            .iter_random_visible(hw_counter)
             .stop_if(is_stopped)
             .try_filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map_ok(|(external_id, _)| external_id)
@@ -84,7 +88,7 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => Ok(self.read_by_random_id(limit)),
+            None => Ok(self.read_by_random_id(limit, hw_counter)),
             Some(condition) => {
                 if self.should_pre_filter(condition, Some(limit), hw_counter)? {
                     self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)

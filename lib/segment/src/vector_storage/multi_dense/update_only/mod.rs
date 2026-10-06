@@ -40,12 +40,19 @@ pub struct UpdateOnlyMultiDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, path: &Path, dim: usize) -> OperationResult<Self> {
-        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
-        let vectors = UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?;
+    pub fn open<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
+        let vectors =
+            UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim, hw_counter)?;
         // One offset entry per point, so the "vector" is a single element.
-        let offsets = UpdateOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1)?;
-        let next_row = vectors.stored_len(fs)?;
+        let offsets =
+            UpdateOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, hw_counter)?;
+        let next_row = vectors.stored_len(fs, hw_counter)?;
 
         Ok(Self {
             vectors,

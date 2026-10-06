@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::universal_io::{UniversalAppendFs, UniversalRead as _};
 
@@ -21,14 +22,15 @@ impl UpdateOnlyAppendableIdTracker {
         path: &Path,
         file: Fs::AppendFile,
         file_len: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         heal_versions_tail(path, file_len, move |healthy_len| {
             let committed = file
-                .read_bytes(0..healthy_len, Sequential, align_of::<u8>())?
+                .read_bytes(0..healthy_len, Sequential, align_of::<u8>(), hw_counter)?
                 .to_vec();
             // Release the mmap before replacing the path.
             drop(file);
-            fs.atomic_save(path, &committed)?;
+            fs.atomic_save(path, &committed, hw_counter)?;
             Ok(())
         })
     }
@@ -52,9 +54,10 @@ impl UpdateOnlyAppendableIdTracker {
         &self,
         fs: &Fs,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let file = Self::open_append(fs, path)?;
-        let file_len = Self::end_of_file(&file)?;
+        let file = Self::open_append(fs, path, hw_counter)?;
+        let file_len = Self::end_of_file(&file, hw_counter)?;
 
         match file_len.cmp(&self.mappings_end) {
             Ordering::Greater => {
@@ -64,11 +67,16 @@ impl UpdateOnlyAppendableIdTracker {
                     path.display(),
                 );
                 let log = file
-                    .read_bytes(0..self.mappings_end, Sequential, align_of::<u8>())?
+                    .read_bytes(
+                        0..self.mappings_end,
+                        Sequential,
+                        align_of::<u8>(),
+                        hw_counter,
+                    )?
                     .to_vec();
                 // Release the mmap before replacing the path.
                 drop(file);
-                fs.atomic_save(path, &log)?;
+                fs.atomic_save(path, &log, hw_counter)?;
                 Ok(())
             }
             // Entries the log counts on are not in the file: it was truncated under us, or this

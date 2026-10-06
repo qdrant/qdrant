@@ -14,9 +14,12 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
 impl MutableBoolIndex {
-    pub fn builder(path: &Path) -> OperationResult<MutableBoolIndexBuilder> {
+    pub fn builder(
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<MutableBoolIndexBuilder> {
         Ok(MutableBoolIndexBuilder(
-            Self::open(path, true)?.ok_or_else(|| {
+            Self::open(path, true, hw_counter)?.ok_or_else(|| {
                 OperationError::service_error("Failed to create and open MutableBoolIndex")
             })?,
         ))
@@ -27,7 +30,11 @@ impl MutableBoolIndex {
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
     /// - `create_if_missing` - If true, creates the index if it doesn't exist.
-    pub fn open(path: &Path, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn open(
+        path: &Path,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
         let falses_dir = path.join(FALSES_DIRNAME);
 
         // If falses directory doesn't exist, assume the index doesn't exist on disk
@@ -35,10 +42,10 @@ impl MutableBoolIndex {
             return Ok(None);
         }
 
-        Ok(Some(Self::open_or_create(path)?))
+        Ok(Some(Self::open_or_create(path, hw_counter)?))
     }
 
-    fn open_or_create(path: &Path) -> OperationResult<Self> {
+    fn open_or_create(path: &Path, hw_counter: &HardwareCounterCell) -> OperationResult<Self> {
         fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create mmap bool index directory: {err}"
@@ -51,6 +58,7 @@ impl MutableBoolIndex {
             &path.join(TRUES_DIRNAME),
             FlagsMode::from_feature_flags(),
             Populate::No,
+            hw_counter,
         )?;
 
         // Falses flags
@@ -59,15 +67,16 @@ impl MutableBoolIndex {
             &path.join(FALSES_DIRNAME),
             FlagsMode::from_feature_flags(),
             Populate::No,
+            hw_counter,
         )?;
 
         // Infallible for the writable variant: its bitmaps are materialized by
         // `RoaringFlags::new` above.
-        let trues_count = trues_flags.count_trues()?;
-        let falses_count = falses_flags.count_trues()?;
+        let trues_count = trues_flags.count_trues(hw_counter)?;
+        let falses_count = falses_flags.count_trues(hw_counter)?;
         let indexed_count = {
-            let trues = trues_flags.get_bitmap()?;
-            let falses = falses_flags.get_bitmap()?;
+            let trues = trues_flags.get_bitmap(hw_counter)?;
+            let falses = falses_flags.get_bitmap(hw_counter)?;
             trues.union_len(falses) as usize
         };
 
@@ -84,8 +93,12 @@ impl MutableBoolIndex {
     }
 
     /// Open for an immutable index.
-    pub(crate) fn open_immutable(path: &Path, deleted: &BitSlice) -> OperationResult<Option<Self>> {
-        let index = Self::open(path, false)?.map(|mut idx| {
+    pub(crate) fn open_immutable(
+        path: &Path,
+        deleted: &BitSlice,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
+        let index = Self::open(path, false, hw_counter)?.map(|mut idx| {
             // Mark deleted points as not indexed
             for id in deleted.iter_ones() {
                 idx.set_or_insert_immutable(id as u32, false, false);
@@ -207,7 +220,11 @@ impl ValueIndexer for MutableBoolIndex {
         value.as_bool()
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.set_or_insert(id, false, false);
         Ok(())
     }
@@ -225,7 +242,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         Ok(())
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> crate::common::Flusher {
         let Self {
             base_dir: _,
             indexed_count: _,
@@ -238,8 +255,8 @@ impl PayloadFieldIndex for MutableBoolIndex {
             falses_flags,
         } = storage;
 
-        let trues_flusher = trues_flags.flusher();
-        let falses_flusher = falses_flags.flusher();
+        let trues_flusher = trues_flags.flusher(hw_counter);
+        let falses_flusher = falses_flags.flusher(hw_counter);
 
         Box::new(move || {
             trues_flusher()?;
@@ -262,7 +279,7 @@ pub struct MutableBoolIndexBuilder(MutableBoolIndex);
 impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
     type FieldIndexType = MutableBoolIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // After Self is created, it is already initialized
         Ok(())
     }
@@ -276,7 +293,7 @@ impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
         self.0.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, _hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         Ok(self.0)
     }
 }

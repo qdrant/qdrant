@@ -209,6 +209,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         assert!(opened.is_none(), "{storage_type:?} should be a no-op");
@@ -229,6 +230,7 @@ mod tests {
                 Distance::Dot,
                 AdviceSetting::Global,
                 false,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
@@ -236,7 +238,7 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
@@ -245,14 +247,18 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
 
         assert!(matches!(storage, VectorStorageReadEnum::DenseChunked(_)));
-        assert_eq!(storage.total_vector_count(), vectors.len());
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            vectors.len()
+        );
         let got: DenseVector = storage
-            .get_vector::<Random>(7)
+            .get_vector::<Random>(7, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();
@@ -269,17 +275,28 @@ mod tests {
 
         {
             // The immutable mmap storage is built by copying from another storage.
-            let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
+            let mut storage = open_dense_vector_storage(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                Memory::Cold,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
-                .unwrap();
-            storage.flusher()().unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &staging,
+                vectors.len() as PointOffsetType,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
@@ -288,14 +305,18 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
 
         assert!(matches!(storage, VectorStorageReadEnum::Dense(_)));
-        assert_eq!(storage.total_vector_count(), vectors.len());
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            vectors.len()
+        );
         let got: DenseVector = storage
-            .get_vector::<Random>(1)
+            .get_vector::<Random>(1, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();
@@ -327,6 +348,7 @@ mod tests {
                     MultiVectorConfig::default(),
                     AdviceSetting::Global,
                     false,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
             for (id, multivec) in multis.iter().enumerate() {
@@ -334,7 +356,7 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
                     .unwrap();
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = VectorStorageReadEnum::<MmapFile>::open(
@@ -346,6 +368,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
@@ -354,8 +377,11 @@ mod tests {
             storage,
             VectorStorageReadEnum::MultiDenseChunked(_)
         ));
-        assert_eq!(storage.total_vector_count(), multis.len());
-        let stored = storage.get_vector::<Random>(5);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            multis.len()
+        );
+        let stored = storage.get_vector::<Random>(5, &HardwareCounterCell::new());
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
             stored.as_vec_ref().try_into().unwrap();
         assert_eq!(multi.to_owned(), multis[5]);
@@ -365,7 +391,9 @@ mod tests {
     /// way the segment open path does before `preopen`.
     fn snapshot_cached_fs(dir: &Path) -> CachedFs<MmapFs> {
         let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
-        cached_fs.cache_file_info().unwrap();
+        cached_fs
+            .cache_file_info(&HardwareCounterCell::new())
+            .unwrap();
         cached_fs
     }
 
@@ -393,6 +421,7 @@ mod tests {
                 Distance::Dot,
                 AdviceSetting::Global,
                 false,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
@@ -400,7 +429,7 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let config = dense_config(VectorStorageType::ChunkedMmap, None);
@@ -411,6 +440,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -423,13 +453,22 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
-                .unwrap()
-                .unwrap();
-        assert_eq!(storage.total_vector_count(), vectors.len());
+        let storage = VectorStorageReadEnum::open(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            vectors.len()
+        );
         let got: DenseVector = storage
-            .get_vector::<Random>(7)
+            .get_vector::<Random>(7, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();
@@ -447,17 +486,28 @@ mod tests {
 
         {
             // The immutable mmap storage is built by copying from another storage.
-            let mut storage =
-                open_dense_vector_storage(dir.path(), DIM, Distance::Dot, Memory::Cold).unwrap();
+            let mut storage = open_dense_vector_storage(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                Memory::Cold,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
-                .unwrap();
-            storage.flusher()().unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &staging,
+                vectors.len() as PointOffsetType,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let config = dense_config(VectorStorageType::Mmap, None);
@@ -468,6 +518,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -480,13 +531,22 @@ mod tests {
             fs_err::remove_file(dir.path().join(file_name)).unwrap();
         }
 
-        let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
-                .unwrap()
-                .unwrap();
-        assert_eq!(storage.total_vector_count(), vectors.len());
+        let storage = VectorStorageReadEnum::open(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            vectors.len()
+        );
         let got: DenseVector = storage
-            .get_vector::<Random>(1)
+            .get_vector::<Random>(1, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();
@@ -519,6 +579,7 @@ mod tests {
                     MultiVectorConfig::default(),
                     AdviceSetting::Global,
                     false,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
             for (id, multivec) in multis.iter().enumerate() {
@@ -526,7 +587,7 @@ mod tests {
                     .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
                     .unwrap();
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let config = dense_config(
@@ -540,6 +601,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
@@ -553,12 +615,21 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage =
-            VectorStorageReadEnum::open(&cached_fs, &config, dir.path(), dir.path(), None)
-                .unwrap()
-                .unwrap();
-        assert_eq!(storage.total_vector_count(), multis.len());
-        let stored = storage.get_vector::<Random>(5);
+        let storage = VectorStorageReadEnum::open(
+            &cached_fs,
+            &config,
+            dir.path(),
+            dir.path(),
+            None,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            multis.len()
+        );
+        let stored = storage.get_vector::<Random>(5, &HardwareCounterCell::new());
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
             stored.as_vec_ref().try_into().unwrap();
         assert_eq!(multi.to_owned(), multis[5]);
@@ -579,6 +650,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for (id, vector) in first.iter().enumerate() {
@@ -586,7 +658,7 @@ mod tests {
                 .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut storage = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
@@ -594,10 +666,14 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
-        assert_eq!(storage.total_vector_count(), first.len());
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            first.len()
+        );
 
         for (offset, vector) in second.iter().enumerate() {
             writer
@@ -610,9 +686,11 @@ mod tests {
         }
         let deleted_ids: Vec<PointOffsetType> = vec![5, 100];
         for &id in &deleted_ids {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
             .map(|offset| offset as PointOffsetType)
@@ -626,7 +704,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(storage.total_vector_count(), first.len() + second.len());
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            first.len() + second.len()
+        );
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
         for &id in &deleted_ids {
             assert!(storage.is_deleted_vector(id));
@@ -669,8 +750,10 @@ mod tests {
             let mut source = encoded
                 .iter()
                 .map(|(bytes, deleted)| (Cow::Borrowed(bytes.as_slice()), *deleted));
-            target.update_from(&mut source, stopped).unwrap();
-            target.flusher()().unwrap();
+            target
+                .update_from(&mut source, stopped, &HardwareCounterCell::new())
+                .unwrap();
+            target.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         const COUNT: PointOffsetType = 300;
@@ -688,6 +771,7 @@ mod tests {
             Distance::Dot,
             TQBits::Bits4,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for (id, vector) in vectors.iter().enumerate() {
@@ -697,16 +781,20 @@ mod tests {
         }
         for id in 0..COUNT {
             if rng.random_bool(0.1) {
-                reference.delete_vector(id).unwrap();
+                reference
+                    .delete_vector(id, &HardwareCounterCell::new())
+                    .unwrap();
                 deleted_ids.push(id);
             }
         }
-        reference.flusher()().unwrap();
+        reference.flusher(&HardwareCounterCell::new())().unwrap();
 
         let encoded: Vec<(Vec<u8>, bool)> = (0..COUNT)
             .map(|id| {
                 (
-                    reference.get_quantized_vector(id).to_vec(),
+                    reference
+                        .get_quantized_vector(id, &HardwareCounterCell::new())
+                        .to_vec(),
                     reference.is_deleted_vector(id),
                 )
             })
@@ -727,6 +815,7 @@ mod tests {
                             Distance::Dot,
                             TQBits::Bits4,
                             false,
+                            &HardwareCounterCell::new(),
                         )
                         .unwrap();
                     build_target(&mut target, &encoded, &stopped);
@@ -738,6 +827,7 @@ mod tests {
                         Distance::Dot,
                         TQBits::Bits4,
                         false,
+                        &HardwareCounterCell::new(),
                     )
                     .unwrap();
                     build_target(&mut target, &encoded, &stopped);
@@ -756,6 +846,7 @@ mod tests {
                 dir.path(),
                 dir.path(),
                 None,
+                &HardwareCounterCell::new(),
             )
             .unwrap()
             .unwrap();
@@ -774,7 +865,10 @@ mod tests {
                 routed,
                 "{storage_type:?} should route to its dense Turbo read-only variant",
             );
-            assert_eq!(ro.total_vector_count(), vectors.len());
+            assert_eq!(
+                ro.total_vector_count(&HardwareCounterCell::new()),
+                vectors.len()
+            );
             assert_eq!(ro.deleted_vector_count(), deleted_ids.len());
             for id in 0..COUNT {
                 assert_eq!(
@@ -785,22 +879,29 @@ mod tests {
             }
 
             for id in [0, 7, 42, COUNT - 1] {
-                let ro_vec: DenseVector =
-                    ro.get_vector::<Random>(id).to_owned().try_into().unwrap();
+                let ro_vec: DenseVector = ro
+                    .get_vector::<Random>(id, &HardwareCounterCell::new())
+                    .to_owned()
+                    .try_into()
+                    .unwrap();
                 let ref_vec: DenseVector = reference
-                    .get_vector::<Random>(id)
+                    .get_vector::<Random>(id, &HardwareCounterCell::new())
                     .to_owned()
                     .try_into()
                     .unwrap();
                 assert_eq!(ro_vec, ref_vec, "{storage_type:?} get_vector @{id}");
             }
 
-            ro.read_vector_bytes::<Random, _>((0..COUNT).map(|id| ((), id)), |(), id, bytes| {
-                assert_eq!(
-                    bytes, encoded[id as usize].0,
-                    "{storage_type:?} raw bytes @{id}",
-                );
-            })
+            ro.read_vector_bytes::<Random, _>(
+                (0..COUNT).map(|id| ((), id)),
+                |(), id, bytes| {
+                    assert_eq!(
+                        bytes, encoded[id as usize].0,
+                        "{storage_type:?} raw bytes @{id}",
+                    );
+                },
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
 
             let query = QueryVector::Nearest(vectors[3].clone().into());
@@ -850,6 +951,7 @@ mod tests {
             TQBits::Bits4,
             multivector_config,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for (id, multi) in multis.iter().enumerate() {
@@ -863,11 +965,13 @@ mod tests {
         }
         for id in 0..COUNT {
             if rng.random_bool(0.1) {
-                writable.delete_vector(id).unwrap();
+                writable
+                    .delete_vector(id, &HardwareCounterCell::new())
+                    .unwrap();
                 deleted_ids.push(id);
             }
         }
-        writable.flusher()().unwrap();
+        writable.flusher(&HardwareCounterCell::new())().unwrap();
 
         let ro = VectorStorageReadEnum::<MmapFile>::open(
             &MmapFs,
@@ -875,6 +979,7 @@ mod tests {
             dir.path(),
             dir.path(),
             None,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
@@ -883,7 +988,10 @@ mod tests {
             matches!(ro, VectorStorageReadEnum::MultiDenseTurbo(_)),
             "multivector Turbo4 should route to MultiDenseTurbo",
         );
-        assert_eq!(ro.total_vector_count(), multis.len());
+        assert_eq!(
+            ro.total_vector_count(&HardwareCounterCell::new()),
+            multis.len()
+        );
         assert_eq!(ro.deleted_vector_count(), deleted_ids.len());
         for id in 0..COUNT {
             assert_eq!(
@@ -893,13 +1001,19 @@ mod tests {
             );
         }
 
-        ro.read_vector_bytes::<Random, _>((0..COUNT).map(|id| ((), id)), |(), id, bytes| {
-            assert_eq!(
-                bytes,
-                writable.get_multi_tq::<Random>(id).to_vec(),
-                "raw records @{id}",
-            );
-        })
+        ro.read_vector_bytes::<Random, _>(
+            (0..COUNT).map(|id| ((), id)),
+            |(), id, bytes| {
+                assert_eq!(
+                    bytes,
+                    writable
+                        .get_multi_tq::<Random>(id, &HardwareCounterCell::new())
+                        .to_vec(),
+                    "raw records @{id}",
+                );
+            },
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
         let query = QueryVector::Nearest(multis[5].clone().into());

@@ -64,9 +64,9 @@ impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // deleted bitvec is already loaded
-        self.vectors.populate()?;
+        self.vectors.populate(hw_counter)?;
         Ok(())
     }
 
@@ -83,9 +83,13 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for AppendableMmapDens
         self.vectors.dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
         self.vectors
-            .get::<P>(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType, hw_counter)
             .expect("mmap vector not found")
     }
 
@@ -93,31 +97,36 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for AppendableMmapDens
         &self,
         keys: &[PointOffsetType],
         callback: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, &[T]),
     {
-        self.vectors.for_each_in_batch(keys, callback)
+        self.vectors.for_each_in_batch(keys, callback, hw_counter)
     }
 
     fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let keys = keys
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
 
-        self.vectors
-            .for_each_vector::<P, _>(keys, |(user_data, point_offset), vector| {
+        self.vectors.for_each_vector::<P, _>(
+            keys,
+            |(user_data, point_offset), vector| {
                 callback(
                     user_data,
                     point_offset,
                     bytemuck::cast_slice(vector.as_ref()).to_vec(),
                 );
                 Ok(())
-            })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -126,6 +135,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
@@ -140,8 +150,8 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorStorage<T> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter) * self.vector_dim() * std::mem::size_of::<T>()
     }
 
     fn distance(&self) -> Distance {
@@ -156,13 +166,17 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         self.vectors.is_on_disk()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         self.vectors
-            .get::<P>(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType, hw_counter)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
             .expect("Vector not found")
     }
@@ -171,23 +185,32 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let keys = keys
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
 
         self.vectors
-            .for_each_vector::<P, _>(keys, |(user_data, point_offset), vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(vector));
-                callback(user_data, point_offset, vector);
-                Ok(())
-            })
+            .for_each_vector::<P, _>(
+                keys,
+                |(user_data, point_offset), vector| {
+                    let vector = CowVector::from(T::slice_to_float_cow(vector));
+                    callback(user_data, point_offset, vector);
+                    Ok(())
+                },
+                hw_counter,
+            )
             .expect("read vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         self.vectors
-            .get::<P>(key as VectorOffsetType)
+            .get::<P>(key as VectorOffsetType, hw_counter)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
     }
 
@@ -207,8 +230,9 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.read_dense_bytes::<P, U>(keys, callback)
+        self.read_dense_bytes::<P, U>(keys, callback, hw_counter)
     }
 }
 
@@ -227,10 +251,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new({
             let vectors_flusher = self.vectors.flusher();
-            let deleted_flusher = self.deleted.flusher();
+            let deleted_flusher = self.deleted.flusher(hw_counter);
             move || {
                 vectors_flusher()?;
                 deleted_flusher()?;
@@ -249,7 +273,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
         self.vectors.immutable_files()
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(!self.set_deleted(key, true))
     }
 }
@@ -260,9 +288,10 @@ pub fn open_appendable_memmap_vector_storage_full(
     distance: Distance,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
-        path, dim, distance, madvise, populate,
+        path, dim, distance, madvise, populate, hw_counter,
     )?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
@@ -274,9 +303,11 @@ pub fn open_appendable_memmap_vector_storage_byte(
     distance: Distance,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl(path, dim, distance, madvise, populate)?;
+    let storage = open_appendable_memmap_vector_storage_impl(
+        path, dim, distance, madvise, populate, hw_counter,
+    )?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
         storage,
@@ -289,9 +320,11 @@ pub fn open_appendable_memmap_vector_storage_half(
     distance: Distance,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl(path, dim, distance, madvise, populate)?;
+    let storage = open_appendable_memmap_vector_storage_impl(
+        path, dim, distance, madvise, populate, hw_counter,
+    )?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
         storage,
@@ -304,6 +337,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     distance: Distance,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
     fs::create_dir_all(path)?;
 
@@ -316,6 +350,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
         dim,
         madvise,
         Populate::from(populate),
+        hw_counter,
     )?;
 
     let deleted = BitvecFlags::open_or_create(
@@ -323,6 +358,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
         &deleted_path,
         FlagsMode::from_feature_flags(),
         Populate::from(populate),
+        hw_counter,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -373,6 +409,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -392,9 +429,9 @@ mod tests {
             if !rng.random_bool(0.1) {
                 continue;
             }
-            storage.delete_vector(internal_id).unwrap();
+            storage.delete_vector(internal_id, &hw_counter).unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
         let found_files = find_storage_files(dir.path())

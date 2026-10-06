@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::check_stopped;
@@ -19,6 +20,7 @@ impl SegmentHolder {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
         mut f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>
     where
         R: ReadSegmentEntry + ?Sized,
@@ -30,7 +32,7 @@ impl SegmentHolder {
             let segment_point_ids: Vec<PointIdType> = ids
                 .iter()
                 .copied()
-                .filter(|id| read_segment.has_point(*id, deferred_behavior))
+                .filter(|id| read_segment.has_point(*id, deferred_behavior, hw_counter))
                 .collect();
             check_stopped(is_stopped)?;
             if !segment_point_ids.is_empty() {
@@ -50,12 +52,13 @@ impl SegmentHolder {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>
     where
         R: ReadSegmentEntry + ?Sized,
         F: FnMut(&[PointIdType], &RwLockReadGuard<R>) -> OperationResult<usize>,
     {
-        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f)
+        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f, hw_counter)
     }
 
     fn segments_for_retrieval(&self) -> impl Iterator<Item = LockedSegment> {
@@ -81,6 +84,7 @@ impl SegmentHolder {
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>
     where
         F: FnMut(&[PointIdType], &RwLockReadGuard<dyn ReadSegmentEntry>) -> OperationResult<usize>,
@@ -88,6 +92,6 @@ impl SegmentHolder {
         let segments = self
             .segments_for_retrieval()
             .map(|segment| segment.get_read_arc());
-        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f)
+        Self::_read_points(segments, ids, is_stopped, deferred_behavior, f, hw_counter)
     }
 }

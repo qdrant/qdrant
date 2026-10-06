@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use once_cell::sync::OnceCell;
 
@@ -82,12 +83,13 @@ fn graph_deferred<S: UniversalRead>(
     path: &Path,
     populate_override: Option<Populate>,
     residency: GraphLinksResidency,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool> {
     let cold_override = match populate_override {
         Some(Populate::No | Populate::Auto | Populate::Partial(_)) => true,
         Some(Populate::Blocking | Populate::PreferBackground) | None => false,
     };
-    Ok(cold_override && !HnswGraph::<S>::is_batched(fs, path, residency)?)
+    Ok(cold_override && !HnswGraph::<S>::is_batched(fs, path, residency, hw_counter)?)
 }
 
 impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
@@ -100,15 +102,21 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         path: &Path,
         hnsw_config: &HnswConfig,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Graph config
-        fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None);
+        fs.schedule_open(
+            &HnswGraphConfig::get_config_path(path),
+            None,
+            None,
+            hw_counter,
+        );
 
         // Graph data and links
         let (_memory, residency) =
             graph_residency(hnsw_config.memory_placement(), populate_override);
-        if !graph_deferred(fs, path, populate_override, residency)? {
-            HnswGraph::preopen_universal(fs, path, residency)?;
+        if !graph_deferred(fs, path, populate_override, residency, hw_counter)? {
+            HnswGraph::preopen_universal(fs, path, residency, hw_counter)?;
         }
 
         Ok(())
@@ -136,13 +144,14 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         hnsw_config: HnswConfig,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         // The graph keeps its universal-IO storage handle alive behind a
         // boxed trait object, which must outlive the index.
         S: 'static,
     {
-        let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
+        let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage, hw_counter)?;
 
         let (memory, residency) =
             graph_residency(hnsw_config.memory_placement(), populate_override);
@@ -150,8 +159,12 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
         let graph = match vector_storage.borrow().hnsw_graph() {
             Some(graph) => OnceCell::with_value(graph),
-            None if graph_deferred(fs, path, populate_override, residency)? => OnceCell::new(),
-            None => OnceCell::with_value(HnswGraph::open_universal(fs, path, residency)?),
+            None if graph_deferred(fs, path, populate_override, residency, hw_counter)? => {
+                OnceCell::new()
+            }
+            None => {
+                OnceCell::with_value(HnswGraph::open_universal(fs, path, residency, hw_counter)?)
+            }
         };
 
         Ok(Self {
@@ -183,12 +196,13 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// vector performs one load while the other callers block on it, rather
     /// than each fetching the whole graph. A failed load is not cached —
     /// the next caller retries.
-    fn graph(&self) -> OperationResult<&HnswGraph<S>>
+    fn graph(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&HnswGraph<S>>
     where
         S: 'static,
     {
-        self.graph
-            .get_or_try_init(|| HnswGraph::open_universal(&self.fs, &self.path, self.residency))
+        self.graph.get_or_try_init(|| {
+            HnswGraph::open_universal(&self.fs, &self.path, self.residency, hw_counter)
+        })
     }
 
     pub fn is_on_disk(&self) -> bool {
@@ -198,11 +212,11 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// Read underlying graph data from disk into the disk cache.
     ///
     /// An explicit warm-up request overrides the deferral: it loads the graph.
-    pub fn populate(&self) -> OperationResult<()>
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         S: 'static,
     {
-        self.graph()?.populate()
+        self.graph(hw_counter)?.populate(hw_counter)
     }
 
     /// Drop the graph's disk cache. An unloaded graph holds no cache to drop.
@@ -217,11 +231,15 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     /// [`HNSWIndex::with_view`]. Loads a deferred graph (see [`Self::graph`]).
     ///
     /// [`HNSWIndex::with_view`]: super::super::HNSWIndex::with_view
-    pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S>) -> R) -> OperationResult<R>
+    pub fn with_view<R>(
+        &self,
+        f: impl FnOnce(ReadView<'_, S>) -> R,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<R>
     where
         S: 'static,
     {
-        let graph = self.graph()?;
+        let graph = self.graph(hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
@@ -281,6 +299,7 @@ mod tests {
                     dir.path(),
                     format.with_param_for_tests(graph_links_vectors.as_ref()),
                     true,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
 
@@ -318,7 +337,8 @@ mod tests {
         };
 
         for (residency, expected) in [Cold, Cached, Pinned].into_iter().zip(row) {
-            let graph = HnswGraph::open_universal(fs, dir, residency).unwrap();
+            let graph =
+                HnswGraph::open_universal(fs, dir, residency, &HardwareCounterCell::new()).unwrap();
             let actual = match &graph {
                 HnswGraph::Direct(direct) if direct.links_heap_size_bytes() > 0 => Vec,
                 HnswGraph::Direct(_) => Mmap,

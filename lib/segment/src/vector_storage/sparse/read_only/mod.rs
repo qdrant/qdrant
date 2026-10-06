@@ -58,24 +58,35 @@ mod tests {
 
         let mut deleted_ids = Vec::new();
         {
-            let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+            let mut storage =
+                MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new())
+                    .unwrap();
             for (id, vector) in sparse_vectors.iter().enumerate() {
                 storage
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
             for id in (0..POINT_COUNT).step_by(7) {
-                storage.delete_vector(id).unwrap();
+                storage
+                    .delete_vector(id, &HardwareCounterCell::new())
+                    .unwrap();
                 deleted_ids.push(id);
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
-        let storage =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let storage = ReadOnlySparseVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
         assert_eq!(storage.distance(), SPARSE_VECTOR_DISTANCE);
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
 
@@ -89,7 +100,7 @@ mod tests {
                 continue;
             }
 
-            match storage.get_vector::<Random>(id) {
+            match storage.get_vector::<Random>(id, &HardwareCounterCell::new()) {
                 CowVector::Sparse(got) => {
                     assert_eq!(got.indices, sparse_vectors[id as usize].indices);
                     assert_eq!(got.values, sparse_vectors[id as usize].values);
@@ -131,20 +142,29 @@ mod tests {
             .collect();
 
         {
-            let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+            let mut storage =
+                MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new())
+                    .unwrap();
             for (id, vector) in sparse_vectors.iter().enumerate() {
                 storage
                     .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                     .unwrap();
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         // Same order as the segment open path: snapshot, then preopen, then open.
         let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
-        cached_fs.cache_file_info().unwrap();
-        ReadOnlySparseVectorStorage::<MmapFile>::preopen(&cached_fs, dir.path(), Populate::No)
+        cached_fs
+            .cache_file_info(&HardwareCounterCell::new())
             .unwrap();
+        ReadOnlySparseVectorStorage::<MmapFile>::preopen(
+            &cached_fs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         // Everything `open` reads must now come from the prefetch pool.
@@ -152,12 +172,19 @@ mod tests {
             fs_err::remove_dir_all(dir.path().join(dir_name)).unwrap();
         }
 
-        let storage =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&cached_fs, dir.path(), Populate::No)
-                .unwrap();
+        let storage = ReadOnlySparseVectorStorage::<MmapFile>::open(
+            &cached_fs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
-        match storage.get_vector::<Random>(7) {
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
+        match storage.get_vector::<Random>(7, &HardwareCounterCell::new()) {
             CowVector::Sparse(got) => {
                 assert_eq!(got.indices, sparse_vectors[7].indices);
                 assert_eq!(got.values, sparse_vectors[7].values);
@@ -197,18 +224,27 @@ mod tests {
         let first: Vec<SparseVector> = (0..150).map(make).collect();
         let second: Vec<SparseVector> = (150..250).map(make).collect();
 
-        let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+        let mut writer =
+            MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         for (id, vector) in first.iter().enumerate() {
             writer
                 .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        let mut reader =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
-        assert_eq!(reader.total_vector_count(), first.len());
+        let mut reader = ReadOnlySparseVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len()
+        );
 
         for (offset, vector) in second.iter().enumerate() {
             writer
@@ -221,9 +257,11 @@ mod tests {
         }
         let deleted_ids: Vec<PointOffsetType> = vec![2, 80, 149];
         for &id in &deleted_ids {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
         drop(writer);
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
@@ -233,8 +271,12 @@ mod tests {
         let new = SortedSlice::new(&new_ids).unwrap();
         if preload {
             let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
-            cached_fs.cache_file_info().unwrap();
-            reader.live_preload(&cached_fs).unwrap();
+            cached_fs
+                .cache_file_info(&HardwareCounterCell::new())
+                .unwrap();
+            reader
+                .live_preload(&cached_fs, &HardwareCounterCell::new())
+                .unwrap();
             futures::executor::block_on(cached_fs.wait_all());
 
             fs_err::remove_dir_all(dir.path()).unwrap();
@@ -244,11 +286,16 @@ mod tests {
             reader.live_reload(&MmapFs, &deleted, &new, &hw).unwrap();
         }
 
-        assert_eq!(reader.total_vector_count(), first.len() + second.len());
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len() + second.len()
+        );
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
 
         // The appended vector is visible; deleted ones are flagged.
-        match reader.get_vector::<Random>(first.len() as PointOffsetType) {
+        match reader
+            .get_vector::<Random>(first.len() as PointOffsetType, &HardwareCounterCell::new())
+        {
             CowVector::Sparse(got) => assert_eq!(got.values, second[0].values),
             CowVector::Dense(_) | CowVector::MultiDense(_) => panic!("expected sparse vector"),
         }
@@ -273,21 +320,29 @@ mod tests {
             }
         }
 
-        let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+        let mut writer =
+            MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&make(0)), &hw)
             .unwrap();
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        let mut reader =
-            ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let mut reader = ReadOnlySparseVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         writer
             .insert_vector(1, VectorRef::from(&make(1)), &hw)
             .unwrap();
-        writer.delete_vector(1).unwrap();
-        writer.flusher()().unwrap();
+        writer
+            .delete_vector(1, &HardwareCounterCell::new())
+            .unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = vec![1];

@@ -15,6 +15,7 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         // Nothing to stage: the persisted variants are immutable after build,
         // and the mutable-RAM sparse index ingests through the already-reloaded
@@ -38,10 +39,10 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
         _fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::SparseMutableRam(index) => index.live_reload(new_points),
+            Self::SparseMutableRam(index) => index.live_reload(new_points, hw_counter),
             Self::Plain(_)
             | Self::Hnsw(_)
             | Self::SparseCompressedImmutableRamF32(_)

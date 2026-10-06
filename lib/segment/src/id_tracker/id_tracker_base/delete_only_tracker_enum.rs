@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalWriteFs;
 
@@ -20,13 +21,14 @@ impl DeleteOnlyIdTrackerEnum {
         &mut self,
         fs: &Fs,
         points: &[(PointIdType, PointOffsetType)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         Fs: UniversalWriteFs,
     {
         match self {
-            Self::Immutable(id_tracker) => id_tracker.tombstone_points(fs, points),
-            Self::DiskResident(id_tracker) => id_tracker.tombstone_points(fs, points),
+            Self::Immutable(id_tracker) => id_tracker.tombstone_points(fs, points, hw_counter),
+            Self::DiskResident(id_tracker) => id_tracker.tombstone_points(fs, points, hw_counter),
         }
     }
 }

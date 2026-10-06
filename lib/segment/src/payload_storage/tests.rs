@@ -12,7 +12,12 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     let dir = tempfile::tempdir().unwrap();
     let mut storage = open(dir.path());
 
-    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+    assert_eq!(
+        storage
+            .get_storage_size_bytes(&HardwareCounterCell::new())
+            .unwrap(),
+        0
+    );
 
     let payload = payload_json! {
         "a": "some text",
@@ -114,7 +119,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     eprintln!("storage is correct before drop");
 
     // flush, drop, and reopen
-    storage.flusher()().unwrap();
+    storage.flusher(&hw_counter)().unwrap();
     drop(storage);
     let storage = open(dir.path());
 
@@ -122,12 +127,17 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     assert_payloads(&storage);
     eprintln!("storage is correct after drop");
 
-    assert!(storage.get_storage_size_bytes().unwrap() > 0);
+    assert!(storage.get_storage_size_bytes(&hw_counter).unwrap() > 0);
 }
 
 #[rstest]
 fn test_mmap_storage(#[values(false, true)] populate: bool) {
     test_trait_impl(|path| {
-        PayloadStorageImpl::<MmapFile>::open_or_create(path.to_path_buf(), populate).unwrap()
+        PayloadStorageImpl::<MmapFile>::open_or_create(
+            path.to_path_buf(),
+            populate,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     });
 }

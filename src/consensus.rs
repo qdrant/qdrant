@@ -17,6 +17,7 @@ use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftM
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_high_thread_priority;
 use raft::eraftpb::Message as RaftMessage;
@@ -87,6 +88,7 @@ impl Consensus {
         toc: Arc<TableOfContent>,
         runtime: Handle,
         reinit: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
@@ -122,12 +124,14 @@ impl Consensus {
             channel_service.clone(),
             runtime.clone(),
             reinit,
+            hw_acc,
         )?;
 
         let logger_clone = logger.clone();
         let state_ref_clone = state_ref.clone();
         let channel_service_clone = channel_service.clone();
         let runtime_clone = runtime.clone();
+        let hw_acc = hw_acc.clone();
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
@@ -147,7 +151,7 @@ impl Consensus {
                 loop {
                     let started_at = Instant::now();
 
-                    let err = match consensus.start(&mut receiver) {
+                    let err = match consensus.start(&mut receiver, &hw_acc) {
                         Ok(()) => {
                             log::info!("Consensus stopped");
                             state_ref_clone.on_consensus_stopped();
@@ -204,6 +208,7 @@ impl Consensus {
                             channel_service_clone.clone(),
                             runtime_clone.clone(),
                             false,
+                            &hw_acc,
                         );
 
                         match rebuilt {
@@ -289,6 +294,7 @@ impl Consensus {
         channel_service: ChannelService,
         runtime: Handle,
         reinit: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> anyhow::Result<Self> {
         // If we want to re-initialize consensus, we need to prevent other peers
         // from re-playing consensus WAL operations, as they should already have them applied.
@@ -368,7 +374,7 @@ impl Consensus {
         // This might happen if Qdrant was stopped or crashed before or while applying an operation.
         // Applying during startup allows us to catch service errors early,
         // before starting consensus thread.
-        let _stop_consensus = state_ref.apply_entries(&mut node)?;
+        let _stop_consensus = state_ref.apply_entries(&mut node, hw_acc)?;
 
         // Node was created with older `applied` index, and `apply_entries` does *not* update it.
         // On first `Ready` Raft would once again return entries applied above to the application,
@@ -605,7 +611,11 @@ impl Consensus {
         Ok(())
     }
 
-    pub fn start(&mut self, receiver: &mut Receiver<Message>) -> anyhow::Result<()> {
+    pub fn start(
+        &mut self,
+        receiver: &mut Receiver<Message>,
+        hw_acc: &HwMeasurementAcc,
+    ) -> anyhow::Result<()> {
         // If this is the only peer in the cluster, tick Raft node a few times to instantly
         // self-elect itself as Raft leader
         if self.node.store().peer_count() == 1 {
@@ -661,7 +671,7 @@ impl Consensus {
             }
 
             // Append new entries to the WAL, apply committed entries, etc...
-            let (stop_consensus, is_idle) = self.on_ready()?;
+            let (stop_consensus, is_idle) = self.on_ready(hw_acc)?;
 
             if stop_consensus {
                 return Ok(());
@@ -1009,7 +1019,7 @@ impl Consensus {
     /// Returns two boolean flags: `stop_consensus` and `is_idle`.
     /// If `stop_consensus` is true, then we should exit consensus loop and stop consensus.
     /// If `is_idle` is true, it means that no on-disk state was updated during this `on_ready` call.
-    fn on_ready(&mut self) -> anyhow::Result<(bool, bool)> {
+    fn on_ready(&mut self, hw_acc: &HwMeasurementAcc) -> anyhow::Result<(bool, bool)> {
         if !self.node.has_ready() {
             // No updates to process
             return Ok((false, true));
@@ -1020,12 +1030,14 @@ impl Consensus {
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
 
-        let (Some(light_ready), role_change, is_idle_ready) = self.process_ready(ready)? else {
+        let (Some(light_ready), role_change, is_idle_ready) = self.process_ready(ready, hw_acc)?
+        else {
             // No light ready, so we need to stop consensus.
             return Ok((true, false));
         };
 
-        let (stop_consensus, is_idle_light_ready) = self.process_light_ready(light_ready)?;
+        let (stop_consensus, is_idle_light_ready) =
+            self.process_light_ready(light_ready, hw_acc)?;
 
         if let Some(role_change) = role_change {
             self.process_role_change(role_change);
@@ -1061,6 +1073,7 @@ impl Consensus {
     fn process_ready(
         &mut self,
         mut ready: raft::Ready,
+        hw_acc: &HwMeasurementAcc,
     ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>, bool)> {
         let store = self.store();
 
@@ -1082,7 +1095,7 @@ impl Consensus {
             log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
             is_idle = false;
 
-            if let Err(err) = store.apply_snapshot(&snapshot)? {
+            if let Err(err) = store.apply_snapshot(&snapshot, hw_acc)? {
                 log::error!("Failed to apply snapshot: {err}");
             }
         }
@@ -1129,8 +1142,9 @@ impl Consensus {
         is_idle &= committed_entries.is_empty();
 
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
-        let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
-            .context("Failed to handle committed entries")?;
+        let stop_consensus =
+            handle_committed_entries(&committed_entries, &store, &mut self.node, hw_acc)
+                .context("Failed to handle committed entries")?;
 
         if stop_consensus {
             return Ok((None, None, false));
@@ -1150,6 +1164,7 @@ impl Consensus {
     fn process_light_ready(
         &mut self,
         mut light_rd: raft::LightReady,
+        hw_acc: &HwMeasurementAcc,
     ) -> anyhow::Result<(bool, bool)> {
         let store = self.store();
 
@@ -1176,8 +1191,9 @@ impl Consensus {
         is_idle &= committed_entries.is_empty();
 
         // Apply all committed entries.
-        let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
-            .context("Failed to apply committed entries")?;
+        let stop_consensus =
+            handle_committed_entries(&committed_entries, &store, &mut self.node, hw_acc)
+                .context("Failed to apply committed entries")?;
 
         // Advance the apply index.
         self.node.advance_apply();
@@ -1226,11 +1242,12 @@ fn handle_committed_entries(
     entries: &[Entry],
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
+    hw_acc: &HwMeasurementAcc,
 ) -> anyhow::Result<bool> {
     let mut stop_consensus = false;
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
-        stop_consensus = state.apply_entries(raw_node)?;
+        stop_consensus = state.apply_entries(raw_node, hw_acc)?;
     }
     Ok(stop_consensus)
 }
@@ -1600,6 +1617,7 @@ mod tests {
     use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
     use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::collection_meta_ops::{
@@ -1638,6 +1656,7 @@ mod tests {
             ),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
+            &HwMeasurementAcc::new(),
         )
         .unwrap();
         let handle = toc.general_runtime_handle().clone();
@@ -1673,11 +1692,16 @@ mod tests {
             ),
             handle.clone(),
             false,
+            &HwMeasurementAcc::new(),
         )
         .unwrap();
 
         let is_leader_established = consensus_state.is_leader_established.clone();
-        thread::spawn(move || consensus.start(&mut message_receiver).unwrap());
+        thread::spawn(move || {
+            consensus
+                .start(&mut message_receiver, &HwMeasurementAcc::new())
+                .unwrap()
+        });
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
                 if message_sender
@@ -1730,6 +1754,7 @@ mod tests {
                     ),
                     Auth::new_internal(Access::full("For test")),
                     None,
+                    &HwMeasurementAcc::new(),
                 ),
             )
             .unwrap();

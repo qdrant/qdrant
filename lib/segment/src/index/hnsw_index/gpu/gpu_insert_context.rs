@@ -528,7 +528,9 @@ mod tests {
         // upload vectors to storage
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
         for idx in 0..(num_vectors + groups_count) as PointOffsetType {
-            let v = vector_holder.storage().get_vector::<Random>(idx);
+            let v = vector_holder
+                .storage()
+                .get_vector::<Random>(idx, &HardwareCounterCell::new());
             storage
                 .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
                 .unwrap();
@@ -549,8 +551,15 @@ mod tests {
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), &storage, None, false, &false.into()).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
+            &storage,
+            None,
+            false,
+            &false.into(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         TestData {
             groups_count,

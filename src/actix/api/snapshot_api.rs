@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use ::common::counter::hardware_accumulator::HwMeasurementAcc;
 use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
@@ -183,6 +184,7 @@ async fn create_snapshot(
             dispatcher.toc(&auth, &pass).clone(),
             &auth,
             &collection_name,
+            &HwMeasurementAcc::disposable(),
         )
         .await
     };
@@ -241,6 +243,7 @@ async fn upload_snapshot(
             snapshot_recover,
             auth,
             http_client,
+            &HwMeasurementAcc::disposable(),
         )
         .await
     };
@@ -277,6 +280,7 @@ async fn recover_from_snapshot(
             snapshot_recover,
             auth,
             http_client,
+            &HwMeasurementAcc::disposable(),
         )
         .await
     };
@@ -323,7 +327,14 @@ async fn create_full_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
-    let future = async move { do_create_full_snapshot(dispatcher.get_ref(), auth.clone()).await };
+    let future = async move {
+        do_create_full_snapshot(
+            dispatcher.get_ref(),
+            auth.clone(),
+            &HwMeasurementAcc::disposable(),
+        )
+        .await
+    };
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
@@ -420,6 +431,7 @@ async fn create_shard_snapshot(
             &auth,
             collection_name,
             shard,
+            &HwMeasurementAcc::disposable(),
         )
         .await
     };
@@ -446,6 +458,7 @@ async fn stream_shard_snapshot(
         collection_name,
         shard,
         None,
+        &HwMeasurementAcc::disposable(),
     )
     .await?)
 }
@@ -492,6 +505,7 @@ async fn recover_shard_snapshot(
             // No transfer sender to identify: this is a user request. The shard transfer
             // priority, the only one that clears the shard, cannot be selected here anyway.
             None,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -566,6 +580,7 @@ async fn upload_shard_snapshot(
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -664,6 +679,7 @@ async fn create_partial_snapshot(
         collection,
         shard,
         Some(manifest),
+        &HwMeasurementAcc::disposable(),
     )
     .await?;
 
@@ -749,6 +765,7 @@ async fn recover_partial_snapshot(
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
             cancel,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -928,7 +945,7 @@ async fn recover_partial_snapshot_from(
             RecoveryType::Partial,
             // Direct API recovery is not tracked as a transfer-side recovery
             None,
-            cancel,
+            cancel, &HwMeasurementAcc::disposable()
         )
         .await?;
 

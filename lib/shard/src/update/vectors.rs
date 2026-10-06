@@ -108,7 +108,7 @@ pub fn delete_vectors(
             |id, write_segment| {
                 let mut res = true;
                 for name in vector_names {
-                    res &= write_segment.delete_vector(op_num, id, name)?;
+                    res &= write_segment.delete_vector(op_num, id, name, hw_counter)?;
                 }
                 Ok(res)
             },

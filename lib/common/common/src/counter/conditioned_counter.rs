@@ -6,28 +6,29 @@ use super::hardware_counter::HardwareCounterCell;
 /// This is needed in places where we need to decide at runtime whether to measure or not.
 #[derive(Copy, Clone)]
 pub struct ConditionedCounter<'a> {
-    parent: Option<&'a HardwareCounterCell>,
+    parent: &'a HardwareCounterCell,
+    condition: bool,
 }
 
 impl<'a> ConditionedCounter<'a> {
     pub fn new(condition: bool, parent: &'a HardwareCounterCell) -> Self {
-        if condition {
-            Self::always(parent)
-        } else {
-            Self::never()
-        }
+        Self { parent, condition }
     }
 
     /// Never measure hardware.
-    pub fn never() -> Self {
-        Self { parent: None }
+    /// 🤖 Object store requests are still counted into `parent`.
+    pub fn never(parent: &'a HardwareCounterCell) -> Self {
+        Self::new(false, parent)
     }
 
     /// Always measure hardware.
     pub fn always(parent: &'a HardwareCounterCell) -> Self {
-        Self {
-            parent: Some(parent),
-        }
+        Self::new(true, parent)
+    }
+
+    /// 🤖 The underlying counter, regardless of the condition.
+    pub fn parent(&self) -> &'a HardwareCounterCell {
+        self.parent
     }
 
     #[inline]
@@ -35,7 +36,7 @@ impl<'a> ConditionedCounter<'a> {
     where
         C: Fn(&HardwareCounterCell) -> &CounterCell,
     {
-        OptionalCounterCell::new(self.parent.map(c))
+        OptionalCounterCell::new(self.condition.then(|| c(self.parent)))
     }
 
     #[inline]
@@ -75,9 +76,10 @@ impl<'a> ConditionedCounter<'a> {
 
     #[inline]
     pub fn new_accumulator(&self) -> HwMeasurementAcc {
-        match self.parent {
-            Some(p) => p.new_accumulator(),
-            None => HwMeasurementAcc::disposable(),
+        if self.condition {
+            self.parent.new_accumulator()
+        } else {
+            HwMeasurementAcc::disposable()
         }
     }
 }

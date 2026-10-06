@@ -6,6 +6,7 @@ use roaring::RoaringBitmap;
 use super::format::MAX_LOGICAL_LEN;
 use super::read::StoredBitmask;
 use super::write::bitmask_file_bytes;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::{OpenOptions, UioResult, UniversalReadFs, UniversalWriteFs};
 
 /// Mutable in-RAM handle over a bitmask persisted by [`save_bitmask`].
@@ -69,11 +70,12 @@ impl MutableStoredBitmask {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let stored = StoredBitmask::<Fs::File>::open(fs, path, options, extra)?;
+        let stored = StoredBitmask::<Fs::File>::open(fs, path, options, extra, hw_counter)?;
         Ok(Self {
             logical_len: stored.bit_len(),
-            ones: stored.read_ones()?,
+            ones: stored.read_ones(hw_counter)?,
             changed: false,
             persisted_len: Some(stored.bit_len()),
         })
@@ -153,7 +155,12 @@ impl MutableStoredBitmask {
     /// Returns the number of bytes written, zero when the write was skipped.
     ///
     /// A failed save leaves the mask dirty, so a later retry writes again.
-    pub fn save(&mut self, fs: &impl UniversalWriteFs, path: &Path) -> UioResult<usize> {
+    pub fn save(
+        &mut self,
+        fs: &impl UniversalWriteFs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<usize> {
         if !self.is_dirty() {
             return Ok(0);
         }
@@ -161,7 +168,7 @@ impl MutableStoredBitmask {
         // Run-optimize in place so the encoder can serialize a borrow.
         self.ones.optimize();
         let bytes = bitmask_file_bytes(self.logical_len, Cow::Borrowed(&self.ones))?;
-        fs.atomic_save(path, &bytes)?;
+        fs.atomic_save(path, &bytes, hw_counter)?;
 
         self.changed = false;
         self.persisted_len = Some(self.logical_len);

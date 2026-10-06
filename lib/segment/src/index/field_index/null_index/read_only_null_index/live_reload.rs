@@ -14,9 +14,17 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        let mut futs = self.storage.has_values_flags.live_preload(cached_fs)?;
-        futs.extend(self.storage.is_null_flags.live_preload(cached_fs)?);
+        let mut futs = self
+            .storage
+            .has_values_flags
+            .live_preload(cached_fs, hw_counter)?;
+        futs.extend(
+            self.storage
+                .is_null_flags
+                .live_preload(cached_fs, hw_counter)?,
+        );
         Ok(futs)
     }
 
@@ -25,12 +33,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
         fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Resync each flag set from its on-disk state; the point deltas are
         // irrelevant, the flag files are the source of truth.
-        self.storage.has_values_flags.live_reload(fs)?;
-        self.storage.is_null_flags.live_reload(fs)?;
+        self.storage.has_values_flags.live_reload(fs, hw_counter)?;
+        self.storage.is_null_flags.live_reload(fs, hw_counter)?;
 
         // total_point_count only grows, to cover appended offsets.
         self.total_point_count = new_points

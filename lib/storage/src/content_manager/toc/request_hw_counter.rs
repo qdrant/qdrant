@@ -44,6 +44,8 @@ impl RequestHwCounter {
                 payload_index_io_write,
                 vector_io_read,
                 vector_io_write,
+                object_store_read_requests: _,
+                object_store_write_requests: _,
             } = self.counter.hw_data();
 
             Some(api::rest::models::HardwareUsage {
@@ -70,6 +72,8 @@ impl RequestHwCounter {
                 payload_index_io_write,
                 vector_io_read,
                 vector_io_write,
+                object_store_read_requests: _,
+                object_store_write_requests: _,
             } = self.counter.hw_data();
 
             Some(api::grpc::qdrant::HardwareUsage {

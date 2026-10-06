@@ -48,11 +48,12 @@ where
     fn for_each_value(
         &self,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Disambiguate from `FacetIndex::for_each_value` (the trait we're
         // implementing): the inner call is `MapIndexRead::for_each_value`,
         // which iterates raw `&N` values rather than `FacetValueRef`.
-        MapIndexRead::for_each_value(self, |v| f(v.into()))
+        MapIndexRead::for_each_value(self, |v| f(v.into()), hw_counter)
     }
 
     fn for_each_value_map(
@@ -82,13 +83,19 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        MapIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: value.into(),
-                count,
-            })
-        })
+        MapIndexRead::for_each_count_per_value(
+            self,
+            deferred_internal_id,
+            |value, count| {
+                f(FacetHit {
+                    value: value.into(),
+                    count,
+                })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -137,8 +144,9 @@ where
     fn for_each_value(
         &self,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        MapIndexRead::for_each_value(self, |v| f(v.into()))
+        MapIndexRead::for_each_value(self, |v| f(v.into()), hw_counter)
     }
 
     fn for_each_value_map(
@@ -168,12 +176,18 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        MapIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: value.into(),
-                count,
-            })
-        })
+        MapIndexRead::for_each_count_per_value(
+            self,
+            deferred_internal_id,
+            |value, count| {
+                f(FacetHit {
+                    value: value.into(),
+                    count,
+                })
+            },
+            hw_counter,
+        )
     }
 }

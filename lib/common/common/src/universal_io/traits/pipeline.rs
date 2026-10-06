@@ -28,6 +28,7 @@ use std::mem::ManuallyDrop;
 use std::ops::Range;
 
 use super::{Item, UniversalRead};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{UioResult, UserData};
@@ -68,19 +69,28 @@ where
         file: &'file Self::File,
         range: Range<u64>,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()>;
 
     /// Like `Self::schedule`, but doesn't need to know file length upfront.
     /// Reads starting at `from` offset until the end of file.
-    fn schedule_whole(&mut self, user_data: U, file: &'file Self::File, from: u64)
-    -> UioResult<()>;
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()>;
 
     /// Block until any scheduled operation completes and consume its result.
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>>;
+    fn wait(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>>;
 
     #[inline]
-    fn wait_bytemuck<T: Item>(&mut self) -> UioResult<Option<(U, Cow<'file, [T]>)>> {
-        let Some((user_data, bytes)) = self.wait()? else {
+    fn wait_bytemuck<T: Item>(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Option<(U, Cow<'file, [T]>)>> {
+        let Some((user_data, bytes)) = self.wait(hw_counter)? else {
             return Ok(None);
         };
 
@@ -151,6 +161,7 @@ where
         user_data: U,
         range: Range<u64>,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         // SAFETY:
         //
@@ -162,11 +173,17 @@ where
         let file: &R = &self.file;
         let file: &'static R = unsafe { (file as *const R).as_ref_unchecked() };
 
-        self.pipeline.schedule::<P>(user_data, file, range, align)
+        self.pipeline
+            .schedule::<P>(user_data, file, range, align, hw_counter)
     }
 
     /// Like [`schedule`](Self::schedule), but reads the entire file
-    pub fn schedule_whole(&mut self, user_data: U, from: u64) -> UioResult<()> {
+    pub fn schedule_whole(
+        &mut self,
+        user_data: U,
+        from: u64,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         // SAFETY:
         //
         // Same as schedule
@@ -174,21 +191,25 @@ where
         let file: &R = &self.file;
         let file: &'static R = unsafe { (file as *const R).as_ref_unchecked() };
 
-        self.pipeline.schedule_whole(user_data, file, from)
+        self.pipeline
+            .schedule_whole(user_data, file, from, hw_counter)
     }
 
     #[inline]
-    pub fn wait(&mut self) -> UioResult<Option<(U, ACow<'_>)>> {
+    pub fn wait(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'_>)>> {
         // pipeline returns ACow<'static>, but we shorten its lifetime to ACow<'_>,
         // which mutably borrows self, so pipeline can only be dropped after all returned
         // ACow-s are dropped
 
-        self.pipeline.wait()
+        self.pipeline.wait(hw_counter)
     }
 
     #[inline]
-    pub fn wait_bytemuck<T: Item>(&mut self) -> UioResult<Option<(U, Cow<'_, [T]>)>> {
-        let Some((user_data, bytes)) = self.wait()? else {
+    pub fn wait_bytemuck<T: Item>(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Option<(U, Cow<'_, [T]>)>> {
+        let Some((user_data, bytes)) = self.wait(hw_counter)? else {
             return Ok(None);
         };
 

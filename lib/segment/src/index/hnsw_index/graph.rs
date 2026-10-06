@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::{ConditionChecker as _, Rest, Select};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::flags::feature_flags;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -72,7 +73,11 @@ pub enum SearchScorers<'a> {
 }
 
 impl HnswGraph<HnswLinksStorage> {
-    pub fn open(dir: &Path, memory: Memory) -> OperationResult<Self> {
+    pub fn open(
+        dir: &Path,
+        memory: Memory,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let (memory, residency) = graph_residency(memory, None);
         let with_uring = use_io_uring(
             IoUringFallback::Mmap,
@@ -82,13 +87,18 @@ impl HnswGraph<HnswLinksStorage> {
 
         if with_uring {
             #[cfg(target_os = "linux")]
-            if Self::is_batched(&IoUringFs, dir, residency)? {
-                let graph = GraphLayersBatched::open(&IoUringFs, dir, residency)?;
+            if Self::is_batched(&IoUringFs, dir, residency, hw_counter)? {
+                let graph = GraphLayersBatched::open(&IoUringFs, dir, residency, hw_counter)?;
                 return Ok(HnswGraph::Batched(Arc::new(graph)));
             }
         }
 
-        let graph = GraphLayers::load(dir, residency, LINK_COMPRESSION_CONVERT_EXISTING)?;
+        let graph = GraphLayers::load(
+            dir,
+            residency,
+            LINK_COMPRESSION_CONVERT_EXISTING,
+            hw_counter,
+        )?;
         Ok(HnswGraph::Direct(Arc::new(graph)))
     }
 }
@@ -99,8 +109,9 @@ impl<S: UniversalRead> HnswGraph<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let format = GraphLayers::probe_links_format(fs, dir)?;
+        let format = GraphLayers::probe_links_format(fs, dir, hw_counter)?;
         Ok(format.is_some_and(|format| Self::format_is_batched(format, residency)))
     }
 
@@ -120,18 +131,23 @@ impl<S: UniversalRead> HnswGraph<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         S: 'static,
     {
-        Ok(if Self::is_batched(fs, dir, residency)? {
-            HnswGraph::Batched(Arc::new(GraphLayersBatched::open(fs, dir, residency)?))
+        Ok(if Self::is_batched(fs, dir, residency, hw_counter)? {
+            HnswGraph::Batched(Arc::new(GraphLayersBatched::open(
+                fs, dir, residency, hw_counter,
+            )?))
         } else {
             // Note that on non-borrowable backends this materializes the
             // links into heap RAM whatever the residency: `Plain` is not
             // supported by the batched view, and `Pinned` asks for
             // materialization explicitly.
-            HnswGraph::Direct(Arc::new(GraphLayers::load_universal(fs, dir, residency)?))
+            HnswGraph::Direct(Arc::new(GraphLayers::load_universal(
+                fs, dir, residency, hw_counter,
+            )?))
         })
     }
 
@@ -142,9 +158,10 @@ impl<S: UniversalRead> HnswGraph<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        fs.schedule_open(&GraphLayers::get_path(dir), None, None);
-        let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
+        fs.schedule_open(&GraphLayers::get_path(dir), None, None, hw_counter);
+        let Some(format) = GraphLayers::probe_links_format(fs, dir, hw_counter)? else {
             return Ok(());
         };
         let options = if Self::format_is_batched(format, residency) {
@@ -156,11 +173,16 @@ impl<S: UniversalRead> HnswGraph<S> {
             &GraphLayers::get_links_path(dir, format),
             Some(options),
             None,
+            hw_counter,
         );
         Ok(())
     }
 
-    pub fn search(&self, args: GraphSearchArgs<'_>) -> OperationResult<Vec<ScoredPointOffset>> {
+    pub fn search(
+        &self,
+        args: GraphSearchArgs<'_>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let GraphSearchArgs {
             top,
             ef,
@@ -181,6 +203,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             custom_entry_points,
             filtered_points_reader,
             seeds_num,
+            hw_counter,
         )?
         else {
             return Ok(Vec::new());
@@ -207,12 +230,13 @@ impl<S: UniversalRead> HnswGraph<S> {
             (HnswGraph::Direct(graph), SearchScorers::WithVectors(scorers)) => {
                 Ok(graph.search_with_vectors(top, ef, *scorers, &entry, is_stopped)?)
             }
-            (HnswGraph::Batched(graph), SearchScorers::Regular(scorer)) => {
-                graph.search(top, ef, algorithm, scorer, &entry, batch_size, is_stopped)
-            }
-            (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => {
-                graph.search_with_vectors(top, ef, *scorers, &entry, batch_size, is_stopped)
-            }
+            (HnswGraph::Batched(graph), SearchScorers::Regular(scorer)) => graph.search(
+                top, ef, algorithm, scorer, &entry, batch_size, is_stopped, hw_counter,
+            ),
+            (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => graph
+                .search_with_vectors(
+                    top, ef, *scorers, &entry, batch_size, is_stopped, hw_counter,
+                ),
         }
     }
 
@@ -222,6 +246,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         custom_entry_points: Option<&[PointOffsetType]>,
         filtered_points: Option<&FilteredPoints<'_>>,
         seeds_num: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<SearchEntry>> {
         // Custom entry points
         if let Some(custom_entry_points) = custom_entry_points {
@@ -233,7 +258,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             let custom_best = point_ids[..matches]
                 .iter()
                 .map(|&point_id| {
-                    let level = self.point_level(point_id)?;
+                    let level = self.point_level(point_id, hw_counter)?;
                     OperationResult::Ok(EntryPoint { point_id, level })
                 })
                 .process_results(|it| it.max_by_key(|ep| ep.level))?;
@@ -272,10 +297,14 @@ impl<S: UniversalRead> HnswGraph<S> {
         Ok(None)
     }
 
-    fn point_level(&self, point_id: PointOffsetType) -> OperationResult<usize> {
+    fn point_level(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         match self {
             HnswGraph::Direct(graph) => Ok(graph.point_level(point_id)),
-            HnswGraph::Batched(graph) => graph.links.point_level(point_id),
+            HnswGraph::Batched(graph) => graph.links.point_level(point_id, hw_counter),
         }
     }
 
@@ -312,6 +341,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         &self,
         keys: &[PointOffsetType],
         mut f: impl FnMut(usize, &[T]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         T: bytemuck::Pod,
@@ -332,17 +362,26 @@ impl<S: UniversalRead> HnswGraph<S> {
                     f(position, &cast_vector::<T>(bytes)?);
                     Ok(())
                 },
+                hw_counter,
             ),
         }
     }
 
-    pub fn base_vector<T>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>>
+    pub fn base_vector<T>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Cow<'_, [T]>>
     where
         T: bytemuck::Pod,
     {
         cast_vector(match self {
             HnswGraph::Direct(graph) => ACow::Borrowed(graph.links.base_vector(key)),
-            HnswGraph::Batched(graph) => graph.links.read_base_vector(key, align_of::<T>())?,
+            HnswGraph::Batched(graph) => {
+                graph
+                    .links
+                    .read_base_vector(key, align_of::<T>(), hw_counter)?
+            }
         })
     }
 
@@ -411,10 +450,10 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
-            HnswGraph::Direct(graph) => graph.links.populate(),
-            HnswGraph::Batched(graph) => graph.links.populate(),
+            HnswGraph::Direct(graph) => graph.links.populate(hw_counter),
+            HnswGraph::Batched(graph) => graph.links.populate(hw_counter),
         }
     }
 

@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{
     DiskCacheConfig, DiskCacheFs, ListedFile, OpenOptions, UioResult, UniversalReadFs,
     UniversalWriteFs,
@@ -81,13 +82,17 @@ where
         ))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
         // The remote is the source of truth; mirrors are ephemeral.
-        self.blob_fs.list_files(prefix_path)
+        self.blob_fs.list_files(prefix_path, hw_counter)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
-        self.blob_fs.exists(path)
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
+        self.blob_fs.exists(path, hw_counter)
     }
 
     fn open(
@@ -95,15 +100,18 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::File> {
         // The mirror is always opened read-only — appends are buffered in the
         // combined handle and synced by its flusher — so `writeable` gates
         // only the remote half.
         let mut cache_options = options;
         cache_options.writeable = false;
-        let cache = self.cache_fs.open(path.as_ref(), cache_options, extra)?;
+        let cache = self
+            .cache_fs
+            .open(path.as_ref(), cache_options, extra, hw_counter)?;
 
-        let remote = self.blob_fs.open(path.as_ref(), options, ())?;
+        let remote = self.blob_fs.open(path.as_ref(), options, (), hw_counter)?;
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }
@@ -117,10 +125,15 @@ where
 
     // Mutating file ops go straight to the remote.
 
-    fn create(&self, path: &Path, _expected_length: usize) -> UioResult<()> {
+    fn create(
+        &self,
+        path: &Path,
+        _expected_length: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         // Object stores have no fixed-size preallocation; the expected
         // length is ignored, as the trait allows.
-        self.blob_fs.create(path)
+        self.blob_fs.create(path, &hw_counter.new_accumulator())
     }
 
     fn create_dir(&self, _path: &Path) -> UioResult<()> {
@@ -128,8 +141,8 @@ where
         Ok(())
     }
 
-    fn remove(&self, path: &Path) -> UioResult<()> {
-        self.blob_fs.remove(path)
+    fn remove(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.blob_fs.remove(path, &hw_counter.new_accumulator())
     }
 
     fn remove_dir(&self, _path: &Path) -> UioResult<()> {
@@ -137,15 +150,22 @@ where
         Ok(())
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.blob_fs.atomic_save(path, bytes)
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.blob_fs
+            .atomic_save(path, bytes, &hw_counter.new_accumulator())
     }
 
     fn open_append(
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self::AppendFile> {
-        self.open(path, options.for_append(), Default::default())
+        self.open(path, options.for_append(), Default::default(), hw_counter)
     }
 }

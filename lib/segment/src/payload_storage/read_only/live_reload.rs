@@ -14,8 +14,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyPayloadStorage<S> {
     fn live_preload<Fs: common::universal_io::CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        Ok(self.storage.live_preload(cached_fs)?)
+        Ok(self.storage.live_preload(cached_fs, hw_counter)?)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
@@ -23,8 +24,8 @@ impl<S: UniversalRead> LiveReload for ReadOnlyPayloadStorage<S> {
         fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        Ok(self.storage.live_reload(fs)?)
+        Ok(self.storage.live_reload(fs, hw_counter)?)
     }
 }

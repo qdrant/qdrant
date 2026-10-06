@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use super::read_only::{ReadOnly, ReadOnlyFs};
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
@@ -17,13 +18,22 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
         path: PathBuf,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<Self::File> {
         debug_assert!(!options.writeable);
-        Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
+        Ok(ReadOnly(
+            self.0
+                .open_async(path, options, extra, hw_acc.clone())
+                .await?,
+        ))
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.0.list_files_async(prefix_path).await
+    async fn list_files_async(
+        &self,
+        prefix_path: &Path,
+        hw_acc: HwMeasurementAcc,
+    ) -> UioResult<Vec<ListedFile>> {
+        self.0.list_files_async(prefix_path, hw_acc.clone()).await
     }
 }
 
@@ -37,8 +47,10 @@ where
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
-        self.0.read_bytes_async(range, access_pattern, align)
+        self.0
+            .read_bytes_async(range, access_pattern, align, hw_acc.clone())
     }
 
     #[inline]
@@ -46,11 +58,12 @@ where
         &self,
         from: u64,
         init: I,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
-        self.0.read_from_into_async(from, init)
+        self.0.read_from_into_async(from, init, hw_acc.clone())
     }
 }

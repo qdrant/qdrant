@@ -574,6 +574,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
         dir.path(),
         1,
         &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -594,6 +595,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
         Some(&tq_vectors),
         false,
         &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -629,9 +631,15 @@ fn test_gpu_vector_storage_turbo_dense(
         .try_init();
 
     let dir = tempfile::Builder::new().prefix("tq_dir").tempdir().unwrap();
-    let mut turbo =
-        open_appendable_turbo_vector_storage(dir.path(), dim, distance, TQBits::Bits4, true)
-            .unwrap();
+    let mut turbo = open_appendable_turbo_vector_storage(
+        dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let mut rnd = StdRng::seed_from_u64(42);
     for i in 0..num_vectors {
@@ -653,7 +661,11 @@ fn test_gpu_vector_storage_turbo_dense(
     // original space here is what actually verifies that invariance.
     let mut reference = new_volatile_dense_vector_storage(dim, distance);
     for i in 0..num_vectors {
-        let dequantized = turbo.get_dense_for_requantization(i as PointOffsetType, false);
+        let dequantized = turbo.get_dense_for_requantization(
+            i as PointOffsetType,
+            false,
+            &HardwareCounterCell::new(),
+        );
         reference
             .insert_vector(
                 i as PointOffsetType,
@@ -681,10 +693,18 @@ fn test_gpu_vector_storage_turbo_dense(
         None,
         false,
         &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
-    let gpu_reference =
-        GpuVectorStorage::new(device.clone(), &reference, None, false, &DEFAULT_STOPPED).unwrap();
+    let gpu_reference = GpuVectorStorage::new(
+        device.clone(),
+        &reference,
+        None,
+        false,
+        &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     assert_eq!(gpu_turbo.element_type, VectorStorageDatatype::Float32);
     assert_eq!(gpu_turbo.num_vectors(), num_vectors);
@@ -723,6 +743,7 @@ fn test_gpu_vector_storage_turbo_multi(
         TQBits::Bits4,
         multi_config,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -750,7 +771,11 @@ fn test_gpu_vector_storage_turbo_multi(
     // the production vectors rotated yields identical Dot/Cosine/L2 scores.
     let mut reference = new_volatile_multi_dense_vector_storage(dim, distance, multi_config);
     for i in 0..num_points {
-        let inner = turbo.get_inner_dense_for_requantization(i as PointOffsetType, false);
+        let inner = turbo.get_inner_dense_for_requantization(
+            i as PointOffsetType,
+            false,
+            &HardwareCounterCell::new(),
+        );
         let flattened: Vec<VectorElementType> = inner.into_iter().flatten().collect();
         let multivector = MultiDenseVectorInternal::new(flattened, dim);
         reference
@@ -777,10 +802,18 @@ fn test_gpu_vector_storage_turbo_multi(
         None,
         false,
         &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
-    let gpu_reference =
-        GpuVectorStorage::new(device.clone(), &reference, None, false, &DEFAULT_STOPPED).unwrap();
+    let gpu_reference = GpuVectorStorage::new(
+        device.clone(),
+        &reference,
+        None,
+        false,
+        &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     assert_eq!(gpu_turbo.element_type, VectorStorageDatatype::Float32);
     assert_eq!(gpu_turbo.num_vectors(), num_points);
@@ -995,6 +1028,7 @@ fn test_gpu_vector_storage_impl(
             dir.path(),
             1,
             &DEFAULT_STOPPED,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
     });
@@ -1014,6 +1048,7 @@ fn test_gpu_vector_storage_impl(
         quantized_vectors.as_ref(),
         force_half_precision,
         &DEFAULT_STOPPED,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -1045,7 +1080,11 @@ fn test_gpu_vector_storage_impl(
 
     let gpu_scores = run_gpu_scoring(device.clone(), &gpu_vector_storage, num_vectors);
 
-    let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
+    let query = QueryVector::Nearest(
+        storage
+            .get_vector::<Random>(test_point_id, &HardwareCounterCell::new())
+            .to_owned(),
+    );
 
     let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {

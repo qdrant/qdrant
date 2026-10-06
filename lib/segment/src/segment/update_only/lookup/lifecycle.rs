@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFsAsync, read_json_via};
@@ -39,14 +40,15 @@ const WRITER_POPULATE: Populate = Populate::No;
 fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: Fs,
     segment_path: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs, segment_path)?;
 
-    cached_fs.cache_file_info()?;
+    cached_fs.cache_file_info(hw_counter)?;
 
     // Absence is tolerated here: the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
-        cached_fs.schedule_open(&segment_path.join(file_name), None, None);
+        cached_fs.schedule_open(&segment_path.join(file_name), None, None, hw_counter);
     }
 
     Ok(cached_fs)
@@ -70,12 +72,19 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         fs: Fs,
         segment_path: &Path,
         deferred_threshold_kb: Option<usize>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let cached_fs = build_cached_fs(fs, segment_path)?;
-        let config = Self::preopen(&cached_fs, segment_path)?;
+        let cached_fs = build_cached_fs(fs, segment_path, hw_counter)?;
+        let config = Self::preopen(&cached_fs, segment_path, hw_counter)?;
         let deferred_internal_id = deferred_threshold_kb
             .and_then(|threshold_kb| segment_deferred_internal_id(&config, threshold_kb));
-        Self::open_via(cached_fs, segment_path, config, deferred_internal_id)
+        Self::open_via(
+            cached_fs,
+            segment_path,
+            config,
+            deferred_internal_id,
+            hw_counter,
+        )
     }
 
     /// Open the segment's components: the id tracker, the payload storage and
@@ -99,10 +108,11 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         segment_path: &Path,
         config: SegmentConfig,
         deferred_internal_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         futures::executor::block_on(fs.wait_all());
 
-        if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
+        if SegmentVersion::load_universal(&fs, segment_path, hw_counter)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written
             // last, so its absence means the segment vanished mid-open (or was
             // never completed).
@@ -115,6 +125,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             &fs,
             segment_path.to_path_buf(),
             WRITER_POPULATE,
+            hw_counter,
         )?));
 
         let appendable = config.is_appendable();
@@ -127,6 +138,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             segment_path,
             deferred_internal_id.filter(|_| appendable),
             WRITER_POPULATE,
+            hw_counter,
         )?));
 
         let mut vector_data = HashMap::new();
@@ -139,6 +151,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 &path,
                 &index_path,
                 Some(WRITER_POPULATE),
+                hw_counter,
             )?
             .ok_or_else(|| {
                 OperationError::service_error(format!(
@@ -150,7 +163,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
             let storage = VectorStorageReadEnum::Sparse(Box::new(
-                ReadOnlySparseVectorStorage::open(&fs, &path, WRITER_POPULATE)?,
+                ReadOnlySparseVectorStorage::open(&fs, &path, WRITER_POPULATE, hw_counter)?,
             ));
             vector_data.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
@@ -172,15 +185,24 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// caching filesystem can fetch them concurrently instead of one blocking
     /// round-trip at a time. Returns the segment config parsed along the way,
     /// so the open does not read it twice.
-    pub fn preopen(fs: &CachedFs<Fs>, segment_path: &Path) -> OperationResult<SegmentConfig> {
+    pub fn preopen(
+        fs: &CachedFs<Fs>,
+        segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentConfig> {
         let SegmentState {
             initial_version: _,
             version: _,
             config,
-        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
+        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE), hw_counter)?;
 
-        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), WRITER_POPULATE)?;
-        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE)?;
+        ReadOnlyPayloadStorage::preopen(
+            fs,
+            segment_path.to_path_buf(),
+            WRITER_POPULATE,
+            hw_counter,
+        )?;
+        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE, hw_counter)?;
 
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);
@@ -191,11 +213,17 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 &path,
                 &index_path,
                 Some(WRITER_POPULATE),
+                hw_counter,
             )?;
         }
         for vector_name in config.sparse_vector_data.keys() {
             let path = get_vector_storage_path(segment_path, vector_name);
-            ReadOnlySparseVectorStorage::<Fs::File>::preopen(fs, &path, WRITER_POPULATE)?;
+            ReadOnlySparseVectorStorage::<Fs::File>::preopen(
+                fs,
+                &path,
+                WRITER_POPULATE,
+                hw_counter,
+            )?;
         }
 
         Ok(config)

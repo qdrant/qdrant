@@ -34,6 +34,7 @@ impl Collection {
         state: State,
         this_peer_id: PeerId,
         abort_transfer: impl FnMut(ShardTransfer),
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         let State {
             config,
@@ -49,16 +50,17 @@ impl Collection {
 
         // Apply config first — this updates the collection-level vector definitions
         let new_config = config.clone();
-        self.apply_config(config).await?;
+        self.apply_config(config, hw_acc).await?;
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
         self.apply_reshard_state(resharding).await?;
-        self.apply_shard_info(shards, shards_key_mapping).await?;
+        self.apply_shard_info(shards, shards_key_mapping, hw_acc)
+            .await?;
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
         // Reconcile named vectors at the segment level to match the new config.
         // This ensures segments have the correct vector storages after a Raft snapshot.
-        self.apply_vector_name_schema(old_collection_config, &new_config)
+        self.apply_vector_name_schema(old_collection_config, &new_config, hw_acc)
             .await?;
         Ok(())
     }
@@ -146,7 +148,11 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
+    async fn apply_config(
+        &self,
+        new_config: CollectionConfigInternal,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
@@ -225,7 +231,7 @@ impl Collection {
         // application), and stopping the existing optimizers can take a long time, which would
         // otherwise stall the consensus loop.
         if recreate_optimizers {
-            self.recreate_optimizers_background();
+            self.recreate_optimizers_background(hw_acc);
         }
 
         Ok(())
@@ -235,6 +241,7 @@ impl Collection {
         &self,
         shards: AHashMap<ShardId, ShardInfo>,
         shards_key_mapping: ShardKeyMapping,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         let mut extra_shards: AHashMap<ShardId, ShardReplicaSet> = AHashMap::new();
 
@@ -253,17 +260,23 @@ impl Collection {
             match shards_holder.get_shard(shard_id) {
                 Some(replica_set) => {
                     replica_set
-                        .apply_state(shard_info.replicas, shard_key)
+                        .apply_state(shard_info.replicas, shard_key, hw_acc)
                         .await?;
                 }
                 None => {
                     let mut shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
                     shard_replicas.sort_unstable();
                     let replica_set = self
-                        .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
+                        .create_replica_set(
+                            shard_id,
+                            shard_key.clone(),
+                            &shard_replicas,
+                            None,
+                            hw_acc,
+                        )
                         .await?;
                     replica_set
-                        .apply_state(shard_info.replicas, shard_key)
+                        .apply_state(shard_info.replicas, shard_key, hw_acc)
                         .await?;
                     extra_shards.insert(shard_id, replica_set);
                 }
@@ -312,6 +325,7 @@ impl Collection {
         &self,
         old_collection_params: CollectionParams,
         target_config: &CollectionConfigInternal,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         use segment::data_types::vector_name_config::{
             DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
@@ -423,7 +437,7 @@ impl Collection {
 
         // Delete first (includes changed vectors), then create
         for vector_name in to_delete {
-            self.delete_named_vector(vector_name).await?;
+            self.delete_named_vector(vector_name, hw_acc).await?;
         }
 
         for (vector_name, config) in to_create {

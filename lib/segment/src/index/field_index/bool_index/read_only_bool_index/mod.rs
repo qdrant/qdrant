@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use roaring::RoaringBitmap;
 
 use crate::common::flags::read_only_flags::ReadOnlyFlags;
@@ -67,20 +68,23 @@ pub(super) struct ReadOnlyStorage<S: UniversalReadExt> {
 impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// The cached counts, materializing both bitmaps to derive them on the
     /// first call.
-    pub(super) fn counts(&self) -> OperationResult<&BoolCounts> {
+    pub(super) fn counts(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&BoolCounts> {
         if let Some(counts) = self.counts.get() {
             return Ok(counts);
         }
 
-        let counts = Self::derive_counts(&self.storage)?;
+        let counts = Self::derive_counts(&self.storage, hw_counter)?;
 
         Ok(self.counts.get_or_init(|| counts))
     }
 
     /// Recompute the counts straight from the bitmaps, materializing them.
-    fn derive_counts(storage: &ReadOnlyStorage<S>) -> OperationResult<BoolCounts> {
-        let trues: &RoaringBitmap = storage.trues_flags.get_bitmap()?;
-        let falses: &RoaringBitmap = storage.falses_flags.get_bitmap()?;
+    fn derive_counts(
+        storage: &ReadOnlyStorage<S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<BoolCounts> {
+        let trues: &RoaringBitmap = storage.trues_flags.get_bitmap(hw_counter)?;
+        let falses: &RoaringBitmap = storage.falses_flags.get_bitmap(hw_counter)?;
 
         Ok(BoolCounts {
             indexed: trues.union_len(falses) as usize,
@@ -95,12 +99,15 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// both bitmaps, and a reload must not force work no query has asked for.
     /// When they *are* set the bitmaps are materialized too (deriving the
     /// counts is what materialized them), so this rereads them for free.
-    pub(super) fn refresh_counts(&mut self) -> OperationResult<()> {
+    pub(super) fn refresh_counts(
+        &mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if self.counts.get().is_none() {
             return Ok(());
         }
 
-        let counts = Self::derive_counts(&self.storage)?;
+        let counts = Self::derive_counts(&self.storage, hw_counter)?;
         *self
             .counts
             .get_mut()
@@ -173,12 +180,12 @@ mod tests {
             json!([true]),              // 11: true
         ];
 
-        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        let mut builder = MutableBoolIndex::builder(dir.path(), &hw_counter).unwrap();
         for (i, value) in fixture.iter().enumerate() {
             builder.add_point(i as u32, &[value], &hw_counter).unwrap();
         }
-        let index = builder.finalize().unwrap();
-        index.flusher()().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
         drop(index);
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, named via the
@@ -186,7 +193,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &hw_counter)
             .unwrap()
             .unwrap();
 
@@ -210,7 +217,7 @@ mod tests {
             vec![0, 2, 3, 4, 6, 11],
         );
         // `indexed_count = |trues ∪ falses|`, derived from the two bitmaps on open.
-        assert_eq!(index.count_indexed_points().unwrap(), 9);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 9);
     }
 
     /// The incremental `LiveReload` path must land on exactly the same in-memory
@@ -254,26 +261,27 @@ mod tests {
             json!(false),         // 4: false
             json!([true, false]), // 5: both
         ];
-        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        let mut builder = MutableBoolIndex::builder(dir.path(), &hw_counter).unwrap();
         for (i, value) in initial.iter().enumerate() {
             builder.add_point(i as u32, &[value], &hw_counter).unwrap();
         }
-        let mut index = builder.finalize().unwrap();
-        index.flusher()().unwrap();
+        let mut index = builder.finalize(&hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=5, taken before the writer continues.
-        let mut reloaded = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let mut reloaded =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &hw_counter)
+                .unwrap()
+                .unwrap();
 
         if materialize_before_reload {
             // Pull both bitmaps into memory, so the reload below takes its
             // in-place delta path rather than deferring to a later scan. This
             // also populates the counts cache.
-            reloaded.count_indexed_points().unwrap();
+            reloaded.count_indexed_points(&hw_counter).unwrap();
             assert!(reloaded.counts.get().is_some());
         } else {
             assert!(reloaded.counts.get().is_none());
@@ -283,19 +291,19 @@ mod tests {
         // append fresh offsets 6 (true), 7 (false) and 1100 (true). Offset 1100
         // grows the flags file past its 128-byte minimum, so the reload sees it
         // only through the reopened bitslice.
-        index.remove_point(1).unwrap();
-        index.remove_point(2).unwrap();
+        index.remove_point(1, &hw_counter).unwrap();
+        index.remove_point(2, &hw_counter).unwrap();
         index.add_point(6, &[&json!(true)], &hw_counter).unwrap();
         index.add_point(7, &[&json!(false)], &hw_counter).unwrap();
         index.add_point(1100, &[&json!(true)], &hw_counter).unwrap();
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
 
         // `CachedFs` passes opens through until a snapshot is taken, so the
         // non-preload path reloads over it untouched.
         let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
         if preload {
-            cached_fs.cache_file_info().unwrap();
-            reloaded.live_preload(&cached_fs).unwrap();
+            cached_fs.cache_file_info(&hw_counter).unwrap();
+            reloaded.live_preload(&cached_fs, &hw_counter).unwrap();
         }
         reloaded
             .live_reload(
@@ -310,7 +318,7 @@ mod tests {
         // counts never computed stay that way, so the reload forced no scan.
         assert_eq!(reloaded.counts.get().is_some(), materialize_before_reload);
 
-        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &hw_counter)
             .unwrap()
             .unwrap();
 
@@ -351,8 +359,12 @@ mod tests {
         assert_eq!(reloaded_true, fresh_true);
         assert_eq!(reloaded_false, fresh_false);
         assert_eq!(
-            reloaded.count_indexed_points().unwrap(),
-            fresh.count_indexed_points().unwrap()
+            reloaded
+                .count_indexed_points(&hw_acc.get_counter_cell())
+                .unwrap(),
+            fresh
+                .count_indexed_points(&hw_acc.get_counter_cell())
+                .unwrap()
         );
         assert_eq!(card(&reloaded, true), card(&fresh, true));
         assert_eq!(card(&reloaded, false), card(&fresh, false));
@@ -362,7 +374,12 @@ mod tests {
         // as `false` — 1100 only via the reopened, freshly-grown bitslice.
         assert_eq!(reloaded_true, vec![0, 3, 5, 6, 1100]);
         assert_eq!(reloaded_false, vec![4, 5, 7]);
-        assert_eq!(reloaded.count_indexed_points().unwrap(), 7);
+        assert_eq!(
+            reloaded
+                .count_indexed_points(&hw_acc.get_counter_cell())
+                .unwrap(),
+            7
+        );
         assert_eq!(card(&reloaded, true), 5);
         assert_eq!(card(&reloaded, false), 3);
     }
@@ -378,23 +395,37 @@ mod tests {
         let build = || {
             let dir = TempDir::with_prefix("read_only_bool_inconsistent").unwrap();
             let hw_counter = HardwareCounterCell::new();
-            let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+            let mut builder = MutableBoolIndex::builder(dir.path(), &hw_counter).unwrap();
             let value = json!(true);
             builder.add_point(0, &[&value], &hw_counter).unwrap();
-            let index = builder.finalize().unwrap();
-            index.flusher()().unwrap();
+            let index = builder.finalize(&hw_counter).unwrap();
+            index.flusher(&hw_counter)().unwrap();
             dir
         };
 
         // `trues` present, `falses` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
+                &fs,
+                dir.path(),
+                &HardwareCounterCell::new()
+            )
+            .is_err()
+        );
 
         // `falses` present, `trues` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
+                &fs,
+                dir.path(),
+                &HardwareCounterCell::new()
+            )
+            .is_err()
+        );
     }
 
     /// Opening must not read the flags files — that whole-file scan is the cost
@@ -408,17 +439,17 @@ mod tests {
         let dir = TempDir::with_prefix("read_only_bool_index_lazy").unwrap();
         let hw_counter = HardwareCounterCell::new();
 
-        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        let mut builder = MutableBoolIndex::builder(dir.path(), &hw_counter).unwrap();
         let value = json!(true);
         builder.add_point(0, &[&value], &hw_counter).unwrap();
-        let index = builder.finalize().unwrap();
-        index.flusher()().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
         drop(index);
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &hw_counter)
             .unwrap()
             .unwrap();
 
@@ -435,7 +466,7 @@ mod tests {
         assert!(index.counts.get().is_none());
 
         // The first count materializes both, and caches what it derived.
-        assert_eq!(index.count_indexed_points().unwrap(), 1);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 1);
         assert!(index.storage.trues_flags.bitmap_if_materialized().is_some());
         assert!(
             index
@@ -463,12 +494,12 @@ mod tests {
 
         // Points 0..=2: true, false, both.
         let fixture = [json!(true), json!(false), json!([true, false])];
-        let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
+        let mut builder = MutableBoolIndex::builder(dir.path(), &hw_counter).unwrap();
         for (i, value) in fixture.iter().enumerate() {
             builder.add_point(i as u32, &[value], &hw_counter).unwrap();
         }
-        let index = builder.finalize().unwrap();
-        index.flusher()().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
         drop(index);
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -476,12 +507,13 @@ mod tests {
 
         // Same order as the segment open path: snapshot, then preopen, then open.
         let mut cached_fs = CachedFs::new(fs.clone(), dir.path()).unwrap();
-        cached_fs.cache_file_info().unwrap();
+        cached_fs.cache_file_info(&hw_counter).unwrap();
         assert!(
             ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
                 &cached_fs,
                 dir.path(),
-                Populate::PreferBackground
+                Populate::PreferBackground,
+                &hw_counter
             )
             .unwrap()
         );
@@ -491,9 +523,10 @@ mod tests {
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&cached_fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let index =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&cached_fs, dir.path(), &hw_counter)
+                .unwrap()
+                .unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -513,23 +546,24 @@ mod tests {
                 .collect_vec(),
             vec![1, 2],
         );
-        assert_eq!(index.count_indexed_points().unwrap(), 3);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 3);
 
         // An absent index: `preopen` reports it rather than erroring on the
         // missing status file, and schedules nothing for `open` to consume.
         let empty = TempDir::with_prefix("read_only_bool_index_preopen_empty").unwrap();
         let mut empty_fs = CachedFs::new(fs, empty.path()).unwrap();
-        empty_fs.cache_file_info().unwrap();
+        empty_fs.cache_file_info(&hw_counter).unwrap();
         assert!(
             !ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::preopen(
                 &empty_fs,
                 empty.path(),
-                Populate::PreferBackground
+                Populate::PreferBackground,
+                &hw_counter
             )
             .unwrap()
         );
         assert!(
-            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&empty_fs, empty.path())
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&empty_fs, empty.path(), &hw_counter)
                 .unwrap()
                 .is_none()
         );

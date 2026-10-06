@@ -8,6 +8,7 @@ use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::fs::safe_delete_in_tmp;
 
 use super::TableOfContent;
@@ -29,8 +30,9 @@ impl CollectionContainer for TableOfContent {
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
-        self.perform_collection_meta_op_sync(operation)
+        self.perform_collection_meta_op_sync(operation, hw_acc)
     }
 
     fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
@@ -40,8 +42,9 @@ impl CollectionContainer for TableOfContent {
     fn apply_collections_snapshot(
         &self,
         data: consensus_manager::CollectionsSnapshot,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
-        self.apply_collections_snapshot(data)
+        self.apply_collections_snapshot(data, hw_acc)
     }
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
@@ -178,6 +181,7 @@ impl TableOfContent {
     fn apply_collections_snapshot(
         &self,
         data: consensus_manager::CollectionsSnapshot,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
             for (id, state) in &data.collections {
@@ -260,14 +264,14 @@ impl TableOfContent {
                         Some(self.adaptive_search_handle.clone()),
                         Some(self.update_runtime.handle().clone()),
                         self.optimizer_resource_budget.clone(),
-                        self.storage_config.optimizers_overwrite.clone(),
+                        self.storage_config.optimizers_overwrite.clone(), hw_acc
                     )
                     .await?;
                     Arc::new(collection)
                 };
 
                 let result = self
-                    .apply_collection_snapshot_state(id, &existing_collection, state)
+                    .apply_collection_snapshot_state(id, &existing_collection, state, hw_acc)
                     .await;
 
                 // A new collection already exists on disk, but we need to set replica states
@@ -357,6 +361,7 @@ impl TableOfContent {
         id: &str,
         collection: &Collection,
         state: &collection_state::State,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<(), StorageError> {
         if &collection.state().await == state {
             return Ok(());
@@ -384,7 +389,7 @@ impl TableOfContent {
         tests::fail_collection_snapshot_state(id)?;
 
         collection
-            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
+            .apply_state(state.clone(), self.this_peer_id(), abort_transfer, hw_acc)
             .await?;
 
         Ok(())

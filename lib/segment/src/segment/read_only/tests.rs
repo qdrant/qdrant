@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
@@ -72,6 +73,7 @@ fn build_immutable_segment(
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -146,6 +148,7 @@ fn build_immutable_segment(
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     builder
@@ -240,11 +243,18 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
         assert_eq!(
-            reference.point_version(point_id).is_some(),
-            candidate.point_version(point_id).is_some(),
+            reference
+                .point_version(point_id, &HardwareCounterCell::new())
+                .is_some(),
+            candidate
+                .point_version(point_id, &HardwareCounterCell::new())
+                .is_some(),
             "visibility mismatch for point {point_id}",
         );
-        if reference.point_version(point_id).is_none() {
+        if reference
+            .point_version(point_id, &HardwareCounterCell::new())
+            .is_none()
+        {
             continue;
         }
         assert_eq!(
@@ -265,11 +275,20 @@ fn read_only_segment_matches_mutable() {
     let segment_uuid = mutable.uuid;
 
     // Open the very same directory read-only over the universal mmap fs.
-    let read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
-            .expect("read-only open");
+    let read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
 
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     assert_eq!(read_only.segment_uuid(), segment_uuid);
 
     assert_query_equivalence(&mutable, &read_only);
@@ -292,17 +311,28 @@ fn read_only_segment_graph_inline_matches_mutable() {
     }
     let without_vector: PointIdType = 7.into();
     assert_matches!(
-        mutable.delete_vector(NUM_POINTS as u64 + 4, without_vector, DEFAULT_VECTOR_NAME),
+        mutable.delete_vector(
+            NUM_POINTS as u64 + 4,
+            without_vector,
+            DEFAULT_VECTOR_NAME,
+            &HardwareCounterCell::new()
+        ),
         Ok(true),
     );
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
-    let read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
+    let read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
 
     assert_eq!(
-        read_only.available_point_count(),
+        read_only.available_point_count(&HardwareCounterCell::new()),
         NUM_POINTS - deleted.len(),
     );
     let has_vector = Filter::new_must(Condition::HasVector(HasVectorCondition::from(
@@ -348,10 +378,14 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
             segment_uuid,
             None,
             Some(profile),
+            &HardwareCounterCell::new(),
         )
         .expect("read-only open with load profile");
 
-        assert_eq!(read_only.available_point_count(), NUM_POINTS);
+        assert_eq!(
+            read_only.available_point_count(&HardwareCounterCell::new()),
+            NUM_POINTS
+        );
         assert_query_equivalence(&mutable, &read_only);
     }
 }
@@ -384,6 +418,7 @@ fn read_only_segment_load_profile_defers_points() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     for i in 0..NUM_POINTS {
@@ -393,7 +428,7 @@ fn read_only_segment_load_profile_defers_points() {
             .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
     let profile = LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(1));
     let read_only = ReadOnlySegment::<MmapFile>::open(
@@ -402,18 +437,36 @@ fn read_only_segment_load_profile_defers_points() {
         mutable.uuid,
         None,
         Some(&profile),
+        &HardwareCounterCell::new(),
     )
     .expect("read-only open with deferred threshold");
 
-    assert_eq!(read_only.available_point_count_without_deferred(), 32);
-    assert!(read_only.has_point(32.into(), DeferredBehavior::VisibleOnly));
-    assert!(!read_only.has_point(33.into(), DeferredBehavior::VisibleOnly));
-
-    let unfiltered =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
     assert_eq!(
-        unfiltered.available_point_count_without_deferred(),
+        read_only.available_point_count_without_deferred(&HardwareCounterCell::new()),
+        32
+    );
+    assert!(read_only.has_point(
+        32.into(),
+        DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
+    assert!(!read_only.has_point(
+        33.into(),
+        DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
+
+    let unfiltered = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
+    assert_eq!(
+        unfiltered.available_point_count_without_deferred(&HardwareCounterCell::new()),
         NUM_POINTS
     );
 }
@@ -491,10 +544,14 @@ fn read_only_segment_over_s3() {
         segment_uuid,
         None,
         None,
+        &HardwareCounterCell::new(),
     )
     .expect("read-only open over S3");
 
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     assert_query_equivalence(&mutable, &read_only);
 }
 
@@ -582,6 +639,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     // The read-only follower tails the writer's append-only logs; an in-place
@@ -596,12 +654,21 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
             .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     let query = SparseVector::new(vec![2, 10, 40], vec![1.0, 0.5, 0.25]).unwrap();
     assert_sparse_search_matches(&mutable, &read_only, &query);
@@ -630,11 +697,14 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         mutable.delete_point(op_num, point_id.into(), &hw).unwrap();
         op_num += 1;
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
     // A live reload folds the delta into the rebuilt sparse index.
     preload_then_reload(&mut read_only, &hw).expect("read-only live reload");
-    assert_eq!(read_only.available_point_count(), NUM_POINTS + 20 - 2);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS + 20 - 2
+    );
 
     assert_sparse_search_matches(&mutable, &read_only, &query);
     // A query on the fresh dimension only reaches points added after the open.
@@ -648,8 +718,9 @@ fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
     hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
-    let max_committed_id =
-        futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
+    let max_committed_id = futures::executor::block_on(
+        segment.live_preload(&AtomicBool::new(false), hw_counter.new_accumulator()),
+    )?;
     segment.live_reload(max_committed_id, hw_counter)
 }
 
@@ -683,9 +754,15 @@ fn read_only_segment_config_reload_payload_index() {
     reduced_config.save(&config_path).unwrap();
 
     // Open read-only: only `kw` is indexed.
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
-            .expect("read-only open");
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
     {
         let payload_index = read_only.payload_index.borrow();
         assert!(payload_index.field_indexes.contains_key(&kw_field));
@@ -695,7 +772,7 @@ fn read_only_segment_config_reload_payload_index() {
     // Restore the full config and reload: the `num` index is loaded and installed.
     full_config.save(&config_path).unwrap();
     let diff = read_only
-        .config_reload_diff(&MmapFs)
+        .config_reload_diff(&MmapFs, &HardwareCounterCell::new())
         .expect("config reload diff");
     assert!(!diff.is_empty());
     read_only.apply_config_reload(diff);
@@ -708,14 +785,14 @@ fn read_only_segment_config_reload_payload_index() {
 
     // Reloading against the unchanged on-disk config is a no-op.
     let diff = read_only
-        .config_reload_diff(&MmapFs)
+        .config_reload_diff(&MmapFs, &HardwareCounterCell::new())
         .expect("config reload diff");
     assert!(diff.is_empty());
 
     // Drop `num` again on disk and reload: the index is removed.
     reduced_config.save(&config_path).unwrap();
     let diff = read_only
-        .config_reload_diff(&MmapFs)
+        .config_reload_diff(&MmapFs, &HardwareCounterCell::new())
         .expect("config reload diff");
     assert!(!diff.is_empty());
     read_only.apply_config_reload(diff);
@@ -751,6 +828,7 @@ fn vanished_segment_classifies_not_found() {
         segment_uuid,
         None,
         None,
+        &HardwareCounterCell::new(),
     ) else {
         panic!("open of a missing directory must fail");
     };
@@ -759,15 +837,24 @@ fn vanished_segment_classifies_not_found() {
     // Live-reload of a segment whose directory vanished after open (the leader
     // removed it): the first component reopen hits the missing file. The failed
     // preload mutates nothing — the segment keeps serving its pre-refresh state.
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
-            .expect("read-only open");
-    let points_before = read_only.available_point_count();
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
+    let points_before = read_only.available_point_count(&HardwareCounterCell::new());
     fs_err::remove_dir_all(&segment_path).unwrap();
     let err = preload_then_reload(&mut read_only, &HardwareCounterCell::disposable())
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
-    assert_eq!(read_only.available_point_count(), points_before);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        points_before
+    );
 }
 
 /// A load profile that never scores a vector defers its HNSW graph load: the
@@ -798,6 +885,7 @@ fn deferred_index_reads_nothing_at_open() {
         segment_uuid,
         None,
         Some(&profile),
+        &HardwareCounterCell::new(),
     )
     .expect("open with a deferred index must not read the index files");
 
@@ -841,8 +929,15 @@ fn deferred_index_opens_on_first_search() {
     let segment_uuid = mutable.uuid;
     drop(mutable);
 
-    let eager = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
-        .expect("eager open");
+    let eager = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &segment_path,
+        segment_uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("eager open");
 
     let profile = LoadProfile::for_scroll(None, None, true);
     let deferred = ReadOnlySegment::<MmapFile>::open(
@@ -851,6 +946,7 @@ fn deferred_index_opens_on_first_search() {
         segment_uuid,
         None,
         Some(&profile),
+        &HardwareCounterCell::new(),
     )
     .expect("open with a deferred index");
 
@@ -881,6 +977,7 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
         None,
         None,
         &stopped,
+        &HardwareCounterCell::new(),
     );
     assert!(matches!(staged, Err(OperationError::Cancelled { .. })));
     assert!(stopped.load(Ordering::Relaxed));
@@ -894,10 +991,13 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
         None,
         None,
         &stopped,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     stopped.store(true, Ordering::Relaxed);
-    assert!(is_cancelled(staged.finish(&MmapFs)));
+    assert!(is_cancelled(
+        staged.finish(&MmapFs, &HardwareCounterCell::new())
+    ));
     assert!(stopped.load(Ordering::Relaxed));
 
     // Never cancelled: identical to the plain open, and the flag is left alone.
@@ -909,12 +1009,16 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
         None,
         None,
         &stopped,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
-    .finish(&MmapFs)
+    .finish(&MmapFs, &HardwareCounterCell::new())
     .unwrap();
     assert!(!stopped.load(Ordering::Relaxed));
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     assert_query_equivalence(&mutable, &read_only);
 }
 
@@ -947,6 +1051,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     mutable.append_only_mutations = true;
@@ -962,17 +1067,27 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
             .upsert_point(op_num, point_id, vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     // Staged preload takes the CachedFs snapshot (t0).
-    let max_committed_id =
-        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
-            .expect("live preload");
+    let max_committed_id = futures::executor::block_on(
+        read_only.live_preload(&AtomicBool::new(false), HwMeasurementAcc::new()),
+    )
+    .expect("live preload");
 
     // After the listing snapshot was taken, writer appends more points and flushes.
     // 5000 points will cross chunk 0 capacity (4096) and create chunk 1!
@@ -987,7 +1102,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
             .upsert_point(op_num, point_id, vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
     // Now reload.
     // Under the safe read sequence, this reload commits at most the state probed
@@ -996,13 +1111,13 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         .live_reload(max_committed_id, &hw)
         .expect("first live reload");
     assert_eq!(
-        read_only.available_point_count(),
+        read_only.available_point_count(&HardwareCounterCell::new()),
         NUM_POINTS,
         "first reload must only commit up to the probed max_committed_id at preload time",
     );
 
     // All currently available points must have valid vectors.
-    for point_id in 1..=read_only.available_point_count() as u64 {
+    for point_id in 1..=read_only.available_point_count(&HardwareCounterCell::new()) as u64 {
         let vec = read_only
             .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
             .unwrap();
@@ -1014,7 +1129,10 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
 
     // A subsequent preload and reload cycle picks up the remaining points.
     preload_then_reload(&mut read_only, &hw).expect("second live reload");
-    assert_eq!(read_only.available_point_count(), 5000);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        5000
+    );
     for point_id in 1..=5000_u64 {
         let vec = read_only
             .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
@@ -1057,6 +1175,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     mutable.append_only_mutations = true;
@@ -1072,26 +1191,39 @@ fn test_live_reload_pure_delete_without_inserts() {
             .upsert_point(op_num, point_id, vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
-    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     // Delete a point without adding any new points (versions.dat length does not change)
     let op_num = NUM_POINTS as u64 + 1;
     mutable.delete_point(op_num, 5.into(), &hw).unwrap();
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
     preload_then_reload(&mut read_only, &hw).expect("live reload after delete");
     assert_eq!(
-        read_only.available_point_count(),
+        read_only.available_point_count(&HardwareCounterCell::new()),
         NUM_POINTS - 1,
         "pure delete must reduce available point count"
     );
     assert!(
-        !read_only.has_point(5.into(), DeferredBehavior::VisibleOnly),
+        !read_only.has_point(
+            5.into(),
+            DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         "deleted point must no longer be present"
     );
 }
@@ -1127,6 +1259,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     mutable.append_only_mutations = true;
@@ -1138,15 +1271,24 @@ fn test_live_preload_skips_list_when_unchanged() {
             .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
             .unwrap();
     }
-    mutable.flush(true).unwrap();
+    mutable.flush(true, &HardwareCounterCell::new()).unwrap();
 
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
 
     // First preload + reload
     preload_then_reload(&mut read_only, &hw).expect("first reload");
-    assert_eq!(read_only.available_point_count(), 10);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        10
+    );
 
     // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
     let config_path = mutable.data_path().join("config.json");
@@ -1159,9 +1301,10 @@ fn test_live_preload_skips_list_when_unchanged() {
     );
 
     // Call live_preload again without any writer changes
-    let max_committed_id =
-        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
-            .expect("second preload");
+    let max_committed_id = futures::executor::block_on(
+        read_only.live_preload(&AtomicBool::new(false), HwMeasurementAcc::new()),
+    )
+    .expect("second preload");
     assert_eq!(max_committed_id, Some(10));
 
     // Since nothing changed, live_preload skipped cache_file_info_async(), so cached_file_info remains None!
@@ -1178,7 +1321,10 @@ fn test_live_preload_skips_list_when_unchanged() {
     read_only
         .live_reload(max_committed_id, &hw)
         .expect("second reload");
-    assert_eq!(read_only.available_point_count(), 10);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        10
+    );
 }
 
 /// Regression test: `live_preload` runs under shared access, concurrently with readers.
@@ -1214,6 +1360,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     mutable.append_only_mutations = true;
@@ -1226,22 +1373,29 @@ fn test_live_preload_while_reader_holds_id_tracker() {
                 .upsert_point(i + 1, (i + 1).into(), vectors, &hw)
                 .unwrap();
         }
-        mutable.flush(true).unwrap();
+        mutable.flush(true, &HardwareCounterCell::new()).unwrap();
     };
 
     upsert(&mut mutable, 0..10);
-    let mut read_only =
-        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
-            .expect("read-only open");
+    let mut read_only = ReadOnlySegment::<MmapFile>::open(
+        &MmapFs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .expect("read-only open");
     upsert(&mut mutable, 10..20);
 
     let max_committed_id = {
         let reader = read_only.id_tracker.borrow();
-        let max_committed_id =
-            futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false)))
-                .expect("preload alongside a reader");
+        let max_committed_id = futures::executor::block_on(
+            read_only.live_preload(&AtomicBool::new(false), HwMeasurementAcc::new()),
+        )
+        .expect("preload alongside a reader");
         assert_eq!(
-            reader.available_point_count(),
+            reader.available_point_count(&HardwareCounterCell::new()),
             10,
             "preload must not change what readers see"
         );
@@ -1251,5 +1405,8 @@ fn test_live_preload_while_reader_holds_id_tracker() {
     read_only
         .live_reload(max_committed_id, &hw)
         .expect("reload");
-    assert_eq!(read_only.available_point_count(), 20);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        20
+    );
 }

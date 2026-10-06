@@ -110,7 +110,7 @@ fn make_segment(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(path, DIM, DISTANCE).unwrap();
+    let mut segment = build_simple_segment(path, DIM, DISTANCE, &hw_counter).unwrap();
     for n in sequence {
         let vector = only_default_vector(vectors[n]);
         segment
@@ -167,6 +167,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &HardwareCounterCell::new(),
     )
     .unwrap()
 }

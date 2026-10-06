@@ -76,6 +76,7 @@ pub fn open_turbo_vector_storage(
     distance: Distance,
     bits: TQBits,
     memory: Memory,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     // Like the immutable dense storages: no feature flag of its own, and predates the setting.
     let with_uring = use_io_uring(IoUringFallback::AsyncScorer, memory, true);
@@ -87,6 +88,7 @@ pub fn open_turbo_vector_storage(
         bits,
         memory.populate_on_open(),
         with_uring,
+        hw_counter,
     )
 }
 
@@ -100,6 +102,7 @@ pub fn open_turbo_vector_storage_with_uring(
     bits: TQBits,
     populate: bool,
     with_uring: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     // prevent "unused variable" warning
     let _ = with_uring;
@@ -107,7 +110,7 @@ pub fn open_turbo_vector_storage_with_uring(
     #[cfg(target_os = "linux")]
     if with_uring {
         match TurboVectorStorageImpl::<QuantizedStorage<IoUringFile>>::open_uring(
-            path, dim, distance, bits, populate,
+            path, dim, distance, bits, populate, hw_counter,
         ) {
             Ok(storage) => return Ok(VectorStorageEnum::DenseTurboUring(Box::new(storage))),
             Err(err) => {
@@ -117,7 +120,7 @@ pub fn open_turbo_vector_storage_with_uring(
     }
 
     let storage = TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
-        path, dim, distance, bits, populate,
+        path, dim, distance, bits, populate, hw_counter,
     )?;
     Ok(VectorStorageEnum::DenseTurboMemmap(Box::new(storage)))
 }
@@ -130,6 +133,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
         distance: Distance,
         bits: TQBits,
         populate: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedStorage::<MmapFile>::open(
@@ -137,8 +141,11 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
             &path.join(VECTORS_PATH),
             quantizer.quantized_size(),
             populate,
+            hw_counter,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(
+            storage, quantizer, path, dim, distance, populate, true, hw_counter,
+        )
     }
 }
 
@@ -151,6 +158,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
         distance: Distance,
         bits: TQBits,
         populate: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedStorage::<IoUringFile>::open(
@@ -158,8 +166,11 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
             &path.join(VECTORS_PATH),
             quantizer.quantized_size(),
             populate,
+            hw_counter,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(
+            storage, quantizer, path, dim, distance, populate, true, hw_counter,
+        )
     }
 }
 
@@ -170,11 +181,14 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
         dim: usize,
         distance: Distance,
         bits: TQBits,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let on_disk = graph.is_on_disk();
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
-        Self::finalize(storage, quantizer, path, dim, distance, !on_disk, on_disk)
+        Self::finalize(
+            storage, quantizer, path, dim, distance, !on_disk, on_disk, hw_counter,
+        )
     }
 
     pub fn io_backend(&self) -> Option<IoBackend> {
@@ -189,6 +203,7 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
 impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
+    #[expect(clippy::too_many_arguments)]
     fn finalize(
         storage: B,
         quantizer: TurboQuantizer,
@@ -197,6 +212,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
         distance: Distance,
         populate: bool,
         on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::open_or_create(
@@ -204,6 +220,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
             Populate::from(populate),
+            hw_counter,
         )?;
         let deleted_count = deleted.count_trues();
 
@@ -219,14 +236,18 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     }
 
     /// Raw encoded vector blob for one vector (no dequantization).
-    pub fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.storage.get_vector_data(key)
+    pub fn get_quantized_vector(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.storage.get_vector_data(key, hw_counter)
     }
 
     /// Populate all pages of the encoded vectors into the page cache.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // deleted bitvec is already loaded
-        self.storage.populate();
+        self.storage.populate(hw_counter);
         Ok(())
     }
 
@@ -249,8 +270,13 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
 
     /// Set the deleted flag for `key`, keeping `deleted_count` in sync, and
     /// return the previous state.
-    fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if !deleted && self.storage.vectors_count() <= key as usize {
+    fn set_deleted(
+        &mut self,
+        key: PointOffsetType,
+        deleted: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        if !deleted && self.storage.vectors_count(hw_counter) <= key as usize {
             return false;
         }
 
@@ -280,9 +306,10 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let v1 = self.storage.get_vector_data(point_a);
-        let v2 = self.storage.get_vector_data(point_b);
+        let v1 = self.storage.get_vector_data(point_a, hw_counter);
+        let v2 = self.storage.get_vector_data(point_b, hw_counter);
         shared::score_symmetric_bytes(&self.quantizer, self.distance, &v1, &v2)
     }
 }
@@ -292,15 +319,20 @@ impl<B: TurboVectorBlob> std::fmt::Debug for TurboVectorStorageImpl<B> {
         f.debug_struct("TurboVectorStorageImpl")
             .field("dim", &self.dim)
             .field("distance", &self.distance)
-            .field("total_vector_count", &self.storage.vectors_count())
+            .field(
+                "total_vector_count",
+                &self
+                    .storage
+                    .vectors_count(&HardwareCounterCell::disposable()),
+            )
             .field("deleted_count", &self.deleted_count)
             .finish_non_exhaustive()
     }
 }
 
 impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.quantized_vector_size()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter) * self.quantized_vector_size()
     }
 
     fn distance(&self) -> Distance {
@@ -315,15 +347,19 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         self.on_disk
     }
 
-    fn total_vector_count(&self) -> usize {
-        self.storage.vectors_count()
+    fn total_vector_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.storage.vectors_count(hw_counter)
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         shared::dequantize_vector(
             &self.quantizer,
             self.dim,
-            &self.storage.get_vector_data(key),
+            &self.storage.get_vector_data(key, hw_counter),
         )
     }
 
@@ -331,19 +367,28 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.storage
-            .for_each_in_batch(&point_offsets, |idx, bytes| {
-                let vector = shared::dequantize_vector(&self.quantizer, self.dim, bytes);
-                callback(user_data[idx], point_offsets[idx], vector);
-            })
+            .for_each_in_batch(
+                &point_offsets,
+                |idx, bytes| {
+                    let vector = shared::dequantize_vector(&self.quantizer, self.dim, bytes);
+                    callback(user_data[idx], point_offsets[idx], vector);
+                },
+                hw_counter,
+            )
             .expect("read TQ vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        let bytes = self.storage.get_vector_data_opt(key)?;
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
+        let bytes = self.storage.get_vector_data_opt(key, hw_counter)?;
         Some(shared::dequantize_vector(&self.quantizer, self.dim, &bytes))
     }
 
@@ -363,8 +408,9 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.read_dense_tq_bytes::<P, U>(keys, callback)
+        self.read_dense_tq_bytes::<P, U>(keys, callback, hw_counter)
     }
 }
 
@@ -378,9 +424,9 @@ impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
         Err(error_immutable_insert())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         let storage_flusher = self.storage.flusher();
-        let deleted_flusher = self.deleted.flusher();
+        let deleted_flusher = self.deleted.flusher(hw_counter);
 
         Box::new(move || {
             storage_flusher()?;
@@ -399,8 +445,12 @@ impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
         self.storage.files()
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        Ok(!self.set_deleted(key, true))
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Ok(!self.set_deleted(key, true, hw_counter))
     }
 }
 
@@ -418,21 +468,33 @@ impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.storage
-            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
+        self.storage.score_query_batch(
+            &self.quantizer,
+            self.distance,
+            query,
+            ids,
+            scores,
+            hw_counter,
+        );
     }
 
     fn score_internal_encoded(
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        Self::score_internal_encoded(self, point_a, point_b)
+        Self::score_internal_encoded(self, point_a, point_b, hw_counter)
     }
 
-    fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        Self::get_quantized_vector(self, key)
+    fn get_quantized_vector(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        Self::get_quantized_vector(self, key, hw_counter)
     }
 }
 
@@ -445,40 +507,50 @@ impl<B: TurboVectorBlob> DenseTQVectorStorageRead for TurboVectorStorageImpl<B> 
         self.quantizer.quantized_size()
     }
 
-    fn get_dense_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.storage.get_vector_data(key)
+    fn get_dense_tq<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.storage.get_vector_data(key, hw_counter)
     }
 
     fn for_each_in_dense_tq_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage.for_each_in_batch(keys, f)
+        self.storage.for_each_in_batch(keys, f, hw_counter)
     }
 
     fn read_dense_tq_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
-        self.storage
-            .for_each_in_batch(&point_offsets, |idx, bytes| {
+        self.storage.for_each_in_batch(
+            &point_offsets,
+            |idx, bytes| {
                 callback(user_data[idx], point_offsets[idx], bytes.to_vec());
-            })
+            },
+            hw_counter,
+        )
     }
 
     fn get_dense_for_requantization(
         &self,
         key: PointOffsetType,
         keep_rotated: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> DenseVector {
         shared::dequantize_for_requantization(
             &self.quantizer,
             self.dim,
-            &self.storage.get_vector_data(key),
+            &self.storage.get_vector_data(key, hw_counter),
             keep_rotated,
         )
     }
@@ -489,6 +561,7 @@ impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<GraphVect
         &mut self,
         _other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         _stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         Err(OperationError::service_error(
             "Cannot merge into a graph-backed vector storage",
@@ -501,8 +574,9 @@ impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<Quantized
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.storage.vectors_count() as PointOffsetType;
+        let start_index = self.storage.vectors_count(hw_counter) as PointOffsetType;
         let mut end_index = start_index;
         let mut deleted_offsets = Vec::new();
 
@@ -522,10 +596,10 @@ impl<S: UniversalRead> DenseTQVectorStorage for TurboVectorStorageImpl<Quantized
             .into_inner()
             .map_err(io::IntoInnerError::into_error)?;
         file.sync_data()?;
-        self.storage.reload()?;
+        self.storage.reload(hw_counter)?;
 
         for key in deleted_offsets {
-            self.set_deleted(key, true);
+            self.set_deleted(key, true, hw_counter);
         }
 
         Ok(start_index..end_index)

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 
 use crate::collection::Collection;
@@ -11,13 +12,14 @@ impl Collection {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CollectionTelemetry> {
         let (shards_telemetry, transfers, resharding) = {
             if detail.level >= DetailsLevel::Level3 {
                 let shards_holder = self.shards_holder.read().await;
                 let mut shards_telemetry = Vec::new();
                 for shard in shards_holder.all_shards() {
-                    shards_telemetry.push(shard.get_telemetry_data(detail, timeout).await?)
+                    shards_telemetry.push(shard.get_telemetry_data(detail, timeout, hw_acc).await?)
                 }
                 (
                     Some(shards_telemetry),

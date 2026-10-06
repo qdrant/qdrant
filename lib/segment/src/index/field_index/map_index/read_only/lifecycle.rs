@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::MapIndexKey;
@@ -19,8 +20,9 @@ where
     pub fn preopen_appendable(
         fs: &impl CachedReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyAppendableMapIndex::<N, S>::preopen(fs, dir)
+        ReadOnlyAppendableMapIndex::<N, S>::preopen(fs, dir, hw_counter)
     }
 
     /// Read-only mirror of [`MapIndex::new_gridstore`][1]: open the appendable
@@ -37,14 +39,16 @@ where
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableMapIndex::open(fs, dir)?.map(Self::Appendable))
+        Ok(ReadOnlyAppendableMapIndex::open(fs, dir, hw_counter)?.map(Self::Appendable))
     }
 
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         is_on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -54,7 +58,7 @@ where
             false => Populate::PreferBackground,
         };
 
-        OnDiskMapIndex::<N, S>::preopen(fs, dir, populate)
+        OnDiskMapIndex::<N, S>::preopen(fs, dir, populate, hw_counter)
     }
 
     /// Read-only mirror of [`MapIndex::new_mmap`][1]: open the immutable
@@ -74,6 +78,7 @@ where
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -82,7 +87,9 @@ where
             true => Populate::No,
             false => Populate::PreferBackground,
         };
-        let Some(on_disk_index) = OnDiskMapIndex::open(fs, path, populate, deleted_points)? else {
+        let Some(on_disk_index) =
+            OnDiskMapIndex::open(fs, path, populate, deleted_points, hw_counter)?
+        else {
             return Ok(None);
         };
 

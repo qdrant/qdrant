@@ -113,7 +113,9 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_multi::<Random>(idx);
+        let stored = self
+            .vector_storage
+            .get_multi::<Random>(idx, &self.hardware_counter);
         self.hardware_counter
             .vector_io_read()
             .incr_delta(stored.as_ref().vectors_count());
@@ -125,11 +127,14 @@ impl<
         debug_assert_eq!(ids.len(), scores.len());
 
         let vectors_read = self.hardware_counter.vector_io_read();
-        self.vector_storage
-            .for_each_in_batch_multi(ids, |idx, vector| {
+        self.vector_storage.for_each_in_batch_multi(
+            ids,
+            |idx, vector| {
                 vectors_read.incr_delta(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
+            },
+            &self.hardware_counter,
+        );
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

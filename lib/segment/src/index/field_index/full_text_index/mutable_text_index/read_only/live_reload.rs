@@ -17,8 +17,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        Ok(self.storage.live_preload(fs)?)
+        Ok(self.storage.live_preload(fs, hw_counter)?)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
@@ -28,12 +29,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
         new_points: &SortedSlice<'_, PointOffsetType>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage.live_reload(fs)?;
+        self.storage.live_reload(fs, hw_counter)?;
 
         let inner = &mut self.inner;
 
         for &deleted_point in deleted_points {
-            inner.inverted_index.remove(deleted_point);
+            inner.inverted_index.remove(deleted_point, hw_counter);
         }
 
         self.storage
@@ -56,6 +57,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                     Ok(true)
                 },
                 hw_counter.payload_index_io_read_counter(),
+                hw_counter,
             )?;
 
         Ok(())

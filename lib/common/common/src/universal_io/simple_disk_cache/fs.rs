@@ -7,6 +7,7 @@ use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
 use super::{DiskCacheRemote, block_aligned_fetch};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Sequential;
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -116,9 +117,10 @@ impl<R: UniversalRead> DiskCacheFs<R> {
         &self,
         path: impl AsRef<Path>,
         extra: <R::Fs as UniversalReadFs>::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<R> {
         self.remote_fs
-            .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra)
+            .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra, hw_counter)
     }
 }
 
@@ -160,12 +162,16 @@ where
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files(prefix_path)
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files(prefix_path, hw_counter)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
-        self.remote_fs.exists(path)
+    fn exists(&self, path: &Path, hw_counter: &HardwareCounterCell) -> UioResult<bool> {
+        self.remote_fs.exists(path, hw_counter)
     }
 
     fn open(
@@ -173,6 +179,7 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<DiskCache<R>> {
         // The cache is strictly read-only: appends (and any other writes)
         // must go directly to the backing storage, not through the cache.
@@ -197,7 +204,7 @@ where
             (None, Populate::Auto | Populate::No) => State::Uninit,
             // We know file length, initialize local state.
             (Some(len), Populate::Auto | Populate::No) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone(), hw_counter)?;
 
                 let local = LocalState::new(&local_path, len, options)?;
 
@@ -205,12 +212,12 @@ where
             }
             // Even if we know length, we don't need it to do `schedule_whole`.
             (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone(), hw_counter)?;
 
                 let mut pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule_whole((), 0)?;
+                pipeline.schedule_whole((), 0, hw_counter)?;
 
                 State::OpenPrefill { pipeline }
             }
@@ -220,12 +227,12 @@ where
             }
             // Schedule a partial block-aligned read.
             (known_len, Populate::Partial(range)) => {
-                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone(), hw_counter)?;
 
                 // `Partial` must create the local file, so we need the length up front.
                 let file_len = match known_len {
                     Some(len) => len,
-                    None => remote.len::<u8>()?,
+                    None => remote.len::<u8>(hw_counter)?,
                 };
 
                 let requested_byte_range = range.into_byte_range::<u8>();
@@ -240,6 +247,7 @@ where
                         blocks_range,
                         byte_range,
                         REMOTE_READ_ALIGNMENT,
+                        hw_counter,
                     )?;
 
                     State::PartialPrefill {
@@ -266,7 +274,7 @@ where
 
         if matches!(populate, Populate::Blocking) {
             // Force the prefill to resolve before returning.
-            cache.state()?;
+            cache.state(hw_counter)?;
         }
 
         Ok(cache)

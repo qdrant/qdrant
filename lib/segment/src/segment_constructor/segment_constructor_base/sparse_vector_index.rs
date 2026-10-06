@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 
 use crate::common::operation_error::OperationResult;
@@ -11,12 +12,14 @@ use crate::types::{Memory, VectorStorageDatatype};
 #[cfg(feature = "testing")]
 pub fn create_sparse_vector_index_test(
     args: SparseVectorIndexOpenArgs<MmapFs, impl FnMut()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorIndexEnum> {
-    open_or_create_sparse_vector_index(args)
+    open_or_create_sparse_vector_index(args, hw_counter)
 }
 
 pub(crate) fn open_or_create_sparse_vector_index(
     args: SparseVectorIndexOpenArgs<MmapFs, impl FnMut()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorIndexEnum> {
     // Effective placement of the mmap index at load time, degraded by low-memory mode.
     // Cold and cached share the mmap index variant; cached additionally primes the page
@@ -49,25 +52,31 @@ pub(crate) fn open_or_create_sparse_vector_index(
         args.config.datatype.unwrap_or_default(),
     ) {
         (SparseIndexType::MutableRam, _) => {
-            VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseRam(SparseVectorIndex::open(args, hw_counter)?)
         }
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
-            VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(
+                args, hw_counter,
+            )?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
-            VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args, hw_counter)?)
         }
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
-            VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(
+                args, hw_counter,
+            )?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
-            VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args, hw_counter)?)
         }
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
-            VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(
+                args, hw_counter,
+            )?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
-            VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args, hw_counter)?)
         }
         (_, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
             unreachable!("Sparse index incompatible with turbo. Validated at API level.")
@@ -75,7 +84,7 @@ pub(crate) fn open_or_create_sparse_vector_index(
     };
 
     if memory_placement == Memory::Cached {
-        vector_index.populate()?;
+        vector_index.populate(hw_counter)?;
     }
 
     Ok(vector_index)

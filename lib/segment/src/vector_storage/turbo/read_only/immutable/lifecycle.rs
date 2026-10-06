@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use quantization::turboquant::TQBits;
 
@@ -21,9 +22,10 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate);
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate, hw_counter);
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
         Ok(())
     }
 
@@ -37,17 +39,22 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
         distance: Distance,
         bits: TQBits,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
-        let storage =
-            QuantizedStorage::from_file(fs, &path.join(VECTORS_PATH), quantizer.quantized_size())?;
+        let storage = QuantizedStorage::from_file(
+            fs,
+            &path.join(VECTORS_PATH),
+            quantizer.quantized_size(),
+            hw_counter,
+        )?;
 
         // The read-only backend maps lazily; warm it when the load profile asks.
         if !matches!(populate, Populate::No) {
-            storage.populate();
+            storage.populate(hw_counter);
         }
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
 
         Ok(Self {
             storage,
@@ -68,13 +75,14 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>> 
         dim: usize,
         distance: Distance,
         bits: TQBits,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         Ok(Self {
             on_disk: graph.is_on_disk(),
             storage: GraphVectors::new(graph, quantizer.quantized_size())?,
             quantizer,
-            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,
+            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?,
             distance,
             dim,
         })

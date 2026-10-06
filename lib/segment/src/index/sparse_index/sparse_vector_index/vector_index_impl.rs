@@ -74,7 +74,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
         self.with_view(|view| view.indexed_vector_count())
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.with_view(|view| view.size_of_searchable_vectors_in_bytes())
     }
 
@@ -136,14 +136,14 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
             let old_vector = vector_storage
-                .get_vector_opt::<Random>(id)
+                .get_vector_opt::<Random>(id, hw_counter)
                 .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
                 vector_storage.insert_vector(id, vector, hw_counter)?;
                 vector.to_owned()
             } else {
                 let default_vector = vector_storage.default_vector();
-                if id as usize >= vector_storage.total_vector_count() {
+                if id as usize >= vector_storage.total_vector_count(hw_counter) {
                     // Vector doesn't exist in the storage
                     // Insert default vector to keep the sequence
                     vector_storage.insert_vector(
@@ -152,7 +152,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                         hw_counter,
                     )?;
                 }
-                vector_storage.delete_vector(id)?;
+                vector_storage.delete_vector(id, hw_counter)?;
                 default_vector
             };
             (old_vector, new_vector)

@@ -65,6 +65,7 @@ mod tests {
                 Distance::Dot,
                 AdviceSetting::Global,
                 false,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
@@ -74,11 +75,13 @@ mod tests {
             }
             for id in 0..POINT_COUNT {
                 if rng.random_bool(0.1) {
-                    storage.delete_vector(id).unwrap();
+                    storage
+                        .delete_vector(id, &HardwareCounterCell::new())
+                        .unwrap();
                     deleted_ids.push(id);
                 }
             }
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
@@ -88,10 +91,14 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
-        assert_eq!(storage.total_vector_count(), POINT_COUNT as usize);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            POINT_COUNT as usize
+        );
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.deleted_vector_count(), deleted_ids.len());
 
@@ -99,7 +106,7 @@ mod tests {
             assert_eq!(storage.is_deleted_vector(id), deleted_ids.contains(&id));
 
             let got: DenseVector = storage
-                .get_vector::<Random>(id)
+                .get_vector::<Random>(id, &HardwareCounterCell::new())
                 .to_owned()
                 .try_into()
                 .unwrap();
@@ -143,6 +150,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for (id, vector) in first.iter().enumerate() {
@@ -150,7 +158,7 @@ mod tests {
                 .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
             &MmapFs,
@@ -159,9 +167,13 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
-        assert_eq!(reader.total_vector_count(), first.len());
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len()
+        );
 
         // Append new vectors and delete a few existing ones through the writer.
         for (offset, vector) in second.iter().enumerate() {
@@ -175,9 +187,11 @@ mod tests {
         }
         let deleted_ids: Vec<PointOffsetType> = vec![3, 50, 199];
         for &id in &deleted_ids {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
         drop(writer);
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
@@ -187,8 +201,12 @@ mod tests {
         let new = SortedSlice::new(&new_ids).unwrap();
         if preload {
             let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
-            cached_fs.cache_file_info().unwrap();
-            reader.live_preload(&cached_fs).unwrap();
+            cached_fs
+                .cache_file_info(&HardwareCounterCell::new())
+                .unwrap();
+            reader
+                .live_preload(&cached_fs, &HardwareCounterCell::new())
+                .unwrap();
             futures::executor::block_on(cached_fs.wait_all());
 
             fs_err::remove_dir_all(dir.path()).unwrap();
@@ -198,12 +216,15 @@ mod tests {
             reader.live_reload(&MmapFs, &deleted, &new, &hw).unwrap();
         }
 
-        assert_eq!(reader.total_vector_count(), first.len() + second.len());
+        assert_eq!(
+            reader.total_vector_count(&HardwareCounterCell::new()),
+            first.len() + second.len()
+        );
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
 
         // The appended vector is now visible and correct.
         let got: DenseVector = reader
-            .get_vector::<Random>(first.len() as PointOffsetType)
+            .get_vector::<Random>(first.len() as PointOffsetType, &HardwareCounterCell::new())
             .to_owned()
             .try_into()
             .unwrap();
@@ -231,12 +252,13 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
             .unwrap();
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
             &MmapFs,
@@ -245,14 +267,17 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
         writer
             .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
             .unwrap();
-        writer.delete_vector(1).unwrap();
-        writer.flusher()().unwrap();
+        writer
+            .delete_vector(1, &HardwareCounterCell::new())
+            .unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = vec![1];
@@ -265,7 +290,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 2);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 2);
         assert!(reader.is_deleted_vector(1));
     }
 
@@ -284,6 +309,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for id in 0..3u32 {
@@ -291,7 +317,7 @@ mod tests {
                 .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
             &MmapFs,
@@ -300,6 +326,7 @@ mod tests {
             Distance::Dot,
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -310,9 +337,11 @@ mod tests {
         }
         let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
         for &id in &deleted_appended {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = (3..8).collect();
@@ -325,7 +354,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 8);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 8);
         for id in 3..8 {
             assert_eq!(
                 reader.is_deleted_vector(id),

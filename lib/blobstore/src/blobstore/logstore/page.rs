@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use ahash::{HashMap, HashSet};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
@@ -49,9 +50,10 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         fs: &Fs,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
+            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX), hw_counter)?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -65,6 +67,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,
+                hw_counter,
             );
         }
         Ok(())
@@ -79,9 +82,10 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         dir: &Path,
         writeable: bool,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
+            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX), hw_counter)?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -92,7 +96,9 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
             if !page_files.contains(&path) {
                 break;
             }
-            pages.push(AppendOnlyPage::open(fs, path, populate, writeable)?);
+            pages.push(AppendOnlyPage::open(
+                fs, path, populate, writeable, hw_counter,
+            )?);
         }
 
         if pages.is_empty() {
@@ -134,6 +140,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
     pub(super) fn read_value<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Cow<'_, [u8]>> {
         let page =
             self.pages
@@ -141,7 +148,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 .ok_or(BlobstoreError::PageNotFound {
                     page_id: pointer.page_id,
                 })?;
-        page.read_value::<P>(pointer)
+        page.read_value::<P>(pointer, hw_counter)
     }
 
     /// Batch-read the raw value bytes at the given pointers and execute the callback for each.
@@ -156,6 +163,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         &self,
         mut pointers: impl Iterator<Item = (U, ValuePointer)>,
         mut callback: impl FnMut(U, Cow<'_, [u8]>) -> Result<bool, E>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -189,12 +197,18 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 }
 
                 pipeline
-                    .schedule::<P>(user_data, &page.file, start..end, align_of::<u8>())
+                    .schedule::<P>(
+                        user_data,
+                        &page.file,
+                        start..end,
+                        align_of::<u8>(),
+                        hw_counter,
+                    )
                     .map_err(BlobstoreError::from)?;
             }
 
             let Some((user_data, bytes)) = pipeline
-                .wait_bytemuck::<u8>()
+                .wait_bytemuck::<u8>(hw_counter)
                 .map_err(BlobstoreError::from)?
             else {
                 break;
@@ -214,9 +228,10 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         &mut self,
         fs: &Fs,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let page_list: HashMap<_, _> = fs
-            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX), hw_counter)?
             .into_iter()
             .map(|listed| (listed.path, listed.size))
             .collect();
@@ -235,7 +250,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                     "Page {page_idx} is truncated"
                 )));
             }
-            page.live_reload()?;
+            page.live_reload(hw_counter)?;
         }
 
         // Load new pages
@@ -245,16 +260,16 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 break;
             }
             self.pages
-                .push(AppendOnlyPage::open(fs, path, populate, false)?);
+                .push(AppendOnlyPage::open(fs, path, populate, false, hw_counter)?);
         }
 
         Ok(())
     }
 
     /// Populate all page files into the RAM cache.
-    pub(super) fn populate(&self) -> Result<()> {
+    pub(super) fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
         for page in &self.pages {
-            page.file.populate()?;
+            page.file.populate(hw_counter)?;
         }
         Ok(())
     }
@@ -271,9 +286,10 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         &self,
         fs: &Fs,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
         let page_list: HashMap<_, _> = fs
-            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX), hw_counter)?
             .into_iter()
             .map(|listed| (listed.path, listed.size))
             .collect();
@@ -282,7 +298,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
 
         // Reload pages
         for page in &self.pages {
-            futs.push(page.live_preload(fs)?);
+            futs.push(page.live_preload(fs, hw_counter)?);
         }
 
         // Load new pages
@@ -295,6 +311,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
                 &path,
                 Some(AppendOnlyPage::<S>::open_options(populate, false)),
                 None,
+                hw_counter,
             );
         }
         Ok(futs)
@@ -305,11 +322,11 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// Create a new empty page 0 in the given directory, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    pub(super) fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
+    pub(super) fn new<Fs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let page = AppendOnlyPage::new(fs, page_file_name(dir, 0))?;
+        let page = AppendOnlyPage::new(fs, page_file_name(dir, 0), hw_counter)?;
         Ok(Self {
             dir: dir.to_path_buf(),
             pages: vec![page],
@@ -330,6 +347,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
         fs: &Fs,
         value: &[u8],
         page_capacity_bytes: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(PageId, BlockOffset)>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
@@ -340,7 +358,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
             .expect("there is always at least one page");
         if last.len() > 0 && last.len() + value.len() as u64 > page_capacity_bytes {
             let page_id = self.pages.len() as PageId;
-            let page = AppendOnlyPage::new(fs, page_file_name(&self.dir, page_id))?;
+            let page = AppendOnlyPage::new(fs, page_file_name(&self.dir, page_id), hw_counter)?;
             self.pages.push(page);
         }
 
@@ -366,9 +384,13 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// gained data since; for the older, sealed pages a stale target is a no-op.
     ///
     /// This does not sync the files to disk, use [`flusher`](Self::flusher) afterwards.
-    pub(super) fn write_pending(&mut self, targets: &[u64]) -> Result<()> {
+    pub(super) fn write_pending(
+        &mut self,
+        targets: &[u64],
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         for (page, target_len) in self.pages.iter_mut().zip(targets) {
-            page.write_pending(*target_len)?;
+            page.write_pending(*target_len, hw_counter)?;
         }
         Ok(())
     }
@@ -428,12 +450,14 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
         path: PathBuf,
         populate: Populate,
         writeable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let file = fs
             .open(
                 &path,
                 Self::open_options(populate, writeable),
                 Default::default(),
+                hw_counter,
             )
             .map_err(|err| {
                 if err.is_not_found() {
@@ -445,7 +469,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                     BlobstoreError::from(err)
                 }
             })?;
-        let persisted_len = file.len::<u8>()?;
+        let persisted_len = file.len::<u8>(hw_counter)?;
         Ok(Self {
             path,
             file,
@@ -465,7 +489,11 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     ///
     /// The pointer offset is the byte offset within this page, values are packed without blocks
     /// or alignment. Values that haven't been flushed yet are served from the in-memory buffer.
-    fn read_value<P: AccessPattern>(&self, pointer: ValuePointer) -> Result<Cow<'_, [u8]>> {
+    fn read_value<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Cow<'_, [u8]>> {
         let start = u64::from(pointer.block_offset);
         let end = start + u64::from(pointer.length);
 
@@ -475,7 +503,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
                 byte_offset: start,
                 length: u64::from(pointer.length),
             };
-            return Ok(self.file.read(range, P::default())?);
+            return Ok(self.file.read(range, P::default(), hw_counter)?);
         }
 
         Ok(Cow::Borrowed(self.pending_value(pointer)?))
@@ -506,10 +534,12 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
-        Ok(Box::pin(
-            self.file.live_preload(|path| fs.cached_file_info(path))?,
-        ))
+        Ok(Box::pin(self.file.live_preload(
+            |path| fs.cached_file_info(path),
+            hw_counter,
+        )?))
     }
 
     /// Reload the page file handle and reload its length, making newly appended value data
@@ -517,13 +547,13 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
     ///
     /// The reload is a no-op for backends that read the file directly, those see newly appended
     /// data without it.
-    fn live_reload(&mut self) -> Result<()> {
+    fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> Result<()> {
         debug_assert!(
             self.pending.is_empty(),
             "live reload must only be used on read-only instances",
         );
-        self.file.live_reload()?;
-        self.persisted_len = self.file.len::<u8>()?;
+        self.file.live_reload(hw_counter)?;
+        self.persisted_len = self.file.len::<u8>(hw_counter)?;
         Ok(())
     }
 }
@@ -532,15 +562,16 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// Create a new empty page file at the given path, truncating it if it already exists.
     ///
     /// The directory must exist already.
-    fn new<Fs>(fs: &Fs, path: PathBuf) -> Result<Self>
+    fn new<Fs>(fs: &Fs, path: PathBuf, hw_counter: &HardwareCounterCell) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        fs.create(&path, 0)?;
+        fs.create(&path, 0, hw_counter)?;
         let file = fs.open(
             &path,
             Self::open_options(Populate::No, true),
             Default::default(),
+            hw_counter,
         )?;
         Ok(Self {
             path,
@@ -585,7 +616,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// append would have ended.
     ///
     /// This does not sync the file to disk, use [`flusher`](Self::flusher) afterwards.
-    fn write_pending(&mut self, target_len: u64) -> Result<()> {
+    fn write_pending(&mut self, target_len: u64, hw_counter: &HardwareCounterCell) -> Result<()> {
         if target_len <= self.persisted_len {
             return Ok(());
         }
@@ -598,15 +629,18 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
         let count = count.min(self.pending.len());
         let end = self.persisted_len + count as u64;
 
-        match self.file.append(self.persisted_len, &self.pending[..count]) {
+        match self
+            .file
+            .append(self.persisted_len, &self.pending[..count], hw_counter)
+        {
             Ok(()) => {}
             // A retried append after a lost acknowledgement conflicts instead of appending
             // twice. If the file ends exactly where this append would have ended, the bytes
             // landed before; adopt them as persisted. Any other length means the file was
             // modified outside this writer.
             Err(UniversalIoError::AppendOffsetConflict { .. }) => {
-                self.file.live_reload()?;
-                let len = self.file.len::<u8>()?;
+                self.file.live_reload(hw_counter)?;
+                let len = self.file.len::<u8>(hw_counter)?;
                 if len != end {
                     return Err(BlobstoreError::service_error(format!(
                         "append-only page file {} was modified outside this writer: it ends \
@@ -646,7 +680,8 @@ mod tests {
     fn test_page_append_rejects_beyond_addressable_range() {
         let dir = TempDir::new().unwrap();
         let path = page_file_name(dir.path(), 0);
-        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, path).unwrap();
+        let mut page =
+            AppendOnlyPage::<MmapFile>::new(&MmapFs, path, &HardwareCounterCell::new()).unwrap();
 
         // Pretend the page already holds the maximum addressable amount of data
         page.persisted_len = u64::from(u32::MAX) + 1;
@@ -671,7 +706,9 @@ mod tests {
     fn test_write_pending_adopts_lost_append_on_conflict() {
         let dir = TempDir::new().unwrap();
         let path = page_file_name(dir.path(), 0);
-        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone()).unwrap();
+        let mut page =
+            AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone(), &HardwareCounterCell::new())
+                .unwrap();
 
         page.append_value(&[1, 2, 3, 4]).unwrap();
 
@@ -679,7 +716,7 @@ mod tests {
         // (previously empty) file, but the page still counts them as pending
         fs::write(&path, [1, 2, 3, 4]).unwrap();
 
-        page.write_pending(4).unwrap();
+        page.write_pending(4, &HardwareCounterCell::new()).unwrap();
         assert_eq!(page.persisted_len, 4);
         assert!(page.pending.is_empty());
         assert_eq!(
@@ -695,14 +732,18 @@ mod tests {
     fn test_write_pending_rejects_foreign_growth() {
         let dir = TempDir::new().unwrap();
         let path = page_file_name(dir.path(), 0);
-        let mut page = AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone()).unwrap();
+        let mut page =
+            AppendOnlyPage::<MmapFile>::new(&MmapFs, path.clone(), &HardwareCounterCell::new())
+                .unwrap();
 
         page.append_value(&[1, 2, 3, 4]).unwrap();
 
         // Something else grew the (previously empty) file to an unexpected length
         fs::write(&path, [9; 7]).unwrap();
 
-        let err = page.write_pending(4).unwrap_err();
+        let err = page
+            .write_pending(4, &HardwareCounterCell::new())
+            .unwrap_err();
         assert!(matches!(err, BlobstoreError::ServiceError { .. }));
 
         // Nothing was adopted, the pending bytes are kept for a later flush

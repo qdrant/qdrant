@@ -37,6 +37,7 @@ fn encode_bench(c: &mut Criterion) {
         2,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

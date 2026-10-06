@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::UniversalReadFs;
 
 use super::{ReadOnlyIndexesMap, ReadOnlyStructPayloadIndex};
@@ -53,12 +54,13 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
         &self,
         fs: &impl UniversalReadFs<File = S>,
         new_config: PayloadConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PayloadIndexReloadDiff<S>> {
         let mut added: ReadOnlyIndexesMap<S> = Default::default();
         {
             let id_tracker = self.id_tracker.borrow();
             let total_point_count = id_tracker.total_point_count();
-            let deleted_points = id_tracker.deleted_point_bitslice();
+            let deleted_points = id_tracker.deleted_point_bitslice(hw_counter);
 
             for (field, indexed) in new_config.indices.iter() {
                 // Unchanged fields keep their already-loaded indexes untouched.
@@ -80,6 +82,7 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
                         total_point_count,
                         deleted_points,
                         None,
+                        hw_counter,
                     )? {
                         indexes.push(index);
                     }

@@ -172,15 +172,17 @@ fn rewrite_append_at_offset_zero_creates_the_missing_object() {
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())
-        .open_append("bucket/obj", open_options())
+        .open_append("bucket/obj", open_options(), &HardwareCounterCell::new())
         .unwrap();
 
-    file.append(0, b"abc".as_slice()).unwrap();
+    file.append(0, b"abc".as_slice(), &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(source.content().unwrap(), b"abc");
 
-    file.append(3, b"de".as_slice()).unwrap();
+    file.append(3, b"de".as_slice(), &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(source.content().unwrap(), b"abcde");
-    assert_eq!(file.len::<u8>().unwrap(), 5);
+    assert_eq!(file.len::<u8>(&HardwareCounterCell::new()).unwrap(), 5);
 
     // Both appends are below the threshold: rewrites only.
     assert_eq!(source.direct_appends.load(Ordering::Relaxed), 0);
@@ -196,15 +198,19 @@ fn rewrite_appends_are_counted_as_remote_requests() {
     let source = ThresholdMockSource::default();
     let fs = cached_fs(&source, tmp.path());
     let stats = fs.stats();
-    let mut file = fs.open_append("bucket/obj", open_options()).unwrap();
+    let mut file = fs
+        .open_append("bucket/obj", open_options(), &HardwareCounterCell::new())
+        .unwrap();
 
-    file.append(0, b"abc".as_slice()).unwrap();
+    file.append(0, b"abc".as_slice(), &HardwareCounterCell::new())
+        .unwrap();
     let after_create = stats.snapshot();
     assert_eq!(after_create.op(Op::Save).completed, 1);
     assert_eq!(after_create.op(Op::Save).bytes, 3);
     assert_eq!(after_create.op(Op::Append).started, 0);
 
-    file.append(3, b"de".as_slice()).unwrap();
+    file.append(3, b"de".as_slice(), &HardwareCounterCell::new())
+        .unwrap();
     let delta = stats.snapshot().delta_since(&after_create);
     assert_eq!(delta.op(Op::Read).completed, 1);
     assert_eq!(delta.op(Op::Read).bytes, 3);
@@ -220,10 +226,12 @@ fn rewrite_append_at_nonzero_offset_on_a_missing_object_conflicts() {
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())
-        .open_append("bucket/obj", open_options())
+        .open_append("bucket/obj", open_options(), &HardwareCounterCell::new())
         .unwrap();
 
-    let err = file.append(3, b"de".as_slice()).unwrap_err();
+    let err = file
+        .append(3, b"de".as_slice(), &HardwareCounterCell::new())
+        .unwrap_err();
     assert_matches!(
         err,
         UniversalIoError::AppendOffsetConflict { offset: 3, .. }

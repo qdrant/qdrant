@@ -8,6 +8,7 @@
 //! - [`inner`]: the schedule/wait engine ([`PipelineInner`](inner::PipelineInner))
 //!   backing the pipeline.
 
+use common::counter::hardware_counter::HardwareCounterCell;
 mod buffer;
 mod inner;
 
@@ -63,6 +64,7 @@ where
         file: &'file BlobFile<A>,
         range: Range<u64>,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         let inner = self.inner.get_or_insert_with(|| {
             let (tx, rx) = PipelineInner::<U>::default_channel();
@@ -74,7 +76,7 @@ where
             file.path.display(),
             range
         );
-        let future = read_into_byte_buffer::<A>(file, range, align);
+        let future = read_into_byte_buffer::<A>(file, range, align, &hw_counter.new_accumulator());
         inner.schedule(&file.runtime, user_data, future)
     }
 
@@ -83,6 +85,7 @@ where
         user_data: U,
         file: &'file BlobFile<A>,
         from: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         // One open-ended GET from `from` to EOF, byte-aligned, sized from the
         // response — no separate `len`/HEAD round-trip. `from == 0` reads the
@@ -99,11 +102,11 @@ where
             file.path.display(),
         );
 
-        let future = read_from_into_byte_buffer::<A>(file, from, 1);
+        let future = read_from_into_byte_buffer::<A>(file, from, 1, &hw_counter.new_accumulator());
         inner.schedule(&file.runtime, user_data, future)
     }
 
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>> {
         let Some(inner) = self.inner.as_mut() else {
             return Ok(None);
         };

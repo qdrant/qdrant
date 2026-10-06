@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::ReadSegmentEntry as _;
@@ -50,7 +51,11 @@ impl IndexingOptimizer {
         }
     }
 
-    fn is_optimization_required(&self, segment: &Segment) -> bool {
+    fn is_optimization_required(
+        &self,
+        segment: &Segment,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         let segment_data_config = segment.config();
         let indexing_threshold_bytes = self
             .thresholds_config
@@ -67,7 +72,7 @@ impl IndexingOptimizer {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
                 let is_indexed = vector_data.index.is_indexed();
                 let storage_size_bytes = segment
-                    .available_vectors_size_in_bytes(vector_name)
+                    .available_vectors_size_in_bytes(vector_name, hw_counter)
                     .unwrap_or_default();
 
                 let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
@@ -99,7 +104,7 @@ impl IndexingOptimizer {
                 let is_index_immutable = sparse_vector_data.index.index_type.is_immutable();
 
                 let storage_size = segment
-                    .available_vectors_size_in_bytes(sparse_vector_name)
+                    .available_vectors_size_in_bytes(sparse_vector_name, hw_counter)
                     .unwrap_or_default();
 
                 let is_big_for_index = storage_size >= indexing_threshold_bytes;
@@ -147,7 +152,11 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self.thresholds_config
     }
 
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+    fn plan_optimizations(
+        &self,
+        planner: &mut OptimizationPlanner,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let max_segment_size_bytes = self
             .thresholds_config
             .max_segment_size_kb
@@ -158,9 +167,9 @@ impl SegmentOptimizer for IndexingOptimizer {
         for (&segment_id, segment) in planner.remaining().iter() {
             let segment = segment.read();
             let vector_size_bytes = segment
-                .max_available_vectors_size_in_bytes()
+                .max_available_vectors_size_in_bytes(hw_counter)
                 .unwrap_or_default();
-            if self.is_optimization_required(&segment) {
+            if self.is_optimization_required(&segment, hw_counter) {
                 unindexed.push_back((segment_id, vector_size_bytes));
             }
 

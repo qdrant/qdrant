@@ -68,7 +68,7 @@ mod tests {
         // tests' `IndexType::MutableGridstore` path).
         {
             let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf(), false);
-            builder.init().unwrap();
+            builder.init(&hw_counter).unwrap();
             let entries: &[(PointOffsetType, &[&str])] = &[
                 (0, &["red", "green"]),
                 (1, &["green"]),
@@ -79,7 +79,7 @@ mod tests {
                 let values_ref: Vec<_> = values.iter().collect();
                 builder.add_point(*idx, &values_ref, &hw_counter).unwrap();
             }
-            builder.finalize().unwrap();
+            builder.finalize(&hw_counter).unwrap();
         }
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, named via the
@@ -88,7 +88,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf())
+            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf(), &hw_counter)
                 .unwrap()
                 .unwrap();
 
@@ -98,7 +98,7 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every point with at least one value is counted, and `red` matches
         // the two that contain it while `blue` matches only the third.
-        assert_eq!(index.count_indexed_points().unwrap(), 3);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 3);
 
         let key = JsonPath::new("color");
         let red = FieldCondition::new_match(key.clone(), Match::from("red".to_string()));

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_counter::{ForkingHwCounter, HardwareCounterCell};
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -94,7 +94,11 @@ impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         self.dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, _key: PointOffsetType) -> Cow<'_, [VectorElementType]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [VectorElementType]> {
         // All slots are deleted; downstream paths (e.g. optimization's
         // `update_from`) still need a properly-sized placeholder per slot so
         // the destination's index→offset layout stays aligned. The deletion
@@ -106,8 +110,9 @@ impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_for_each_in_dense_batch(self, keys, f)
+        default_for_each_in_dense_batch(self, keys, f, hw_counter)
     }
 }
 
@@ -116,6 +121,7 @@ impl DenseVectorStorage<VectorElementType> for EmptyDenseVectorStorage {
         &mut self,
         _other_vectors: &mut impl Iterator<Item = (Cow<'a, [VectorElementType]>, bool)>,
         _stopped: &AtomicBool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         Err(OperationError::service_error(
             "Cannot update empty vector storage",
@@ -134,6 +140,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
     fn get_multi<P: AccessPattern>(
         &self,
         _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
     ) -> CowMultiVector<'_, VectorElementType> {
         CowMultiVector::Owned(TypedMultiDenseVector::placeholder(self.dim))
     }
@@ -141,12 +148,17 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CowMultiVector<'_, VectorElementType>> {
-        ((key as usize) < self.num_points).then(|| self.get_multi::<P>(key))
+        ((key as usize) < self.num_points).then(|| self.get_multi::<P>(key, hw_counter))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
-    where
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+        _hw_counter: &HardwareCounterCell,
+    ) where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, VectorElementType>),
     {
         let zeros = vec![0.0; self.dim];
@@ -157,6 +169,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
 
     fn iterate_inner_vectors(
         &self,
+        _hw_counter: ForkingHwCounter,
     ) -> impl Iterator<Item = Cow<'_, [VectorElementType]>> + Clone + Send {
         // All vectors are deleted, so there are no inner vectors to report.
         std::iter::empty()
@@ -170,7 +183,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
 }
 
 impl VectorStorageRead for EmptyDenseVectorStorage {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         // All vectors are deleted, so there are no available vectors.
         0
     }
@@ -187,16 +200,24 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
         self.is_on_disk
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.num_points
     }
 
-    fn get_vector<P: AccessPattern>(&self, _key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         // See `get_dense` for why we return a sized placeholder rather than asserting.
         CowVector::from(vec![0.0; self.dim])
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, _key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         None
     }
 
@@ -216,8 +237,9 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback, hw_counter)
     }
 }
 
@@ -233,7 +255,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
         ))
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -241,7 +263,11 @@ impl VectorStorage for EmptyDenseVectorStorage {
         vec![]
     }
 
-    fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(false) // Already deleted
     }
 }
@@ -269,8 +295,14 @@ mod tests {
         assert_eq!(storage.distance(), Distance::Cosine);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
         assert!(storage.is_on_disk());
-        assert_eq!(storage.total_vector_count(), 1000);
-        assert_eq!(storage.available_vector_count(), 0);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            1000
+        );
+        assert_eq!(
+            storage.available_vector_count(&HardwareCounterCell::new()),
+            0
+        );
         assert_eq!(storage.deleted_vector_count(), 1000);
         assert_eq!(storage.deleted_vector_bitslice().len(), 1000);
         assert!(storage.is_deleted_vector(0));
@@ -280,8 +312,16 @@ mod tests {
         assert!(storage.multi_vector_config().is_none());
 
         // get_vector_opt always returns None
-        assert!(storage.get_vector_opt::<Random>(0).is_none());
-        assert!(storage.get_vector_opt::<Random>(500).is_none());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(0, &HardwareCounterCell::new())
+                .is_none()
+        );
+        assert!(
+            storage
+                .get_vector_opt::<Random>(500, &HardwareCounterCell::new())
+                .is_none()
+        );
     }
 
     #[test]
@@ -333,11 +373,11 @@ mod tests {
             None,
             0,
         );
-        assert_eq!(storage.total_vector_count(), 0);
+        assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 0);
         assert_eq!(storage.deleted_vector_count(), 0);
 
         storage.set_num_points(500);
-        assert_eq!(storage.total_vector_count(), 500);
+        assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 500);
         assert_eq!(storage.deleted_vector_count(), 500);
         assert_eq!(storage.deleted_vector_bitslice().len(), 500);
     }
@@ -372,7 +412,11 @@ mod tests {
             10,
         );
         // delete_vector returns false because it was already deleted
-        assert!(!storage.delete_vector(0).unwrap());
+        assert!(
+            !storage
+                .delete_vector(0, &HardwareCounterCell::new())
+                .unwrap()
+        );
     }
 
     /// Searching a multivector added to an already-indexed segment (backed by this

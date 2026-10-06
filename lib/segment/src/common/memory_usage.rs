@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 /// Describes how a component expects its files to be used.
 ///
 /// Used to compute `expected_cache_bytes` and label components for users.
@@ -89,5 +91,5 @@ impl ComponentMemoryUsage {
 /// Implementations should be cheap (no I/O). The actual page-cache measurement
 /// happens in the aggregation layer after file entries are collected.
 pub trait MemoryReporter {
-    fn memory_usage(&self) -> ComponentMemoryUsage;
+    fn memory_usage(&self, hw_counter: &HardwareCounterCell) -> ComponentMemoryUsage;
 }

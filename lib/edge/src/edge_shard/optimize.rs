@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::HnswGlobalConfig;
@@ -48,7 +49,7 @@ impl EdgeShard {
         loop {
             let planned = {
                 let segments = self.segments.read();
-                plan_optimizations(&segments, &optimizers)
+                plan_optimizations(&segments, &optimizers, &HardwareCounterCell::disposable())
             };
 
             if planned.is_empty() {

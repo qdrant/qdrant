@@ -116,7 +116,9 @@ where
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
+        let multi_vector_offset = self
+            .quantized_multivector_storage
+            .get_offset(idx, &self.hardware_counter);
         let sub_vectors_count = multi_vector_offset.count as usize;
         // compute vector IO read once for all examples
         self.hardware_counter.vector_io_read().incr_delta(

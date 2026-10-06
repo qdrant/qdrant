@@ -10,6 +10,7 @@ mod update;
 
 use std::fmt::Display;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
@@ -54,6 +55,7 @@ pub trait StrictModeVerification {
         &self,
         _collection: &Collection,
         _strict_mode_config: &StrictModeConfig,
+        _hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         Ok(())
     }
@@ -103,9 +105,11 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         if let Some(search_params) = self.request_search_params() {
-            Box::pin(search_params.check_strict_mode(collection, strict_mode_config)).await?;
+            Box::pin(search_params.check_strict_mode(collection, strict_mode_config, hw_acc))
+                .await?;
         }
         Ok(())
     }
@@ -170,12 +174,14 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
-        self.check_custom(collection, strict_mode_config).await?;
+        self.check_custom(collection, strict_mode_config, hw_acc)
+            .await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
         self.check_request_exact(strict_mode_config)?;
-        self.check_search_params(collection, strict_mode_config)
+        self.check_search_params(collection, strict_mode_config, hw_acc)
             .await?;
         Ok(())
     }
@@ -338,6 +344,7 @@ impl StrictModeVerification for SearchParams {
         &self,
         _collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        _hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         check_limit_opt(
             self.quantization.and_then(|i| i.oversampling),
@@ -722,7 +729,7 @@ mod test {
     ) {
         let strict_mode_config = collection.strict_mode_config().await.unwrap();
         let error = request
-            .check_strict_mode(collection, &strict_mode_config)
+            .check_strict_mode(collection, &strict_mode_config, &HwMeasurementAcc::new())
             .await
             .expect_err("Expected strict mode error but got Ok() value");
         if !matches!(error, CollectionError::StrictMode { .. }) {
@@ -737,7 +744,7 @@ mod test {
     ) {
         let strict_mode_config = collection.strict_mode_config().await.unwrap();
         let error = request
-            .check_strict_mode(collection, &strict_mode_config)
+            .check_strict_mode(collection, &strict_mode_config, &HwMeasurementAcc::new())
             .await
             .expect_err("Expected strict mode error but got Ok() value");
         let CollectionError::StrictMode { description } = &error else {
@@ -755,7 +762,7 @@ mod test {
     ) {
         let strict_mode_config = collection.strict_mode_config().await.unwrap();
         let res = request
-            .check_strict_mode(collection, &strict_mode_config)
+            .check_strict_mode(collection, &strict_mode_config, &HwMeasurementAcc::new())
             .await;
         if let Err(CollectionError::StrictMode { description }) = res {
             panic!("Strict mode check should've passed but failed with error: {description:?}");
@@ -855,6 +862,7 @@ mod test {
             None,
             ResourceBudget::default(),
             None,
+            &HwMeasurementAcc::new(),
         )
         .await
         .expect("Failed to create new fixture collection");

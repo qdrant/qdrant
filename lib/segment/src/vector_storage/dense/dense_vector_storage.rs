@@ -59,9 +59,9 @@ where
 {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
         if let Some(mmap_store) = &self.vectors {
-            mmap_store.populate();
+            mmap_store.populate(hw_counter);
         }
     }
 
@@ -94,6 +94,7 @@ pub fn open_dense_vector_storage(
     dim: usize,
     distance: Distance,
     memory: Memory,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     open_dense_vector_storage_with_uring(
         path,
@@ -101,6 +102,7 @@ pub fn open_dense_vector_storage(
         distance,
         memory.populate_on_open(),
         dense_with_uring(memory),
+        hw_counter,
     )
 }
 
@@ -113,6 +115,7 @@ pub fn open_dense_vector_storage_with_uring(
     distance: Distance,
     populate: bool,
     with_uring: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     // prevent "unused variable" warning
     let _ = with_uring;
@@ -125,6 +128,7 @@ pub fn open_dense_vector_storage_with_uring(
             dim,
             distance,
             populate,
+            hw_counter,
         ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUring(Box::new(uring_storage)));
@@ -135,7 +139,8 @@ pub fn open_dense_vector_storage_with_uring(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
+    let mmap_storage =
+        open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate, hw_counter)?;
     Ok(VectorStorageEnum::DenseMemmap(Box::new(mmap_storage)))
 }
 
@@ -144,6 +149,7 @@ pub fn open_dense_vector_storage_half(
     dim: usize,
     distance: Distance,
     memory: Memory,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let populate = memory.populate_on_open();
     let with_uring = dense_with_uring(memory);
@@ -158,6 +164,7 @@ pub fn open_dense_vector_storage_half(
             dim,
             distance,
             populate,
+            hw_counter,
         ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUringHalf(Box::new(uring_storage)));
@@ -168,7 +175,8 @@ pub fn open_dense_vector_storage_half(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
+    let mmap_storage =
+        open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate, hw_counter)?;
     Ok(VectorStorageEnum::DenseMemmapHalf(Box::new(mmap_storage)))
 }
 
@@ -177,6 +185,7 @@ pub fn open_dense_vector_storage_byte(
     dim: usize,
     distance: Distance,
     memory: Memory,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let populate = memory.populate_on_open();
     let with_uring = dense_with_uring(memory);
@@ -191,6 +200,7 @@ pub fn open_dense_vector_storage_byte(
             dim,
             distance,
             populate,
+            hw_counter,
         ) {
             Ok(uring_storage) => {
                 return Ok(VectorStorageEnum::DenseUringByte(Box::new(uring_storage)));
@@ -201,7 +211,8 @@ pub fn open_dense_vector_storage_byte(
         }
     }
 
-    let mmap_storage = open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate)?;
+    let mmap_storage =
+        open_dense_vector_storage_impl(MmapFs, path, dim, distance, populate, hw_counter)?;
     Ok(VectorStorageEnum::DenseMemmapByte(Box::new(mmap_storage)))
 }
 
@@ -211,6 +222,7 @@ pub(crate) fn open_dense_vector_storage_impl<T, S>(
     dim: usize,
     distance: Distance,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<DenseVectorStorageImpl<T, S>>
 where
     T: PrimitiveVectorElement,
@@ -227,6 +239,7 @@ where
         &deleted_path,
         dim,
         Populate::from(populate),
+        hw_counter,
     )?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
@@ -249,11 +262,15 @@ where
         self.vectors.as_ref().unwrap().dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [T]> {
         self.vectors
             .as_ref()
             .unwrap()
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
@@ -261,31 +278,34 @@ where
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mmap_store = self.vectors.as_ref().unwrap();
-        mmap_store.for_each_in_batch(keys, f)
+        mmap_store.for_each_in_batch(keys, f, hw_counter)
     }
 
     fn read_dense_bytes<P: AccessPattern, U: Copy>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
-        self.vectors
-            .as_ref()
-            .unwrap()
-            .for_each_in_batch(&point_offsets, |idx, vector| {
+        self.vectors.as_ref().unwrap().for_each_in_batch(
+            &point_offsets,
+            |idx, vector| {
                 callback(
                     user_data[idx],
                     point_offsets[idx],
                     bytemuck::cast_slice(vector).to_vec(),
                 );
-            })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -298,6 +318,7 @@ where
         &mut self,
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [T]>, bool)>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
         let start_index = self.vectors.as_ref().unwrap().num_vectors() as PointOffsetType;
@@ -335,6 +356,7 @@ where
             &self.deleted_path,
             dim,
             Populate::No, // No need to populate
+            hw_counter,
         )?);
 
         // Flush deleted flags into store
@@ -357,8 +379,8 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.available_vector_count(hw_counter) * self.vector_dim() * std::mem::size_of::<T>()
     }
 
     fn distance(&self) -> Distance {
@@ -373,15 +395,19 @@ where
         !self.populated
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.vectors.as_ref().unwrap().num_vectors()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         self.vectors
             .as_ref()
             .unwrap()
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .map(|vector| T::slice_to_float_cow(vector).into())
             .expect("Vector not found")
     }
@@ -390,6 +416,7 @@ where
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
@@ -399,18 +426,26 @@ where
         self.vectors
             .as_ref()
             .unwrap()
-            .for_each_in_batch(&point_offsets, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
-                callback(user_data[idx], point_offsets[idx], vector);
-            })
+            .for_each_in_batch(
+                &point_offsets,
+                |idx, vector| {
+                    let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                    callback(user_data[idx], point_offsets[idx], vector);
+                },
+                hw_counter,
+            )
             .expect("read vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         self.vectors
             .as_ref()
             .unwrap()
-            .get_vector_opt::<P>(key)
+            .get_vector_opt::<P>(key, hw_counter)
             .map(|vector| T::slice_to_float_cow(vector).into())
     }
 
@@ -430,8 +465,9 @@ where
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.read_dense_bytes::<P, U>(keys, callback)
+        self.read_dense_bytes::<P, U>(keys, callback, hw_counter)
     }
 }
 
@@ -449,7 +485,7 @@ where
         Err(error_immutable_insert())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         match &self.vectors {
             Some(mmap_store) => {
                 let mmap_flusher = mmap_store.flusher();
@@ -469,7 +505,11 @@ where
         vec![self.vectors_path.clone()]
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(self.vectors.as_mut().unwrap().delete(key))
     }
 }
@@ -516,8 +556,14 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
+        let mut storage = open_dense_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
@@ -544,17 +590,17 @@ mod tests {
                     .insert_vector(2, points[2].as_slice().into(), &hw_counter)
                     .unwrap();
             }
-            merge_from_single_source(&mut storage, &storage2, 3).unwrap();
+            merge_from_single_source(&mut storage, &storage2, 3, &hw_counter).unwrap();
         }
 
-        assert_eq!(storage.total_vector_count(), 3);
+        assert_eq!(storage.total_vector_count(&hw_counter), 3);
 
-        let vector = storage.get_vector::<Random>(1).to_owned();
+        let vector = storage.get_vector::<Random>(1, &hw_counter).to_owned();
         let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
 
-        id_tracker.drop(PointIdType::NumId(2)).unwrap();
+        id_tracker.drop(PointIdType::NumId(2), &hw_counter).unwrap();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -566,20 +612,22 @@ mod tests {
                     .insert_vector(4, points[4].as_slice().into(), &hw_counter)
                     .unwrap();
             }
-            merge_from_single_source(&mut storage, &storage2, 2).unwrap();
+            merge_from_single_source(&mut storage, &storage2, 2, &hw_counter).unwrap();
         }
 
-        assert_eq!(storage.total_vector_count(), 5);
+        assert_eq!(storage.total_vector_count(&hw_counter), 5);
 
-        let stored_ids: Vec<PointOffsetType> =
-            id_tracker.point_mappings().iter_internal().collect();
+        let stored_ids: Vec<PointOffsetType> = id_tracker
+            .point_mappings(&hw_counter)
+            .iter_internal()
+            .collect();
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             2,
         );
         let res = searcher
@@ -596,7 +644,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             2,
         );
         let res = searcher
@@ -623,8 +671,14 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = create_id_tracker_fixture(points.len());
-        let mut storage =
-            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
+        let mut storage = open_dense_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -637,11 +691,16 @@ mod tests {
                         .unwrap();
                 });
             }
-            merge_from_single_source(&mut storage, &storage2, points.len() as PointOffsetType)
-                .unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &storage2,
+                points.len() as PointOffsetType,
+                &hw_counter,
+            )
+            .unwrap();
         }
 
-        assert_eq!(storage.total_vector_count(), 5);
+        assert_eq!(storage.total_vector_count(&hw_counter), 5);
         assert_eq!(storage.deleted_vector_count(), 0);
 
         // Delete select number of points
@@ -650,7 +709,9 @@ mod tests {
             .enumerate()
             .filter(|(_, d)| *d)
             .for_each(|(i, _)| {
-                storage.delete_vector(i as PointOffsetType).unwrap();
+                storage
+                    .delete_vector(i as PointOffsetType, &hw_counter)
+                    .unwrap();
             });
         assert_eq!(
             storage.deleted_vector_count(),
@@ -663,7 +724,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             5,
         );
 
@@ -679,8 +740,12 @@ mod tests {
         assert_eq!(closest[2].idx, 4);
 
         // Delete 1, redelete 2
-        storage.delete_vector(1 as PointOffsetType).unwrap();
-        storage.delete_vector(2 as PointOffsetType).unwrap();
+        storage
+            .delete_vector(1 as PointOffsetType, &hw_counter)
+            .unwrap();
+        storage
+            .delete_vector(2 as PointOffsetType, &hw_counter)
+            .unwrap();
         assert_eq!(
             storage.deleted_vector_count(),
             3,
@@ -693,7 +758,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             5,
         );
         let closest = searcher
@@ -710,8 +775,12 @@ mod tests {
         assert_eq!(ids, [0, 4]);
 
         // Delete all
-        storage.delete_vector(0 as PointOffsetType).unwrap();
-        storage.delete_vector(4 as PointOffsetType).unwrap();
+        storage
+            .delete_vector(0 as PointOffsetType, &hw_counter)
+            .unwrap();
+        storage
+            .delete_vector(4 as PointOffsetType, &hw_counter)
+            .unwrap();
         assert_eq!(
             storage.deleted_vector_count(),
             5,
@@ -723,7 +792,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             5,
         );
         let closest = searcher
@@ -748,8 +817,14 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let mut storage =
-            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
+        let mut storage = open_dense_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -762,12 +837,19 @@ mod tests {
                         .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                         .unwrap();
                     if delete_mask[i] {
-                        storage2.delete_vector(i as PointOffsetType).unwrap();
+                        storage2
+                            .delete_vector(i as PointOffsetType, &hw_counter)
+                            .unwrap();
                     }
                 });
             }
-            merge_from_single_source(&mut storage, &storage2, points.len() as PointOffsetType)
-                .unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &storage2,
+                points.len() as PointOffsetType,
+                &hw_counter,
+            )
+            .unwrap();
         }
 
         assert_eq!(
@@ -781,7 +863,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(&hw_counter),
             5,
         );
         let closest = searcher
@@ -797,9 +879,15 @@ mod tests {
         assert_eq!(closest[2].idx, 4);
 
         // Delete all
-        storage.delete_vector(0 as PointOffsetType).unwrap();
-        storage.delete_vector(1 as PointOffsetType).unwrap();
-        storage.delete_vector(4 as PointOffsetType).unwrap();
+        storage
+            .delete_vector(0 as PointOffsetType, &hw_counter)
+            .unwrap();
+        storage
+            .delete_vector(1 as PointOffsetType, &hw_counter)
+            .unwrap();
+        storage
+            .delete_vector(4 as PointOffsetType, &hw_counter)
+            .unwrap();
         assert_eq!(
             storage.deleted_vector_count(),
             5,
@@ -818,8 +906,14 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
+        let mut storage = open_dense_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -833,15 +927,23 @@ mod tests {
                         .unwrap();
                 }
             }
-            merge_from_single_source(&mut storage, &storage2, points.len() as PointOffsetType)
-                .unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &storage2,
+                points.len() as PointOffsetType,
+                &hw_counter,
+            )
+            .unwrap();
         }
 
         let vector = vec![-1.0, -1.0, -1.0, -1.0];
         let query = vector.as_slice().into();
 
-        let mut scorer =
-            FilteredScorer::new_for_test(query, &storage, id_tracker.deleted_point_bitslice());
+        let mut scorer = FilteredScorer::new_for_test(
+            query,
+            &storage,
+            id_tracker.deleted_point_bitslice(&hw_counter),
+        );
 
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer
@@ -887,8 +989,14 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
+        let mut storage = open_dense_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            Memory::Cold,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -901,8 +1009,13 @@ mod tests {
                         .unwrap();
                 }
             }
-            merge_from_single_source(&mut storage, &storage2, points.len() as PointOffsetType)
-                .unwrap();
+            merge_from_single_source(
+                &mut storage,
+                &storage2,
+                points.len() as PointOffsetType,
+                &hw_counter,
+            )
+            .unwrap();
         }
 
         let config: QuantizationConfig = ScalarQuantizationConfig {
@@ -922,6 +1035,7 @@ mod tests {
             dir.path(),
             1,
             &stopped,
+            &hw_counter,
         )
         .unwrap();
 
@@ -948,9 +1062,10 @@ mod tests {
         let quantization_files = quantized_vectors.files();
 
         // test save-load
-        let quantized_vectors = QuantizedVectors::load(&config, &storage, dir.path(), &stopped)
-            .unwrap()
-            .unwrap();
+        let quantized_vectors =
+            QuantizedVectors::load(&config, &storage, dir.path(), &stopped, &hw_counter)
+                .unwrap()
+                .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
         let hardware_counter = HardwareCounterCell::new();

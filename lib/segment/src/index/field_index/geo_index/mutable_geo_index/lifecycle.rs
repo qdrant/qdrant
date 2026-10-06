@@ -30,17 +30,26 @@ impl MutableGeoIndex {
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
     /// loaded.
-    pub fn open(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    pub fn open(
+        path: PathBuf,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            Blobstore::open_or_create(MmapFs, path, storage_options(), Populate::Blocking).map_err(
-                |err| {
-                    OperationError::service_error(format!(
-                        "failed to open mutable geo index on gridstore: {err}"
-                    ))
-                },
-            )?
+            Blobstore::open_or_create(
+                MmapFs,
+                path,
+                storage_options(),
+                Populate::Blocking,
+                hw_counter,
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to open mutable geo index on gridstore: {err}"
+                ))
+            })?
         } else if path.exists() {
-            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking, hw_counter).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable geo index on gridstore: {err}"
                 ))
@@ -100,8 +109,8 @@ impl MutableGeoIndex {
     }
 
     #[inline]
-    pub(in super::super) fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
+    pub(in super::super) fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        let storage_flusher = self.storage.flusher(hw_counter);
         Box::new(move || storage_flusher().map_err(OperationError::from))
     }
 
@@ -114,7 +123,7 @@ impl MutableGeoIndex {
         // Update persisted storage
         if values.is_empty() {
             // An empty value cannot be stored; drop whatever the slot holds
-            self.remove_point(idx)?;
+            self.remove_point(idx, hw_counter)?;
         } else {
             let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             let raw_values = values
@@ -135,14 +144,18 @@ impl MutableGeoIndex {
             .add_many_geo_points(idx, values, hw_counter)
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if !self.in_memory_index.remove_point(idx)? {
             // The slot holds nothing, and there is nothing to delete in the
             // storage either: the two are written in lockstep.
             return Ok(());
         }
 
-        self.storage.delete_value(idx)?;
+        self.storage.delete_value(idx, hw_counter)?;
         Ok(())
     }
 

@@ -110,6 +110,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &hw_counter,
     )
     .unwrap();
 

@@ -107,6 +107,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -160,6 +161,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     builder
@@ -168,7 +170,10 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     segment
 }
 
@@ -435,7 +440,10 @@ fn payload_index_files_are_immutable_after_build() {
         *alive = false;
         op_num += 1;
     }
-    assert_eq!(segment.available_point_count(), NUM_POINTS - NUM_POINTS / 2);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS - NUM_POINTS / 2
+    );
 
     let after_deletes = snapshot_dir(&payload_index_dir);
     assert_snapshots_equal(&baseline, &after_deletes, "after delete_point");
@@ -443,7 +451,7 @@ fn payload_index_files_are_immutable_after_build() {
 
     // Operation 2: flush. Persists id_tracker / segment state changes; must
     // not touch payload_index/ files.
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     let after_flush = snapshot_dir(&payload_index_dir);
     assert_snapshots_equal(&baseline, &after_flush, "after flush");
     assert_query_counts(&segment, &live, &queries, "after flush");
@@ -459,6 +467,7 @@ fn payload_index_files_are_immutable_after_build() {
         None,
         &AtomicBool::new(false),
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let after_reload = snapshot_dir(&payload_index_dir);
@@ -473,7 +482,7 @@ fn payload_index_files_are_immutable_after_build() {
         *alive = false;
         op_num += 1;
     }
-    reloaded.flush(true).unwrap();
+    reloaded.flush(true, &HardwareCounterCell::new()).unwrap();
     let after_second_flush = snapshot_dir(&payload_index_dir);
     assert_snapshots_equal(
         &baseline,
@@ -535,7 +544,7 @@ fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types
     let live = vec![true; NUM_POINTS];
     assert_query_counts(&segment, &live, &queries, "before snapshot");
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
 
     // Snapshot into a parent tar, unpack, restore in place, reload — the same
     // sequence as collection snapshot recovery.
@@ -573,6 +582,7 @@ fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types
         None,
         &AtomicBool::new(false),
         false,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

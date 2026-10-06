@@ -76,11 +76,15 @@ where
         Some(boxed)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         match self {
-            ReadOnlyMapIndex::Appendable(index) => index.values_count(idx),
-            ReadOnlyMapIndex::Immutable(index) => index.values_count(idx),
-            ReadOnlyMapIndex::OnDisk(index) => index.values_count(idx),
+            ReadOnlyMapIndex::Appendable(index) => index.values_count(idx, hw_counter),
+            ReadOnlyMapIndex::Immutable(index) => index.values_count(idx, hw_counter),
+            ReadOnlyMapIndex::OnDisk(index) => index.values_count(idx, hw_counter),
         }
     }
 
@@ -124,11 +128,15 @@ where
         }
     }
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+    fn for_each_value(
+        &self,
+        f: impl FnMut(&N) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            ReadOnlyMapIndex::Appendable(index) => index.for_each_value(f),
-            ReadOnlyMapIndex::Immutable(index) => index.for_each_value(f),
-            ReadOnlyMapIndex::OnDisk(index) => index.for_each_value(f),
+            ReadOnlyMapIndex::Appendable(index) => index.for_each_value(f, hw_counter),
+            ReadOnlyMapIndex::Immutable(index) => index.for_each_value(f, hw_counter),
+            ReadOnlyMapIndex::OnDisk(index) => index.for_each_value(f, hw_counter),
         }
     }
 
@@ -136,16 +144,17 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyMapIndex::Appendable(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
             }
             ReadOnlyMapIndex::Immutable(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
             }
             ReadOnlyMapIndex::OnDisk(index) => {
-                index.for_each_count_per_value(deferred_internal_id, f)
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
             }
         }
     }

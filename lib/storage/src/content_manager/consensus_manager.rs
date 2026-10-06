@@ -15,6 +15,7 @@ use collection::common::is_ready::IsReady;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
@@ -371,8 +372,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// If return Error - consensus should be stopped with error.
     /// Return `true` if consensus should be stopped (peer removed)
     /// Return `false` if everything is ok.
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
-        let result = self.apply_entries_impl(raw_node);
+    pub fn apply_entries<T: Storage>(
+        &self,
+        raw_node: &mut RawNode<T>,
+        hw_acc: &HwMeasurementAcc,
+    ) -> anyhow::Result<bool> {
+        let result = self.apply_entries_impl(raw_node, hw_acc);
 
         // Consensus reapplies a failed entry after restart.
         //
@@ -388,7 +393,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
-    fn apply_entries_impl<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+    fn apply_entries_impl<T: Storage>(
+        &self,
+        raw_node: &mut RawNode<T>,
+        hw_acc: &HwMeasurementAcc,
+    ) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
         self.persistent
@@ -419,7 +428,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             } else {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
-                        let operation_result = self.apply_normal_entry(&entry);
+                        let operation_result = self.apply_normal_entry(&entry, hw_acc);
 
                         match operation_result {
                             Ok(status) => {
@@ -590,7 +599,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// - Shards operations (transfer, remove, sync)
     /// - e.t.c
     ///
-    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
+    pub fn apply_normal_entry(
+        &self,
+        entry: &RaftEntry,
+        hw_acc: &HwMeasurementAcc,
+    ) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
 
         // Apply to consensus state machine before operation handler changes applied state
@@ -606,7 +619,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         };
 
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        let result = self.apply_consensus_op(operation);
+        let result = self.apply_consensus_op(operation, hw_acc);
 
         // Compare operation handler with consensus state machine
         if let Some(outcome) = outcome {
@@ -625,10 +638,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         result
     }
 
-    fn apply_consensus_op(&self, operation: ConsensusOperations) -> StorageResult<bool> {
+    fn apply_consensus_op(
+        &self,
+        operation: ConsensusOperations,
+        hw_acc: &HwMeasurementAcc,
+    ) -> StorageResult<bool> {
         let status = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
-                self.toc.perform_collection_meta_op(*operation)?
+                self.toc.perform_collection_meta_op(*operation, hw_acc)?
             }
 
             ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
@@ -711,6 +728,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_snapshot(
         &self,
         snapshot: &raft::eraftpb::Snapshot,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
 
@@ -726,7 +744,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             quota_config,
         } = snapshot.get_data().try_into()?;
 
-        self.toc.apply_collections_snapshot(collections_data)?;
+        self.toc
+            .apply_collections_snapshot(collections_data, hw_acc)?;
         if let Some(quota_config) = quota_config {
             self.toc.set_quota_config(quota_config)?;
         }
@@ -1474,6 +1493,7 @@ mod tests {
     use std::time::Duration;
 
     use collection::shards::shard::PeerId;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use proptest::prelude::*;
     use raft::eraftpb::{
         ConfChange, ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType,
@@ -1608,6 +1628,7 @@ mod tests {
         fn perform_collection_meta_op(
             &self,
             _operation: crate::content_manager::collection_meta_ops::CollectionMetaOperations,
+            _hw_acc: &HwMeasurementAcc,
         ) -> Result<bool, crate::content_manager::errors::StorageError> {
             Ok(true)
         }
@@ -1619,6 +1640,7 @@ mod tests {
         fn apply_collections_snapshot(
             &self,
             _data: super::CollectionsSnapshot,
+            _hw_acc: &HwMeasurementAcc,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
         }
@@ -2084,7 +2106,10 @@ mod tests {
             }),
         };
 
-        consensus.apply_snapshot(&snapshot).unwrap().unwrap();
+        consensus
+            .apply_snapshot(&snapshot, &HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
 
         // The awaiter should have been notified successfully, and the entry should have been
         // removed from the pending map.
@@ -2153,7 +2178,10 @@ mod tests {
             }),
         };
 
-        consensus.apply_snapshot(&snapshot).unwrap().unwrap();
+        consensus
+            .apply_snapshot(&snapshot, &HwMeasurementAcc::new())
+            .unwrap()
+            .unwrap();
 
         assert_matches!(
             rx.try_recv(),

@@ -107,7 +107,7 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         // Shortcut if this segment has no points.
-        let available_points = self.id_tracker.available_point_count();
+        let available_points = self.id_tracker.available_point_count(hw_counter);
         if available_points == 0 {
             return Ok(HashMap::new());
         }
@@ -164,7 +164,7 @@ where
             .payload_index
             .estimate_cardinality(filter, hw_counter)?;
 
-        let available_points = self.id_tracker.available_point_count();
+        let available_points = self.id_tracker.available_point_count(hw_counter);
 
         // If traversing the entire filter is less than x% the available points, use it.
         // Otherwise, prefer to go over the facet index directly.
@@ -244,7 +244,7 @@ where
             .payload_index
             .estimate_cardinality(&new_filter, hw_counter)?;
 
-        let available_points = self.id_tracker.available_point_count();
+        let available_points = self.id_tracker.available_point_count(hw_counter);
 
         // Phase 2: get candidates' counts
 
@@ -388,12 +388,16 @@ where
             }
             // No sampling: count every value in the index.
             None => {
-                facet_index.for_each_count_per_value(deferred_internal_id, |hit| {
-                    if hit.count > 0 {
-                        hits.insert(hit.value.to_owned(), hit.count);
-                    }
-                    Ok(())
-                })?;
+                facet_index.for_each_count_per_value(
+                    deferred_internal_id,
+                    |hit| {
+                        if hit.count > 0 {
+                            hits.insert(hit.value.to_owned(), hit.count);
+                        }
+                        Ok(())
+                    },
+                    hw_counter,
+                )?;
             }
         }
         Ok(hits)
@@ -413,8 +417,8 @@ where
         // Build a stream of random internal point IDs to draw from.
         let id_stream = self
             .id_tracker
-            .point_mappings()
-            .iter_random_visible()
+            .point_mappings(hw_counter)
+            .iter_random_visible(hw_counter)
             .map(|(_external_id, internal_id)| internal_id)
             .filter(move |&internal_id| probe.is_none_or(|probe| probe.check(internal_id)));
 
@@ -475,7 +479,7 @@ where
                     is_stopped,
                     DeferredBehavior::VisibleOnly,
                 )?
-                .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id));
+                .filter(|&point_id| !self.id_tracker.is_deleted_point(point_id, hw_counter));
             facet_index.for_points_values(points, hw_counter, |_point_id, iter| {
                 values.extend(iter.map(|v| v.to_owned()));
             })?;

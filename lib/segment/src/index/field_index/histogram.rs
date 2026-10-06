@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_bin, atomic_save_json};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs, read_bin_via, read_json_via};
@@ -53,17 +54,22 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
     }
 
     /// Schedule background prefetch of the two files [`open`](Self::open) reads.
-    pub fn preopen(fs: &impl CachedReadFs, path: &Path) {
-        fs.schedule_open(&path.join(CONFIG_PATH), None, None);
-        fs.schedule_open(&path.join(BORDERS_PATH), None, None);
+    pub fn preopen(fs: &impl CachedReadFs, path: &Path, hw_counter: &HardwareCounterCell) {
+        fs.schedule_open(&path.join(CONFIG_PATH), None, None, hw_counter);
+        fs.schedule_open(&path.join(BORDERS_PATH), None, None, hw_counter);
     }
 
-    pub fn open<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);
 
-        let histogram_config: HistogramConfig = read_json_via(fs, &config_path)?;
-        let histogram_buckets: Vec<(Point<T>, Counts)> = read_bin_via(fs, &borders_path)?;
+        let histogram_config: HistogramConfig = read_json_via(fs, &config_path, hw_counter)?;
+        let histogram_buckets: Vec<(Point<T>, Counts)> =
+            read_bin_via(fs, &borders_path, hw_counter)?;
 
         Ok(Self {
             max_bucket_size: histogram_config.max_bucket_size,

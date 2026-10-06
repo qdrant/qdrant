@@ -88,6 +88,7 @@ async fn test_continuous_snapshot() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -233,7 +234,7 @@ async fn test_continuous_snapshot() {
             while !stop_flag.load(Ordering::Relaxed) {
                 // Take snapshot
                 let _snapshot = collection
-                    .create_snapshot(snapshots_temp_dir.path(), 0)
+                    .create_snapshot(snapshots_temp_dir.path(), 0, &HwMeasurementAcc::new())
                     .await?;
             }
             CollectionResult::Ok(())

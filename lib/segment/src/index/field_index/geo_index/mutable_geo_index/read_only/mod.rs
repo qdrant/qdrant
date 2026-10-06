@@ -45,7 +45,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
+            let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true, &hw_counter)
                 .unwrap()
                 .unwrap();
             // point 0: Berlin, 1 value
@@ -67,7 +67,7 @@ mod tests {
                     &hw_counter,
                 )
                 .unwrap();
-            mutable.flusher()().unwrap();
+            mutable.flusher(&hw_counter)().unwrap();
         }
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, the
@@ -77,7 +77,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf())
+            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf(), &hw_counter)
                 .unwrap()
                 .unwrap();
 
@@ -87,9 +87,9 @@ mod tests {
         assert_eq!(index.max_values_per_point(), 2);
 
         // Per-point values reconstructed into `point_to_values`.
-        assert_eq!(index.values_count(0), 1);
-        assert_eq!(index.values_count(2), 2);
-        assert_eq!(index.get_values(0).unwrap().count(), 1);
-        assert_eq!(index.get_values(2).unwrap().count(), 2);
+        assert_eq!(index.values_count(0, &hw_counter), 1);
+        assert_eq!(index.values_count(2, &hw_counter), 2);
+        assert_eq!(index.get_values(0, &hw_counter).unwrap().count(), 1);
+        assert_eq!(index.get_values(2, &hw_counter).unwrap().count(), 2);
     }
 }

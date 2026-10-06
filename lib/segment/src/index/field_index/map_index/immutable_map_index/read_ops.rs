@@ -41,7 +41,11 @@ where
         )
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         Some(self.point_to_values.get_values(idx)?.count())
     }
 
@@ -71,7 +75,11 @@ where
         }
     }
 
-    fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+    fn for_each_value(
+        &self,
+        mut f: impl FnMut(&N) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.value_to_points.keys().try_for_each(|v| f(v.borrow()))
     }
 
@@ -79,6 +87,7 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Immutable indexes don't support deferred filtering; callers must
         // pass `None`. See `MapIndex::for_each_count_per_value` for context.

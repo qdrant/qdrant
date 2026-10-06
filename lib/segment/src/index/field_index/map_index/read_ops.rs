@@ -62,7 +62,8 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         hw_counter: &HardwareCounterCell,
     ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>;
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell)
+    -> Option<usize>;
 
     fn get_indexed_points(&self) -> usize;
 
@@ -74,7 +75,11 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
 
     fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_>;
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()>;
+    fn for_each_value(
+        &self,
+        f: impl FnMut(&N) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Iterate `(value, count)` pairs.
     ///
@@ -85,6 +90,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     fn for_each_value_map(
@@ -121,8 +127,8 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         }
     }
 
-    fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        self.values_count(idx).unwrap_or(0) == 0
+    fn values_is_empty(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        self.values_count(idx, hw_counter).unwrap_or(0) == 0
     }
 
     /// Use each value's posting of point ids, invoking `f` once per value.
@@ -237,14 +243,17 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         K: Borrow<N> + Hash + Eq,
     {
         let mut points = IndexSet::<PointOffsetType>::new();
-        self.for_each_value(|key| {
-            if !excluded.contains(key.borrow()) {
-                self.get_iterator(key.borrow(), hw_counter).for_each(|p| {
-                    points.insert(p);
-                });
-            }
-            Ok(())
-        })?;
+        self.for_each_value(
+            |key| {
+                if !excluded.contains(key.borrow()) {
+                    self.get_iterator(key.borrow(), hw_counter).for_each(|p| {
+                        points.insert(p);
+                    });
+                }
+                Ok(())
+            },
+            hw_counter,
+        )?;
         Ok(Box::new(points.into_iter()))
     }
 
@@ -350,11 +359,15 @@ where
         Some(boxed)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         match self {
-            MapIndex::Mutable(index) => index.values_count(idx),
-            MapIndex::Immutable(index) => index.values_count(idx),
-            MapIndex::OnDisk(index) => index.values_count(idx),
+            MapIndex::Mutable(index) => index.values_count(idx, hw_counter),
+            MapIndex::Immutable(index) => index.values_count(idx, hw_counter),
+            MapIndex::OnDisk(index) => index.values_count(idx, hw_counter),
         }
     }
 
@@ -398,11 +411,15 @@ where
         }
     }
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+    fn for_each_value(
+        &self,
+        f: impl FnMut(&N) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.for_each_value(f),
-            MapIndex::Immutable(index) => index.for_each_value(f),
-            MapIndex::OnDisk(index) => index.for_each_value(f),
+            MapIndex::Mutable(index) => index.for_each_value(f, hw_counter),
+            MapIndex::Immutable(index) => index.for_each_value(f, hw_counter),
+            MapIndex::OnDisk(index) => index.for_each_value(f, hw_counter),
         }
     }
 
@@ -410,6 +427,7 @@ where
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // The immutable variant does not support deferred filtering — it
         // asserts the argument is `None`. Two reasons we don't implement it:
@@ -418,9 +436,15 @@ where
         //    for this index variant as it doesn't work well in combination
         //    with the way it handles deletions.
         match self {
-            MapIndex::Mutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::Immutable(index) => index.for_each_count_per_value(deferred_internal_id, f),
-            MapIndex::OnDisk(index) => index.for_each_count_per_value(deferred_internal_id, f),
+            MapIndex::Mutable(index) => {
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
+            }
+            MapIndex::Immutable(index) => {
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
+            }
+            MapIndex::OnDisk(index) => {
+                index.for_each_count_per_value(deferred_internal_id, f, hw_counter)
+            }
         }
     }
 
@@ -509,14 +533,14 @@ where
     /// `usize`-returning convenience wrapper around
     /// [`MapIndexRead::values_count`] for callers outside this module who
     /// don't have the (`pub(super)`) trait in scope.
-    pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        <Self as MapIndexRead<'_, N>>::values_count(self, idx).unwrap_or(0)
+    pub fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
+        <Self as MapIndexRead<'_, N>>::values_count(self, idx, hw_counter).unwrap_or(0)
     }
 
     /// `bool`-returning convenience wrapper around
     /// [`MapIndexRead::values_is_empty`]; see [`Self::values_count`] for why.
-    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
-        <Self as MapIndexRead<'_, N>>::values_is_empty(self, idx)
+    pub fn values_is_empty(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
+        <Self as MapIndexRead<'_, N>>::values_is_empty(self, idx, hw_counter)
     }
 
     /// Convenience wrapper around [`MapIndexRead::get_values`] that boxes the

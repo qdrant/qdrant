@@ -48,7 +48,9 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn remove(&mut self, key: &u32) -> bool {
-        self.delete_value(*key).unwrap().is_some()
+        self.delete_value(*key, &HardwareCounterCell::new())
+            .unwrap()
+            .is_some()
     }
 
     fn update(&mut self, key: &u32, payload: &Payload) -> bool {
@@ -61,6 +63,6 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn flush(&self) -> bool {
-        self.flusher()().is_ok()
+        self.flusher(&HardwareCounterCell::new())().is_ok()
     }
 }

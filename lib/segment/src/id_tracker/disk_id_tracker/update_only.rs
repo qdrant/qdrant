@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalWriteFs;
 
@@ -42,10 +43,17 @@ impl UpdateOnlyDiskIdTracker {
         &mut self,
         fs: &Fs,
         points: &[(PointIdType, PointOffsetType)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         Fs: UniversalWriteFs,
     {
-        tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, points)
+        tombstone_points_in_stored_mask(
+            fs,
+            &self.segment_path,
+            &mut self.deleted,
+            points,
+            hw_counter,
+        )
     }
 }

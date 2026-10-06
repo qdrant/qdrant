@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use std::mem::{align_of, size_of};
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::Flusher;
 use common::types::{PointOffsetType, ScoreType};
@@ -40,8 +41,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphVectors<T, S> {
         &self.graph
     }
 
-    pub fn populate(&self) {
-        if let Err(err) = self.graph.populate() {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
+        if let Err(err) = self.graph.populate(hw_counter) {
             log::error!("Failed to populate vector storage: {err}");
         }
     }
@@ -50,9 +51,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphVectors<T, S> {
         self.graph.clear_cache()
     }
 
-    fn base_vector(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+    fn base_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> Cow<'_, [T]> {
         self.graph
-            .base_vector(key)
+            .base_vector(key, hw_counter)
             .unwrap_or_else(|err| panic!("Failed to read base vector {key} from graph: {err}"))
     }
 }
@@ -69,48 +70,64 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorBlob for GraphVecto
         self.graph.num_points()
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
-        ((key as usize) < self.graph.num_points()).then(|| self.base_vector(key))
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [T]>> {
+        ((key as usize) < self.graph.num_points()).then(|| self.base_vector(key, hw_counter))
     }
 
     fn for_each_in_batch<F: FnMut(usize, &[T])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.graph.for_each_base_vector_in_batch(keys, f)
+        self.graph
+            .for_each_base_vector_in_batch(keys, f, hw_counter)
     }
 }
 
 impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
     type File = S;
 
-    fn vectors_count(&self) -> usize {
+    fn vectors_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.graph.num_points()
     }
 
-    fn get_vector_data(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.base_vector(key)
+    fn get_vector_data(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.base_vector(key, hw_counter)
     }
 
     fn for_each_in_batch<F: FnMut(usize, &[u8])>(
         &self,
         keys: &[PointOffsetType],
         f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.graph.for_each_base_vector_in_batch(keys, f)
+        self.graph
+            .for_each_base_vector_in_batch(keys, f, hw_counter)
     }
 
-    fn populate(&self) {
-        GraphVectors::populate(self);
+    fn populate(&self, hw_counter: &HardwareCounterCell) {
+        GraphVectors::populate(self, hw_counter);
     }
 
     fn clear_cache(&self) -> OperationResult<()> {
         GraphVectors::clear_cache(self)
     }
 
-    fn get_vector_data_opt(&self, key: PointOffsetType) -> Option<Cow<'_, [u8]>> {
-        ((key as usize) < self.graph.num_points()).then(|| self.base_vector(key))
+    fn get_vector_data_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>> {
+        ((key as usize) < self.graph.num_points()).then(|| self.base_vector(key, hw_counter))
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -130,12 +147,17 @@ impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
+        hw_counter: &HardwareCounterCell,
     ) {
         debug_assert_eq!(ids.len(), scores.len());
         self.graph
-            .for_each_base_vector_in_batch(ids, |idx, bytes| {
-                scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
-            })
+            .for_each_base_vector_in_batch(
+                ids,
+                |idx, bytes| {
+                    scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
+                },
+                hw_counter,
+            )
             .expect("score TQ vectors");
     }
 }

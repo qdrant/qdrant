@@ -358,7 +358,10 @@ pub fn should_keep_source_rotated(
 }
 
 impl crate::common::memory_usage::MemoryReporter for QuantizedVectors {
-    fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
+    fn memory_usage(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> crate::common::memory_usage::ComponentMemoryUsage {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
 
         let files = self.files();

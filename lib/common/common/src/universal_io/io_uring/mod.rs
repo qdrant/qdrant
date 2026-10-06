@@ -23,6 +23,7 @@ use self::pool::*;
 use self::runtime::*;
 use super::traits::{OpenExtra, UniversalReadFs, UniversalWriteFs};
 use super::*;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 
@@ -70,11 +71,15 @@ impl UniversalReadFs for IoUringFs {
         Ok(Self)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
+    fn exists(&self, path: &Path, _hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 
@@ -83,6 +88,7 @@ impl UniversalReadFs for IoUringFs {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: IoUringOpenExtra,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<IoUringFile> {
         // Check that io_uring is supported on this system.
         pool::check_io_uring_support()?;
@@ -116,7 +122,12 @@ impl UniversalReadFs for IoUringFs {
 impl UniversalWriteFs for IoUringFs {
     type AppendFile = IoUringFile;
 
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
+    fn create(
+        &self,
+        path: &Path,
+        expected_length: usize,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
 
@@ -124,7 +135,7 @@ impl UniversalWriteFs for IoUringFs {
         local_file_ops::local_create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> UioResult<()> {
+    fn remove(&self, path: &Path, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         local_file_ops::local_remove(path)
     }
 
@@ -132,15 +143,30 @@ impl UniversalWriteFs for IoUringFs {
         local_file_ops::local_remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
     }
 
     /// The very handle [`UniversalReadFs::open`] hands out, opened with the
     /// default extras: an `O_DIRECT` handle cannot append (its block-aligned
     /// I/O requirements rule out appends of arbitrary sizes).
-    fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<IoUringFile> {
-        self.open(path, options.for_append(), IoUringOpenExtra::default())
+    fn open_append(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<IoUringFile> {
+        self.open(
+            path,
+            options.for_append(),
+            IoUringOpenExtra::default(),
+            hw_counter,
+        )
     }
 }
 
@@ -181,7 +207,7 @@ impl UniversalRead for IoUringFile {
         Self: 'a,
         U: UserData;
 
-    fn live_reload(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         Ok(())
     }
 
@@ -190,12 +216,15 @@ impl UniversalRead for IoUringFile {
         range: Range<u64>,
         _access_pattern: P,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
         if self.direct_io {
             // direct_io needs special handling
             let mut pipeline = IoUringPipeline::<()>::new()?;
-            pipeline.schedule::<P>((), self, range, align)?;
-            let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+            pipeline.schedule::<P>((), self, range, align, hw_counter)?;
+            let (_, bytes) = pipeline
+                .wait(hw_counter)?
+                .expect("there's exactly one read");
             return Ok(bytes);
         }
 
@@ -205,7 +234,7 @@ impl UniversalRead for IoUringFile {
         Ok(ACow::Owned(bytes))
     }
 
-    fn len<T>(&self) -> UioResult<u64> {
+    fn len<T>(&self, _hw_counter: &HardwareCounterCell) -> UioResult<u64> {
         let byte_len = self.file.metadata()?.len();
 
         let items_len = byte_len / size_of::<T>() as u64;
@@ -214,7 +243,7 @@ impl UniversalRead for IoUringFile {
         Ok(items_len)
     }
 
-    fn populate(&self) -> UioResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         if crate::low_memory::low_memory_mode().skip_populate() {
             return Ok(());
         }
@@ -353,7 +382,12 @@ impl UniversalFlush for IoUringFile {
 }
 
 impl UniversalAppend for IoUringFile {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
+    fn append<T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        data: &[T],
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let mut slices = [io::IoSlice::new(bytes)];
         self.append_slices(offset, &mut slices, bytes.len())
@@ -363,6 +397,7 @@ impl UniversalAppend for IoUringFile {
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         let (mut slices, total) = local_file_ops::collect_append_slices(items);
         self.append_slices(offset, &mut slices, total)

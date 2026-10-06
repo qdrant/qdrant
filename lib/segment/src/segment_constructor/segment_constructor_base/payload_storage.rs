@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::flags::feature_flags;
 
@@ -13,6 +14,7 @@ use crate::types::SegmentConfig;
 pub(crate) fn create_payload_storage(
     segment_path: &Path,
     config: &SegmentConfig,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<PayloadStorageEnum> {
     let memory = config.payload_storage_type.memory();
     let populate = memory.populate_on_open();
@@ -23,7 +25,7 @@ pub(crate) fn create_payload_storage(
         memory,
         feature_flags().async_payload_storage,
     ) {
-        match PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate) {
+        match PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate, hw_counter) {
             Ok(storage) => return Ok(PayloadStorageEnum::IoUring(storage)),
             Err(err) => {
                 log::error!("Failed to open io_uring based payload storage: {err}");
@@ -31,6 +33,7 @@ pub(crate) fn create_payload_storage(
         }
     }
 
-    let payload_storage = PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate)?;
+    let payload_storage =
+        PayloadStorageImpl::open_or_create(segment_path.to_path_buf(), populate, hw_counter)?;
     Ok(PayloadStorageEnum::Mmap(payload_storage))
 }

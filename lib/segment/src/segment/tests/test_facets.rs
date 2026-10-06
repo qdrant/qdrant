@@ -62,7 +62,7 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
 
     let dim = 2;
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot, &hw_counter).unwrap();
     let vector: Vec<f32> = (0..dim).map(|i| i as f32 / 10.0).collect();
     let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
 

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::super::Encodable;
@@ -25,8 +26,9 @@ where
     pub fn preopen_appendable(
         fs: &impl CachedReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyAppendableNumericIndex::preopen(fs, dir)
+        ReadOnlyAppendableNumericIndex::preopen(fs, dir, hw_counter)
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
@@ -36,6 +38,7 @@ where
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -45,7 +48,7 @@ where
             false => Populate::PreferBackground,
         };
 
-        OnDiskNumericIndex::<T, S>::preopen(fs, path, populate)
+        OnDiskNumericIndex::<T, S>::preopen(fs, path, populate, hw_counter)
     }
 
     /// Read-only mirror of [`NumericIndexInner::new_gridstore`][1]: open the
@@ -60,8 +63,9 @@ where
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableNumericIndex::open(fs, dir)?.map(Self::Appendable))
+        Ok(ReadOnlyAppendableNumericIndex::open(fs, dir, hw_counter)?.map(Self::Appendable))
     }
 
     /// Read-only mirror of [`NumericIndexInner::new_mmap`][1]: open the
@@ -82,19 +86,24 @@ where
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let populate = Populate::from(!effective_is_on_disk);
-        let Some(mmap_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
+        let Some(mmap_index) =
+            OnDiskNumericIndex::open(fs, path, populate, deleted_points, hw_counter)?
+        else {
             return Ok(None);
         };
 
         let index = if effective_is_on_disk {
             Self::OnDisk(mmap_index)
         } else {
-            Self::Immutable(ImmutableNumericIndex::load_from_on_disk(mmap_index))
+            Self::Immutable(ImmutableNumericIndex::load_from_on_disk(
+                mmap_index, hw_counter,
+            ))
         };
 
         Ok(Some(index))

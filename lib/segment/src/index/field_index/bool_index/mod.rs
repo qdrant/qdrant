@@ -77,10 +77,10 @@ impl BoolIndexRead for BoolIndex {
         }
     }
 
-    fn indexed_count(&self) -> OperationResult<usize> {
+    fn indexed_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
-            BoolIndex::Mutable(index) => index.indexed_count(),
-            BoolIndex::Immutable(index) => index.indexed_count(),
+            BoolIndex::Mutable(index) => index.indexed_count(hw_counter),
+            BoolIndex::Immutable(index) => index.indexed_count(hw_counter),
         }
     }
 
@@ -91,24 +91,24 @@ impl BoolIndexRead for BoolIndex {
         }
     }
 
-    fn trues_count(&self) -> OperationResult<usize> {
+    fn trues_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
-            BoolIndex::Mutable(index) => index.trues_count(),
-            BoolIndex::Immutable(index) => index.trues_count(),
+            BoolIndex::Mutable(index) => index.trues_count(hw_counter),
+            BoolIndex::Immutable(index) => index.trues_count(hw_counter),
         }
     }
 
-    fn falses_count(&self) -> OperationResult<usize> {
+    fn falses_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
-            BoolIndex::Mutable(index) => index.falses_count(),
-            BoolIndex::Immutable(index) => index.falses_count(),
+            BoolIndex::Mutable(index) => index.falses_count(hw_counter),
+            BoolIndex::Immutable(index) => index.falses_count(hw_counter),
         }
     }
 }
 
 impl PayloadFieldIndexRead for BoolIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
-        self.indexed_count()
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.indexed_count(hw_counter)
     }
 
     fn filter<'a>(
@@ -132,8 +132,9 @@ impl PayloadFieldIndexRead for BoolIndex {
         threshold: usize,
         key: crate::types::PayloadKeyType,
         f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -156,10 +157,10 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> crate::common::Flusher {
         match self {
-            BoolIndex::Mutable(index) => index.flusher(),
-            BoolIndex::Immutable(index) => index.flusher(),
+            BoolIndex::Mutable(index) => index.flusher(hw_counter),
+            BoolIndex::Immutable(index) => index.flusher(hw_counter),
         }
     }
 
@@ -187,11 +188,11 @@ impl FacetIndex for BoolIndex {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
     ) -> OperationResult<()> {
         for point_id in points {
-            let values = self.get_point_values(point_id)?;
+            let values = self.get_point_values(point_id, hw_counter)?;
             f(point_id, &mut values.into_iter().map(FacetValueRef::Bool));
         }
         Ok(())
@@ -200,8 +201,9 @@ impl FacetIndex for BoolIndex {
     fn for_each_value(
         &self,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        BoolIndexRead::iter_values(self)?.try_for_each(|v| f(FacetValueRef::Bool(v)))
+        BoolIndexRead::iter_values(self, hw_counter)?.try_for_each(|v| f(FacetValueRef::Bool(v)))
     }
 
     fn for_each_value_map(
@@ -236,13 +238,19 @@ impl FacetIndex for BoolIndex {
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        BoolIndexRead::for_each_count_per_value(self, deferred_internal_id, |value, count| {
-            f(FacetHit {
-                value: FacetValueRef::Bool(value),
-                count,
-            })
-        })
+        BoolIndexRead::for_each_count_per_value(
+            self,
+            deferred_internal_id,
+            |value, count| {
+                f(FacetHit {
+                    value: FacetValueRef::Bool(value),
+                    count,
+                })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -274,9 +282,13 @@ impl ValueIndexer for BoolIndex {
         }
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mutable(index) => index.remove_point(id),
+            BoolIndex::Mutable(index) => index.remove_point(id, hw_counter),
             BoolIndex::Immutable(index) => index.remove_point(id),
         }
     }
@@ -318,11 +330,11 @@ mod tests {
         type BuilderType = MutableBoolIndexBuilder;
 
         fn builder(path: &Path) -> Self::BuilderType {
-            MutableBoolIndex::builder(path).unwrap()
+            MutableBoolIndex::builder(path, &HardwareCounterCell::new()).unwrap()
         }
 
         fn open_at(path: &Path) -> Self {
-            MutableBoolIndex::builder(path)
+            MutableBoolIndex::builder(path, &HardwareCounterCell::new())
                 .unwrap()
                 .make_empty()
                 .unwrap()
@@ -333,15 +345,15 @@ mod tests {
         type BuilderType = ImmutableBoolIndexBuilder;
 
         fn builder(path: &Path) -> Self::BuilderType {
-            ImmutableBoolIndex::builder(path).unwrap()
+            ImmutableBoolIndex::builder(path, &HardwareCounterCell::new()).unwrap()
         }
 
         fn open_at(path: &Path) -> Self {
-            let mutable_index = MutableBoolIndex::builder(path)
+            let mutable_index = MutableBoolIndex::builder(path, &HardwareCounterCell::new())
                 .unwrap()
                 .make_empty()
                 .unwrap();
-            ImmutableBoolIndex::from_mutable(mutable_index).unwrap()
+            ImmutableBoolIndex::from_mutable(mutable_index, &HardwareCounterCell::new()).unwrap()
         }
     }
 
@@ -381,7 +393,7 @@ mod tests {
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
-        let index = builder.finalize().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
         let count = index
             .filter(&match_bool(match_on), &hw_counter)
             .unwrap()
@@ -456,8 +468,8 @@ mod tests {
                 builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
-        let index = builder.finalize().unwrap();
-        index.flusher()().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
+        index.flusher(&hw_counter)().unwrap();
         drop(index);
 
         let new_index = I::open_at(tmp_dir.path());
@@ -478,7 +490,7 @@ mod tests {
             .collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
 
-        assert_eq!(new_index.count_indexed_points().unwrap(), 9);
+        assert_eq!(new_index.count_indexed_points(&hw_counter).unwrap(), 9);
     }
 
     #[rstest]
@@ -550,9 +562,9 @@ mod tests {
                 builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
-        let index = builder.finalize().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
 
-        assert_eq!(index.count_indexed_points().unwrap(), 9);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 9);
     }
 
     #[test]
@@ -575,10 +587,15 @@ mod tests {
 
         let mut blocks = Vec::new();
         index
-            .for_each_payload_block(0, JsonPath::new(FIELD_NAME), &mut |block| {
-                blocks.push(block);
-                Ok(())
-            })
+            .for_each_payload_block(
+                0,
+                JsonPath::new(FIELD_NAME),
+                &mut |block| {
+                    blocks.push(block);
+                    Ok(())
+                },
+                &hw_counter,
+            )
             .unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
@@ -610,7 +627,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let index = builder.finalize().unwrap();
+        let index = builder.finalize(&hw_counter).unwrap();
         let cardinality = index
             .estimate_cardinality(&match_bool(true), &hw_counter)
             .unwrap()

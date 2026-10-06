@@ -3,6 +3,7 @@ mod prof;
 
 use std::hint::black_box;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
@@ -52,7 +53,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         })
     });
 
-    graph_layers.compress_ram();
+    graph_layers.compress_ram(&HardwareCounterCell::new());
     let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("compressed", |b| {
         b.iter(|| {

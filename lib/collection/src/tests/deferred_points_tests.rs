@@ -67,6 +67,7 @@ async fn build_shard(
         current_runtime,
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap()

@@ -35,15 +35,16 @@ pub(super) fn build_main_graph_on_cpu(
     progress_main_graph: ProgressTracker,
     pool: &ThreadPool,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    let total_vector_count = vector_storage.total_vector_count();
+    let total_vector_count = vector_storage.total_vector_count(hw_counter);
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
     let mut ids = Vec::with_capacity(total_vector_count);
     let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
     let mut ids_iter = id_tracker
-        .point_mappings()
+        .point_mappings(hw_counter)
         .iter_internal_excluding(deleted_bitslice);
     if let Some(old_index) = old_index {
         progress_migrate.start();
@@ -62,6 +63,7 @@ pub(super) fn build_main_graph_on_cpu(
             old_quantized_vectors.as_ref(),
             stopped,
             counter.deref(),
+            hw_counter,
         )?;
         check_process_stopped(stopped)?;
         healer.save_into_builder(graph_layers_builder);
@@ -90,6 +92,7 @@ pub(super) fn build_main_graph_on_cpu(
         progress_main_graph.track_progress(Some(first_few_ids.len() as u64 + ids.len() as u64));
     let counter = counter.deref();
 
+    let deleted_point_bitslice = id_tracker.deleted_point_bitslice(hw_counter);
     let insert_point = |vector_id| {
         check_process_stopped(stopped)?;
         // No need to accumulate hardware, since this is an internal operation
@@ -100,7 +103,7 @@ pub(super) fn build_main_graph_on_cpu(
             vector_storage,
             quantized_vectors.as_ref(),
             None,
-            id_tracker.deleted_point_bitslice(),
+            deleted_point_bitslice,
             internal_hardware_counter,
         )?;
 

@@ -13,6 +13,7 @@ use bitvec::order::Lsb0;
 use itertools::{Either, Itertools};
 
 use crate::bitvec::BitVec;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Random;
 use crate::universal_io::{
     Flusher, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
@@ -70,18 +71,19 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let storage = TypedStorage::open(fs, path, options, extra)?;
-        let element_len = storage.len()?;
+        let storage = TypedStorage::open(fs, path, options, extra, hw_counter)?;
+        let element_len = storage.len(hw_counter)?;
         Ok(Self {
             storage,
             element_len,
         })
     }
 
-    pub fn live_reload(&mut self) -> UioResult<()> {
-        self.storage.live_reload()?;
-        self.element_len = self.storage.len()?;
+    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.storage.live_reload(hw_counter)?;
+        self.element_len = self.storage.len(hw_counter)?;
         Ok(())
     }
 
@@ -99,6 +101,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         extra: Fs::OpenExtra,
         seed: Option<BitVec>,
         update: impl FnOnce(&mut BitVec) -> Result<R, E>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Result<R, E>>
     where
         Fs: UniversalWriteFs<File = S>,
@@ -109,8 +112,8 @@ impl<S: UniversalRead> StoredBitSlice<S> {
             Some(bits) => bits,
             None => {
                 // Dropped before the save: Windows cannot replace a mapped file.
-                let stored = Self::open(fs, path, options, extra)?;
-                stored.read_all()?.into_owned()
+                let stored = Self::open(fs, path, options, extra, hw_counter)?;
+                stored.read_all(hw_counter)?.into_owned()
             }
         };
 
@@ -119,7 +122,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
             Err(err) => return Ok(Err(err)),
         };
 
-        fs.atomic_save(path, bytemuck::cast_slice(bits.as_raw_slice()))?;
+        fs.atomic_save(path, bytemuck::cast_slice(bits.as_raw_slice()), hw_counter)?;
 
         Ok(Ok(result))
     }
@@ -160,8 +163,8 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     ///
     /// Returns `Cow::Borrowed` when the backend supports zero-copy reads
     /// (e.g., mmap), otherwise returns `Cow::Owned`.
-    pub fn read_all(&self) -> UioResult<Cow<'_, BitSlice>> {
-        let elements = self.storage.read_whole()?;
+    pub fn read_all(&self, hw_counter: &HardwareCounterCell) -> UioResult<Cow<'_, BitSlice>> {
+        let elements = self.storage.read_whole(hw_counter)?;
         match elements {
             Cow::Borrowed(slice) => Ok(Cow::Borrowed(BitSlice::from_slice(slice))),
             Cow::Owned(vec) => Ok(Cow::Owned(BitVec::from_vec(vec))),
@@ -173,7 +176,11 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// The range is specified in bit indices. The underlying element reads are
     /// widened to cover full `u64` boundaries, and the returned slice is trimmed
     /// to the exact requested bit range.
-    pub fn read_bit_range(&self, range: std::ops::Range<u64>) -> UioResult<Cow<'_, BitSlice>> {
+    pub fn read_bit_range(
+        &self,
+        range: std::ops::Range<u64>,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Cow<'_, BitSlice>> {
         if range.is_empty() {
             return Ok(Cow::Borrowed(BitSlice::empty()));
         }
@@ -185,6 +192,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         let elements = self.storage.read(
             ReadRange::new(elem_start * size_of::<BitStore>() as u64, num_elements),
             Random,
+            hw_counter,
         )?;
 
         let bit_offset = Self::bit_within_element(range.start) as usize;
@@ -203,8 +211,8 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     }
 
     /// Count the number of set bits in the entire storage.
-    pub fn count_ones(&self) -> UioResult<usize> {
-        Ok(self.read_all()?.count_ones())
+    pub fn count_ones(&self, hw_counter: &HardwareCounterCell) -> UioResult<usize> {
+        Ok(self.read_all(hw_counter)?.count_ones())
     }
 
     /// Iterate the bit indices of all set bits, in ascending order.
@@ -215,8 +223,11 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// intermediate `Vec` of set positions is allocated. Reads the whole storage
     /// including any trailing capacity, so callers that keep unused capacity
     /// cleared get back exactly their set positions.
-    pub fn iter_ones(&self) -> UioResult<impl Iterator<Item = u64> + '_> {
-        let cow_bitslice = self.read_all()?;
+    pub fn iter_ones(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<impl Iterator<Item = u64> + '_> {
+        let cow_bitslice = self.read_all(hw_counter)?;
         let iter = match cow_bitslice {
             Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
             Cow::Owned(bitvec) => Either::Right(OwnedOnes::new(bitvec, |bv| bv.iter_ones())),
@@ -230,7 +241,11 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// target bit.
     ///
     /// Returns `None` if `bit_index` is out of bounds.
-    pub fn get_bit(&self, bit_index: u64) -> UioResult<Option<bool>> {
+    pub fn get_bit(
+        &self,
+        bit_index: u64,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Option<bool>> {
         let element_index = Self::element_idx(bit_index);
         let bit_within_element = Self::bit_within_element(bit_index);
 
@@ -241,6 +256,7 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         let element = self.storage.read(
             ReadRange::one(element_index * size_of::<BitStore>() as u64),
             Random,
+            hw_counter,
         )?[0];
 
         let bitslice = BitSlice::from_element(&element);
@@ -252,8 +268,8 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     }
 
     /// Populate the underlying storage's RAM cache.
-    pub fn populate(&self) -> UioResult<()> {
-        self.storage.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.storage.populate(hw_counter)
     }
 
     /// Evict the underlying storage's data from RAM cache.
@@ -274,6 +290,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     pub fn set_ascending_bits_batch(
         &mut self,
         updates: impl IntoIterator<Item = (u64, bool)>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         // Group updates into runs of consecutive elements. A new run starts
         // whenever the element index jumps by more than 1.
@@ -309,6 +326,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
                 .read(
                     ReadRange::new(element_start * size_of::<BitStore>() as u64, num_elements),
                     Random,
+                    hw_counter,
                 )?
                 .into_owned();
             let bitslice = BitSlice::from_slice_mut(&mut buf);
@@ -335,6 +353,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     pub fn write_bitslice<T2, O2>(
         &mut self,
         source: &bitvec::slice::BitSlice<T2, O2>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()>
     where
         T2: bitvec::store::BitStore,
@@ -359,7 +378,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
 
         let existing = self
             .storage
-            .read(ReadRange::new(0, element_count), Random)?;
+            .read(ReadRange::new(0, element_count), Random, hw_counter)?;
 
         let mut buf = existing.into_owned();
         let buf_bits = BitSlice::from_slice_mut(&mut buf);
@@ -371,7 +390,12 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
     /// Read-modify-write a single bit. Returns the previous value.
     ///
     /// Only writes to the backend if the element actually changed.
-    pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> UioResult<bool> {
+    pub fn replace_bit(
+        &mut self,
+        bit_index: u64,
+        value: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<bool> {
         let element_index = Self::element_idx(bit_index);
         let bit_within_element = Self::bit_within_element(bit_index);
 
@@ -386,6 +410,7 @@ impl<S: UniversalWrite> StoredBitSlice<S> {
         let mut element = self.storage.read(
             ReadRange::one(element_index * size_of::<BitStore>() as u64),
             Random,
+            hw_counter,
         )?[0];
 
         let element = &mut element;
@@ -438,9 +463,18 @@ mod tests {
     // ---- Atomic update tests ----
 
     fn stored_ones(path: &Path) -> Vec<u64> {
-        let stored: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, path, OpenOptions::new_for_test(), ()).unwrap();
-        stored.iter_ones().unwrap().collect()
+        let stored: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        stored
+            .iter_ones(&HardwareCounterCell::new())
+            .unwrap()
+            .collect()
     }
 
     #[test]
@@ -458,6 +492,7 @@ mod tests {
                 bits.set(3, true);
                 Ok::<_, ()>(())
             },
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
@@ -484,6 +519,7 @@ mod tests {
                 bits.set(3, true);
                 Ok::<_, ()>(())
             },
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap();
@@ -506,6 +542,7 @@ mod tests {
                 bits.set(3, true);
                 Err::<(), _>("rejected")
             },
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -526,13 +563,19 @@ mod tests {
         ];
         let f = create_temp_file(&data);
 
-        let storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         assert_eq!(storage.element_len(), 2);
         assert_eq!(storage.bit_len(), 128);
 
-        let bs = storage.read_all().unwrap();
+        let bs = storage.read_all(&HardwareCounterCell::new()).unwrap();
 
         // Element 0, byte 0: 0xB2 = 0b10110010
         // Lsb0 bits: [0,1,0,0,1,1,0,1]
@@ -580,17 +623,38 @@ mod tests {
         let data = [0xB2u8]; // 0b10110010
         let f = create_temp_file(&data);
 
-        let storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         // Lsb0: 0xB2 = bits [0,1,0,0,1,1,0,1]
-        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
-        assert_eq!(storage.get_bit(1).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(4).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(7).unwrap(), Some(true));
+        assert_eq!(
+            storage.get_bit(0, &HardwareCounterCell::new()).unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            storage.get_bit(1, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            storage.get_bit(4, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            storage.get_bit(7, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
 
         // Out of bounds (file is 8 bytes = 1 u64 = 64 bits)
-        assert_eq!(storage.get_bit(64).unwrap(), None);
+        assert_eq!(
+            storage.get_bit(64, &HardwareCounterCell::new()).unwrap(),
+            None
+        );
     }
 
     // ---- Write tests ----
@@ -599,44 +663,89 @@ mod tests {
     fn test_set_bit() {
         let f = create_temp_file(&[0x00; 8]);
 
-        let mut storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let mut storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         // Set bit 3
-        storage.replace_bit(3, true).unwrap();
-        assert_eq!(storage.get_bit(3).unwrap(), Some(true));
-        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
+        storage
+            .replace_bit(3, true, &HardwareCounterCell::new())
+            .unwrap();
+        assert_eq!(
+            storage.get_bit(3, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            storage.get_bit(0, &HardwareCounterCell::new()).unwrap(),
+            Some(false)
+        );
 
         // Clear bit 3
-        storage.replace_bit(3, false).unwrap();
-        assert_eq!(storage.get_bit(3).unwrap(), Some(false));
+        storage
+            .replace_bit(3, false, &HardwareCounterCell::new())
+            .unwrap();
+        assert_eq!(
+            storage.get_bit(3, &HardwareCounterCell::new()).unwrap(),
+            Some(false)
+        );
     }
 
     #[test]
     fn test_set_bit_out_of_bounds() {
         let f = create_temp_file(&[0x00; 8]);
 
-        let mut storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let mut storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        assert!(storage.replace_bit(storage.bit_len(), true).is_err());
+        assert!(
+            storage
+                .replace_bit(storage.bit_len(), true, &HardwareCounterCell::new())
+                .is_err()
+        );
     }
 
     #[test]
     fn test_replace_bit() {
         let f = create_temp_file(&[0xFF; 8]); // all bits set
-        let mut storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let mut storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         // Replace bit 2 (was true) with false
-        let old = storage.replace_bit(2, false).unwrap();
+        let old = storage
+            .replace_bit(2, false, &HardwareCounterCell::new())
+            .unwrap();
         assert!(old);
-        assert_eq!(storage.get_bit(2).unwrap(), Some(false));
+        assert_eq!(
+            storage.get_bit(2, &HardwareCounterCell::new()).unwrap(),
+            Some(false)
+        );
 
         // Replace bit 2 (now false) with true
-        let old = storage.replace_bit(2, true).unwrap();
+        let old = storage
+            .replace_bit(2, true, &HardwareCounterCell::new())
+            .unwrap();
         assert!(!old);
-        assert_eq!(storage.get_bit(2).unwrap(), Some(true));
+        assert_eq!(
+            storage.get_bit(2, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -644,13 +753,19 @@ mod tests {
         const NUM_BITS: u64 = 8192; // 128 u64 elements
         let f = create_temp_file(&[0x00; (NUM_BITS / 8) as usize]);
 
-        let mut storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let mut storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(storage.bit_len(), NUM_BITS);
 
         /// Verify every bit in storage matches the predicate.
         fn assert_bits(storage: &MmapBitSlice, expected: impl Fn(u64) -> bool) {
-            let bs = storage.read_all().unwrap();
+            let bs = storage.read_all(&HardwareCounterCell::new()).unwrap();
             for i in 0..storage.bit_len() {
                 assert_eq!(bs[i as usize], expected(i), "mismatch at bit {i}",);
             }
@@ -658,21 +773,36 @@ mod tests {
 
         // Set all odd bits across all elements
         storage
-            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 2 == 1).map(|i| (i, true)))
+            .set_ascending_bits_batch(
+                (0..NUM_BITS).filter(|i| i % 2 == 1).map(|i| (i, true)),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_bits(&storage, |i| i % 2 == 1);
-        assert_eq!(storage.count_ones().unwrap(), (NUM_BITS / 2) as usize);
+        assert_eq!(
+            storage.count_ones(&HardwareCounterCell::new()).unwrap(),
+            (NUM_BITS / 2) as usize
+        );
 
         // Set all even bits, now everything is set
         storage
-            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 2 == 0).map(|i| (i, true)))
+            .set_ascending_bits_batch(
+                (0..NUM_BITS).filter(|i| i % 2 == 0).map(|i| (i, true)),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_bits(&storage, |_| true);
-        assert_eq!(storage.count_ones().unwrap(), NUM_BITS as usize);
+        assert_eq!(
+            storage.count_ones(&HardwareCounterCell::new()).unwrap(),
+            NUM_BITS as usize
+        );
 
         // Clear every 3rd bit
         storage
-            .set_ascending_bits_batch((0..NUM_BITS).filter(|i| i % 3 == 0).map(|i| (i, false)))
+            .set_ascending_bits_batch(
+                (0..NUM_BITS).filter(|i| i % 3 == 0).map(|i| (i, false)),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_bits(&storage, |i| i % 3 != 0);
 
@@ -682,16 +812,20 @@ mod tests {
                 (0..NUM_BITS)
                     .filter(|i| i % 64 == 0 || i % 64 == 63)
                     .map(|i| (i, true)),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         assert_bits(&storage, |i| i % 3 != 0 || i % 64 == 0 || i % 64 == 63);
 
         // Clear everything
         storage
-            .set_ascending_bits_batch((0..NUM_BITS).map(|i| (i, false)))
+            .set_ascending_bits_batch(
+                (0..NUM_BITS).map(|i| (i, false)),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_bits(&storage, |_| false);
-        assert_eq!(storage.count_ones().unwrap(), 0);
+        assert_eq!(storage.count_ones(&HardwareCounterCell::new()).unwrap(), 0);
 
         // Non-consecutive runs: set bits in elements 0, 3, 7, 15 (gaps between)
         storage
@@ -699,6 +833,7 @@ mod tests {
                 [0, 3, 7, 111]
                     .into_iter()
                     .flat_map(|el: u64| (el * 64..el * 64 + 64).map(|i| (i, true))),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 111));
@@ -706,13 +841,16 @@ mod tests {
         // Out of bounds
         assert!(
             storage
-                .set_ascending_bits_batch([(NUM_BITS, true)])
+                .set_ascending_bits_batch([(NUM_BITS, true)], &HardwareCounterCell::new())
                 .is_err()
         );
 
         // Empty batch is a no-op
         storage
-            .set_ascending_bits_batch(std::iter::empty::<(u64, bool)>())
+            .set_ascending_bits_batch(
+                std::iter::empty::<(u64, bool)>(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert_bits(&storage, |i| matches!(i / 64, 0 | 3 | 7 | 111));
     }
@@ -721,24 +859,47 @@ mod tests {
     fn test_flusher() {
         let f = create_temp_file(&[0x00; 8]);
 
-        let mut storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let mut storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        storage.replace_bit(0, true).unwrap();
+        storage
+            .replace_bit(0, true, &HardwareCounterCell::new())
+            .unwrap();
         storage.flusher()().unwrap();
 
         // Reopen and verify persistence
-        let storage2: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
-        assert_eq!(storage2.get_bit(0).unwrap(), Some(true));
+        let storage2: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            storage2.get_bit(0, &HardwareCounterCell::new()).unwrap(),
+            Some(true)
+        );
     }
 
     #[test]
     fn test_bit_len() {
         let f = create_temp_file(&[0u8; 16]); // 2 u64 elements
 
-        let storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         assert_eq!(storage.element_len(), 2);
         assert_eq!(storage.bit_len(), 128);
@@ -749,10 +910,16 @@ mod tests {
         let data = [0xAB, 0xCD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let f = create_temp_file(&data);
 
-        let storage: MmapBitSlice =
-            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+        let storage: MmapBitSlice = StoredBitSlice::open(
+            &MmapFs,
+            f.path(),
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        let bs = storage.read_all().unwrap();
+        let bs = storage.read_all(&HardwareCounterCell::new()).unwrap();
         assert_eq!(bs.len(), storage.bit_len() as usize);
         // With mmap backend, read_all returns Cow::Borrowed (zero-copy)
         assert_matches!(bs, Cow::Borrowed(_));

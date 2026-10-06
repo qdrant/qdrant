@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{UniversalReadFs, read_json_via};
 use segment::common::operation_error::OperationResult;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
@@ -68,7 +69,11 @@ impl<F: UniversalReadFs> ManifestSegmentEnumerator<F> {
 
 impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnumerator<F> {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
-        let manifest: SegmentsManifest = read_json_via(&self.fs, &self.manifest_path)?;
+        let manifest: SegmentsManifest = read_json_via(
+            &self.fs,
+            &self.manifest_path,
+            &HardwareCounterCell::disposable(),
+        )?;
         Ok(manifest
             .iter()
             .filter(|(_, state)| state.is_usable())
@@ -100,17 +105,19 @@ impl LocalSegmentEnumerator {
 
 impl SegmentEnumerator for LocalSegmentEnumerator {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
-        Ok(scan_segment_dirs(&self.segments_path)?
-            .into_iter()
-            .map(|(uuid, path)| {
-                (
-                    uuid,
-                    ListedSegment {
-                        path,
-                        writable: true,
-                    },
-                )
-            })
-            .collect())
+        Ok(
+            scan_segment_dirs(&self.segments_path, &HardwareCounterCell::disposable())?
+                .into_iter()
+                .map(|(uuid, path)| {
+                    (
+                        uuid,
+                        ListedSegment {
+                            path,
+                            writable: true,
+                        },
+                    )
+                })
+                .collect(),
+        )
     }
 }

@@ -54,7 +54,8 @@ mod tests {
 
         let n: PointOffsetType = 100;
 
-        let mut builder = MutableNullIndex::builder(dir.path(), n as usize).unwrap();
+        let mut builder =
+            MutableNullIndex::builder(dir.path(), n as usize, &HardwareCounterCell::new()).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -72,7 +73,7 @@ mod tests {
             }
         }
 
-        let null_index = builder.finalize().unwrap();
+        let null_index = builder.finalize(&hw_counter).unwrap();
         let key = JsonPath::new("test");
 
         let filter_is_null = FieldCondition::new_is_null(key.clone(), true);
@@ -108,10 +109,10 @@ mod tests {
             .collect();
 
         let is_empty_values: Vec<_> = (0..n)
-            .filter(|&id| null_index.values_is_empty(id).unwrap())
+            .filter(|&id| null_index.values_is_empty(id, &hw_counter).unwrap())
             .collect();
         let not_null_values: Vec<_> = (0..n)
-            .filter(|&id| !null_index.values_is_null(id).unwrap())
+            .filter(|&id| !null_index.values_is_null(id, &hw_counter).unwrap())
             .collect();
 
         for i in 0..n {
@@ -178,7 +179,9 @@ mod tests {
     #[test]
     fn test_manual_buffer_flushing() {
         let dir = TempDir::with_prefix("test_manual_buffer_flushing").unwrap();
-        let mut index = MutableNullIndex::builder(dir.path(), 10).unwrap().0;
+        let mut index = MutableNullIndex::builder(dir.path(), 10, &HardwareCounterCell::new())
+            .unwrap()
+            .0;
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -188,11 +191,19 @@ mod tests {
                 .unwrap();
         }
 
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
 
         for i in 0..10 {
-            assert!(!index.values_is_empty(i as PointOffsetType).unwrap());
-            assert!(!index.values_is_null(i as PointOffsetType).unwrap());
+            assert!(
+                !index
+                    .values_is_empty(i as PointOffsetType, &hw_counter)
+                    .unwrap()
+            );
+            assert!(
+                !index
+                    .values_is_null(i as PointOffsetType, &hw_counter)
+                    .unwrap()
+            );
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use quantization::turboquant::TQBits;
@@ -24,15 +25,22 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         path: &Path,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
+        QuantizedChunkedStorageRead::<S>::preopen(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            populate,
+            hw_counter,
+        )?;
         ReadOnlyChunkedVectors::<MultivectorMmapOffset, S>::preopen(
             fs,
             &path.join(OFFSETS_DIR_PATH),
             advice,
             populate,
+            hw_counter,
         )?;
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
         Ok(())
     }
 
@@ -49,6 +57,7 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         multi_vector_config: MultiVectorConfig,
         advice: AdviceSetting,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
 
@@ -56,16 +65,23 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
             fs,
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
+            hw_counter,
         )?;
         // The chunked read backend maps lazily; warm it when the profile asks.
         if !matches!(populate, Populate::No) {
-            storage.populate()?;
+            storage.populate(hw_counter)?;
         }
 
-        let offsets =
-            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+        let offsets = ReadOnlyChunkedVectors::open(
+            fs,
+            &path.join(OFFSETS_DIR_PATH),
+            1,
+            advice,
+            populate,
+            hw_counter,
+        )?;
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
 
         Ok(Self {
             storage,

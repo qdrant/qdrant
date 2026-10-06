@@ -378,6 +378,7 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShard> {
         let total_started = Instant::now();
 
@@ -446,8 +447,11 @@ impl LocalShard {
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
                 let desired_vectors = desired_vector_names.clone();
+                let hw_acc = hw_acc.clone();
                 let handle = tokio::task::spawn_blocking(move || {
-                    let Some((segment_path, uuid)) = normalize_segment_dir(&segment_path)? else {
+                    let Some((segment_path, uuid)) =
+                        normalize_segment_dir(&segment_path, &hw_acc.get_counter_cell())?
+                    else {
                         return CollectionResult::Ok(None);
                     };
                     let mut segment = load_segment(
@@ -456,9 +460,10 @@ impl LocalShard {
                         deferred_internal_id,
                         &AtomicBool::new(false),
                         false,
+                        &hw_acc.get_counter_cell(),
                     )?;
 
-                    segment.check_consistency_and_repair()?;
+                    segment.check_consistency_and_repair(&hw_acc.get_counter_cell())?;
 
                     // Replay pending changes persisted by proxy segment. Buffered proxy state
                     // that made it to disk doesn't hold back the WAL acknowledge, so it must be
@@ -481,7 +486,8 @@ impl LocalShard {
 
                     // Reconcile named vectors: create vectors that exist in collection config
                     // but are missing from the segment (e.g. after crash between config update and shard update)
-                    segment.update_all_vector_names(&desired_vectors)?;
+                    segment
+                        .update_all_vector_names(&desired_vectors, &hw_acc.get_counter_cell())?;
 
                     CollectionResult::Ok(Some((segment, recovered)))
                 });
@@ -520,7 +526,7 @@ impl LocalShard {
         }
         drop(segment_stream); // release `payload_index_schema` from borrow checker
 
-        let res = deduplicate_points_async(&segment_holder).await?;
+        let res = deduplicate_points_async(&segment_holder, &hw_acc.get_counter_cell()).await?;
         if res > 0 {
             log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
         }
@@ -556,6 +562,7 @@ impl LocalShard {
                 segment_config,
                 payload_index_schema.clone(),
                 deferred_internal_id,
+                &hw_acc.get_counter_cell(),
             )?;
         }
 
@@ -579,7 +586,7 @@ impl LocalShard {
         .await;
 
         // Apply outstanding operations from WAL
-        local_shard.load_from_wal(collection_id).await?;
+        local_shard.load_from_wal(collection_id, hw_acc).await?;
 
         log_load_timing(shard_path, "total", total_started);
 
@@ -610,6 +617,7 @@ impl LocalShard {
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -624,6 +632,7 @@ impl LocalShard {
             search_runtime,
             optimizer_resource_budget,
             effective_optimizers_config,
+            hw_acc,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -643,6 +652,7 @@ impl LocalShard {
         search_runtime: AdaptiveSearchHandle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -685,10 +695,17 @@ impl LocalShard {
                 payload_storage_type: config.params.payload_storage_type(),
                 id_tracker_memory: config.params.id_tracker_memory(),
             };
+            let hw_acc = hw_acc.clone();
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
                 .spawn(move || {
-                    build_segment(&path_clone, &segment_config, deferred_internal_id, true)
+                    build_segment(
+                        &path_clone,
+                        &segment_config,
+                        deferred_internal_id,
+                        true,
+                        &hw_acc.get_counter_cell(),
+                    )
                 })
                 .unwrap();
             build_handlers.push(segment);
@@ -766,7 +783,11 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+    pub async fn load_from_wal(
+        &self,
+        collection_id: CollectionId,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock().await;
 
@@ -980,7 +1001,7 @@ impl LocalShard {
             // Force a flush after re-applying WAL operations, to ensure we maintain on-disk data
             // consistency, if we happened to only apply *past* operations to a segment with newer
             // version.
-            segments.flush_all(FlushMode::Sync, true)?;
+            segments.flush_all(FlushMode::Sync, true, &hw_acc.get_counter_cell())?;
         }
 
         bar.finish();
@@ -992,7 +1013,7 @@ impl LocalShard {
 
         // The storage is expected to be consistent after WAL recovery
         #[cfg(feature = "data-consistency-check")]
-        self.check_data_consistency()?;
+        self.check_data_consistency(&hw_acc.get_counter_cell())?;
 
         // Send remaining pending WAL elements to the update channel
         if to < last_wal_index {
@@ -1054,14 +1075,14 @@ impl LocalShard {
     /// Check data consistency for all segments
     ///
     /// Returns an error at the first inconsistent segment
-    pub fn check_data_consistency(&self) -> CollectionResult<()> {
+    pub fn check_data_consistency(&self, hw_counter: &HardwareCounterCell) -> CollectionResult<()> {
         log::info!("Checking data consistency for shard {:?}", self.path);
         let segments = self.segments.read();
         for (_idx, segment) in segments.iter() {
             match segment {
                 LockedSegment::Original(raw_segment) => {
                     let segment_guard = raw_segment.read();
-                    if let Err(err) = segment_guard.check_data_consistency() {
+                    if let Err(err) = segment_guard.check_data_consistency(hw_counter) {
                         log::error!(
                             "Segment {:?} is inconsistent: {}",
                             segment_guard.segment_path,
@@ -1214,7 +1235,10 @@ impl LocalShard {
         }
     }
 
-    pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
+    pub async fn local_shard_status(
+        &self,
+        hw_acc: &HwMeasurementAcc,
+    ) -> (ShardStatus, OptimizersStatus) {
         {
             let segments = self.segments.clone();
 
@@ -1259,7 +1283,7 @@ impl LocalShard {
             .update_handler
             .lock()
             .await
-            .check_optimizer_conditions();
+            .check_optimizer_conditions(&hw_acc.get_counter_cell());
         if has_suboptimal_optimizers {
             let status = if has_triggered_any_optimizers {
                 ShardStatus::Yellow
@@ -1273,8 +1297,12 @@ impl LocalShard {
         (ShardStatus::Green, OptimizersStatus::Ok)
     }
 
-    pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
+    pub async fn memory_report(
+        &self,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<CollectionMemoryReport> {
         let segments = self.segments.clone();
+        let hw_acc = hw_acc.clone();
         tokio::task::spawn_blocking(move || {
             // Collect metadata while the segments are stable, then release all
             // segment locks before issuing page-cache probes.
@@ -1282,7 +1310,11 @@ impl LocalShard {
                 let segments_read = segments.read();
                 let mut reports = Vec::new();
                 for (_id, locked_segment) in segments_read.iter() {
-                    collect_segment_memory_metadata(locked_segment, &mut reports);
+                    collect_segment_memory_metadata(
+                        locked_segment,
+                        &mut reports,
+                        &hw_acc.get_counter_cell(),
+                    );
                 }
                 reports
             };
@@ -1295,11 +1327,12 @@ impl LocalShard {
         .map_err(|e| CollectionError::service_error(format!("Memory report task failed: {e}")))?
     }
 
-    pub async fn local_shard_info(&self) -> ShardInfoInternal {
+    pub async fn local_shard_info(&self, hw_acc: &HwMeasurementAcc) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
 
+        let segments_hw_acc = hw_acc.clone();
         let segment_info = self
-            .do_with_segments(|segments| {
+            .do_with_segments(move |segments| {
                 let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
                 let mut indexed_vectors_count = 0;
                 let mut points_count = 0;
@@ -1308,7 +1341,10 @@ impl LocalShard {
                 for segment in segments {
                     segments_count += 1;
 
-                    let segment_info = segment.get().read().info()?;
+                    let segment_info = segment
+                        .get()
+                        .read()
+                        .info(&segments_hw_acc.get_counter_cell())?;
 
                     indexed_vectors_count += segment_info.num_indexed_vectors;
                     points_count += segment_info.num_points;
@@ -1335,7 +1371,7 @@ impl LocalShard {
         let (schema, indexed_vectors_count, points_count, segments_count) =
             segment_info.unwrap_or_default();
 
-        let (status, optimizer_status) = self.local_shard_status().await;
+        let (status, optimizer_status) = self.local_shard_status(hw_acc).await;
 
         let update_queue = self.local_update_queue_info().await;
 
@@ -1360,11 +1396,11 @@ impl LocalShard {
     }
 
     /// Call [`plan_optimizations`] and return summary.
-    pub fn optimizations(&self) -> LocalShardOptimizations {
+    pub fn optimizations(&self, hw_counter: &HardwareCounterCell) -> LocalShardOptimizations {
         let segments = self.segments.read();
 
         let mut remaining: HashMap<_, _> = segments.iter_original().collect();
-        let scheduled = plan_optimizations(&segments, &self.optimizers.load());
+        let scheduled = plan_optimizations(&segments, &self.optimizers.load(), hw_counter);
         let queued = scheduled
             .into_iter()
             .map(|(optimizer, segment_ids)| PendingOptimization {
@@ -1375,7 +1411,7 @@ impl LocalShard {
                         let segment = remaining.remove(&segment_id)?.read();
                         Some(OptimizationSegmentInfo {
                             uuid: segment.uuid,
-                            points_count: segment.available_point_count(),
+                            points_count: segment.available_point_count(hw_counter),
                         })
                     })
                     .collect(),
@@ -1390,7 +1426,7 @@ impl LocalShard {
                     let segment = segment.read();
                     OptimizationSegmentInfo {
                         uuid: segment.uuid,
-                        points_count: segment.available_point_count(),
+                        points_count: segment.available_point_count(hw_counter),
                     }
                 })
                 .collect(),
@@ -1570,9 +1606,10 @@ pub struct LocalShardOptimizations {
 
 fn deduplicate_points_async(
     holder: &SegmentHolder,
+    hw_counter: &HardwareCounterCell,
 ) -> impl Future<Output = CollectionResult<usize>> + 'static {
     let mut tasks: FuturesUnordered<_> = holder
-        .deduplicate_points_tasks()
+        .deduplicate_points_tasks(hw_counter)
         .into_iter()
         .map(tokio::task::spawn_blocking)
         .map(AbortOnDropHandle::new)
@@ -1740,15 +1777,16 @@ fn desired_vector_names_from_config(
 fn collect_segment_memory_metadata(
     locked_segment: &LockedSegment,
     reports: &mut Vec<segment::segment::memory::SegmentMemoryReport>,
+    hw_counter: &HardwareCounterCell,
 ) {
     match locked_segment {
         LockedSegment::Original(segment) => {
             let segment_guard = segment.read();
-            reports.push(segment_guard.memory_report());
+            reports.push(segment_guard.memory_report(hw_counter));
         }
         LockedSegment::Proxy(proxy) => {
             let proxy_guard = proxy.read();
-            collect_segment_memory_metadata(&proxy_guard.wrapped_segment, reports);
+            collect_segment_memory_metadata(&proxy_guard.wrapped_segment, reports, hw_counter);
         }
     }
 }

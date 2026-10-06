@@ -45,7 +45,9 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
 
 impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let bytes = self.storage.get_quantized_vector(idx);
+        let bytes = self
+            .storage
+            .get_quantized_vector(idx, &self.hardware_counter);
         self.hardware_counter.vector_io_read().incr();
         self.hardware_counter.cpu_counter().incr();
         self.storage.score_query_bytes(&self.query, &bytes)
@@ -58,12 +60,14 @@ impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
         self.hardware_counter.cpu_counter().incr_delta(ids.len());
 
-        self.storage.score_query_batch(&self.query, ids, scores);
+        self.storage
+            .score_query_batch(&self.query, ids, scores, &self.hardware_counter);
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
-        self.storage.score_internal_encoded(point_a, point_b)
+        self.storage
+            .score_internal_encoded(point_a, point_b, &self.hardware_counter)
     }
 
     type SupportsBytes = True;

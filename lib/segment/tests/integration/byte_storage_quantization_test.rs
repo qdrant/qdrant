@@ -319,7 +319,14 @@ fn test_quantization_over_typed_storage_hnsw(
 
     let int_key = "int";
 
-    let (mut segment_byte, _) = build_segment(dir_byte.path(), &config_byte, None, true).unwrap();
+    let (mut segment_byte, _) = build_segment(
+        dir_byte.path(),
+        &config_byte,
+        None,
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     // check that `segment_byte` uses the storage backend selected by the datatype
     {
         let borrowed_storage = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
@@ -421,6 +428,7 @@ fn test_quantization_over_typed_storage_hnsw(
                 quantized_data_path,
                 4,
                 &stopped,
+                &hw_counter,
             )
             .unwrap();
             vector_storage.quantized_vectors =
@@ -464,6 +472,7 @@ fn test_quantization_over_typed_storage_hnsw(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

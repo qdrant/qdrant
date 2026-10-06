@@ -1,4 +1,5 @@
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
@@ -18,35 +19,51 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         IoBackend::from_universal_kind(S::kind())
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseByte(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseHalf(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::Dense(s) => s.size_of_available_vectors_in_bytes(hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => s.size_of_available_vectors_in_bytes(hw_counter),
+            VectorStorageReadEnum::DenseHalf(s) => s.size_of_available_vectors_in_bytes(hw_counter),
+            VectorStorageReadEnum::DenseGraphInline(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
             VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                s.size_of_available_vectors_in_bytes()
+                s.size_of_available_vectors_in_bytes(hw_counter)
             }
             VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                s.size_of_available_vectors_in_bytes()
+                s.size_of_available_vectors_in_bytes(hw_counter)
             }
-            VectorStorageReadEnum::DenseChunked(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseChunked(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedByte(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedHalf(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
+            VectorStorageReadEnum::MultiDenseChunked(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                s.size_of_available_vectors_in_bytes()
+                s.size_of_available_vectors_in_bytes(hw_counter)
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                s.size_of_available_vectors_in_bytes()
+                s.size_of_available_vectors_in_bytes(hw_counter)
             }
-            VectorStorageReadEnum::DenseTurbo(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseTurbo(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                s.size_of_available_vectors_in_bytes()
+                s.size_of_available_vectors_in_bytes(hw_counter)
             }
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.size_of_available_vectors_in_bytes(),
-            VectorStorageReadEnum::Sparse(s) => s.size_of_available_vectors_in_bytes(),
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
+            VectorStorageReadEnum::MultiDenseTurbo(s) => {
+                s.size_of_available_vectors_in_bytes(hw_counter)
+            }
+            VectorStorageReadEnum::Sparse(s) => s.size_of_available_vectors_in_bytes(hw_counter),
         }
     }
 
@@ -116,47 +133,51 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         }
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseByte(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseHalf(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseChunked(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.total_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.total_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.total_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseTurbo(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.total_vector_count(),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.total_vector_count(),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.total_vector_count(),
-            VectorStorageReadEnum::Sparse(s) => s.total_vector_count(),
+            VectorStorageReadEnum::Dense(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseHalf(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunked(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurbo(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.total_vector_count(hw_counter),
+            VectorStorageReadEnum::Sparse(s) => s.total_vector_count(hw_counter),
         }
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseByte(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseHalf(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseChunked(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseTurbo(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.get_vector::<P>(key),
-            VectorStorageReadEnum::Sparse(s) => s.get_vector::<P>(key),
+            VectorStorageReadEnum::Dense(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseHalf(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseChunked(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseTurbo(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.get_vector::<P>(key, hw_counter),
+            VectorStorageReadEnum::Sparse(s) => s.get_vector::<P>(key, hw_counter),
         }
     }
 
@@ -164,57 +185,92 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseByte(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseHalf(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.read_vectors::<P, U>(keys, callback),
+            VectorStorageReadEnum::Dense(s) => s.read_vectors::<P, U>(keys, callback, hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseHalf(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseGraphInline(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                s.read_vectors::<P, U>(keys, callback)
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                s.read_vectors::<P, U>(keys, callback)
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::DenseChunked(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.read_vectors::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseChunked(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedByte(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseChunkedHalf(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::MultiDenseChunked(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                s.read_vectors::<P, U>(keys, callback)
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                s.read_vectors::<P, U>(keys, callback)
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::DenseTurbo(s) => s.read_vectors::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseTurbo(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                s.read_vectors::<P, U>(keys, callback)
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.read_vectors::<P, U>(keys, callback),
-            VectorStorageReadEnum::Sparse(s) => s.read_vectors::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::MultiDenseTurbo(s) => {
+                s.read_vectors::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::Sparse(s) => s.read_vectors::<P, U>(keys, callback, hw_counter),
         }
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseByte(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseHalf(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseChunked(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseTurbo(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.get_vector_opt::<P>(key),
-            VectorStorageReadEnum::Sparse(s) => s.get_vector_opt::<P>(key),
+            VectorStorageReadEnum::Dense(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseHalf(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => {
+                s.get_vector_opt::<P>(key, hw_counter)
+            }
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
+                s.get_vector_opt::<P>(key, hw_counter)
+            }
+            VectorStorageReadEnum::DenseChunked(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
+                s.get_vector_opt::<P>(key, hw_counter)
+            }
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
+                s.get_vector_opt::<P>(key, hw_counter)
+            }
+            VectorStorageReadEnum::DenseTurbo(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => {
+                s.get_vector_opt::<P>(key, hw_counter)
+            }
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.get_vector_opt::<P>(key, hw_counter),
+            VectorStorageReadEnum::Sparse(s) => s.get_vector_opt::<P>(key, hw_counter),
         }
     }
 
@@ -288,45 +344,56 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         &self,
         key: PointOffsetType,
         f: impl FnOnce(&[u8]) -> R,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<R>> {
         match self {
-            VectorStorageReadEnum::Dense(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
-            VectorStorageReadEnum::DenseByte(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
-            VectorStorageReadEnum::DenseHalf(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::Dense(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
+            }
+            VectorStorageReadEnum::DenseByte(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
+            }
+            VectorStorageReadEnum::DenseHalf(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
+            }
             VectorStorageReadEnum::DenseGraphInline(s) => {
-                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
             }
-            VectorStorageReadEnum::DenseChunked(s) => Ok(s.with_dense_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseChunked(s) => {
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
+            }
             VectorStorageReadEnum::DenseChunkedByte(s) => {
-                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::DenseChunkedHalf(s) => {
-                Ok(s.with_dense_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::MultiDenseChunked(s) => {
-                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                Ok(s.with_multi_bytes_opt::<P, R>(key, f))
+                Ok(s.with_multi_bytes_opt::<P, R>(key, f, hw_counter))
             }
-            VectorStorageReadEnum::DenseTurbo(s) => Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f)),
+            VectorStorageReadEnum::DenseTurbo(s) => {
+                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f, hw_counter))
+            }
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::DenseTurboChunked(s) => {
-                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f))
+                Ok(s.with_dense_tq_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
-                Ok(s.with_multi_tq_bytes_opt::<P, R>(key, f))
+                Ok(s.with_multi_tq_bytes_opt::<P, R>(key, f, hw_counter))
             }
             VectorStorageReadEnum::Sparse(s) => s.with_sparse_bytes_opt::<P, R>(key, f),
         }
@@ -335,6 +402,7 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
     fn vector_bytes_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<u8>>> {
         match self {
             // Sparse already allocates on serialize — return it without a copy.
@@ -356,30 +424,30 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
             | VectorStorageReadEnum::DenseTurboGraphInline(_)
             | VectorStorageReadEnum::DenseTurboChunked(_)
             | VectorStorageReadEnum::MultiDenseTurbo(_) => {
-                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec)
+                self.with_vector_bytes_opt::<P, _>(key, <[u8]>::to_vec, hw_counter)
             }
         }
     }
 
-    fn available_vector_count(&self) -> usize {
+    fn available_vector_count(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseByte(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseHalf(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseChunked(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.available_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.available_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.available_vector_count(),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseTurbo(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.available_vector_count(),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.available_vector_count(),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.available_vector_count(),
-            VectorStorageReadEnum::Sparse(s) => s.available_vector_count(),
+            VectorStorageReadEnum::Dense(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseByte(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseHalf(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunked(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurbo(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.available_vector_count(hw_counter),
+            VectorStorageReadEnum::Sparse(s) => s.available_vector_count(hw_counter),
         }
     }
 
@@ -387,47 +455,60 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseByte(s) => s.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageReadEnum::DenseHalf(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::Dense(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseByte(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
+            VectorStorageReadEnum::DenseHalf(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::DenseGraphInline(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::DenseChunked(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseChunked(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::DenseChunkedByte(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::DenseChunkedHalf(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::MultiDenseChunked(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::DenseTurbo(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::DenseTurbo(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::DenseTurboChunked(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
-                s.read_vector_bytes::<P, U>(keys, callback)
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
             }
-            VectorStorageReadEnum::Sparse(s) => s.read_vector_bytes::<P, U>(keys, callback),
+            VectorStorageReadEnum::Sparse(s) => {
+                s.read_vector_bytes::<P, U>(keys, callback, hw_counter)
+            }
         }
     }
 }

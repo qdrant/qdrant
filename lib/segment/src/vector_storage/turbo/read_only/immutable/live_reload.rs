@@ -15,6 +15,7 @@ impl<B: TurboVectorBlob> LiveReload for ReadOnlyImmutableTurboVectorStorage<B> {
     fn live_preload<Fs: CachedReadFs<File = B::File>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         // No new data to fetch, deletions are applied directly from arguments
         Ok(Vec::new())

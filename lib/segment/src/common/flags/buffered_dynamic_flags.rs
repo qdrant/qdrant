@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
@@ -66,7 +67,7 @@ where
         self.storage.lock().files()
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         let updates = {
             let buffer_guard = self.buffer.read();
             if buffer_guard.is_empty() {
@@ -85,7 +86,9 @@ where
         let fs = Arc::clone(&self.fs);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let (Some(is_alive_flush_guard), Some(flags_arc), Some(buffer_arc)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 flags_weak.upgrade(),
@@ -102,7 +105,7 @@ where
 
             // resize if needed
             if required_len > flags_guard.len() {
-                flags_guard.set_len(&*fs, required_len)?;
+                flags_guard.set_len(&*fs, required_len, hw_counter)?;
             }
 
             flags_guard.set_ascending_bits(
@@ -110,6 +113,7 @@ where
                     .iter()
                     .map(|(index, value)| (u64::from(*index), *value))
                     .sorted_by_key(|(index, _value)| *index),
+                hw_counter,
             )?;
 
             flags_guard.flusher()()?;
@@ -145,7 +149,7 @@ fn reconcile_persisted_buffer(
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
-
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use common::universal_io::Populate;
     #[cfg_predicate]
@@ -165,25 +169,40 @@ mod tests_mod {
 
         // Start with smaller flags
         {
-            let mut mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            mmap_flags.set_len(&Fs::default(), 3).unwrap();
-            mmap_flags.set(0, true).unwrap();
-            mmap_flags.set(2, true).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            mmap_flags
+                .set_len(&Fs::default(), 3, &HardwareCounterCell::new())
+                .unwrap();
+            mmap_flags
+                .set(0, true, &HardwareCounterCell::new())
+                .unwrap();
+            mmap_flags
+                .set(2, true, &HardwareCounterCell::new())
+                .unwrap();
             mmap_flags.flusher()().unwrap();
         }
 
         // Grow and update with BufferedDynamicFlags
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             // Initial state should match
-            assert_eq!(flags.count_flags().unwrap(), 2);
+            assert_eq!(flags.count_flags(&HardwareCounterCell::new()).unwrap(), 2);
             assert_eq!(flags.len(), 3);
 
             drop(flags);
@@ -198,26 +217,36 @@ mod tests_mod {
             // The flusher will handle the growth when it's called
 
             // Flush changes
-            let flusher = buffered_flags.flusher();
+            let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify growth persisted
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             assert_eq!(mmap_flags.len(), 9);
 
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
             let flags = buffered_flags.storage.lock();
 
             let expected_trues = vec![0, 1, 2, 5, 7];
-            let actual_trues: Vec<_> = flags.iter_trues().unwrap().collect();
+            let actual_trues: Vec<_> = flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
             assert_eq!(actual_trues, expected_trues);
 
-            assert_eq!(flags.count_flags().unwrap(), 5);
-            assert_eq!(flags.len() - flags.count_flags().unwrap(), 4);
+            assert_eq!(flags.count_flags(&HardwareCounterCell::new()).unwrap(), 5);
+            assert_eq!(
+                flags.len() - flags.count_flags(&HardwareCounterCell::new()).unwrap(),
+                4
+            );
         }
     }
 
@@ -235,12 +264,21 @@ mod tests_mod {
 
         // Create initial flags
         {
-            let mut mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            mmap_flags.set_len(&Fs::default(), num_flags).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            mmap_flags
+                .set_len(&Fs::default(), num_flags, &HardwareCounterCell::new())
+                .unwrap();
 
             for (i, &value) in initial_flags.iter().enumerate() {
-                mmap_flags.set(i, value).unwrap();
+                mmap_flags
+                    .set(i, value, &HardwareCounterCell::new())
+                    .unwrap();
             }
 
             mmap_flags.flusher()().unwrap();
@@ -259,15 +297,23 @@ mod tests_mod {
 
         // Apply updates and flush
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Verify initial state loaded correctly
             let initial_true_count = initial_flags.iter().filter(|&&b| b).count();
             assert_eq!(
-                buffered_flags.storage.lock().count_flags().unwrap(),
+                buffered_flags
+                    .storage
+                    .lock()
+                    .count_flags(&HardwareCounterCell::new())
+                    .unwrap(),
                 initial_true_count
             );
 
@@ -277,15 +323,19 @@ mod tests_mod {
             }
 
             // Flush
-            let flusher = buffered_flags.flusher();
+            let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify persistence
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Calculate expected final state
@@ -296,13 +346,16 @@ mod tests_mod {
 
             let expected_true_count = expected_state.iter().filter(|&&b| b).count();
             let flags = buffered_flags.storage.lock();
-            assert_eq!(flags.count_flags().unwrap(), expected_true_count);
+            assert_eq!(
+                flags.count_flags(&HardwareCounterCell::new()).unwrap(),
+                expected_true_count
+            );
             assert_eq!(flags.len(), num_flags);
 
             // Verify specific values for a sample
             for i in (0..num_flags).step_by(100) {
                 let expected = expected_state[i];
-                let actual = flags.get(i).unwrap();
+                let actual = flags.get(i, &HardwareCounterCell::new()).unwrap();
                 assert_eq!(actual, expected, "Mismatch at index {i}");
             }
         }
@@ -317,8 +370,13 @@ mod tests_mod {
 
         // Initial empty state
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             mmap_flags.flusher()().unwrap();
         }
 
@@ -333,9 +391,13 @@ mod tests_mod {
         for (cycle_num, updates) in cycles.iter().enumerate() {
             // Apply updates and flush
             {
-                let mmap_flags =
-                    DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                        .unwrap();
+                let mmap_flags = DynamicStoredFlags::<S>::open(
+                    &Fs::default(),
+                    dir.path(),
+                    Populate::Blocking,
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
                 let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
                 // The flusher will handle length expansion as needed
@@ -345,19 +407,27 @@ mod tests_mod {
                     expected_state[index as usize] = value;
                 }
 
-                let flusher = buffered_flags.flusher();
+                let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
                 flusher().unwrap();
             }
 
             // Verify state after each cycle
             {
-                let mmap_flags =
-                    DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                        .unwrap();
+                let mmap_flags = DynamicStoredFlags::<S>::open(
+                    &Fs::default(),
+                    dir.path(),
+                    Populate::Blocking,
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
                 let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
                 for (i, &expected) in expected_state.iter().enumerate() {
-                    let actual = buffered_flags.storage.lock().get(i).unwrap();
+                    let actual = buffered_flags
+                        .storage
+                        .lock()
+                        .get(i, &HardwareCounterCell::new())
+                        .unwrap();
                     assert_eq!(
                         actual, expected,
                         "Cycle {cycle_num}, index {i}: expected {expected}, got {actual}"
@@ -366,7 +436,11 @@ mod tests_mod {
 
                 let expected_true_count = expected_state.iter().filter(|&&b| b).count();
                 assert_eq!(
-                    buffered_flags.storage.lock().count_flags().unwrap(),
+                    buffered_flags
+                        .storage
+                        .lock()
+                        .count_flags(&HardwareCounterCell::new())
+                        .unwrap(),
                     expected_true_count
                 );
             }
@@ -382,31 +456,46 @@ mod tests_mod {
 
         // Test with single true flag
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             buffered_flags.buffer_set(0, true);
 
-            let flusher = buffered_flags.flusher();
+            let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify single flag persisted
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             assert_eq!(flags.len(), 1);
-            assert_eq!(flags.count_flags().unwrap(), 1);
-            assert_eq!(flags.len() - flags.count_flags().unwrap(), 0);
-            assert!(flags.get(0).unwrap());
+            assert_eq!(flags.count_flags(&HardwareCounterCell::new()).unwrap(), 1);
+            assert_eq!(
+                flags.len() - flags.count_flags(&HardwareCounterCell::new()).unwrap(),
+                0
+            );
+            assert!(flags.get(0, &HardwareCounterCell::new()).unwrap());
 
-            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
+            let trues: Vec<_> = flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
             assert_eq!(trues, vec![0]);
         }
     }
@@ -420,8 +509,13 @@ mod tests_mod {
 
         // Test with very sparse indices (large gaps)
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Set flags at sparse indices
@@ -430,34 +524,41 @@ mod tests_mod {
             buffered_flags.buffer_set(50000, true);
             buffered_flags.buffer_set(100000, true);
 
-            let flusher = buffered_flags.flusher();
+            let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify sparse indices persisted correctly
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
             assert_eq!(flags.len(), 100001);
-            assert_eq!(flags.count_flags().unwrap(), 4);
+            assert_eq!(flags.count_flags(&HardwareCounterCell::new()).unwrap(), 4);
 
             // Verify specific indices
-            assert!(flags.get(0).unwrap());
-            assert!(flags.get(1000).unwrap());
-            assert!(flags.get(50000).unwrap());
-            assert!(flags.get(100000).unwrap());
+            assert!(flags.get(0, &HardwareCounterCell::new()).unwrap());
+            assert!(flags.get(1000, &HardwareCounterCell::new()).unwrap());
+            assert!(flags.get(50000, &HardwareCounterCell::new()).unwrap());
+            assert!(flags.get(100000, &HardwareCounterCell::new()).unwrap());
 
             // Verify some gaps are false
-            assert!(!flags.get(500).unwrap());
-            assert!(!flags.get(25000).unwrap());
-            assert!(!flags.get(75000).unwrap());
+            assert!(!flags.get(500, &HardwareCounterCell::new()).unwrap());
+            assert!(!flags.get(25000, &HardwareCounterCell::new()).unwrap());
+            assert!(!flags.get(75000, &HardwareCounterCell::new()).unwrap());
 
-            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
+            let trues: Vec<_> = flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
             assert_eq!(trues, vec![0, 1000, 50000, 100000]);
         }
     }
@@ -471,24 +572,44 @@ mod tests_mod {
 
         // Create initial state
         {
-            let mut mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            mmap_flags.set_len(&Fs::default(), 10).unwrap();
+            let mut mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            mmap_flags
+                .set_len(&Fs::default(), 10, &HardwareCounterCell::new())
+                .unwrap();
             for i in 0..10 {
-                mmap_flags.set(i, i % 2 == 0).unwrap(); // Even indices true
+                mmap_flags
+                    .set(i, i % 2 == 0, &HardwareCounterCell::new())
+                    .unwrap(); // Even indices true
             }
             mmap_flags.flusher()().unwrap();
         }
 
         // Test overwriting existing flags multiple times
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             // Initial state: [true, false, true, false, true, false, true, false, true, false]
-            assert_eq!(buffered_flags.storage.lock().count_flags().unwrap(), 5);
+            assert_eq!(
+                buffered_flags
+                    .storage
+                    .lock()
+                    .count_flags(&HardwareCounterCell::new())
+                    .unwrap(),
+                5
+            );
 
             // First overwrite: flip all values
             for i in 0..10 {
@@ -505,27 +626,40 @@ mod tests_mod {
                 buffered_flags.buffer_set(i, false);
             }
 
-            let flusher = buffered_flags.flusher();
+            let flusher = buffered_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify final state (all false) persisted
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             let buffered_flags = BufferedDynamicFlags::new(Fs::default(), mmap_flags);
 
             let flags = buffered_flags.storage.lock();
 
-            assert_eq!(flags.count_flags().unwrap(), 0);
-            assert_eq!(flags.len() - flags.count_flags().unwrap(), 10);
+            assert_eq!(flags.count_flags(&HardwareCounterCell::new()).unwrap(), 0);
+            assert_eq!(
+                flags.len() - flags.count_flags(&HardwareCounterCell::new()).unwrap(),
+                10
+            );
 
             for i in 0..10 {
-                assert!(!flags.get(i).unwrap(), "Index {i} should be false");
+                assert!(
+                    !flags.get(i, &HardwareCounterCell::new()).unwrap(),
+                    "Index {i} should be false"
+                );
             }
 
-            let trues: Vec<_> = flags.iter_trues().unwrap().collect();
+            let trues: Vec<_> = flags
+                .iter_trues(&HardwareCounterCell::new())
+                .unwrap()
+                .collect();
             assert!(trues.is_empty());
         }
     }

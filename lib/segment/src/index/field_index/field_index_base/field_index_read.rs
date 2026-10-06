@@ -40,13 +40,24 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`count_indexed_points`](PayloadFieldIndexRead::count_indexed_points):
     /// the read-only bool index derives its point counts from bitmaps it
     /// materializes on demand.
-    fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry>;
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PayloadIndexTelemetry>;
 
     /// Number of values for `point_id`.
-    fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;
+    fn values_count(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize>;
 
     /// True if `point_id` has zero values in this index.
-    fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool>;
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 
     /// Build a closure that extracts this index's values for a given
     /// point as a [`MultiValue<Value>`](crate::common::utils::MultiValue).

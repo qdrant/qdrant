@@ -5,6 +5,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err::tokio as tokio_fs;
 
 use super::TableOfContent;
@@ -53,6 +54,7 @@ impl TableOfContent {
     pub async fn create_snapshot(
         &self,
         collection_pass: &CollectionPass<'_>,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<SnapshotDescription, StorageError> {
         // Increment snapshot telemetry/mertic counter and account for the whole scope.
         // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -67,7 +69,7 @@ impl TableOfContent {
         // snapshot directory is mounted as network share and multiple writes to it could be slow
         let temp_dir = self.optional_temp_or_storage_temp_path()?;
         Ok(collection
-            .create_snapshot(&temp_dir, self.this_peer_id)
+            .create_snapshot(&temp_dir, self.this_peer_id, hw_acc)
             .await?)
     }
 

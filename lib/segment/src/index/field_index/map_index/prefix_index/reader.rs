@@ -74,13 +74,19 @@ impl<S: UniversalRead> PrefixIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let file_path = dir.join(PREFIX_INDEX_PATH);
-        if !UniversalReadFs::exists(fs, &file_path)? {
+        if !UniversalReadFs::exists(fs, &file_path, hw_counter)? {
             return Ok(());
         }
 
-        fs.schedule_open(&file_path, Some(Self::prefix_open_options(populate)), None);
+        fs.schedule_open(
+            &file_path,
+            Some(Self::prefix_open_options(populate)),
+            None,
+            hw_counter,
+        );
 
         Ok(())
     }
@@ -91,9 +97,10 @@ impl<S: UniversalRead> PrefixIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let file_path = dir.join(PREFIX_INDEX_PATH);
-        if !UniversalReadFs::exists(fs, &file_path)? {
+        if !UniversalReadFs::exists(fs, &file_path, hw_counter)? {
             return Ok(None);
         }
 
@@ -101,10 +108,12 @@ impl<S: UniversalRead> PrefixIndex<S> {
             &file_path,
             Self::prefix_open_options(populate),
             Default::default(),
+            hw_counter,
         )?;
 
         let header_size = size_of::<Header>() as u64;
-        let header_bytes = storage.read_bytes(0..header_size, Random, align_of::<Header>())?;
+        let header_bytes =
+            storage.read_bytes(0..header_size, Random, align_of::<Header>(), hw_counter)?;
         let header: Header = bytemuck::try_pod_read_unaligned(header_bytes.as_ref())
             .map_err(|_| OperationError::service_error("Failed to read prefix index header"))?;
 
@@ -124,6 +133,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             header_size..header_size + header.block_index_size,
             Random,
             1,
+            hw_counter,
         )?;
         let blocks = Self::parse_block_index(
             index_bytes.as_ref(),
@@ -238,6 +248,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
         let bytes = self.storage.read::<_, u8>(
             ReadRange::new(bytes_start, last_block.bytes.end - bytes_start),
             Random,
+            hw_counter.parent(),
         )?;
 
         for block in &self.blocks[range] {
@@ -353,6 +364,7 @@ impl<S: UniversalRead> PrefixIndex<S> {
             let bytes = self.storage.read::<_, u8>(
                 ReadRange::new(bytes_start, bytes_end - bytes_start),
                 Sequential,
+                hw_counter.parent(),
             )?;
 
             for block in &self.blocks[chunk_start..chunk_end] {
@@ -384,13 +396,14 @@ impl<S: UniversalRead> PrefixIndex<S> {
         let bytes = self.storage.read::<_, u8>(
             ReadRange::new(block.bytes.start, block.bytes.end - block.bytes.start),
             Random,
+            hw_counter.parent(),
         )?;
         decode_block(bytes.as_ref(), block.key_count, f)
     }
 
     /// Populate all pages of the backing storage.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.populate(hw_counter)?;
         Ok(())
     }
 

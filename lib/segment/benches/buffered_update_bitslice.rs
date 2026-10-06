@@ -1,6 +1,7 @@
 use std::hint::black_box;
 use std::iter;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::create_and_ensure_length;
 use common::stored_bitslice::MmapBitSlice;
 use common::universal_io::{MmapFs, OpenOptions};
@@ -26,15 +27,21 @@ fn buffered_update_bitslice(c: &mut Criterion) {
     )
     .unwrap();
 
-    let bitslice_storage =
-        MmapBitSlice::open(&MmapFs, &path, OpenOptions::new_for_test(), ()).unwrap();
+    let bitslice_storage = MmapBitSlice::open(
+        &MmapFs,
+        &path,
+        OpenOptions::new_for_test(),
+        (),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let buffered_update_bitslice = BufferedUpdateBitSlice::new(bitslice_storage);
 
     // Set random flags and persist
     for _ in 0..FLAG_COUNT {
         buffered_update_bitslice.set(rng.random::<u64>() as usize % SIZE, rng.random());
     }
-    buffered_update_bitslice.flusher()().unwrap();
+    buffered_update_bitslice.flusher(&HardwareCounterCell::new())().unwrap();
 
     let mut group = c.benchmark_group("buffered-update-bitslice");
 
@@ -45,7 +52,11 @@ fn buffered_update_bitslice(c: &mut Criterion) {
     group.bench_function("lookup-without-pending-changes", |b| {
         b.iter(|| {
             for lookup in &lookups {
-                black_box(buffered_update_bitslice.get(*lookup).unwrap());
+                black_box(
+                    buffered_update_bitslice
+                        .get(*lookup, &HardwareCounterCell::new())
+                        .unwrap(),
+                );
             }
         });
     });
@@ -58,7 +69,11 @@ fn buffered_update_bitslice(c: &mut Criterion) {
     group.bench_function("lookup-with-pending-changes", |b| {
         b.iter(|| {
             for lookup in &lookups {
-                black_box(buffered_update_bitslice.get(*lookup).unwrap());
+                black_box(
+                    buffered_update_bitslice
+                        .get(*lookup, &HardwareCounterCell::new())
+                        .unwrap(),
+                );
             }
         });
     });

@@ -40,7 +40,7 @@ fn test_tenant_graph_with_second_condition() {
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let product = if n % rare_every == 1 {
             "rare"
@@ -109,6 +109,7 @@ fn test_tenant_graph_with_second_condition() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

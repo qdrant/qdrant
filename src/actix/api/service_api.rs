@@ -9,6 +9,7 @@ use actix_web::web::Data;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use actix_web_validator::{Path, Query};
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -64,7 +65,13 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .lock()
             .await
-            .prepare_data(&auth, detail, None, params.timeout())
+            .prepare_data(
+                &auth,
+                detail,
+                None,
+                params.timeout(),
+                &HwMeasurementAcc::disposable(),
+            )
             .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
@@ -117,6 +124,7 @@ async fn metrics(
             },
             None,
             params.timeout(),
+            &HwMeasurementAcc::disposable(),
         )
         .await;
     match telemetry_data {

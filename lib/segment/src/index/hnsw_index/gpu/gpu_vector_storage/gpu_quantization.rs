@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
@@ -47,17 +48,24 @@ impl GpuQuantization {
     pub fn new_bq<T: BitsStoreType, TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsBin<T, TStorage>,
+        hw_counter: &HardwareCounterCell,
     ) -> GpuQuantization {
-        GpuQuantization::Binary(GpuBinaryQuantization::new(device, quantized_storage))
+        GpuQuantization::Binary(GpuBinaryQuantization::new(
+            device,
+            quantized_storage,
+            hw_counter,
+        ))
     }
 
     pub fn new_sq<TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsU8<TStorage>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GpuQuantization> {
         Ok(GpuQuantization::Scalar(GpuScalarQuantization::new(
             device,
             quantized_storage,
+            hw_counter,
         )?))
     }
 
@@ -137,11 +145,12 @@ impl GpuBinaryQuantization {
     fn new<T: BitsStoreType, TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsBin<T, TStorage>,
+        hw_counter: &HardwareCounterCell,
     ) -> Self {
         let orig_dim = quantized_storage.get_vector_parameters().dim;
         // Bytes count for quantized vector.
-        let quantized_vector_len = if quantized_storage.vectors_count() > 0 {
-            quantized_storage.get_quantized_vector(0).len()
+        let quantized_vector_len = if quantized_storage.vectors_count(hw_counter) > 0 {
+            quantized_storage.get_quantized_vector(0, hw_counter).len()
         } else {
             0
         };
@@ -210,6 +219,7 @@ impl GpuScalarQuantization {
     fn new<TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsU8<TStorage>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         Ok(GpuScalarQuantization {
             multiplier: quantized_storage.get_multiplier(),
@@ -217,6 +227,7 @@ impl GpuScalarQuantization {
             offsets_buffer: GpuScalarQuantization::create_sq_offsets_buffer(
                 device,
                 quantized_storage,
+                hw_counter,
             )?,
             offsets_buffer_binding: START_QUANTIZATION_BINDING,
         })
@@ -225,12 +236,14 @@ impl GpuScalarQuantization {
     fn create_sq_offsets_buffer<TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsU8<TStorage>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Arc<gpu::Buffer>> {
         let sq_offsets_buffer = gpu::Buffer::new(
             device.clone(),
             "SQ offsets buffer",
             gpu::BufferType::Storage,
-            std::cmp::max(quantized_storage.vectors_count(), 1) * std::mem::size_of::<f32>(),
+            std::cmp::max(quantized_storage.vectors_count(hw_counter), 1)
+                * std::mem::size_of::<f32>(),
         )?;
 
         let sq_offsets_staging_buffer = gpu::Buffer::new(
@@ -242,9 +255,9 @@ impl GpuScalarQuantization {
 
         let mut upload_context = gpu::Context::new(device.clone())?;
 
-        for i in 0..quantized_storage.vectors_count() {
-            let (offset, _) =
-                quantized_storage.get_quantized_vector_offset_and_code(i as PointOffsetType);
+        for i in 0..quantized_storage.vectors_count(hw_counter) {
+            let (offset, _) = quantized_storage
+                .get_quantized_vector_offset_and_code(i as PointOffsetType, hw_counter);
             sq_offsets_staging_buffer.upload(&offset, i * std::mem::size_of::<f32>())?;
         }
 

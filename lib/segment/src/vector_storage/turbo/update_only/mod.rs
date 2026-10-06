@@ -44,14 +44,16 @@ impl UpdateOnlyTurboVectorStorage {
         dim: usize,
         distance: Distance,
         bits: TQBits,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
-        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
+        let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH), hw_counter)?;
         let vectors = UpdateOnlyChunkedVectors::open(
             fs,
             &path.join(VECTORS_DIR_PATH),
             quantizer.quantized_size(),
+            hw_counter,
         )?;
 
         Ok(Self {

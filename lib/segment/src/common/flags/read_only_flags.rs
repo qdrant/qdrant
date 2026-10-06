@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 use futures::future::BoxFuture;
 use roaring::RoaringBitmap;
@@ -34,11 +35,16 @@ impl<S: UniversalRead> ReadOnlyFlags<S> {
         fs: &impl CachedReadFs<File = S>,
         directory: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        match FlagsMode::detect(fs, directory)? {
+        match FlagsMode::detect(fs, directory, hw_counter)? {
             None => Ok(false),
-            Some(FlagsMode::Dynamic) => ReadOnlyRoaringFlags::<S>::preopen(fs, directory, populate),
-            Some(FlagsMode::Compact) => ReadOnlyCompactFlags::<S>::preopen(fs, directory, populate),
+            Some(FlagsMode::Dynamic) => {
+                ReadOnlyRoaringFlags::<S>::preopen(fs, directory, populate, hw_counter)
+            }
+            Some(FlagsMode::Compact) => {
+                ReadOnlyCompactFlags::<S>::preopen(fs, directory, populate, hw_counter)
+            }
         }
     }
 
@@ -49,24 +55,29 @@ impl<S: UniversalRead> ReadOnlyFlags<S> {
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        match FlagsMode::detect(fs, directory)? {
+        match FlagsMode::detect(fs, directory, hw_counter)? {
             None => Ok(None),
             Some(FlagsMode::Dynamic) => {
-                Ok(ReadOnlyRoaringFlags::open(fs, directory)?.map(Self::Dynamic))
+                Ok(ReadOnlyRoaringFlags::open(fs, directory, hw_counter)?.map(Self::Dynamic))
             }
             Some(FlagsMode::Compact) => {
-                Ok(ReadOnlyCompactFlags::open(fs, directory)?.map(Self::Compact))
+                Ok(ReadOnlyCompactFlags::open(fs, directory, hw_counter)?.map(Self::Compact))
             }
         }
     }
 
     /// Refresh to the current on-disk state; see the variants' impls for the
     /// respective reload semantics.
-    pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
+    pub fn live_reload(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            Self::Dynamic(flags) => flags.live_reload(fs),
-            Self::Compact(flags) => flags.live_reload(fs),
+            Self::Dynamic(flags) => flags.live_reload(fs, hw_counter),
+            Self::Compact(flags) => flags.live_reload(fs, hw_counter),
         }
     }
 }
@@ -77,10 +88,11 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
-            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
-            ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
+            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs, hw_counter),
+            ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs, hw_counter),
         };
         Ok(Vec::new())
     }
@@ -90,11 +102,11 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         fs: &Fs,
         _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
         _new_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
-        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
+        hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs),
-            ReadOnlyFlags::Compact(compact) => compact.live_reload(fs),
+            ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs, hw_counter),
+            ReadOnlyFlags::Compact(compact) => compact.live_reload(fs, hw_counter),
         }
     }
 }
@@ -107,10 +119,10 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyFlags<S> {
         }
     }
 
-    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
+    fn get_bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
         match self {
-            Self::Dynamic(flags) => flags.get_bitmap(),
-            Self::Compact(flags) => flags.get_bitmap(),
+            Self::Dynamic(flags) => flags.get_bitmap(hw_counter),
+            Self::Compact(flags) => flags.get_bitmap(hw_counter),
         }
     }
 
@@ -145,7 +157,7 @@ mod tests {
         // Nothing on disk: no flags.
         let missing = tmp.path().join("missing");
         assert!(
-            ReadOnlyFlags::<MmapFile>::open(&MmapFs, &missing)
+            ReadOnlyFlags::<MmapFile>::open(&MmapFs, &missing, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
@@ -153,34 +165,48 @@ mod tests {
         // Dynamic-mode flags.
         let dynamic_dir = tmp.path().join("dynamic");
         {
-            let mut writer =
-                DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dynamic_dir, Populate::No).unwrap();
-            writer.set_len(&MmapFs, 10).unwrap();
-            writer.set(3, true).unwrap();
+            let mut writer = DynamicStoredFlags::<MmapFile>::open(
+                &MmapFs,
+                &dynamic_dir,
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            writer
+                .set_len(&MmapFs, 10, &HardwareCounterCell::new())
+                .unwrap();
+            writer.set(3, true, &HardwareCounterCell::new()).unwrap();
             writer.flusher()().unwrap();
         }
-        let flags = ReadOnlyFlags::<MmapFile>::open(&MmapFs, &dynamic_dir)
-            .unwrap()
-            .unwrap();
+        let flags =
+            ReadOnlyFlags::<MmapFile>::open(&MmapFs, &dynamic_dir, &HardwareCounterCell::new())
+                .unwrap()
+                .unwrap();
         assert!(matches!(flags, ReadOnlyFlags::Dynamic(_)));
         assert_eq!(flags.len(), 10);
-        assert!(flags.get(3).unwrap());
-        assert_eq!(flags.count_trues().unwrap(), 1);
+        assert!(flags.get(3, &HardwareCounterCell::new()).unwrap());
+        assert_eq!(flags.count_trues(&HardwareCounterCell::new()).unwrap(), 1);
 
         // Compact-mode flags.
         let compact_dir = tmp.path().join("compact");
         {
-            let writer =
-                CompactStoredFlags::<MmapFile>::open(MmapFs, &compact_dir, Populate::No).unwrap();
-            writer.set(7, true);
-            writer.flusher()().unwrap();
-        }
-        let flags = ReadOnlyFlags::<MmapFile>::open(&MmapFs, &compact_dir)
-            .unwrap()
+            let writer = CompactStoredFlags::<MmapFile>::open(
+                MmapFs,
+                &compact_dir,
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
+            writer.set(7, true);
+            writer.flusher(&HardwareCounterCell::new())().unwrap();
+        }
+        let flags =
+            ReadOnlyFlags::<MmapFile>::open(&MmapFs, &compact_dir, &HardwareCounterCell::new())
+                .unwrap()
+                .unwrap();
         assert!(matches!(flags, ReadOnlyFlags::Compact(_)));
         assert_eq!(flags.len(), 8);
-        assert!(flags.get(7).unwrap());
+        assert!(flags.get(7, &HardwareCounterCell::new()).unwrap());
         assert_eq!(flags.files().len(), 1);
     }
 }

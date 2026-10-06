@@ -29,6 +29,7 @@ impl FullTextIndex {
         config: TextIndexParams,
         memory: Memory,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Low-memory mode degrades the placement at load time (pinned falls back to the
         // pure-mmap variant). Files are shared between variants; the persisted
@@ -41,7 +42,7 @@ impl FullTextIndex {
         // Checked before the open, not after: opening populates the whole file
         // set, and on the first start after scoring is enabled every existing
         // segment would fault in its postings only to be discarded here.
-        if scoring && !has_doc_len_sidecar(&MmapFs, &path)? {
+        if scoring && !has_doc_len_sidecar(&MmapFs, &path, hw_counter)? {
             log::info!(
                 "Text index at {path} records no document lengths, rebuilding it from payload",
                 path = path.display(),
@@ -50,7 +51,7 @@ impl FullTextIndex {
         }
 
         let Some(on_disk_index) =
-            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
+            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points, hw_counter)?
         else {
             return Ok(None);
         };
@@ -69,7 +70,10 @@ impl FullTextIndex {
 
         let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         } else {
             // Use on-disk directly
             Self::OnDisk(on_disk_index)
@@ -81,15 +85,22 @@ impl FullTextIndex {
         dir: PathBuf,
         config: TextIndexParams,
         create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing, scoring)?;
+        let index = MutableFullTextIndex::open_gridstore(
+            dir,
+            config,
+            create_if_missing,
+            scoring,
+            hw_counter,
+        )?;
         Ok(index.map(Self::Mutable))
     }
 
-    pub fn init(&mut self) -> OperationResult<()> {
+    pub fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.init(),
+            Self::Mutable(index) => index.init(hw_counter),
             Self::Immutable(_) => {
                 debug_assert!(false, "Immutable index should be initialized before use");
                 Ok(())
@@ -211,12 +222,12 @@ impl FullTextIndex {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             // Mutable / Immutable keep their inverted index fully in RAM —
             // there is nothing to populate.
             Self::Mutable(_) | Self::Immutable(_) => Ok(()),
-            Self::OnDisk(index) => index.populate(),
+            Self::OnDisk(index) => index.populate(hw_counter),
         }
     }
 
@@ -269,11 +280,15 @@ impl ValueIndexer for FullTextIndex {
         value.as_str().map(ToOwned::to_owned)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            FullTextIndex::Mutable(index) => index.remove_point(id)?,
-            FullTextIndex::Immutable(index) => index.remove_point(id),
-            FullTextIndex::OnDisk(index) => index.remove_point(id),
+            FullTextIndex::Mutable(index) => index.remove_point(id, hw_counter)?,
+            FullTextIndex::Immutable(index) => index.remove_point(id, hw_counter),
+            FullTextIndex::OnDisk(index) => index.remove_point(id, hw_counter),
         }
         Ok(())
     }
@@ -288,9 +303,9 @@ impl PayloadFieldIndex for FullTextIndex {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match self {
-            Self::Mutable(index) => index.flusher(),
+            Self::Mutable(index) => index.flusher(hw_counter),
             Self::Immutable(index) => index.flusher(),
             Self::OnDisk(index) => index.flusher(),
         }
@@ -342,20 +357,24 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
         FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.remove_point(id)
+        index.remove_point(id, hw_counter)
     }
 }
 
 impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
     type FieldIndexType = FullTextIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         assert!(
             self.index.is_none(),
             "index must be initialized exactly once",
@@ -365,6 +384,7 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
             self.config.clone(),
             true,
             self.scoring,
+            hw_counter,
         )?
         .ok_or_else(|| {
             OperationError::service_error(
@@ -389,13 +409,16 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
         index.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(
+        mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flusher(hw_counter)()?;
         Ok(index)
     }
 }

@@ -72,27 +72,42 @@ where
         }
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
-            ReadOnlyNumericIndexInner::Appendable(index) => index.get_values(idx),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.get_values(idx),
-            ReadOnlyNumericIndexInner::OnDisk(index) => index.get_values(idx),
+            ReadOnlyNumericIndexInner::Appendable(index) => index.get_values(idx, hw_counter),
+            ReadOnlyNumericIndexInner::Immutable(index) => index.get_values(idx, hw_counter),
+            ReadOnlyNumericIndexInner::OnDisk(index) => index.get_values(idx, hw_counter),
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         match self {
-            ReadOnlyNumericIndexInner::Appendable(index) => index.values_count(idx),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.values_count(idx),
-            ReadOnlyNumericIndexInner::OnDisk(index) => index.values_count(idx),
+            ReadOnlyNumericIndexInner::Appendable(index) => index.values_count(idx, hw_counter),
+            ReadOnlyNumericIndexInner::Immutable(index) => index.values_count(idx, hw_counter),
+            ReadOnlyNumericIndexInner::OnDisk(index) => index.values_count(idx, hw_counter),
         }
     }
 
-    fn total_unique_values_count(&self) -> OperationResult<usize> {
+    fn total_unique_values_count(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         match self {
-            ReadOnlyNumericIndexInner::Appendable(index) => index.total_unique_values_count(),
-            ReadOnlyNumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            ReadOnlyNumericIndexInner::OnDisk(index) => index.total_unique_values_count(),
+            ReadOnlyNumericIndexInner::Appendable(index) => {
+                index.total_unique_values_count(hw_counter)
+            }
+            ReadOnlyNumericIndexInner::Immutable(index) => {
+                index.total_unique_values_count(hw_counter)
+            }
+            ReadOnlyNumericIndexInner::OnDisk(index) => index.total_unique_values_count(hw_counter),
         }
     }
 
@@ -120,16 +135,17 @@ where
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let boxed: Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> = match self {
             ReadOnlyNumericIndexInner::Appendable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
             ReadOnlyNumericIndexInner::Immutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
         };
         Ok(boxed)
@@ -192,7 +208,8 @@ where
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        query::stream_range(self, range)
+        query::stream_range(self, range, hw_counter)
     }
 }

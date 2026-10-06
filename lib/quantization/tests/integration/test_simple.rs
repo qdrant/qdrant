@@ -44,12 +44,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -88,12 +90,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -136,12 +140,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -180,12 +186,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -224,12 +232,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = -l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -264,13 +274,15 @@ mod tests {
             ScalarQuantizationMethod::Int8,
             None,
             &stopped,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(query);
 
         (0..vectors_count)
             .map(|index| {
-                let quantized_vector = encoded.get_quantized_vector(index as u32);
+                let quantized_vector =
+                    encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
                 encoded.score_point_simple(&query_u8, &quantized_vector)
             })
             .collect()
@@ -408,12 +420,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = -l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -451,6 +465,7 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -493,6 +508,7 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -536,12 +552,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_simple(&query_u8, &quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -584,6 +602,7 @@ mod tests {
                 method.clone(),
                 None,
                 &AtomicBool::new(false),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -592,7 +611,9 @@ mod tests {
                 // encode vector using the encode_query method
                 let query = encoded.encode_query(vector);
                 // encode vector using the encode_internal_vector method
-                let query_internal = encoded.encode_internal_vector(i as u32).unwrap();
+                let query_internal = encoded
+                    .encode_internal_vector(i as u32, &HardwareCounterCell::new())
+                    .unwrap();
 
                 let score_query = encoded.score_point(&query, 0, &hw);
                 let score_internal_query = encoded.score_point(&query_internal, 0, &hw);

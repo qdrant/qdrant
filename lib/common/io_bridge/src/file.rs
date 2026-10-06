@@ -3,6 +3,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::uio_trace::Op;
@@ -110,7 +112,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Self: 'a,
         U: UserData;
 
-    fn live_reload(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         Ok(())
     }
 
@@ -119,12 +121,16 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         range: Range<u64>,
         _access_pattern: P,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
-        let buf = self
-            .runtime
-            .block_on(read_into_byte_buffer::<A>(self, range.clone(), align))?;
+        let buf = self.runtime.block_on(read_into_byte_buffer::<A>(
+            self,
+            range.clone(),
+            align,
+            &hw_counter.new_accumulator(),
+        ))?;
 
         if let Some(start_time) = start_time {
             log::trace!(
@@ -139,22 +145,24 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(ACow::Owned(buf))
     }
 
-    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
-        let buf = self
-            .runtime
-            .block_on(read_whole_into_byte_buffer::<A>(self, align_of::<T>()))?;
+    fn read_whole<T: Item>(&self, hw_counter: &HardwareCounterCell) -> UioResult<Cow<'_, [T]>> {
+        let buf = self.runtime.block_on(read_whole_into_byte_buffer::<A>(
+            self,
+            align_of::<T>(),
+            &hw_counter.new_accumulator(),
+        ))?;
         Ok(ACow::Owned(buf)
             .try_cast_bytemuck()
             .expect("buffer has compatible layout"))
     }
 
-    fn len<T>(&self) -> UioResult<u64> {
+    fn len<T>(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let item_size = size_of::<T>() as u64;
         let len = self.runtime.block_on(
             self.stats
-                .request(Op::Len, &self.path, 0..0)
+                .request(Op::Len, &self.path, 0..0, &hw_counter.new_accumulator())
                 .wrap(self.inner.len(&self.path)),
         )?;
         debug_assert_eq!(len % item_size, 0);
@@ -172,7 +180,7 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         Ok(len / item_size)
     }
 
-    fn populate(&self) -> UioResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         Ok(())
     }
 
@@ -210,6 +218,7 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
         offset: ByteOffset,
         data: Bytes,
         expected_etag: Option<String>,
+        hw_acc: &HwMeasurementAcc,
     ) -> UioResult<()> {
         if data.is_empty() {
             return Ok(());
@@ -222,9 +231,12 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
             )));
         }
 
-        let request =
-            self.stats
-                .request(Op::Append, &self.path, offset..offset + data.len() as u64);
+        let request = self.stats.request(
+            Op::Append,
+            &self.path,
+            offset..offset + data.len() as u64,
+            hw_acc,
+        );
         self.runtime
             .block_on(request.wrap(self.inner.append(&self.path, offset, data, expected_etag)))
             .map(drop)
@@ -233,7 +245,7 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
 
 impl<A: AsyncWrite + Clone> BlobFile<A> {
     /// Replace the whole object with `data` in one atomic put.
-    pub fn save_whole(&self, data: Bytes) -> UioResult<()> {
+    pub fn save_whole(&self, data: Bytes, hw_acc: &HwMeasurementAcc) -> UioResult<()> {
         if !self.writeable {
             return Err(UniversalIoError::Io(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -243,7 +255,7 @@ impl<A: AsyncWrite + Clone> BlobFile<A> {
 
         let request = self
             .stats
-            .request(Op::Save, &self.path, 0..data.len() as u64);
+            .request(Op::Save, &self.path, 0..data.len() as u64, hw_acc);
         self.runtime
             .block_on(request.wrap(self.inner.save(&self.path, data)))
     }
@@ -342,10 +354,19 @@ mod tests {
     fn blob_fs_opens_readable_file() {
         let fs = BlobFs::new(MockSource::new(b"hello world"), BridgeRuntime::global());
         let file = fs
-            .open("obj", OpenOptions::new_for_test(), ())
+            .open(
+                "obj",
+                OpenOptions::new_for_test(),
+                (),
+                &HardwareCounterCell::new(),
+            )
             .expect("open");
         let cow = file
-            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, 11),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -358,7 +379,11 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, 11),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -371,7 +396,7 @@ mod tests {
             "obj",
         );
         let cow = file
-            .read::<_, u8>(ReadRange::new(6, 5), Random)
+            .read::<_, u8>(ReadRange::new(6, 5), Random, &HardwareCounterCell::new())
             .expect("read");
         assert_eq!(&cow[..], b"world");
     }
@@ -383,7 +408,9 @@ mod tests {
             BridgeRuntime::global(),
             "obj",
         );
-        let len: u64 = <BlobFile<MockSource> as UniversalRead>::len::<u16>(&file).unwrap();
+        let len: u64 =
+            <BlobFile<MockSource> as UniversalRead>::len::<u16>(&file, &HardwareCounterCell::new())
+                .unwrap();
         assert_eq!(len, 2);
     }
 
@@ -400,10 +427,15 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch(inputs, Random, |u, s| {
-            got.insert(u, s.to_vec());
-            UioResult::Ok(())
-        })
+        file.read_batch(
+            inputs,
+            Random,
+            |u, s| {
+                got.insert(u, s.to_vec());
+                UioResult::Ok(())
+            },
+            &HardwareCounterCell::new(),
+        )
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");
         assert_eq!(got[&2], b"WORLD");
@@ -576,12 +608,47 @@ mod tests {
         assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
         assert!(source.content().is_none());
 
-        file.append_bytes(0, Bytes::from_static(b"abc"), None)
-            .unwrap();
-        file.append_bytes(3, Bytes::from_static(b"de"), None)
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"abc"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
+        file.append_bytes(3, Bytes::from_static(b"de"), None, &HwMeasurementAcc::new())
             .unwrap();
         assert_eq!(source.content().unwrap(), b"abcde");
-        assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 5);
+        assert_eq!(
+            <BlobFile<_> as UniversalRead>::len::<u8>(&file, &HardwareCounterCell::new()).unwrap(),
+            5
+        );
+    }
+
+    #[test]
+    fn requests_are_counted_into_hw_counter() {
+        let source = MutableMockSource::default();
+        let file = mutable_file(&source);
+        let hw_acc = HwMeasurementAcc::new();
+
+        file.append_bytes(0, Bytes::from_static(b"abc"), None, &hw_acc)
+            .unwrap();
+        file.append_bytes(3, Bytes::new(), None, &hw_acc).unwrap();
+        {
+            let hw_counter = hw_acc.get_counter_cell();
+            file.read::<_, u8>(ReadRange::new(0, 3), Random, &hw_counter)
+                .unwrap();
+            file.read_batch(
+                [(0, ReadRange::new(0, 1)), (1, ReadRange::new(1, 2))],
+                Random,
+                |_, _: &[u8]| UioResult::Ok(()),
+                &hw_counter,
+            )
+            .unwrap();
+            <BlobFile<_> as UniversalRead>::len::<u8>(&file, &hw_counter).unwrap();
+        }
+
+        assert_eq!(hw_acc.get_object_store_read_requests(), 4);
+        assert_eq!(hw_acc.get_object_store_write_requests(), 1);
     }
 
     #[test]
@@ -589,9 +656,15 @@ mod tests {
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
-        file.append_bytes(0, Bytes::from_static(b"abc"), None)
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"abc"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
+        file.append_bytes(3, Bytes::new(), None, &HwMeasurementAcc::new())
             .unwrap();
-        file.append_bytes(3, Bytes::new(), None).unwrap();
 
         let append_calls = source
             .append_calls
@@ -609,23 +682,44 @@ mod tests {
         let second = mutable_file(&source);
 
         first
-            .append_bytes(0, Bytes::from_static(b"aaa"), None)
+            .append_bytes(
+                0,
+                Bytes::from_static(b"aaa"),
+                None,
+                &HwMeasurementAcc::new(),
+            )
             .unwrap();
         second
-            .append_bytes(3, Bytes::from_static(b"bbb"), None)
+            .append_bytes(
+                3,
+                Bytes::from_static(b"bbb"),
+                None,
+                &HwMeasurementAcc::new(),
+            )
             .unwrap();
 
         let err = first
-            .append_bytes(3, Bytes::from_static(b"ccc"), None)
+            .append_bytes(
+                3,
+                Bytes::from_static(b"ccc"),
+                None,
+                &HwMeasurementAcc::new(),
+            )
             .unwrap_err();
         assert!(matches!(
             err,
             UniversalIoError::AppendOffsetConflict { offset: 3, .. }
         ));
 
-        let eof = <BlobFile<_> as UniversalRead>::len::<u8>(&first).unwrap();
+        let eof =
+            <BlobFile<_> as UniversalRead>::len::<u8>(&first, &HardwareCounterCell::new()).unwrap();
         first
-            .append_bytes(eof, Bytes::from_static(b"ccc"), None)
+            .append_bytes(
+                eof,
+                Bytes::from_static(b"ccc"),
+                None,
+                &HwMeasurementAcc::new(),
+            )
             .unwrap();
         assert_eq!(source.content().unwrap(), b"aaabbbccc");
     }
@@ -640,21 +734,41 @@ mod tests {
 
         // No object yet: an expected etag cannot match anything.
         let err = file
-            .append_bytes(0, Bytes::from_static(b"abc"), Some("etag-0".to_string()))
+            .append_bytes(
+                0,
+                Bytes::from_static(b"abc"),
+                Some("etag-0".to_string()),
+                &HwMeasurementAcc::new(),
+            )
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::AppendEtagMismatch { .. }));
         assert!(source.content().is_none());
 
-        file.append_bytes(0, Bytes::from_static(b"abc"), None)
-            .unwrap();
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"abc"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
 
         // The current etag: the append proceeds.
-        file.append_bytes(3, Bytes::from_static(b"de"), Some("etag-3".to_string()))
-            .unwrap();
+        file.append_bytes(
+            3,
+            Bytes::from_static(b"de"),
+            Some("etag-3".to_string()),
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
 
         // The previous etag is stale now: rejected, nothing lands.
         let err = file
-            .append_bytes(5, Bytes::from_static(b"f"), Some("etag-3".to_string()))
+            .append_bytes(
+                5,
+                Bytes::from_static(b"f"),
+                Some("etag-3".to_string()),
+                &HwMeasurementAcc::new(),
+            )
             .unwrap_err();
         assert!(matches!(err, UniversalIoError::AppendEtagMismatch { .. }));
         assert_eq!(source.content().unwrap(), b"abcde");
@@ -671,11 +785,12 @@ mod tests {
                     ..OpenOptions::new_for_test()
                 },
                 (),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
         assert!(
-            file.append_bytes(0, Bytes::from_static(b"x"), None)
+            file.append_bytes(0, Bytes::from_static(b"x"), None, &HwMeasurementAcc::new())
                 .is_err()
         );
     }
@@ -685,8 +800,13 @@ mod tests {
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
-        file.append_bytes(0, Bytes::from_static(b"abc"), None)
-            .unwrap();
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"abc"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
         (file.flusher())().unwrap();
     }
 
@@ -698,15 +818,16 @@ mod tests {
         let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
         let path = Path::new("obj");
 
-        assert!(!fs.exists(path).unwrap());
-        fs.create(path).unwrap();
-        assert!(fs.exists(path).unwrap());
+        assert!(!fs.exists(path, &HardwareCounterCell::new()).unwrap());
+        fs.create(path, &HwMeasurementAcc::new()).unwrap();
+        assert!(fs.exists(path, &HardwareCounterCell::new()).unwrap());
 
-        fs.atomic_save(path, b"xyz").unwrap();
+        fs.atomic_save(path, b"xyz", &HwMeasurementAcc::new())
+            .unwrap();
         assert_eq!(source.content().unwrap(), b"xyz");
 
-        fs.remove(path).unwrap();
-        assert!(!fs.exists(path).unwrap());
+        fs.remove(path, &HwMeasurementAcc::new()).unwrap();
+        assert!(!fs.exists(path, &HardwareCounterCell::new()).unwrap());
     }
 
     /// Every remote request issued through the filesystem and the files it
@@ -722,19 +843,50 @@ mod tests {
         let stats = fs.stats();
         let path = Path::new("obj");
 
-        fs.create(path).unwrap();
-        let file = fs.open(path, OpenOptions::new_for_test(), ()).unwrap();
-        file.append_bytes(0, Bytes::from_static(b"abcdef"), None)
+        fs.create(path, &HwMeasurementAcc::new()).unwrap();
+        let file = fs
+            .open(
+                path,
+                OpenOptions::new_for_test(),
+                (),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
-        assert_eq!(file.read_bytes(1..4, Random, 1).unwrap().as_ref(), b"bcd");
-        assert_eq!(file.read_whole::<u8>().unwrap().len(), 6);
-        assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 6);
-        file.save_whole(Bytes::from_static(b"xy")).unwrap();
-        assert!(fs.exists(path).unwrap());
-        fs.remove(path).unwrap();
-        assert!(file.read_bytes(0..1, Random, 1).is_err());
-        assert!(file.read_whole::<u8>().is_err());
-        assert!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).is_err());
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"abcdef"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            file.read_bytes(1..4, Random, 1, &HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
+            b"bcd"
+        );
+        assert_eq!(
+            file.read_whole::<u8>(&HardwareCounterCell::new())
+                .unwrap()
+                .len(),
+            6
+        );
+        assert_eq!(
+            <BlobFile<_> as UniversalRead>::len::<u8>(&file, &HardwareCounterCell::new()).unwrap(),
+            6
+        );
+        file.save_whole(Bytes::from_static(b"xy"), &HwMeasurementAcc::new())
+            .unwrap();
+        assert!(fs.exists(path, &HardwareCounterCell::new()).unwrap());
+        fs.remove(path, &HwMeasurementAcc::new()).unwrap();
+        assert!(
+            file.read_bytes(0..1, Random, 1, &HardwareCounterCell::new())
+                .is_err()
+        );
+        assert!(file.read_whole::<u8>(&HardwareCounterCell::new()).is_err());
+        assert!(
+            <BlobFile<_> as UniversalRead>::len::<u8>(&file, &HardwareCounterCell::new()).is_err()
+        );
 
         let snapshot = stats.snapshot();
         let counts = |op: Op| {

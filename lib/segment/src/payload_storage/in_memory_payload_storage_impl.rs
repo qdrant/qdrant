@@ -87,7 +87,7 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+    fn get_storage_size_bytes(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         let mut estimated_size = 0;
         for (_p_id, val) in &self.payload {
             // account for point_id
@@ -179,7 +179,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 

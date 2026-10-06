@@ -2,6 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{FacetRequest, FacetResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
@@ -38,6 +39,7 @@ async fn facet(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

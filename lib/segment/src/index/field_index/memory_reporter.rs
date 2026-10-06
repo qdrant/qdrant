@@ -1,8 +1,10 @@
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
 use crate::index::field_index::field_index_base::FieldIndex;
 
 impl MemoryReporter for FieldIndex {
-    fn memory_usage(&self) -> ComponentMemoryUsage {
+    fn memory_usage(&self, _hw_counter: &HardwareCounterCell) -> ComponentMemoryUsage {
         let files = self.files();
         let ram_bytes = self.ram_usage_bytes() as u64;
 

@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use std::cell::Cell;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -51,13 +52,15 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         path: impl Into<PathBuf>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let path = path.into();
-        let Some(storage) = fs.open(&path, options, extra).ok_not_found()? else {
+        let Some(storage) = fs.open(&path, options, extra, hw_counter).ok_not_found()? else {
             return Ok(None);
         };
 
-        let header = storage.read::<_, PostingsHeader>(ReadRange::one(0), Sequential)?[0];
+        let header =
+            storage.read::<_, PostingsHeader>(ReadRange::one(0), Sequential, hw_counter)?[0];
 
         Ok(Some(Self {
             _path: path,
@@ -70,8 +73,8 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     /// Hint the storage backend to populate any RAM cache backing this file.
     /// For mmap-backed storage this is `madvise(MADV_POPULATE_READ)` and blocks
     /// until pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.populate(hw_counter)?;
         Ok(())
     }
 
@@ -87,7 +90,11 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     /// The returned [`HeadersBatch`] pairs the in-range `(token_id, header)`
     /// pairs with the list of token ids that were out-of-range. Order is not
     /// guaranteed to match the input.
-    fn headers_iter(&self, token_ids: &[TokenId]) -> Result<HeadersBatch, UniversalIoError> {
+    fn headers_iter(
+        &self,
+        token_ids: &[TokenId],
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<HeadersBatch, UniversalIoError> {
         let header_length = size_of::<PostingListHeader>() as u64;
         let posting_count = self.header.posting_count;
 
@@ -115,15 +122,19 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         // parsed (copied) out of the read bytes, so nothing borrows the file past
         // the read — `read_batch` is sufficient here, no pipeline needed.
         let mut headers: Vec<HeaderResult> = Vec::with_capacity(valid_ranges.len());
-        self.storage
-            .read_batch(valid_ranges, Random, |token_id, bytes| {
+        self.storage.read_batch(
+            valid_ranges,
+            Random,
+            |token_id, bytes| {
                 headers.push(
                     PostingListHeader::read_from_prefix(bytes)
                         .map(|(header, _)| (token_id, header))
                         .map_err(UniversalIoError::from),
                 );
                 UioResult::Ok(())
-            })?;
+            },
+            hw_counter,
+        )?;
 
         Ok(HeadersBatch {
             headers,
@@ -131,8 +142,12 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         })
     }
 
-    fn get_header(&self, token_id: TokenId) -> OperationResult<Option<PostingListHeader>> {
-        let HeadersBatch { headers, .. } = self.headers_iter(&[token_id])?;
+    fn get_header(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PostingListHeader>> {
+        let HeadersBatch { headers, .. } = self.headers_iter(&[token_id], hw_counter)?;
         let Some(entry) = headers.into_iter().next() else {
             return Ok(None);
         };
@@ -161,14 +176,20 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
             byte_offset: header.offset,
             length: header.posting_size::<V>() as u64,
         };
-        let bytes = self.storage.read::<_, u8>(read_range, Sequential)?;
+        let bytes =
+            self.storage
+                .read::<_, u8>(read_range, Sequential, &HardwareCounterCell::new())?;
         let result = RawPostingList::new(bytes, header);
         Ok(result)
     }
 
     #[cfg(test)]
-    pub fn get(&self, token_id: TokenId) -> OperationResult<Option<RawPostingList<'_>>> {
-        let header = self.get_header(token_id)?;
+    pub fn get(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<RawPostingList<'_>>> {
+        let header = self.get_header(token_id, hw_counter)?;
         if let Some(header) = header {
             let posting = self.raw_posting(header).map(Some)?;
             return Ok(posting);
@@ -183,8 +204,14 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
 
     /// Number of elements in the posting list for `token_id`. Reads only the
     /// per-token header, not the posting bytes.
-    pub fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
-        Ok(self.get_header(token_id)?.map(|h| h.posting_len()))
+    pub fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
+        Ok(self
+            .get_header(token_id, hw_counter)?
+            .map(|h| h.posting_len()))
     }
 
     /// Read the posting lists for the given `headers` and hand the resulting
@@ -194,6 +221,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         headers: Vec<HeaderResult>,
         expected_capacity: usize,
         callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<T> {
         let header_err: Cell<Option<UniversalIoError>> = Cell::new(None);
 
@@ -216,7 +244,7 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         let mut raw_postings: Vec<(TokenId, RawPostingList<'_>)> =
             Vec::with_capacity(expected_capacity);
 
-        for entry in self.storage.read_iter(range_iter, Sequential)? {
+        for entry in self.storage.read_iter(range_iter, Sequential, hw_counter)? {
             let ((token_id, header), bytes) = entry?;
             raw_postings.push((token_id, RawPostingList::new(bytes, header)));
         }
@@ -243,14 +271,20 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         &self,
         token_ids: &[TokenId],
         callback: impl FnOnce(Option<Vec<(TokenId, PostingListView<'_, V>)>>) -> OperationResult<T>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<T> {
-        let HeadersBatch { headers, missing } = self.headers_iter(token_ids)?;
+        let HeadersBatch { headers, missing } = self.headers_iter(token_ids, hw_counter)?;
 
         if !missing.is_empty() {
             return callback(None);
         }
 
-        self.with_posting_views(headers, token_ids.len(), |views| callback(Some(views)))
+        self.with_posting_views(
+            headers,
+            token_ids.len(),
+            |views| callback(Some(views)),
+            hw_counter,
+        )
     }
 
     /// Fetch all existing posting lists for the given token ids and hand them
@@ -259,23 +293,31 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         &self,
         token_ids: &[TokenId],
         callback: impl FnOnce(Vec<(TokenId, PostingListView<'_, V>)>) -> OperationResult<T>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<T> {
-        let HeadersBatch { headers, .. } = self.headers_iter(token_ids)?;
+        let HeadersBatch { headers, .. } = self.headers_iter(token_ids, hw_counter)?;
 
-        self.with_posting_views(headers, token_ids.len(), callback)
+        self.with_posting_views(headers, token_ids.len(), callback, hw_counter)
     }
 
-    pub fn all_postings(&self) -> OperationResult<Vec<PostingList<V>>> {
+    pub fn all_postings(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PostingList<V>>> {
         let mut result = Vec::new();
         let all_tokens = (0..self.header.posting_count as TokenId).collect::<Vec<_>>();
 
-        self.with_existing_postings(&all_tokens, |views| {
-            for (_, view) in views {
-                let posting_list = view.to_owned();
-                result.push(posting_list);
-            }
-            Ok(())
-        })?;
+        self.with_existing_postings(
+            &all_tokens,
+            |views| {
+                for (_, view) in views {
+                    let posting_list = view.to_owned();
+                    result.push(posting_list);
+                }
+                Ok(())
+            },
+            hw_counter,
+        )?;
 
         Ok(result)
     }

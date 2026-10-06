@@ -65,13 +65,17 @@ pub trait OptimizationStrategy: Send {
     fn create_segment_builder(
         &self,
         input_segments: &[LockedSegment],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SegmentBuilder>;
 
     /// Create a temporary COW segment for writes during optimization.
     ///
     /// Returns the segment together with the [`NewSegmentToken`] obliging the caller to register it
     /// in the manifest once it is published into the holder.
-    fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)>;
+    fn create_temp_segment(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<(LockedSegment, NewSegmentToken)>;
 
     /// Vector names currently present in the live collection schema, if a live source is wired in.
     ///
@@ -205,7 +209,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     progress: ProgressTracker,
     segments_path: &Path,
 ) -> OperationResult<Segment> {
-    let mut segment_builder = factory.create_segment_builder(input_segments)?;
+    let mut segment_builder = factory.create_segment_builder(input_segments, hw_counter)?;
 
     check_process_stopped(stopped)?;
 
@@ -281,7 +285,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     // Before switching from IO to CPU, make sure that vectors cache is heated up,
     // so indexing process won't need to wait for IO.
     progress_populate_storages.start();
-    segment_builder.populate_vector_storages()?;
+    segment_builder.populate_vector_storages(hw_counter)?;
     drop(progress_populate_storages);
 
     // 000 - acquired
@@ -440,7 +444,7 @@ fn finish_optimization(
     // segment, but we will drop this last source of persisted data a bit further down. We must
     // therefore flush this segment to persist the changes in a new location. WAL recovery would
     // not help us here, because all proapgated changes are already acknowledged in the WAL.
-    optimized_segment.flush(true)?;
+    optimized_segment.flush(true, hw_counter)?;
 
     // All propagated changes are applied and durable: make the segment loadable on restart.
     // `SegmentBuilder::build` postponed the version file exactly until this point (its `ready`
@@ -457,7 +461,7 @@ fn finish_optimization(
     SegmentVersion::save(&optimized_segment_path)?;
 
     // Replace proxy segments with new optimized segment
-    let point_count = optimized_segment.available_point_count();
+    let point_count = optimized_segment.available_point_count(hw_counter);
     let optimized_segment_version = optimized_segment.version();
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
@@ -470,7 +474,7 @@ fn finish_optimization(
 
     let mut deferred_points_set = AHashSet::new();
     for proxy in &proxies {
-        deferred_points_set.extend(proxy.get().read().deferred_point_ids());
+        deferred_points_set.extend(proxy.get().read().deferred_point_ids(hw_counter));
     }
     let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
 
@@ -509,7 +513,7 @@ fn finish_optimization(
     if let Some(cow_segment_id) = cow_segment_id_opt {
         // Temp segment might be taken into another parallel optimization
         // so it is not necessary exist by this time
-        writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
+        writable_segment_holder.remove_segment_if_not_needed(cow_segment_id, hw_counter)?;
     }
 
     let read_segment_holder = RwLockWriteGuard::downgrade(writable_segment_holder);
@@ -705,7 +709,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
     // the holder, and before the slow build can route writes into it.
     let (extra_cow_segment_opt, extra_cow_token_opt) = if need_extra_cow_segment {
-        let (segment, token) = factory.create_temp_segment()?;
+        let (segment, token) = factory.create_temp_segment(&hw_counter)?;
         (Some(segment), Some(token))
     } else {
         (None, None)
@@ -763,7 +767,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // otherwise a
             // point inserted in that window sits past the mask and scored search treats it as
             // deleted. The type-state guarantees this happens exactly once and cannot be skipped.
-            let proxy = proxy.finalize();
+            let proxy = proxy.finalize(&hw_counter);
 
             // replicate_field_indexes for the second time,
             // because optimized segments could have been changed.
@@ -886,7 +890,7 @@ mod tests {
 
         // Wrap it the way an optimization does, then delete a point through the proxy: the
         // deletion is recorded on the proxy, the wrapped segment still has the point.
-        let mut proxy = ProxySegment::new(wrapped.clone());
+        let mut proxy = ProxySegment::new(wrapped.clone(), &hw_counter);
         proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
         let holder = LockedSegmentHolder::new(holder);
         holder
@@ -897,7 +901,7 @@ mod tests {
             wrapped
                 .get()
                 .read()
-                .has_point(1.into(), DeferredBehavior::WithDeferred),
+                .has_point(1.into(), DeferredBehavior::WithDeferred, &hw_counter),
             "wrapped segment should still hold the point while proxied",
         );
 
@@ -907,7 +911,7 @@ mod tests {
             !wrapped
                 .get()
                 .read()
-                .has_point(1.into(), DeferredBehavior::WithDeferred),
+                .has_point(1.into(), DeferredBehavior::WithDeferred, &hw_counter),
             "deletion recorded on the proxy must reach the wrapped segment before it goes back \
              into the holder",
         );
@@ -935,10 +939,10 @@ mod tests {
 
         // Delete a point through the proxy and flush it, so the pending change is actually
         // persisted to its log file on disk; otherwise there is nothing to clean up.
-        let mut proxy = ProxySegment::new(wrapped.clone());
+        let mut proxy = ProxySegment::new(wrapped.clone(), &hw_counter);
         let log_path = proxy.pending_changes_log_path().to_path_buf();
         proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
-        proxy.flush(false).unwrap();
+        proxy.flush(false, &hw_counter).unwrap();
         assert!(log_path.is_file(), "log file must exist once flushed");
 
         let holder = LockedSegmentHolder::new(holder);
@@ -954,7 +958,10 @@ mod tests {
              persists the propagated changes",
         );
 
-        holder.read().flush_all(FlushMode::Sync, true).unwrap();
+        holder
+            .read()
+            .flush_all(FlushMode::Sync, true, &hw_counter)
+            .unwrap();
         assert!(
             !log_path.is_file(),
             "the log file must be removed once the wrapped segment flushed past the propagated \
@@ -988,7 +995,7 @@ mod tests {
         // below, since those only land on the proxy after the build has started.
         let optimized_segment = build_segment_1(dir.path());
 
-        let mut proxy = ProxySegment::new(wrapped.clone());
+        let mut proxy = ProxySegment::new(wrapped.clone(), &hw_counter);
 
         // Queue a payload index creation, then a named vector creation, then a point delete,
         // each with a higher version than the last.
@@ -1005,7 +1012,7 @@ mod tests {
             datatype: None,
         });
         proxy
-            .create_vector_name(20, "extra_vector", &vector_config)
+            .create_vector_name(20, "extra_vector", &vector_config, &hw_counter)
             .unwrap();
 
         proxy.delete_point(30, 1.into(), &hw_counter).unwrap();
@@ -1046,7 +1053,7 @@ mod tests {
             "payload index change queued before the named vector change must still land",
         );
         assert!(
-            !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred),
+            !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred, &hw_counter),
             "point delete must land on the optimized segment",
         );
     }
@@ -1074,7 +1081,7 @@ mod tests {
         let mut optimized_segment = build_segment_1(dir.path());
 
         // Queue a named vector creation, then a point delete at a higher version
-        let mut proxy = ProxySegment::new(wrapped.clone());
+        let mut proxy = ProxySegment::new(wrapped.clone(), &hw_counter);
         let vector_config = VectorNameConfig::dense(DenseVectorConfig {
             size: 4,
             distance: Distance::Dot,
@@ -1082,7 +1089,7 @@ mod tests {
             datatype: None,
         });
         proxy
-            .create_vector_name(10, "extra_vector", &vector_config)
+            .create_vector_name(10, "extra_vector", &vector_config, &hw_counter)
             .unwrap();
         proxy.delete_point(20, 1.into(), &hw_counter).unwrap();
 
@@ -1141,9 +1148,9 @@ mod tests {
             Some(&field_schema),
             "index change queued after the first pass must land",
         );
-        assert!(!result_segment.has_point(1.into(), DeferredBehavior::WithDeferred));
-        assert!(!result_segment.has_point(2.into(), DeferredBehavior::WithDeferred));
-        assert!(result_segment.has_point(3.into(), DeferredBehavior::WithDeferred));
+        assert!(!result_segment.has_point(1.into(), DeferredBehavior::WithDeferred, &hw_counter));
+        assert!(!result_segment.has_point(2.into(), DeferredBehavior::WithDeferred, &hw_counter));
+        assert!(result_segment.has_point(3.into(), DeferredBehavior::WithDeferred, &hw_counter));
     }
 
     thread_local! {
@@ -1200,10 +1207,10 @@ mod tests {
         let optimized_path = optimized_segment.segment_path.clone();
         fs_err::remove_file(optimized_path.join(VERSION_FILE)).unwrap();
 
-        let mut proxy = ProxySegment::new(wrapped.clone());
+        let mut proxy = ProxySegment::new(wrapped.clone(), &hw_counter);
 
         proxy.delete_point(10, 1.into(), &hw_counter).unwrap();
-        proxy.flush(false).unwrap();
+        proxy.flush(false, &hw_counter).unwrap();
         assert_eq!(proxy.persistent_version(), 10);
 
         proxy.delete_point(20, 2.into(), &hw_counter).unwrap();
@@ -1222,7 +1229,11 @@ mod tests {
             let acknowledged = acknowledged.clone();
             POST_SWAP_FAILURE_HOOK.with(|hook| {
                 *hook.borrow_mut() = Some(Box::new(move || {
-                    let version = holder.read().flush_all(FlushMode::Sync, false)?;
+                    let version = holder.read().flush_all(
+                        FlushMode::Sync,
+                        false,
+                        &HardwareCounterCell::new(),
+                    )?;
                     *acknowledged.lock() = Some(version);
                     Err(OperationError::service_error(
                         "simulated failure after the optimized segment was swapped in",
@@ -1247,13 +1258,25 @@ mod tests {
 
         drop(holder);
         drop(wrapped);
-        let optimized_loadable = normalize_segment_dir(&optimized_path).unwrap().is_some();
-        let (old_path, old_uuid) = normalize_segment_dir(&wrapped_path).unwrap().unwrap();
-        let mut old_segment =
-            load_segment(&old_path, old_uuid, None, &AtomicBool::new(false), false).unwrap();
+        let optimized_loadable = normalize_segment_dir(&optimized_path, &hw_counter)
+            .unwrap()
+            .is_some();
+        let (old_path, old_uuid) = normalize_segment_dir(&wrapped_path, &hw_counter)
+            .unwrap()
+            .unwrap();
+        let mut old_segment = load_segment(
+            &old_path,
+            old_uuid,
+            None,
+            &AtomicBool::new(false),
+            false,
+            &hw_counter,
+        )
+        .unwrap();
         let _recovered =
             recover_pending_changes(&mut old_segment, PersistedProxyChanges::Replay).unwrap();
-        let point_2_alive = old_segment.has_point(2.into(), DeferredBehavior::WithDeferred);
+        let point_2_alive =
+            old_segment.has_point(2.into(), DeferredBehavior::WithDeferred, &hw_counter);
 
         assert!(
             acknowledged_version <= 10,

@@ -39,8 +39,12 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         false
     }
 
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        self.with_view(|view| view.point_version(point_id))
+    fn point_version(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
+        self.with_view(|view| view.point_version(point_id, hw_counter))
     }
 
     fn search_batch(
@@ -243,8 +247,13 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped, hw_counter))
     }
 
-    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
-        self.with_view(|view| view.read_range(from, to))
+    fn read_range(
+        &self,
+        from: Option<PointIdType>,
+        to: Option<PointIdType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointIdType> {
+        self.with_view(|view| view.read_range(from, to, hw_counter))
     }
 
     fn unique_values(
@@ -266,10 +275,15 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| view.approximate_facet(request, is_stopped, hw_counter))
     }
 
-    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
+    fn has_point(
+        &self,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.id_tracker
             .borrow()
-            .internal_id_with_behavior(point_id, deferred_behavior)
+            .internal_id_with_behavior(point_id, deferred_behavior, hw_counter)
             .is_some()
     }
 
@@ -291,20 +305,24 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.id_tracker.borrow().total_point_count() == 0
     }
 
-    fn available_point_count(&self) -> usize {
-        self.id_tracker.borrow().available_point_count()
+    fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.borrow().available_point_count(hw_counter)
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.id_tracker.borrow().deleted_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.borrow().deleted_point_count(hw_counter)
     }
 
-    fn available_point_count_without_deferred(&self) -> usize {
-        self.with_view(|view| view.available_point_count_without_deferred())
+    fn available_point_count_without_deferred(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.with_view(|view| view.available_point_count_without_deferred(hw_counter))
     }
 
-    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
-        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
+    fn available_vectors_size_in_bytes(
+        &self,
+        vector_name: &VectorName,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name, hw_counter))
     }
 
     fn segment_uuid(&self) -> Uuid {
@@ -315,14 +333,14 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.segment_type
     }
 
-    fn info(&self) -> OperationResult<SegmentInfo> {
+    fn info(&self, hw_counter: &HardwareCounterCell) -> OperationResult<SegmentInfo> {
         // A read-only segment is never appendable.
-        self.with_view(|view| view.build_info(self.uuid, self.segment_type, false))
+        self.with_view(|view| view.build_info(self.uuid, self.segment_type, false, hw_counter))
     }
 
-    fn size_info(&self) -> SegmentInfo {
+    fn size_info(&self, hw_counter: &HardwareCounterCell) -> SegmentInfo {
         // A read-only segment is never appendable.
-        self.with_view(|view| view.build_size_info(self.uuid, self.segment_type, false))
+        self.with_view(|view| view.build_size_info(self.uuid, self.segment_type, false, hw_counter))
     }
 
     fn config(&self) -> &SegmentConfig {
@@ -339,7 +357,11 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
             .with_view(|v| v.indexed_fields())
     }
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
+    fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SegmentTelemetry> {
         self.with_view(|view| {
             // A read-only segment is never appendable.
             view.build_telemetry(
@@ -348,6 +370,7 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
                 false,
                 &self.segment_config,
                 detail,
+                hw_counter,
             )
         })
     }
@@ -356,12 +379,12 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| view.fill_query_context(query_context))
     }
 
-    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        self.with_view(|view| view.point_is_deferred(point_id))
+    fn point_is_deferred(&self, point_id: PointIdType, hw_counter: &HardwareCounterCell) -> bool {
+        self.with_view(|view| view.point_is_deferred(point_id, hw_counter))
     }
 
-    fn deferred_point_ids(&self) -> Vec<PointIdType> {
-        self.with_view(|view| view.deferred_point_ids())
+    fn deferred_point_ids(&self, hw_counter: &HardwareCounterCell) -> Vec<PointIdType> {
+        self.with_view(|view| view.deferred_point_ids(hw_counter))
     }
 
     fn deferred_point_count(&self) -> usize {

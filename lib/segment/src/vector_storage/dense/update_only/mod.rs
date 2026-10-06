@@ -30,10 +30,20 @@ pub struct UpdateOnlyDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        path: &Path,
+        dim: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?,
-            vectors: UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?,
+            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH), hw_counter)?,
+            vectors: UpdateOnlyChunkedVectors::open(
+                fs,
+                &path.join(VECTORS_DIR_PATH),
+                dim,
+                hw_counter,
+            )?,
             dim,
         })
     }

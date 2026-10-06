@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::encoded_vectors_tq;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::turboquant::TQRotation;
@@ -33,6 +34,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = Self::tq_mode(bits);
@@ -49,6 +51,7 @@ impl QuantizedVectors {
                     data_path.as_path(),
                     quantized_vector_size,
                     in_ram,
+                    hw_counter,
                 )?;
                 Ok(QuantizedVectorStorage::TQChunkedMmap(
                     EncodedVectorsTQ::encode(
@@ -63,6 +66,7 @@ impl QuantizedVectors {
                         max_threads,
                         Some(meta_path.as_path()),
                         stopped,
+                        hw_counter,
                     )?,
                 ))
             }
@@ -84,6 +88,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?))
             }
             (false, QuantizedVectorsStorageType::Immutable) => {
@@ -104,6 +109,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?))
             }
         }
@@ -125,6 +131,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         let bits = Self::convert_tq_bits(turbo_config.bits.unwrap_or_default());
         let mode = Self::tq_mode(bits);
@@ -142,6 +149,7 @@ impl QuantizedVectors {
                     data_path.as_path(),
                     quantized_vector_size,
                     in_ram,
+                    hw_counter,
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
@@ -155,6 +163,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?;
                 let offsets = MultivectorOffsetsStorageChunked::<ReadFile>::create(
                     READ_FS,
@@ -189,6 +198,7 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?;
                 let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
                 Ok(QuantizedVectorStorage::TQRamMulti(
@@ -218,9 +228,14 @@ impl QuantizedVectors {
                     max_threads,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?;
-                let offsets =
-                    MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
+                let offsets = MultivectorOffsetsStorageMmap::create(
+                    &offsets_path,
+                    offsets,
+                    vectors_count,
+                    hw_counter,
+                )?;
                 Ok(QuantizedVectorStorage::TQMmapMulti(
                     QuantizedMultivectorStorage::new(
                         vector_parameters.dim,

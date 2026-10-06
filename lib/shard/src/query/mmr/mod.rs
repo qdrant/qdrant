@@ -145,10 +145,11 @@ fn relevance_similarities(
     hw_counter: HardwareCounterCell,
 ) -> OperationResult<Vec<ScoreType>> {
     let query = QueryVector::Nearest(query_vector);
+    let total_vector_count = volatile_storage.total_vector_count(&hw_counter);
     let query_scorer = new_raw_scorer(query, volatile_storage, hw_counter)?;
 
     // get similarity between candidates and query
-    let ids: Vec<_> = (0..volatile_storage.total_vector_count() as u32).collect();
+    let ids: Vec<_> = (0..total_vector_count as u32).collect();
     let mut similarities = vec![0.0; ids.len()];
     query_scorer.score_points(&ids, &mut similarities);
 

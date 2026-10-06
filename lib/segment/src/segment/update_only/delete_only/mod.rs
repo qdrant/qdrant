@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 
@@ -51,7 +52,9 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.id_tracker.tombstone_points(&self.fs, points)
+        self.id_tracker
+            .tombstone_points(&self.fs, points, hw_counter)
     }
 }

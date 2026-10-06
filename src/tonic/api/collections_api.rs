@@ -17,6 +17,7 @@ use collection::operations::cluster_ops::{
 };
 use collection::operations::types::{AliasDescription, CollectionsAliasesResponse};
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -37,6 +38,7 @@ impl CollectionsService {
     async fn perform_operation<O>(
         &self,
         mut request: Request<O>,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<Response<CollectionOperationResponse>, Status>
     where
         O: WithTimeout
@@ -51,7 +53,7 @@ impl CollectionsService {
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, auth, wait_timeout)
+            .submit_collection_meta_op(operation.try_into()?, auth, wait_timeout, hw_acc)
             .await?;
 
         let response = CollectionOperationResponse::from((timing, result));
@@ -76,6 +78,7 @@ impl Collections for CollectionsService {
             request.into_inner(),
             &auth,
             None,
+            &HwMeasurementAcc::disposable(),
         )
         .await
     }
@@ -102,7 +105,8 @@ impl Collections for CollectionsService {
         request: Request<CreateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate(request.get_ref())?;
-        self.perform_operation(request).await
+        self.perform_operation(request, &HwMeasurementAcc::disposable())
+            .await
     }
 
     async fn update(
@@ -110,7 +114,8 @@ impl Collections for CollectionsService {
         request: Request<UpdateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate(request.get_ref())?;
-        self.perform_operation(request).await
+        self.perform_operation(request, &HwMeasurementAcc::disposable())
+            .await
     }
 
     async fn delete(
@@ -118,7 +123,8 @@ impl Collections for CollectionsService {
         request: Request<DeleteCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate(request.get_ref())?;
-        self.perform_operation(request).await
+        self.perform_operation(request, &HwMeasurementAcc::disposable())
+            .await
     }
 
     async fn update_aliases(
@@ -126,7 +132,8 @@ impl Collections for CollectionsService {
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate(request.get_ref())?;
-        self.perform_operation(request).await
+        self.perform_operation(request, &HwMeasurementAcc::disposable())
+            .await
     }
 
     async fn list_collection_aliases(
@@ -239,6 +246,7 @@ impl Collections for CollectionsService {
                 .try_into()?,
             auth,
             timeout.map(std::time::Duration::from_secs),
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
@@ -298,6 +306,7 @@ impl Collections for CollectionsService {
             operation,
             auth,
             timeout,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -336,6 +345,7 @@ impl Collections for CollectionsService {
             operation,
             auth,
             timeout,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use cancel::CancellationToken;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
@@ -352,11 +353,14 @@ impl UpdateHandler {
     /// This function returns a tuple of two booleans:
     /// - The first indicates if any optimizers have been triggered since startup.
     /// - The second indicates if there are any pending/suboptimal optimizers.
-    pub(crate) fn check_optimizer_conditions(&self) -> (bool, bool) {
+    pub(crate) fn check_optimizer_conditions(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> (bool, bool) {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
         let has_suboptimal_optimizers =
-            !plan_optimizations(&self.segments.read(), &self.optimizers).is_empty();
+            !plan_optimizations(&self.segments.read(), &self.optimizers, hw_counter).is_empty();
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 

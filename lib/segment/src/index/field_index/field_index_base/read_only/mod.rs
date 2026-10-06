@@ -172,7 +172,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     }
 
     /// Populate all pages in the mmap. Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
@@ -188,7 +188,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(_) => {
                 todo!("follow-up: forward `populate` through `ReadOnlyFullTextIndex`")
             }
-            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::populate(index),
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::populate(index, hw_counter),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::populate(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::populate(index),
         }
@@ -280,19 +280,20 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         match self {
-            ReadOnlyFieldIndex::IntIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::DatetimeIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::IntMapIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::KeywordIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::FloatIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::GeoIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::FullTextIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::BoolIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::UuidIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::UuidMapIndex(index) => index.live_preload(fs),
-            ReadOnlyFieldIndex::NullIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::IntIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::GeoIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::BoolIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.live_preload(fs, hw_counter),
+            ReadOnlyFieldIndex::NullIndex(index) => index.live_preload(fs, hw_counter),
         }
     }
 

@@ -87,7 +87,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
-        let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
+        let mut builder = MutableNullIndex::builder(dir.path(), 0, &hw_counter).unwrap();
         builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
         builder
             .add_point(1, &[&null_in_array], &hw_counter)
@@ -95,7 +95,7 @@ mod tests {
         builder.add_point(2, &[], &hw_counter).unwrap(); // empty
         builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
         let total = 4;
-        builder.finalize().unwrap();
+        builder.finalize(&hw_counter).unwrap();
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, named via the
         // associated-type projection since the wrapper type isn't exported.
@@ -103,9 +103,10 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)
-            .unwrap()
-            .unwrap();
+        let index =
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total, &hw_counter)
+                .unwrap()
+                .unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);
@@ -160,16 +161,16 @@ mod tests {
             vec![0, 2],
         );
         // Length read straight from the status file.
-        assert_eq!(index.count_indexed_points().unwrap(), 4);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 4);
 
-        assert!(index.values_is_empty(0).unwrap());
-        assert!(!index.values_is_empty(1).unwrap());
-        assert!(index.values_is_empty(2).unwrap());
-        assert!(!index.values_is_empty(3).unwrap());
+        assert!(index.values_is_empty(0, &hw_counter).unwrap());
+        assert!(!index.values_is_empty(1, &hw_counter).unwrap());
+        assert!(index.values_is_empty(2, &hw_counter).unwrap());
+        assert!(!index.values_is_empty(3, &hw_counter).unwrap());
 
-        assert!(index.values_is_null(0).unwrap());
-        assert!(index.values_is_null(1).unwrap());
-        assert!(!index.values_is_null(3).unwrap());
+        assert!(index.values_is_null(0, &hw_counter).unwrap());
+        assert!(index.values_is_null(1, &hw_counter).unwrap());
+        assert!(!index.values_is_null(3, &hw_counter).unwrap());
     }
 
     /// The incremental `LiveReload` path must land on exactly the same in-memory
@@ -200,28 +201,29 @@ mod tests {
 
         // Initial on-disk state: points 0..=3 (total 4).
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
-        let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
+        let mut builder = MutableNullIndex::builder(dir.path(), 0, &hw_counter).unwrap();
         builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
         builder
             .add_point(1, &[&null_in_array], &hw_counter)
             .unwrap(); // null + values
         builder.add_point(2, &[], &hw_counter).unwrap(); // empty
         builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
-        let mut index = builder.finalize().unwrap();
+        let mut index = builder.finalize(&hw_counter).unwrap();
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=3, taken before the writer continues.
-        let mut reloaded = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 4)
-            .unwrap()
-            .unwrap();
+        let mut reloaded =
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 4, &hw_counter)
+                .unwrap()
+                .unwrap();
 
         if materialize_before_reload {
             // Pull both bitmaps into memory, so the reload below takes its
             // in-place delta path rather than deferring to a later scan.
-            reloaded.values_is_null(0).unwrap();
-            reloaded.values_is_empty(0).unwrap();
+            reloaded.values_is_null(0, &hw_counter).unwrap();
+            reloaded.values_is_empty(0, &hw_counter).unwrap();
         }
 
         // Writer's delta: drop point 1, flip point 2 (empty -> value), append a
@@ -229,7 +231,7 @@ mod tests {
         index.remove_point(1).unwrap();
         index.add_point(2, &[&json!(true)], &hw_counter).unwrap();
         index.add_point(4, &[&Value::Null], &hw_counter).unwrap();
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
         let total = 5;
 
         reloaded
@@ -241,9 +243,10 @@ mod tests {
             )
             .unwrap();
 
-        let fresh = ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total)
-            .unwrap()
-            .unwrap();
+        let fresh =
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), total, &hw_counter)
+                .unwrap()
+                .unwrap();
 
         let key = JsonPath::new("test");
         let is_null = FieldCondition::new_is_null(key.clone(), true);
@@ -306,8 +309,8 @@ mod tests {
         assert_eq!(reloaded_not_empty, fresh_not_empty);
         assert_eq!(reloaded_empty, fresh_empty);
         assert_eq!(
-            reloaded.count_indexed_points().unwrap(),
-            fresh.count_indexed_points().unwrap()
+            reloaded.count_indexed_points(&hw_counter).unwrap(),
+            fresh.count_indexed_points(&hw_counter).unwrap()
         );
 
         // … and the concrete expected sets. Point 2's flip moves it from empty
@@ -316,7 +319,7 @@ mod tests {
         assert_eq!(reloaded_null, vec![0, 4]);
         assert_eq!(reloaded_not_empty, vec![2, 3]);
         assert_eq!(reloaded_empty, vec![0, 1, 4]);
-        assert_eq!(reloaded.count_indexed_points().unwrap(), 5);
+        assert_eq!(reloaded.count_indexed_points(&hw_counter).unwrap(), 5);
     }
 
     /// A partial on-disk layout — exactly one of the `has_values` / `is_null`
@@ -330,21 +333,37 @@ mod tests {
         let build = || {
             let dir = TempDir::with_prefix("read_only_null_inconsistent").unwrap();
             let hw_counter = HardwareCounterCell::new();
-            let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
+            let mut builder = MutableNullIndex::builder(dir.path(), 0, &hw_counter).unwrap();
             let value = json!(true);
             builder.add_point(0, &[&value], &hw_counter).unwrap();
-            builder.finalize().unwrap();
+            builder.finalize(&hw_counter).unwrap();
             dir
         };
 
         // `has_values` present, `is_null` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(IS_NULL_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
+        assert!(
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+                &fs,
+                dir.path(),
+                1,
+                &HardwareCounterCell::new()
+            )
+            .is_err()
+        );
 
         // `is_null` present, `has_values` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(HAS_VALUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), 1).is_err());
+        assert!(
+            ReadOnlyNullIndex::<ReadOnly<MmapFile>>::open(
+                &fs,
+                dir.path(),
+                1,
+                &HardwareCounterCell::new()
+            )
+            .is_err()
+        );
     }
 }

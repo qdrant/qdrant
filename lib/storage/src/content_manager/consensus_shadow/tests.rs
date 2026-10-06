@@ -15,6 +15,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use raft::eraftpb::{ConfState, Entry as RaftEntry, Snapshot, SnapshotMetadata};
 use segment::types::PayloadSchemaType;
 use serde_json::json;
@@ -56,7 +57,7 @@ fn matching_entry() {
     };
 
     manager
-        .apply_normal_entry(&entry(&operation))
+        .apply_normal_entry(&entry(&operation), &HwMeasurementAcc::new())
         .expect("entry applied");
 }
 
@@ -67,7 +68,9 @@ fn manager_initializes_state_machine_before_handler() {
     let dir = tempdir();
     let manager = manager(container.clone(), ShadowMode::Panic, dir.path());
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 
     assert_eq!(container.snapshots_before_handler(), 1);
 }
@@ -82,7 +85,11 @@ fn manager_preserves_handler_result() {
     let dir = tempdir();
     let manager = manager(container, ShadowMode::Disabled, dir.path());
 
-    assert!(!manager.apply_normal_entry(&entry(&nop())).expect("nop"));
+    assert!(
+        !manager
+            .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+            .expect("nop")
+    );
 }
 
 /// Consensus state machine and `Container` contain the same collection, but with different shard
@@ -272,15 +279,19 @@ fn snapshot_invalidates() {
     let dir = tempdir();
     let manager = manager(container, ShadowMode::Panic, dir.path());
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 
     // Snapshot removes the existing collection and its alias
     manager
-        .apply_snapshot(&snapshot())
+        .apply_snapshot(&snapshot(), &HwMeasurementAcc::new())
         .expect("snapshot applied")
         .expect("snapshot applied");
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 }
 
 /// `ConsensusManager` should panic on a divergence when consensus state machine validation runs
@@ -292,11 +303,15 @@ fn manager_panics_on_divergence() {
     let dir = tempdir();
     let manager = manager(container.clone(), ShadowMode::Panic, dir.path());
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 
     container.add_alias(OTHER_ALIAS);
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 }
 
 /// With consensus state machine validation disabled, `ConsensusManager` should not panic on
@@ -307,11 +322,15 @@ fn manager_disabled() {
     let dir = tempdir();
     let manager = manager(container.clone(), ShadowMode::Disabled, dir.path());
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 
     container.add_alias(OTHER_ALIAS);
 
-    manager.apply_normal_entry(&entry(&nop())).expect("nop");
+    manager
+        .apply_normal_entry(&entry(&nop()), &HwMeasurementAcc::new())
+        .expect("nop");
 }
 
 #[test]
@@ -656,6 +675,7 @@ impl CollectionContainer for Container {
     fn perform_collection_meta_op(
         &self,
         _operation: CollectionMetaOperations,
+        _hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         self.snapshots_before_handler
             .store(self.snapshots(), Ordering::Relaxed);
@@ -663,7 +683,11 @@ impl CollectionContainer for Container {
         Ok(self.handler_result)
     }
 
-    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError> {
+    fn apply_collections_snapshot(
+        &self,
+        data: CollectionsSnapshot,
+        _hw_acc: &HwMeasurementAcc,
+    ) -> Result<(), StorageError> {
         let CollectionsSnapshot {
             collections,
             aliases,

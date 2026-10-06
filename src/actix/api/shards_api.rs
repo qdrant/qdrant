@@ -5,6 +5,7 @@ use collection::operations::cluster_ops::{
     DropShardingKeyOperation,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -55,6 +56,7 @@ async fn create_shard_key(
         operation,
         auth,
         wait_timeout,
+        &HwMeasurementAcc::disposable(),
     )
     .await;
 
@@ -85,6 +87,7 @@ async fn delete_shard_key(
         operation,
         auth,
         wait_timeout,
+        &HwMeasurementAcc::disposable(),
     )
     .await;
 

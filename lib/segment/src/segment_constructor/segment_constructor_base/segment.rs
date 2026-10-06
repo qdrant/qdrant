@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::defaults::log_load_timing;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::storage_version::StorageVersion;
@@ -47,7 +48,10 @@ impl NewSegmentToken {
 ///
 /// Might delete or rename the directory.
 /// Returns `None` if the segment directory was deleted.
-pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uuid)>> {
+pub fn normalize_segment_dir(
+    path: &Path,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<Option<(PathBuf, Uuid)>> {
     // 1. Delete dirs like `5345474d-454e-54f0-9f98-ba206e616d65.deleted`.
     // These are leftovers from rename-then-delete approach.
     if path
@@ -66,7 +70,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
     // 2. Delete dirs without proper `version.info` file inside.
     // These segments are not properly saved.
     // Likely, the server crashed during saving.
-    if SegmentVersion::load_universal(&MmapFs, path)?.is_none() {
+    if SegmentVersion::load_universal(&MmapFs, path, hw_counter)?.is_none() {
         log::warn!("Deleting segment without version file: {}", path.display());
         safe_delete_with_suffix(path).map_err(|err| {
             OperationError::service_error(format!("failed to delete leftover segment: {err}"))
@@ -117,10 +121,11 @@ pub fn load_segment(
     deferred_internal_id: Option<PointOffsetType>,
     stopped: &AtomicBool,
     ignore_missing_version: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Segment> {
     let total_started = Instant::now();
 
-    let stored_version = SegmentVersion::load_universal(&MmapFs, path)?;
+    let stored_version = SegmentVersion::load_universal(&MmapFs, path, hw_counter)?;
 
     match stored_version {
         Some(stored_version) => {
@@ -176,6 +181,7 @@ pub fn load_segment(
         &segment_state.config,
         stopped,
         IndexLoadMode::LoadExisting,
+        hw_counter,
     )?;
 
     log_load_timing(path, "total", total_started);
@@ -200,6 +206,7 @@ pub fn build_segment(
     config: &SegmentConfig,
     deferred_internal_id: Option<PointOffsetType>,
     ready: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(Segment, NewSegmentToken)> {
     let uuid = Uuid::new_v4();
     let token = NewSegmentToken::new(uuid);
@@ -217,6 +224,7 @@ pub fn build_segment(
         config,
         &stopped,
         IndexLoadMode::CreateIfMissing,
+        hw_counter,
     )?;
     segment.save_current_state()?;
 

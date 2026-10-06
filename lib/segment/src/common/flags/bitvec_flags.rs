@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalRead, UniversalWrite};
 
@@ -45,14 +46,15 @@ where
         directory: &Path,
         mode_if_create: FlagsMode,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        match FlagsMode::detect(&fs, directory)?.unwrap_or(mode_if_create) {
+        match FlagsMode::detect(&fs, directory, hw_counter)?.unwrap_or(mode_if_create) {
             FlagsMode::Dynamic => {
-                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate)?;
-                Self::new(fs, dynamic_flags)
+                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate, hw_counter)?;
+                Self::new(fs, dynamic_flags, hw_counter)
             }
             FlagsMode::Compact => {
-                let compact_flags = CompactStoredFlags::open(fs, directory, populate)?;
+                let compact_flags = CompactStoredFlags::open(fs, directory, populate, hw_counter)?;
                 Ok(Self::from_compact(compact_flags))
             }
         }
@@ -63,8 +65,9 @@ where
         directory: &Path,
         mode: FlagsMode,
         bitslice: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let mut flags = Self::open_or_create(fs, directory, mode, Populate::No)?;
+        let mut flags = Self::open_or_create(fs, directory, mode, Populate::No, hw_counter)?;
         for index in bitslice.iter_ones() {
             let index = PointOffsetType::try_from(index).map_err(|_| {
                 OperationError::service_error(format!("Point offset {index} is out of u32 range"))
@@ -74,9 +77,13 @@ where
         Ok(flags)
     }
 
-    pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {
+    pub fn new(
+        fs: S::Fs,
+        dynamic_flags: DynamicStoredFlags<S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         // load flags into memory
-        let bitvec = BitVec::from_bitslice(&*dynamic_flags.get_bitslice()?);
+        let bitvec = BitVec::from_bitslice(&*dynamic_flags.get_bitslice(hw_counter)?);
 
         if let Err(err) = dynamic_flags.clear_cache() {
             log::warn!("Failed to clear bitslice cache: {err}");
@@ -174,8 +181,8 @@ where
         self.storage.files()
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.storage.flusher()
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        self.storage.flusher(hw_counter)
     }
 }
 
@@ -188,6 +195,7 @@ where
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use common::universal_io::Populate;
     #[cfg_predicate]
@@ -207,9 +215,15 @@ mod tests_mod {
 
         // Create and update flags
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            let mut bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            let mut bitvec_flags =
+                BitvecFlags::new(Fs::default(), mmap_flags, &HardwareCounterCell::new()).unwrap();
 
             // Set various flags - we'll set up to index 19 to have a length of 20
             for i in 16..20 {
@@ -231,16 +245,21 @@ mod tests_mod {
             assert_eq!(bitvec_flags.count_trues(), 4);
 
             // Flush
-            let flusher = bitvec_flags.flusher();
+            let flusher = bitvec_flags.flusher(&HardwareCounterCell::new());
             flusher().unwrap();
         }
 
         // Verify bitmap consistency after reload
         {
-            let mmap_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
-            let bitvec_flags = BitvecFlags::new(Fs::default(), mmap_flags).unwrap();
+            let mmap_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            let bitvec_flags =
+                BitvecFlags::new(Fs::default(), mmap_flags, &HardwareCounterCell::new()).unwrap();
 
             // Verify iteration consistency after reload
             let iter_trues: Vec<_> = bitvec_flags.iter_trues().collect();
@@ -280,6 +299,7 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Compact,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert!(!flags.set(0, true));
@@ -292,7 +312,7 @@ mod tests_mod {
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with(COMPACT_FLAGS_FILE));
 
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         // Requesting dynamic mode on existing flags keeps the compact mode.
@@ -302,6 +322,7 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Dynamic,
                 Populate::Blocking,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert_eq!(flags.files().len(), 1);
@@ -327,10 +348,11 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Dynamic,
                 Populate::No,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             flags.set(1, true);
-            flags.flusher()().unwrap();
+            flags.flusher(&HardwareCounterCell::new())().unwrap();
 
             // dynamic stack: flags file plus status file
             assert!(flags.files().len() > 1);
@@ -342,6 +364,7 @@ mod tests_mod {
                 dir.path(),
                 FlagsMode::Compact,
                 Populate::Blocking,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             assert!(flags.files().len() > 1);

@@ -46,7 +46,7 @@ fn test_delete_by_filter_version_bump() {
     );
 
     let old_version = holder
-        .flush_all(FlushMode::Sync, false)
+        .flush_all(FlushMode::Sync, false, &hw_counter)
         .expect("Failed to flush test segment holder");
 
     let segments = Arc::new(RwLock::new(holder));
@@ -65,7 +65,7 @@ fn test_delete_by_filter_version_bump() {
 
     let new_version = segments
         .read()
-        .flush_all(FlushMode::Sync, false)
+        .flush_all(FlushMode::Sync, false, &hw_counter)
         .expect("Failed to flush test segment holder");
 
     // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty
@@ -151,7 +151,11 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
     {
         let non_app = holder.get(sid_non_app).unwrap().get();
         let non_app = non_app.read();
-        assert!(!non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred));
+        assert!(!non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
     }
 
     for point_id in [1, 100] {
@@ -220,7 +224,7 @@ fn test_sync_points_raw() {
         .unwrap()
         .get()
         .read()
-        .point_version(2.into());
+        .point_version(2.into(), &hw_counter);
 
     let mut point_3 = incoming_raw_point(retrieve_raw_record(&holder, sid, 3).unwrap());
     let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
@@ -258,13 +262,17 @@ fn test_sync_points_raw() {
             assert!(
                 !segment.has_point(
                     point_id.into(),
-                    common::types::DeferredBehavior::WithDeferred
+                    common::types::DeferredBehavior::WithDeferred,
+                    &hw_counter
                 ),
                 "point {point_id} must be deleted",
             );
         }
-        assert_eq!(segment.point_version(2.into()), point_2_version_before);
-        assert_eq!(segment.point_version(3.into()), Some(100));
+        assert_eq!(
+            segment.point_version(2.into(), &hw_counter),
+            point_2_version_before
+        );
+        assert_eq!(segment.point_version(3.into(), &hw_counter), Some(100));
     }
 
     let record = retrieve_raw_record(&holder, sid, 3).unwrap();
@@ -319,7 +327,7 @@ fn build_deferred_with_city(
     seg.set_payload(version, point_id.into(), &payload, &None, &hw_counter)
         .unwrap();
     assert!(
-        seg.point_is_deferred(point_id.into()),
+        seg.point_is_deferred(point_id.into(), &hw_counter),
         "Point {point_id} should be deferred"
     );
     seg
@@ -364,11 +372,19 @@ fn test_delete_by_filter_deferred_filter_matches_deferred() {
     let app = app.read();
 
     assert!(
-        !app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        !app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy should be deleted (matches filter)"
     );
     assert!(
-        !non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        !non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy should also be deleted (deferred version matched filter)"
     );
 }
@@ -405,11 +421,19 @@ fn test_delete_by_filter_deferred_filter_matches_old_copy() {
     // so both copies must be kept. Once the optimizer kicks in and deduplicates,
     // only the Amsterdam version will remain.
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept (does not match filter, is newest)"
     );
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept (deferred version is newer and does not match filter)"
     );
 }
@@ -476,11 +500,19 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
     let app = app.read();
 
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept"
     );
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept"
     );
 }
@@ -545,11 +577,19 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
     let app = app.read();
 
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept"
     );
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept"
     );
 }
@@ -612,11 +652,19 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let app = app.read();
 
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept"
     );
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept"
     );
 }
@@ -683,11 +731,19 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
     let app = app.read();
 
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept"
     );
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept"
     );
 }
@@ -754,11 +810,19 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
     let app = app.read();
 
     assert!(
-        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        non_app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Old copy must be kept"
     );
     assert!(
-        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            1.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Deferred copy must be kept"
     );
 }
@@ -825,7 +889,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     };
 
     let check = |segment: &dyn SegmentEntry, path: &str| {
-        assert!(segment.has_point(point_id, DeferredBehavior::WithDeferred));
+        assert!(segment.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
         assert!(
             segment
                 .vector(VECTOR1_NAME, point_id, &hw_counter)
@@ -848,7 +912,8 @@ fn test_upsert_cow_move_replaces_whole_point() {
 
     // Oracle: in-place upsert into an appendable segment.
     let mut in_place =
-        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot, &hw_counter)
+            .unwrap();
     seed(&mut in_place);
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(in_place);
@@ -859,11 +924,13 @@ fn test_upsert_cow_move_replaces_whole_point() {
     // CoW move: the point's segment is non-appendable, so the upsert must
     // move it into the appendable destination with the same semantics.
     let mut source =
-        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot, &hw_counter)
+            .unwrap();
     seed(&mut source);
     source.appendable_flag = false;
     let destination =
-        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot, &hw_counter)
+            .unwrap();
     let mut holder = SegmentHolder::default();
     holder.add_new(source);
     let sid = holder.add_new(destination);
@@ -911,7 +978,7 @@ fn create_field_index_pins_pending_payload_state() {
     let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
     seg.set_payload(2, 0.into(), &payload, &None, &hw_counter)
         .unwrap();
-    seg.flush(true).unwrap();
+    seg.flush(true, &hw_counter).unwrap();
 
     // Pending payload clear: stays in memory until the next flush cycle.
     seg.clear_payload(3, 0.into(), &hw_counter).unwrap();
@@ -933,6 +1000,7 @@ fn create_field_index_pins_pending_payload_state() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .expect("segment must load after simulated crash");
 
@@ -1001,7 +1069,9 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     let destination_id = holder.add_new(destination);
 
     // Durable baseline.
-    holder.flush_all(FlushMode::Sync, true).unwrap();
+    holder
+        .flush_all(FlushMode::Sync, true, &hw_counter)
+        .unwrap();
 
     // Op 100 modifies point 1, which lives in the non-appendable source: the
     // copy-on-write arm upserts the updated point into the destination, deletes it from
@@ -1091,7 +1161,9 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
 
     let mut holder = SegmentHolder::default();
     let segment_id = holder.add_new(segment);
-    holder.flush_all(FlushMode::Sync, true).unwrap();
+    holder
+        .flush_all(FlushMode::Sync, true, &hw_counter)
+        .unwrap();
 
     // Operation 10 sets a payload on every point. This is its first batch; the update worker
     // has not returned, so the last fully applied operation is still 9.
@@ -1115,7 +1187,7 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
     // A flush pass lands in the gap before the next batch.
     assert_eq!(
         holder
-            .flush_all_up_to(FlushMode::Sync, false, Some(9))
+            .flush_all_up_to(FlushMode::Sync, false, Some(9), &hw_counter)
             .unwrap(),
         9,
         "the acknowledged version must leave the unfinished operation replayable",
@@ -1137,7 +1209,7 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
     // above claimed version 10, the segment would look clean here and be skipped.
     assert_eq!(
         holder
-            .flush_all_up_to(FlushMode::Sync, false, Some(10))
+            .flush_all_up_to(FlushMode::Sync, false, Some(10), &hw_counter)
             .unwrap(),
         10,
     );
@@ -1149,6 +1221,7 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
     let hits = reloaded

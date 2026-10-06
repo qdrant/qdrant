@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::StoredBitmask;
@@ -69,17 +70,24 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let i2e_path = i2e_path(segment_path);
-        if !UniversalReadFs::exists(fs, &i2e_path)? {
+        if !UniversalReadFs::exists(fs, &i2e_path, hw_counter)? {
             return Ok(false);
         }
 
-        fs.schedule_open(&i2e_path, Some(Self::i2e_open_options(populate)), None);
+        fs.schedule_open(
+            &i2e_path,
+            Some(Self::i2e_open_options(populate)),
+            None,
+            hw_counter,
+        );
         fs.schedule_open(
             &e2i_path(segment_path),
             Some(Self::open_options(populate)),
             None,
+            hw_counter,
         );
         fs.schedule_open(
             &is_uuid_path(segment_path),
@@ -90,6 +98,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 ..Self::is_uuid_open_options()
             }),
             None,
+            hw_counter,
         );
 
         Ok(true)
@@ -107,8 +116,9 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        Self::try_open(fs, segment_path, populate)?.ok_or_else(|| {
+        Self::try_open(fs, segment_path, populate, hw_counter)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker mapping ({}) not found",
                 i2e_path(segment_path).display(),
@@ -124,32 +134,38 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let Some(i2e) = fs
             .open(
                 i2e_path(segment_path),
                 Self::i2e_open_options(populate),
                 Default::default(),
+                hw_counter,
             )
             .ok_not_found()?
         else {
             return Ok(None);
         };
-        let i2e_header_bytes = i2e.read::<_, u8>(ReadRange::new(0, I2E_HEADER_SIZE), Random)?;
+        let i2e_header_bytes =
+            i2e.read::<_, u8>(ReadRange::new(0, I2E_HEADER_SIZE), Random, hw_counter)?;
         let i2e_header = I2eHeader::parse(i2e_header_bytes.as_ref())?;
 
         let e2i = fs.open(
             e2i_path(segment_path),
             Self::open_options(populate),
             Default::default(),
+            hw_counter,
         )?;
-        let e2i_header_bytes = e2i.read::<_, u8>(ReadRange::new(0, E2I_HEADER_SIZE), Random)?;
+        let e2i_header_bytes =
+            e2i.read::<_, u8>(ReadRange::new(0, E2I_HEADER_SIZE), Random, hw_counter)?;
         let e2i_header = E2iHeader::parse(e2i_header_bytes.as_ref())?;
 
         // Read the whole sparse index (numeric then UUID) in a single range.
         let index_bytes = e2i.read::<_, u8>(
             ReadRange::new(E2I_HEADER_SIZE, e2i_header.index_end() - E2I_HEADER_SIZE),
             Random,
+            hw_counter,
         )?;
         let mut cursor = Cursor::new(index_bytes.as_ref());
         let mut num_sparse = Vec::with_capacity(e2i_header.num_blocks() as usize);
@@ -170,6 +186,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             is_uuid_path(segment_path),
             Self::is_uuid_open_options(),
             Default::default(),
+            hw_counter,
         )?;
         if is_uuid_storage.bit_len() != i2e_header.total {
             return Err(OperationError::inconsistent_storage(format!(
@@ -178,7 +195,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 i2e_header.total,
             )));
         }
-        let is_uuid = is_uuid_storage.read_ones()?;
+        let is_uuid = is_uuid_storage.read_ones(hw_counter)?;
 
         Ok(Some(Self {
             i2e,

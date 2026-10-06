@@ -1,4 +1,5 @@
 use super::{UniversalFlush, UniversalRead, UniversalWriteFs};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::universal_io::{ByteOffset, UioResult, UniversalReadFsAsync};
 
 /// A file handle that supports atomic appends at a caller-provided offset.
@@ -72,7 +73,12 @@ pub trait UniversalAppend:
     /// [`AppendOffsetConflict`] otherwise.
     ///
     /// [`AppendOffsetConflict`]: crate::universal_io::UniversalIoError::AppendOffsetConflict
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()>;
+    fn append<T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        data: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()>;
 
     /// Append several buffers contiguously, in order, starting at exactly
     /// `offset`, using as few operations as the backend allows (a single
@@ -81,11 +87,12 @@ pub trait UniversalAppend:
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         let mut offset = offset;
 
         for item in items {
-            self.append(offset, item)?;
+            self.append(offset, item, hw_counter)?;
             offset += std::mem::size_of_val(item) as u64;
         }
 

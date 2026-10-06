@@ -436,12 +436,16 @@ impl SegmentHolder {
     ///
     /// A segment that cannot be measured right now counts as having capacity, the size cap is
     /// best effort.
-    fn segment_has_capacity(segment: &LockedSegment, max_segment_size_bytes: NonZeroUsize) -> bool {
+    fn segment_has_capacity(
+        segment: &LockedSegment,
+        max_segment_size_bytes: NonZeroUsize,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         let segment_arc = segment.get();
         let Some(segment) = segment_arc.try_read() else {
             return true;
         };
-        match segment.max_available_vectors_size_in_bytes() {
+        match segment.max_available_vectors_size_in_bytes(hw_counter) {
             Ok(size) => size < max_segment_size_bytes.get(),
             Err(err) => {
                 log::error!("Failed to get segment size, ignoring: {err}");
@@ -454,6 +458,7 @@ impl SegmentHolder {
     fn eligible_appendable_segments_ids(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<SegmentId> {
         let Some(max_segment_size_bytes) = max_segment_size_bytes else {
             return self.appendable_segments_ids();
@@ -461,7 +466,9 @@ impl SegmentHolder {
 
         self.appendable_segments
             .iter()
-            .filter(|(_, segment)| Self::segment_has_capacity(segment, max_segment_size_bytes))
+            .filter(|(_, segment)| {
+                Self::segment_has_capacity(segment, max_segment_size_bytes, hw_counter)
+            })
             .map(|(segment_id, _)| *segment_id)
             .collect()
     }
@@ -471,6 +478,7 @@ impl SegmentHolder {
     pub fn has_appendable_segment_with_capacity(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
+        hw_counter: &HardwareCounterCell,
     ) -> bool {
         let Some(max_segment_size_bytes) = max_segment_size_bytes else {
             return !self.appendable_segments.is_empty();
@@ -478,7 +486,7 @@ impl SegmentHolder {
 
         self.appendable_segments
             .values()
-            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes))
+            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes, hw_counter))
     }
 
     /// Candidate destinations for copy-on-write moves, computed lazily on the first move and
@@ -490,9 +498,11 @@ impl SegmentHolder {
         &self,
         cache: &'a mut Option<Vec<SegmentId>>,
         max_segment_size_bytes: Option<NonZeroUsize>,
+        hw_counter: &HardwareCounterCell,
     ) -> &'a [SegmentId] {
         cache.get_or_insert_with(|| {
-            let eligible = self.eligible_appendable_segments_ids(max_segment_size_bytes);
+            let eligible =
+                self.eligible_appendable_segments_ids(max_segment_size_bytes, hw_counter);
             if eligible.is_empty() {
                 self.appendable_segments_ids()
             } else {
@@ -711,7 +721,10 @@ impl SegmentHolder {
     /// all, a random one is returned.
     ///
     /// If capacity is not important use `random_appendable_segment` instead because it is cheaper.
-    pub fn smallest_appendable_segment(&self) -> Option<LockedSegment> {
+    pub fn smallest_appendable_segment(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
 
         // Try a non-blocking read lock on all segments and return the smallest one
@@ -722,7 +735,7 @@ impl SegmentHolder {
                 match locked_segment
                     .get()
                     .try_read()
-                    .map(|segment| segment.max_available_vectors_size_in_bytes())?
+                    .map(|segment| segment.max_available_vectors_size_in_bytes(hw_counter))?
                 {
                     Ok(size) => Some((locked_segment, size)),
                     Err(err) => {
@@ -747,10 +760,11 @@ impl SegmentHolder {
         ids: &[PointIdType],
         segment: &dyn ReadSegmentEntry,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
-            .filter(|id| segment.has_point(*id, deferred_behavior))
+            .filter(|id| segment.has_point(*id, deferred_behavior, hw_counter))
             .collect()
     }
 
@@ -767,6 +781,7 @@ impl SegmentHolder {
     fn find_points_to_update_and_delete(
         &self,
         ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
     ) -> (
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
@@ -789,13 +804,18 @@ impl SegmentHolder {
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
-            let segment_points =
-                Self::segment_points(ids, segment_lock.deref(), DeferredBehavior::WithDeferred);
+            let segment_points = Self::segment_points(
+                ids,
+                segment_lock.deref(),
+                DeferredBehavior::WithDeferred,
+                hw_counter,
+            );
             for segment_point in segment_points {
-                let Some(point_version) = segment_lock.point_version(segment_point) else {
+                let Some(point_version) = segment_lock.point_version(segment_point, hw_counter)
+                else {
                     continue;
                 };
-                let is_deferred = segment_lock.point_is_deferred(segment_point);
+                let is_deferred = segment_lock.point_is_deferred(segment_point, hw_counter);
                 all_occurrences.entry(segment_point).or_default().push((
                     segment_id,
                     point_version,
@@ -929,7 +949,7 @@ impl SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
         ) -> OperationResult<bool>,
     {
-        let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
+        let (to_update, to_delete) = self.find_points_to_update_and_delete(ids, hw_counter);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
         self.delete_points_from_segments(to_delete, hw_counter)?;
@@ -961,7 +981,7 @@ impl SegmentHolder {
             let mut write_segment = segment_arc.write();
 
             for point_id in points {
-                if let Some(version) = write_segment.point_version(point_id) {
+                if let Some(version) = write_segment.point_version(point_id, hw_counter) {
                     write_segment.delete_point(version, point_id, hw_counter)?;
                 }
             }
@@ -977,7 +997,7 @@ impl SegmentHolder {
         points: &[PointIdType],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let (_to_keep, to_delete) = self.find_points_to_update_and_delete(points);
+        let (_to_keep, to_delete) = self.find_points_to_update_and_delete(points, hw_counter);
         self.delete_points_from_segments(to_delete, hw_counter)
     }
 
@@ -1095,7 +1115,7 @@ impl SegmentHolder {
         let stopped = AtomicBool::new(false);
 
         let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
-            if let Some(point_version) = write_segment.point_version(point_id)
+            if let Some(point_version) = write_segment.point_version(point_id, hw_counter)
                 && point_version >= op_num
             {
                 applied_points.insert(point_id);
@@ -1110,7 +1130,7 @@ impl SegmentHolder {
                 self.aloha_random_write(
                     self.cow_destination_candidates(
                         &mut destination_cache,
-                        max_segment_size_bytes,
+                        max_segment_size_bytes, hw_counter
                     ),
                     |appendable_idx, appendable_write_segment| {
                         // If we are moving point from one segment to another,
@@ -1208,7 +1228,7 @@ impl SegmentHolder {
                         )?;
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
-                        if !appendable_write_segment.point_is_deferred(point_id) {
+                        if !appendable_write_segment.point_is_deferred(point_id, hw_counter) {
                             write_segment.delete_point(op_num, point_id, hw_counter)?;
                         }
 
@@ -1228,7 +1248,11 @@ impl SegmentHolder {
     /// - Removes found IDs from consideration for subsequent segments
     /// - Early terminates when all IDs are found
     /// - Pre-allocates result set
-    pub fn select_existing_points(&self, ids: Vec<PointIdType>) -> AHashSet<PointIdType> {
+    pub fn select_existing_points(
+        &self,
+        ids: Vec<PointIdType>,
+        hw_counter: &HardwareCounterCell,
+    ) -> AHashSet<PointIdType> {
         let mut remaining_ids = ids;
         if remaining_ids.is_empty() {
             return AHashSet::new();
@@ -1242,7 +1266,7 @@ impl SegmentHolder {
 
             // Partition remaining IDs: found ones go to existing_points, rest stay in remaining
             remaining_ids.retain(|&id| {
-                if segment_guard.has_point(id, DeferredBehavior::WithDeferred) {
+                if segment_guard.has_point(id, DeferredBehavior::WithDeferred, hw_counter) {
                     existing_points.insert(id);
                     false // Remove from remaining
                 } else {
@@ -1268,6 +1292,7 @@ impl SegmentHolder {
         segment_config: SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         deferred_internal_id: Option<PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<LockedSegment> {
         let (segment, token) = self.build_tmp_segment(
             segments_path,
@@ -1275,6 +1300,7 @@ impl SegmentHolder {
             payload_index_schema,
             deferred_internal_id,
             true,
+            hw_counter,
         )?;
         // Register the new segment ASAP — it exists on disk, so it must be in the manifest. No-op
         // when no manifest is attached yet (e.g. during shard load).
@@ -1307,6 +1333,7 @@ impl SegmentHolder {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         deferred_internal_id: Option<PointOffsetType>,
         save_version: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         let config = match segment_config {
             // Base config on collection params
@@ -1326,8 +1353,13 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let (mut segment, token) =
-            build_segment(segments_path, &config, deferred_internal_id, save_version)?;
+        let (mut segment, token) = build_segment(
+            segments_path,
+            &config,
+            deferred_internal_id,
+            save_version,
+            hw_counter,
+        )?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();
@@ -1348,7 +1380,11 @@ impl SegmentHolder {
     /// - We are not removing the last appendable segment.
     ///
     /// Returns `true` if the segment was removed, `false` otherwise.
-    pub fn remove_segment_if_not_needed(&mut self, segment_id: SegmentId) -> OperationResult<bool> {
+    pub fn remove_segment_if_not_needed(
+        &mut self,
+        segment_id: SegmentId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         let tmp_segment = {
             let mut segments = self.remove(&[segment_id]);
             if segments.is_empty() {
@@ -1366,7 +1402,7 @@ impl SegmentHolder {
         {
             log::trace!(
                 "Keeping temporary segment with {} points",
-                tmp_segment.get().read().available_point_count(),
+                tmp_segment.get().read().available_point_count(hw_counter),
             );
             self.add_existing_locked(segment_id, tmp_segment);
             Ok(false)
@@ -1392,8 +1428,11 @@ impl SegmentHolder {
     /// Checks all segments and removes duplicated and outdated points.
     /// If two points have the same id, the point with the highest version is kept.
     /// If two points have the same id and version, one of them is kept.
-    pub fn deduplicate_points_tasks(&self) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
-        let points_to_remove = self.find_duplicated_points();
+    pub fn deduplicate_points_tasks(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
+        let points_to_remove = self.find_duplicated_points(hw_counter);
 
         points_to_remove
             .into_iter()
@@ -1408,7 +1447,7 @@ impl SegmentHolder {
                     let disposable_hw_counter = HardwareCounterCell::disposable();
 
                     for &point_id in &points {
-                        if let Some(point_version) = write_segment.point_version(point_id) {
+                        if let Some(point_version) = write_segment.point_version(point_id, &disposable_hw_counter) {
                             removed_points += 1;
                             write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
                         }
@@ -1422,7 +1461,10 @@ impl SegmentHolder {
             .collect::<Vec<_>>()
     }
 
-    pub fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
+    pub fn find_duplicated_points(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> AHashMap<SegmentId, Vec<PointIdType>> {
         struct DedupPoint {
             segment_id: SegmentId,
             point_id: PointIdType,
@@ -1454,12 +1496,14 @@ impl SegmentHolder {
         let point_group_iter = locked_segments
             .iter()
             .map(|(&segment_id, segment)| {
-                segment.iter_points().map(move |point_id| DedupPoint {
-                    segment_id,
-                    point_id,
-                    version: None,
-                    is_deferred: false,
-                })
+                segment
+                    .iter_points(hw_counter)
+                    .map(move |point_id| DedupPoint {
+                        segment_id,
+                        point_id,
+                        version: None,
+                        is_deferred: false,
+                    })
             })
             .kmerge_by(|a, b| a.point_id < b.point_id)
             .chunk_by(|entry| entry.point_id);
@@ -1478,8 +1522,8 @@ impl SegmentHolder {
             // Enrich with point version and deferred status
             for dedup_point in &mut points {
                 let segment = &locked_segments[&dedup_point.segment_id];
-                dedup_point.version = segment.point_version(point_id);
-                dedup_point.is_deferred = segment.point_is_deferred(point_id);
+                dedup_point.version = segment.point_version(point_id, hw_counter);
+                dedup_point.is_deferred = segment.point_is_deferred(point_id, hw_counter);
             }
 
             // Sort points from highest to lowest version

@@ -72,7 +72,12 @@ fn test_full_text_indexing() {
                 .unwrap();
         }
 
-        assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
+        assert_eq!(
+            index
+                .count_indexed_points(&HardwareCounterCell::new())
+                .unwrap(),
+            payloads.len()
+        );
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -101,8 +106,8 @@ fn test_full_text_indexing() {
             .collect();
         assert_eq!(search_res, vec![4]);
 
-        index.remove_point(2).unwrap();
-        index.remove_point(3).unwrap();
+        index.remove_point(2, &hw_counter).unwrap();
+        index.remove_point(3, &hw_counter).unwrap();
 
         let filter_condition = filter_request("giant computer");
         assert!(
@@ -114,7 +119,10 @@ fn test_full_text_indexing() {
                 .is_none()
         );
 
-        assert_eq!(index.count_indexed_points().unwrap(), payloads.len() - 2);
+        assert_eq!(
+            index.count_indexed_points(&hw_counter).unwrap(),
+            payloads.len() - 2
+        );
 
         let payload = serde_json::json!([
             "The last question was asked for the first time, half in jest, on May 21, 2061,",
@@ -127,9 +135,12 @@ fn test_full_text_indexing() {
         ]);
         index.add_point(4, &[&payload], &hw_cell).unwrap();
 
-        assert_eq!(index.count_indexed_points().unwrap(), payloads.len() - 1);
+        assert_eq!(
+            index.count_indexed_points(&hw_counter).unwrap(),
+            payloads.len() - 1
+        );
 
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
     }
 
     {
@@ -137,7 +148,12 @@ fn test_full_text_indexing() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(index.count_indexed_points().unwrap(), 4);
+        assert_eq!(
+            index
+                .count_indexed_points(&HardwareCounterCell::new())
+                .unwrap(),
+            4
+        );
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -159,7 +175,7 @@ fn test_full_text_indexing() {
         assert_eq!(search_res, vec![0, 1, 3, 4]);
 
         // check deletion
-        index.remove_point(0).unwrap();
+        index.remove_point(0, &hw_counter).unwrap();
         let filter_condition = filter_request("multivac");
         let search_res: Vec<_> = index
             .filter(&filter_condition, &hw_counter)
@@ -167,9 +183,9 @@ fn test_full_text_indexing() {
             .unwrap()
             .collect();
         assert!(search_res.is_empty());
-        assert_eq!(index.count_indexed_points().unwrap(), 3);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 3);
 
-        index.remove_point(3).unwrap();
+        index.remove_point(3, &hw_counter).unwrap();
         let filter_condition = filter_request("the");
         let search_res: Vec<_> = index
             .filter(&filter_condition, &hw_counter)
@@ -177,11 +193,11 @@ fn test_full_text_indexing() {
             .unwrap()
             .collect();
         assert_eq!(search_res, vec![1, 4]);
-        assert_eq!(index.count_indexed_points().unwrap(), 2);
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 2);
 
         // check deletion of non-existing point
-        index.remove_point(3).unwrap();
-        assert_eq!(index.count_indexed_points().unwrap(), 2);
+        index.remove_point(3, &hw_counter).unwrap();
+        assert_eq!(index.count_indexed_points(&hw_counter).unwrap(), 2);
     }
 }
 
@@ -194,10 +210,14 @@ fn gridstore_index(
     create_if_missing: bool,
     scoring: bool,
 ) -> crate::common::operation_error::OperationResult<Option<FullTextIndex>> {
-    Ok(
-        super::MutableFullTextIndex::open_gridstore(path, config, create_if_missing, scoring)?
-            .map(FullTextIndex::Mutable),
-    )
+    Ok(super::MutableFullTextIndex::open_gridstore(
+        path,
+        config,
+        create_if_missing,
+        scoring,
+        &HardwareCounterCell::new(),
+    )?
+    .map(FullTextIndex::Mutable))
 }
 
 /// Reach the in-memory lengths of a gridstore-backed index.
@@ -268,7 +288,7 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
         let (lens, total) = doc_lens(&index);
         assert_eq!(lens, expected, "lengths wrong before reload");
         assert_eq!(total, 10);
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
     }
 
     let reopened = gridstore_index(path, length_config(phrase_matching), false, true)
@@ -357,11 +377,11 @@ fn removing_a_point_discounts_its_length() {
         .unwrap();
     assert_eq!(doc_lens(&index), (vec![3, 2], 5));
 
-    index.remove_point(1).unwrap();
+    index.remove_point(1, &hw_counter).unwrap();
     assert_eq!(doc_lens(&index), (vec![3, 0], 3));
 
     // Removing twice must not double-discount.
-    index.remove_point(1).unwrap();
+    index.remove_point(1, &hw_counter).unwrap();
     assert_eq!(doc_lens(&index), (vec![3, 0], 3));
 }
 
@@ -434,7 +454,7 @@ fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) 
 
         // The tokens still round-trip; only the length is absent.
         assert!(inner.get_doc(0).is_some_and(|tokens| !tokens.is_empty()));
-        index.flusher()().unwrap();
+        index.flusher(&hw_counter)().unwrap();
     }
 
     // Scoped, so the store is never open twice: both handles are writable and

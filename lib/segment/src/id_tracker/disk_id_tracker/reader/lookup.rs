@@ -1,5 +1,6 @@
 //! Point lookups: sparse-index binary search plus one data-block read.
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead};
@@ -38,20 +39,22 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     pub(super) fn read_num_block(
         &self,
         block: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
         let bytes = self
             .e2i
-            .read::<_, u8>(self.num_block_range(block), Random)?;
+            .read::<_, u8>(self.num_block_range(block), Random, hw_counter)?;
         Ok(decode_num_block(bytes.as_ref()))
     }
 
     pub(super) fn read_uuid_block(
         &self,
         block: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(u128, PointOffsetType)>> {
         let bytes = self
             .e2i
-            .read::<_, u8>(self.uuid_block_range(block), Random)?;
+            .read::<_, u8>(self.uuid_block_range(block), Random, hw_counter)?;
         Ok(decode_uuid_block(bytes.as_ref()))
     }
 
@@ -81,22 +84,30 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         Some(block)
     }
 
-    fn lookup_num(&self, key: u64) -> OperationResult<Option<PointOffsetType>> {
+    fn lookup_num(
+        &self,
+        key: u64,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointOffsetType>> {
         let Some(block) = self.num_block_of(key) else {
             return Ok(None);
         };
-        let entries = self.read_num_block(block)?;
+        let entries = self.read_num_block(block, hw_counter)?;
         Ok(entries
             .binary_search_by_key(&u128::from(key), |(k, _)| *k)
             .ok()
             .map(|idx| entries[idx].1))
     }
 
-    fn lookup_uuid(&self, key: u128) -> OperationResult<Option<PointOffsetType>> {
+    fn lookup_uuid(
+        &self,
+        key: u128,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointOffsetType>> {
         let Some(block) = self.uuid_block_of(key) else {
             return Ok(None);
         };
-        let entries = self.read_uuid_block(block)?;
+        let entries = self.read_uuid_block(block, hw_counter)?;
         Ok(entries
             .binary_search_by_key(&key, |(k, _)| *k)
             .ok()
@@ -105,10 +116,14 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 
     /// External→internal lookup ignoring deletion (the caller applies its own
     /// deleted source). `Ok(None)` if the id is absent; storage errors propagate.
-    pub fn lookup(&self, external_id: PointIdType) -> OperationResult<Option<PointOffsetType>> {
+    pub fn lookup(
+        &self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointOffsetType>> {
         match external_id {
-            PointIdType::NumId(num) => self.lookup_num(num),
-            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128()),
+            PointIdType::NumId(num) => self.lookup_num(num, hw_counter),
+            PointIdType::Uuid(uuid) => self.lookup_uuid(uuid.as_u128(), hw_counter),
         }
     }
 
@@ -131,6 +146,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         external_ids: impl IntoIterator<Item = PointIdType>,
         mut on_found: impl FnMut(PointIdType, PointOffsetType) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Each read is tagged with `(is_uuid, key)` so the callback can pick the
         // decoder, binary-search, and rebuild the id. Ids outside every block
@@ -149,8 +165,10 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 }
             });
 
-        self.e2i
-            .read_batch(ranges, Random, |(is_uuid, key), bytes| {
+        self.e2i.read_batch(
+            ranges,
+            Random,
+            |(is_uuid, key), bytes| {
                 let entries = if is_uuid {
                     decode_uuid_block(bytes)
                 } else {
@@ -165,16 +183,22 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                     on_found(id, entries[pos].1)?;
                 }
                 Ok(())
-            })
+            },
+            hw_counter,
+        )
     }
 
     /// Internal→external lookup ignoring deletion. `Ok(None)` for out-of-range
     /// offsets; storage errors propagate.
-    pub fn external_id(&self, offset: PointOffsetType) -> OperationResult<Option<PointIdType>> {
+    pub fn external_id(
+        &self,
+        offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointIdType>> {
         if u64::from(offset) >= self.i2e_header.total {
             return Ok(None);
         }
-        self.read_external_id(offset).map(Some)
+        self.read_external_id(offset, hw_counter).map(Some)
     }
 
     /// Batch counterpart of [`external_id`](Self::external_id): all 16-byte
@@ -190,6 +214,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         &self,
         offsets: impl IntoIterator<Item = PointOffsetType>,
         mut on_found: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Each read is tagged with its offset so the callback can pair it with
         // the decoded id; the range iterator stays lazy (no collect).
@@ -204,29 +229,42 @@ impl<S: UniversalRead> DiskMappingReader<S> {
                 (offset, range)
             });
 
-        self.i2e.read_batch(ranges, Random, |offset, bytes| {
-            let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
-            on_found(
-                offset,
-                decode_external(value, self.is_uuid.contains(offset)),
-            );
-            Ok(())
-        })
+        self.i2e.read_batch(
+            ranges,
+            Random,
+            |offset, bytes| {
+                let value = u128::from_le_bytes(bytes.try_into().expect("16 data bytes"));
+                on_found(
+                    offset,
+                    decode_external(value, self.is_uuid.contains(offset)),
+                );
+                Ok(())
+            },
+            hw_counter,
+        )
     }
 
     /// One 16-byte i2e read; the `is_uuid` flag comes from the RAM-resident
     /// bitmap.
-    fn read_external_id(&self, offset: PointOffsetType) -> OperationResult<PointIdType> {
+    fn read_external_id(
+        &self,
+        offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PointIdType> {
         let data_offset = self.i2e_header.data_offset + u64::from(offset) * 16;
         let data = self
             .i2e
-            .read::<_, u8>(ReadRange::new(data_offset, 16), Random)?;
+            .read::<_, u8>(ReadRange::new(data_offset, 16), Random, hw_counter)?;
         let value = u128::from_le_bytes(data.as_ref().try_into().expect("16 data bytes"));
         Ok(decode_external(value, self.is_uuid.contains(offset)))
     }
 
     /// Start index (within the numeric run) of the first key `>= key`.
-    pub(super) fn num_start_index(&self, key: u64) -> OperationResult<u64> {
+    pub(super) fn num_start_index(
+        &self,
+        key: u64,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<u64> {
         if self.e2i_header.num_count == 0 {
             return Ok(0);
         }
@@ -234,13 +272,17 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             .num_sparse
             .partition_point(|&first| first <= key)
             .saturating_sub(1) as u64;
-        let entries = self.read_num_block(block)?;
+        let entries = self.read_num_block(block, hw_counter)?;
         let within = entries.partition_point(|(k, _)| *k < u128::from(key)) as u64;
         Ok(block * u64::from(self.e2i_header.num_block_size) + within)
     }
 
     /// Start index (within the UUID run) of the first key `>= key`.
-    pub(super) fn uuid_start_index(&self, key: u128) -> OperationResult<u64> {
+    pub(super) fn uuid_start_index(
+        &self,
+        key: u128,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<u64> {
         if self.e2i_header.uuid_count == 0 {
             return Ok(0);
         }
@@ -248,7 +290,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             .uuid_sparse
             .partition_point(|&first| first <= key)
             .saturating_sub(1) as u64;
-        let entries = self.read_uuid_block(block)?;
+        let entries = self.read_uuid_block(block, hw_counter)?;
         let within = entries.partition_point(|(k, _)| *k < key) as u64;
         Ok(block * u64::from(self.e2i_header.uuid_block_size) + within)
     }

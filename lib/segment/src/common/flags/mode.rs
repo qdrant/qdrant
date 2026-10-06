@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::universal_io::UniversalReadFs;
 
@@ -44,10 +45,14 @@ impl FlagsMode {
     /// `None` when no flags exist there yet.
     ///
     /// Errors when files of both modes are present.
-    pub fn detect(fs: &impl UniversalReadFs, directory: &Path) -> OperationResult<Option<Self>> {
-        let dynamic =
-            fs.exists(&status_file(directory))? || fs.exists(&directory.join(FLAGS_FILE))?;
-        let compact = fs.exists(&directory.join(COMPACT_FLAGS_FILE))?;
+    pub fn detect(
+        fs: &impl UniversalReadFs,
+        directory: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
+        let dynamic = fs.exists(&status_file(directory), hw_counter)?
+            || fs.exists(&directory.join(FLAGS_FILE), hw_counter)?;
+        let compact = fs.exists(&directory.join(COMPACT_FLAGS_FILE), hw_counter)?;
         match (dynamic, compact) {
             (false, false) => Ok(None),
             (true, false) => Ok(Some(Self::Dynamic)),
@@ -69,6 +74,7 @@ impl FlagsMode {
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
@@ -82,16 +88,28 @@ mod tests_mod {
     fn detects_nothing_in_missing_or_empty_directory() {
         let dir = TempDir::new().unwrap();
         let missing = dir.path().join("missing");
-        assert_eq!(FlagsMode::detect(&Fs::default(), &missing).unwrap(), None);
-        assert_eq!(FlagsMode::detect(&Fs::default(), dir.path()).unwrap(), None);
+        assert_eq!(
+            FlagsMode::detect(&Fs::default(), &missing, &HardwareCounterCell::new()).unwrap(),
+            None
+        );
+        assert_eq!(
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
+            None
+        );
     }
 
     #[test]
     fn detects_dynamic_flags() {
         let dir = TempDir::new().unwrap();
-        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+        DynamicStoredFlags::<S>::open(
+            &Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(
-            FlagsMode::detect(&Fs::default(), dir.path()).unwrap(),
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
             Some(FlagsMode::Dynamic),
         );
     }
@@ -99,9 +117,15 @@ mod tests_mod {
     #[test]
     fn detects_compact_flags() {
         let dir = TempDir::new().unwrap();
-        CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No).unwrap();
+        CompactStoredFlags::<S>::open(
+            Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(
-            FlagsMode::detect(&Fs::default(), dir.path()).unwrap(),
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
             Some(FlagsMode::Compact),
         );
     }
@@ -112,8 +136,22 @@ mod tests_mod {
         // refused outright, so this order is the only way to end up with
         // files of both modes.
         let dir = TempDir::new().unwrap();
-        CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No).unwrap();
-        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-        assert!(FlagsMode::detect(&Fs::default(), dir.path()).is_err());
+        CompactStoredFlags::<S>::open(
+            Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        DynamicStoredFlags::<S>::open(
+            &Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        assert!(
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).is_err()
+        );
     }
 }

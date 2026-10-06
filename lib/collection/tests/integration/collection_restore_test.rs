@@ -72,7 +72,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
     .await;
     assert_eq!(
         collection
-            .info(&ShardSelectorInternal::All)
+            .info(&ShardSelectorInternal::All, &HwMeasurementAcc::new())
             .await
             .unwrap()
             .points_count,

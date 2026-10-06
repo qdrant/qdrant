@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::sorted_slice::SortedSlice;
 use common::stored_bitmask::StoredBitmask;
@@ -64,14 +65,19 @@ fn compact_open_options(populate: Populate) -> OpenOptions {
 impl InMemoryBitvecFlags {
     /// Schedule background prefetch of the files [`Self::open`] reads, in the
     /// detected [mode](FlagsMode).
-    pub fn preopen(fs: &impl CachedReadFs, directory: &Path) -> OperationResult<()> {
-        match FlagsMode::detect(fs, directory)?.unwrap_or(FlagsMode::Dynamic) {
+    pub fn preopen(
+        fs: &impl CachedReadFs,
+        directory: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        match FlagsMode::detect(fs, directory, hw_counter)?.unwrap_or(FlagsMode::Dynamic) {
             FlagsMode::Dynamic => {
                 // Status file
                 fs.schedule_open(
                     &status_file(directory),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
 
                 // Bitslice
@@ -79,6 +85,7 @@ impl InMemoryBitvecFlags {
                     &directory.join(FLAGS_FILE),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
             }
             FlagsMode::Compact => {
@@ -86,6 +93,7 @@ impl InMemoryBitvecFlags {
                     &directory.join(COMPACT_FLAGS_FILE),
                     Some(compact_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
             }
         }
@@ -94,7 +102,11 @@ impl InMemoryBitvecFlags {
 
     /// Stage the two files [`Self::reload_appended`] may open. A no-op for
     /// [`Self::from_bitvec`] flags, mirroring the reload.
-    pub fn live_preload(&self, fs: &impl CachedReadFs) -> OperationResult<()> {
+    pub fn live_preload(
+        &self,
+        fs: &impl CachedReadFs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let Some((directory, mode)) = &self.backing else {
             return Ok(());
         };
@@ -105,11 +117,13 @@ impl InMemoryBitvecFlags {
                     &status_file(directory),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
                 fs.reschedule_open(
                     &directory.join(FLAGS_FILE),
                     Some(bitslice_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
             }
             FlagsMode::Compact => {
@@ -117,6 +131,7 @@ impl InMemoryBitvecFlags {
                     &directory.join(COMPACT_FLAGS_FILE),
                     Some(compact_open_options(Populate::PreferBackground)),
                     None,
+                    hw_counter,
                 );
             }
         }
@@ -128,15 +143,17 @@ impl InMemoryBitvecFlags {
     fn persisted_len<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<usize> {
         // TypedStorage, not StoredStruct which is write-bound.
         let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
             status_file(directory),
             bitslice_open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?);
         Ok(status
-            .read_whole()?
+            .read_whole(hw_counter)?
             .first()
             .map_or(0, DynamicFlagsStatus::len))
     }
@@ -146,10 +163,11 @@ impl InMemoryBitvecFlags {
     pub fn open<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        match FlagsMode::detect(fs, directory)?.unwrap_or(FlagsMode::Dynamic) {
-            FlagsMode::Dynamic => Self::open_dynamic(fs, directory),
-            FlagsMode::Compact => Self::open_compact(fs, directory),
+        match FlagsMode::detect(fs, directory, hw_counter)?.unwrap_or(FlagsMode::Dynamic) {
+            FlagsMode::Dynamic => Self::open_dynamic(fs, directory, hw_counter),
+            FlagsMode::Compact => Self::open_compact(fs, directory, hw_counter),
         }
     }
 
@@ -159,8 +177,9 @@ impl InMemoryBitvecFlags {
     fn open_dynamic<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let len = Self::persisted_len(fs, directory)?;
+        let len = Self::persisted_len(fs, directory, hw_counter)?;
 
         let flags_path = directory.join(FLAGS_FILE);
         let flags = StoredBitSlice::<S>::open(
@@ -168,8 +187,9 @@ impl InMemoryBitvecFlags {
             &flags_path,
             bitslice_open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?;
-        let bits = flags.read_all()?;
+        let bits = flags.read_all(hw_counter)?;
         let bitvec = bits.get(..len).map(BitVec::from_bitslice).ok_or_else(|| {
             OperationError::service_error(format!(
                 "Flags file {} holds fewer than {len} bits",
@@ -190,14 +210,16 @@ impl InMemoryBitvecFlags {
     fn open_compact<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let mask = StoredBitmask::<S>::open(
             fs,
             directory.join(COMPACT_FLAGS_FILE),
             compact_open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?;
-        let ones = mask.read_ones()?;
+        let ones = mask.read_ones(hw_counter)?;
 
         let mut bitvec = BitVec::repeat(false, mask.bit_len() as usize);
         for index in &ones {
@@ -262,13 +284,18 @@ impl InMemoryBitvecFlags {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
         new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some((directory, mode)) = self.backing.clone() else {
             return Ok(());
         };
         match mode {
-            FlagsMode::Dynamic => self.reload_appended_dynamic(fs, &directory, new_points),
-            FlagsMode::Compact => self.reload_appended_compact(fs, &directory, new_points),
+            FlagsMode::Dynamic => {
+                self.reload_appended_dynamic(fs, &directory, new_points, hw_counter)
+            }
+            FlagsMode::Compact => {
+                self.reload_appended_compact(fs, &directory, new_points, hw_counter)
+            }
         }
     }
 
@@ -280,12 +307,13 @@ impl InMemoryBitvecFlags {
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
         new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (Some(&first), Some(&last)) = (new_points.first(), new_points.last()) else {
             return Ok(());
         };
 
-        let len = Self::persisted_len(fs, directory)
+        let len = Self::persisted_len(fs, directory, hw_counter)
             .ok_unchanged()?
             .unwrap_or_else(|| self.bitvec.len()) as u64;
 
@@ -300,6 +328,7 @@ impl InMemoryBitvecFlags {
             &directory.join(FLAGS_FILE),
             bitslice_open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         else {
@@ -307,7 +336,7 @@ impl InMemoryBitvecFlags {
             return Ok(());
         };
 
-        let bits = flags.read_bit_range(start..end)?;
+        let bits = flags.read_bit_range(start..end, hw_counter)?;
 
         let mut deleted = Vec::new();
         for &point in new_points.iter() {
@@ -329,6 +358,7 @@ impl InMemoryBitvecFlags {
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
         new_points: &SortedSlice<'_, PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if new_points.is_empty() {
             return Ok(());
@@ -339,6 +369,7 @@ impl InMemoryBitvecFlags {
             directory.join(COMPACT_FLAGS_FILE),
             compact_open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         else {
@@ -346,7 +377,7 @@ impl InMemoryBitvecFlags {
             return Ok(());
         };
 
-        let ones = mask.read_ones()?;
+        let ones = mask.read_ones(hw_counter)?;
 
         let deleted: Vec<_> = new_points
             .iter()
@@ -382,13 +413,23 @@ mod tests_mod {
 
     /// Persist `flags` via the writable storage so the read-only path can open it.
     fn persist(fs: &Fs, dir: &Path, flags: &[bool]) {
-        let mut dynamic_flags = DynamicStoredFlags::<S>::open(fs, dir, Populate::No).unwrap();
-        dynamic_flags.set_len(fs, flags.len()).unwrap();
+        let mut dynamic_flags =
+            DynamicStoredFlags::<S>::open(fs, dir, Populate::No, &HardwareCounterCell::new())
+                .unwrap();
+        dynamic_flags
+            .set_len(fs, flags.len(), &HardwareCounterCell::new())
+            .unwrap();
         flags
             .iter()
             .enumerate()
             .filter(|(_, flag)| **flag)
-            .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
+            .for_each(|(i, _)| {
+                assert!(
+                    !dynamic_flags
+                        .set(i, true, &HardwareCounterCell::new())
+                        .unwrap()
+                )
+            });
         dynamic_flags.flusher()().unwrap();
     }
 
@@ -401,7 +442,9 @@ mod tests_mod {
 
         persist(&Fs::default(), dir.path(), &random_flags);
 
-        let flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
+        let flags =
+            InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path(), &HardwareCounterCell::new())
+                .unwrap();
 
         let expected_count = random_flags.iter().filter(|flag| **flag).count();
         assert_eq!(flags.count(), expected_count);
@@ -418,7 +461,9 @@ mod tests_mod {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         persist(&Fs::default(), dir.path(), &random_flags);
-        let mut flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
+        let mut flags =
+            InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         let base_count = flags.count();
 
         // One offset already set, one unset in range, one past the end (grows).
@@ -444,13 +489,20 @@ mod tests_mod {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         // Persist compact-mode flags via the writable wrapper.
-        let writer =
-            CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No).unwrap();
+        let writer = CompactStoredFlags::<S>::open(
+            Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         writer.set(3, true);
         writer.set(9, false); // grows the flags to 10
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        let mut flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
+        let mut flags =
+            InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path(), &HardwareCounterCell::new())
+                .unwrap();
         assert_eq!(flags.count(), 1);
         assert!(flags.get(3));
         assert!(!flags.get(9));
@@ -460,11 +512,15 @@ mod tests_mod {
         // persisted flags.
         writer.set(11, true);
         writer.set(12, false);
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let new_points = [10, 11, 12];
         flags
-            .reload_appended::<S>(&Fs::default(), &SortedSlice::new(&new_points).unwrap())
+            .reload_appended::<S>(
+                &Fs::default(),
+                &SortedSlice::new(&new_points).unwrap(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
         assert!(flags.get(11));
         assert!(!flags.get(10));

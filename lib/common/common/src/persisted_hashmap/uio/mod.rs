@@ -8,6 +8,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::{BucketOffset, Header, Key, MaybeIncompleteEntry, MaybeIncompleteEntryKind, read_err};
 use crate::aligned_buf::AlignedBuf;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Sequential;
 use crate::iterator_ext::ordering_iterator::OrderingIterator;
 use crate::universal_io::{
@@ -51,12 +52,13 @@ where
         fs: &Fs,
         path: impl AsRef<Path>,
         mut options: OpenOptions,
+        hw_counter: &HardwareCounterCell,
     ) {
         // Default a lazy open to partially populating the header + a slice of
         // the perfect-hash table, so the map can be opened without a full read.
         options.populate = options.populate.or_partial(0..HEADER_AND_BASIC_PHF_SIZE);
 
-        fs.schedule_open(path.as_ref(), Some(options), None)
+        fs.schedule_open(path.as_ref(), Some(options), None, hw_counter)
     }
 
     /// Load the hash map from file.
@@ -65,12 +67,16 @@ where
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Fs::OpenExtra,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let storage = TypedStorage::<S, u8>::open(fs, path, options, extra)?;
+        let storage = TypedStorage::<S, u8>::open(fs, path, options, extra, hw_counter)?;
 
         // 1. Read header.
-        let header_bytes =
-            storage.read(ReadRange::new(0, size_of::<Header>() as u64), Sequential)?;
+        let header_bytes = storage.read(
+            ReadRange::new(0, size_of::<Header>() as u64),
+            Sequential,
+            hw_counter,
+        )?;
         let (header, _) = Header::read_from_prefix(&header_bytes)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid header"))?;
 
@@ -91,14 +97,17 @@ where
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "buckets_pos before header end")
             })?;
-        let phf_bytes =
-            storage.read(ReadRange::new(phf_region_start, phf_region_len), Sequential)?;
+        let phf_bytes = storage.read(
+            ReadRange::new(phf_region_start, phf_region_len),
+            Sequential,
+            hw_counter,
+        )?;
         let phf = Function::read(&mut Cursor::new(&*phf_bytes))?;
 
         let entries_start =
             header.buckets_pos + header.buckets_count * size_of::<BucketOffset>() as u64;
 
-        let average_entry_size = (storage.len()? - entries_start)
+        let average_entry_size = (storage.len(hw_counter)? - entries_start)
             .checked_div(header.buckets_count)
             .unwrap_or(0);
 
@@ -118,8 +127,8 @@ where
     }
 
     /// Populate the RAM cache for the backing file.
-    pub fn populate(&self) -> UioResult<()> {
-        self.storage.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.storage.populate(hw_counter)
     }
 
     /// Evict the backing file data from RAM cache.
@@ -131,7 +140,7 @@ where
     ///
     /// Implementation detail: unlike [`UniversalHashMap::for_each_sparse`], it
     /// will read the whole file in a sequence.
-    pub fn for_each_entry<F, E>(&self, mut f: F) -> Result<(), E>
+    pub fn for_each_entry<F, E>(&self, mut f: F, hw_counter: &HardwareCounterCell) -> Result<(), E>
     where
         F: FnMut(&K, &[V]) -> Result<(), E>,
         E: From<UniversalIoError>,
@@ -143,15 +152,16 @@ where
         }
 
         let mut buf = AlignedBuf::new_for_offset(self.entries_start, align_of::<u128>());
-        let file_len = self.storage.len()?;
+        let file_len = self.storage.len(hw_counter)?;
         let range = ReadRange {
             byte_offset: self.entries_start,
             length: file_len - self.entries_start,
         };
-        let mut iter = OrderingIterator::new(
-            self.storage
-                .read_iter::<_, usize>(range.iter_autochunks::<u8>().enumerate(), Sequential)?,
-        );
+        let mut iter = OrderingIterator::new(self.storage.read_iter::<_, usize>(
+            range.iter_autochunks::<u8>().enumerate(),
+            Sequential,
+            hw_counter,
+        )?);
 
         while let Some(chunk) = iter.next() {
             let (_chunk_idx, chunk) = chunk?;
@@ -184,13 +194,13 @@ where
     }
 
     /// Read all entry keys and call the provided closure on each of them.
-    pub fn for_each_key<F, E>(&self, mut f: F) -> Result<(), E>
+    pub fn for_each_key<F, E>(&self, mut f: F, hw_counter: &HardwareCounterCell) -> Result<(), E>
     where
         F: FnMut(&K) -> Result<(), E>,
         E: From<UniversalIoError>,
     {
         if self.average_entry_size < SEQUENTIAL_READ_THRESHOLD {
-            self.for_each_entry(|key, _| f(key))
+            self.for_each_entry(|key, _| f(key), hw_counter)
         } else {
             let buckets = self.storage.read(
                 ReadRange::new(
@@ -198,6 +208,7 @@ where
                     self.header.buckets_count * size_of::<BucketOffset>() as u64,
                 ),
                 Sequential,
+                hw_counter,
             )?;
             let mut offsets: Vec<BucketOffset> = buckets
                 .as_chunks::<{ size_of::<BucketOffset>() }>()
@@ -215,12 +226,18 @@ where
                     let key = entry.key().expect("KeyOnly entry should have a key");
                     f(key)
                 },
+                hw_counter,
             )
         }
     }
 
     /// Read all keys and call the provided closure on each of them.
-    pub fn for_each_entry_in_iter<U, I, F, E>(&self, keys: I, mut f: F) -> Result<(), E>
+    pub fn for_each_entry_in_iter<U, I, F, E>(
+        &self,
+        keys: I,
+        mut f: F,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<(), E>
     where
         U: UserData,
         I: IntoIterator<Item = (U, &'key K)>,
@@ -236,23 +253,36 @@ where
                     entry.map(|e| e.values().expect("KeyAndValues entry should have values"));
                 f(user_data, values)
             },
+            hw_counter,
         )
     }
 
     /// Get the values associated with the `key`.
     ///
     /// Prefer to use [`Self::for_each_entry_in_iter`] instead.
-    pub fn unbatched_get(&self, key: &K) -> UioResult<Option<Vec<V>>> {
+    pub fn unbatched_get(
+        &self,
+        key: &K,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Option<Vec<V>>> {
         let mut result: Option<Vec<V>> = None;
-        self.for_each_entry_in_iter(std::iter::once(((), key)), |(), values| {
-            result = values.map(|v| v.to_vec());
-            UioResult::Ok(())
-        })?;
+        self.for_each_entry_in_iter(
+            std::iter::once(((), key)),
+            |(), values| {
+                result = values.map(|v| v.to_vec());
+                UioResult::Ok(())
+            },
+            hw_counter,
+        )?;
         Ok(result)
     }
 
     /// Return the number of values for `key` without reading the values themselves.
-    pub fn unbatched_get_values_count(&self, key: &K) -> UioResult<Option<usize>> {
+    pub fn unbatched_get_values_count(
+        &self,
+        key: &K,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Option<usize>> {
         let mut result: Option<usize> = None;
         self.for_each_sparse(
             MaybeIncompleteEntryKind::KeyAndValuesLen,
@@ -266,6 +296,7 @@ where
                 }
                 UioResult::Ok(())
             },
+            hw_counter,
         )?;
         Ok(result)
     }

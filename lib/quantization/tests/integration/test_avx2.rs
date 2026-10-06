@@ -3,6 +3,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
@@ -43,12 +44,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_avx(&query_u8, &quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -87,12 +90,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_avx(&query_u8, &quantized_vector);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
@@ -135,12 +140,14 @@ mod tests {
             method,
             None,
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
         for (index, vector) in vector_data.iter().enumerate() {
-            let quantized_vector = encoded.get_quantized_vector(index as u32);
+            let quantized_vector =
+                encoded.get_quantized_vector(index as u32, &HardwareCounterCell::new());
             let score = encoded.score_point_avx(&query_u8, &quantized_vector);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);

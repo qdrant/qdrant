@@ -57,7 +57,13 @@ fn test_on_disk_segment_snapshot(
 
     let segment_builder_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut segment = build_simple_segment(segment_builder_dir.path(), 2, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(
+        segment_builder_dir.path(),
+        2,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -162,6 +168,7 @@ fn test_on_disk_segment_snapshot(
         &segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
     let hw_counter = HardwareCounterCell::new();
@@ -179,10 +186,10 @@ fn test_on_disk_segment_snapshot(
         expected_storage_type,
     );
     assert_matches!(
-        segment.delete_vector(6, 1.into(), DEFAULT_VECTOR_NAME),
+        segment.delete_vector(6, 1.into(), DEFAULT_VECTOR_NAME, &hw_counter),
         Ok(true)
     );
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -244,6 +251,7 @@ fn test_on_disk_segment_snapshot(
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
 
@@ -253,12 +261,12 @@ fn test_on_disk_segment_snapshot(
         restored_segment.total_point_count(),
     );
     assert_eq!(
-        segment.available_point_count(),
-        restored_segment.available_point_count(),
+        segment.available_point_count(&hw_counter),
+        restored_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        segment.deleted_point_count(),
-        restored_segment.deleted_point_count(),
+        segment.deleted_point_count(&hw_counter),
+        restored_segment.deleted_point_count(&hw_counter),
     );
     assert_eq!(
         restored_segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].storage_type,
@@ -274,7 +282,7 @@ fn test_on_disk_segment_snapshot(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for id in segment.iter_points() {
+    for id in segment.iter_points(&hw_counter) {
         let vectors = segment.all_vectors(id, &hw_counter).unwrap();
         let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
 use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
@@ -62,8 +63,9 @@ impl HnswGraphConfig {
     pub fn load_universal<Fs: UniversalReadFs>(
         fs: &Fs,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(read_json_via(fs, path).ok_not_found()?)
+        Ok(read_json_via(fs, path, hw_counter).ok_not_found()?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

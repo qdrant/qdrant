@@ -55,26 +55,27 @@ fn main() {
             &AtomicBool::new(false),
             // Allow to ignore missing version file, this is a debugging tool
             true,
+            &HardwareCounterCell::disposable(),
         )
         .unwrap();
 
         eprintln!(
             "path = {:#?}, size-points = {}",
             path,
-            segment.available_point_count()
+            segment.available_point_count(&HardwareCounterCell::disposable())
         );
 
         if args.info {
-            let info = segment.info();
+            let info = segment.info(&HardwareCounterCell::disposable());
             eprintln!("info = {info:#?}");
         }
 
         if let Some(point_id_int) = args.point_id_int {
             let point_id = PointIdType::NumId(point_id_int);
 
-            let internal_id = segment.get_internal_id(point_id);
+            let internal_id = segment.get_internal_id(point_id, &HardwareCounterCell::disposable());
             if internal_id.is_some() {
-                let version = segment.point_version(point_id);
+                let version = segment.point_version(point_id, &HardwareCounterCell::disposable());
                 let payload = segment
                     .payload(point_id, &HardwareCounterCell::disposable())
                     .unwrap();

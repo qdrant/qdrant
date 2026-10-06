@@ -1,6 +1,7 @@
 use std::ops::Deref as _;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 use segment::types::{Filter, PointIdType};
 
@@ -430,7 +431,7 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn transfer_indexes(&self) -> CollectionResult<()> {
+    pub async fn transfer_indexes(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<()> {
         let local = self.local.read().await;
 
         let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
@@ -445,7 +446,7 @@ impl ShardReplicaSet {
             proxy.remote_shard.peer_id,
         );
 
-        proxy.transfer_indexes().await
+        proxy.transfer_indexes(hw_acc).await
     }
 
     /// Send all queue proxy updates to remote

@@ -34,8 +34,12 @@ where
         self.in_memory_index.get_values(idx, hw_counter)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.in_memory_index.values_count(idx)
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        self.in_memory_index.values_count(idx, hw_counter)
     }
 
     fn get_indexed_points(&self) -> usize {
@@ -58,17 +62,22 @@ where
         self.in_memory_index.get_iterator(value, hw_counter)
     }
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
-        self.in_memory_index.for_each_value(f)
+    fn for_each_value(
+        &self,
+        f: impl FnMut(&N) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.in_memory_index.for_each_value(f, hw_counter)
     }
 
     fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(&N, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.in_memory_index
-            .for_each_count_per_value(deferred_internal_id, f)
+            .for_each_count_per_value(deferred_internal_id, f, hw_counter)
     }
 
     fn for_each_value_map(

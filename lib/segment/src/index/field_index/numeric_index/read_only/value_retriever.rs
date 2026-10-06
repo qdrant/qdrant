@@ -81,10 +81,10 @@ where
     /// `NumericIndex::value_retriever` on the writable side.
     pub fn value_retriever<'a>(
         &'a self,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
-            self.get_values(point_id)
+            self.get_values(point_id, hw_counter)
                 .into_iter()
                 .flatten()
                 .filter_map(Self::value_to_json)

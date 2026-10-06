@@ -8,6 +8,7 @@ use std::io::{BufWriter, Write};
 
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use serde::{Deserialize, Serialize};
@@ -100,6 +101,7 @@ pub async fn do_list_full_snapshots(
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     auth: Auth,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<SnapshotDescription, StorageError> {
     let collections_pass =
         auth.check_global_access(AccessRequirements::new().manage(), "create_full_snapshot")?;
@@ -108,7 +110,11 @@ pub async fn do_create_full_snapshot(
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&auth, &pass).clone();
 
-    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, collections_pass).await })
+    let hw_acc = hw_acc.clone();
+    let res =
+        tokio::spawn(
+            async move { _do_create_full_snapshot(&toc, collections_pass, &hw_acc).await },
+        )
         .await??;
     Ok(res)
 }
@@ -116,13 +122,14 @@ pub async fn do_create_full_snapshot(
 async fn _do_create_full_snapshot(
     toc: &TableOfContent,
     multipass: CollectionMultipass,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<SnapshotDescription, StorageError> {
     let snapshot_dir = toc.snapshots_path();
 
     let all_collections = toc.multipass_into_collections(&multipass).await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
     for collection_pass in &all_collections {
-        let snapshot_details = toc.create_snapshot(collection_pass).await?;
+        let snapshot_details = toc.create_snapshot(collection_pass, hw_acc).await?;
         created_snapshots.push((collection_pass.name(), snapshot_details));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();

@@ -37,10 +37,19 @@ pub struct UpdateOnlySparseVectorStorage<S: UniversalAppend + 'static> {
 impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open(fs: &impl UniversalAppendFs<AppendFile = S>, path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            storage: UpdateOnlyBlobstore::open(fs, &path.join(STORAGE_DIRNAME), STORAGE_CONFIG)?,
-            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIRNAME))?,
+            storage: UpdateOnlyBlobstore::open(
+                fs,
+                &path.join(STORAGE_DIRNAME),
+                STORAGE_CONFIG,
+                hw_counter,
+            )?,
+            deleted: UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIRNAME), hw_counter)?,
         })
     }
 
@@ -80,7 +89,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
                 .put(fs, slot, &stored, hw_counter.ref_vector_io_write_counter())?;
         }
 
-        self.storage.flush()?;
+        self.storage.flush(hw_counter)?;
         self.deleted.flush(fs, hw_counter)
     }
 }

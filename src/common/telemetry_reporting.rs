@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults::APP_USER_AGENT;
 use common::types::{DetailsLevel, TelemetryDetail};
 use reqwest::Client;
@@ -47,12 +48,12 @@ impl TelemetryReporter {
         }
     }
 
-    async fn report(&self, client: &Client) -> StorageResult<()> {
+    async fn report(&self, client: &Client, hw_acc: &HwMeasurementAcc) -> StorageResult<()> {
         let data = self
             .telemetry
             .lock()
             .await
-            .prepare_data(&full_reporter_auth(), DETAIL, None, None)
+            .prepare_data(&full_reporter_auth(), DETAIL, None, None, hw_acc)
             .await?
             .anonymize();
         let data = serde_json::to_string(&data)?;
@@ -73,13 +74,15 @@ impl TelemetryReporter {
     }
 
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
+        // 🤖 Internal operation
+        let hw_acc = &HwMeasurementAcc::disposable();
         let reporter = Self::new(telemetry);
         let client = Client::builder()
             .user_agent(APP_USER_AGENT.as_str())
             .build()
             .unwrap();
         loop {
-            if let Err(err) = reporter.report(&client).await {
+            if let Err(err) = reporter.report(&client, hw_acc).await {
                 log::error!("Failed to report telemetry {err}")
             }
             tokio::time::sleep(REPORTING_INTERVAL).await;

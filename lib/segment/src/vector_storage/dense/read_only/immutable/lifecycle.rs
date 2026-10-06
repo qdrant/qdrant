@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs};
@@ -39,15 +40,22 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Vectors
-        ImmutableDenseVectorData::<T, S>::preopen(fs, &path.join(VECTORS_PATH), populate)?;
+        ImmutableDenseVectorData::<T, S>::preopen(
+            fs,
+            &path.join(VECTORS_PATH),
+            populate,
+            hw_counter,
+        )?;
 
         // Deleted flags
         fs.schedule_open(
             &path.join(DELETED_PATH),
             Some(bitslice_open_options(Populate::PreferBackground)),
             None,
+            hw_counter,
         );
 
         Ok(())
@@ -62,9 +70,21 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
         dim: usize,
         distance: Distance,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
-        let vectors = ImmutableDenseVectorData::open(fs, &path.join(VECTORS_PATH), dim, populate)?;
-        let deleted = open_deleted_flags::<S>(fs, &path.join(DELETED_PATH), vectors.num_vectors)?;
+        let vectors = ImmutableDenseVectorData::open(
+            fs,
+            &path.join(VECTORS_PATH),
+            dim,
+            populate,
+            hw_counter,
+        )?;
+        let deleted = open_deleted_flags::<S>(
+            fs,
+            &path.join(DELETED_PATH),
+            vectors.num_vectors,
+            hw_counter,
+        )?;
 
         Ok(Self {
             vectors,
@@ -84,11 +104,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
         graph: HnswGraph<S>,
         dim: usize,
         distance: Distance,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         Ok(Self {
             populate: Populate::from(!graph.is_on_disk()),
             vectors: GraphVectors::new(graph, dim)?,
-            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,
+            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH), hw_counter)?,
             distance,
         })
     }
@@ -106,14 +127,16 @@ fn open_deleted_flags<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     deleted_path: &Path,
     num_vectors: usize,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<InMemoryBitvecFlags> {
     let stored = StoredBitSlice::<S>::open(
         fs,
         deleted_path,
         bitslice_open_options(Populate::No),
         Default::default(),
+        hw_counter,
     )?;
-    let all = stored.read_all()?;
+    let all = stored.read_all(hw_counter)?;
 
     let start = deleted_mmap_data_start() * 8;
     let bits = all.get(start..start + num_vectors).ok_or_else(|| {

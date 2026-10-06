@@ -39,7 +39,8 @@ fn test_load_payload_index() {
     let key = JsonPath::from_str("name").unwrap();
 
     let full_segment_path = {
-        let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+        let mut segment =
+            build_simple_segment(dir.path(), dim, Distance::Dot, &hw_counter).unwrap();
         segment
             .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
             .unwrap();
@@ -90,6 +91,7 @@ fn test_load_payload_index() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
 
@@ -128,14 +130,14 @@ fn create_field_index_persists_index_data_with_config() {
     let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
 
     let segment_path = {
-        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
         segment
             .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
             .unwrap();
         segment
             .set_full_payload(2, 0.into(), &payload, &hw_counter)
             .unwrap();
-        segment.flush(true).unwrap();
+        segment.flush(true, &hw_counter).unwrap();
 
         // No flush after this op: its own persistence must be self-contained.
         segment
@@ -160,6 +162,7 @@ fn create_field_index_persists_index_data_with_config() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .expect("segment must load after simulated crash");
 
@@ -200,7 +203,7 @@ fn switch_incompatible_index_type_survives_crash() {
     let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
 
     let segment_path = {
-        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
         segment
             .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
             .unwrap();
@@ -210,7 +213,7 @@ fn switch_incompatible_index_type_survives_crash() {
         segment
             .create_field_index(3, &key, Some(&keyword_schema), &hw_counter)
             .unwrap();
-        segment.flush(true).unwrap();
+        segment.flush(true, &hw_counter).unwrap();
 
         // Incompatible switch: drops the keyword index, then builds full-text.
         // No flush after this op: its own persistence must be self-contained.
@@ -237,6 +240,7 @@ fn switch_incompatible_index_type_survives_crash() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .expect("segment must load after simulated crash");
 
@@ -288,6 +292,7 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
         dir.path(),
         StorageType::NonAppendable,
         IndexLoadMode::CreateIfMissing,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -407,7 +412,7 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
         .get(&field)
         .unwrap()
         .iter()
-        .map(|i| i.count_indexed_points().unwrap())
+        .map(|i| i.count_indexed_points(&hw_counter).unwrap())
         .sum();
     assert!(before_count > 0, "fixture should index some integer points");
 
@@ -439,7 +444,7 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
         .get(&field)
         .unwrap()
         .iter()
-        .map(|i| i.count_indexed_points().unwrap())
+        .map(|i| i.count_indexed_points(&hw_counter).unwrap())
         .sum();
     assert_eq!(
         after_count, before_count,
@@ -516,6 +521,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         dir.path(),
         StorageType::NonAppendable,
         IndexLoadMode::CreateIfMissing,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -531,7 +537,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         .get(&field)
         .unwrap()
         .iter()
-        .map(|i| i.count_indexed_points().unwrap())
+        .map(|i| i.count_indexed_points(&hw_counter).unwrap())
         .sum();
     assert!(before_count > 0, "fixture should index some integer points");
 
@@ -553,7 +559,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
             );
             let after_count: usize = indexes
                 .iter()
-                .map(|i| i.count_indexed_points().unwrap())
+                .map(|i| i.count_indexed_points(&hw_counter).unwrap())
                 .sum();
             assert_eq!(
                 after_count, before_count,
@@ -585,7 +591,7 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let segment_path = {
-        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
         for i in 0..3 {
             segment
                 .upsert_point(
@@ -604,7 +610,7 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
         segment
             .create_field_index(20, &key, Some(&schema), &hw_counter)
             .unwrap();
-        segment.flush(true).unwrap();
+        segment.flush(true, &hw_counter).unwrap();
         segment.segment_path.clone()
     };
 
@@ -645,6 +651,7 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .expect("segment must load, rebuilding the corrupt index");
 
@@ -677,7 +684,7 @@ fn test_build_field_index_without_journal() {
     let hw_counter = HardwareCounterCell::new();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
-    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot, &hw_counter).unwrap();
     segment
         .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();

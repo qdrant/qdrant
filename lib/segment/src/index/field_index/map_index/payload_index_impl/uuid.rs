@@ -32,8 +32,8 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
-        MapIndex::flusher(self)
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        MapIndex::flusher(self, hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -46,7 +46,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 }
 
 impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -71,8 +71,9 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -89,7 +90,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<UuidIntType
 where
     Vec<<UuidIntType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -114,8 +115,9 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -176,14 +178,17 @@ fn filter_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
                     return Ok(None);
                 };
                 let mut points = IndexSet::new();
-                index.for_each_value(|key| {
-                    if !excluded_uuids.contains(key) {
-                        index.get_iterator(key, hw_counter).for_each(|p| {
-                            points.insert(p);
-                        });
-                    }
-                    Ok(())
-                })?;
+                index.for_each_value(
+                    |key| {
+                        if !excluded_uuids.contains(key) {
+                            index.get_iterator(key, hw_counter).for_each(|p| {
+                                points.insert(p);
+                            });
+                        }
+                        Ok(())
+                    },
+                    hw_counter,
+                )?;
                 Some(Box::new(points.into_iter()))
             }
             AnyVariants::Integers(_) => None,
@@ -274,23 +279,27 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    index.for_each_value(|value| {
-        let count = index
-            // payload_blocks only used in HNSW building, which is unmeasured.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
-        if count >= threshold {
-            f(PayloadBlockCondition {
-                condition: FieldCondition::new_match(
-                    key.clone(),
-                    Uuid::from_u128(*value).to_string().into(),
-                ),
-                cardinality: count,
-            })?;
-        }
-        Ok(())
-    })
+    index.for_each_value(
+        |value| {
+            let count = index
+                // payload_blocks only used in HNSW building, which is unmeasured.
+                .get_count_for_value(value, &HardwareCounterCell::disposable())
+                .unwrap_or(0);
+            if count >= threshold {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(
+                        key.clone(),
+                        Uuid::from_u128(*value).to_string().into(),
+                    ),
+                    cardinality: count,
+                })?;
+            }
+            Ok(())
+        },
+        hw_counter,
+    )
 }
 
 fn condition_checker_impl<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(

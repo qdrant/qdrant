@@ -69,6 +69,7 @@ fn build_hnsw(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &HardwareCounterCell::new(),
     )
     .unwrap()
 }
@@ -118,7 +119,7 @@ fn create_test_segment(
     let mut rng = StdRng::seed_from_u64(42);
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir, dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir, dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);

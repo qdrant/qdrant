@@ -1,5 +1,6 @@
 use atomic_refcell::AtomicRef;
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{MmapFile, UniversalRead};
 use itertools::Either;
@@ -39,11 +40,16 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     /// Iterate over all external IDs.
     ///
     /// Excludes soft deleted points.
-    pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
+    pub fn iter_external(
+        self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointIdType> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_external()),
             PointMappingsRefEnum::Compressed(m) => Either::Right(Either::Left(m.iter_external())),
-            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_external())),
+            PointMappingsRefEnum::Disk(m) => {
+                Either::Right(Either::Right(m.iter_external(hw_counter)))
+            }
         }
     }
 
@@ -64,13 +70,16 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     pub fn iter_from(
         self,
         external_id: Option<PointIdType>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => Either::Left(m.iter_from(external_id)),
             PointMappingsRefEnum::Compressed(m) => {
                 Either::Right(Either::Left(m.iter_from(external_id)))
             }
-            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_from(external_id))),
+            PointMappingsRefEnum::Disk(m) => {
+                Either::Right(Either::Right(m.iter_from(external_id, hw_counter)))
+            }
         }
     }
 
@@ -211,6 +220,7 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
         self,
         external_id: Option<PointIdType>,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => {
@@ -219,7 +229,9 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
             PointMappingsRefEnum::Compressed(m) => {
                 Either::Right(Either::Left(m.iter_from(external_id)))
             }
-            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_from(external_id))),
+            PointMappingsRefEnum::Disk(m) => {
+                Either::Right(Either::Right(m.iter_from(external_id, hw_counter)))
+            }
         }
     }
 
@@ -231,21 +243,27 @@ impl<'a, S: UniversalRead> PointMappingsRefEnum<'a, S> {
     pub fn iter_random_with_behavior(
         self,
         deferred_behavior: DeferredBehavior,
+        hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         match self {
             PointMappingsRefEnum::Plain(m) => {
                 Either::Left(m.iter_random_with_behavior(deferred_behavior))
             }
             PointMappingsRefEnum::Compressed(m) => Either::Right(Either::Left(m.iter_random())),
-            PointMappingsRefEnum::Disk(m) => Either::Right(Either::Right(m.iter_random())),
+            PointMappingsRefEnum::Disk(m) => {
+                Either::Right(Either::Right(m.iter_random(hw_counter)))
+            }
         }
     }
 
     /// Iterate over internal IDs in random order, filtering deferred points
     /// using the mapping's own threshold. Shorthand for
     /// [`Self::iter_random_with_behavior`] with [`DeferredBehavior::VisibleOnly`].
-    pub fn iter_random_visible(self) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
-        self.iter_random_with_behavior(DeferredBehavior::VisibleOnly)
+    pub fn iter_random_visible(
+        self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        self.iter_random_with_behavior(DeferredBehavior::VisibleOnly, hw_counter)
     }
 
     /// Deferred threshold attached to this mapping, if any.

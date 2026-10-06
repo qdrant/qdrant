@@ -2,6 +2,7 @@ use api::rest::{
     BatchVectorStruct, PointInsertOperations, PointsBatch, PointsList, UpdateVectors, Vector,
     VectorStruct,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::tiny_map::TinyMap;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVector};
 use segment::types::{
@@ -99,9 +100,10 @@ impl StrictModeVerification for SetPayload {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         if let Some(payload_size_limit_bytes) = strict_mode_config.max_collection_payload_size_bytes
-            && let Some(local_stats) = collection.estimated_collection_stats().await?
+            && let Some(local_stats) = collection.estimated_collection_stats(hw_acc).await?
         {
             check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
         }
@@ -161,6 +163,7 @@ impl StrictModeVerification for PointInsertOperations {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         check_limit_opt(
             Some(self.len()),
@@ -168,7 +171,7 @@ impl StrictModeVerification for PointInsertOperations {
             "upsert limit",
         )?;
 
-        check_collection_size_limit(collection, strict_mode_config).await?;
+        check_collection_size_limit(collection, strict_mode_config, hw_acc).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
             check_multivectors_limits_insert(self, multivector_config)?;
@@ -227,6 +230,7 @@ impl StrictModeVerification for UpdateVectors {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         check_limit_opt(
             Some(self.points.len()),
@@ -234,7 +238,7 @@ impl StrictModeVerification for UpdateVectors {
             "update limit",
         )?;
 
-        check_collection_size_limit(collection, strict_mode_config).await?;
+        check_collection_size_limit(collection, strict_mode_config, hw_acc).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
             check_multivectors_limits_update(self, multivector_config)?;
@@ -280,6 +284,7 @@ impl StrictModeVerification for UpdateVectors {
 async fn check_collection_size_limit(
     collection: &Collection,
     strict_mode_config: &StrictModeConfig,
+    hw_acc: &HwMeasurementAcc,
 ) -> CollectionResult<()> {
     let vector_limit = strict_mode_config.max_collection_vector_size_bytes;
     let payload_limit = strict_mode_config.max_collection_payload_size_bytes;
@@ -290,7 +295,7 @@ async fn check_collection_size_limit(
         return Ok(());
     }
 
-    let Some(stats) = collection.estimated_collection_stats().await? else {
+    let Some(stats) = collection.estimated_collection_stats(hw_acc).await? else {
         return Ok(());
     };
 

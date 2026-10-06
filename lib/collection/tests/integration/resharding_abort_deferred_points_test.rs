@@ -66,6 +66,7 @@ async fn test_abort_resharding_down_does_not_wait_for_deferred_points() {
             Box::new(NoopReshardingConsensus),
             std::future::ready(()),
             std::future::ready(()),
+            &HwMeasurementAcc::new(),
         )
         .await
         .expect("start_resharding down must succeed");

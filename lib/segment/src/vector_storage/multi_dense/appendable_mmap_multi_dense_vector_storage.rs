@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_counter::{ForkingHwCounter, HardwareCounterCell};
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -74,13 +74,17 @@ pub(crate) fn read_multi_vector<'a, T, P, S>(
     offsets: &'a ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
     vectors: &'a ReadOnlyChunkedVectors<T, S>,
     key: PointOffsetType,
+    hw_counter: &HardwareCounterCell,
 ) -> Option<CowMultiVector<'a, T>>
 where
     T: PrimitiveVectorElement,
     P: AccessPattern,
     S: UniversalRead,
 {
-    let &[multi_offset] = offsets.get::<P>(key as VectorOffsetType)?.as_ref() else {
+    let &[multi_offset] = offsets
+        .get::<P>(key as VectorOffsetType, hw_counter)?
+        .as_ref()
+    else {
         unreachable!("multi-vector offsets are stored as vectors of length 1");
     };
 
@@ -90,7 +94,7 @@ where
         capacity: _,
     } = multi_offset;
 
-    let flattened = vectors.get_many::<P>(offset as _, count as _)?;
+    let flattened = vectors.get_many::<P>(offset as _, count as _, hw_counter)?;
 
     Some(flattened_to_multi_vector(flattened, vectors.dim()))
 }
@@ -144,7 +148,7 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
 
         let mut offset = self
             .offsets
-            .get::<Random>(key as VectorOffsetType)
+            .get::<Random>(key as VectorOffsetType, hw_counter)
             .unwrap_or_default();
 
         if multi_vector.vectors_count() > offset.capacity as usize {
@@ -177,10 +181,12 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Cow<'_, [T]>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let row_offsets = self.offsets.resolve_rows::<P, _, _>(
             keys.into_iter()
                 .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset)),
+            hw_counter,
         );
 
         self.vectors.for_each_vector::<P, _>(
@@ -189,15 +195,16 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
                 callback(user_data, point_offset, flattened);
                 Ok(())
             },
+            hw_counter,
         )
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         // deleted bitvec is already loaded
-        self.vectors.populate()?;
-        self.offsets.populate()?;
+        self.vectors.populate(hw_counter)?;
+        self.offsets.populate(hw_counter)?;
         Ok(())
     }
 
@@ -227,54 +234,74 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
     }
 
     /// Panics if key is not found
-    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T> {
-        self.get_multi_opt::<P>(key).expect("vector not found")
+    fn get_multi<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowMultiVector<'_, T> {
+        self.get_multi_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Returns None if key is not found
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CowMultiVector<'_, T>> {
         // Resolve the offset through the buffer (pending overlay then durable),
         // then fetch the row slice from `vectors`.
-        let offset = self.offsets.get::<P>(key as VectorOffsetType)?;
-        let flattened = self
-            .vectors
-            .get_many::<P>(offset.offset as _, offset.count as _)?;
+        let offset = self.offsets.get::<P>(key as VectorOffsetType, hw_counter)?;
+        let flattened =
+            self.vectors
+                .get_many::<P>(offset.offset as _, offset.count as _, hw_counter)?;
         Some(flattened_to_multi_vector(flattened, self.vectors.dim()))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
-    where
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+        hw_counter: &HardwareCounterCell,
+    ) where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         // Resolve offsets through the buffer first (so unflushed writes are seen),
         // then reuse the row-side prefetch reader over `vectors`.
         let row_offsets = self
             .offsets
-            .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
+            .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate(), hw_counter);
 
         self.vectors
-            .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
-                let vector = TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
-                callback(index, vector);
-                Ok(())
-            })
+            .for_each_vector::<Sequential, _>(
+                row_offsets.into_iter(),
+                |index, flattened| {
+                    let vector =
+                        TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
+                    callback(index, vector);
+                    Ok(())
+                },
+                hw_counter,
+            )
             .expect("read vectors");
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
+    fn iterate_inner_vectors(
+        &self,
+        hw_counter: ForkingHwCounter,
+    ) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
         // TODO: Implement based on `iter_vectors`!?
 
-        (0..self.total_vector_count()).flat_map(move |key| {
+        let total_vector_count = self.total_vector_count(&hw_counter);
+        (0..total_vector_count).flat_map(move |key| {
             let mmap_offset = self
                 .offsets
-                .get::<Sequential>(key as VectorOffsetType)
+                .get::<Sequential>(key as VectorOffsetType, &hw_counter)
                 .unwrap();
+            let hw_counter = hw_counter.clone();
             (0..mmap_offset.count).map(move |i| {
                 self.vectors
-                    .get::<Sequential>((mmap_offset.offset + i) as VectorOffsetType)
+                    .get::<Sequential>((mmap_offset.offset + i) as VectorOffsetType, &hw_counter)
                     .unwrap()
             })
         })
@@ -305,11 +332,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
 }
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVectorStorage<T> {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        if self.total_vector_count(hw_counter) > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+            (total_size as u128 * self.available_vector_count(hw_counter) as u128
+                / self.total_vector_count(hw_counter) as u128) as usize
         } else {
             0
         }
@@ -327,33 +354,48 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         self.vectors.is_on_disk()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.offsets.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
-            let vector = CowVector::MultiDense(T::into_float_multivector(
-                flattened_to_multi_vector(flattened, self.vectors.dim()),
-            ));
+        self.for_each_flat_multi::<P, U>(
+            keys,
+            |user_data, point_offset, flattened| {
+                let vector = CowVector::MultiDense(T::into_float_multivector(
+                    flattened_to_multi_vector(flattened, self.vectors.dim()),
+                ));
 
-            callback(user_data, point_offset, vector);
-        })
+                callback(user_data, point_offset, vector);
+            },
+            hw_counter,
+        )
         .expect("read vectors");
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
-            CowVector::MultiDense(T::into_float_multivector(multi_dense_vector))
-        })
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
+        self.get_multi_opt::<P>(key, hw_counter)
+            .map(|multi_dense_vector| {
+                CowVector::MultiDense(T::into_float_multivector(multi_dense_vector))
+            })
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -372,14 +414,19 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
-            callback(
-                user_data,
-                point_offset,
-                bytemuck::cast_slice(flattened.as_ref()).to_vec(),
-            );
-        })
+        self.for_each_flat_multi::<P, U>(
+            keys,
+            |user_data, point_offset, flattened| {
+                callback(
+                    user_data,
+                    point_offset,
+                    bytemuck::cast_slice(flattened.as_ref()).to_vec(),
+                );
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -395,11 +442,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         self.insert_multi_native(key, multi_vector.as_ref(), hw_counter)
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new({
             let vectors_flusher = self.vectors.flusher();
             let offsets_flusher = self.offsets.flusher();
-            let deleted_flusher = self.deleted.flusher();
+            let deleted_flusher = self.deleted.flusher(hw_counter);
             move || {
                 vectors_flusher()?;
                 offsets_flusher()?;
@@ -422,7 +469,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         files
     }
 
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(!self.set_deleted(key, true))
     }
 }
@@ -434,6 +485,7 @@ pub fn open_appendable_memmap_vector_storage(
     distance: Distance,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_element_type {
         VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage_full(
@@ -442,6 +494,7 @@ pub fn open_appendable_memmap_vector_storage(
             distance,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
             vector_storage_path,
@@ -449,6 +502,7 @@ pub fn open_appendable_memmap_vector_storage(
             distance,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
             vector_storage_path,
@@ -456,6 +510,7 @@ pub fn open_appendable_memmap_vector_storage(
             distance,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
             open_appendable_turbo_vector_storage(
@@ -464,12 +519,14 @@ pub fn open_appendable_memmap_vector_storage(
                 distance,
                 tq_bits(storage_element_type),
                 populate,
+                hw_counter,
             )
             .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s)))
         }
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 pub fn open_appendable_memmap_multi_vector_storage(
     storage_element_type: VectorStorageDatatype,
     path: &Path,
@@ -478,6 +535,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
     multi_vector_config: MultiVectorConfig,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_element_type {
         VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage_full(
@@ -487,6 +545,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
             multi_vector_config,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Uint8 => open_appendable_memmap_multi_vector_storage_byte(
             path,
@@ -495,6 +554,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
             multi_vector_config,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Float16 => open_appendable_memmap_multi_vector_storage_half(
             path,
@@ -503,6 +563,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
             multi_vector_config,
             madvise,
             populate,
+            hw_counter,
         ),
         VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
             open_appendable_turbo_multi_vector_storage(
@@ -512,6 +573,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
                 tq_bits(storage_element_type),
                 multi_vector_config,
                 populate,
+                hw_counter,
             )
             .map(|s| VectorStorageEnum::MultiDenseTurbo(Box::new(s)))
         }
@@ -525,6 +587,7 @@ pub fn open_appendable_memmap_multi_vector_storage_full(
     multi_vector_config: MultiVectorConfig,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
@@ -533,6 +596,7 @@ pub fn open_appendable_memmap_multi_vector_storage_full(
         multi_vector_config,
         madvise,
         populate,
+        hw_counter,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
@@ -547,6 +611,7 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     multi_vector_config: MultiVectorConfig,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl(
         path,
@@ -555,6 +620,7 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
         multi_vector_config,
         madvise,
         populate,
+        hw_counter,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
@@ -569,6 +635,7 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     multi_vector_config: MultiVectorConfig,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl(
         path,
@@ -577,6 +644,7 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
         multi_vector_config,
         madvise,
         populate,
+        hw_counter,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
@@ -591,6 +659,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     multi_vector_config: MultiVectorConfig,
     madvise: AdviceSetting,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<AppendableMmapMultiDenseVectorStorage<T>> {
     fs::create_dir_all(path)?;
 
@@ -604,9 +673,16 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         dim,
         madvise,
         Populate::from(populate),
+        hw_counter,
     )?;
-    let offsets =
-        ChunkedVectors::open(MmapFs, &offsets_path, 1, madvise, Populate::from(populate))?;
+    let offsets = ChunkedVectors::open(
+        MmapFs,
+        &offsets_path,
+        1,
+        madvise,
+        Populate::from(populate),
+        hw_counter,
+    )?;
     // The offsets store is buffered so its durable state can never race ahead of
     // the durable `vectors` length, which would corrupt points on reload.
     let offsets = BufferedOffsets::new(offsets);
@@ -616,6 +692,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         &deleted_path,
         FlagsMode::from_feature_flags(),
         Populate::from(populate),
+        hw_counter,
     )?;
     let deleted_count = deleted.count_trues();
 
@@ -672,6 +749,7 @@ mod tests {
             mutli_vector_config,
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -697,9 +775,9 @@ mod tests {
             if !rng.random_bool(0.1) {
                 continue;
             }
-            storage.delete_vector(internal_id).unwrap();
+            storage.delete_vector(internal_id, &hw_counter).unwrap();
         }
-        storage.flusher()().unwrap();
+        storage.flusher(&hw_counter)().unwrap();
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
         let found_files = find_storage_files(dir.path())
@@ -739,6 +817,7 @@ mod tests {
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
                 false,
+                &hw_counter,
             )
             .unwrap()
         };
@@ -754,11 +833,11 @@ mod tests {
             storage
                 .insert_vector(1, VectorRef::from(&p1), &hw_counter)
                 .unwrap();
-            storage.flusher()().unwrap();
+            storage.flusher(&hw_counter)().unwrap();
 
             // Start a flush: it snapshots vectors.len and the (now empty) offsets
             // pending set at this instant.
-            let flush = storage.flusher();
+            let flush = storage.flusher(&hw_counter);
 
             // Grow point 0 past its capacity -> append path relocates its rows to
             // the end. This is the dangerous in-window write.
@@ -775,7 +854,7 @@ mod tests {
         let storage = open();
 
         let read0 = storage
-            .get_multi_opt::<Random>(0)
+            .get_multi_opt::<Random>(0, &hw_counter)
             .expect("point 0 readable after reload");
         assert_eq!(
             read0.as_vec_ref().flattened_vectors,
@@ -784,7 +863,7 @@ mod tests {
         );
 
         let read1 = storage
-            .get_multi_opt::<Random>(1)
+            .get_multi_opt::<Random>(1, &hw_counter)
             .expect("point 1 readable after reload");
         assert_eq!(
             read1.as_vec_ref().flattened_vectors,
@@ -815,6 +894,7 @@ mod tests {
                     MultiVectorConfig::default(),
                     AdviceSetting::Global,
                     false,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
 
@@ -840,7 +920,7 @@ mod tests {
             );
             assert_eq!(storage.vectors.len(), per_chunk + 3);
 
-            let read = storage.get_multi::<Random>(1);
+            let read = storage.get_multi::<Random>(1, &HardwareCounterCell::new());
             assert!(matches!(read, CowMultiVector::Borrowed(_)));
             assert_eq!(
                 read.as_vec_ref().flattened_vectors,
@@ -850,13 +930,17 @@ mod tests {
             // Batched path must agree with the single-key getter.
             let mut seen = None;
             storage
-                .for_each_flat_multi::<Random, _>([((), 1)], |(), _, flat| {
-                    seen = Some(flat.into_owned());
-                })
+                .for_each_flat_multi::<Random, _>(
+                    [((), 1)],
+                    |(), _, flat| {
+                        seen = Some(flat.into_owned());
+                    },
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
             assert_eq!(seen.unwrap(), padded.flattened_vectors);
 
-            storage.flusher()().unwrap();
+            storage.flusher(&HardwareCounterCell::new())().unwrap();
         }
 
         let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
@@ -866,13 +950,17 @@ mod tests {
             MultiVectorConfig::default(),
             AdviceSetting::Global,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
-        let offset = storage.offsets.get::<Random>(1).unwrap();
+        let offset = storage
+            .offsets
+            .get::<Random>(1, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(offset.offset as usize, per_chunk);
         assert_eq!(offset.count, 3);
 
-        let read = storage.get_multi::<Random>(1);
+        let read = storage.get_multi::<Random>(1, &HardwareCounterCell::new());
         assert!(matches!(read, CowMultiVector::Borrowed(_)));
         assert_eq!(
             read.as_vec_ref().flattened_vectors,

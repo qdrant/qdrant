@@ -43,7 +43,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType);
+        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType, &hw_counter);
         let sparse: &SparseVector = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, vec);
     }
@@ -54,7 +54,9 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            storage.delete_vector(i as PointOffsetType).unwrap();
+            storage
+                .delete_vector(i as PointOffsetType, &hw_counter)
+                .unwrap();
         });
     assert_eq!(
         storage.deleted_vector_count(),
@@ -77,7 +79,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -92,8 +94,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(closest[2].idx, 4);
 
     // Delete 1, re-delete 2
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(2 as PointOffsetType).unwrap();
+    storage
+        .delete_vector(1 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(2 as PointOffsetType, &hw_counter)
+        .unwrap();
     assert_eq!(
         storage.deleted_vector_count(),
         3,
@@ -101,8 +107,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     );
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
+    storage
+        .delete_vector(0 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(4 as PointOffsetType, &hw_counter)
+        .unwrap();
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -136,11 +146,19 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
                     .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
             } else {
-                storage2.delete_vector(i as PointOffsetType).unwrap();
+                storage2
+                    .delete_vector(i as PointOffsetType, &hw_counter)
+                    .unwrap();
             }
         });
 
-        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
+        merge_from_single_source(
+            storage,
+            &storage2,
+            points.len() as PointOffsetType,
+            &hw_counter,
+        )
+        .unwrap();
     }
 
     assert_eq!(
@@ -163,7 +181,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let results = searcher
@@ -183,10 +201,18 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(closest[3].idx, 1);
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
-    storage.delete_vector(5 as PointOffsetType).unwrap();
+    storage
+        .delete_vector(0 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(1 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(4 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(5 as PointOffsetType, &hw_counter)
+        .unwrap();
     assert_eq!(
         storage.deleted_vector_count(),
         7,
@@ -218,12 +244,12 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     });
 
     // Delete selective vectors
-    storage.delete_vector(1).unwrap();
-    storage.delete_vector(3).unwrap();
-    storage.flusher()().unwrap();
+    storage.delete_vector(1, &hw_counter).unwrap();
+    storage.delete_vector(3, &hw_counter).unwrap();
+    storage.flusher(&hw_counter)().unwrap();
 
     let deleted_vector_count = storage.deleted_vector_count();
-    let available_vector_count = storage.available_vector_count();
+    let available_vector_count = storage.available_vector_count(&hw_counter);
 
     drop(storage);
 
@@ -232,57 +258,66 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
 
     // Check deleted vectors are still marked as deleted
     assert!(storage.is_deleted_vector(1));
-    assert!(storage.get_vector_opt::<Random>(1).is_none());
+    assert!(storage.get_vector_opt::<Random>(1, &hw_counter).is_none());
 
     assert!(storage.is_deleted_vector(3));
-    assert!(storage.get_vector_opt::<Random>(3).is_none());
+    assert!(storage.get_vector_opt::<Random>(3, &hw_counter).is_none());
 
     // Check non-deleted vectors still have correct data
     let verify_idx = [0, 2, 4];
     for idx in verify_idx {
-        let stored = storage.get_vector::<Random>(idx);
+        let stored = storage.get_vector::<Random>(idx, &hw_counter);
         let sparse: &SparseVector = stored.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, &points[idx as usize]);
     }
     assert_eq!(storage.deleted_vector_count(), 2);
 
     assert_eq!(storage.deleted_vector_count(), deleted_vector_count);
-    assert_eq!(storage.available_vector_count(), available_vector_count);
+    assert_eq!(
+        storage.available_vector_count(&hw_counter),
+        available_vector_count
+    );
 }
 
 #[test]
 fn test_delete_points_in_mmap_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let mut storage =
-        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
+    let mut storage = VectorStorageEnum::SparseMmap(
+        MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new()).unwrap(),
+    );
     do_test_delete_points(&mut storage);
 
-    storage.flusher()().unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
 
     drop(storage);
 
-    let _storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+    let _storage =
+        MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new()).unwrap();
 }
 
 #[test]
 fn test_update_from_delete_points_mmap_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    let mut storage =
-        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
+    let mut storage = VectorStorageEnum::SparseMmap(
+        MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new()).unwrap(),
+    );
 
     do_test_update_from_delete_points(&mut storage);
-    storage.flusher()().unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
 
     drop(storage);
 
-    let _storage =
-        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
+    let _storage = VectorStorageEnum::SparseMmap(
+        MmapSparseVectorStorage::open_or_create(dir.path(), &HardwareCounterCell::new()).unwrap(),
+    );
 }
 
 #[test]
 fn test_persistence_in_mmap_sparse_vector_storage() {
     do_test_persistence(|path| {
-        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(path).unwrap())
+        VectorStorageEnum::SparseMmap(
+            MmapSparseVectorStorage::open_or_create(path, &HardwareCounterCell::new()).unwrap(),
+        )
     });
 }

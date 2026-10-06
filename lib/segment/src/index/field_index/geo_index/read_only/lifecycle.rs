@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
@@ -16,8 +17,9 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn preopen_appendable(
         fs: &impl CachedReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyAppendableGeoIndex::preopen(fs, dir)
+        ReadOnlyAppendableGeoIndex::preopen(fs, dir, hw_counter)
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
@@ -27,6 +29,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -36,7 +39,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
             false => Populate::PreferBackground,
         };
 
-        OnDiskGeoIndex::preopen(fs, path, populate)
+        OnDiskGeoIndex::preopen(fs, path, populate, hw_counter)
     }
 
     /// Read-only mirror of [`GeoIndex::new_mutable`][1]: open the
@@ -51,8 +54,9 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableGeoIndex::open(fs, dir)?.map(Self::Appendable))
+        Ok(ReadOnlyAppendableGeoIndex::open(fs, dir, hw_counter)?.map(Self::Appendable))
     }
 
     /// Read-only mirror of [`GeoIndex::new_immutable`][1]: open the immutable
@@ -78,20 +82,26 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
         path: &Path,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
 
         let populate = Populate::from(!effective_is_on_disk);
 
-        let Some(on_disk_index) = OnDiskGeoIndex::open(fs, path, populate, deleted_points)? else {
+        let Some(on_disk_index) =
+            OnDiskGeoIndex::open(fs, path, populate, deleted_points, hw_counter)?
+        else {
             return Ok(None);
         };
 
         let index = if is_on_disk {
             Self::OnDisk(on_disk_index)
         } else {
-            Self::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+            Self::Immutable(ImmutableGeoIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         };
 
         Ok(Some(index))

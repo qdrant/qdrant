@@ -11,6 +11,7 @@ use collection::shards::replica_set::replica_set_state::{
     MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
 };
 use collection::shards::shard::{PeerId, ShardId};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
@@ -66,6 +67,7 @@ pub async fn do_recover_from_snapshot(
     source: SnapshotRecover,
     auth: Auth,
     client: reqwest::Client,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<bool, StorageError> {
     let multipass =
         auth.check_global_access(AccessRequirements::new().manage(), "recover_from_snapshot")?;
@@ -77,10 +79,12 @@ pub async fn do_recover_from_snapshot(
         .toc(&auth, &new_unchecked_verification_pass())
         .clone();
 
+    let hw_acc = hw_acc.clone();
     let res = toc
         .general_runtime_handle()
         .spawn(async move {
-            _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client).await
+            _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client, &hw_acc)
+                .await
         })
         .await??;
 
@@ -96,6 +100,7 @@ async fn _do_recover_from_snapshot(
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover {
         location,
@@ -199,7 +204,7 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 )?);
             dispatcher
-                .submit_collection_meta_op(operation, auth.clone(), None)
+                .submit_collection_meta_op(operation, auth.clone(), None, hw_acc)
                 .await?;
 
             // Since we not just copy files into a collection dir,
@@ -214,7 +219,7 @@ async fn _do_recover_from_snapshot(
                     });
 
                 dispatcher
-                    .submit_collection_meta_op(consensus_op, auth.clone(), None)
+                    .submit_collection_meta_op(consensus_op, auth.clone(), None, hw_acc)
                     .await?;
             }
 
@@ -301,6 +306,7 @@ async fn _do_recover_from_snapshot(
                 RecoveryType::Full,
                 *shard_id,
                 cancel::CancellationToken::new(),
+                hw_acc,
             )
             .await?;
 

@@ -137,6 +137,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         num_threads: usize,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(data.clone(), vector_parameters).is_ok());
 
@@ -278,7 +279,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         }
 
         let encoded_vectors = storage_builder
-            .build()
+            .build(hw_counter)
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
         if let Some(meta_path) = meta_path {
@@ -322,8 +323,9 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let metadata: Metadata = read_json_via(fs, meta_path, hw_counter)?;
         let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
 
         Ok(Self {
@@ -379,8 +381,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let metadata: Metadata = read_json_via(fs, meta_path, hw_counter)?;
 
         let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
 
@@ -396,13 +399,21 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         // invariant the scoring hot path relies on (it splits each stored vector into packed
         // dimensions plus a fixed-size trailer) also holds in release builds without a per-score
         // check.
-        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+        validate_storage_vector_size(
+            &result.encoded_vectors,
+            result.quantized_vector_size(),
+            hw_counter,
+        )?;
 
         Ok(result)
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
-        self.encoded_vectors.get_vector_data(i)
+    pub fn get_quantized_vector(
+        &self,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.encoded_vectors.get_vector_data(i, hw_counter)
     }
 
     pub fn layout(&self) -> Layout {
@@ -443,8 +454,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.encoded_vectors.for_each_batch(offsets, callback)
+        self.encoded_vectors
+            .for_each_batch(offsets, callback, hw_counter)
     }
 
     fn score(
@@ -462,7 +475,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let encoded_vector = self.encoded_vectors.get_vector_data(i);
+        let encoded_vector = self.encoded_vectors.get_vector_data(i, hw_counter);
         self.score_bytes(True, query, &encoded_vector, hw_counter)
     }
 
@@ -476,9 +489,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         debug_assert_eq!(offsets.len(), scores.len());
 
         if !TStorage::prefers_run_scoring(offsets) {
-            self.for_each_batch(offsets, |i, vector| {
-                scores[i] = self.score_bytes(True, query, &vector, hw_counter);
-            });
+            self.for_each_batch(
+                offsets,
+                |i, vector| {
+                    scores[i] = self.score_bytes(True, query, &vector, hw_counter);
+                },
+                hw_counter,
+            );
             return;
         }
 
@@ -487,15 +504,18 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             .incr_delta(offsets.len() * self.quantized_vector_size());
 
         let stride = self.quantized_vector_size();
-        self.encoded_vectors
-            .for_each_run(offsets, |first, count, bytes| {
+        self.encoded_vectors.for_each_run(
+            offsets,
+            |first, count, bytes| {
                 self.quantizer.score_precomputed_batch(
                     query,
                     &bytes,
                     stride,
                     &mut scores[first..first + count],
                 );
-            });
+            },
+            hw_counter,
+        );
 
         if self.metadata.vector_parameters.invert {
             for score in scores {
@@ -511,8 +531,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let v1 = self.encoded_vectors.get_vector_data(i);
-        let v2 = self.encoded_vectors.get_vector_data(j);
+        let v1 = self.encoded_vectors.get_vector_data(i, hw_counter);
+        let v2 = self.encoded_vectors.get_vector_data(j, hw_counter);
 
         hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
 
@@ -548,7 +568,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             + encoding_buffer.capacity() * size_of::<f64>()
     }
 
-    fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
+    fn encode_internal_vector(
+        &self,
+        _id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<EncodedQueryTQ> {
         // Turbo quant is asymmetric, so we cannot encode internal vectors, only queries.
         // This method is used for symmetric quantization,
         // where we can encode internal vectors without access to original vector data,
@@ -571,8 +595,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         )
     }
 
-    fn vectors_count(&self) -> usize {
-        self.encoded_vectors.vectors_count()
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.encoded_vectors.vectors_count(hw_counter)
     }
 
     fn flusher(&self) -> Flusher {

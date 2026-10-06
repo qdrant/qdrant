@@ -246,7 +246,7 @@ impl InvertedIndex for MutableInvertedIndex {
         Ok(())
     }
 
-    fn remove(&mut self, point_id: PointOffsetType) -> bool {
+    fn remove(&mut self, point_id: PointOffsetType, _hw_counter: &HardwareCounterCell) -> bool {
         if point_id as usize >= self.point_to_tokens.len() {
             return false; // Already removed or never actually existed
         }
@@ -349,6 +349,7 @@ impl InvertedIndex for MutableInvertedIndex {
     fn for_each_vocab_with_postings_len(
         &self,
         mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.vocab.iter().try_for_each(|(token, &posting_idx)| {
             if let Some(postings) = self.postings.get(posting_idx as usize) {
@@ -362,6 +363,7 @@ impl InvertedIndex for MutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let matched = match parsed_query {
             ParsedQuery::AllTokens(query) => {
@@ -392,11 +394,15 @@ impl InvertedIndex for MutableInvertedIndex {
         Ok(matched)
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.get_tokens(point_id).is_none_or(|x| x.is_empty())
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType, _hw_counter: &HardwareCounterCell) -> usize {
         // Maybe we want number of documents in the future?
         self.get_tokens(point_id).map(|x| x.len()).unwrap_or(0)
     }

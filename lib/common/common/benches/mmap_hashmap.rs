@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use common::bench_cache::{build_once, cache_path};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::{MmapHashMap, UniversalHashMap, serialize_hashmap};
 use common::universal_io::{OpenOptions, UniversalIoError, UniversalReadFs};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -65,10 +66,11 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
             ..OpenOptions::new_for_test()
         },
         Default::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     if !low_mem {
-        uio.populate().unwrap();
+        uio.populate(&HardwareCounterCell::new()).unwrap();
     }
 
     let mut keys: Vec<String> = mmap.iter().map(|(k, _)| k.to_owned()).collect();
@@ -86,7 +88,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     });
     c.bench_function(&format!("{prefix}uio:get_1"), |b| {
         b.iter(|| {
-            uio.unbatched_get(it.next().unwrap())
+            uio.unbatched_get(it.next().unwrap(), &HardwareCounterCell::new())
                 .unwrap()
                 .and_then(|v| v.iter().copied().max())
         })
@@ -112,6 +114,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
                     result += values.unwrap().iter().copied().max().unwrap_or(0);
                     Ok(())
                 },
+                &HardwareCounterCell::new(),
             )
             .unwrap();
             result
@@ -131,10 +134,13 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     c.bench_function(&format!("{prefix}uio:whole"), |b| {
         b.iter(|| {
             let mut result = 0;
-            uio.for_each_entry(|_key, values| -> Result<(), UniversalIoError> {
-                result += values.iter().copied().max().unwrap_or(0);
-                Ok(())
-            })
+            uio.for_each_entry(
+                |_key, values| -> Result<(), UniversalIoError> {
+                    result += values.iter().copied().max().unwrap_or(0);
+                    Ok(())
+                },
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
             result
         })

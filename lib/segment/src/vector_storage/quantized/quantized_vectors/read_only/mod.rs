@@ -112,8 +112,12 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         self.storage_impl.get_quantized_vector_layout()
     }
 
-    pub fn get_quantized_vector(&self, id: PointOffsetType) -> Cow<'_, [u8]> {
-        self.storage_impl.get_quantized_vector(id)
+    pub fn get_quantized_vector(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.storage_impl.get_quantized_vector(id, hw_counter)
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -128,8 +132,8 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         files
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage_impl.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage_impl.populate(hw_counter)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -169,7 +173,10 @@ impl<S: UniversalRead> QuantizedVectorsRead for ReadOnlyQuantizedVectors<S> {
 }
 
 impl<S: UniversalRead> crate::common::memory_usage::MemoryReporter for ReadOnlyQuantizedVectors<S> {
-    fn memory_usage(&self) -> crate::common::memory_usage::ComponentMemoryUsage {
+    fn memory_usage(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> crate::common::memory_usage::ComponentMemoryUsage {
         use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent};
 
         let files = self.files();

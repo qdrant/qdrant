@@ -94,7 +94,9 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_dense::<Random>(idx);
+        let stored = self
+            .vector_storage
+            .get_dense::<Random>(idx, &self.hardware_counter);
         self.hardware_counter.vector_io_read().incr();
 
         self.score(&stored)
@@ -107,7 +109,11 @@ impl<
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         self.vector_storage
-            .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector))
+            .for_each_in_dense_batch(
+                ids,
+                |idx, vector| scores[idx] = self.score(vector),
+                &self.hardware_counter,
+            )
             .expect("read vectors");
     }
 

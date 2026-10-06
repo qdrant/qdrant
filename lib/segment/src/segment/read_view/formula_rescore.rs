@@ -66,6 +66,7 @@ where
 
                         scores_by_internal.insert(internal_id, score);
                     },
+                    hw_counter,
                 )?;
 
                 OperationResult::Ok(scores_by_internal)
@@ -183,7 +184,9 @@ mod tests {
     #[test]
     fn rescore_keeps_every_prefetch_score_with_its_own_point() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let mut segment =
+            build_simple_segment(dir.path(), 2, Distance::Dot, &HardwareCounterCell::new())
+                .unwrap();
         let hw_counter = HardwareCounterCell::new();
 
         for id in [1, 2, 3] {

@@ -30,7 +30,7 @@ use crate::optimizers_builder::build_segment_optimizer_config;
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot).unwrap()
+    build_simple_segment(path, 4, Distance::Dot, &HardwareCounterCell::new()).unwrap()
 }
 
 /// A generator for random point IDs
@@ -68,7 +68,14 @@ pub fn random_multi_vec_segment(
     dim2: usize,
 ) -> Segment {
     let mut id_gen = PointIdGenerator::default();
-    let mut segment = build_segment_with_two_named_vecs(path, dim1, dim2, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(
+        path,
+        dim1,
+        dim2,
+        Distance::Dot,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let mut rnd = rand::rng();
     let payload_key = "number";
     let keyword_key = "keyword";
@@ -96,7 +103,8 @@ pub fn random_multi_vec_segment(
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
-    let segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
+    let segment =
+        build_simple_segment(path, dim, Distance::Dot, &HardwareCounterCell::new()).unwrap();
     fill_random(segment, opnum, num_vectors, dim)
 }
 
@@ -109,7 +117,9 @@ pub fn random_segment_with_config(
 ) -> Segment {
     let config = config.plain_segment_config();
     let dim = config.vector_data[DEFAULT_VECTOR_NAME].size;
-    let segment = build_segment(path, &config, None, true).unwrap().0;
+    let segment = build_segment(path, &config, None, true, &HardwareCounterCell::new())
+        .unwrap()
+        .0;
     fill_random(segment, opnum, num_vectors, dim)
 }
 

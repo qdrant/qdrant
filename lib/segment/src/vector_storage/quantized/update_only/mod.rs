@@ -84,6 +84,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         fs: Fs,
         path: &Path,
         vector_config: &VectorDataConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let datatype = vector_config.datatype.unwrap_or_default();
         // Multivector and TurboQuant-datatype vectors never get an overlay, so they
@@ -98,11 +99,19 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         }
 
         let config_path = QuantizedVectors::get_config_path(path);
-        if !fs.exists(&config_path)? {
+        if !fs.exists(&config_path, hw_counter)? {
             return Ok(None);
         }
-        let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path)?;
-        Self::open_existing(fs, config, path, vector_config.distance, datatype).map(Some)
+        let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path, hw_counter)?;
+        Self::open_existing(
+            fs,
+            config,
+            path,
+            vector_config.distance,
+            datatype,
+            hw_counter,
+        )
+        .map(Some)
     }
 
     /// Reopen a previously-persisted overlay to resume appending: reads the fitted metadata
@@ -118,6 +127,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         path: &Path,
         distance: Distance,
         datatype: VectorStorageDatatype,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let meta_path = QuantizedVectors::get_meta_path(path);
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
@@ -130,9 +140,10 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
                     fs,
                     data_path.as_path(),
                     quantized_vector_size,
+                    hw_counter,
                 )?;
                 UpdateOnlyQuantizedVectorStorage::Binary(Box::new(
-                    EncodedVectorsBin::reopen_for_write(&meta_fs, backend, &meta_path)?,
+                    EncodedVectorsBin::reopen_for_write(&meta_fs, backend, &meta_path, hw_counter)?,
                 ))
             }
             QuantizationConfig::Turbo(_) => {
@@ -140,9 +151,10 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
                     fs,
                     data_path.as_path(),
                     quantized_vector_size,
+                    hw_counter,
                 )?;
                 UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(
-                    EncodedVectorsTQ::reopen_for_write(&meta_fs, backend, &meta_path)?,
+                    EncodedVectorsTQ::reopen_for_write(&meta_fs, backend, &meta_path, hw_counter)?,
                 ))
             }
             QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {

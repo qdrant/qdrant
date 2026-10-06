@@ -314,7 +314,11 @@ pub(super) async fn apply_drop_index(collection: &Collection, field: &JsonPath) 
 /// wait for it: that's what a real config update does, and it leaves the workers restarting
 /// while the run loop keeps writing. The model isn't touched - flush cadence is invisible to
 /// the collection's observable contents.
-pub(super) async fn apply_set_flush_interval(collection: &Collection, flush_interval_sec: u64) {
+pub(super) async fn apply_set_flush_interval(
+    collection: &Collection,
+    flush_interval_sec: u64,
+    hw_acc: &HwMeasurementAcc,
+) {
     collection
         .update_optimizer_params_from_diff(OptimizersConfigDiff {
             flush_interval_sec: Some(flush_interval_sec),
@@ -332,7 +336,7 @@ pub(super) async fn apply_set_flush_interval(collection: &Collection, flush_inte
         })
         .await
         .expect("update flush_interval_sec failed");
-    collection.recreate_optimizers_background();
+    collection.recreate_optimizers_background(hw_acc);
 }
 
 pub(super) async fn apply_upsert_conditional(
@@ -474,9 +478,10 @@ pub(super) async fn apply_delete_vector_name(
     model: &mut Model,
     active: &mut BTreeSet<VectorNameBuf>,
     name: &str,
+    hw_acc: &HwMeasurementAcc,
 ) {
     collection
-        .delete_named_vector(name.to_string())
+        .delete_named_vector(name.to_string(), hw_acc)
         .await
         .unwrap_or_else(|e| panic!("delete_named_vector({name:?}) failed: {e:?}"));
     active.remove(name);

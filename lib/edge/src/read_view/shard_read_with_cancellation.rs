@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::data_types::facets::FacetResponse;
 use segment::index::UniversalReadExt;
@@ -191,7 +192,9 @@ where
     }
 
     fn info(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<ShardInfo> {
-        run(self, is_stopped, |view| view.info())
+        run(self, is_stopped, |view| {
+            view.info(&HardwareCounterCell::disposable())
+        })
     }
 }
 

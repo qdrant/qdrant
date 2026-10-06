@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{
     UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFs, read_json_via, read_whole_via,
 };
@@ -108,12 +109,13 @@ pub(super) fn ensure_config<T, Fs>(
     directory: &Path,
     dim: usize,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<ChunkedVectorsConfig>
 where
     Fs: UniversalWriteFs,
 {
     let config_file = config_file(directory);
-    match load_config(fs, &config_file) {
+    match load_config(fs, &config_file, hw_counter) {
         Ok(Some(config)) => {
             if config.dim == dim {
                 Ok(config)
@@ -125,10 +127,10 @@ where
                 )))
             }
         }
-        Ok(None) => create_config::<T>(fs, &config_file, dim, populate),
+        Ok(None) => create_config::<T>(fs, &config_file, dim, populate, hw_counter),
         Err(e) => {
             log::error!("Failed to deserialize config file {config_file:?}: {e}");
-            create_config::<T>(fs, &config_file, dim, populate)
+            create_config::<T>(fs, &config_file, dim, populate, hw_counter)
         }
     }
 }
@@ -138,6 +140,7 @@ fn create_config<T>(
     config_file: &Path,
     dim: usize,
     populate: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<ChunkedVectorsConfig> {
     if dim == 0 {
         return Err(OperationError::service_error(
@@ -156,7 +159,7 @@ fn create_config<T>(
         dim,
         populate: Some(populate),
     };
-    fs.atomic_save(config_file, &serde_json::to_vec(&config)?)?;
+    fs.atomic_save(config_file, &serde_json::to_vec(&config)?, hw_counter)?;
     Ok(config)
 }
 
@@ -172,8 +175,9 @@ pub(super) fn status_file(directory: &Path) -> PathBuf {
 pub(super) fn load_config<Fs: UniversalReadFs>(
     fs: &Fs,
     config_file: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<ChunkedVectorsConfig>> {
-    match read_json_via::<Fs, ChunkedVectorsConfig>(fs, config_file) {
+    match read_json_via::<Fs, ChunkedVectorsConfig>(fs, config_file, hw_counter) {
         Ok(config) => Ok(Some(config)),
         Err(UniversalIoError::NotFound { .. }) => Ok(None),
         Err(e) => Err(e.into()),
@@ -185,20 +189,26 @@ pub(super) fn load_config<Fs: UniversalReadFs>(
 pub(super) fn read_status_len<Fs: UniversalReadFs>(
     fs: &Fs,
     status_file: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> UioResult<usize> {
     let needed = std::mem::size_of::<usize>();
-    let len = read_whole_via(fs, status_file, |bytes| {
-        let head = bytes.get(..needed).ok_or_else(|| {
-            UniversalIoError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                format!(
-                    "Status file {} is too short: {} < {needed}",
-                    status_file.display(),
-                    bytes.len(),
-                ),
-            ))
-        })?;
-        Ok(usize::from_ne_bytes(head.try_into().expect("size matches")))
-    })?;
+    let len = read_whole_via(
+        fs,
+        status_file,
+        |bytes| {
+            let head = bytes.get(..needed).ok_or_else(|| {
+                UniversalIoError::Io(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    format!(
+                        "Status file {} is too short: {} < {needed}",
+                        status_file.display(),
+                        bytes.len(),
+                    ),
+                ))
+            })?;
+            Ok(usize::from_ne_bytes(head.try_into().expect("size matches")))
+        },
+        hw_counter,
+    )?;
     Ok(len)
 }

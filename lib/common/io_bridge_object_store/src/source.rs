@@ -277,6 +277,8 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{DiskCacheConfig, ListedFile, ReadRange, UioResult, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
@@ -423,7 +425,11 @@ mod tests {
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
         let cow = file
-            .read::<_, u8>(ReadRange::new(0, 11), Sequential)
+            .read::<_, u8>(
+                ReadRange::new(0, 11),
+                Sequential,
+                &HardwareCounterCell::new(),
+            )
             .expect("read");
         assert_eq!(&cow[..], b"hello world");
     }
@@ -434,7 +440,7 @@ mod tests {
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
         let cow = file
-            .read::<_, u8>(ReadRange::new(6, 5), Random)
+            .read::<_, u8>(ReadRange::new(6, 5), Random, &HardwareCounterCell::new())
             .expect("read");
         assert_eq!(&cow[..], b"world");
     }
@@ -451,10 +457,15 @@ mod tests {
             (3u32, ReadRange::new(10, 3)),
         ];
         let mut got: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        file.read_batch(inputs, Random, |u, s| {
-            got.insert(u, s.to_vec());
-            UioResult::Ok(())
-        })
+        file.read_batch(
+            inputs,
+            Random,
+            |u, s| {
+                got.insert(u, s.to_vec());
+                UioResult::Ok(())
+            },
+            &HardwareCounterCell::new(),
+        )
         .expect("read_batch");
         assert_eq!(got[&1], b"hello");
         assert_eq!(got[&2], b"WORLD");
@@ -529,8 +540,13 @@ mod tests {
         let stats = io_bridge::RemoteIoStats::default();
         let file = make_file(runtime, store, "empty").with_stats(stats.clone());
         let mut pipeline = common::universal_io::OwnedPipeline::new(file).unwrap();
-        pipeline.schedule_whole((), 1).unwrap();
-        let (_, bytes) = pipeline.wait().unwrap().expect("read scheduled");
+        pipeline
+            .schedule_whole((), 1, &HardwareCounterCell::new())
+            .unwrap();
+        let (_, bytes) = pipeline
+            .wait(&HardwareCounterCell::new())
+            .unwrap()
+            .expect("read scheduled");
         assert!(bytes.is_empty());
 
         let snapshot = stats.snapshot();
@@ -543,7 +559,9 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = BlobFile::new(ObjectStoreSource::new(store), runtime, PathBuf::from("obj"));
-        let cow = file.read_whole::<u8>().expect("read_whole");
+        let cow = file
+            .read_whole::<u8>(&HardwareCounterCell::new())
+            .expect("read_whole");
         assert_eq!(&cow[..], b"hello world");
     }
 
@@ -597,7 +615,7 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("o", b"x")]);
         let file = make_file(runtime, store, "o");
-        file.populate().unwrap();
+        file.populate(&HardwareCounterCell::new()).unwrap();
         file.clear_ram_cache().unwrap();
     }
 
@@ -606,7 +624,11 @@ mod tests {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
-        let len: u64 = <BlobFile<InMemorySource> as UniversalRead>::len::<u16>(&file).unwrap();
+        let len: u64 = <BlobFile<InMemorySource> as UniversalRead>::len::<u16>(
+            &file,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert_eq!(len, 2);
     }
 
@@ -632,7 +654,11 @@ mod tests {
             BridgeRuntime::global(),
             Arc::new(config),
         );
-        common::universal_io::conformance::run_append_conformance(&fs, Path::new("conformance"));
+        common::universal_io::conformance::run_append_conformance(
+            &fs,
+            Path::new("conformance"),
+            &HardwareCounterCell::new(),
+        );
     }
 
     #[test]
@@ -642,14 +668,29 @@ mod tests {
         let file = make_file(runtime, store, "log");
 
         // Create-on-first-append at offset 0, then sequential appends.
-        file.append_bytes(0, Bytes::from_static(b"hello "), None)
-            .unwrap();
-        file.append_bytes(6, Bytes::from_static(b"world"), None)
-            .unwrap();
-        file.append_bytes(11, Bytes::from_static(b"!?"), None)
-            .unwrap();
+        file.append_bytes(
+            0,
+            Bytes::from_static(b"hello "),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
+        file.append_bytes(
+            6,
+            Bytes::from_static(b"world"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
+        file.append_bytes(
+            11,
+            Bytes::from_static(b"!?"),
+            None,
+            &HwMeasurementAcc::new(),
+        )
+        .unwrap();
 
-        let bytes = file.read_whole::<u8>().unwrap();
+        let bytes = file.read_whole::<u8>(&HardwareCounterCell::new()).unwrap();
         assert_eq!(&bytes[..], b"hello world!?");
     }
 }

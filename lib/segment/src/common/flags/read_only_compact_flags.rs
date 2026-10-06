@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::{self, StoredBitmask};
 use common::universal_io::{
@@ -62,6 +63,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         fs: &impl CachedReadFs<File = S>,
         directory: &Path,
         mut populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         populate = match populate {
             Populate::Auto | Populate::No => {
@@ -72,7 +74,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             partial @ Populate::Partial(_) => partial,
         };
 
-        if !fs.exists(&directory.join(COMPACT_FLAGS_FILE))? {
+        if !fs.exists(&directory.join(COMPACT_FLAGS_FILE), hw_counter)? {
             return Ok(false);
         }
 
@@ -80,6 +82,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             &directory.join(COMPACT_FLAGS_FILE),
             Some(open_options(populate)),
             None,
+            hw_counter,
         );
 
         Ok(true)
@@ -93,6 +96,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // A missing file means the flags aren't present on disk.
         let Some(storage) = StoredBitmask::<S>::open(
@@ -100,6 +104,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             directory.join(COMPACT_FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_not_found()?
         else {
@@ -120,7 +125,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
     /// This is the whole-file read that [`Self::open`] avoids. It is deferred
     /// to the first query rather than paid per segment open — many segments
     /// hold flag indexes that no query ever touches.
-    fn bitmap(&self) -> OperationResult<&RoaringBitmap> {
+    fn bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
         // `OnceLock::get_or_try_init` is still unstable, so build outside the
         // lock and let `get_or_init` arbitrate. A racing thread's bitmap is
         // simply dropped: both are built from the same bytes.
@@ -128,11 +133,15 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             return Ok(bitmap);
         }
 
-        let bitmap = self.storage.read_ones()?;
+        let bitmap = self.storage.read_ones(hw_counter)?;
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let directory = self.directory.as_path();
         let populate = if self.bitmap.get().is_some() {
             Populate::PreferBackground
@@ -143,6 +152,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             &directory.join(COMPACT_FLAGS_FILE),
             Some(open_options(populate)),
             None,
+            hw_counter,
         );
     }
 
@@ -156,7 +166,11 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
     ///
     /// While the bitmap is still unmaterialized there is nothing to resync:
     /// the eventual first read decodes the fresh storage installed here.
-    pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
+    pub fn live_reload(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Once the flags exist their file always does, so absence here is a
         // genuine not-found (segment removed mid-reload), not a lazy file.
         let Some(storage) = StoredBitmask::<S>::open(
@@ -164,6 +178,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
             self.directory.join(COMPACT_FLAGS_FILE),
             open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )
         .ok_unchanged()?
         else {
@@ -171,7 +186,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         };
 
         if let Some(bitmap) = self.bitmap.get_mut() {
-            *bitmap = storage.read_ones()?;
+            *bitmap = storage.read_ones(hw_counter)?;
         }
 
         // The logical length grows as points are appended; refresh it so
@@ -188,8 +203,8 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyCompactFlags<S> {
         self.len
     }
 
-    fn get_bitmap(&self) -> OperationResult<&RoaringBitmap> {
-        self.bitmap()
+    fn get_bitmap(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&RoaringBitmap> {
+        self.bitmap(hw_counter)
     }
 
     fn bitmap_if_materialized(&self) -> Option<&RoaringBitmap> {
@@ -223,25 +238,32 @@ mod tests {
 
         // Never-create contract: nothing on disk, nothing opened.
         assert!(
-            ReadOnlyCompactFlags::<MmapFile>::open(&MmapFs, &dir)
+            ReadOnlyCompactFlags::<MmapFile>::open(&MmapFs, &dir, &HardwareCounterCell::new())
                 .unwrap()
                 .is_none()
         );
 
-        let writer = CompactStoredFlags::<MmapFile>::open(MmapFs, &dir, Populate::No).unwrap();
+        let writer = CompactStoredFlags::<MmapFile>::open(
+            MmapFs,
+            &dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         writer.set(3, true);
         writer.set(9, false); // grows the flags to 10
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        let flags = ReadOnlyCompactFlags::<MmapFile>::open(&MmapFs, &dir)
-            .unwrap()
-            .unwrap();
+        let flags =
+            ReadOnlyCompactFlags::<MmapFile>::open(&MmapFs, &dir, &HardwareCounterCell::new())
+                .unwrap()
+                .unwrap();
         assert_eq!(flags.len(), 10);
         assert!(flags.bitmap_if_materialized().is_none()); // open decodes nothing
 
-        assert!(flags.get(3).unwrap());
-        assert!(!flags.get(9).unwrap());
-        assert_eq!(flags.count_trues().unwrap(), 1);
+        assert!(flags.get(3, &HardwareCounterCell::new()).unwrap());
+        assert!(!flags.get(9, &HardwareCounterCell::new()).unwrap());
+        assert_eq!(flags.count_trues(&HardwareCounterCell::new()).unwrap(), 1);
         assert!(flags.bitmap_if_materialized().is_some());
         assert_eq!(flags.files(), vec![dir.join(COMPACT_FLAGS_FILE)]);
     }
@@ -267,23 +289,38 @@ mod tests {
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
-        let writer = CompactStoredFlags::<MmapFile>::open(MmapFs, &dir, Populate::No).unwrap();
+        let writer = CompactStoredFlags::<MmapFile>::open(
+            MmapFs,
+            &dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         writer.set(5, true);
         writer.set_len(100);
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
             config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
             remote: Default::default(),
         })
         .unwrap();
-        let mut flags = ReadOnlyCompactFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
-            .unwrap()
-            .unwrap();
+        let mut flags = ReadOnlyCompactFlags::<DiskCache<MmapFile>>::open(
+            &cache_fs,
+            &dir,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
 
         // Materialize the bitmap: reads (and locally caches) the whole file —
         // the pre-write state this test must escape.
-        assert!(flags.get_bitmap().unwrap().contains(5));
+        assert!(
+            flags
+                .get_bitmap(&HardwareCounterCell::new())
+                .unwrap()
+                .contains(5)
+        );
         assert_eq!(flags.len(), 100);
 
         // Replace the file behind the reader's back: new bits, a cleared bit,
@@ -292,11 +329,13 @@ mod tests {
         writer.set(50, true);
         writer.set(5, false);
         writer.set_len(120);
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        flags.live_reload(&cache_fs).unwrap();
+        flags
+            .live_reload(&cache_fs, &HardwareCounterCell::new())
+            .unwrap();
 
-        let bitmap = flags.get_bitmap().unwrap();
+        let bitmap = flags.get_bitmap(&HardwareCounterCell::new()).unwrap();
         assert!(bitmap.contains(6));
         assert!(bitmap.contains(50));
         assert!(
@@ -321,26 +360,38 @@ mod tests {
         fs_err::create_dir_all(&dir).unwrap();
         fs_err::create_dir_all(&local_root).unwrap();
 
-        let writer = CompactStoredFlags::<MmapFile>::open(MmapFs, &dir, Populate::No).unwrap();
+        let writer = CompactStoredFlags::<MmapFile>::open(
+            MmapFs,
+            &dir,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         writer.set(5, true);
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
             config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
             remote: Default::default(),
         })
         .unwrap();
-        let mut flags = ReadOnlyCompactFlags::<DiskCache<MmapFile>>::open(&cache_fs, &dir)
-            .unwrap()
-            .unwrap();
+        let mut flags = ReadOnlyCompactFlags::<DiskCache<MmapFile>>::open(
+            &cache_fs,
+            &dir,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap();
 
         // No `get_bitmap` here: the bitmap stays unmaterialized.
         writer.set(6, true);
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
-        flags.live_reload(&cache_fs).unwrap();
+        flags
+            .live_reload(&cache_fs, &HardwareCounterCell::new())
+            .unwrap();
 
-        let bitmap = flags.get_bitmap().unwrap();
+        let bitmap = flags.get_bitmap(&HardwareCounterCell::new()).unwrap();
         assert!(bitmap.contains(5));
         assert!(bitmap.contains(6));
     }

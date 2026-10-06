@@ -69,6 +69,7 @@ impl SparseVectorStorageRead for EmptySparseVectorStorage {
         &self,
         _keys: &[PointOffsetType],
         _callback: F,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         F: FnMut(usize, SparseVector),
@@ -90,7 +91,7 @@ impl SparseVectorStorage for EmptySparseVectorStorage {
 }
 
 impl VectorStorageRead for EmptySparseVectorStorage {
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self, _hw_counter: &HardwareCounterCell) -> usize {
         0
     }
 
@@ -106,16 +107,24 @@ impl VectorStorageRead for EmptySparseVectorStorage {
         true
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.num_points
     }
 
-    fn get_vector<P: AccessPattern>(&self, _key: PointOffsetType) -> CowVector<'_> {
+    fn get_vector<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         debug_assert!(false, "get_vector called on EmptySparseVectorStorage");
         CowVector::default_sparse()
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, _key: PointOffsetType) -> Option<CowVector<'_>> {
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
         None
     }
 
@@ -135,8 +144,9 @@ impl VectorStorageRead for EmptySparseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback, hw_counter)
     }
 }
 
@@ -152,7 +162,7 @@ impl VectorStorage for EmptySparseVectorStorage {
         ))
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         Box::new(|| Ok(()))
     }
 
@@ -160,7 +170,11 @@ impl VectorStorage for EmptySparseVectorStorage {
         vec![]
     }
 
-    fn delete_vector(&mut self, _key: PointOffsetType) -> OperationResult<bool> {
+    fn delete_vector(
+        &mut self,
+        _key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(false) // Already deleted
     }
 }
@@ -178,25 +192,35 @@ mod tests {
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
         assert!(storage.is_on_disk());
-        assert_eq!(storage.total_vector_count(), 500);
-        assert_eq!(storage.available_vector_count(), 0);
+        assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 500);
+        assert_eq!(
+            storage.available_vector_count(&HardwareCounterCell::new()),
+            0
+        );
         assert_eq!(storage.deleted_vector_count(), 500);
         assert_eq!(storage.deleted_vector_bitslice().len(), 500);
         assert!(storage.is_deleted_vector(0));
         assert!(storage.is_deleted_vector(499));
         assert!(storage.files().is_empty());
 
-        assert!(storage.get_vector_opt::<Random>(0).is_none());
+        assert!(
+            storage
+                .get_vector_opt::<Random>(0, &HardwareCounterCell::new())
+                .is_none()
+        );
         assert!(storage.get_sparse_opt::<Random>(0).unwrap().is_none());
     }
 
     #[test]
     fn test_empty_sparse_set_num_points() {
         let mut storage = EmptySparseVectorStorage::new(0);
-        assert_eq!(storage.total_vector_count(), 0);
+        assert_eq!(storage.total_vector_count(&HardwareCounterCell::new()), 0);
 
         storage.set_num_points(1000);
-        assert_eq!(storage.total_vector_count(), 1000);
+        assert_eq!(
+            storage.total_vector_count(&HardwareCounterCell::new()),
+            1000
+        );
         assert_eq!(storage.deleted_vector_count(), 1000);
     }
 }

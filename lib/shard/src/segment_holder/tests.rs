@@ -28,7 +28,8 @@ fn test_add_and_swap() {
 
     assert_ne!(sid1, sid2);
 
-    let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let segment3 =
+        build_simple_segment(dir.path(), 4, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let (_sid3, replaced_segments) = holder.swap_new(segment3, &[sid1, sid2]);
     replaced_segments
@@ -59,7 +60,11 @@ fn test_apply_to_appendable() {
             &point_ids,
             |point_id, segment| {
                 updated_in_place.push(point_id);
-                assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
+                assert!(segment.has_point(
+                    point_id,
+                    common::types::DeferredBehavior::WithDeferred,
+                    &HardwareCounterCell::new()
+                ));
                 Ok(true)
             },
             |point_id, _, _, _| {
@@ -84,13 +89,23 @@ fn test_apply_to_appendable() {
 
     // All points were moved from immutable into appendable segment
     for point_id in point_ids {
-        assert!(
-            appendable_segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-        );
+        assert!(appendable_segment.has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &HardwareCounterCell::new()
+        ));
     }
 
-    assert!(!immutable_segment.has_point(11.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(!immutable_segment.has_point(12.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(!immutable_segment.has_point(
+        11.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
+    assert!(!immutable_segment.has_point(
+        12.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 }
 
 /// Test applying points and conditionally moving them if operation versions are off
@@ -186,7 +201,11 @@ fn test_apply_and_move_old_versions(
             &[123.into(), 456.into(), 789.into()],
             |point_id, segment| {
                 processed_points.push(point_id);
-                assert!(segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred));
+                assert!(segment.has_point(
+                    point_id,
+                    common::types::DeferredBehavior::WithDeferred,
+                    &hw_counter
+                ));
                 Ok(true)
             },
             |point_id, _, _, _| processed_points2.push(point_id),
@@ -202,16 +221,44 @@ fn test_apply_and_move_old_versions(
     let read_segment_2 = locked_segment_2.read();
 
     for i in &processed_points2 {
-        assert!(read_segment_2.has_point(*i, common::types::DeferredBehavior::WithDeferred));
+        assert!(read_segment_2.has_point(
+            *i,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
     }
 
     // Point 123 and 456 should have moved from segment 1 into 2
-    assert!(!read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(!read_segment_1.has_point(456.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(!read_segment_1.has_point(789.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(read_segment_2.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(read_segment_2.has_point(456.into(), common::types::DeferredBehavior::WithDeferred));
-    assert!(read_segment_2.has_point(789.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(!read_segment_1.has_point(
+        123.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!read_segment_1.has_point(
+        456.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!read_segment_1.has_point(
+        789.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(read_segment_2.has_point(
+        123.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(read_segment_2.has_point(
+        456.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(read_segment_2.has_point(
+        789.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 }
 
 #[test]
@@ -247,15 +294,19 @@ fn test_cow_operation() {
     {
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
-        assert!(
-            !read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred)
-        );
+        assert!(!read_segment_1.has_point(
+            123.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
 
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
-        assert!(
-            read_segment_2.has_point(123.into(), common::types::DeferredBehavior::WithDeferred)
-        );
+        assert!(read_segment_2.has_point(
+            123.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
         let vector = read_segment_2
             .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
             .unwrap()
@@ -290,7 +341,11 @@ fn test_cow_operation() {
     let locked_segment_1 = holder.get(sid1).unwrap().get();
     let read_segment_1 = locked_segment_1.read();
 
-    assert!(read_segment_1.has_point(123.into(), common::types::DeferredBehavior::WithDeferred));
+    assert!(read_segment_1.has_point(
+        123.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 
     let new_vector = read_segment_1
         .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
@@ -414,8 +469,10 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
         id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let (mut segment_a, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let (segment_b, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment_a, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
+    let (segment_b, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let point_id: PointIdType = 7.into();
@@ -475,8 +532,8 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
 
         let source = source.read();
         let destination = destination.read();
-        assert!(!source.has_point(point_id, DeferredBehavior::WithDeferred));
-        assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+        assert!(!source.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
+        assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
 
         let read_back = read_dense(&*destination);
         drift.push(
@@ -527,8 +584,10 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
         id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut source, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
+    let (destination, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let point_id: PointIdType = 7.into();
@@ -567,7 +626,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
 
     // Oracle for the overlaid name: a fresh direct ingest into a same-config
     // segment (TQ encoding is deterministic for equal configs).
-    let (mut oracle, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut oracle, _) = build_segment(dir.path(), &config, None, true, &hw_counter).unwrap();
     oracle
         .upsert_point(
             100,
@@ -607,7 +666,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
         .unwrap();
 
     let destination = destination.read();
-    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
 
     assert_eq!(
         read_dense(&*destination, KEEP),
@@ -651,8 +710,10 @@ fn test_cow_move_delete_name_preserves_survivor() {
         id_tracker_memory: None,
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut source, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
+    let (destination, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
     let point_id: PointIdType = 7.into();
@@ -707,7 +768,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
         .unwrap();
 
     let destination = destination.read();
-    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
 
     assert_eq!(
         read_dense(&*destination, KEEP),
@@ -764,6 +825,7 @@ fn test_cow_move_allows_role_config_differences() {
         &make_config(VectorStorageType::InRamChunkedMmap),
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let (destination, _) = build_segment(
@@ -771,6 +833,7 @@ fn test_cow_move_allows_role_config_differences() {
         &make_config(VectorStorageType::ChunkedMmap),
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -806,7 +869,7 @@ fn test_cow_move_allows_role_config_differences() {
         .unwrap();
 
     let destination = destination.read();
-    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred));
+    assert!(destination.has_point(point_id, DeferredBehavior::WithDeferred, &hw_counter));
     match destination
         .vector(DEFAULT_VECTOR_NAME, point_id, &hw_counter)
         .unwrap()
@@ -854,71 +917,47 @@ fn test_points_deduplication() {
 
     assert_eq!(5, res);
 
-    assert!(
-        holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(1.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(2.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        !holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(1.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        !holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(2.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(holder.get(sid1).unwrap().get().read().has_point(
+        1.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid1).unwrap().get().read().has_point(
+        2.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!holder.get(sid2).unwrap().get().read().has_point(
+        1.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!holder.get(sid2).unwrap().get().read().has_point(
+        2.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        !holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        !holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        4.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        5.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!holder.get(sid1).unwrap().get().read().has_point(
+        4.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!holder.get(sid1).unwrap().get().read().has_point(
+        5.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 }
 
 /// Unit test for a specific bug we caught before.
@@ -973,7 +1012,7 @@ fn test_points_deduplication_bug() {
     let sid2 = holder.add_new(segment2);
 
     let duplicate_count = holder
-        .find_duplicated_points()
+        .find_duplicated_points(&hw_counter)
         .values()
         .map(|ids| ids.len())
         .sum::<usize>();
@@ -982,39 +1021,27 @@ fn test_points_deduplication_bug() {
     let removed_count = deduplicate_points_sync(&holder).unwrap();
     assert_eq!(2, removed_count);
 
-    assert!(
-        !holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(10.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(10.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(!holder.get(sid1).unwrap().get().read().has_point(
+        10.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        10.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 
-    assert!(
-        !holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(!holder.get(sid1).unwrap().get().read().has_point(
+        11.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        11.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 
     assert_eq!(
         holder
@@ -1022,7 +1049,7 @@ fn test_points_deduplication_bug() {
             .unwrap()
             .get()
             .read()
-            .available_point_count(),
+            .available_point_count(&hw_counter),
         0,
     );
     assert_eq!(
@@ -1031,7 +1058,7 @@ fn test_points_deduplication_bug() {
             .unwrap()
             .get()
             .read()
-            .available_point_count(),
+            .available_point_count(&hw_counter),
         2,
     );
 }
@@ -1079,7 +1106,7 @@ fn test_points_deduplication_randomized() {
         .collect::<Vec<_>>();
 
     let duplicate_count = holder
-        .find_duplicated_points()
+        .find_duplicated_points(&hw_counter)
         .values()
         .map(|ids| ids.len())
         .sum::<usize>();
@@ -1101,7 +1128,7 @@ fn test_points_deduplication_randomized() {
                     .unwrap()
                     .get()
                     .read()
-                    .point_version(point_id)
+                    .point_version(point_id, &hw_counter)
             })
             .collect::<Vec<_>>();
 
@@ -1163,7 +1190,7 @@ fn test_find_points_to_update_and_delete() {
 
     // Query for points 1, 2, 3, 4, 5, 6
     let ids: Vec<PointIdType> = vec![1.into(), 2.into(), 3.into(), 4.into(), 5.into(), 6.into()];
-    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids, &hw_counter);
 
     let update_set = |sid: &SegmentId| -> HashSet<PointIdType> {
         to_update
@@ -1249,7 +1276,7 @@ fn test_find_points_to_update_and_delete_with_deferred() {
     let sid2 = holder.add_new(segment2);
 
     let ids: Vec<PointIdType> = vec![1.into(), 2.into(), 3.into(), 4.into(), 5.into()];
-    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids, &hw_counter);
 
     let update_set = |sid: &SegmentId| -> HashSet<PointIdType> {
         to_update
@@ -1319,7 +1346,8 @@ fn test_find_points_to_update_and_delete_with_deferred_only() {
 
     // Query only deferred points — no non-deferred copy exists for these in any segment
     let ids: Vec<PointIdType> = vec![4.into(), 5.into()];
-    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+    let (to_update, to_delete) =
+        holder.find_points_to_update_and_delete(&ids, &HardwareCounterCell::new());
 
     let update_set: HashSet<PointIdType> = to_update
         .get(&sid)
@@ -1366,7 +1394,7 @@ fn test_find_points_to_update_and_delete_with_deferred_winning() {
     let sid2 = holder.add_new(segment2);
 
     let ids: Vec<PointIdType> = vec![4.into(), 5.into()];
-    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids, &hw_counter);
 
     let update_set = |sid: &SegmentId| -> HashSet<PointIdType> {
         to_update
@@ -1444,7 +1472,7 @@ fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
     let sid3 = holder.add_new(segment3);
 
     let ids: Vec<PointIdType> = vec![4.into()];
-    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids, &hw_counter);
 
     let update_set = |sid: &SegmentId| -> HashSet<PointIdType> {
         to_update
@@ -1512,12 +1540,12 @@ fn test_points_deduplication_with_deferred() {
             .unwrap();
     }
     // Verify deferred status
-    assert!(!segment2.point_is_deferred(1.into()));
-    assert!(!segment2.point_is_deferred(2.into()));
-    assert!(!segment2.point_is_deferred(3.into()));
-    assert!(segment2.point_is_deferred(4.into()));
-    assert!(segment2.point_is_deferred(5.into()));
-    assert!(segment2.point_is_deferred(6.into()));
+    assert!(!segment2.point_is_deferred(1.into(), &hw_counter));
+    assert!(!segment2.point_is_deferred(2.into(), &hw_counter));
+    assert!(!segment2.point_is_deferred(3.into(), &hw_counter));
+    assert!(segment2.point_is_deferred(4.into(), &hw_counter));
+    assert!(segment2.point_is_deferred(5.into(), &hw_counter));
+    assert!(segment2.point_is_deferred(6.into(), &hw_counter));
 
     // Segment 3 (also with deferred, internal IDs >= 3) — to test multiple deferred copies:
     //   To get point 6 deferred, we need 3 dummy points first to push internal IDs up.
@@ -1536,14 +1564,14 @@ fn test_points_deduplication_with_deferred() {
     segment3
         .upsert_point(9, 6.into(), vec4.clone(), &hw_counter)
         .unwrap();
-    assert!(segment3.point_is_deferred(6.into()));
+    assert!(segment3.point_is_deferred(6.into(), &hw_counter));
 
     let mut holder = SegmentHolder::default();
     let sid1 = holder.add_new(segment1);
     let sid2 = holder.add_new(segment2);
     let sid3 = holder.add_new(segment3);
 
-    let duplicates = holder.find_duplicated_points();
+    let duplicates = holder.find_duplicated_points(&hw_counter);
 
     let removed_from = |sid: SegmentId| -> HashSet<PointIdType> {
         duplicates
@@ -1596,56 +1624,38 @@ fn test_points_deduplication_with_deferred() {
     assert_eq!(removed_count, 2);
 
     // After dedup: point 3 should only be in seg1
-    assert!(
-        holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(3.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        !holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(3.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(holder.get(sid1).unwrap().get().read().has_point(
+        3.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(!holder.get(sid2).unwrap().get().read().has_point(
+        3.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 
     // Points 4 and 5 should still be in both seg1 and seg2
-    assert!(
-        holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(4.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid1)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
-    );
-    assert!(
-        holder
-            .get(sid2)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(5.into(), common::types::DeferredBehavior::WithDeferred)
-    );
+    assert!(holder.get(sid1).unwrap().get().read().has_point(
+        4.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        4.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid1).unwrap().get().read().has_point(
+        5.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(
+        5.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter
+    ));
 }
 
 /// Randomized test for deduplication with a mix of normal and deferred segments.
@@ -1713,8 +1723,15 @@ fn test_points_deduplication_with_deferred_randomized() {
     for id in 0..POINT_COUNT {
         let point_id = PointIdType::from(id);
         for (seg_idx, segment) in segments.iter().enumerate() {
-            if segment.has_point(point_id, common::types::DeferredBehavior::WithDeferred) {
-                is_deferred.insert((id, seg_idx), segment.point_is_deferred(point_id));
+            if segment.has_point(
+                point_id,
+                common::types::DeferredBehavior::WithDeferred,
+                &hw_counter,
+            ) {
+                is_deferred.insert(
+                    (id, seg_idx),
+                    segment.point_is_deferred(point_id, &hw_counter),
+                );
             }
         }
     }
@@ -1733,12 +1750,12 @@ fn test_points_deduplication_with_deferred_randomized() {
         for (seg_idx, &sid) in segment_ids.iter().enumerate() {
             let seg = holder.get(sid).unwrap().get();
             let seg = seg.read();
-            versions_before.insert((id, seg_idx), seg.point_version(point_id));
+            versions_before.insert((id, seg_idx), seg.point_version(point_id, &hw_counter));
         }
     }
 
     // Run dedup
-    let duplicates = holder.find_duplicated_points();
+    let duplicates = holder.find_duplicated_points(&hw_counter);
 
     // Collect what will be removed: (point_id, segment_idx)
     let mut to_remove: HashSet<(u64, usize)> = HashSet::new();
@@ -1842,7 +1859,7 @@ fn test_points_deduplication_with_deferred_randomized() {
 fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
     let mut removed_points = 0;
 
-    for task in holder.deduplicate_points_tasks() {
+    for task in holder.deduplicate_points_tasks(&HardwareCounterCell::new()) {
         removed_points += task()?;
     }
 
@@ -1890,7 +1907,7 @@ fn test_double_proxies() {
         .1
         .get()
         .read()
-        .read_range(Some(1.into()), None);
+        .read_range(Some(1.into()), None, &hw_counter);
     assert_eq!(&points, &[1.into(), 2.into(), 3.into(), 4.into(), 5.into()]);
 
     // Writing to inner proxy segment
@@ -1915,7 +1932,11 @@ fn test_double_proxies() {
     for (_proxy_id, proxy) in &outer_proxies {
         let proxy_read = proxy.get().read();
 
-        if proxy_read.has_point(2.into(), common::types::DeferredBehavior::WithDeferred) {
+        if proxy_read.has_point(
+            2.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter,
+        ) {
             has_point = true;
             let payload = proxy_read.payload(2.into(), &hw_counter).unwrap();
 
@@ -1944,6 +1965,7 @@ fn test_double_proxies() {
         outer_segments_lock,
         &outer_proxy_ids,
         outer_tmp_segment,
+        &hw_counter,
     )
     .unwrap();
 
@@ -1959,6 +1981,7 @@ fn test_double_proxies() {
         holder.upgradable_read(),
         &inner_proxy_ids,
         inner_tmp_segment,
+        &hw_counter,
     )
     .unwrap();
 
@@ -1976,18 +1999,21 @@ fn test_double_proxies() {
         "There should be no new segment after unproxying"
     );
 
-    let has_point_1 = locked_segment1
-        .get()
-        .read()
-        .has_point(1.into(), common::types::DeferredBehavior::WithDeferred); // Deleted in inner proxy
-    let has_point_2 = locked_segment1
-        .get()
-        .read()
-        .has_point(2.into(), common::types::DeferredBehavior::WithDeferred); // Deleted in outer proxy
-    let has_point_3 = locked_segment1
-        .get()
-        .read()
-        .has_point(3.into(), common::types::DeferredBehavior::WithDeferred); // Not deleted
+    let has_point_1 = locked_segment1.get().read().has_point(
+        1.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter,
+    ); // Deleted in inner proxy
+    let has_point_2 = locked_segment1.get().read().has_point(
+        2.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter,
+    ); // Deleted in outer proxy
+    let has_point_3 = locked_segment1.get().read().has_point(
+        3.into(),
+        common::types::DeferredBehavior::WithDeferred,
+        &hw_counter,
+    ); // Not deleted
 
     assert!(!has_point_1, "Point 1 should be deleted");
     assert!(!has_point_2, "Point 2 should be deleted");
@@ -2040,17 +2066,17 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
 
     // Point 100 was upserted into the appendable segment and became deferred
     assert!(
-        app.point_is_deferred(100.into()),
+        app.point_is_deferred(100.into(), &hw_counter),
         "Point 100 should be deferred in the destination"
     );
     assert!(
-        app.point_version(100.into()).is_some(),
+        app.point_version(100.into(), &hw_counter).is_some(),
         "Point 100 should exist in the destination"
     );
 
     // Source should NOT be deleted because the destination copy is deferred
     assert!(
-        non_app.point_version(100.into()).is_some(),
+        non_app.point_version(100.into(), &hw_counter).is_some(),
         "Point 100 should still exist in the source (delete skipped for deferred destination)"
     );
 }
@@ -2084,17 +2110,23 @@ fn test_post_flush_action_retry_keeps_ack_pin() {
     });
 
     // While the action is pending, the ack pin caps the returned version.
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(version, ACK_PIN, "ack pin must cap the WAL acknowledge");
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 
     // Still pending after the second retry: the pin remains in effect.
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(version, ACK_PIN);
     assert_eq!(runs.load(Ordering::SeqCst), 2);
 
     // The third flush completes the action, lifting the cap.
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(
         version, WATERLINE,
         "cap is lifted once the action completes"
@@ -2102,7 +2134,9 @@ fn test_post_flush_action_retry_keeps_ack_pin() {
     assert_eq!(runs.load(Ordering::SeqCst), 3);
 
     // The completed action is gone and is not run again.
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(version, WATERLINE);
     assert_eq!(runs.load(Ordering::SeqCst), 3);
 }
@@ -2131,7 +2165,9 @@ fn test_post_flush_action_in_flight_pin_stays_visible() {
         Ok(PostFlushOutcome::Done)
     });
 
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
 
     assert_eq!(
         *observed.lock(),
@@ -2158,11 +2194,15 @@ fn test_post_flush_action_hard_failure_is_dropped() {
     holder.register_post_flush_action(0, 5, move || Err(OperationError::service_error("boom")));
 
     // The flush surfaces the action's error.
-    let err = holder.flush_all(FlushMode::Sync, true).unwrap_err();
+    let err = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap_err();
     assert!(format!("{err}").contains("boom"));
 
     // The failed action is gone, so the next flush is clean and uncapped.
-    let version = holder.flush_all(FlushMode::Sync, true).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, true, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(version, WATERLINE);
 }
 
@@ -2208,13 +2248,17 @@ fn test_cow_deletes_source_when_destination_is_not_deferred() {
 
     // Point 100 should exist in the appendable segment, not deferred
     assert!(
-        app.has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
+        app.has_point(
+            100.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Point 100 should exist in the destination"
     );
 
     // Source should be deleted (standard CoW behavior)
     assert!(
-        non_app.point_version(100.into()).is_none(),
+        non_app.point_version(100.into(), &hw_counter).is_none(),
         "Point 100 should be deleted from the source"
     );
 }
@@ -2226,7 +2270,7 @@ fn segment_size(holder: &SegmentHolder, segment_id: SegmentId) -> usize {
         .unwrap()
         .get()
         .read()
-        .max_available_vectors_size_in_bytes()
+        .max_available_vectors_size_in_bytes(&HardwareCounterCell::new())
         .unwrap()
 }
 
@@ -2236,7 +2280,7 @@ fn test_has_appendable_segment_with_capacity() {
 
     let mut holder = SegmentHolder::default();
     assert!(
-        !holder.has_appendable_segment_with_capacity(None),
+        !holder.has_appendable_segment_with_capacity(None, &HardwareCounterCell::new()),
         "Empty holder should have no capacity",
     );
 
@@ -2244,14 +2288,25 @@ fn test_has_appendable_segment_with_capacity() {
     let size = segment_size(&holder, segment_id);
     assert!(size > 0, "Segment should have non-zero size");
 
-    assert!(holder.has_appendable_segment_with_capacity(None));
-    assert!(!holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size)));
-    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(size + 1)));
+    assert!(holder.has_appendable_segment_with_capacity(None, &HardwareCounterCell::new()));
+    assert!(!holder.has_appendable_segment_with_capacity(
+        NonZeroUsize::new(size),
+        &HardwareCounterCell::new()
+    ));
+    assert!(holder.has_appendable_segment_with_capacity(
+        NonZeroUsize::new(size + 1),
+        &HardwareCounterCell::new()
+    ));
 
     // A segment busy under a write lock cannot be measured and stays eligible
     let locked_segment = holder.get(segment_id).unwrap().get();
     let _write_guard = locked_segment.write();
-    assert!(holder.has_appendable_segment_with_capacity(NonZeroUsize::new(1)));
+    assert!(
+        holder.has_appendable_segment_with_capacity(
+            NonZeroUsize::new(1),
+            &HardwareCounterCell::new()
+        )
+    );
 }
 
 #[test]
@@ -2285,17 +2340,21 @@ fn test_cow_move_prefers_appendable_segment_below_size_cap() {
 
     let free_segment = holder.get(free_id).unwrap().get();
     assert!(
-        free_segment
-            .read()
-            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        free_segment.read().has_point(
+            11.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Moved point should land in the segment below the cap",
     );
 
     let full_segment = holder.get(full_id).unwrap().get();
     assert!(
-        !full_segment
-            .read()
-            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        !full_segment.read().has_point(
+            11.into(),
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),
         "Segment at the cap should not receive the point",
     );
 }
@@ -2358,15 +2417,19 @@ fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
     let source_segment = source_segment.read();
 
     assert!(
-        staging_segment.point_version(100.into()).is_some(),
+        staging_segment
+            .point_version(100.into(), &hw_counter)
+            .is_some(),
         "Moved point should be in the staging segment",
     );
     assert!(
-        staging_segment.point_is_deferred(100.into()),
+        staging_segment.point_is_deferred(100.into(), &hw_counter),
         "Point past the deferred offset should land deferred",
     );
     assert!(
-        source_segment.point_version(100.into()).is_some(),
+        source_segment
+            .point_version(100.into(), &hw_counter)
+            .is_some(),
         "Source should be kept while the destination copy is deferred",
     );
 }
@@ -2414,18 +2477,22 @@ fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
     let fresh_segment = holder.get(fresh_id).unwrap().get();
     let fresh_segment = fresh_segment.read();
     assert!(
-        fresh_segment.point_version(100.into()).is_some(),
+        fresh_segment
+            .point_version(100.into(), &hw_counter)
+            .is_some(),
         "Moved point should land in the segment below the cap",
     );
     assert!(
-        !fresh_segment.point_is_deferred(100.into()),
+        !fresh_segment.point_is_deferred(100.into(), &hw_counter),
         "Point should be immediately visible, the fresh segment has no deferred offset",
     );
 
     let staging_segment = holder.get(staging_id).unwrap().get();
     let staging_segment = staging_segment.read();
     assert!(
-        staging_segment.point_version(100.into()).is_none(),
+        staging_segment
+            .point_version(100.into(), &hw_counter)
+            .is_none(),
         "Full staging segment should not receive the move",
     );
     assert!(
@@ -2436,7 +2503,9 @@ fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
     let source_segment = holder.get(source_id).unwrap().get();
     let source_segment = source_segment.read();
     assert!(
-        source_segment.point_version(100.into()).is_none(),
+        source_segment
+            .point_version(100.into(), &hw_counter)
+            .is_none(),
         "Source copy should be deleted, the destination copy is visible",
     );
 }
@@ -2468,14 +2537,19 @@ fn test_flush_all_does_not_claim_an_unfinished_operation() {
     // Operation 10 has not finished applying, so the last finished operation is 9.
     assert_eq!(
         holder
-            .flush_all_up_to(FlushMode::Sync, false, Some(9))
+            .flush_all_up_to(FlushMode::Sync, false, Some(9), &hw_counter)
             .unwrap(),
         9,
         "the acknowledged version must leave the unfinished operation replayable",
     );
 
     // The segment stays unsaved, so the rest of the operation is flushed once it is applied.
-    assert_eq!(holder.flush_all(FlushMode::Sync, false).unwrap(), 10);
+    assert_eq!(
+        holder
+            .flush_all(FlushMode::Sync, false, &hw_counter)
+            .unwrap(),
+        10
+    );
 }
 
 /// A copy-on-write dependency is retired once the flush pass has persisted it. A clamped pass
@@ -2526,7 +2600,7 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
     // Operation 20 has not finished applying, so the pass persists no further than 19.
     assert_eq!(
         holder
-            .flush_all_up_to(FlushMode::Sync, false, Some(19))
+            .flush_all_up_to(FlushMode::Sync, false, Some(19), &hw_counter)
             .unwrap(),
         19,
     );
@@ -2541,7 +2615,12 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
     );
 
     // Once the operation is applied, an unclamped pass persists the move and retires the edge.
-    assert_eq!(holder.flush_all(FlushMode::Sync, false).unwrap(), 20);
+    assert_eq!(
+        holder
+            .flush_all(FlushMode::Sync, false, &hw_counter)
+            .unwrap(),
+        20
+    );
     assert_eq!(
         holder
             .flush_dependency
@@ -2572,11 +2651,13 @@ fn test_proxy_segment_does_not_hold_back_wal_ack() {
 
     // Wrap a segment at version 6 in a proxy, as the optimizer and snapshots do
     let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
-    let proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let proxy_segment = ProxySegment::new(wrapped_segment.clone(), &hw_counter);
     let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
 
     // All segment state is persisted after a flush, the full version can be acknowledged
-    let version = holder.flush_all(FlushMode::Sync, false).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, false, &hw_counter)
+        .unwrap();
     assert_eq!(version, 6);
 
     // Buffer a point delete in the proxy; it is in memory only, so it caps the acknowledgeable
@@ -2592,7 +2673,9 @@ fn test_proxy_segment_does_not_hold_back_wal_ack() {
     // Flushing persists the buffered delete into the pending changes log of the wrapped
     // segment, so the WAL can be acknowledged up to and including the delete operation even
     // though the wrapped segment itself never saw it
-    let version = holder.flush_all(FlushMode::Sync, false).unwrap();
+    let version = holder
+        .flush_all(FlushMode::Sync, false, &hw_counter)
+        .unwrap();
     assert_eq!(
         version, 100,
         "flushed proxy segment must not hold back the WAL acknowledge",
@@ -2616,7 +2699,7 @@ fn test_unwrap_proxy_propagates_pending_changes() {
 
     let mut holder = SegmentHolder::default();
     let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
-    let proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let proxy_segment = ProxySegment::new(wrapped_segment.clone(), &hw_counter);
     let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
     let holder = LockedSegmentHolder::new(holder);
 
@@ -2630,12 +2713,11 @@ fn test_unwrap_proxy_propagates_pending_changes() {
             .delete_point(100, 2.into(), &hw_counter)
             .unwrap();
     }
-    assert!(
-        wrapped_segment
-            .get()
-            .read()
-            .has_point(2.into(), DeferredBehavior::VisibleOnly)
-    );
+    assert!(wrapped_segment.get().read().has_point(
+        2.into(),
+        DeferredBehavior::VisibleOnly,
+        &hw_counter
+    ));
 
     unwrap_proxy(&holder, &[proxy_id]).unwrap();
 
@@ -2645,10 +2727,11 @@ fn test_unwrap_proxy_propagates_pending_changes() {
         LockedSegment::Original(_),
     ));
     assert!(
-        !wrapped_segment
-            .get()
-            .read()
-            .has_point(2.into(), DeferredBehavior::VisibleOnly),
+        !wrapped_segment.get().read().has_point(
+            2.into(),
+            DeferredBehavior::VisibleOnly,
+            &hw_counter
+        ),
         "unwrapping must propagate the buffered delete into the wrapped segment",
     );
 }
@@ -2669,7 +2752,7 @@ fn test_unwrap_proxy_reports_failed_propagation() {
     let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
     let wrapped_segment_dir = wrapped_segment.get().read().data_path();
 
-    let mut proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let mut proxy_segment = ProxySegment::new(wrapped_segment.clone(), &HardwareCounterCell::new());
     proxy_segment
         .create_vector_name(
             100,
@@ -2680,9 +2763,12 @@ fn test_unwrap_proxy_reports_failed_propagation() {
                 multivector_config: None,
                 datatype: None,
             }),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
-    proxy_segment.flush(false).unwrap();
+    proxy_segment
+        .flush(false, &HardwareCounterCell::new())
+        .unwrap();
 
     // A plain file where the new vector's storage directory has to go, so propagating the
     // buffered create into the wrapped segment fails
@@ -2730,7 +2816,7 @@ fn test_flush_all_up_to_does_not_claim_unfinished_operation_through_proxy() {
     let hw_counter = HardwareCounterCell::new();
 
     let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
-    let proxy_segment = ProxySegment::new(wrapped_segment.clone());
+    let proxy_segment = ProxySegment::new(wrapped_segment.clone(), &hw_counter);
 
     let mut holder = SegmentHolder::default();
     let proxy_id = holder.add_new_locked(LockedSegment::from(proxy_segment));
@@ -2744,14 +2830,19 @@ fn test_flush_all_up_to_does_not_claim_unfinished_operation_through_proxy() {
         .unwrap();
 
     let acknowledged = holder
-        .flush_all_up_to(FlushMode::Sync, false, Some(9))
+        .flush_all_up_to(FlushMode::Sync, false, Some(9), &hw_counter)
         .unwrap();
     assert!(
         acknowledged <= 9,
         "acknowledged version {acknowledged} must leave the unfinished operation 10 replayable",
     );
 
-    assert_eq!(holder.flush_all(FlushMode::Sync, false).unwrap(), 10);
+    assert_eq!(
+        holder
+            .flush_all(FlushMode::Sync, false, &hw_counter)
+            .unwrap(),
+        10
+    );
 }
 
 /// What `proxy_all_segments_and_apply` does for a shard snapshot, with `operation` run on every
@@ -2765,7 +2856,7 @@ fn snapshot_all_segments_with(
     let segments_lock = holder.upgradable_read();
     let (proxies, tmp_segment_id, segments_lock) =
         SegmentHolder::proxy_all_segments(segments_lock, segments_dir, None, schema, None)?;
-    segments_lock.flush_all_up_to(FlushMode::Sync, true, None)?;
+    segments_lock.flush_all_up_to(FlushMode::Sync, true, None, &HardwareCounterCell::new())?;
     for (_, proxy) in &proxies {
         let LockedSegment::Proxy(proxy) = proxy else {
             continue;
@@ -2774,7 +2865,13 @@ fn snapshot_all_segments_with(
         operation(&segments_lock, wrapped.get())?;
     }
     let proxy_ids: Vec<_> = proxies.iter().map(|(segment_id, _)| *segment_id).collect();
-    SegmentHolder::unproxy_all_segments(holder, segments_lock, &proxy_ids, tmp_segment_id)
+    SegmentHolder::unproxy_all_segments(
+        holder,
+        segments_lock,
+        &proxy_ids,
+        tmp_segment_id,
+        &HardwareCounterCell::new(),
+    )
 }
 
 fn delete_through_proxies(
@@ -2830,7 +2927,7 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
         schema.clone(),
         |segments, wrapped| {
             delete_through_proxies(segments, 100, 1.into(), &hw_counter)?;
-            segments.flush_all(FlushMode::Sync, true)?;
+            segments.flush_all(FlushMode::Sync, true, &hw_counter)?;
             assert_eq!(list_pending_changes_log_files(&segment_path).len(), 1);
             assert!(
                 wrapped
@@ -2876,13 +2973,17 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
         None,
         &AtomicBool::new(false),
         false,
+        &hw_counter,
     )
     .unwrap();
     recover_pending_changes(&mut restored, PersistedProxyChanges::Replay).unwrap();
-    assert!(!restored.has_point(1.into(), DeferredBehavior::VisibleOnly));
-    assert!(restored.has_point(2.into(), DeferredBehavior::VisibleOnly));
+    assert!(!restored.has_point(1.into(), DeferredBehavior::VisibleOnly, &hw_counter));
+    assert!(restored.has_point(2.into(), DeferredBehavior::VisibleOnly, &hw_counter));
 
-    holder.read().flush_all(FlushMode::Sync, true).unwrap();
+    holder
+        .read()
+        .flush_all(FlushMode::Sync, true, &hw_counter)
+        .unwrap();
     assert!(
         list_pending_changes_log_files(&segment_path).is_empty(),
         "pending changes logs of snapshot proxies must be removed once the wrapped segment flushed",
@@ -2925,7 +3026,9 @@ fn test_nested_proxies_pending_changes_logs() {
     )
     .unwrap();
     delete_through_proxies(&segments_lock, 100, 1.into(), &hw_counter).unwrap();
-    segments_lock.flush_all(FlushMode::Sync, true).unwrap();
+    segments_lock
+        .flush_all(FlushMode::Sync, true, &hw_counter)
+        .unwrap();
     let inner = proxy_at(&segments_lock);
     let inner_log = inner.read().pending_changes_log_path().to_path_buf();
 
@@ -2934,7 +3037,9 @@ fn test_nested_proxies_pending_changes_logs() {
         SegmentHolder::proxy_all_segments(segments_lock, segments_dir.path(), None, schema, None)
             .unwrap();
     delete_through_proxies(&segments_lock, 101, 2.into(), &hw_counter).unwrap();
-    segments_lock.flush_all(FlushMode::Sync, true).unwrap();
+    segments_lock
+        .flush_all(FlushMode::Sync, true, &hw_counter)
+        .unwrap();
     let outer = proxy_at(&segments_lock);
     let outer_log = outer.read().pending_changes_log_path().to_path_buf();
     assert_ne!(inner_log, outer_log);
@@ -3000,7 +3105,10 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
     let other = LockedSegment::new(build_segment_2(dir.path()));
 
     let mut holder = SegmentHolder::default();
-    let proxy_id = holder.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped.clone())));
+    let proxy_id = holder.add_new_locked(LockedSegment::from(ProxySegment::new(
+        wrapped.clone(),
+        &HardwareCounterCell::new(),
+    )));
     let _other_id = holder.add_new_locked(other.clone());
     let holder = LockedSegmentHolder::new(holder);
 
@@ -3020,7 +3128,7 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
             .unwrap();
             proxy
                 .write()
-                .create_vector_name(100, "v2", &hook_config)
+                .create_vector_name(100, "v2", &hook_config, &HardwareCounterCell::new())
                 .unwrap();
         }));
     });
@@ -3028,7 +3136,7 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
     other
         .get()
         .write()
-        .create_vector_name(100, "v2", &vector_config)
+        .create_vector_name(100, "v2", &vector_config, &HardwareCounterCell::new())
         .unwrap();
 
     let result = unwrap_proxy(&holder, &[proxy_id]);
@@ -3058,7 +3166,10 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
     // The other segment makes operation 100 durable, so a flush acknowledges the WAL past it. That
     // is safe only because the proxy is still here: flushing persists the change it kept into its
     // pending changes log, from where a restart replays it.
-    let acknowledged = holder.read().flush_all(FlushMode::Sync, false).unwrap();
+    let acknowledged = holder
+        .read()
+        .flush_all(FlushMode::Sync, false, &HardwareCounterCell::new())
+        .unwrap();
     assert!(
         !list_pending_changes_log_files(&wrapped.get().read().data_path()).is_empty(),
         "WAL acknowledged {acknowledged}, so operation 100 must be persisted in the pending \

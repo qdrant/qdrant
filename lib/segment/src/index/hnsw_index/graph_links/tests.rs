@@ -1,6 +1,7 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
@@ -57,11 +58,16 @@ impl GraphLinksVectors for TestGraphLinksVectors {
         &self,
         point_id: PointOffsetType,
         f: &mut dyn FnMut(&[u8]) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         f(&self.base_vectors[point_id as usize])
     }
 
-    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
+    fn get_link_vector(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Cow<'_, [u8]>> {
         Ok(Cow::Borrowed(&self.link_vectors[point_id as usize]))
     }
 
@@ -161,13 +167,24 @@ fn test_save_load(
 
     let format_param = format.with_param_for_tests(vectors.as_ref());
     atomic_save(&links_file, |writer| {
-        serialize_graph_links(links.clone(), format_param, hnsw_m, writer)
+        serialize_graph_links(
+            links.clone(),
+            format_param,
+            hnsw_m,
+            writer,
+            &HardwareCounterCell::new(),
+        )
     })
     .unwrap();
 
-    let cmp_links =
-        GraphLinks::load_universal(&MmapFs, &links_file, format, GraphLinksResidency::Cold)
-            .unwrap();
+    let cmp_links = GraphLinks::load_universal(
+        &MmapFs,
+        &links_file,
+        format,
+        GraphLinksResidency::Cold,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     check_links(links, &cmp_links, &vectors);
 }
 
@@ -207,6 +224,7 @@ fn test_links_file_links<F: UniversalReadFs>(
             format.with_param_for_tests(vectors.as_ref()),
             hnsw_m,
             writer,
+            &HardwareCounterCell::new(),
         )
     })
     .unwrap();
@@ -216,9 +234,10 @@ fn test_links_file_links<F: UniversalReadFs>(
             &links_file,
             GraphLinks::open_options(GraphLinksResidency::Cold),
             Default::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
-    let view = GraphLinksFile::<F::File>::open(file, format).unwrap();
+    let view = GraphLinksFile::<F::File>::open(file, format, &HardwareCounterCell::new()).unwrap();
     let arena = stumpalo::Arena::new();
     let max_levels = links.iter().map(|levels| levels.len()).max().unwrap_or(0);
     for level in 0..max_levels {
@@ -233,9 +252,13 @@ fn test_links_file_links<F: UniversalReadFs>(
                     normalize_links(level_m, links[chunk[position] as usize][level].clone()),
                 );
             };
-            view.links(&arena, chunk, level, |position, iter| {
-                check(position, iter.collect())
-            })
+            view.links(
+                &arena,
+                chunk,
+                level,
+                |position, iter| check(position, iter.collect()),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
             if let Some(vectors) = &vectors {
                 view.links_with_vectors(
@@ -254,6 +277,7 @@ fn test_links_file_links<F: UniversalReadFs>(
                         check(position, links_iter);
                         Ok(())
                     },
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
             }
@@ -262,7 +286,9 @@ fn test_links_file_links<F: UniversalReadFs>(
 
     if let Some(vectors) = &vectors {
         for point_id in 0..links.len() as PointOffsetType {
-            let base_vector = view.read_base_vector(point_id, 1).unwrap();
+            let base_vector = view
+                .read_base_vector(point_id, 1, &HardwareCounterCell::new())
+                .unwrap();
             vectors.assert_base_vector(point_id, 0, &base_vector);
         }
     }
@@ -281,7 +307,13 @@ fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
 
     let check = |links: Vec<Vec<Vec<PointOffsetType>>>| {
         let format_param = format.with_param_for_tests(vectors.as_ref());
-        let cmp_links = GraphLinks::new_from_edges(links.clone(), format_param, hnsw_m).unwrap();
+        let cmp_links = GraphLinks::new_from_edges(
+            links.clone(),
+            format_param,
+            hnsw_m,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         check_links(links, &cmp_links, &vectors);
     };
 

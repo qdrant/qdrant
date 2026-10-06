@@ -40,7 +40,7 @@ fn test_graph_connectivity() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -93,6 +93,7 @@ fn test_graph_connectivity() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 
@@ -24,10 +25,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
         segment_path: &Path,
         config: &SegmentConfig,
         id_tracker_state: WriterIdTrackerState,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         Ok(match id_tracker_state {
             WriterIdTrackerState::Appendable(state) => Self::Appendable(Box::new(
-                AppendableSegment::open(fs, segment_path, config, state)?,
+                AppendableSegment::open(fs, segment_path, config, state, hw_counter)?,
             )),
             WriterIdTrackerState::DeleteOnly(state) => {
                 Self::DeleteOnly(DeleteOnlySegment::open(fs, segment_path, state)?)
@@ -51,10 +53,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::DeleteOnly(segment) => segment.tombstone_points(points),
-            Self::Appendable(segment) => segment.tombstone_points(points),
+            Self::DeleteOnly(segment) => segment.tombstone_points(points, hw_counter),
+            Self::Appendable(segment) => segment.tombstone_points(points, hw_counter),
         }
     }
 }

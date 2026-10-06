@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
 use segment::common::operation_error::OperationResult;
@@ -434,7 +435,7 @@ struct ExcludingEnumerator {
 
 impl SegmentEnumerator for ExcludingEnumerator {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
-        let mut segments = scan_segment_dirs(&self.segments_path)?;
+        let mut segments = scan_segment_dirs(&self.segments_path, &HardwareCounterCell::new())?;
         segments.remove(&self.exclude);
         Ok(segments
             .into_iter()
@@ -463,7 +464,7 @@ fn follower_uses_injected_enumerator() {
     leader.flush().unwrap();
 
     let segments_path = dir.path().join(SEGMENTS_PATH);
-    let all_segments = scan_segment_dirs(&segments_path).unwrap();
+    let all_segments = scan_segment_dirs(&segments_path, &HardwareCounterCell::new()).unwrap();
     assert!(!all_segments.is_empty());
     let hidden = *all_segments.keys().next().unwrap();
 
@@ -506,7 +507,7 @@ fn manifest_enumerator_requires_manifest() {
     leader.flush().unwrap();
 
     let segments_path = dir.path().join(SEGMENTS_PATH);
-    let on_disk: HashSet<Uuid> = scan_segment_dirs(&segments_path)
+    let on_disk: HashSet<Uuid> = scan_segment_dirs(&segments_path, &HardwareCounterCell::new())
         .unwrap()
         .into_keys()
         .collect();
@@ -550,10 +551,11 @@ fn leader_writes_manifest_and_follower_loads_it() {
         manifest_path.exists(),
         "leader should write the segment manifest"
     );
-    let on_disk: HashSet<Uuid> = scan_segment_dirs(&dir.path().join(SEGMENTS_PATH))
-        .unwrap()
-        .into_keys()
-        .collect();
+    let on_disk: HashSet<Uuid> =
+        scan_segment_dirs(&dir.path().join(SEGMENTS_PATH), &HardwareCounterCell::new())
+            .unwrap()
+            .into_keys()
+            .collect();
     let from_manifest: HashSet<Uuid> = ManifestSegmentEnumerator::new(MmapFs, dir.path())
         .list_segments()
         .unwrap()

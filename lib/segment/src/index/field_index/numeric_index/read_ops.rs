@@ -24,6 +24,7 @@ pub trait StreamRange<T> {
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 }
 
@@ -51,8 +52,8 @@ impl<T: NumericIndexValue, P> PayloadFieldIndexRead for NumericIndex<T, P>
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
-        self.inner.count_indexed_points()
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.inner.count_indexed_points(hw_counter)
     }
 
     fn filter<'a>(
@@ -76,8 +77,10 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.inner.for_each_payload_block(threshold, key, f)
+        self.inner
+            .for_each_payload_block(threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

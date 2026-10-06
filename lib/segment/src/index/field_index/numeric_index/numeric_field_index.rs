@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Either;
 
@@ -41,16 +42,17 @@ where
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_> {
         Ok(match self {
             NumericFieldIndexView::IntIndex(index) => Either::Left(
                 index
-                    .stream_range(range)?
+                    .stream_range(range, hw_counter)?
                     .map(|(v, p)| (OrderValue::from(v), p)),
             ),
             NumericFieldIndexView::FloatIndex(index) => Either::Right(
                 index
-                    .stream_range(range)?
+                    .stream_range(range, hw_counter)?
                     .map(|(v, p)| (OrderValue::from(v), p)),
             ),
         })
@@ -65,18 +67,19 @@ where
     pub fn get_ordering_values(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = OrderValue> + 'a {
         match self {
             NumericFieldIndexView::IntIndex(index) => Either::Left(
                 index
-                    .get_values(idx)
+                    .get_values(idx, hw_counter)
                     .into_iter()
                     .flatten()
                     .map(OrderValue::Int),
             ),
             NumericFieldIndexView::FloatIndex(index) => Either::Right(
                 index
-                    .get_values(idx)
+                    .get_values(idx, hw_counter)
                     .into_iter()
                     .flatten()
                     .map(OrderValue::Float),
@@ -94,11 +97,16 @@ where
 /// Returned iterators borrow from `&self` — callers hold them within the
 /// scope of the borrow.
 pub trait NumericFieldIndexRead {
-    fn get_ordering_values(&self, idx: PointOffsetType) -> impl Iterator<Item = OrderValue> + '_;
+    fn get_ordering_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> impl Iterator<Item = OrderValue> + '_;
 
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_>;
 }
 
@@ -107,14 +115,19 @@ where
     I: NumericIndexRead<IntPayloadType> + StreamRange<IntPayloadType>,
     F: NumericIndexRead<FloatPayloadType> + StreamRange<FloatPayloadType>,
 {
-    fn get_ordering_values(&self, idx: PointOffsetType) -> impl Iterator<Item = OrderValue> + '_ {
-        NumericFieldIndexView::get_ordering_values(self, idx)
+    fn get_ordering_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> impl Iterator<Item = OrderValue> + '_ {
+        NumericFieldIndexView::get_ordering_values(self, idx, hw_counter)
     }
 
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_> {
-        StreamRange::stream_range(self, range)
+        StreamRange::stream_range(self, range, hw_counter)
     }
 }

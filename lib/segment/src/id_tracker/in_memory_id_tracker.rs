@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 #[cfg(test)]
 use rand::RngExt;
@@ -45,7 +46,13 @@ impl InMemoryIdTracker {
 
     /// Generate a random [`InMemoryIdTracker`].
     #[cfg(test)]
-    pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
+    pub fn random(
+        rand: &mut StdRng,
+        size: u32,
+        preserved_size: u32,
+        bits_in_id: u8,
+        hw_counter: &HardwareCounterCell,
+    ) -> Self {
         let mappings = PointMappings::random_with_params(rand, size, bits_in_id);
 
         let mut id_tracker = Self {
@@ -55,7 +62,9 @@ impl InMemoryIdTracker {
 
         // Delete points after creating the id tracker completely to maintain consistency.
         for to_delete_internal_id in preserved_size..size {
-            id_tracker.drop_internal(to_delete_internal_id).unwrap();
+            id_tracker
+                .drop_internal(to_delete_internal_id, hw_counter)
+                .unwrap();
         }
 
         id_tracker
@@ -63,7 +72,11 @@ impl InMemoryIdTracker {
 }
 
 impl IdTrackerRead for InMemoryIdTracker {
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
@@ -71,20 +84,26 @@ impl IdTrackerRead for InMemoryIdTracker {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_internal_versions_batch(self, internal_ids, callback)
+        default_internal_versions_batch(self, internal_ids, callback, hw_counter)
     }
 
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
         deferred_behavior: common::types::DeferredBehavior,
+        _hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType> {
         self.mappings
             .internal_id_with_behavior(&external_id, deferred_behavior)
     }
 
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
     }
 
@@ -92,13 +111,17 @@ impl IdTrackerRead for InMemoryIdTracker {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_external_ids_batch(self, internal_ids, callback)
+        default_external_ids_batch(self, internal_ids, callback, hw_counter)
     }
 
     type Backend = common::universal_io::MmapFile;
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+    fn point_mappings(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
 
@@ -106,19 +129,19 @@ impl IdTrackerRead for InMemoryIdTracker {
         self.mappings.total_point_count()
     }
 
-    fn available_point_count(&self) -> usize {
+    fn available_point_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.mappings.available_point_count()
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.total_point_count() - self.available_point_count(hw_counter)
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self, _hw_counter: &HardwareCounterCell) -> &BitSlice {
         self.mappings.deleted()
     }
 
-    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_point(&self, key: PointOffsetType, _hw_counter: &HardwareCounterCell) -> bool {
         self.mappings.is_deleted_point(key)
     }
 
@@ -136,6 +159,7 @@ impl IdTrackerRead for InMemoryIdTracker {
 
     fn iter_internal_versions(
         &self,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         Ok(Box::new(
             self.internal_to_version
@@ -151,8 +175,9 @@ impl IdTracker for InMemoryIdTracker {
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        if self.external_id(internal_id).is_some() {
+        if self.external_id(internal_id, hw_counter).is_some() {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
             } else {
@@ -173,22 +198,32 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist.
         // In-memory trackers never carry deferred heads, but resolve with
         // deferred preference for consistency with the other drop paths.
-        if let Some(internal_id) = self
-            .internal_id_with_behavior(external_id, common::types::DeferredBehavior::WithDeferred)
-        {
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        if let Some(internal_id) = self.internal_id_with_behavior(
+            external_id,
+            common::types::DeferredBehavior::WithDeferred,
+            hw_counter,
+        ) {
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         }
         self.mappings.drop(external_id);
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
@@ -196,13 +231,13 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
         Box::new(|| Ok(()))
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
         Box::new(|| Ok(()))
     }
@@ -227,14 +262,21 @@ mod test {
 
         // Create a random ID tracker with 32 points and half of them deleted.
         const ID_TRACKER_SIZE: u32 = 32;
-        let mut id_tracker =
-            InMemoryIdTracker::random(&mut rand, ID_TRACKER_SIZE, ID_TRACKER_SIZE / 2, 10);
+        let mut id_tracker = InMemoryIdTracker::random(
+            &mut rand,
+            ID_TRACKER_SIZE,
+            ID_TRACKER_SIZE / 2,
+            10,
+            &HardwareCounterCell::new(),
+        );
 
         // Find a deleted and a non-deleted point in the random id tracker.
         let mut deleted_point_id = None;
         let mut available_point_id = None;
         for internal_id in 0..ID_TRACKER_SIZE {
-            let is_deleted = id_tracker.external_id(internal_id).is_none();
+            let is_deleted = id_tracker
+                .external_id(internal_id, &HardwareCounterCell::new())
+                .is_none();
             if is_deleted {
                 deleted_point_id = Some(internal_id);
             } else {
@@ -247,15 +289,23 @@ mod test {
 
         // We drop the available point and assert that it has the same `internal_version` as the deleted one from the `id_tracker`
         // and that both don't have an external ID anymore.
-        id_tracker.drop_internal(available_point_id).unwrap();
+        id_tracker
+            .drop_internal(available_point_id, &HardwareCounterCell::new())
+            .unwrap();
 
         for internal_id in [available_point_id, deleted_point_id] {
             // Assert the dropped point's version has been set to `DELETED_POINT_VERSION`.
             assert_eq!(
-                id_tracker.internal_version(internal_id).unwrap(),
+                id_tracker
+                    .internal_version(internal_id, &HardwareCounterCell::new())
+                    .unwrap(),
                 DELETED_POINT_VERSION
             );
-            assert!(id_tracker.external_id(internal_id).is_none());
+            assert!(
+                id_tracker
+                    .external_id(internal_id, &HardwareCounterCell::new())
+                    .is_none()
+            );
         }
     }
 }

@@ -84,9 +84,16 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         if self.storage.deleted.is_active(idx) {
-            self.storage.point_to_values.get_values_count(idx).ok()?
+            self.storage
+                .point_to_values
+                .get_values_count(idx, hw_counter)
+                .ok()?
         } else {
             None
         }
@@ -121,7 +128,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         match self
             .storage
             .value_to_points
-            .unbatched_get_values_count(value)
+            .unbatched_get_values_count(value, hw_counter.parent())
         {
             Ok(Some(count)) => Some(count),
             Ok(None) => None,
@@ -139,7 +146,11 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
         let hw_counter = ConditionedCounter::always(hw_counter);
 
-        match self.storage.value_to_points.unbatched_get(value) {
+        match self
+            .storage
+            .value_to_points
+            .unbatched_get(value, hw_counter.parent())
+        {
             Ok(Some(values)) => {
                 // We're iterating over the whole (mmapped) slice
                 hw_counter
@@ -189,9 +200,9 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
             (key, key)
         });
 
-        self.storage
-            .value_to_points
-            .for_each_entry_in_iter(requests, |key, point_ids| {
+        self.storage.value_to_points.for_each_entry_in_iter(
+            requests,
+            |key, point_ids| {
                 // Mirror `get_iterator`'s IO accounting.
                 let io_read = match point_ids {
                     Some(ids) => size_of_val(ids) + READ_ENTRY_OVERHEAD,
@@ -209,7 +220,9 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                     .filter(move |point| deleted.is_active(*point));
 
                 f(key, &mut ids)
-            })
+            },
+            hw_counter.parent(),
+        )
     }
 
     /// Batched override of [`MapIndexRead::iter_for_values`].
@@ -229,30 +242,38 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         Ok(Box::new(ids.into_iter()))
     }
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
-        self.storage.value_to_points.for_each_key(f)
+    fn for_each_value(
+        &self,
+        f: impl FnMut(&N) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.storage.value_to_points.for_each_key(f, hw_counter)
     }
 
     fn for_each_count_per_value(
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(&N, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let deleted = &self.storage.deleted;
-        self.storage.value_to_points.for_each_entry(|k, v| {
-            let count = v
-                .iter()
-                .filter(|&&idx| {
-                    deleted.is_active(idx)
+        self.storage.value_to_points.for_each_entry(
+            |k, v| {
+                let count = v
+                    .iter()
+                    .filter(|&&idx| {
+                        deleted.is_active(idx)
 
                     // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
                     // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
                     && deferred_internal_id.is_none_or(|deferred| idx < deferred)
-                })
-                .unique()
-                .count();
-            f(k, count)
-        })
+                    })
+                    .unique()
+                    .count();
+                f(k, count)
+            },
+            hw_counter,
+        )
     }
 
     fn for_each_value_map(
@@ -264,23 +285,26 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
 
         let deleted = &self.storage.deleted;
 
-        self.storage.value_to_points.for_each_entry(|k, v| {
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(k.write_bytes());
+        self.storage.value_to_points.for_each_entry(
+            |k, v| {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(k.write_bytes());
 
-            let mut iter = v
-                .iter()
-                .copied()
-                .filter(|idx| deleted.is_active(*idx))
-                .measure_hw_with_acc(
-                    hw_counter.new_accumulator(),
-                    size_of::<PointOffsetType>(),
-                    |i| i.payload_index_io_read_counter(),
-                );
+                let mut iter = v
+                    .iter()
+                    .copied()
+                    .filter(|idx| deleted.is_active(*idx))
+                    .measure_hw_with_acc(
+                        hw_counter.new_accumulator(),
+                        size_of::<PointOffsetType>(),
+                        |i| i.payload_index_io_read_counter(),
+                    );
 
-            f(k, &mut iter)
-        })
+                f(k, &mut iter)
+            },
+            hw_counter.parent(),
+        )
     }
 
     fn storage_type(&self) -> StorageType {

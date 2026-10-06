@@ -24,8 +24,9 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        self.inner.live_preload(fs)
+        self.inner.live_preload(fs, hw_counter)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(

@@ -34,8 +34,8 @@ pub struct QuantizedStorage<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
-    pub fn populate(&self) {
-        if let Err(err) = self.storage.populate() {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) {
+        if let Err(err) = self.storage.populate(hw_counter) {
             log::warn!("Failed to populate quantized storage: {err}")
         };
     }
@@ -59,16 +59,24 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     /// Reopen after the file grew so reads observe appended vectors. Build-time only.
-    pub(crate) fn reload(&mut self) -> OperationResult<()> {
-        self.storage.live_reload()?;
+    pub(crate) fn reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.live_reload(hw_counter)?;
         Ok(())
     }
 
     /// Read one vector with the given access pattern.
-    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+    fn read_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
         let size = self.quantized_vector_size.get() as u64;
         self.storage
-            .read(ReadRange::new(size * u64::from(key), size), P::default())
+            .read(
+                ReadRange::new(size * u64::from(key), size),
+                P::default(),
+                hw_counter,
+            )
             .expect("vector read from quantized storage failed")
     }
 
@@ -81,6 +89,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         &self,
         keys: &[PointOffsetType],
         mut f: F,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if S::kind().can_be_async() {
             let size = self.quantized_vector_size.get() as u64;
@@ -98,7 +107,8 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             };
 
             // Access pattern does not matter for io_uring.
-            self.storage.read_batch(ranges, Random, callback)?;
+            self.storage
+                .read_batch(ranges, Random, callback, hw_counter)?;
             return Ok(());
         }
 
@@ -108,16 +118,20 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         // A storage small enough to stay cache-resident has nothing to fetch,
         // so the hints are pure overhead; skip them. On the rare chance the
         // size lookup fails, treat the storage as large and keep prefetching.
-        let storage_bytes = self.storage.len::<u8>().unwrap_or(u64::MAX) as usize;
+        let storage_bytes = self.storage.len::<u8>(hw_counter).unwrap_or(u64::MAX) as usize;
         let storage_fits_cache = storage_bytes < MIN_PREFETCH_STORAGE_BYTES;
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let sequential = is_read_with_prefetch_efficient(keys);
             let vectors = if sequential {
-                let iter = keys.iter().map(|&key| self.read_vector::<Sequential>(key));
+                let iter = keys
+                    .iter()
+                    .map(|&key| self.read_vector::<Sequential>(key, hw_counter));
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
-                let iter = keys.iter().map(|&key| self.read_vector::<Random>(key));
+                let iter = keys
+                    .iter()
+                    .map(|&key| self.read_vector::<Random>(key, hw_counter));
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             };
 
@@ -186,20 +200,27 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     ///
     /// The storage reads lazily through its mmap-style handle; `populate`
     /// warms the parked handle for the `cached` memory placement.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path, populate: Populate) {
-        fs.schedule_open(path, Some(Self::open_options(populate)), None)
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        fs.schedule_open(path, Some(Self::open_options(populate)), None, hw_counter)
     }
 
     pub fn from_file(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedStorage<S>> {
         let storage = ReadOnly::open(
             fs,
             path,
             Self::open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
@@ -208,7 +229,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
                 "`quantized_vector_size` must be non-zero",
             )
         })?;
-        let len = storage.len::<u8>()? as usize;
+        let len = storage.len::<u8>(hw_counter)? as usize;
         if !len.is_multiple_of(quantized_vector_size.get()) {
             return Err(OperationError::inconsistent_storage(format!(
                 "Encoded file size ({len}) is not a multiple of quantized_vector_size ({quantized_vector_size})",
@@ -227,6 +248,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         path: &Path,
         quantized_vector_size: usize,
         prefault: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedStorage<S>> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -240,10 +262,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             .truncate(false)
             .open(path)?;
 
-        let storage = Self::from_file(fs, path, quantized_vector_size)?;
+        let storage = Self::from_file(fs, path, quantized_vector_size, hw_counter)?;
 
         if prefault {
-            storage.populate();
+            storage.populate(hw_counter);
         }
 
         Ok(storage)
@@ -271,8 +293,8 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
         true
     }
 
-    fn vectors_count(&self) -> usize {
-        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.storage.len::<u8>(hw_counter).unwrap_or(0) as usize / self.quantized_vector_size.get()
     }
 
     fn flusher(&self) -> Flusher {
@@ -318,15 +340,24 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         }
     }
 
-    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).expect("vector exists")
+    fn get_vector_data(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.get_vector_data_opt(index, hw_counter)
+            .expect("vector exists")
     }
 
-    fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
+    fn get_vector_data_opt(
+        &self,
+        index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Cow<'_, [u8]>> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
         self.storage
-            .read(ReadRange::new(start, length), Random)
+            .read(ReadRange::new(start, length), Random, hw_counter)
             .ok()
     }
 
@@ -334,15 +365,21 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
-            .expect("vectors exist and are read correctly");
+        self.for_each_in_batch(
+            offsets,
+            |idx, data| callback(idx, Cow::Borrowed(data)),
+            hw_counter,
+        )
+        .expect("vectors exist and are read correctly");
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
         let size = self.quantized_vector_size.get() as u64;
         let range = |run: &ConsecutiveRun| {
@@ -356,10 +393,15 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             // back in completion order; the access pattern is ignored.
             let runs = consecutive_runs(offsets).map(|run| ((run.first, run.len), range(&run)));
             self.storage
-                .read_batch(runs, Random, |(first, len), bytes: &[u8]| {
-                    callback(first, len, Cow::Borrowed(bytes));
-                    UioResult::Ok(())
-                })
+                .read_batch(
+                    runs,
+                    Random,
+                    |(first, len), bytes: &[u8]| {
+                        callback(first, len, Cow::Borrowed(bytes));
+                        UioResult::Ok(())
+                    },
+                    hw_counter,
+                )
                 .expect("vectors read from quantized storage failed");
             return;
         }
@@ -368,9 +410,9 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         // has the kernel read ahead, which only a multi-vector run repays.
         for run in consecutive_runs(offsets) {
             let bytes = if run.len > 1 {
-                self.storage.read(range(&run), Sequential)
+                self.storage.read(range(&run), Sequential, hw_counter)
             } else {
-                self.storage.read(range(&run), Random)
+                self.storage.read(range(&run), Random, hw_counter)
             };
             let bytes = bytes.expect("vectors read from quantized storage failed");
             callback(run.first, run.len, bytes);
@@ -390,7 +432,10 @@ impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
     type Storage = QuantizedStorage<MmapFile>;
     type Error = OperationError;
 
-    fn build(self) -> OperationResult<QuantizedStorage<MmapFile>> {
+    fn build(
+        self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<QuantizedStorage<MmapFile>> {
         self.mmap.flush()?;
 
         let storage = ReadOnly::open(
@@ -398,6 +443,7 @@ impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
             &self.path,
             Self::Storage::open_options(Populate::No),
             (),
+            hw_counter,
         )?;
 
         Ok(QuantizedStorage {
@@ -500,23 +546,29 @@ mod tests {
 
         for ids in [&ascending, &scattered, &descending, &mixed, &empty] {
             let mut seen = vec![false; ids.len()];
-            storage.for_each_run(ids, |first, len, bytes| {
-                assert_eq!(
-                    bytes.len(),
-                    len * VECTOR_SIZE,
-                    "run bytes must span the run"
-                );
-                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
-                    let offset = ids[first + i];
-                    assert!(!seen[first + i], "offset {offset} served twice");
-                    seen[first + i] = true;
+            storage.for_each_run(
+                ids,
+                |first, len, bytes| {
                     assert_eq!(
-                        vector.as_slice(),
-                        storage.get_vector_data(offset).as_ref(),
-                        "run bytes diverge at offset {offset}",
+                        bytes.len(),
+                        len * VECTOR_SIZE,
+                        "run bytes must span the run"
                     );
-                }
-            });
+                    for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                        let offset = ids[first + i];
+                        assert!(!seen[first + i], "offset {offset} served twice");
+                        seen[first + i] = true;
+                        assert_eq!(
+                            vector.as_slice(),
+                            storage
+                                .get_vector_data(offset, &HardwareCounterCell::new())
+                                .as_ref(),
+                            "run bytes diverge at offset {offset}",
+                        );
+                    }
+                },
+                &HardwareCounterCell::new(),
+            );
             assert!(
                 seen.iter().all(|&served| served),
                 "every offset must be served"
@@ -540,7 +592,13 @@ mod tests {
     fn mmap_runs_match_per_point_reads() {
         let dir = TempDir::with_prefix("quantized_storage_mmap").unwrap();
         let path = write_dataset(dir.path());
-        let storage = QuantizedStorage::<MmapFile>::from_file(&MmapFs, &path, VECTOR_SIZE).unwrap();
+        let storage = QuantizedStorage::<MmapFile>::from_file(
+            &MmapFs,
+            &path,
+            VECTOR_SIZE,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert!(!MmapFile::kind().can_be_async());
         runs_match_per_point_reads(&storage);
     }
@@ -559,9 +617,13 @@ mod tests {
 
         let config = Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap());
         let cache_fs = DiskCacheFs::<MmapFile>::new(config, MmapFs);
-        let storage =
-            QuantizedStorage::<DiskCache<MmapFile>>::from_file(&cache_fs, &path, VECTOR_SIZE)
-                .unwrap();
+        let storage = QuantizedStorage::<DiskCache<MmapFile>>::from_file(
+            &cache_fs,
+            &path,
+            VECTOR_SIZE,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert!(DiskCache::<MmapFile>::kind().can_be_async());
         runs_match_per_point_reads(&storage);
     }

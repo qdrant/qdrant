@@ -110,6 +110,7 @@ fn batch_search_bench(c: &mut Criterion) {
             search_runtime_handle.clone(),
             ResourceBudget::default(),
             optimizers_config,
+            &HwMeasurementAcc::new(),
         ))
         .unwrap();
 

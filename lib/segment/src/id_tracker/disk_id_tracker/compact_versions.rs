@@ -18,6 +18,7 @@
 use std::io::{BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{
     OkNotFound, OpenOptions, UniversalRead, UniversalReadFs, UniversalWriteFs,
 };
@@ -114,8 +115,13 @@ pub fn save(
     fs: &impl UniversalWriteFs,
     segment_path: &Path,
     versions: &CompressedVersions,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    fs.atomic_save(&compact_versions_path(segment_path), &encode(versions)?)?;
+    fs.atomic_save(
+        &compact_versions_path(segment_path),
+        &encode(versions)?,
+        hw_counter,
+    )?;
     Ok(())
 }
 
@@ -125,12 +131,16 @@ pub fn load<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     segment_path: &Path,
     options: OpenOptions,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CompressedVersions>> {
     let path = compact_versions_path(segment_path);
-    let Some(file) = fs.open(&path, options, Default::default()).ok_not_found()? else {
+    let Some(file) = fs
+        .open(&path, options, Default::default(), hw_counter)
+        .ok_not_found()?
+    else {
         return Ok(None);
     };
-    let versions = decode(&file.read_whole::<u8>()?).map_err(|err| {
+    let versions = decode(&file.read_whole::<u8>(hw_counter)?).map_err(|err| {
         OperationError::inconsistent_storage(format!("{}: {err}", path.display()))
     })?;
     Ok(Some(CompressedVersions::from_slice(&versions)))

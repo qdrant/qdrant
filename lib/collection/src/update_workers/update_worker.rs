@@ -144,6 +144,7 @@ impl UpdateWorkers {
                                 optimizer.segment_optimizer_config(),
                                 optimizer.threshold_config(),
                                 payload_index_schema_clone,
+                                &hw_measurements.get_counter_cell(),
                             )
                         {
                             log::error!(
@@ -442,7 +443,7 @@ mod tests {
         const DIM: usize = 256;
         let mut holder = SegmentHolder::default();
         let full_id = holder.add_new(random_segment(dir.path(), 100, 3, DIM));
-        let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+        let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot, &hw_counter).unwrap();
         source
             .upsert_point(
                 1,
@@ -471,7 +472,7 @@ mod tests {
             .unwrap()
             .get()
             .read()
-            .max_available_vectors_size_in_bytes()
+            .max_available_vectors_size_in_bytes(&hw_counter)
             .unwrap();
         assert!(
             full_size > BYTES_IN_KB,
@@ -564,7 +565,11 @@ mod tests {
                 .unwrap()
                 .get()
                 .read()
-                .has_point(100.into(), common::types::DeferredBehavior::WithDeferred),
+                .has_point(
+                    100.into(),
+                    common::types::DeferredBehavior::WithDeferred,
+                    &hw_counter
+                ),
             "Moved point should not land in the full segment",
         );
 

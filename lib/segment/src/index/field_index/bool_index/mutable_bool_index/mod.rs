@@ -31,6 +31,7 @@ pub(super) struct Storage<S: common::universal_io::UniversalRead> {
 mod tests {
     use std::collections::HashSet;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use tempfile::TempDir;
     use walkdir::WalkDir;
 
@@ -40,7 +41,9 @@ mod tests {
     #[test]
     fn test_files() {
         let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
-        let index = MutableBoolIndex::open(dir.path(), true).unwrap().unwrap();
+        let index = MutableBoolIndex::open(dir.path(), true, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 

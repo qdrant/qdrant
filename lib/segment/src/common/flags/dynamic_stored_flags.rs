@@ -4,6 +4,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -100,9 +101,13 @@ where
         self.status.len == 0
     }
 
-    fn ensure_status_file(fs: &S::Fs, directory: &Path) -> OperationResult<PathBuf> {
+    fn ensure_status_file(
+        fs: &S::Fs,
+        directory: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PathBuf> {
         let status_file = status_file(directory);
-        if !fs.exists(&status_file)? {
+        if !fs.exists(&status_file, hw_counter)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
             //TODO(uio): migrate when UniversalWriteFs is available
             create_and_ensure_length(&status_file, length)?;
@@ -110,9 +115,14 @@ where
         Ok(status_file)
     }
 
-    pub fn open(fs: &S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
+    pub fn open(
+        fs: &S::Fs,
+        directory: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
-        let status_path = Self::ensure_status_file(fs, directory)?;
+        let status_path = Self::ensure_status_file(fs, directory, hw_counter)?;
 
         let mut status: StoredStruct<S, DynamicFlagsStatus> = StoredStruct::open(
             fs,
@@ -124,6 +134,7 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
 
         if status.current_file_id != 0 {
@@ -137,7 +148,7 @@ where
         }
 
         // Open storage
-        let flags = Self::open_storage(fs, status.len, directory, populate)?;
+        let flags = Self::open_storage(fs, status.len, directory, populate, hw_counter)?;
         Ok(Self {
             flags,
             status,
@@ -150,6 +161,7 @@ where
         num_flags: usize,
         directory: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<StoredBitSlice<S>> {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
@@ -169,7 +181,7 @@ where
             populate,
             advice: AdviceSetting::Global,
         };
-        let flags = StoredBitSlice::open(fs, &path, options, Default::default())?;
+        let flags = StoredBitSlice::open(fs, &path, options, Default::default(), hw_counter)?;
         Ok(flags)
     }
 
@@ -179,7 +191,12 @@ where
     /// NOTE: capacity can be up to 2x the current length.
     ///
     /// Errors if the vector is shrunk.
-    pub fn set_len(&mut self, fs: &S::Fs, new_len: usize) -> OperationResult<()> {
+    pub fn set_len(
+        &mut self,
+        fs: &S::Fs,
+        new_len: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         debug_assert!(new_len >= self.status.len);
         if new_len == self.status.len {
             return Ok(());
@@ -202,7 +219,7 @@ where
             // Don't read the whole file on resize
             let populate = Populate::No;
             // TODO(uio): consider using UniversalRead::live_reload
-            let flags = Self::open_storage(fs, new_len, &self.directory, populate)?;
+            let flags = Self::open_storage(fs, new_len, &self.directory, populate, hw_counter)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             self.flags = flags;
@@ -212,18 +229,21 @@ where
         Ok(())
     }
 
-    pub fn get(&self, index: usize) -> OperationResult<bool> {
+    pub fn get(&self, index: usize, hw_counter: &HardwareCounterCell) -> OperationResult<bool> {
         if index >= self.status.len {
             return Ok(false);
         }
-        Ok(self.flags.get_bit(index as u64)?.unwrap_or(false))
+        Ok(self
+            .flags
+            .get_bit(index as u64, hw_counter)?
+            .unwrap_or(false))
     }
 
     /// Count number of set flags
-    pub fn count_flags(&self) -> OperationResult<usize> {
+    pub fn count_flags(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         // Take a bitslice of our set length, count ones in it
         // This uses bit-indexing, returning a new bitslice, extra bits within capacity are not counted
-        let bits = self.flags.read_all()?;
+        let bits = self.flags.read_all(hw_counter)?;
         Ok(bits
             .get(..self.status.len)
             .map(|s| s.count_ones())
@@ -235,19 +255,25 @@ where
     ///
     /// Returns previous value of the flag.
     #[cfg(any(test, feature = "testing"))]
-    pub fn set(&mut self, index: usize, value: bool) -> OperationResult<bool> {
+    pub fn set(
+        &mut self,
+        index: usize,
+        value: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         debug_assert!(index < self.status.len);
         if index >= self.status.len {
             return Ok(false);
         }
-        Ok(self.flags.replace_bit(index as u64, value)?)
+        Ok(self.flags.replace_bit(index as u64, value, hw_counter)?)
     }
 
     pub fn set_ascending_bits(
         &mut self,
         updates: impl IntoIterator<Item = (u64, bool)>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        Ok(self.flags.set_ascending_bits_batch(updates)?)
+        Ok(self.flags.set_ascending_bits_batch(updates, hw_counter)?)
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -262,11 +288,14 @@ where
         })
     }
 
-    pub fn get_bitslice(&self) -> OperationResult<Cow<'_, BitSlice>> {
+    pub fn get_bitslice(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Cow<'_, BitSlice>> {
         // Take subslice with actual length, bitslice may be larger due to extra allocated capacity
         // See `file_size_for`
         let len = self.len();
-        Ok(match self.flags.read_all()? {
+        Ok(match self.flags.read_all(hw_counter)? {
             Cow::Borrowed(bitslice) => Cow::Borrowed(&bitslice[..len]),
             Cow::Owned(mut bitvec) => {
                 bitvec.truncate(len);
@@ -284,16 +313,22 @@ where
     }
 
     /// Iterate over all "true" flags
-    pub fn iter_trues(&self) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
+    pub fn iter_trues(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         // Unused capacity past `len` is always cleared, so iterating set bits
         // over the whole storage yields exactly the "true" positions.
-        Ok(self.flags.iter_ones()?.map(|i| i as PointOffsetType))
+        Ok(self
+            .flags
+            .iter_ones(hw_counter)?
+            .map(|i| i as PointOffsetType))
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.flags.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.flags.populate(hw_counter)?;
         Ok(())
     }
 
@@ -337,35 +372,66 @@ mod tests_mod {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
-            dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
+            let mut dynamic_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::No,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
+            dynamic_flags
+                .set_len(&Fs::default(), num_flags, &HardwareCounterCell::new())
+                .unwrap();
             random_flags
                 .iter()
                 .enumerate()
                 .filter(|(_, flag)| **flag)
-                .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
+                .for_each(|(i, _)| {
+                    assert!(
+                        !dynamic_flags
+                            .set(i, true, &HardwareCounterCell::new())
+                            .unwrap()
+                    )
+                });
 
             dynamic_flags
-                .set_len(&Fs::default(), num_flags * 2)
+                .set_len(&Fs::default(), num_flags * 2, &HardwareCounterCell::new())
                 .unwrap();
             random_flags
                 .iter()
                 .enumerate()
                 .filter(|(_, flag)| !*flag)
-                .for_each(|(i, _)| assert!(!dynamic_flags.set(num_flags + i, true).unwrap()));
+                .for_each(|(i, _)| {
+                    assert!(
+                        !dynamic_flags
+                            .set(num_flags + i, true, &HardwareCounterCell::new())
+                            .unwrap()
+                    )
+                });
 
             dynamic_flags.flusher()().unwrap();
         }
 
         {
-            let dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
-                    .unwrap();
+            let dynamic_flags = DynamicStoredFlags::<S>::open(
+                &Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
-                assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
-                assert_eq!(dynamic_flags.get(num_flags + i).unwrap(), !*flag);
+                assert_eq!(
+                    dynamic_flags.get(i, &HardwareCounterCell::new()).unwrap(),
+                    *flag
+                );
+                assert_eq!(
+                    dynamic_flags
+                        .get(num_flags + i, &HardwareCounterCell::new())
+                        .unwrap(),
+                    !*flag
+                );
             }
         }
     }
@@ -377,24 +443,39 @@ mod tests_mod {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags =
-            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking).unwrap();
-        dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::<S>::open(
+            &Fs::default(),
+            dir.path(),
+            Populate::Blocking,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        dynamic_flags
+            .set_len(&Fs::default(), num_flags, &HardwareCounterCell::new())
+            .unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags
             .iter()
             .enumerate()
             .filter(|(_, flag)| **flag)
-            .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true).unwrap()));
+            .for_each(|(i, _)| {
+                assert!(
+                    !dynamic_flags
+                        .set(i, true, &HardwareCounterCell::new())
+                        .unwrap()
+                )
+            });
         dynamic_flags.flusher()().unwrap();
 
         // Test count flags method
-        let count = dynamic_flags.count_flags().unwrap();
+        let count = dynamic_flags
+            .count_flags(&HardwareCounterCell::new())
+            .unwrap();
 
         // Compare against manually counting every flag
         let mut manual_count = 0;
         for i in 0..num_flags {
-            if dynamic_flags.get(i).unwrap() {
+            if dynamic_flags.get(i, &HardwareCounterCell::new()).unwrap() {
                 manual_count += 1;
             }
         }

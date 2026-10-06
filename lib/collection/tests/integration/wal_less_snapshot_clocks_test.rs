@@ -148,6 +148,7 @@ async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -204,7 +205,7 @@ async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
     }
 
     let snapshot = collection
-        .create_shard_snapshot(SHARD_ID, snapshot_temp_dir.path())
+        .create_shard_snapshot(SHARD_ID, snapshot_temp_dir.path(), &HwMeasurementAcc::new())
         .await
         .unwrap();
 

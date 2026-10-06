@@ -2,6 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_binary::{EncodedVectorsBin, QueryEncoding};
@@ -38,6 +39,7 @@ mod tests {
             ScalarQuantizationMethod::Int8,
             Some(meta_path.as_path()),
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -45,6 +47,7 @@ mod tests {
             &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
     }
@@ -76,6 +79,7 @@ mod tests {
             1,
             Some(meta_path.as_path()),
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -83,6 +87,7 @@ mod tests {
             &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
     }
@@ -115,6 +120,7 @@ mod tests {
             QueryEncoding::SameAsStorage,
             Some(meta_path.as_path()),
             &AtomicBool::new(false),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -122,6 +128,7 @@ mod tests {
             &common::universal_io::MmapFs,
             TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
             meta_path.as_path(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
     }

@@ -54,6 +54,7 @@ impl SegmentHolder {
             payload_index_schema,
             deferred_internal_id,
             false,
+            &hw_counter,
         )?;
 
         // List all segments we want to snapshot
@@ -93,7 +94,7 @@ impl SegmentHolder {
             // `write_segments` lock, so the wrapped segment is only frozen now. Finalizing here
             // syncs `deleted_mask` from the now-immutable segment — the type-state guarantees this
             // happens exactly once and cannot be skipped.
-            let proxy = proxy.finalize();
+            let proxy = proxy.finalize(&hw_counter);
 
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
@@ -162,6 +163,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxy_ids: &[SegmentId],
         tmp_segment_id: SegmentId,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Propagate all changes in the proxies into their wrapped segments and put the wrapped
         // segments back into the segment holder. On failure nothing is unwrapped: every proxy
@@ -177,7 +179,7 @@ impl SegmentHolder {
         );
 
         // Remove temporary appendable segment, if we don't need it anymore
-        write_segments.remove_segment_if_not_needed(tmp_segment_id)?;
+        write_segments.remove_segment_if_not_needed(tmp_segment_id, hw_counter)?;
 
         drop(updates_guard); // Release updates lock as soon as possible
 

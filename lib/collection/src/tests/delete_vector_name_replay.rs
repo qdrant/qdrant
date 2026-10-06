@@ -56,7 +56,9 @@ async fn force_flush_all_local(collection: &Collection) {
     let shards_holder = collection.shards_holder();
     let holder = shards_holder.read().await;
     for replica_set in holder.all_shards() {
-        replica_set.force_flush_local_for_test().await;
+        replica_set
+            .force_flush_local_for_test(&HwMeasurementAcc::new())
+            .await;
     }
 }
 
@@ -148,6 +150,7 @@ async fn delete_named_vector_then_reload_loses_points() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -211,7 +214,7 @@ async fn delete_named_vector_then_reload_loses_points() {
 
     // Drop the `b` vector schema-wide.
     collection
-        .delete_named_vector("b".to_string())
+        .delete_named_vector("b".to_string(), &HwMeasurementAcc::new())
         .await
         .expect("delete_named_vector(b) failed");
 
@@ -255,6 +258,7 @@ async fn delete_named_vector_then_reload_loses_points() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await;
 
@@ -366,6 +370,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -409,7 +414,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
     force_flush_all_local(&collection).await;
 
     collection
-        .delete_named_vector("b".to_string())
+        .delete_named_vector("b".to_string(), &HwMeasurementAcc::new())
         .await
         .expect("delete_named_vector(b) failed");
 
@@ -430,6 +435,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await;
 
@@ -535,6 +541,7 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -597,7 +604,7 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
 
         // 4. Drop the dynamically-added vector.
         collection
-            .delete_named_vector(name.clone())
+            .delete_named_vector(name.clone(), &HwMeasurementAcc::new())
             .await
             .unwrap_or_else(|e| panic!("delete_named_vector({name:?}) failed: {e:?}"));
     }
@@ -642,6 +649,7 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await;
 

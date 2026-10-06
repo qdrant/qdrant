@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -35,6 +36,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         ScalarQuantizationMethod::Int8,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -46,7 +48,8 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
@@ -57,7 +60,8 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
@@ -85,7 +89,8 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
@@ -96,7 +101,8 @@ fn encode_dot_bench(c: &mut Criterion) {
         let mut _s = 0.0;
         b.iter(|| {
             for &i in &permutation {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
@@ -142,6 +148,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         ScalarQuantizationMethod::Int8,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -153,7 +160,8 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
@@ -164,7 +172,8 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
@@ -192,7 +201,8 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
@@ -203,7 +213,8 @@ fn encode_l1_bench(c: &mut Criterion) {
         let mut _s = 0.0;
         b.iter(|| {
             for &i in &permutation {
-                let quantized_vector = i8_encoded.get_quantized_vector(i);
+                let quantized_vector =
+                    i8_encoded.get_quantized_vector(i, &HardwareCounterCell::new());
                 _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });

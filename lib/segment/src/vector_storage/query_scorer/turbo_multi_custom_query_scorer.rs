@@ -72,17 +72,21 @@ where
         let hw_counter = &self.hardware_counter;
 
         self.storage
-            .for_each_record_range::<Random, _>(keys, |idx, _id, records| {
-                hw_counter.vector_io_read().incr_delta(records.len());
+            .for_each_record_range::<Random, _>(
+                keys,
+                |idx, _id, records| {
+                    hw_counter.vector_io_read().incr_delta(records.len());
 
-                scores[idx] = self.query.score_by(|query| {
-                    hw_counter
-                        .cpu_counter()
-                        .incr_delta(records.len() * query.len());
+                    scores[idx] = self.query.score_by(|query| {
+                        hw_counter
+                            .cpu_counter()
+                            .incr_delta(records.len() * query.len());
 
-                    self.storage.score_records_max_similarity(query, records)
-                });
-            })
+                        self.storage.score_records_max_similarity(query, records)
+                    });
+                },
+                hw_counter,
+            )
             .expect("Failed to score stored batch");
     }
 

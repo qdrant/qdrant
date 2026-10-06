@@ -94,10 +94,22 @@ impl TestSegments {
 
         let config = Self::make_simple_config(true);
 
-        let (mut plain_segment, _) =
-            build_segment(&base_dir.path().join("plain"), &config, None, true).unwrap();
-        let (mut struct_segment, _) =
-            build_segment(&base_dir.path().join("struct"), &config, None, true).unwrap();
+        let (mut plain_segment, _) = build_segment(
+            &base_dir.path().join("plain"),
+            &config,
+            None,
+            true,
+            &hw_counter,
+        )
+        .unwrap();
+        let (mut struct_segment, _) = build_segment(
+            &base_dir.path().join("struct"),
+            &config,
+            None,
+            true,
+            &hw_counter,
+        )
+        .unwrap();
 
         let num_points = 3000;
         let points_to_delete = 500;
@@ -256,10 +268,10 @@ impl TestSegments {
 
         for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
             for index in indexes {
-                assert!(index.count_indexed_points().unwrap() <= num_points as usize);
+                assert!(index.count_indexed_points(&hw_counter).unwrap() <= num_points as usize);
                 if field.to_string() != FLICKING_KEY {
                     assert!(
-                        index.count_indexed_points().unwrap()
+                        index.count_indexed_points(&hw_counter).unwrap()
                             >= (num_points as usize - points_to_delete - points_to_clear)
                     );
                 }
@@ -309,6 +321,7 @@ impl TestSegments {
             &Self::make_simple_config(false),
             &HnswGlobalConfig::default(),
             FeatureFlags::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -425,8 +438,10 @@ impl TestSegments {
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
     let mut rng = StdRng::seed_from_u64(42);
 
-    let mut plain_segment = build_simple_segment(path_plain, DIM, Distance::Dot).unwrap();
-    let mut struct_segment = build_simple_segment(path_struct, DIM, Distance::Dot).unwrap();
+    let mut plain_segment =
+        build_simple_segment(path_plain, DIM, Distance::Dot, &HardwareCounterCell::new()).unwrap();
+    let mut struct_segment =
+        build_simple_segment(path_struct, DIM, Distance::Dot, &HardwareCounterCell::new()).unwrap();
 
     let num_points = 3000;
     let points_to_delete = 500;
@@ -514,9 +529,9 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for indexes in struct_segment.payload_index.borrow().field_indexes.values() {
         for index in indexes {
-            assert!(index.count_indexed_points().unwrap() <= num_points as usize);
+            assert!(index.count_indexed_points(&hw_counter).unwrap() <= num_points as usize);
             assert!(
-                index.count_indexed_points().unwrap()
+                index.count_indexed_points(&hw_counter).unwrap()
                     > (num_points as usize - points_to_delete - points_to_clear)
             );
         }
@@ -559,7 +574,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
                     .struct_segment
                     .id_tracker
                     .borrow()
-                    .available_point_count(),
+                    .available_point_count(&hw_counter),
             "{estimation:#?}",
         );
 
@@ -591,7 +606,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
                     .struct_segment
                     .id_tracker
                     .borrow()
-                    .available_point_count(),
+                    .available_point_count(&hw_counter),
             "{estimation:#?}",
         );
 
@@ -681,7 +696,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .into_iter()
         // null index does not track deleted points, so we need to filter them out here. In callsites,
         // the deleted check is done externally anyway
-        .filter(|id| !id_tracker.is_deleted_point(*id))
+        .filter(|id| !id_tracker.is_deleted_point(*id, &hw_counter))
         .collect::<Vec<_>>();
 
     ensure!(plain_result == struct_result);
@@ -851,7 +866,7 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
             .struct_segment
             .id_tracker
             .borrow()
-            .point_mappings()
+            .point_mappings(&hw_counter)
             .iter_internal()
             .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
@@ -916,7 +931,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
         struct_segment
             .id_tracker
             .borrow()
-            .point_mappings()
+            .point_mappings(&hw_counter)
             .iter_internal()
             .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
@@ -987,7 +1002,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
         struct_segment
             .id_tracker
             .borrow()
-            .point_mappings()
+            .point_mappings(&hw_counter)
             .iter_internal()
             .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()
@@ -1063,7 +1078,7 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
                     .struct_segment
                     .id_tracker
                     .borrow()
-                    .available_point_count(),
+                    .available_point_count(&hw_counter),
             "{estimation:#?}",
         );
 
@@ -1263,7 +1278,11 @@ fn test_struct_payload_index_nested_fields() {
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
         assert!(estimation.exp <= estimation.max, "{estimation:#?}");
         assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            estimation.max
+                <= struct_segment
+                    .id_tracker
+                    .borrow()
+                    .available_point_count(&hw_counter),
             "{estimation:#?}",
         );
 
@@ -1317,6 +1336,7 @@ fn test_update_payload_index_type() {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &hw_counter,
     )
     .unwrap();
 
@@ -1329,8 +1349,14 @@ fn test_update_payload_index_type() {
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points().unwrap(), point_num);
-    assert_eq!(field_index[1].count_indexed_points().unwrap(), point_num);
+    assert_eq!(
+        field_index[0].count_indexed_points(&hw_counter).unwrap(),
+        point_num
+    );
+    assert_eq!(
+        field_index[1].count_indexed_points(&hw_counter).unwrap(),
+        point_num
+    );
 
     // update field to Keyword type
     index.set_indexed(&field, Keyword, &hw_counter).unwrap();
@@ -1339,7 +1365,7 @@ fn test_update_payload_index_type() {
         FieldType(Keyword)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points().unwrap(), 0); // only one field index for Keyword
+    assert_eq!(field_index[0].count_indexed_points(&hw_counter).unwrap(), 0); // only one field index for Keyword
 
     // set field to Integer type (again)
     index.set_indexed(&field, Integer, &hw_counter).unwrap();
@@ -1348,8 +1374,14 @@ fn test_update_payload_index_type() {
         FieldType(Integer)
     );
     let field_index = index.field_indexes.get(&field).unwrap();
-    assert_eq!(field_index[0].count_indexed_points().unwrap(), point_num);
-    assert_eq!(field_index[1].count_indexed_points().unwrap(), point_num);
+    assert_eq!(
+        field_index[0].count_indexed_points(&hw_counter).unwrap(),
+        point_num
+    );
+    assert_eq!(
+        field_index[1].count_indexed_points(&hw_counter).unwrap(),
+        point_num
+    );
 }
 
 /// An appendable segment with a bool payload index must still accept updates
@@ -1376,6 +1408,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
             dir.path(),
             StorageType::Appendable,
             IndexLoadMode::CreateIfMissing,
+            &hw_counter,
         )
         .unwrap();
 
@@ -1384,7 +1417,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
             .unwrap();
 
         for field_index in index.field_indexes.get(&field).unwrap() {
-            field_index.flusher()().unwrap();
+            field_index.flusher(&hw_counter)().unwrap();
         }
     }
 
@@ -1397,6 +1430,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::LoadExisting,
+        &hw_counter,
     )
     .unwrap();
 
@@ -1409,7 +1443,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
         .iter()
         .find(|fi| matches!(fi, FieldIndex::BoolIndex(_)))
         .expect("bool index present after reopen");
-    assert_eq!(bool_index.count_indexed_points().unwrap(), 2);
+    assert_eq!(bool_index.count_indexed_points(&hw_counter).unwrap(), 2);
 }
 
 /// An appendable segment with a payload field index carries a companion null
@@ -1438,6 +1472,7 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
             dir.path(),
             StorageType::Appendable,
             IndexLoadMode::CreateIfMissing,
+            &hw_counter,
         )
         .unwrap();
 
@@ -1446,7 +1481,7 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
             .unwrap();
 
         for field_index in index.field_indexes.get(&field).unwrap() {
-            field_index.flusher()().unwrap();
+            field_index.flusher(&hw_counter)().unwrap();
         }
     }
 
@@ -1461,6 +1496,7 @@ fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::LoadExisting,
+        &hw_counter,
     )
     .unwrap();
 
@@ -1535,7 +1571,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
             .struct_segment
             .id_tracker
             .borrow()
-            .point_mappings()
+            .point_mappings(&hw_counter)
             .iter_internal()
             .filter(|x| filter_context.check(*x).unwrap())
             .collect_vec()

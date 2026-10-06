@@ -114,8 +114,8 @@ impl UnsyncedProxySegment {
     /// Must be called once the segment-holder write lock is held, so the wrapped segment can no
     /// longer change and the mask covers its full, final point range. The fresh read also captures
     /// any deletes that raced in, closing the ghost direction too.
-    pub fn finalize(mut self) -> ProxySegment {
-        self.0.sync_deleted_mask();
+    pub fn finalize(mut self, hw_counter: &HardwareCounterCell) -> ProxySegment {
+        self.0.sync_deleted_mask(hw_counter);
         self.0
     }
 
@@ -162,20 +162,20 @@ impl ProxySegment {
     /// two-phase form so the mask is synced under the segment-holder write lock; see
     /// [`UnsyncedProxySegment`].
     #[cfg(feature = "testing")]
-    pub fn new(segment: LockedSegment) -> Self {
+    pub fn new(segment: LockedSegment, hw_counter: &HardwareCounterCell) -> Self {
         UnsyncedProxySegment::new(segment)
             .expect("failed to open proxy segment pending changes")
-            .finalize()
+            .finalize(hw_counter)
     }
 
     /// Read the wrapped segment's deleted bitvec into `deleted_mask`.
     ///
     /// Only called from [`UnsyncedProxySegment::finalize`]; see that type for why the timing
     /// (after the wrapped segment is frozen) matters.
-    fn sync_deleted_mask(&mut self) {
+    fn sync_deleted_mask(&mut self, hw_counter: &HardwareCounterCell) {
         match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
-                self.deleted_mask = Some(raw_segment.read().get_deleted_points_bitvec());
+                self.deleted_mask = Some(raw_segment.read().get_deleted_points_bitvec(hw_counter));
             }
             LockedSegment::Proxy(_) => {
                 // A double proxy has no own deleted bitvec to sync.

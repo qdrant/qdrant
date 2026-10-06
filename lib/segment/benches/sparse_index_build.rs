@@ -53,6 +53,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         payload_dir.path(),
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
@@ -82,8 +83,8 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
         b.iter(|| {
-            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-                SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+                SparseVectorIndexOpenArgs {
                     fs: &MmapFs,
                     config: index_config,
                     id_tracker: id_tracker.clone(),
@@ -92,15 +93,17 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
                     path: index_dir.path(),
                     stopped: &stopped,
                     tick_progress: || (),
-                })
-                .unwrap();
+                },
+                &hw_counter,
+            )
+            .unwrap();
             assert_eq!(sparse_vector_index.indexed_vector_count(), NUM_VECTORS);
         })
     });
 
     // build once to reuse in mmap conversion benchmark
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+        SparseVectorIndexOpenArgs {
             fs: &MmapFs,
             config: index_config,
             id_tracker,
@@ -109,8 +112,10 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
             path: index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
-        })
-        .unwrap();
+        },
+        &hw_counter,
+    )
+    .unwrap();
 
     // intent: measure mmap conversion time
     group.bench_function("convert-mmap-index-f32", |b| {

@@ -69,6 +69,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser as _;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 use edge::{ManifestSegmentEnumerator, PointId, UpdateOnlyEdgeShard};
 use io_bridge_object_store::{AsyncAppend, CachedBlobFs, ObjectStoreSource};
@@ -85,7 +86,7 @@ use crate::schema::read_schema;
 
 /// Dry-run against a local shard directory: segments discovered by scanning
 /// `segments/`, read over memory-mapped files.
-fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
+fn run_local(cli: &Cli, ids: &[PointId], hw_counter: &HardwareCounterCell) -> Result<()> {
     let path = cli
         .connection
         .path
@@ -99,7 +100,7 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
         shard.segments_count()
     );
 
-    let schema = read_schema(&shard, &common::universal_io::MmapFs, &path)?;
+    let schema = read_schema(&shard, &common::universal_io::MmapFs, &path, hw_counter)?;
     let meter = IoMeter::new(None);
     if cli.apply {
         apply_run(
@@ -119,7 +120,12 @@ fn run_local(cli: &Cli, ids: &[PointId]) -> Result<()> {
 /// Run against object storage: segments discovered from the leader's
 /// segment manifest, reads through the local disk cache, appends (with
 /// `--apply`) straight to the remote.
-fn run_remote<A>(cli: &Cli, ids: &[PointId], remote_config: A::Config) -> Result<()>
+fn run_remote<A>(
+    cli: &Cli,
+    ids: &[PointId],
+    remote_config: A::Config,
+    hw_counter: &HardwareCounterCell,
+) -> Result<()>
 where
     A: AsyncAppend + Clone,
     A::Config: Clone,
@@ -145,7 +151,9 @@ where
         shard.segments_count()
     );
 
-    let schema = meter.measure("schema", || read_schema(&shard, &cached_fs, &prefix))?;
+    let schema = meter.measure("schema", || {
+        read_schema(&shard, &cached_fs, &prefix, hw_counter)
+    })?;
     if cli.apply {
         apply_run(
             shard,
@@ -182,12 +190,18 @@ fn main() -> Result<()> {
 
     let conn = &cli.connection;
     match conn.backend {
-        Backend::Local => run_local(&cli, &ids),
-        Backend::Aws => {
-            run_remote::<ObjectStoreSource<AmazonS3>>(&cli, &ids, build_aws_config(conn)?)
-        }
-        Backend::Gcs => {
-            run_remote::<ObjectStoreSource<GoogleCloudStorage>>(&cli, &ids, build_gcs_config(conn)?)
-        }
+        Backend::Local => run_local(&cli, &ids, &HardwareCounterCell::disposable()),
+        Backend::Aws => run_remote::<ObjectStoreSource<AmazonS3>>(
+            &cli,
+            &ids,
+            build_aws_config(conn)?,
+            &HardwareCounterCell::disposable(),
+        ),
+        Backend::Gcs => run_remote::<ObjectStoreSource<GoogleCloudStorage>>(
+            &cli,
+            &ids,
+            build_gcs_config(conn)?,
+            &HardwareCounterCell::disposable(),
+        ),
     }
 }

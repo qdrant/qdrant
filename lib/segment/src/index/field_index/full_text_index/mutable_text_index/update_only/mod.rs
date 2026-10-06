@@ -90,6 +90,7 @@ mod tests {
             &field,
             &PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.clone())),
             &index_type,
+            &hw_counter,
         )
         .unwrap();
 
@@ -103,9 +104,10 @@ mod tests {
         writer.flush(&MmapFs, &hw_counter).unwrap();
 
         let scoring = params.scoring();
-        let index = MutableFullTextIndex::open_gridstore(storage, params, false, scoring)
-            .unwrap()
-            .unwrap();
+        let index =
+            MutableFullTextIndex::open_gridstore(storage, params, false, scoring, &hw_counter)
+                .unwrap()
+                .unwrap();
 
         let mut tokens = index.get_doc(0).expect("document stored for slot 0");
         tokens.sort();

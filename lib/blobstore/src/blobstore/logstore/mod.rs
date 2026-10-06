@@ -44,11 +44,12 @@ const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 fn validate_consistency<S: UniversalRead, T: TrackerRead>(
     tracker: &T,
     pages: &AppendOnlyPages<S>,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<()> {
-    let count = tracker.max_point_offset()?;
+    let count = tracker.max_point_offset(hw_counter)?;
     let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
     for pointer in tracker
-        .get_range::<Sequential>(start..count)?
+        .get_range::<Sequential>(start..count, hw_counter)?
         .into_iter()
         .flatten()
     {
@@ -126,16 +127,21 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub(super) fn new<Fs>(fs: &Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self>
+    pub(super) fn new<Fs>(
+        fs: &Fs,
+        base_path: PathBuf,
+        config: LogstoreConfig,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = TrackerEnum::new(fs, &base_path)?;
-        let pages = AppendOnlyPages::new(fs, &base_path)?;
+        let tracker = TrackerEnum::new(fs, &base_path, hw_counter)?;
+        let pages = AppendOnlyPages::new(fs, &base_path, hw_counter)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
         let config_bytes = serde_json::to_vec(&StorageConfig::AppendOnly(config.clone()))?;
-        fs.atomic_save(&config_path, &config_bytes)?;
+        fs.atomic_save(&config_path, &config_bytes, hw_counter)?;
 
         Ok(Self {
             config,
@@ -158,16 +164,19 @@ where
         base_path: PathBuf,
         config_if_create: LogstoreConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        match super::reader::read_config(fs, &base_path).ok_not_found()? {
-            Some(StorageConfig::AppendOnly(config)) => Self::open(fs, base_path, config, populate),
+        match super::reader::read_config(fs, &base_path, hw_counter).ok_not_found()? {
+            Some(StorageConfig::AppendOnly(config)) => {
+                Self::open(fs, base_path, config, populate, hw_counter)
+            }
             Some(StorageConfig::Mutable(_)) => Err(BlobstoreError::unsupported_operation(format!(
                 "storage at {} was created in mutable mode, it cannot be opened append-only",
                 base_path.display(),
             ))),
             None => {
                 fs.create_dir(&base_path)?;
-                Self::new(fs, base_path, config_if_create)
+                Self::new(fs, base_path, config_if_create, hw_counter)
             }
         }
     }
@@ -178,13 +187,14 @@ where
         base_path: PathBuf,
         config: LogstoreConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = TrackerEnum::open_writable(fs, &base_path, populate)?;
-        let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
-        validate_consistency(&tracker, &pages)?;
+        let tracker = TrackerEnum::open_writable(fs, &base_path, populate, hw_counter)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, true, populate, hw_counter)?;
+        validate_consistency(&tracker, &pages, hw_counter)?;
 
         Ok(Self {
             config,
@@ -268,10 +278,12 @@ where
             .map_err(|_| BlobstoreError::service_error("value is too large"))?;
 
         let page_capacity_bytes = self.config.page_capacity_bytes as u64;
-        let (page_id, offset) =
-            self.pages
-                .write()
-                .append_value(fs, &comp_value, page_capacity_bytes)?;
+        let (page_id, offset) = self.pages.write().append_value(
+            fs,
+            &comp_value,
+            page_capacity_bytes,
+            hw_counter.parent(),
+        )?;
 
         self.tracker
             .write()
@@ -290,7 +302,7 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it in append-only mode.
-    pub(super) fn clear<Fs>(&mut self, fs: &Fs) -> Result<()>
+    pub(super) fn clear<Fs>(&mut self, fs: &Fs, hw_counter: &HardwareCounterCell) -> Result<()>
     where
         Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
@@ -299,7 +311,7 @@ where
         fs.remove_dir(&self.base_path)?;
         fs.create_dir(&self.base_path)?;
 
-        *self = Self::new(fs, self.base_path.clone(), self.config.clone())?;
+        *self = Self::new(fs, self.base_path.clone(), self.config.clone(), hw_counter)?;
 
         Ok(())
     }
@@ -310,11 +322,15 @@ where
     /// The append-only file is removed right away, the next flush saves the compacted one after
     /// the value data as always. Until then the storage on disk has no tracker file and cannot be
     /// opened, so this suits a storage being built, which a crash discards anyway.
-    pub(super) fn make_immutable<Fs: UniversalWriteFs>(&self, fs: &Fs) -> Result<()> {
+    pub(super) fn make_immutable<Fs: UniversalWriteFs>(
+        &self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         let mut tracker = self.tracker.write();
         let (compacted, append_only_files) = match &*tracker {
             TrackerEnum::AppendOnly(append_only) => (
-                CompactedTracker::from_tracker(fs, &self.base_path, append_only)?,
+                CompactedTracker::from_tracker(fs, &self.base_path, append_only, hw_counter)?,
                 append_only.files(),
             ),
             TrackerEnum::Compacted(_) => return Ok(()),
@@ -322,7 +338,7 @@ where
         // Drops the append-only file handle before the file is removed
         *tracker = TrackerEnum::Compacted(compacted);
         for path in append_only_files {
-            fs.remove(&path)?;
+            fs.remove(&path, hw_counter)?;
         }
         Ok(())
     }
@@ -388,6 +404,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -402,6 +419,7 @@ where
                     Ok(true)
                 },
                 hw_counter_cell,
+                hw_counter,
             )
         })?;
 
@@ -414,6 +432,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -428,6 +447,7 @@ where
                     Ok(true)
                 },
                 hw_counter_cell,
+                hw_counter,
             )
         })?;
 
@@ -435,10 +455,14 @@ where
     }
 
     #[cfg(test)]
-    pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+    pub(super) fn get_pointer(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ValuePointer> {
         self.tracker
             .read()
-            .get::<common::generic_consts::Random>(point_offset)
+            .get::<common::generic_consts::Random>(point_offset, hw_counter)
             .ok()
             .flatten()
     }
@@ -478,7 +502,7 @@ where
             const BATCH_SIZE: PointOffset = 256;
 
             self.with_view(|view| -> Result<_, E> {
-                max_offset = view.max_point_offset()?;
+                max_offset = view.max_point_offset(hw_counter.parent())?;
 
                 if current_offset >= max_offset {
                     return Ok(());
@@ -508,7 +532,7 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
     /// and syncs them, then does the same for the pending mappings in the tracker file. This
     /// order guarantees that a mapping on disk never points at value data that is not durable
     /// yet.
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         // Only values and mappings put up to this point are persisted, puts made during the
         // flush stay buffered for the next flush. The two watermarks are consistent with each
         // other: puts take &mut self, so no put can happen between capturing them.
@@ -519,7 +543,9 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
         let pages = Arc::downgrade(&self.pages);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let (Some(is_alive_flush_guard), Some(tracker), Some(pages)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 tracker.upgrade(),
@@ -531,15 +557,15 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
 
             let pages_flusher = {
                 let mut pages_guard = pages.write();
-                pages_guard.write_pending(&target_page_lens)?;
+                pages_guard.write_pending(&target_page_lens, hw_counter)?;
                 pages_guard.flusher()
             };
             pages_flusher()?;
 
             let tracker_flusher = {
                 let mut tracker_guard = tracker.write();
-                tracker_guard.write_pending(target)?;
-                tracker_guard.flusher(target)
+                tracker_guard.write_pending(target, hw_counter)?;
+                tracker_guard.flusher(target, hw_counter)
             };
             tracker_flusher()?;
 
@@ -550,9 +576,9 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
     }
 
     /// Populate the tracker and all pages into the RAM cache.
-    pub(super) fn populate(&self) -> Result<()> {
-        self.pages.read().populate()?;
-        self.tracker.read().populate()?;
+    pub(super) fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        self.pages.read().populate(hw_counter)?;
+        self.tracker.read().populate(hw_counter)?;
         Ok(())
     }
 

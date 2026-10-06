@@ -6,6 +6,7 @@ use std::path::Path;
 use futures::FutureExt as _;
 
 use super::{Item, ReadPipeline, UniversalReadFs, UserData};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::cached_fs::FileInfo;
@@ -35,7 +36,6 @@ use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError,
 /// - When returning [`ACow::Borrowed`], an implementation will ignore the
 ///   alignment. Practically mmaps are aligned by 4 KiB, which is more than
 ///   enough for the majority of types.
-#[expect(clippy::len_without_is_empty)]
 pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// The canonical filesystem handle type that opens `Self`-typed file
     /// handles via [`UniversalReadFs::open`](UniversalReadFs::open).
@@ -60,7 +60,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// underlying file larger, so reopening can account for this growth.
     ///
     /// This may be a no-op in some implementations.
-    fn live_reload(&mut self) -> UioResult<()>;
+    fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()>;
 
     /// Stage the work that the next [`live_reload`](Self::reopen) must do, reading
     /// the file's current length via `get_file_info` — typically backed by a
@@ -84,8 +84,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
-        let _ = get_file_info;
+        let _ = (get_file_info, hw_counter);
 
         Ok(async {}.boxed())
     }
@@ -96,11 +97,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         &self,
         range: ReadRange,
         access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Cow<'_, [T]>> {
         let bytes = self.read_bytes(
             range.into_byte_range::<T>(),
             access_pattern,
             align_of::<T>(),
+            hw_counter,
         )?;
         Ok(bytes.try_cast_bytemuck().unwrap())
     }
@@ -110,6 +113,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>>;
 
     /// Read the entire file in one logical access.
@@ -117,13 +121,13 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Implementations may override this to avoid the two accesses that would
     /// result from `len()` followed by `read(0..len())`. Default implementation
     /// does exactly that.
-    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
+    fn read_whole<T: Item>(&self, hw_counter: &HardwareCounterCell) -> UioResult<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: 0,
-            length: self.len::<T>()?,
+            length: self.len::<T>(hw_counter)?,
         };
 
-        self.read(range, Sequential)
+        self.read(range, Sequential, hw_counter)
     }
 
     fn read_batch<P, T, U, E>(
@@ -131,6 +135,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         _access_pattern: P,
         mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -146,10 +151,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
                 && let Some((user_data, range)) = ranges.next()
             {
                 let range = range.into_byte_range::<T>();
-                pipeline.schedule::<P>(user_data, self, range, align_of::<T>())?;
+                pipeline.schedule::<P>(user_data, self, range, align_of::<T>(), hw_counter)?;
             }
 
-            let Some((user_data, data)) = pipeline.wait_bytemuck()? else {
+            let Some((user_data, data)) = pipeline.wait_bytemuck(hw_counter)? else {
                 break;
             };
             callback(user_data, &data)?;
@@ -164,6 +169,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         _access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
@@ -173,12 +179,14 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
                 && let Some((user_data, range)) = ranges.next()
             {
                 let range = range.into_byte_range::<T>();
-                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align_of::<T>()) {
+                if let Err(err) =
+                    pipeline.schedule::<P>(user_data, self, range, align_of::<T>(), hw_counter)
+                {
                     return Some(Err(err));
                 }
             }
 
-            pipeline.wait_bytemuck().transpose()
+            pipeline.wait_bytemuck(hw_counter).transpose()
         }))
     }
 
@@ -186,6 +194,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
         &self,
         ranges: impl IntoIterator<Item = ReadBytesItem<U>>,
         _access_pattern: P,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, ACow<'_>)>>> {
         let mut pipeline = Self::ReadPipeline::<'_, U>::new()?;
         let mut ranges = ranges.into_iter();
@@ -199,21 +208,22 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
                     range,
                     align,
                 } = item;
-                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align) {
+                if let Err(err) = pipeline.schedule::<P>(user_data, self, range, align, hw_counter)
+                {
                     return Some(Err(err));
                 }
             }
 
-            pipeline.wait().transpose()
+            pipeline.wait(hw_counter).transpose()
         }))
     }
 
-    fn len<T>(&self) -> UioResult<u64>;
+    fn len<T>(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.
-    fn populate(&self) -> UioResult<()>;
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()>;
 
     /// Whether the backend chooses to populate when using `Populate::Auto`
     fn populate_auto() -> bool;

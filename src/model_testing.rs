@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 #[cfg(all(
@@ -176,10 +177,10 @@ fn main() {
     }
     let runtime = builder.build().expect("failed to build tokio runtime");
 
-    runtime.block_on(run_main(args));
+    runtime.block_on(run_main(args, &HwMeasurementAcc::disposable()));
 }
 
-async fn run_main(args: Args) {
+async fn run_main(args: Args, hw_acc: &HwMeasurementAcc) {
     env_logger::init();
     init_feature_flags(FeatureFlags {
         append_only_mutations: args.append_only_mutations,
@@ -269,6 +270,7 @@ async fn run_main(args: Args) {
         args.disable_snapshots,
         args.duration_sec.map(Duration::from_secs),
         shutdown,
+        hw_acc,
     )
     .await;
     println!("model_testing: ok in {:.1?}", start.elapsed());

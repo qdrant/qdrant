@@ -220,6 +220,30 @@ impl HardwareCounterCell {
     }
 }
 
+/// 🤖 Counter owned by `Clone + Send` iterators: every clone is a [`HardwareCounterCell::fork`].
+#[derive(Debug)]
+pub struct ForkingHwCounter(HardwareCounterCell);
+
+impl ForkingHwCounter {
+    pub fn new(hw_counter: &HardwareCounterCell) -> Self {
+        Self(hw_counter.fork())
+    }
+}
+
+impl Clone for ForkingHwCounter {
+    fn clone(&self) -> Self {
+        Self(self.0.fork())
+    }
+}
+
+impl std::ops::Deref for ForkingHwCounter {
+    type Target = HardwareCounterCell;
+
+    fn deref(&self) -> &HardwareCounterCell {
+        &self.0
+    }
+}
+
 #[cfg(feature = "testing")]
 impl Default for HardwareCounterCell {
     fn default() -> Self {

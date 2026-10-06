@@ -7,6 +7,7 @@ use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::scope_tracker::{ScopeTracker, ScopeTrackerGuard};
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
@@ -56,6 +57,7 @@ impl TableOfContent {
         only_collections: Option<HashSet<String>>,
         timeout: Duration,
         is_stopped: &AtomicBool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<TocTelemetryData> {
         let all_collections = self.all_collections_access(access).await;
         let mut collection_telemetry = Vec::new();
@@ -69,7 +71,11 @@ impl TableOfContent {
                 continue;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                collection_telemetry.push(collection.get_telemetry_data(detail, timeout).await?);
+                collection_telemetry.push(
+                    collection
+                        .get_telemetry_data(detail, timeout, hw_acc)
+                        .await?,
+                );
             }
         }
 
@@ -103,6 +109,7 @@ impl TableOfContent {
         access: &Access,
         timeout: Duration,
         is_stopped: &AtomicBool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<CollectionsAggregatedTelemetry>> {
         let mut result = Vec::new();
         let all_collections = self.all_collections_access(access).await;
@@ -111,7 +118,11 @@ impl TableOfContent {
                 break;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
-                result.push(collection.get_aggregated_telemetry_data(timeout).await?);
+                result.push(
+                    collection
+                        .get_aggregated_telemetry_data(timeout, hw_acc)
+                        .await?,
+                );
             }
         }
         Ok(result)

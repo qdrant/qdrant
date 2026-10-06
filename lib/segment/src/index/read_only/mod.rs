@@ -96,12 +96,17 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         vector_config: &VectorDataConfig,
         path: &Path,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &vector_config.index {
             Indexes::Plain {} => Ok(()),
-            Indexes::Hnsw(hnsw_config) => {
-                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
-            }
+            Indexes::Hnsw(hnsw_config) => ReadOnlyHNSWIndex::<S>::preopen(
+                fs,
+                path,
+                hnsw_config,
+                populate_override,
+                hw_counter,
+            ),
         }
     }
 
@@ -123,6 +128,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         sparse_vector_config: &SparseVectorDataConfig,
         path: &Path,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // MutableRam has no persisted representation: `open_sparse` rebuilds
         // it from the vector storage (prefetched separately), so there are no
@@ -133,7 +139,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         }
 
         let config_path = SparseIndexConfig::get_config_path(path);
-        fs.schedule_open(&config_path, None, None);
+        fs.schedule_open(&config_path, None, None, hw_counter);
 
         // The effective placement (structural index type refined by the
         // `memory` parameter, degraded by low-memory mode — which is also
@@ -155,13 +161,13 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         };
 
         // Inverted index
-        inverted_index_compressed_mmap::preopen(fs, path, populate)?;
+        inverted_index_compressed_mmap::preopen(fs, path, populate, hw_counter)?;
 
         // Version check
-        fs.schedule_open(&path.join(VERSION_FILE), None, None);
+        fs.schedule_open(&path.join(VERSION_FILE), None, None, hw_counter);
 
         // Indices tracker
-        fs.schedule_open(&IndicesTracker::file_path(path), None, None);
+        fs.schedule_open(&IndicesTracker::file_path(path), None, None, hw_counter);
 
         Ok(())
     }
@@ -179,6 +185,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
         raw_fs: &S::Fs,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         // The HNSW graph keeps its universal-IO storage handle alive behind a
@@ -210,6 +217,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                 payload_index,
                 *hnsw_config,
                 populate_override,
+                hw_counter,
             )?)),
         })
     }
@@ -225,6 +233,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         sparse_vector_config: &SparseVectorDataConfig,
         args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
         populate_override: Option<Populate>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let ReadOnlyVectorIndexOpenArgs {
             fs,
@@ -245,12 +254,16 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                     id_tracker,
                     vector_storage,
                     payload_index,
+                    hw_counter,
                 )?,
             )));
         }
 
-        let config =
-            SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
+        let config = SparseIndexConfig::load_universal(
+            fs,
+            &SparseIndexConfig::get_config_path(path),
+            hw_counter,
+        )?;
 
         // A cold populate override parks the index on disk, exactly like the
         // low-memory downgrade below.
@@ -280,13 +293,14 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
 
         fn open<S, Fs, TInvertedIndex>(
             args: ReadOnlySparseVectorIndexOpenArgs<'_, S, Fs>,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>>
         where
             S: UniversalReadExt + 'static,
             Fs: UniversalReadFs<File = S>,
             TInvertedIndex: InvertedIndexReadOnly<S>,
         {
-            Ok(Box::new(ReadOnlySparseVectorIndex::open(args)?))
+            Ok(Box::new(ReadOnlySparseVectorIndex::open(args, hw_counter)?))
         }
 
         let index = match (effective_index_type, config.datatype.unwrap_or_default()) {
@@ -297,22 +311,22 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
                 ));
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
-                Self::SparseCompressedImmutableRamF32(open(args)?)
+                Self::SparseCompressedImmutableRamF32(open(args, hw_counter)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
-                Self::SparseCompressedStoredF32(open(args)?)
+                Self::SparseCompressedStoredF32(open(args, hw_counter)?)
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
-                Self::SparseCompressedImmutableRamF16(open(args)?)
+                Self::SparseCompressedImmutableRamF16(open(args, hw_counter)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
-                Self::SparseCompressedStoredF16(open(args)?)
+                Self::SparseCompressedStoredF16(open(args, hw_counter)?)
             }
             (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
-                Self::SparseCompressedImmutableRamU8(open(args)?)
+                Self::SparseCompressedImmutableRamU8(open(args, hw_counter)?)
             }
             (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
-                Self::SparseCompressedStoredU8(open(args)?)
+                Self::SparseCompressedStoredU8(open(args, hw_counter)?)
             }
             (
                 SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
@@ -341,17 +355,21 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             Self::Plain(_) => {}
-            Self::Hnsw(index) => index.populate()?,
+            Self::Hnsw(index) => index.populate(hw_counter)?,
             Self::SparseMutableRam(_) => {}
             Self::SparseCompressedImmutableRamF32(_) => {}
             Self::SparseCompressedImmutableRamF16(_) => {}
             Self::SparseCompressedImmutableRamU8(_) => {}
-            Self::SparseCompressedStoredF32(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedStoredF16(index) => index.inverted_index().populate()?,
-            Self::SparseCompressedStoredU8(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredF32(index) => {
+                index.inverted_index().populate(hw_counter)?
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.inverted_index().populate(hw_counter)?
+            }
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().populate(hw_counter)?,
         };
         Ok(())
     }
@@ -436,23 +454,29 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         }
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseMutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
+            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
+            Self::SparseMutableRam(index) => index.size_of_searchable_vectors_in_bytes(hw_counter),
             Self::SparseCompressedImmutableRamF32(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
             Self::SparseCompressedImmutableRamF16(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
             Self::SparseCompressedImmutableRamU8(index) => {
-                index.size_of_searchable_vectors_in_bytes()
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
             }
-            Self::SparseCompressedStoredF32(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedStoredF16(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedStoredU8(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredF32(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.size_of_searchable_vectors_in_bytes(hw_counter)
+            }
         }
     }
 

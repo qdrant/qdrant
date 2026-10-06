@@ -20,6 +20,7 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitmask::save_bitmask;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalWriteFs;
@@ -142,6 +143,7 @@ pub fn store_is_uuid(
     fs: &impl UniversalWriteFs,
     segment_path: &Path,
     mappings: &CompressedPointMappings,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let uuid_offsets = RoaringBitmap::from_sorted_iter(mappings.iter_internal_raw().filter_map(
         |(offset, external_id)| match external_id {
@@ -155,6 +157,7 @@ pub fn store_is_uuid(
         &is_uuid_path(segment_path),
         mappings.total_point_count() as u64,
         uuid_offsets,
+        hw_counter,
     )?;
     Ok(())
 }

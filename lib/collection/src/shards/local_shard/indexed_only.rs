@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::BYTES_IN_KB;
 use segment::types::VectorNameBuf;
 use shard::locked_segment::LockedSegment;
@@ -14,6 +15,7 @@ use crate::config::CollectionConfigInternal;
 pub fn get_index_only_excluded_vectors(
     segment_holder: &[LockedSegment],
     collection_config: &CollectionConfigInternal,
+    hw_counter: &HardwareCounterCell,
 ) -> HashMap<VectorNameBuf, usize> {
     let indexing_threshold = collection_config
         .optimizer_config
@@ -39,7 +41,7 @@ pub fn get_index_only_excluded_vectors(
                 .filter_map(move |vector_name| {
                     let segment_config = segment_guard.config().vector_data.get(&vector_name)?;
 
-                    let points = segment_guard.available_point_count_without_deferred();
+                    let points = segment_guard.available_point_count_without_deferred(hw_counter);
 
                     // Skip segments that have an index.
                     if segment_config.index.is_indexed() {
@@ -47,7 +49,7 @@ pub fn get_index_only_excluded_vectors(
                     }
 
                     let vector_storage_size =
-                        segment_guard.available_vectors_size_in_bytes(&vector_name);
+                        segment_guard.available_vectors_size_in_bytes(&vector_name, hw_counter);
 
                     if let Err(err) = vector_storage_size {
                         log::error!("Failed to get vector size from segment: {err:?}");

@@ -18,6 +18,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
+use ::common::counter::hardware_accumulator::HwMeasurementAcc;
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
 use ::common::fs::{FsCheckResult, check_fs_info, check_mmap_functionality};
@@ -557,6 +558,7 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
+        &HwMeasurementAcc::disposable(),
     )?;
     let runtime_handle = toc.general_runtime_handle().clone();
 
@@ -636,6 +638,7 @@ fn main() -> anyhow::Result<()> {
             toc_arc.clone(),
             runtime_handle.clone(),
             args.reinit,
+            &HwMeasurementAcc::disposable(),
         )
         .expect("Can't initialize consensus");
 
@@ -682,6 +685,7 @@ fn main() -> anyhow::Result<()> {
                 dispatcher_arc.clone(),
                 consensus_state.this_peer_id(),
                 collections_to_recover_in_consensus,
+                &HwMeasurementAcc::disposable(),
             ));
         }
     } else {

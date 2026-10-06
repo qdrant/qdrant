@@ -56,7 +56,14 @@ fn test_async_raw_scorer(
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let mut storage = open_dense_vector_storage_with_uring(dir.path(), dim, distance, false, true)?;
+    let mut storage = open_dense_vector_storage_with_uring(
+        dir.path(),
+        dim,
+        distance,
+        false,
+        true,
+        &HardwareCounterCell::new(),
+    )?;
     let mut id_tracker = create_id_tracker_fixture(points);
 
     {
@@ -65,11 +72,21 @@ fn test_async_raw_scorer(
         insert_random_vectors(&mut rng, dim, &mut volatile_storage, points)?;
         delete_random_vectors(&mut rng, &mut volatile_storage, &mut id_tracker, delete)?;
 
-        merge_from_single_source(&mut storage, &volatile_storage, points as PointOffsetType)?;
+        merge_from_single_source(
+            &mut storage,
+            &volatile_storage,
+            points as PointOffsetType,
+            &HardwareCounterCell::new(),
+        )?;
     }
 
     for _ in 0..score {
-        test_random_score(&mut rng, dim, &storage, id_tracker.deleted_point_bitslice())?;
+        test_random_score(
+            &mut rng,
+            dim,
+            &storage,
+            id_tracker.deleted_point_bitslice(&HardwareCounterCell::new()),
+        )?;
     }
 
     Ok(())
@@ -103,8 +120,9 @@ fn test_random_score(
         HardwareCounterCell::new(),
     )?;
 
-    let points = rng.random_range(1..storage.total_vector_count());
-    let points = (0..storage.total_vector_count() as _).sample(&mut rng, points);
+    let points = rng.random_range(1..storage.total_vector_count(&HardwareCounterCell::new()));
+    let points =
+        (0..storage.total_vector_count(&HardwareCounterCell::new()) as _).sample(&mut rng, points);
 
     let res = scorer.score_points(&mut points.clone(), 0).collect_vec();
     let async_res = async_scorer

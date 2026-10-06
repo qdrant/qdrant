@@ -55,16 +55,27 @@ where
             .for_each_matching_value(items, hw_counter, check_fn, on_match)
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        self.inner.get_values(idx)
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        self.inner.get_values(idx, hw_counter)
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.inner.values_count(idx)
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        self.inner.values_count(idx, hw_counter)
     }
 
-    fn total_unique_values_count(&self) -> OperationResult<usize> {
-        self.inner.total_unique_values_count()
+    fn total_unique_values_count(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
+        self.inner.total_unique_values_count(hw_counter)
     }
 
     fn values_range<'a>(
@@ -80,8 +91,10 @@ where
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        self.inner.orderable_values_range(start_bound, end_bound)
+        self.inner
+            .orderable_values_range(start_bound, end_bound, hw_counter)
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
@@ -114,8 +127,8 @@ impl<T: NumericIndexValue, P, S: UniversalReadExt> PayloadFieldIndexRead
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
-        self.inner.count_indexed_points()
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.inner.count_indexed_points(hw_counter)
     }
 
     fn filter<'a>(
@@ -139,8 +152,10 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.inner.for_each_payload_block(threshold, key, f)
+        self.inner
+            .for_each_payload_block(threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

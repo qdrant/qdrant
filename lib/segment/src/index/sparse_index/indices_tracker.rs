@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
@@ -23,8 +24,12 @@ impl IndicesTracker {
     }
 
     /// Universal-IO variant of [`Self::open`].
-    pub fn open_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self> {
-        read_json_via(fs, Self::file_path(path))
+    pub fn open_universal<Fs: UniversalReadFs>(
+        fs: &Fs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self> {
+        read_json_via(fs, Self::file_path(path), hw_counter)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

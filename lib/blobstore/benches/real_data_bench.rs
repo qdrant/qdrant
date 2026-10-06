@@ -69,15 +69,17 @@ pub fn real_data_data_bench(c: &mut Criterion) {
 
     // insert data once & flush
     append_csv_data(&mut storage, &csv_path);
-    storage.flusher()().unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
 
     assert_eq!(storage.max_point_offset(), expected_point_count);
 
     // flush to get a consistent bitmask
-    storage.flusher()().unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
 
     // sanity check of storage size
-    let storage_size = storage.get_storage_size_bytes().unwrap();
+    let storage_size = storage
+        .get_storage_size_bytes(&HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(storage_size, 54_034_048); // 54MB
 
     // check storage folder size
@@ -85,7 +87,13 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     assert_eq!(file_size_mb, 70); // 70MB (includes metadata)
 
     c.bench_function("compute storage size", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
+        b.iter(|| {
+            black_box(
+                storage
+                    .get_storage_size_bytes(&HardwareCounterCell::new())
+                    .unwrap(),
+            )
+        });
     });
 
     c.bench_function("scan storage", |b| {
@@ -104,29 +112,45 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     // append the same data again to increase storage size
     for _ in 0..10 {
         append_csv_data(&mut storage, &csv_path);
-        storage.flusher()().unwrap();
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
     }
 
-    let inflated_storage_size = storage.get_storage_size_bytes().unwrap();
+    let inflated_storage_size = storage
+        .get_storage_size_bytes(&HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(inflated_storage_size, 594_374_528); // 594 MB (close to 10x54MB)
 
     c.bench_function("compute storage size (large)", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
+        b.iter(|| {
+            black_box(
+                storage
+                    .get_storage_size_bytes(&HardwareCounterCell::new())
+                    .unwrap(),
+            )
+        });
     });
 
     // delete 30% of the points
     let mut rng = rand::make_rng::<SmallRng>();
     for i in 0..storage.max_point_offset() {
         if rng.random_bool(0.3) {
-            storage.delete_value(i).unwrap();
+            storage
+                .delete_value(i, &HardwareCounterCell::new())
+                .unwrap();
         }
     }
 
     // flush to get a consistent bitmask
-    storage.flusher()().unwrap();
+    storage.flusher(&HardwareCounterCell::new())().unwrap();
 
     c.bench_function("compute storage size (large sparse)", |b| {
-        b.iter(|| black_box(storage.get_storage_size_bytes().unwrap()));
+        b.iter(|| {
+            black_box(
+                storage
+                    .get_storage_size_bytes(&HardwareCounterCell::new())
+                    .unwrap(),
+            )
+        });
     });
 
     c.bench_function("insert real payload (large)", |b| {
@@ -134,7 +158,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
             append_csv_data(&mut storage, &csv_path);
             // do not always flush to build up pending updates
             if rng.random_bool(0.3) {
-                storage.flusher()().unwrap();
+                storage.flusher(&HardwareCounterCell::new())().unwrap();
             }
         });
     });

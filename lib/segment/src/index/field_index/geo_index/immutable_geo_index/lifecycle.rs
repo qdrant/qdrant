@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UioResult, UniversalRead};
@@ -17,18 +18,21 @@ use crate::types::GeoPoint;
 
 impl<S: UniversalRead> ImmutableGeoIndex<S> {
     /// Open and load the immutable geo index from mmap storage.
-    pub fn load_from_on_disk(index: OnDiskGeoIndex<S>) -> OperationResult<Self> {
+    pub fn load_from_on_disk(
+        index: OnDiskGeoIndex<S>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let counts_per_hash = index
             .storage
             .counts_per_hash
-            .read_whole()?
+            .read_whole(hw_counter)?
             .iter()
             .copied()
             .map(Counts::from)
             .collect();
 
         // Build flat parallel arrays from on-disk points_map + points_map_ids
-        let points_map_entries = index.storage.points_map.read_whole()?;
+        let points_map_entries = index.storage.points_map.read_whole(hw_counter)?;
         let num_entries = points_map_entries.len();
         let mut points_map_hashes = Vec::with_capacity(num_entries);
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
@@ -53,6 +57,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
                 }
                 UioResult::Ok(())
             },
+            hw_counter,
         )?;
         points_map_offsets.push(points_map_ids.len() as u32);
         drop(points_map_entries);
@@ -65,17 +70,17 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         // order, so we pre-fill with empty value lists and index by point id.
         let mut point_to_values: Vec<Vec<GeoPoint>> =
             vec![Vec::new(); index.storage.point_to_values.len()];
-        index
-            .storage
-            .point_to_values
-            .for_all_points_values(|id, values| {
+        index.storage.point_to_values.for_all_points_values(
+            |id, values| {
                 let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
                 if !index.storage.deleted.is_active(id) {
                     deleted_points.push((id, geo_points));
                 } else {
                     point_to_values[id as usize] = geo_points;
                 }
-            })?;
+            },
+            hw_counter,
+        )?;
         let point_to_values = ImmutablePointToValues::new(point_to_values);
 
         // Index is now loaded into memory, clear cache of backing mmap storage

@@ -45,8 +45,21 @@ fn build_on_disk_storage(dir: &std::path::Path, rng: &mut StdRng) -> VectorStora
             .unwrap();
     }
 
-    let mut storage = open_dense_vector_storage(dir, DIMS, DISTANCE, Memory::Cold).unwrap();
-    merge_from_single_source(&mut storage, &raw, NUM_POINTS as PointOffsetType).unwrap();
+    let mut storage = open_dense_vector_storage(
+        dir,
+        DIMS,
+        DISTANCE,
+        Memory::Cold,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    merge_from_single_source(
+        &mut storage,
+        &raw,
+        NUM_POINTS as PointOffsetType,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     storage
 }
 
@@ -132,6 +145,7 @@ fn read_only_matches_read_write(
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -143,6 +157,7 @@ fn read_only_matches_read_write(
         None,
         on_disk,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
@@ -154,7 +169,11 @@ fn read_only_matches_read_write(
 
     for _ in 0..20 {
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
-        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+        let query = QueryVector::Nearest(
+            storage
+                .get_vector::<Random>(query_id, &HardwareCounterCell::new())
+                .to_owned(),
+        );
 
         let rw_scorer = rw
             .raw_scorer(query.clone(), HardwareCounterCell::disposable())
@@ -199,6 +218,7 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -210,6 +230,7 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
         None,
         on_disk,
         Some(Populate::No),
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
@@ -223,7 +244,11 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
 
     for _ in 0..10 {
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
-        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+        let query = QueryVector::Nearest(
+            storage
+                .get_vector::<Random>(query_id, &HardwareCounterCell::new())
+                .to_owned(),
+        );
 
         let rw_scorer = rw
             .raw_scorer(query.clone(), HardwareCounterCell::disposable())
@@ -284,6 +309,7 @@ fn read_only_matches_read_write_multivector(
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -295,6 +321,7 @@ fn read_only_matches_read_write_multivector(
         Some(&multivector_config),
         on_disk,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
@@ -303,7 +330,11 @@ fn read_only_matches_read_write_multivector(
 
     for _ in 0..10 {
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
-        let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
+        let query = QueryVector::Nearest(
+            storage
+                .get_vector::<Random>(query_id, &HardwareCounterCell::new())
+                .to_owned(),
+        );
 
         let rw_scorer = rw
             .raw_scorer(query.clone(), HardwareCounterCell::disposable())
@@ -355,8 +386,17 @@ fn preopen_and_unlink(
     };
 
     let mut cached_fs = CachedFs::new(MmapFs, dir).unwrap();
-    cached_fs.cache_file_info().unwrap();
-    ReadOnlyQuantizedVectors::<MmapFile>::preopen(&cached_fs, dir, &vector_config, None).unwrap();
+    cached_fs
+        .cache_file_info(&HardwareCounterCell::new())
+        .unwrap();
+    ReadOnlyQuantizedVectors::<MmapFile>::preopen(
+        &cached_fs,
+        dir,
+        &vector_config,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     futures::executor::block_on(cached_fs.wait_all());
 
     for entry in fs_err::read_dir(dir).unwrap() {
@@ -404,6 +444,7 @@ fn preopen_then_open_through_cached_fs(
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -417,12 +458,17 @@ fn preopen_then_open_through_cached_fs(
         None,
         on_disk,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
-    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+    let query = QueryVector::Nearest(
+        storage
+            .get_vector::<Random>(0, &HardwareCounterCell::new())
+            .to_owned(),
+    );
     let rw_scorer = rw
         .raw_scorer(query.clone(), HardwareCounterCell::disposable())
         .unwrap();
@@ -479,6 +525,7 @@ fn preopen_then_open_multivector_through_cached_fs(
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -492,12 +539,17 @@ fn preopen_then_open_multivector_through_cached_fs(
         Some(&multivector_config),
         on_disk,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(11).collect();
-    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+    let query = QueryVector::Nearest(
+        storage
+            .get_vector::<Random>(0, &HardwareCounterCell::new())
+            .to_owned(),
+    );
     let rw_scorer = rw
         .raw_scorer(query.clone(), HardwareCounterCell::disposable())
         .unwrap();
@@ -573,6 +625,7 @@ fn reload_chunked_preserves_scores(preload: bool) {
         quant_dir.path(),
         1,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -584,12 +637,17 @@ fn reload_chunked_preserves_scores(preload: bool) {
         None,
         on_disk,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap()
     .expect("quantization config exists");
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
-    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+    let query = QueryVector::Nearest(
+        storage
+            .get_vector::<Random>(0, &HardwareCounterCell::new())
+            .to_owned(),
+    );
 
     let before: Vec<_> = {
         let scorer = ro
@@ -601,8 +659,11 @@ fn reload_chunked_preserves_scores(preload: bool) {
     let empty = SortedSlice::new(&[]).unwrap();
     if preload {
         let mut cached_fs = CachedFs::new(MmapFs, quant_dir.path()).unwrap();
-        cached_fs.cache_file_info().unwrap();
-        ro.live_preload(&cached_fs).unwrap();
+        cached_fs
+            .cache_file_info(&HardwareCounterCell::new())
+            .unwrap();
+        ro.live_preload(&cached_fs, &HardwareCounterCell::new())
+            .unwrap();
         futures::executor::block_on(cached_fs.wait_all());
 
         fs_err::remove_dir_all(quant_dir.path()).unwrap();

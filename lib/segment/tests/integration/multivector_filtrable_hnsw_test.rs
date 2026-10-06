@@ -95,7 +95,7 @@ fn test_multi_filterable_hnsw(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true, &hw_counter).unwrap();
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
@@ -117,7 +117,7 @@ fn test_multi_filterable_hnsw(
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .borrow()
-            .total_vector_count(),
+            .total_vector_count(&hw_counter),
         num_points as usize
     );
 
@@ -167,6 +167,7 @@ fn test_multi_filterable_hnsw(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

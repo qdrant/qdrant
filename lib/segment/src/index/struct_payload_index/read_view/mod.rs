@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::FieldIndexRead;
@@ -68,7 +69,7 @@ where
     F: FieldIndexRead,
 {
     /// Number of available points -- excludes soft-deleted points.
-    pub fn available_point_count(&self) -> usize {
-        self.id_tracker.available_point_count()
+    pub fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.available_point_count(hw_counter)
     }
 }

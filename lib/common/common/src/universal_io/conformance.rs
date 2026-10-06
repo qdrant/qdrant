@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Random;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
@@ -25,35 +26,40 @@ pub fn open_options(writeable: bool) -> OpenOptions {
 ///
 /// `dir` is a directory (or key prefix, for object stores) the suite may
 /// create files under.
-pub fn run_append_conformance<Fs>(fs: &Fs, dir: &Path)
+pub fn run_append_conformance<Fs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell)
 where
     Fs: UniversalWriteFs,
     Fs::File: UniversalAppend,
     Fs::OpenExtra: Default,
 {
     let path = dir.join("append.dat");
-    fs.create(&path, 0).unwrap();
+    fs.create(&path, 0, hw_counter).unwrap();
 
     let mut file = fs
-        .open(&path, open_options(true), Fs::OpenExtra::default())
+        .open(
+            &path,
+            open_options(true),
+            Fs::OpenExtra::default(),
+            hw_counter,
+        )
         .unwrap();
 
     // Appending no bytes trivially succeeds, without touching the file.
-    file.append::<u8>(0, &[]).unwrap();
-    assert_eq!(file.len::<u8>().unwrap(), 0);
+    file.append::<u8>(0, &[], hw_counter).unwrap();
+    assert_eq!(file.len::<u8>(hw_counter).unwrap(), 0);
 
     // Appends land at exactly the provided offset.
-    file.append(0, b"hello ".as_slice()).unwrap();
-    file.append(6, b"world".as_slice()).unwrap();
-    assert_eq!(file.len::<u8>().unwrap(), 11);
+    file.append(0, b"hello ".as_slice(), hw_counter).unwrap();
+    file.append(6, b"world".as_slice(), hw_counter).unwrap();
+    assert_eq!(file.len::<u8>(hw_counter).unwrap(), 11);
 
     // Reads through the same handle observe the appended bytes.
     assert_eq!(
-        file.read_whole::<u8>().unwrap().as_ref(),
+        file.read_whole::<u8>(hw_counter).unwrap().as_ref(),
         b"hello world".as_slice(),
     );
     assert_eq!(
-        file.read::<_, u8>(ReadRange::new(6, 5), Random)
+        file.read::<_, u8>(ReadRange::new(6, 5), Random, hw_counter)
             .unwrap()
             .as_ref(),
         b"world".as_slice(),
@@ -62,41 +68,46 @@ where
     // A wrong offset is rejected outright and writes nothing — so a
     // duplicate of an already-landed append conflicts instead of appending
     // twice (idempotency).
-    let err = file.append(6, b"world".as_slice()).unwrap_err();
+    let err = file.append(6, b"world".as_slice(), hw_counter).unwrap_err();
     assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
-    let err = file.append(100, b"x".as_slice()).unwrap_err();
+    let err = file.append(100, b"x".as_slice(), hw_counter).unwrap_err();
     assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
-    assert_eq!(file.len::<u8>().unwrap(), 11);
+    assert_eq!(file.len::<u8>(hw_counter).unwrap(), 11);
     assert_eq!(
-        file.read_whole::<u8>().unwrap().as_ref(),
+        file.read_whole::<u8>(hw_counter).unwrap().as_ref(),
         b"hello world".as_slice(),
     );
 
     // A batch lands contiguously at the provided offset; empty buffers are
     // skipped.
     let batch: [&[u8]; 4] = [b"ab", b"", b"cde", b"f"];
-    file.append_batch(11, batch).unwrap();
-    assert_eq!(file.len::<u8>().unwrap(), 17);
+    file.append_batch(11, batch, hw_counter).unwrap();
+    assert_eq!(file.len::<u8>(hw_counter).unwrap(), 17);
     assert_eq!(
-        file.read::<_, u8>(ReadRange::new(11, 6), Random)
+        file.read::<_, u8>(ReadRange::new(11, 6), Random, hw_counter)
             .unwrap()
             .as_ref(),
         b"abcdef".as_slice(),
     );
 
     // An empty batch trivially succeeds.
-    file.append_batch::<u8>(17, std::iter::empty()).unwrap();
+    file.append_batch::<u8>(17, std::iter::empty(), hw_counter)
+        .unwrap();
 
     // Batches larger than IOV_MAX (1024) still land contiguously and in
     // order across the multiple underlying operations.
     let buffers: Vec<Vec<u8>> = (0..1500u32).map(|i| i.to_le_bytes().to_vec()).collect();
     let expected: Vec<u8> = buffers.concat();
-    file.append_batch(17, buffers.iter().map(Vec::as_slice))
+    file.append_batch(17, buffers.iter().map(Vec::as_slice), hw_counter)
         .unwrap();
     assert_eq!(
-        file.read::<_, u8>(ReadRange::new(17, expected.len() as u64), Random)
-            .unwrap()
-            .as_ref(),
+        file.read::<_, u8>(
+            ReadRange::new(17, expected.len() as u64),
+            Random,
+            hw_counter
+        )
+        .unwrap()
+        .as_ref(),
         expected.as_slice(),
     );
     let eof = 17 + expected.len() as u64;
@@ -104,15 +115,20 @@ where
     // A freshly opened handle sees the current size; afterwards it observes
     // further growth after `reopen()`.
     let mut reader = fs
-        .open(&path, open_options(false), Fs::OpenExtra::default())
+        .open(
+            &path,
+            open_options(false),
+            Fs::OpenExtra::default(),
+            hw_counter,
+        )
         .unwrap();
-    assert_eq!(reader.len::<u8>().unwrap(), eof);
-    file.append(eof, b"tail".as_slice()).unwrap();
-    reader.live_reload().unwrap();
-    assert_eq!(reader.len::<u8>().unwrap(), eof + 4);
+    assert_eq!(reader.len::<u8>(hw_counter).unwrap(), eof);
+    file.append(eof, b"tail".as_slice(), hw_counter).unwrap();
+    reader.live_reload(hw_counter).unwrap();
+    assert_eq!(reader.len::<u8>(hw_counter).unwrap(), eof + 4);
     assert_eq!(
         reader
-            .read::<_, u8>(ReadRange::new(eof, 4), Random)
+            .read::<_, u8>(ReadRange::new(eof, 4), Random, hw_counter)
             .unwrap()
             .as_ref(),
         b"tail".as_slice(),
@@ -125,19 +141,29 @@ where
     // offset gets a clean conflict and writes nothing — the check runs
     // against the file, not the handle's possibly-stale view.
     let conflict_path = dir.join("append_conflict.dat");
-    fs.create(&conflict_path, 0).unwrap();
+    fs.create(&conflict_path, 0, hw_counter).unwrap();
     let mut first = fs
-        .open(&conflict_path, open_options(true), Fs::OpenExtra::default())
+        .open(
+            &conflict_path,
+            open_options(true),
+            Fs::OpenExtra::default(),
+            hw_counter,
+        )
         .unwrap();
     let mut second = fs
-        .open(&conflict_path, open_options(true), Fs::OpenExtra::default())
+        .open(
+            &conflict_path,
+            open_options(true),
+            Fs::OpenExtra::default(),
+            hw_counter,
+        )
         .unwrap();
 
-    first.append(0, b"aaa".as_slice()).unwrap();
-    second.append(3, b"bbb".as_slice()).unwrap();
+    first.append(0, b"aaa".as_slice(), hw_counter).unwrap();
+    second.append(3, b"bbb".as_slice(), hw_counter).unwrap();
 
     // `first` still believes the file ends at 3.
-    let err = first.append(3, b"ccc".as_slice()).unwrap_err();
+    let err = first.append(3, b"ccc".as_slice(), hw_counter).unwrap_err();
     assert!(matches!(
         err,
         UniversalIoError::AppendOffsetConflict { offset: 3, .. }
@@ -145,16 +171,16 @@ where
 
     // Recovery per the contract: reopen the stale handle, re-check the
     // length to learn the true end of file, and append there.
-    first.live_reload().unwrap();
-    let eof = first.len::<u8>().unwrap();
+    first.live_reload(hw_counter).unwrap();
+    let eof = first.len::<u8>(hw_counter).unwrap();
     assert_eq!(eof, 6);
-    first.append(eof, b"ccc".as_slice()).unwrap();
+    first.append(eof, b"ccc".as_slice(), hw_counter).unwrap();
     assert_eq!(
-        first.read_whole::<u8>().unwrap().as_ref(),
+        first.read_whole::<u8>(hw_counter).unwrap().as_ref(),
         b"aaabbbccc".as_slice(),
     );
 
-    run_open_append_conformance(fs, dir);
+    run_open_append_conformance(fs, dir, hw_counter);
 }
 
 /// Exercise [`UniversalWriteFs::open_append`] against a backend: the
@@ -163,33 +189,40 @@ where
 ///
 /// Called by [`run_append_conformance`]; run it directly for a filesystem
 /// whose own [`UniversalReadFs::File`] does not append.
-pub fn run_open_append_conformance<Fs>(fs: &Fs, dir: &Path)
+pub fn run_open_append_conformance<Fs>(fs: &Fs, dir: &Path, hw_counter: &HardwareCounterCell)
 where
     Fs: UniversalWriteFs,
     Fs::OpenExtra: Default,
 {
     let path = dir.join("open_append.dat");
-    fs.create(&path, 0).unwrap();
+    fs.create(&path, 0, hw_counter).unwrap();
 
     // `writeable` is forced on: an append handle opened as read-only is a
     // contradiction, not an error to propagate.
-    let mut file = fs.open_append(&path, open_options(false)).unwrap();
+    let mut file = fs
+        .open_append(&path, open_options(false), hw_counter)
+        .unwrap();
 
-    file.append(0, b"one".as_slice()).unwrap();
-    file.append_batch(3, [b"two".as_slice(), b"three".as_slice()])
+    file.append(0, b"one".as_slice(), hw_counter).unwrap();
+    file.append_batch(3, [b"two".as_slice(), b"three".as_slice()], hw_counter)
         .unwrap();
     (file.flusher())().unwrap();
 
     // Same compare-and-swap contract as any other append handle.
-    let err = file.append(0, b"x".as_slice()).unwrap_err();
+    let err = file.append(0, b"x".as_slice(), hw_counter).unwrap_err();
     assert!(matches!(err, UniversalIoError::AppendOffsetConflict { .. }));
 
     // The read path sees the appended bytes.
     let reader = fs
-        .open(&path, open_options(false), Fs::OpenExtra::default())
+        .open(
+            &path,
+            open_options(false),
+            Fs::OpenExtra::default(),
+            hw_counter,
+        )
         .unwrap();
     assert_eq!(
-        reader.read_whole::<u8>().unwrap().as_ref(),
+        reader.read_whole::<u8>(hw_counter).unwrap().as_ref(),
         b"onetwothree".as_slice(),
     );
 }

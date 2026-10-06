@@ -55,7 +55,7 @@ mod tests {
             let mut builder = NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_gridstore(
                 dir.path().to_path_buf(),
             );
-            builder.init().unwrap();
+            builder.init(&hw_counter).unwrap();
             builder
                 .add_point(0, &[&Value::from(1.5)], &hw_counter)
                 .unwrap();
@@ -66,7 +66,7 @@ mod tests {
                 .add_point(2, &[&Value::from(4.5)], &hw_counter)
                 .unwrap();
             // `finalize` flushes the Gridstore to disk.
-            builder.finalize().unwrap();
+            builder.finalize(&hw_counter).unwrap();
         }
 
         // `S = ReadOnly<MmapFile>` → the write-enforced backend (every open
@@ -75,16 +75,16 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableNumericIndex<FloatPayloadType, ReadOnly<MmapFile>> =
-            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf())
+            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf(), &hw_counter)
                 .unwrap()
                 .unwrap();
 
         assert_eq!(index.get_points_count(), 3);
         assert_eq!(index.get_max_values_per_point(), 2);
-        assert_eq!(index.values_count(0), Some(1));
-        assert_eq!(index.values_count(1), Some(2));
-        assert_eq!(index.get_values(0).unwrap().count(), 1);
-        assert_eq!(index.get_values(1).unwrap().count(), 2);
-        assert_eq!(index.total_unique_values_count().unwrap(), 4);
+        assert_eq!(index.values_count(0, &hw_counter), Some(1));
+        assert_eq!(index.values_count(1, &hw_counter), Some(2));
+        assert_eq!(index.get_values(0, &hw_counter).unwrap().count(), 1);
+        assert_eq!(index.get_values(1, &hw_counter).unwrap().count(), 2);
+        assert_eq!(index.total_unique_values_count(&hw_counter).unwrap(), 4);
     }
 }

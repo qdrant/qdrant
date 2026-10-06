@@ -16,6 +16,7 @@
 //! observe the appended bytes right away; the appended blocks themselves
 //! fault in from the remote on first read.
 
+use common::counter::hardware_counter::HardwareCounterCell;
 mod async_io;
 mod fs;
 mod pipeline;
@@ -76,7 +77,12 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
     /// One remote append operation per call: direct append or whole-object
     /// rewrite, then advance the mirror to the new length without extra IO
     /// (a successful append proves `offset` was the remote EOF).
-    fn append_bytes(&mut self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
+    fn append_bytes(
+        &mut self,
+        offset: ByteOffset,
+        data: Bytes,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         if data.is_empty() {
             return Ok(());
         }
@@ -95,20 +101,30 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
 
         let strategy = match self.remote.source().append_support() {
             AppendSupport::Always => {
-                self.remote.append_bytes(offset, data, self.cache.etag())?;
+                self.remote.append_bytes(
+                    offset,
+                    data,
+                    self.cache.etag(),
+                    &hw_counter.new_accumulator(),
+                )?;
                 "append"
             }
             AppendSupport::AboveThreshold { min_offset } => {
                 if offset >= min_offset {
-                    self.remote.append_bytes(offset, data, self.cache.etag())?;
+                    self.remote.append_bytes(
+                        offset,
+                        data,
+                        self.cache.etag(),
+                        &hw_counter.new_accumulator(),
+                    )?;
                     "append"
                 } else {
-                    self.local_rewrite(offset, data)?;
+                    self.local_rewrite(offset, data, hw_counter)?;
                     "rewrite"
                 }
             }
             AppendSupport::Never => {
-                self.local_rewrite(offset, data)?;
+                self.local_rewrite(offset, data, hw_counter)?;
                 "rewrite"
             }
         };
@@ -122,32 +138,43 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
             );
         }
 
-        let _ = self.cache.live_preload(|_| {
-            Some(FileInfo {
-                size: new_len,
-                last_modified: None,
-                etag: None,
-            })
-        });
-        self.cache.live_reload()
+        let _ = self.cache.live_preload(
+            |_| {
+                Some(FileInfo {
+                    size: new_len,
+                    last_modified: None,
+                    etag: None,
+                })
+            },
+            hw_counter,
+        );
+        self.cache.live_reload(hw_counter)
     }
 
     /// Replace the whole remote object with `[0, offset) + data`, built on
     /// this side — for stores (or object sizes) without direct appends.
-    fn local_rewrite(&self, offset: ByteOffset, data: Bytes) -> UioResult<()> {
-        self.check_offset(offset)?;
+    fn local_rewrite(
+        &self,
+        offset: ByteOffset,
+        data: Bytes,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.check_offset(offset, hw_counter)?;
 
         if offset == 0 {
-            self.remote.save_whole(data)
+            self.remote.save_whole(data, &hw_counter.new_accumulator())
         } else {
             // The prefix is small by construction (below the direct-append
             // threshold); read it through the cache (served locally once
             // mirrored).
-            let prefix = self.cache.read_bytes(0..offset, Sequential, 1)?;
+            let prefix = self
+                .cache
+                .read_bytes(0..offset, Sequential, 1, hw_counter)?;
             let mut whole = Vec::with_capacity(prefix.len() + data.len());
             whole.extend_from_slice(&prefix);
             whole.extend_from_slice(&data);
-            self.remote.save_whole(Bytes::from(whole))
+            self.remote
+                .save_whole(Bytes::from(whole), &hw_counter.new_accumulator())
         }
     }
 
@@ -159,8 +186,12 @@ impl<A: AsyncAppend + Clone> CachedBlobFile<A> {
     /// offset-0 rewrite is what creates it, matching the direct-append
     /// backends (a GCS compose or native append at offset 0 also creates
     /// the object).
-    fn check_offset(&self, offset: ByteOffset) -> UioResult<()> {
-        let local_len = self.cache.len::<u8>().ok_not_found()?.unwrap_or(0);
+    fn check_offset(&self, offset: ByteOffset, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        let local_len = self
+            .cache
+            .len::<u8>(hw_counter)
+            .ok_not_found()?
+            .unwrap_or(0);
         if offset != local_len {
             return Err(UniversalIoError::AppendOffsetConflict {
                 path: self.remote.path().to_path_buf(),
@@ -183,15 +214,16 @@ where
         Self: 'a,
         U: UserData;
 
-    fn live_reload(&mut self) -> UioResult<()> {
-        self.cache.live_reload()
+    fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.cache.live_reload(hw_counter)
     }
 
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
-        self.cache.live_preload(get_file_info)
+        self.cache.live_preload(get_file_info, hw_counter)
     }
 
     fn read_bytes<P: AccessPattern>(
@@ -199,20 +231,25 @@ where
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
-        self.cache.read_bytes(range, access_pattern, align)
+        self.cache
+            .read_bytes(range, access_pattern, align, hw_counter)
     }
 
-    fn read_whole<T: common::universal_io::Item>(&self) -> UioResult<std::borrow::Cow<'_, [T]>> {
-        self.cache.read_whole()
+    fn read_whole<T: common::universal_io::Item>(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<std::borrow::Cow<'_, [T]>> {
+        self.cache.read_whole(hw_counter)
     }
 
-    fn len<T>(&self) -> UioResult<u64> {
-        self.cache.len::<T>()
+    fn len<T>(&self, hw_counter: &HardwareCounterCell) -> UioResult<u64> {
+        self.cache.len::<T>(hw_counter)
     }
 
-    fn populate(&self) -> UioResult<()> {
-        self.cache.populate()
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> UioResult<()> {
+        self.cache.populate(hw_counter)
     }
 
     fn populate_auto() -> bool {
@@ -239,14 +276,24 @@ impl<A: AsyncAppend + Clone> UniversalAppend for CachedBlobFile<A>
 where
     A::Config: Clone,
 {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
-        self.append_bytes(offset, Bytes::copy_from_slice(bytemuck::cast_slice(data)))
+    fn append<T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        data: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
+        self.append_bytes(
+            offset,
+            Bytes::copy_from_slice(bytemuck::cast_slice(data)),
+            hw_counter,
+        )
     }
 
     fn append_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         // Concatenate into a single buffer so the whole batch is one remote
         // mutation.
@@ -260,6 +307,6 @@ where
             buffer.extend_from_slice(slice);
         }
 
-        self.append_bytes(offset, Bytes::from(buffer))
+        self.append_bytes(offset, Bytes::from(buffer), hw_counter)
     }
 }

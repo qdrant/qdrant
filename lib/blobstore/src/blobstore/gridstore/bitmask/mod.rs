@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
@@ -54,11 +55,11 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Calculate the amount of trailing free blocks in the bitmask.
-    pub fn trailing_free_blocks(&self) -> Result<u32> {
-        let trailing_gap = self.regions_gaps.trailing_free_blocks()?;
+    pub fn trailing_free_blocks(&self, hw_counter: &HardwareCounterCell) -> Result<u32> {
+        let trailing_gap = self.regions_gaps.trailing_free_blocks(hw_counter)?;
         #[cfg(debug_assertions)]
         {
-            let all_bits = self.bitslice.read_all()?;
+            let all_bits = self.bitslice.read_all(hw_counter)?;
             let num_trailing_zeros = all_bits.trailing_zeros();
             debug_assert_eq!(num_trailing_zeros, trailing_gap as usize);
         }
@@ -82,7 +83,12 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create(fs: &S::Fs, dir: &Path, config: GridstoreConfig) -> Result<Self> {
+    pub(crate) fn create(
+        fs: &S::Fs,
+        dir: &Path,
+        config: GridstoreConfig,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes
@@ -96,7 +102,8 @@ impl<S: UniversalWrite> Bitmask<S> {
         let path = Self::bitmask_path(dir);
         create_and_ensure_length(&path, length)?;
 
-        let bitslice = StoredBitSlice::open(fs, &path, open_options(), Default::default())?;
+        let bitslice =
+            StoredBitSlice::open(fs, &path, open_options(), Default::default(), hw_counter)?;
 
         let bit_len = bitslice.bit_len() as usize;
         assert_eq!(bit_len, length * 8, "Bitmask length mismatch");
@@ -105,7 +112,8 @@ impl<S: UniversalWrite> Bitmask<S> {
         let num_regions = bit_len / config.region_size_blocks;
         let region_gaps = vec![RegionGaps::all_free(config.region_size_blocks as u16); num_regions];
 
-        let regions_gaps = BitmaskGaps::create(fs, dir, region_gaps.into_iter(), config.clone())?;
+        let regions_gaps =
+            BitmaskGaps::create(fs, dir, region_gaps.into_iter(), config.clone(), hw_counter)?;
 
         Ok(Self {
             config,
@@ -119,6 +127,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         config: GridstoreConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         debug_assert!(
             config
@@ -145,8 +154,9 @@ impl<S: UniversalWrite> Bitmask<S> {
                 advice: AdviceSetting::Advice(Advice::Random),
             },
             Default::default(),
+            hw_counter,
         )?;
-        let regions_gaps = BitmaskGaps::open(fs, dir, config.clone())?;
+        let regions_gaps = BitmaskGaps::open(fs, dir, config.clone(), hw_counter)?;
 
         Ok(Self {
             config,
@@ -172,13 +182,13 @@ impl<S: UniversalWrite> Bitmask<S> {
 
     /// Compute the size of the storage in bytes.
     /// Does not include the metadata information (e.g. the regions gaps, bitmask...).
-    pub fn get_storage_size_bytes(&self) -> Result<usize> {
+    pub fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         let mut size = 0;
         let region_size_blocks = self.config.region_size_blocks;
         let block_size_bytes = self.config.block_size_bytes;
         let region_size_bytes = region_size_blocks * block_size_bytes;
-        let gaps = self.regions_gaps.read_all()?;
-        let all_bits = self.bitslice.read_all()?;
+        let gaps = self.regions_gaps.read_all(hw_counter)?;
+        let all_bits = self.bitslice.read_all(hw_counter)?;
         for (gap_id, gap) in gaps.iter().enumerate() {
             // skip empty regions
             if gap.is_empty(region_size_blocks as u16) {
@@ -205,7 +215,7 @@ impl<S: UniversalWrite> Bitmask<S> {
     }
 
     /// Extend the bitslice to cover another page
-    pub fn cover_new_page(&mut self) -> Result<()> {
+    pub fn cover_new_page(&mut self, hw_counter: &HardwareCounterCell) -> Result<()> {
         let extra_length = Self::length_for_page(&self.config);
 
         // flush outstanding changes
@@ -216,12 +226,12 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length)?;
 
-        self.bitslice.live_reload()?;
+        self.bitslice.live_reload(hw_counter)?;
 
         let current_bit_len = self.bitslice.bit_len() as usize;
 
         // extend the region gaps
-        let current_total_regions = self.regions_gaps.len()?;
+        let current_total_regions = self.regions_gaps.len(hw_counter)?;
         let expected_total_full_regions =
             current_bit_len.div_euclid(self.config.region_size_blocks);
         debug_assert!(
@@ -231,10 +241,10 @@ impl<S: UniversalWrite> Bitmask<S> {
         let new_regions = expected_total_full_regions.saturating_sub(current_total_regions);
         let new_gaps =
             vec![RegionGaps::all_free(self.config.region_size_blocks as u16); new_regions];
-        self.regions_gaps.extend(new_gaps.into_iter())?;
+        self.regions_gaps.extend(new_gaps.into_iter(), hw_counter)?;
 
         assert_eq!(
-            self.regions_gaps.len()? * self.config.region_size_blocks,
+            self.regions_gaps.len(hw_counter)? * self.config.region_size_blocks,
             current_bit_len,
             "Bitmask length mismatch",
         );
@@ -251,17 +261,23 @@ impl<S: UniversalWrite> Bitmask<S> {
 
     /// The amount of blocks that have never been used in the page.
     #[cfg(test)]
-    pub(crate) fn free_blocks_for_page(&self, page_id: PageId) -> Result<usize> {
+    pub(crate) fn free_blocks_for_page(
+        &self,
+        page_id: PageId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<usize> {
         let range_of_page = self.range_of_page(page_id);
-        let all_bits = self.bitslice.read_all()?;
+        let all_bits = self.bitslice.read_all(hw_counter)?;
         Ok(all_bits[range_of_page].trailing_zeros())
     }
 
     pub(crate) fn find_available_blocks(
         &self,
         num_blocks: u32,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<(PageId, BlockOffset)>> {
-        let Some(region_id_range) = self.regions_gaps.find_fitting_gap(num_blocks)? else {
+        let Some(region_id_range) = self.regions_gaps.find_fitting_gap(num_blocks, hw_counter)?
+        else {
             return Ok(None);
         };
         let regions_start_offset = region_id_range.start as usize * self.config.region_size_blocks;
@@ -288,7 +304,7 @@ impl<S: UniversalWrite> Bitmask<S> {
             (page_id as PageId, page_block_offset as BlockOffset)
         };
 
-        let all_bits = self.bitslice.read_all()?;
+        let all_bits = self.bitslice.read_all(hw_counter)?;
         let regions_bitslice = &all_bits[regions_start_offset..regions_end_offset];
 
         Ok(Self::find_available_blocks_in_slice(
@@ -403,9 +419,10 @@ impl<S: UniversalWrite> Bitmask<S> {
         block_offset: BlockOffset,
         num_blocks: u32,
         used: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let relative_range = block_offset as usize..(block_offset as usize + num_blocks as usize);
-        self.mark_blocks_batch(page_id, std::iter::once(relative_range), used)
+        self.mark_blocks_batch(page_id, std::iter::once(relative_range), used, hw_counter)
     }
 
     /// Marks blocks sharing the same page in batch. First updates all ranges in the bitmask, then updates the region gaps a single time.
@@ -419,6 +436,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         page_id: PageId,
         local_block_ranges: impl Iterator<Item = Range<usize>>,
         used: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         let page_start = self.range_of_page(page_id).start;
 
@@ -430,6 +448,7 @@ impl<S: UniversalWrite> Bitmask<S> {
 
             self.bitslice.set_ascending_bits_batch(
                 (bitmask_range.start as u64..bitmask_range.end as u64).map(|i| (i, used)),
+                hw_counter,
             )?;
 
             let start_region_id =
@@ -440,16 +459,22 @@ impl<S: UniversalWrite> Bitmask<S> {
             dirty_regions.extend(start_region_id..end_region_id);
         }
 
-        self.update_region_gaps(dirty_regions)
+        self.update_region_gaps(dirty_regions, hw_counter)
     }
 
-    fn update_region_gaps(&mut self, dirty_regions: AHashSet<RegionId>) -> Result<()> {
+    fn update_region_gaps(
+        &mut self,
+        dirty_regions: AHashSet<RegionId>,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         for region_id in dirty_regions {
             let region_id = region_id as usize;
             let region_start = (region_id * self.config.region_size_blocks) as u64;
             let region_end = region_start + self.config.region_size_blocks as u64;
 
-            let bitslice = &self.bitslice.read_bit_range(region_start..region_end)?;
+            let bitslice = &self
+                .bitslice
+                .read_bit_range(region_start..region_end, hw_counter)?;
 
             let gaps = Self::calculate_gaps(bitslice, self.config.region_size_blocks);
 
@@ -462,17 +487,20 @@ impl<S: UniversalWrite> Bitmask<S> {
     ///
     /// Cheap length-only comparison. Returns `Some((expected, actual))` region counts when the
     /// persisted gaps diverged in length from the bitmask, which an unclean shutdown can cause.
-    pub(crate) fn gaps_length_mismatch(&self) -> Result<Option<(usize, usize)>> {
+    pub(crate) fn gaps_length_mismatch(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<(usize, usize)>> {
         let expected =
             (self.bitslice.bit_len() as usize).div_euclid(self.config.region_size_blocks);
-        let actual = self.regions_gaps.len()?;
+        let actual = self.regions_gaps.len(hw_counter)?;
         Ok((expected != actual).then_some((expected, actual)))
     }
 
     /// Recompute the gap entries of every region from the bitmask.
-    fn compute_gaps(&self) -> Result<Vec<RegionGaps>> {
+    fn compute_gaps(&self, hw_counter: &HardwareCounterCell) -> Result<Vec<RegionGaps>> {
         let region_size_blocks = self.config.region_size_blocks;
-        let all_bits = self.bitslice.read_all()?;
+        let all_bits = self.bitslice.read_all(hw_counter)?;
         Ok(all_bits
             .chunks_exact(region_size_blocks)
             .map(|region| Self::calculate_gaps(region, region_size_blocks))
@@ -490,8 +518,8 @@ impl<S: UniversalWrite> Bitmask<S> {
     /// overwritten through the existing mapping, because resizing the file would require
     /// unmapping it first (Windows refuses to resize a file with a live mapping). A length
     /// divergence is repaired when the storage is opened, see [`Self::into_rebuilt_gaps`].
-    pub(crate) fn rebuild_gaps(&mut self) -> Result<()> {
-        if let Some((expected, actual)) = self.gaps_length_mismatch()? {
+    pub(crate) fn rebuild_gaps(&mut self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        if let Some((expected, actual)) = self.gaps_length_mismatch(hw_counter)? {
             return Err(BlobstoreError::service_error(format!(
                 "Cannot rebuild region gaps of bitmask at {:?} in place: the gaps cover \
                  {actual} regions, but the bitmask has {expected}",
@@ -499,8 +527,8 @@ impl<S: UniversalWrite> Bitmask<S> {
             )));
         }
 
-        let gaps = self.compute_gaps()?;
-        self.regions_gaps.overwrite(&gaps)
+        let gaps = self.compute_gaps(hw_counter)?;
+        self.regions_gaps.overwrite(&gaps, hw_counter)
     }
 
     /// Rebuild all region gaps from the bitmask, repairing a gaps file whose length diverged
@@ -508,8 +536,12 @@ impl<S: UniversalWrite> Bitmask<S> {
     ///
     /// Consumes and returns `self`: the gaps file must be unmapped while it is replaced, since
     /// Windows refuses to resize or replace a file with a live mapping.
-    pub(crate) fn into_rebuilt_gaps(self, fs: &S::Fs) -> Result<Self> {
-        let gaps = self.compute_gaps()?;
+    pub(crate) fn into_rebuilt_gaps(
+        self,
+        fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
+        let gaps = self.compute_gaps(hw_counter)?;
 
         let Self {
             config,
@@ -522,12 +554,12 @@ impl<S: UniversalWrite> Bitmask<S> {
         // Unmap the gaps file before replacing it.
         drop(regions_gaps);
 
-        fs.atomic_save(&gaps_path, bytemuck::cast_slice(&gaps))?;
+        fs.atomic_save(&gaps_path, bytemuck::cast_slice(&gaps), hw_counter)?;
 
         let dir = gaps_path
             .parent()
             .expect("gaps file has a parent directory");
-        let regions_gaps = BitmaskGaps::open(fs, dir, config.clone())?;
+        let regions_gaps = BitmaskGaps::open(fs, dir, config.clone(), hw_counter)?;
 
         Ok(Self {
             config,
@@ -652,9 +684,9 @@ impl<S: UniversalWrite> Bitmask<S> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> Result<()> {
-        self.bitslice.populate()?;
-        self.regions_gaps.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        self.bitslice.populate(hw_counter)?;
+        self.regions_gaps.populate(hw_counter)?;
         Ok(())
     }
 
@@ -668,9 +700,9 @@ impl<S: UniversalWrite> Bitmask<S> {
 
 #[cfg(test)]
 mod tests {
-
     use bitvec::bits;
     use common::bitvec::BitVec;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::MmapFs;
     use proptest::prelude::*;
     use rand::{RngExt, rng};
@@ -702,7 +734,9 @@ mod tests {
             compression: Compression::LZ4,
         };
 
-        let bitmask = super::Bitmask::create(&MmapFs, dir.path(), config).unwrap();
+        let bitmask =
+            super::Bitmask::create(&MmapFs, dir.path(), config, &HardwareCounterCell::new())
+                .unwrap();
         (dir, bitmask)
     }
 
@@ -711,47 +745,76 @@ mod tests {
         let blocks_per_page = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         let (_dir, mut bitmask) = create_test_bitmask();
-        bitmask.cover_new_page().unwrap();
+        bitmask.cover_new_page(&HardwareCounterCell::new()).unwrap();
 
         assert_eq!(bitmask.bitslice.bit_len() as u32, blocks_per_page * 2);
 
         // 1..10
-        bitmask.mark_blocks(0, 1, 9, true).unwrap();
+        bitmask
+            .mark_blocks(0, 1, 9, true, &HardwareCounterCell::new())
+            .unwrap();
 
         // 15..20
-        bitmask.mark_blocks(0, 15, 5, true).unwrap();
+        bitmask
+            .mark_blocks(0, 15, 5, true, &HardwareCounterCell::new())
+            .unwrap();
 
         // 30..blocks_per_page
         bitmask
-            .mark_blocks(0, 30, blocks_per_page - 30, true)
+            .mark_blocks(
+                0,
+                30,
+                blocks_per_page - 30,
+                true,
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
 
         // blocks_per_page..blocks_per_page + 1
-        bitmask.mark_blocks(1, 0, 1, true).unwrap();
+        bitmask
+            .mark_blocks(1, 0, 1, true, &HardwareCounterCell::new())
+            .unwrap();
 
-        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(1, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(block_offset, 0);
         assert_eq!(page_id, 0);
 
-        let (page_id, block_offset) = bitmask.find_available_blocks(2).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(2, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(block_offset, 10);
         assert_eq!(page_id, 0);
 
-        let (page_id, block_offset) = bitmask.find_available_blocks(5).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(5, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(block_offset, 10);
         assert_eq!(page_id, 0);
 
-        let (page_id, block_offset) = bitmask.find_available_blocks(6).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(6, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(block_offset, 20);
         assert_eq!(page_id, 0);
 
         // first free block of the next page
-        let (page_id, block_offset) = bitmask.find_available_blocks(30).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(30, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(block_offset, 1);
         assert_eq!(page_id, 1);
 
         // not fitting cell
-        let found_large = bitmask.find_available_blocks(blocks_per_page).unwrap();
+        let found_large = bitmask
+            .find_available_blocks(blocks_per_page, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(found_large, None);
     }
 
@@ -761,13 +824,21 @@ mod tests {
 
         // Two pages, one region per page.
         let (_dir, mut bitmask) = create_test_bitmask();
-        bitmask.cover_new_page().unwrap();
+        bitmask.cover_new_page(&HardwareCounterCell::new()).unwrap();
 
         // Occupy all of region 0 and the first block of region 1.
-        bitmask.mark_blocks(0, 0, blocks_per_page, true).unwrap();
-        bitmask.mark_blocks(1, 0, 1, true).unwrap();
+        bitmask
+            .mark_blocks(0, 0, blocks_per_page, true, &HardwareCounterCell::new())
+            .unwrap();
+        bitmask
+            .mark_blocks(1, 0, 1, true, &HardwareCounterCell::new())
+            .unwrap();
 
-        let expected = bitmask.regions_gaps.read_all().unwrap().into_owned();
+        let expected = bitmask
+            .regions_gaps
+            .read_all(&HardwareCounterCell::new())
+            .unwrap()
+            .into_owned();
 
         // Corrupt the persisted gaps, as an unclean shutdown can leave them: claim region 0 is
         // all free.
@@ -775,17 +846,29 @@ mod tests {
         bitmask.regions_gaps.set(0, all_free).unwrap();
 
         // With the corrupted gaps the search proposes region 0, which is actually full.
-        assert_eq!(bitmask.find_available_blocks(1).unwrap(), None);
+        assert_eq!(
+            bitmask
+                .find_available_blocks(1, &HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
 
         // The in-place rebuild restores every entry from the bitmask.
-        bitmask.rebuild_gaps().unwrap();
+        bitmask.rebuild_gaps(&HardwareCounterCell::new()).unwrap();
         assert_eq!(
-            bitmask.regions_gaps.read_all().unwrap().as_ref(),
+            bitmask
+                .regions_gaps
+                .read_all(&HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
             expected.as_slice(),
         );
 
         // The search finds the free space in region 1 again.
-        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(1, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!((page_id, block_offset), (1, 1));
     }
 
@@ -793,10 +876,21 @@ mod tests {
     fn test_gaps_length_mismatch() {
         // One page, one region.
         let (_dir, mut bitmask) = create_test_bitmask();
-        bitmask.mark_blocks(0, 0, 3, true).unwrap();
+        bitmask
+            .mark_blocks(0, 0, 3, true, &HardwareCounterCell::new())
+            .unwrap();
 
-        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), None);
-        let expected = bitmask.regions_gaps.read_all().unwrap().into_owned();
+        assert_eq!(
+            bitmask
+                .gaps_length_mismatch(&HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
+        let expected = bitmask
+            .regions_gaps
+            .read_all(&HardwareCounterCell::new())
+            .unwrap()
+            .into_owned();
 
         // Append multiple phantom full entries, as a lost `extend` writeback leaves them.
         let full = RegionGaps {
@@ -804,24 +898,46 @@ mod tests {
             leading: 0,
             trailing: 0,
         };
-        bitmask.regions_gaps.extend([full; 2].into_iter()).unwrap();
+        bitmask
+            .regions_gaps
+            .extend([full; 2].into_iter(), &HardwareCounterCell::new())
+            .unwrap();
 
-        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), Some((1, 3)));
+        assert_eq!(
+            bitmask
+                .gaps_length_mismatch(&HardwareCounterCell::new())
+                .unwrap(),
+            Some((1, 3))
+        );
 
         // The in-place rebuild refuses a length divergence; repairing it needs the file to be
         // replaced while unmapped.
-        assert!(bitmask.rebuild_gaps().is_err());
-        let bitmask = bitmask.into_rebuilt_gaps(&MmapFs).unwrap();
+        assert!(bitmask.rebuild_gaps(&HardwareCounterCell::new()).is_err());
+        let bitmask = bitmask
+            .into_rebuilt_gaps(&MmapFs, &HardwareCounterCell::new())
+            .unwrap();
 
         // The length is repaired and the real region's entry is intact.
-        assert_eq!(bitmask.gaps_length_mismatch().unwrap(), None);
         assert_eq!(
-            bitmask.regions_gaps.read_all().unwrap().as_ref(),
+            bitmask
+                .gaps_length_mismatch(&HardwareCounterCell::new())
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            bitmask
+                .regions_gaps
+                .read_all(&HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
             expected.as_slice(),
         );
 
         // The search sees the real free space again.
-        let (page_id, block_offset) = bitmask.find_available_blocks(1).unwrap().unwrap();
+        let (page_id, block_offset) = bitmask
+            .find_available_blocks(1, &HardwareCounterCell::new())
+            .unwrap()
+            .unwrap();
         assert_eq!((page_id, block_offset), (0, 3));
     }
 

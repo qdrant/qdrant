@@ -41,8 +41,8 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         }
     }
 
-    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
-        self.tracker.max_point_offset()
+    pub(crate) fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
+        self.tracker.max_point_offset(hw_counter)
     }
 
     /// Return the storage size in bytes (precise, the exact amount of appended value data).
@@ -54,8 +54,9 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
     pub(crate) fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Cow<'_, [u8]>> {
-        self.pages.read_value::<P>(pointer)
+        self.pages.read_value::<P>(pointer, hw_counter)
     }
 }
 
@@ -78,11 +79,11 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(pointer) = self.tracker.get::<P>(point_offset)? else {
+        let Some(pointer) = self.tracker.get::<P>(point_offset, hw_counter)? else {
             return Ok(None);
         };
 
-        let raw = self.read_from_pages::<P>(pointer)?;
+        let raw = self.read_from_pages::<P>(pointer, hw_counter)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         Ok(Some(self.config.compression.decompress(raw)?))
@@ -100,6 +101,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -113,6 +115,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
                 callback(user_data, point_offset, value)
             },
             hw_counter_cell,
+            hw_counter,
         )
     }
 
@@ -123,6 +126,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -134,7 +138,11 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
 
         let mut pointers = Vec::new();
 
-        for result in self.tracker.iter(point_offsets).map_err(E::from)? {
+        for result in self
+            .tracker
+            .iter(point_offsets, hw_counter)
+            .map_err(E::from)?
+        {
             let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
 
             let PointerItem::Valid(pointer) = pointer else {
@@ -156,6 +164,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
                 let decompressed = self.config.compression.decompress(bytes)?;
                 callback(user_data, point_offset, Some(&decompressed))
             },
+            hw_counter,
         )
     }
 
@@ -182,7 +191,7 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         let start = point_offsets.start;
         let pointers = self
             .tracker
-            .get_range::<Sequential>(point_offsets)
+            .get_range::<Sequential>(point_offsets, hw_counter.parent())
             .map_err(E::from)?;
 
         // Skip the gaps, and carry each value's point offset through the batch as user data
@@ -193,14 +202,17 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
                 pointer.map(|pointer| (start + index as PointOffset, pointer))
             });
 
-        self.pages
-            .read_batch_values::<Sequential, _, _>(pointers, |point_offset, bytes| {
+        self.pages.read_batch_values::<Sequential, _, _>(
+            pointers,
+            |point_offset, bytes| {
                 hw_counter.incr_delta(bytes.len());
 
                 let decompressed = self.config.compression.decompress(bytes)?;
                 let value = V::from_bytes(&decompressed)?;
 
                 callback(point_offset, value)
-            })
+            },
+            hw_counter.parent(),
+        )
     }
 }

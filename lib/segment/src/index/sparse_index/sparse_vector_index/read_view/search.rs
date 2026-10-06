@@ -84,14 +84,14 @@ where
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        let available_vector_count = self.vector_storage.available_vector_count();
+        let available_vector_count = self.vector_storage.available_vector_count(hw_counter);
         let query_point_cardinality = self
             .payload_index
             .estimate_cardinality(filter, hw_counter)?;
         Ok(adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
-            self.id_tracker.available_point_count(),
+            self.id_tracker.available_point_count(hw_counter),
         ))
     }
 
@@ -104,9 +104,10 @@ where
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let deleted_point_bitslice = vector_query_context
-            .deleted_points()
-            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+        let deleted_point_bitslice = vector_query_context.deleted_points().unwrap_or(
+            self.id_tracker
+                .deleted_point_bitslice(vector_query_context.hw_counter()),
+        );
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -136,8 +137,10 @@ where
                 searcher.peek_top_iter(filtered_points, &is_stopped)?
             }
             None => {
-                let (cutoff, mapping_deleted, shadowed) =
-                    self.id_tracker.point_mappings().visible_scan_masks();
+                let (cutoff, mapping_deleted, shadowed) = self
+                    .id_tracker
+                    .point_mappings(&hw_counter)
+                    .visible_scan_masks();
                 searcher.peek_top_visible(cutoff, mapping_deleted, shadowed, &is_stopped)?
             }
         };
@@ -156,9 +159,10 @@ where
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let is_stopped = vector_query_context.is_stopped();
 
-        let point_deleted = vector_query_context
-            .deleted_points()
-            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+        let point_deleted = vector_query_context.deleted_points().unwrap_or(
+            self.id_tracker
+                .deleted_point_bitslice(vector_query_context.hw_counter()),
+        );
         let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
         let hw_counter = vector_query_context.hardware_counter();
@@ -217,9 +221,10 @@ where
         top: usize,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let point_deleted = vector_query_context
-            .deleted_points()
-            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+        let point_deleted = vector_query_context.deleted_points().unwrap_or(
+            self.id_tracker
+                .deleted_point_bitslice(vector_query_context.hw_counter()),
+        );
         let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
         let not_deleted_condition =

@@ -99,7 +99,12 @@ impl CollectionUpdater {
                     )
                 }
                 CollectionUpdateOperations::VectorNameOperation(vector_name_operation) => {
-                    process_vector_name_operation(&segments_guard, op_num, &vector_name_operation)
+                    process_vector_name_operation(
+                        &segments_guard,
+                        op_num,
+                        &vector_name_operation,
+                        hw_counter,
+                    )
                 }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(staging_operation) => {

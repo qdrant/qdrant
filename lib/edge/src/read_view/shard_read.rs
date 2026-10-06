@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use rayon::ThreadPool;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::FacetResponse;
@@ -146,7 +147,7 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
     }
 
     fn info(&self) -> OperationResult<ShardInfo> {
-        view(self).info()
+        view(self).info(&HardwareCounterCell::disposable())
     }
 }
 

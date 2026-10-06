@@ -359,8 +359,8 @@ impl ShardOperation for LocalShard {
     }
 
     /// Collect overview information about the shard
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        Ok(CollectionInfo::from(self.local_shard_info().await))
+    async fn info(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo> {
+        Ok(CollectionInfo::from(self.local_shard_info(hw_acc).await))
     }
 
     /// This call is rate limited by the read rate limiter.

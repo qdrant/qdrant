@@ -7,6 +7,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::uio_trace;
@@ -26,16 +27,18 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
         path: PathBuf,
         options: OpenOptions,
         extra: (),
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<BlobFile<A>> {
         // BlobFile does not populate on open.
-        self.open(path, options, extra)
+        self.open(path, options, extra, &hw_acc.get_counter_cell())
     }
 
     fn list_files_async<'a>(
         &'a self,
         prefix_path: &'a Path,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
-        self.spawn(self.list_files_traced(prefix_path))
+        self.spawn(self.list_files_traced(prefix_path, &hw_acc))
     }
 }
 
@@ -45,6 +48,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         range: Range<u64>,
         _access_pattern: P,
         align: usize,
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<ACow<'_>> {
         let started = std::time::Instant::now();
         log::trace!(
@@ -58,7 +62,8 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
             .runtime
             .handle()
             .spawn(
-                uio_trace::Context::current().wrap(read_into_byte_buffer::<A>(self, range, align)),
+                uio_trace::Context::current()
+                    .wrap(read_into_byte_buffer::<A>(self, range, align, &hw_acc)),
             )
             .await??;
 
@@ -78,6 +83,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         &self,
         from: u64,
         init: I,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
@@ -94,7 +100,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
                 .handle()
                 .spawn(
                     uio_trace::Context::current()
-                        .wrap(read_from_into_sink::<A, W, I>(self, from, init)),
+                        .wrap(read_from_into_sink::<A, W, I>(self, from, init, &hw_acc)),
                 );
         async move {
             let (sink, bytes) = task.await??;

@@ -30,13 +30,15 @@ where
         filter: Option<&Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let available_vector_count = self.vector_storage.available_vector_count();
+        let available_vector_count = self.vector_storage.available_vector_count(hw_counter);
         if available_vector_count == 0 {
             return Ok(true);
         }
 
-        let vector_size_bytes =
-            self.vector_storage.size_of_available_vectors_in_bytes() / available_vector_count;
+        let vector_size_bytes = self
+            .vector_storage
+            .size_of_available_vectors_in_bytes(hw_counter)
+            / available_vector_count;
         let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
         if let Some(payload_filter) = filter {
@@ -84,7 +86,7 @@ where
         });
         let deleted_points = query_context
             .deleted_points()
-            .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice(&hw_counter));
         let quantization_enabled = is_quantized_search(self.quantized_vectors, params);
         let quantized_vectors = quantization_enabled
             .then_some(self.quantized_vectors)
@@ -108,8 +110,10 @@ where
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => {
-                let (cutoff, mapping_deleted, shadowed) =
-                    self.id_tracker.point_mappings().visible_scan_masks();
+                let (cutoff, mapping_deleted, shadowed) = self
+                    .id_tracker
+                    .point_mappings(&hw_counter)
+                    .visible_scan_masks();
                 batch_searcher.peek_top_visible(cutoff, mapping_deleted, shadowed, &is_stopped)?
             }
         };

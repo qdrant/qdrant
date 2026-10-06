@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::memory_usage::{ComponentMemoryUsage, FileStorageIntent, MemoryReporter};
 use crate::vector_storage::vector_storage_base::{
     VectorStorage as _, VectorStorageEnum, VectorStorageRead as _,
@@ -19,20 +21,20 @@ fn from_files_with_on_disk(files: Vec<PathBuf>, is_on_disk: bool) -> ComponentMe
 }
 
 impl MemoryReporter for VectorStorageEnum {
-    fn memory_usage(&self) -> ComponentMemoryUsage {
+    fn memory_usage(&self, hw_counter: &HardwareCounterCell) -> ComponentMemoryUsage {
         match self {
             // Volatile (in-memory) dense variants: report RAM size, no files
-            VectorStorageEnum::DenseVolatile(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::DenseVolatile(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::DenseVolatileByte(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::DenseVolatileHalf(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
 
             // Mmap dense variants: intent depends on populate config
             VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
@@ -95,24 +97,24 @@ impl MemoryReporter for VectorStorageEnum {
             }
 
             // Volatile sparse: in-memory
-            VectorStorageEnum::SparseVolatile(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::SparseVolatile(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
             // Mmap sparse: intent depends on storage config
             VectorStorageEnum::SparseMmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
 
             // Volatile multi-dense: in-memory
-            VectorStorageEnum::MultiDenseVolatile(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::MultiDenseVolatile(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::MultiDenseVolatileByte(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
-                ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
-            }
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => ComponentMemoryUsage::ram_only(
+                v.size_of_available_vectors_in_bytes(hw_counter) as u64,
+            ),
 
             // Appendable mmap multi-dense: intent depends on populate config
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {

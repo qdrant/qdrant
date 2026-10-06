@@ -23,7 +23,7 @@ pub struct GeoIndexMmapBuilder {
 impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
     type FieldIndexType = GeoIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 
@@ -41,7 +41,7 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
             .add_many_geo_points(id, values, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         let populate = Populate::from(!self.is_on_disk);
         let on_disk_index = OnDiskGeoIndex::build(
             &MmapFs,
@@ -49,12 +49,16 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
             &self.path,
             populate,
             &self.deleted_points,
+            hw_counter,
         )?;
 
         let index = if self.is_on_disk {
             GeoIndex::OnDisk(on_disk_index)
         } else {
-            GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+            GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         };
         Ok(index)
     }
@@ -82,13 +86,13 @@ impl GeoIndexGridstoreBuilder {
 impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
     type FieldIndexType = GeoIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         assert!(
             self.index.is_none(),
             "index must be initialized exactly once",
         );
         self.index.replace(
-            GeoIndex::new_mutable(self.dir.clone(), true)?.ok_or_else(|| {
+            GeoIndex::new_mutable(self.dir.clone(), true, hw_counter)?.ok_or_else(|| {
                 OperationError::service_error("Failed to open GeoIndex after creating it")
             })?,
         );
@@ -109,13 +113,16 @@ impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
         index.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(
+        mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
                 "GeoIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flusher(hw_counter)()?;
         Ok(index)
     }
 }

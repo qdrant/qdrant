@@ -92,13 +92,14 @@ where
         base_path: PathBuf,
         config_if_create: StorageConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
-        if fs.exists(&config_path)? {
-            Self::open(fs, base_path, populate)
+        if fs.exists(&config_path, hw_counter)? {
+            Self::open(fs, base_path, populate, hw_counter)
         } else {
             fs.create_dir(&base_path)?;
-            Self::new(fs, base_path, config_if_create)
+            Self::new(fs, base_path, config_if_create, hw_counter)
         }
     }
 
@@ -106,16 +107,21 @@ where
     ///
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
-    pub fn new(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+    pub fn new(
+        fs: S::Fs,
+        base_path: PathBuf,
+        config: StorageConfig,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
         config
             .validate()
             .map_err(BlobstoreError::validation_error)?;
         let inner = match config {
             StorageConfig::Mutable(config) => {
-                BlobstoreInner::Gridstore(Gridstore::new(&fs, base_path, config)?)
+                BlobstoreInner::Gridstore(Gridstore::new(&fs, base_path, config, hw_counter)?)
             }
             StorageConfig::AppendOnly(config) => {
-                BlobstoreInner::Logstore(Logstore::new(&fs, base_path, config)?)
+                BlobstoreInner::Logstore(Logstore::new(&fs, base_path, config, hw_counter)?)
             }
         };
         Ok(Self { fs, inner })
@@ -124,14 +130,19 @@ where
     /// Open an existing storage at the given path.
     ///
     /// The operating mode is automatically selected based on the persisted config.
-    pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
-        let inner = match reader::read_config(&fs, &base_path)? {
-            StorageConfig::Mutable(config) => {
-                BlobstoreInner::Gridstore(Gridstore::open(&fs, base_path, config, populate)?)
-            }
-            StorageConfig::AppendOnly(config) => {
-                BlobstoreInner::Logstore(Logstore::open(&fs, base_path, config, populate)?)
-            }
+    pub fn open(
+        fs: S::Fs,
+        base_path: PathBuf,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self> {
+        let inner = match reader::read_config(&fs, &base_path, hw_counter)? {
+            StorageConfig::Mutable(config) => BlobstoreInner::Gridstore(Gridstore::open(
+                &fs, base_path, config, populate, hw_counter,
+            )?),
+            StorageConfig::AppendOnly(config) => BlobstoreInner::Logstore(Logstore::open(
+                &fs, base_path, config, populate, hw_counter,
+            )?),
         };
         Ok(Self { fs, inner })
     }
@@ -190,9 +201,13 @@ where
     /// Returns the deleted value otherwise.
     ///
     /// Not supported in append-only mode, returns an error.
-    pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
+    pub fn delete_value(
+        &mut self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<V>> {
         match &mut self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.delete_value(point_offset),
+            BlobstoreInner::Gridstore(storage) => storage.delete_value(point_offset, hw_counter),
             BlobstoreInner::Logstore(storage) => storage.delete_value(point_offset),
         }
     }
@@ -200,10 +215,10 @@ where
     /// Clear the storage, going back to the initial state.
     ///
     /// Completely wipes the storage, and recreates it in the same mode.
-    pub fn clear(&mut self) -> Result<()> {
+    pub fn clear(&mut self, hw_counter: &HardwareCounterCell) -> Result<()> {
         match &mut self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.clear(&self.fs),
-            BlobstoreInner::Logstore(storage) => storage.clear(&self.fs),
+            BlobstoreInner::Gridstore(storage) => storage.clear(&self.fs, hw_counter),
+            BlobstoreInner::Logstore(storage) => storage.clear(&self.fs, hw_counter),
         }
     }
 
@@ -214,10 +229,10 @@ where
     /// In the append-only mode the value mappings are stored compacted: opening reads them into
     /// RAM whole, so a lookup no longer costs a read. The storage stays writable, but every flush
     /// then rewrites the whole mapping file. The mutable mode is left as is.
-    pub fn make_immutable(&self) -> Result<()> {
+    pub fn make_immutable(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
         match &self.inner {
             BlobstoreInner::Gridstore(_) => Ok(()),
-            BlobstoreInner::Logstore(storage) => storage.make_immutable(&self.fs),
+            BlobstoreInner::Logstore(storage) => storage.make_immutable(&self.fs, hw_counter),
         }
     }
 
@@ -257,9 +272,9 @@ where
     }
 
     /// Return the storage size in bytes.
-    pub fn get_storage_size_bytes(&self) -> Result<usize> {
+    pub fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> Result<usize> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_storage_size_bytes(),
+            BlobstoreInner::Gridstore(storage) => storage.get_storage_size_bytes(hw_counter),
             BlobstoreInner::Logstore(storage) => storage.get_storage_size_bytes(),
         }
     }
@@ -303,6 +318,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -311,10 +327,10 @@ where
     {
         match &self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
         }
     }
@@ -328,6 +344,7 @@ where
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -335,20 +352,30 @@ where
         E: From<BlobstoreError>,
     {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
-            }
-            BlobstoreInner::Logstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
-            }
+            BlobstoreInner::Gridstore(storage) => storage.read_values_bytes::<P, U, E>(
+                point_offsets,
+                callback,
+                hw_counter_cell,
+                hw_counter,
+            ),
+            BlobstoreInner::Logstore(storage) => storage.read_values_bytes::<P, U, E>(
+                point_offsets,
+                callback,
+                hw_counter_cell,
+                hw_counter,
+            ),
         }
     }
 
     #[cfg(test)]
-    pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+    pub fn get_pointer(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ValuePointer> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_pointer(point_offset),
-            BlobstoreInner::Logstore(storage) => storage.get_pointer(point_offset),
+            BlobstoreInner::Gridstore(storage) => storage.get_pointer(point_offset, hw_counter),
+            BlobstoreInner::Logstore(storage) => storage.get_pointer(point_offset, hw_counter),
         }
     }
 
@@ -376,18 +403,18 @@ where
 
 impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
     /// Create flusher that durably persists all pending changes when invoked.
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.flusher(),
-            BlobstoreInner::Logstore(storage) => storage.flusher(),
+            BlobstoreInner::Gridstore(storage) => storage.flusher(hw_counter),
+            BlobstoreInner::Logstore(storage) => storage.flusher(hw_counter),
         }
     }
 
     /// Populate all parts of the storage into the RAM cache.
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.populate(),
-            BlobstoreInner::Logstore(storage) => storage.populate(),
+            BlobstoreInner::Gridstore(storage) => storage.populate(hw_counter),
+            BlobstoreInner::Logstore(storage) => storage.populate(hw_counter),
         }
     }
 

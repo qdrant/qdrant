@@ -106,6 +106,7 @@ fn probe_via_mincore(path: &Path) -> io::Result<u64> {
                 advice: AdviceSetting::Advice(Advice::Normal),
             },
             (),
+            &crate::counter::hardware_counter::HardwareCounterCell::disposable(),
         )
         .map_err(|err| io::Error::other(err.to_string()))?;
     file.resident_bytes()

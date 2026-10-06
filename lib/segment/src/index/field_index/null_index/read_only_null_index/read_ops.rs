@@ -35,24 +35,24 @@ impl<S: UniversalRead> NullIndexRead for ReadOnlyNullIndex<S> {
 }
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.indexed_points_count())
     }
 
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition)
+        read_ops::filter(self, condition, hw_counter)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition)
+        read_ops::estimate_cardinality(self, condition, hw_counter)
     }
 
     fn for_each_payload_block(
@@ -60,6 +60,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyNullIndex<S> {
         _threshold: usize,
         _key: PayloadKeyType,
         _f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No payload blocks
         Ok(())

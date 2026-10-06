@@ -150,12 +150,12 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
         documents: &[Vec<String>],
         hw_counter: &HardwareCounterCell,
     ) -> FullTextIndex {
-        builder.init().unwrap();
+        builder.init(hw_counter).unwrap();
         for (id, document) in documents.iter().enumerate() {
             let value = serde_json::Value::String(document.join(" "));
             builder.add_point(id as u32, &[&value], hw_counter).unwrap();
         }
-        builder.finalize().unwrap()
+        builder.finalize(hw_counter).unwrap()
     }
 
     let path = dir.path().to_path_buf();
@@ -305,21 +305,24 @@ fn measure_sparse(
                     .unwrap();
                 let start = Instant::now();
                 let index: SparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>> =
-                    SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-                        fs: &MmapFs,
-                        config: SparseIndexConfig::new(
-                            Some(1),
-                            SparseIndexType::ImmutableRam,
-                            None,
-                            None,
-                        ),
-                        id_tracker: mutable.id_tracker().clone(),
-                        vector_storage: mutable.vector_storage().clone(),
-                        payload_index: mutable.payload_index().clone(),
-                        path: dir.path(),
-                        stopped: &stopped,
-                        tick_progress: || (),
-                    })
+                    SparseVectorIndex::open(
+                        SparseVectorIndexOpenArgs {
+                            fs: &MmapFs,
+                            config: SparseIndexConfig::new(
+                                Some(1),
+                                SparseIndexType::ImmutableRam,
+                                None,
+                                None,
+                            ),
+                            id_tracker: mutable.id_tracker().clone(),
+                            vector_storage: mutable.vector_storage().clone(),
+                            payload_index: mutable.payload_index().clone(),
+                            path: dir.path(),
+                            stopped: &stopped,
+                            tick_progress: || (),
+                        },
+                        &HardwareCounterCell::new(),
+                    )
                     .unwrap();
                 let build = start.elapsed();
                 out.push(measure(
@@ -338,16 +341,24 @@ fn measure_sparse(
                     .unwrap();
                 let start = Instant::now();
                 let index: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
-                    SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-                        fs: &MmapFs,
-                        config: SparseIndexConfig::new(Some(1), SparseIndexType::Mmap, None, None),
-                        id_tracker: mutable.id_tracker().clone(),
-                        vector_storage: mutable.vector_storage().clone(),
-                        payload_index: mutable.payload_index().clone(),
-                        path: dir.path(),
-                        stopped: &stopped,
-                        tick_progress: || (),
-                    })
+                    SparseVectorIndex::open(
+                        SparseVectorIndexOpenArgs {
+                            fs: &MmapFs,
+                            config: SparseIndexConfig::new(
+                                Some(1),
+                                SparseIndexType::Mmap,
+                                None,
+                                None,
+                            ),
+                            id_tracker: mutable.id_tracker().clone(),
+                            vector_storage: mutable.vector_storage().clone(),
+                            payload_index: mutable.payload_index().clone(),
+                            path: dir.path(),
+                            stopped: &stopped,
+                            tick_progress: || (),
+                        },
+                        &HardwareCounterCell::new(),
+                    )
                     .unwrap();
                 let build = start.elapsed();
                 out.push(measure(

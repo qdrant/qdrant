@@ -196,6 +196,7 @@ mod store {
     use std::collections::HashMap;
     use std::path::Path;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::{MmapFile, MmapFs};
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::payload_json;
@@ -226,7 +227,12 @@ mod store {
             if payload_storage.is_dir() {
                 fs_err::remove_dir_all(&payload_storage).unwrap();
                 // Opening the writer creates the storage in append-only mode.
-                UpdateOnlyPayloadStorage::<MmapFile>::open(&MmapFs, &segment_path).unwrap();
+                UpdateOnlyPayloadStorage::<MmapFile>::open(
+                    &MmapFs,
+                    &segment_path,
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
             }
         }
     }
@@ -856,6 +862,7 @@ mod copy_dir {
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::universal_io::{MmapFs, UioResult, UniversalIoError, UniversalWriteFsAsync};
 
     use crate::update_only::lifecycle::{COPY_CONCURRENCY, copy_dir};
@@ -924,6 +931,7 @@ mod copy_dir {
             &self,
             path: PathBuf,
             bytes: Vec<u8>,
+            _hw_acc: HwMeasurementAcc,
         ) -> impl Future<Output = UioResult<()>> + Send + '_ {
             Save {
                 fs: self.clone(),
@@ -932,7 +940,11 @@ mod copy_dir {
             }
         }
 
-        fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_ {
+        fn remove_async(
+            &self,
+            path: PathBuf,
+            _hw_acc: HwMeasurementAcc,
+        ) -> impl Future<Output = UioResult<()>> + Send + '_ {
             self.0.lock().unwrap().removed.push(path);
             std::future::ready(Ok(()))
         }
@@ -970,7 +982,13 @@ mod copy_dir {
         let fs = RecordingFs::default();
         let remote = Path::new("shard/segments/uuid");
 
-        futures::executor::block_on(copy_dir(&fs, local.path(), remote)).unwrap();
+        futures::executor::block_on(copy_dir(
+            &fs,
+            local.path(),
+            remote,
+            &HwMeasurementAcc::new(),
+        ))
+        .unwrap();
 
         let log = fs.0.lock().unwrap();
         let saved: BTreeMap<PathBuf, Vec<u8>> = log
@@ -1004,8 +1022,13 @@ mod copy_dir {
         fs.0.lock().unwrap().fail_save_at = Some(5);
         let remote = Path::new("shard/segments/uuid");
 
-        let err = futures::executor::block_on(copy_dir(&fs, local.path(), remote))
-            .expect_err("the injected failure surfaces");
+        let err = futures::executor::block_on(copy_dir(
+            &fs,
+            local.path(),
+            remote,
+            &HwMeasurementAcc::new(),
+        ))
+        .expect_err("the injected failure surfaces");
 
         assert!(err.to_string().contains("injected save failure"), "{err}");
         let log = fs.0.lock().unwrap();
@@ -1025,7 +1048,13 @@ mod copy_dir {
         let remote = tempfile::tempdir().unwrap();
         let target = remote.path().join("segments/uuid");
 
-        futures::executor::block_on(copy_dir(&MmapFs, local.path(), &target)).unwrap();
+        futures::executor::block_on(copy_dir(
+            &MmapFs,
+            local.path(),
+            &target,
+            &HwMeasurementAcc::new(),
+        ))
+        .unwrap();
 
         assert_eq!(tree(&target), tree(local.path()));
     }

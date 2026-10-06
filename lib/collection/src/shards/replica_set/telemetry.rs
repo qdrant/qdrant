@@ -1,6 +1,7 @@
 use std::ops::Deref as _;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::TelemetryDetail;
 use segment::types::SizeStats;
 
@@ -13,12 +14,17 @@ impl ShardReplicaSet {
         &self,
         detail: TelemetryDetail,
         timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<ReplicaSetTelemetry> {
         let local_shard = self.local.read().await;
         let local = local_shard.as_ref();
 
         let local_telemetry = match local {
-            Some(local_shard) => Some(local_shard.get_telemetry_data(detail, timeout).await?),
+            Some(local_shard) => Some(
+                local_shard
+                    .get_telemetry_data(detail, timeout, hw_acc)
+                    .await?,
+            ),
             None => None,
         };
 
@@ -57,13 +63,17 @@ impl ShardReplicaSet {
         Some(local.get_optimization_status(timeout).await)
     }
 
-    pub(crate) async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+    pub(crate) async fn get_size_stats(
+        &self,
+        timeout: Duration,
+        hw_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<SizeStats> {
         let local_shard = self.local.read().await;
 
         let Some(local) = local_shard.deref() else {
             return Ok(SizeStats::default());
         };
 
-        local.get_size_stats(timeout).await
+        local.get_size_stats(timeout, hw_acc).await
     }
 }

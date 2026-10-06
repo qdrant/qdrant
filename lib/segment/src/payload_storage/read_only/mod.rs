@@ -48,12 +48,13 @@ mod tests {
 
         {
             let mut storage: PayloadStorageImpl =
-                PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
+                PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false, &hw_counter)
+                    .unwrap();
             for i in 0..5 {
                 storage.set(i, &payload, &hw_counter).unwrap();
             }
             // Flush so the reader observes the data on disk.
-            storage.flusher()().unwrap();
+            storage.flusher(&hw_counter)().unwrap();
         }
 
         // `S = ReadOnly<MmapFile>` → the write-enforced backend (every open
@@ -62,7 +63,8 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
-            ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
+            ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate, &hw_counter)
+                .unwrap();
 
         assert_eq!(storage.is_on_disk(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {

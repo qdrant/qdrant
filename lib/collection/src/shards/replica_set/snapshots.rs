@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
@@ -39,6 +40,7 @@ impl ShardReplicaSet {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
@@ -55,7 +57,7 @@ impl ShardReplicaSet {
         let maybe_local_snapshot_future = if let Some(local) = &*local_read {
             Some(
                 local
-                    .get_snapshot_creator(&temp_path, &tar, format, manifest, save_wal)
+                    .get_snapshot_creator(&temp_path, &tar, format, manifest, save_wal, hw_acc)
                     .await?,
             )
         } else {
@@ -165,6 +167,7 @@ impl ShardReplicaSet {
         recovery_type: RecoveryType,
         collection_path: &Path,
         cancel: cancel::CancellationToken,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<bool> {
         // `local.take()` call and `restore` task have to be executed as a single transaction
 
@@ -340,6 +343,7 @@ impl ShardReplicaSet {
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
+                hw_acc,
             )
             .await
         };

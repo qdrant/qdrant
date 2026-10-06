@@ -1,5 +1,7 @@
 use std::io::Write;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
@@ -16,8 +18,8 @@ type ReadOnlyTracker = ReadOnlyAppendableIdTracker<MmapFile>;
 
 /// Flush both mapping and version changes of a mutable tracker to disk.
 fn flush(tracker: &MutableIdTracker) {
-    tracker.mapping_flusher()().unwrap();
-    tracker.versions_flusher()().unwrap();
+    tracker.mapping_flusher(&HardwareCounterCell::new())().unwrap();
+    tracker.versions_flusher(&HardwareCounterCell::new())().unwrap();
 }
 
 /// Insert a point with a version into the mutable tracker.
@@ -28,7 +30,9 @@ fn insert(
     version: SeqNumberType,
 ) {
     tracker.set_link(external, internal).unwrap();
-    tracker.set_internal_version(internal, version).unwrap();
+    tracker
+        .set_internal_version(internal, version, &HardwareCounterCell::new())
+        .unwrap();
 }
 
 /// Assert that the read-only tracker exposes the same live points and versions as the mutable one.
@@ -38,26 +42,26 @@ fn insert(
 /// slot, so the read-only total can legitimately be smaller. The live points must still match.
 fn assert_in_sync(read_only: &ReadOnlyTracker, mutable: &MutableIdTracker) {
     assert_eq!(
-        read_only.available_point_count(),
-        mutable.available_point_count(),
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        mutable.available_point_count(&HardwareCounterCell::new()),
     );
     for internal_id in 0..mutable.total_point_count() as PointOffsetType {
         assert_eq!(
-            read_only.is_deleted_point(internal_id),
-            mutable.is_deleted_point(internal_id),
+            read_only.is_deleted_point(internal_id, &HardwareCounterCell::new()),
+            mutable.is_deleted_point(internal_id, &HardwareCounterCell::new()),
             "deleted state mismatch at offset {internal_id}",
         );
         assert_eq!(
-            read_only.external_id(internal_id),
-            mutable.external_id(internal_id),
+            read_only.external_id(internal_id, &HardwareCounterCell::new()),
+            mutable.external_id(internal_id, &HardwareCounterCell::new()),
             "external id mismatch at offset {internal_id}",
         );
         // Versions are only meaningful for live points. A deleted point's version is considered
         // gone, the read-only tracker does not refresh it (it keeps whatever stale value it had).
-        if !mutable.is_deleted_point(internal_id) {
+        if !mutable.is_deleted_point(internal_id, &HardwareCounterCell::new()) {
             assert_eq!(
-                read_only.internal_version(internal_id),
-                mutable.internal_version(internal_id),
+                read_only.internal_version(internal_id, &HardwareCounterCell::new()),
+                mutable.internal_version(internal_id, &HardwareCounterCell::new()),
                 "version mismatch at offset {internal_id}",
             );
         }
@@ -72,24 +76,41 @@ fn test_open_matches_mutable_tracker() {
     insert(&mut mutable, 100.into(), 0, 10);
     insert(&mut mutable, 200.into(), 1, 11);
     insert(&mut mutable, 300.into(), 2, 12);
-    mutable.drop(200.into()).unwrap();
+    mutable
+        .drop(200.into(), &HardwareCounterCell::new())
+        .unwrap();
     flush(&mutable);
 
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // Spot check resolved ids
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            100.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(0)
     );
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            200.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None
     );
-    assert_eq!(read_only.external_id(2), Some(300.into()));
+    assert_eq!(
+        read_only.external_id(2, &HardwareCounterCell::new()),
+        Some(300.into())
+    );
 }
 
 #[test]
@@ -98,8 +119,17 @@ fn test_open_without_storage_is_empty() {
 
     // No storage exists yet: the files are absent while empty, so a read-only view opens as an
     // empty tracker (matching `MutableIdTracker::open`) rather than erroring.
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.available_point_count(), 0);
+    let read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        0
+    );
     assert_eq!(read_only.total_point_count(), 0);
 }
 
@@ -115,8 +145,17 @@ fn test_open_with_missing_versions_is_empty() {
 
     // With no versions file no point is committed (a point becomes visible only once its version is
     // present), so the read-only view opens empty instead of erroring.
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.available_point_count(), 0);
+    let read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        0
+    );
 }
 
 #[test]
@@ -130,30 +169,48 @@ fn test_live_reload_reports_inserts_and_deletes() {
     insert(&mut mutable, 300.into(), 2, 12);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // A reload with no new changes reports nothing
     assert_eq!(
-        read_only.live_reload(&MmapFs, None).unwrap(),
+        read_only
+            .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+            .unwrap(),
         LiveReloadResult::default(),
     );
 
     // Append more changes: insert two new points, delete one existing point
     insert(&mut mutable, 400.into(), 3, 13);
     insert(&mut mutable, 500.into(), 4, 14);
-    mutable.drop(200.into()).unwrap();
+    mutable
+        .drop(200.into(), &HardwareCounterCell::new())
+        .unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, vec![3, 4]);
     assert_eq!(result.deleted, vec![1]);
     assert_in_sync(&read_only, &mutable);
 
     // The deleted point is gone; the live ones carry their versions.
-    assert!(read_only.is_deleted_point(1));
-    assert_eq!(read_only.internal_version(3), Some(13));
-    assert_eq!(read_only.internal_version(4), Some(14));
+    assert!(read_only.is_deleted_point(1, &HardwareCounterCell::new()));
+    assert_eq!(
+        read_only.internal_version(3, &HardwareCounterCell::new()),
+        Some(13)
+    );
+    assert_eq!(
+        read_only.internal_version(4, &HardwareCounterCell::new()),
+        Some(14)
+    );
 }
 
 /// A point that is inserted and then deleted within a single un-reloaded batch was never observed
@@ -166,25 +223,38 @@ fn test_live_reload_insert_then_delete_within_batch() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Insert a brand-new point and delete it again, all before the read-only view reloads.
     insert(&mut mutable, 200.into(), 1, 11);
-    mutable.drop(200.into()).unwrap();
+    mutable
+        .drop(200.into(), &HardwareCounterCell::new())
+        .unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_in_sync(&read_only, &mutable);
 
     // The pre-existing point is untouched.
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            100.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(0)
     );
-    assert!(read_only.is_deleted_point(1));
+    assert!(read_only.is_deleted_point(1, &HardwareCounterCell::new()));
 }
 
 /// Upserting an existing point re-links its external id to a new offset and marks the old offset
@@ -198,28 +268,47 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            100.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(0)
     );
 
     // Upsert point 100: it moves to a new offset, the old offset is marked deleted.
     mutable.set_link(100.into(), 1).unwrap();
-    mutable.set_internal_version(1, 20).unwrap();
+    mutable
+        .set_internal_version(1, 20, &HardwareCounterCell::new())
+        .unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, vec![0]);
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            100.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(1)
     );
-    assert_eq!(read_only.internal_version(1), Some(20));
-    assert!(read_only.is_deleted_point(0));
+    assert_eq!(
+        read_only.internal_version(1, &HardwareCounterCell::new()),
+        Some(20)
+    );
+    assert!(read_only.is_deleted_point(0, &HardwareCounterCell::new()));
     assert_in_sync(&read_only, &mutable);
 }
 
@@ -236,36 +325,58 @@ fn test_live_reload_withholds_insert_until_version_present() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Insert a point but flush *only* the mapping, mimicking observing storage mid-flush-cycle.
     insert(&mut mutable, 200.into(), 1, 11);
-    mutable.mapping_flusher()().unwrap();
+    mutable.mapping_flusher(&HardwareCounterCell::new())().unwrap();
 
     // The version is not flushed yet, so the point is withheld from the result and, crucially, is
     // not present in the mapping at all (its data may be partially written).
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            200.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None
     );
-    assert_eq!(read_only.internal_version(1), None);
+    assert_eq!(
+        read_only.internal_version(1, &HardwareCounterCell::new()),
+        None
+    );
 
     // The writer flushes the versions afterwards. A reload with no new mapping changes now reports
     // the insert, links it into the mapping, and reconciles the version.
-    mutable.versions_flusher()().unwrap();
+    mutable.versions_flusher(&HardwareCounterCell::new())().unwrap();
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.internal_id_with_behavior(
+            200.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         Some(1)
     );
-    assert_eq!(read_only.internal_version(1), Some(11));
+    assert_eq!(
+        read_only.internal_version(1, &HardwareCounterCell::new()),
+        Some(11)
+    );
     assert_in_sync(&read_only, &mutable);
 }
 
@@ -281,7 +392,13 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     assert_in_sync(&read_only, &mutable);
 
     // Byte offset of the last fully-consumed mapping entry, the position we expect to resume from.
@@ -300,7 +417,9 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     }
 
     // The partial entry is ignored and we don't advance past it.
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only.mappings_read_to, complete_len,
@@ -316,7 +435,9 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
         insert(&mut mutable, 300.into(), 2, 12);
         flush(&mutable);
 
-        let result = read_only.live_reload(&MmapFs, None).unwrap();
+        let result = read_only
+            .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
         assert_in_sync(&read_only, &mutable);
@@ -345,9 +466,21 @@ fn test_open_and_reload_ignore_partial_trailing_version() {
     }
 
     // Open ignores the partial trailing bytes, versions match the complete entries.
-    let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
-    assert_eq!(read_only.internal_version(0), Some(10));
-    assert_eq!(read_only.internal_version(1), Some(11));
+    let read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        read_only.internal_version(0, &HardwareCounterCell::new()),
+        Some(10)
+    );
+    assert_eq!(
+        read_only.internal_version(1, &HardwareCounterCell::new()),
+        Some(11)
+    );
     assert_in_sync(&read_only, &mutable);
 }
 
@@ -362,12 +495,18 @@ fn test_live_reload_withholds_partially_written_version() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Insert a third point and flush its mapping, then simulate a torn version flush by appending
     // only part of its 8-byte version entry.
     insert(&mut mutable, 300.into(), 2, 12);
-    mutable.mapping_flusher()().unwrap();
+    mutable.mapping_flusher(&HardwareCounterCell::new())().unwrap();
     {
         let mut file = fs::OpenOptions::new()
             .append(true)
@@ -377,9 +516,14 @@ fn test_live_reload_withholds_partially_written_version() {
     }
 
     // Only part of the version is written, so the point is withheld.
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
-    assert_eq!(read_only.internal_version(2), None);
+    assert_eq!(
+        read_only.internal_version(2, &HardwareCounterCell::new()),
+        None
+    );
 
     // Completing the version flush truncates the torn bytes (a `set_len`) and writes the full entry,
     // and a later live-reload picks up the now-complete version. That truncation is a `set_len`,
@@ -387,18 +531,24 @@ fn test_live_reload_withholds_partially_written_version() {
     // check only runs off Windows.
     #[cfg(not(target_os = "windows"))]
     {
-        mutable.versions_flusher()().unwrap();
+        mutable.versions_flusher(&HardwareCounterCell::new())().unwrap();
 
-        let result = read_only.live_reload(&MmapFs, None).unwrap();
+        let result = read_only
+            .live_reload(&MmapFs, None, &HardwareCounterCell::new())
+            .unwrap();
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(
             read_only.internal_id_with_behavior(
                 300.into(),
-                common::types::DeferredBehavior::VisibleOnly
+                common::types::DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new()
             ),
             Some(2)
         );
-        assert_eq!(read_only.internal_version(2), Some(12));
+        assert_eq!(
+            read_only.internal_version(2, &HardwareCounterCell::new()),
+            Some(12)
+        );
         assert_in_sync(&read_only, &mutable);
     }
 }
@@ -461,10 +611,18 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     insert(&mut mutable, 100.into(), 0, 10);
     flush(&mutable);
 
-    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    let mut read_only = ReadOnlyTracker::open(
+        &MmapFs,
+        segment_dir.path(),
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // 1. Probe when nothing changed reports unchanged
-    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&MmapFs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Unchanged {
@@ -478,7 +636,9 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     flush(&mutable);
 
     // Probe now detects changes and anchors max_committed_id to 2 points
-    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&MmapFs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Changed {
@@ -494,17 +654,27 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
 
     // Reload is clamped to the probed max_committed_id passed as argument (2 points, internal_id 1),
     // so point 300 (offset 2) is NOT committed yet!
-    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    let result = read_only
+        .live_reload(&MmapFs, max_committed_id, &HardwareCounterCell::new())
+        .unwrap();
     assert_eq!(result.inserted, vec![1]);
-    assert_eq!(read_only.available_point_count(), 2);
     assert_eq!(
-        read_only
-            .internal_id_with_behavior(300.into(), common::types::DeferredBehavior::VisibleOnly),
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        2
+    );
+    assert_eq!(
+        read_only.internal_id_with_behavior(
+            300.into(),
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
+        ),
         None,
     );
 
     // Subsequent probe now sees point 300 and commits it
-    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&MmapFs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Changed {
@@ -512,16 +682,27 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
         }
     );
     let result = read_only
-        .live_reload(&MmapFs, probe.max_committed_id())
+        .live_reload(
+            &MmapFs,
+            probe.max_committed_id(),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert_eq!(result.inserted, vec![2]);
-    assert_eq!(read_only.available_point_count(), 3);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        3
+    );
 
     // 3. Pure delete without inserts: versions.dat does not grow, but mappings.dat changed
-    mutable.drop(200.into()).unwrap();
+    mutable
+        .drop(200.into(), &HardwareCounterCell::new())
+        .unwrap();
     flush(&mutable);
 
-    let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&MmapFs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Changed {
@@ -530,10 +711,17 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
         "probe must detect pure delete via mappings change"
     );
     let result = read_only
-        .live_reload(&MmapFs, probe.max_committed_id())
+        .live_reload(
+            &MmapFs,
+            probe.max_committed_id(),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert_eq!(result.deleted, vec![1]);
-    assert_eq!(read_only.available_point_count(), 2);
+    assert_eq!(
+        read_only.available_point_count(&HardwareCounterCell::new()),
+        2
+    );
 }
 
 #[test]
@@ -564,12 +752,18 @@ fn test_probe_committed_over_disk_cache() {
     })
     .unwrap();
 
-    let read_only =
-        ReadOnlyAppendableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &segment_dir, None)
-            .unwrap();
+    let read_only = ReadOnlyAppendableIdTracker::<DiskCache<MmapFile>>::open(
+        &cache_fs,
+        &segment_dir,
+        None,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // 1. Probe when nothing changed reports unchanged
-    let probe = futures::executor::block_on(read_only.probe_committed(&cache_fs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&cache_fs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Unchanged {
@@ -582,7 +776,9 @@ fn test_probe_committed_over_disk_cache() {
     flush(&mutable);
 
     // Probe now should detect changes!
-    let probe = futures::executor::block_on(read_only.probe_committed(&cache_fs)).unwrap();
+    let probe =
+        futures::executor::block_on(read_only.probe_committed(&cache_fs, &HwMeasurementAcc::new()))
+            .unwrap();
     assert_eq!(
         probe,
         TrackerProbe::Changed {

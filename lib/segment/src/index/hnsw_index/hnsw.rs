@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
 use self::telemetry::HNSWSearchesTelemetry;
@@ -71,7 +72,10 @@ pub struct HnswIndexOpenArgs<'a> {
 }
 
 impl HNSWIndex {
-    pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
+    pub fn open(
+        args: HnswIndexOpenArgs<'_>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let HnswIndexOpenArgs {
             path,
             id_tracker,
@@ -81,11 +85,12 @@ impl HNSWIndex {
             hnsw_config,
         } = args;
 
-        let config = load_or_derive_config(&MmapFs, path, &hnsw_config, &vector_storage)?;
+        let config =
+            load_or_derive_config(&MmapFs, path, &hnsw_config, &vector_storage, hw_counter)?;
 
         let graph = match vector_storage.borrow().hnsw_graph() {
             Some(graph) => HnswGraph::clone(graph),
-            None => HnswGraph::open(path, hnsw_config.memory_placement())?,
+            None => HnswGraph::open(path, hnsw_config.memory_placement(), hw_counter)?,
         };
 
         Ok(HNSWIndex {
@@ -124,8 +129,8 @@ impl HNSWIndex {
     }
 
     /// Read underlying data from disk into disk cache.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.graph.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.graph.populate(hw_counter)
     }
 
     /// Drop disk cache.
@@ -171,18 +176,20 @@ fn load_or_derive_config(
     path: &Path,
     hnsw_config: &HnswConfig,
     vector_storage: &AtomicRefCell<impl VectorStorageRead>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<HnswGraphConfig> {
     let config_path = HnswGraphConfig::get_config_path(path);
-    if let Some(config) = HnswGraphConfig::load_universal(fs, &config_path)? {
+    if let Some(config) = HnswGraphConfig::load_universal(fs, &config_path, hw_counter)? {
         return Ok(config);
     }
 
     let vector_storage = vector_storage.borrow();
-    let available_vectors = vector_storage.available_vector_count();
+    let available_vectors = vector_storage.available_vector_count(hw_counter);
     Ok(derive_config(
         hnsw_config,
         &*vector_storage,
         available_vectors,
+        hw_counter,
     ))
 }
 
@@ -193,9 +200,10 @@ fn derive_config(
     hnsw_config: &HnswConfig,
     vector_storage: &impl VectorStorageRead,
     vector_count: usize,
+    hw_counter: &HardwareCounterCell,
 ) -> HnswGraphConfig {
     let full_scan_threshold = vector_storage
-        .size_of_available_vectors_in_bytes()
+        .size_of_available_vectors_in_bytes(hw_counter)
         .checked_div(vector_count)
         .and_then(|avg_vector_size| {
             hnsw_config

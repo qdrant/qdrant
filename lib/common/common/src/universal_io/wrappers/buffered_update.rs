@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use parking_lot::{Mutex, RwLock};
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::is_alive_lock::IsAliveLock;
 use crate::types::PointOffsetType;
 use crate::universal_io::{Flusher, UniversalIoError, UniversalWrite};
@@ -29,8 +30,11 @@ where
     S: UniversalWrite,
     T: bytemuck::Pod,
 {
-    pub fn new(slice_storage: S) -> Result<Self, UniversalIoError> {
-        let len = slice_storage.len::<T>()?;
+    pub fn new(
+        slice_storage: S,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Self, UniversalIoError> {
+        let len = slice_storage.len::<T>(hw_counter)?;
         Ok(Self {
             slice: Arc::new(RwLock::new(slice_storage)),
             len,

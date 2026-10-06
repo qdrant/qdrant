@@ -171,7 +171,8 @@ mod tests {
         );
         let locked_holder = LockedSegmentHolder::new(holder);
 
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert!(suggested_to_optimize.is_empty());
 
         index_optimizer
@@ -181,7 +182,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .indexing_threshold_kb = 50;
 
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
@@ -190,7 +192,13 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info().unwrap())
+            .map(|(_sid, segment)| {
+                segment
+                    .get()
+                    .read()
+                    .info(&HardwareCounterCell::new())
+                    .unwrap()
+            })
             .collect_vec();
         let configs = locked_holder
             .read()
@@ -305,6 +313,7 @@ mod tests {
             &segment_config,
             deferred_internal_id,
             true,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -328,7 +337,7 @@ mod tests {
             "segment should hold deferred points",
         );
         let vectors_size_bytes = segment
-            .available_vectors_size_in_bytes(VECTOR_NAME)
+            .available_vectors_size_in_bytes(VECTOR_NAME, &hw_counter)
             .unwrap();
 
         let mut holder = SegmentHolder::default();
@@ -364,7 +373,8 @@ mod tests {
         );
 
         // The segment is selected for optimization solely because it has deferred points.
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&segment_id));
 
@@ -375,7 +385,7 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info().unwrap())
+            .map(|(_sid, segment)| segment.get().read().info(&hw_counter).unwrap())
             .collect_vec();
         assert!(
             infos
@@ -394,7 +404,8 @@ mod tests {
             "deferred points must be promoted after optimization",
         );
 
-        let suggested_after = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_after =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         assert!(
             suggested_after.is_empty(),
             "no further optimization should be required (no infinite loop)",
@@ -460,7 +471,8 @@ mod tests {
         let locked_holder = LockedSegmentHolder::new(holder);
 
         // ---- check condition for MMap optimization
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert!(suggested_to_optimize.is_empty());
 
         index_optimizer
@@ -470,7 +482,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .indexing_threshold_kb = 50;
 
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(
             normalize(suggested_to_optimize),
             normalize(vec![
@@ -486,7 +499,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert!(suggested_to_optimize.is_empty());
 
         index_optimizer
@@ -496,7 +510,8 @@ mod tests {
             .threshold_config_mut_for_test()
             .indexing_threshold_kb = 1000;
 
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = index_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(
             normalize(suggested_to_optimize),
             normalize(vec![
@@ -527,7 +542,8 @@ mod tests {
         .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         assert_eq!(
             normalize(suggested_to_optimize.clone()),
             normalize(vec![
@@ -538,12 +554,14 @@ mod tests {
         index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------ Plain -> Indexed payload
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         assert_eq!(suggested_to_optimize.clone(), vec![vec![middle_segment_id]]);
         index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
@@ -555,7 +573,7 @@ mod tests {
         let infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info().unwrap())
+            .map(|(_sid, segment)| segment.get().read().info(&hw_counter).unwrap())
             .collect_vec();
         let configs = locked_holder
             .read()
@@ -586,7 +604,7 @@ mod tests {
         // `SegmentHolder::register_post_flush_action`). Flush to run the action before counting dirs.
         locked_holder
             .read()
-            .flush_all(FlushMode::Sync, true)
+            .flush_all(FlushMode::Sync, true, &hw_counter)
             .expect("failed to flush segment holder");
 
         let segment_dirs = fs::read_dir(segments_dir.path()).unwrap().collect_vec();
@@ -647,7 +665,7 @@ mod tests {
         let new_infos = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info().unwrap())
+            .map(|(_sid, segment)| segment.get().read().info(&hw_counter).unwrap())
             .collect_vec();
         let new_smallest_size = new_infos
             .iter()
@@ -667,7 +685,8 @@ mod tests {
         index_optimizer
             .threshold_config_mut_for_test()
             .indexing_threshold_kb = 20;
-        let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
@@ -675,7 +694,7 @@ mod tests {
         let new_infos2 = locked_holder
             .read()
             .iter()
-            .map(|(_sid, segment)| segment.get().read().info().unwrap())
+            .map(|(_sid, segment)| segment.get().read().info(&hw_counter).unwrap())
             .collect_vec();
 
         let mut has_empty = false;
@@ -772,7 +791,8 @@ mod tests {
         // Index until all segments are indexed
         let mut numer_of_optimizations = 0;
         loop {
-            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            let suggested_to_optimize = index_optimizer
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
             if suggested_to_optimize.is_empty() {
                 break;
             }
@@ -872,7 +892,8 @@ mod tests {
             );
 
             // Index optimizer should not optimize and put storage back in memory, nothing changed
-            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            let suggested_to_optimize = index_optimizer
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
             assert_eq!(
                 suggested_to_optimize.len(),
                 0,
@@ -880,8 +901,8 @@ mod tests {
             );
 
             // Config mismatch optimizer should not try to change the current state
-            let suggested_to_optimize =
-                config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+            let suggested_to_optimize = config_mismatch_optimizer
+                .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
             assert_eq!(
                 suggested_to_optimize.len(),
                 0,
@@ -944,8 +965,8 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "mmap must be built");
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
-        let suggested_to_optimize =
-            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = config_mismatch_optimizer
+            .plan_optimizations_for_test(&locked_holder, &HardwareCounterCell::new());
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Ensure new segment is on disk now
@@ -993,7 +1014,11 @@ mod tests {
         let planned = |optimizers: &[Box<Optimizer>], holder: &LockedSegmentHolder| {
             optimizers
                 .iter()
-                .filter(|optimizer| !optimizer.plan_optimizations_for_test(holder).is_empty())
+                .filter(|optimizer| {
+                    !optimizer
+                        .plan_optimizations_for_test(holder, &HardwareCounterCell::new())
+                        .is_empty()
+                })
                 .map(|optimizer| optimizer.name())
                 .collect_vec()
         };
@@ -1120,7 +1145,9 @@ mod tests {
                 .or_insert_with(|| {
                     let holder = new_holder(&segment_config);
                     for optimizer in &optimizers {
-                        for batch in optimizer.plan_optimizations_for_test(&holder) {
+                        for batch in optimizer
+                            .plan_optimizations_for_test(&holder, &HardwareCounterCell::new())
+                        {
                             optimizer.optimize_for_test(holder.clone(), batch);
                         }
                     }
@@ -1208,6 +1235,7 @@ mod tests {
             &segment_config,
             Some(deferred_internal_id),
             true,
+            &hw_counter,
         )
         .unwrap();
 
@@ -1230,7 +1258,7 @@ mod tests {
             "segment should have deferred points",
         );
         let stored_bytes = segment
-            .available_vectors_size_in_bytes(DEFAULT_VECTOR_NAME)
+            .available_vectors_size_in_bytes(DEFAULT_VECTOR_NAME, &hw_counter)
             .unwrap();
         assert!(
             stored_bytes < indexing_threshold_bytes,
@@ -1264,7 +1292,8 @@ mod tests {
         const MAX_ITERATIONS: usize = 16;
         let mut iterations = 0;
         loop {
-            let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
+            let suggested_to_optimize =
+                index_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
             if suggested_to_optimize.is_empty() {
                 break;
             }

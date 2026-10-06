@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -280,6 +281,7 @@ fn test_save_load_histogram() {
         .unwrap();
     histogram.save(dir.path()).unwrap();
 
-    let loaded_histogram = Histogram::<f64>::open(&MmapFs, dir.path()).unwrap();
+    let loaded_histogram =
+        Histogram::<f64>::open(&MmapFs, dir.path(), &HardwareCounterCell::new()).unwrap();
     assert_eq!(histogram, loaded_histogram);
 }

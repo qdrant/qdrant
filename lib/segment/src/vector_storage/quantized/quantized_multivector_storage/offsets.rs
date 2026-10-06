@@ -59,11 +59,16 @@ impl MultivectorOffsetsStorageRam {
     /// Schedule background prefetch of the offsets file [`Self::open`] reads.
     ///
     /// The open reads the whole file, so the prefetch populates it.
-    pub fn preopen(fs: &impl CachedReadFs, path: &Path) -> OperationResult<()> {
+    pub fn preopen(
+        fs: &impl CachedReadFs,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         fs.schedule_open(
             path,
             Some(Self::open_options(Populate::PreferBackground)),
             None,
+            hw_counter,
         );
         Ok(())
     }
@@ -75,21 +80,27 @@ impl MultivectorOffsetsStorageRam {
     pub fn open<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
             Self::open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?);
         Ok(MultivectorOffsetsStorageRam {
-            offsets: offsets.read_whole()?.into_owned(),
+            offsets: offsets.read_whole(hw_counter)?.into_owned(),
             path: path.to_path_buf(),
         })
     }
 }
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
         self.offsets[idx as usize]
     }
 
@@ -97,14 +108,15 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         &self,
         ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, MultivectorOffset),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for (index, &id) in ids.iter().enumerate() {
-            callback(index, self.get_offset(id));
+            callback(index, self.get_offset(id, hw_counter));
         }
         Ok(())
     }
 
-    fn len(&self) -> usize {
+    fn len(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.offsets.len()
     }
 
@@ -112,10 +124,10 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         &mut self,
         id: PointOffsetType,
         offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
-        if id as usize >= self.len() {
+        if id as usize >= self.len(hw_counter) {
             self.offsets
                 .resize(id as usize + 1, MultivectorOffset::default());
         }
@@ -152,13 +164,14 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
         path: &Path,
         offsets: impl Iterator<Item = MultivectorOffset>,
         count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         create_offsets_file_from_iter(path, count, offsets)?;
-        MultivectorOffsetsStorageMmap::load(path)
+        MultivectorOffsetsStorageMmap::load(path, hw_counter)
     }
 
-    pub fn load(path: &Path) -> OperationResult<Self> {
-        Self::open(&MmapFs, path)
+    pub fn load(path: &Path, hw_counter: &HardwareCounterCell) -> OperationResult<Self> {
+        Self::open(&MmapFs, path, hw_counter)
     }
 }
 
@@ -176,18 +189,28 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
     ///
     /// The offsets are read lazily; `populate` warms the parked handle for
     /// the `cached` memory placement.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path, populate: Populate) {
-        fs.schedule_open(path, Some(Self::open_options(populate)), None);
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        fs.schedule_open(path, Some(Self::open_options(populate)), None, hw_counter);
     }
 
     /// Open the offsets file read-only through the provided [`UniversalRead`] filesystem.
     ///
     /// Performs no writes, making this the entry point used by read-only storages.
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let offsets = TypedStorage::<S, MultivectorOffset>::new(fs.open(
             path,
             Self::open_options(Populate::No),
             Default::default(),
+            hw_counter,
         )?);
 
         Ok(Self {
@@ -196,8 +219,8 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
         })
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        Ok(self.offsets.populate()?)
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        Ok(self.offsets.populate(hw_counter)?)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -206,12 +229,17 @@ impl<S: UniversalRead> MultivectorOffsetsStorageMmap<S> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap<S> {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
         let offset = self
             .offsets
             .read(
                 ReadRange::one(u64::from(idx) * size_of::<MultivectorOffset>() as u64),
                 Random,
+                hw_counter,
             )
             .expect("multi-vector offset read");
 
@@ -226,25 +254,31 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         &self,
         ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, MultivectorOffset),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let ranges = ids.iter().copied().enumerate().map(|(idx, id)| {
             let offset = u64::from(id) * size_of::<MultivectorOffset>() as u64;
             (idx, ReadRange::one(offset))
         });
 
-        self.offsets.read_batch(ranges, Random, |idx, offset| {
-            let [offset] = offset else {
-                unreachable!("multi-vector offsets are stored as a single-element slice");
-            };
-            callback(idx, *offset);
-            UioResult::Ok(())
-        })?;
+        self.offsets.read_batch(
+            ranges,
+            Random,
+            |idx, offset| {
+                let [offset] = offset else {
+                    unreachable!("multi-vector offsets are stored as a single-element slice");
+                };
+                callback(idx, *offset);
+                UioResult::Ok(())
+            },
+            hw_counter,
+        )?;
         Ok(())
     }
 
-    fn len(&self) -> usize {
+    fn len(&self, hw_counter: &HardwareCounterCell) -> usize {
         self.offsets
-            .len()
+            .len(hw_counter)
             .expect("multi-vector offsets length read") as _
     }
 
@@ -298,7 +332,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         in_ram: bool,
     ) -> OperationResult<Self> {
         let hw_counter = HardwareCounterCell::disposable();
-        let mut offsets_storage = Self::load(fs, path, in_ram)?;
+        let mut offsets_storage = Self::load(fs, path, in_ram, &hw_counter)?;
         for (id, offset) in offsets.enumerate() {
             offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
         }
@@ -306,18 +340,23 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         Ok(offsets_storage)
     }
 
-    pub fn load(fs: S::Fs, path: &Path, in_ram: bool) -> OperationResult<Self> {
+    pub fn load(
+        fs: S::Fs,
+        path: &Path,
+        in_ram: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let advice = if in_ram {
             AdviceSetting::from(Advice::Normal)
         } else {
             AdviceSetting::Global
         };
-        let data = ChunkedVectors::open(fs, path, 1, advice, Populate::from(in_ram))?;
+        let data = ChunkedVectors::open(fs, path, 1, advice, Populate::from(in_ram), hw_counter)?;
         Ok(Self { data })
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.data.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.data.populate(hw_counter)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -329,9 +368,13 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
 impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
     for MultivectorOffsetsStorageChunked<S>
 {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
         self.data
-            .get::<Random>(idx as VectorOffsetType)
+            .get::<Random>(idx as VectorOffsetType, hw_counter)
             .and_then(|offsets| offsets.first().copied())
             .unwrap_or_default()
     }
@@ -340,25 +383,29 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
         &self,
         ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, MultivectorOffset),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let point_offsets = ids
             .iter()
             .enumerate()
             .map(|(idx, &point_offset)| (idx, point_offset, 1));
 
-        self.data
-            .for_each_vector::<Random, _>(point_offsets, |idx, multi_offset| {
+        self.data.for_each_vector::<Random, _>(
+            point_offsets,
+            |idx, multi_offset| {
                 let &[multi_offset] = multi_offset.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
 
                 callback(idx, multi_offset);
                 Ok(())
-            })?;
+            },
+            hw_counter,
+        )?;
         Ok(())
     }
 
-    fn len(&self) -> usize {
+    fn len(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.data.len()
     }
 
@@ -412,28 +459,35 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         ReadOnlyChunkedVectors::<MultivectorOffset, S>::preopen(
             fs,
             path,
             AdviceSetting::Global,
             populate,
+            hw_counter,
         )
     }
 
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let data = ReadOnlyChunkedVectors::open(
             fs,
             path,
             1,
             AdviceSetting::Global,
             Populate::No, // TODO(uio): consider `in_ram`?
+            hw_counter,
         )?;
         Ok(Self { data })
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.data.populate()
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.data.populate(hw_counter)
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
@@ -442,9 +496,13 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedRead<S> {
-    fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
+    fn get_offset(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> MultivectorOffset {
         self.data
-            .get::<Random>(idx as VectorOffsetType)
+            .get::<Random>(idx as VectorOffsetType, hw_counter)
             .and_then(|offsets| offsets.first().copied())
             .unwrap_or_default()
     }
@@ -453,25 +511,29 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
         &self,
         ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, MultivectorOffset),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let point_offsets = ids
             .iter()
             .enumerate()
             .map(|(idx, &point_offset)| (idx, point_offset, 1));
 
-        self.data
-            .for_each_vector::<Random, _>(point_offsets, |idx, multi_offset| {
+        self.data.for_each_vector::<Random, _>(
+            point_offsets,
+            |idx, multi_offset| {
                 let &[multi_offset] = multi_offset.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
 
                 callback(idx, multi_offset);
                 Ok(())
-            })?;
+            },
+            hw_counter,
+        )?;
         Ok(())
     }
 
-    fn len(&self) -> usize {
+    fn len(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.data.len()
     }
 

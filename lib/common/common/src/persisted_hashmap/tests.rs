@@ -7,6 +7,7 @@ use rand::{RngExt, SeedableRng};
 
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
+use crate::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use crate::universal_io::{IoUringFile, IoUringFs, IoUringOpenExtra};
 use crate::universal_io::{MmapFile, MmapFs, OpenOptions, UioResult, UniversalRead};
@@ -77,8 +78,14 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     run_uio_checks(
         r.group("uio:mmap"),
         &mut rng,
-        &UniversalHashMap::<K, V, MmapFile>::open(&MmapFs, &path, OpenOptions::new_for_test(), ())
-            .unwrap(),
+        &UniversalHashMap::<K, V, MmapFile>::open(
+            &MmapFs,
+            &path,
+            OpenOptions::new_for_test(),
+            (),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap(),
         &orig,
         &non_existing_keys,
     );
@@ -92,6 +99,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
             &path,
             OpenOptions::new_for_test(),
             IoUringOpenExtra::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap(),
         &orig,
@@ -138,7 +146,10 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
 
     r.check("get() for existing keys", || {
         for (key, values) in orig {
-            let val = uio.unbatched_get(K::as_ref(key)).unwrap().unwrap();
+            let val = uio
+                .unbatched_get(K::as_ref(key), &HardwareCounterCell::new())
+                .unwrap()
+                .unwrap();
             assert_eq!(&val, values, "uio::unbatched_get()");
         }
     });
@@ -146,7 +157,7 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
     r.check("get_values_count() for existing keys", || {
         for (key, values) in orig {
             let val = uio
-                .unbatched_get_values_count(K::as_ref(key))
+                .unbatched_get_values_count(K::as_ref(key), &HardwareCounterCell::new())
                 .unwrap()
                 .unwrap();
             assert_eq!(val, values.len());
@@ -155,14 +166,18 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
 
     r.check("get() for non-existing keys", || {
         for key in non_existing_keys {
-            assert!(uio.unbatched_get(K::as_ref(key)).unwrap().is_none());
+            assert!(
+                uio.unbatched_get(K::as_ref(key), &HardwareCounterCell::new())
+                    .unwrap()
+                    .is_none()
+            );
         }
     });
 
     r.check("get_values_count() for non-existing keys", || {
         for key in non_existing_keys {
             assert!(
-                uio.unbatched_get_values_count(K::as_ref(key))
+                uio.unbatched_get_values_count(K::as_ref(key), &HardwareCounterCell::new())
                     .unwrap()
                     .is_none()
             );
@@ -171,16 +186,22 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
 
     r.check("for_each_entry", || {
         let mut res = Vec::new();
-        uio.for_each_entry(|k, vals| push_val(&mut res, (K::from_ref(k), vals.to_vec())))
-            .unwrap();
+        uio.for_each_entry(
+            |k, vals| push_val(&mut res, (K::from_ref(k), vals.to_vec())),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         res.sort();
         assert_equal(res.iter().map(|(k, v)| (k, v)), orig.iter());
     });
 
     r.check("for_each_key", || {
         let mut res = Vec::new();
-        uio.for_each_key(|k| push_val(&mut res, K::from_ref(k)))
-            .unwrap();
+        uio.for_each_key(
+            |k| push_val(&mut res, K::from_ref(k)),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         res.sort();
         assert_equal(res.iter(), orig.keys());
     });
@@ -229,6 +250,7 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
                     },
                 )
             },
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 

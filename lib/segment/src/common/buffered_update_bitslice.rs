@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::UniversalWrite;
 use itertools::Itertools;
@@ -41,7 +42,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         self.pending_updates.write().insert(index, value);
     }
 
-    pub fn get(&self, index: usize) -> Option<bool> {
+    pub fn get(&self, index: usize, hw_counter: &HardwareCounterCell) -> Option<bool> {
         if index >= self.len {
             return None;
         }
@@ -50,7 +51,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         } else {
             self.bitslice
                 .read()
-                .get_bit(index as u64)
+                .get_bit(index as u64, hw_counter)
                 .unwrap_or_else(|err| {
                     log::error!("Error reading bit at index {index}: {err}");
                     debug_assert!(false, "Error reading bit at index {index}: {err}");
@@ -90,7 +91,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         Ok(())
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         let updates = {
             let updates_guard = self.pending_updates.read();
             if updates_guard.is_empty() {
@@ -103,7 +104,9 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         let pending_updates_weak = Arc::downgrade(&self.pending_updates);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
+        let hw_acc = hw_counter.new_accumulator();
         Box::new(move || {
+            let hw_counter = &hw_acc.get_counter_cell();
             let (Some(is_alive_flush_guard), Some(bitslice), Some(pending_updates_arc)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 bitslice.upgrade(),
@@ -123,6 +126,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
                     .iter()
                     .map(|(idx, value)| (*idx as u64, *value))
                     .sorted_unstable_by_key(|(idx, _)| *idx),
+                hw_counter,
             )?;
             storage_write.flusher()()?;
 

@@ -1,4 +1,5 @@
 use common::condition_checker::ConditionChecker;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 use common::universal_io::UniversalRead;
 
@@ -65,7 +66,9 @@ where
                 // to do a plain search instead.
                 let plain_search = exact
                     || is_hnsw_disabled
-                    || self.vector_storage.available_vector_count()
+                    || self
+                        .vector_storage
+                        .available_vector_count(query_context.hw_counter())
                         < self.config.full_scan_threshold;
 
                 // Do plain or graph search
@@ -96,7 +99,9 @@ where
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
 
-                let available_vector_count = self.vector_storage.available_vector_count();
+                let available_vector_count = self
+                    .vector_storage
+                    .available_vector_count(query_context.hw_counter());
 
                 let hw_counter = query_context.hardware_counter();
 
@@ -109,7 +114,7 @@ where
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
-                    self.id_tracker.available_point_count(),
+                    self.id_tracker.available_point_count(&hw_counter),
                 );
 
                 // if exact search is requested, we should not use HNSW index
@@ -166,8 +171,10 @@ where
                         .payload_index
                         .filter_context(query_filter, &hw_counter)?;
                     sample_check_cardinality(
-                        self.id_tracker
-                            .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
+                        self.id_tracker.sample_ids(
+                            Some(self.vector_storage.deleted_vector_bitslice()),
+                            &hw_counter,
+                        ),
                         |idx| filter_context.check(idx),
                         self.config.full_scan_threshold,
                         available_vector_count, // Check cardinality among available vectors
@@ -211,7 +218,8 @@ where
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
+        let algorithm =
+            self.filtered_graph_algorithm(query_cardinality, params, query_context.hw_counter());
         let _timer = ScopeDurationMeasurer::new(match algorithm {
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
@@ -224,6 +232,7 @@ where
         &self,
         query_cardinality: &CardinalityEstimation,
         params: Option<&SearchParams>,
+        hw_counter: &HardwareCounterCell,
     ) -> SearchAlgorithm {
         let Some(acorn) = params.and_then(|params| params.acorn) else {
             return SearchAlgorithm::Hnsw;
@@ -236,7 +245,7 @@ where
         // practice, such segments most likely to be picked by an optimizer
         // soon.
 
-        let available_vector_count = self.vector_storage.available_vector_count();
+        let available_vector_count = self.vector_storage.available_vector_count(hw_counter);
         let selectivity = if available_vector_count == 0 {
             1.0
         } else {

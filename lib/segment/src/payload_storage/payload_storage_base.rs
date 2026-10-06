@@ -68,7 +68,7 @@ pub trait PayloadStorageRead {
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
 
     /// Return storage size in bytes
-    fn get_storage_size_bytes(&self) -> OperationResult<usize>;
+    fn get_storage_size_bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize>;
 
     /// Whether this storage is on-disk or in-memory.
     fn is_on_disk(&self) -> bool;
@@ -127,7 +127,7 @@ pub trait PayloadStorage: PayloadStorageRead {
     fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher;
 
     /// Return all files that are used by storage to include in snapshots.
     fn files(&self) -> Vec<PathBuf>;

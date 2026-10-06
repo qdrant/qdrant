@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use blobstore::BlobstoreReader;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlySparseVectorStorage;
@@ -23,17 +24,23 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Blobstore reader
-        BlobstoreReader::<StoredSparseVector, S>::preopen(fs, path.join(STORAGE_DIRNAME), populate)
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to preopen read-only sparse vector storage: {err}"
-                ))
-            })?;
+        BlobstoreReader::<StoredSparseVector, S>::preopen(
+            fs,
+            path.join(STORAGE_DIRNAME),
+            populate,
+            hw_counter,
+        )
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to preopen read-only sparse vector storage: {err}"
+            ))
+        })?;
 
         // Deleted flags
-        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME))?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIRNAME), hw_counter)?;
 
         Ok(())
     }
@@ -48,11 +55,13 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let storage = BlobstoreReader::<StoredSparseVector, S>::open(
             fs,
             path.join(STORAGE_DIRNAME),
             populate,
+            hw_counter,
         )
         .map_err(|err| {
             OperationError::service_error(format!(
@@ -60,13 +69,13 @@ impl<S: UniversalRead> ReadOnlySparseVectorStorage<S> {
             ))
         })?;
 
-        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIRNAME))?;
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIRNAME), hw_counter)?;
 
         let next_point_offset = deleted
             .as_bitslice()
             .last_one()
             .map(|i| i + 1)
-            .max(Some(storage.max_point_offset()? as usize))
+            .max(Some(storage.max_point_offset(hw_counter)? as usize))
             .unwrap_or_default();
 
         Ok(Self {

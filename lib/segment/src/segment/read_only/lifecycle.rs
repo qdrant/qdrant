@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
@@ -35,7 +37,11 @@ use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVector
 use crate::vector_storage::read_only::VectorStorageReadEnum;
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 
-fn schedule_static_files<Fs: UniversalReadFsAsync>(cached_fs: &CachedFs<Fs>, segment_path: &Path) {
+fn schedule_static_files<Fs: UniversalReadFsAsync>(
+    cached_fs: &CachedFs<Fs>,
+    segment_path: &Path,
+    hw_counter: &HardwareCounterCell,
+) {
     // TODO(uio): Schedule static files in advance, after implementing
     // `read_whole_bytes_async`, so that their fetch can overlap with the listing
     // round-trip.
@@ -44,7 +50,7 @@ fn schedule_static_files<Fs: UniversalReadFsAsync>(cached_fs: &CachedFs<Fs>, seg
         segment_path.join(SEGMENT_STATE_FILE),
         PayloadConfig::get_config_path(&get_payload_index_path(segment_path)),
     ] {
-        cached_fs.schedule_open(&path, None, None);
+        cached_fs.schedule_open(&path, None, None, hw_counter);
     }
 }
 
@@ -52,10 +58,11 @@ fn schedule_static_files<Fs: UniversalReadFsAsync>(cached_fs: &CachedFs<Fs>, seg
 fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: &Fs,
     segment_path: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-    cached_fs.cache_file_info()?;
-    schedule_static_files(&cached_fs, segment_path);
+    cached_fs.cache_file_info(hw_counter)?;
+    schedule_static_files(&cached_fs, segment_path, hw_counter);
     Ok(cached_fs)
 }
 
@@ -127,6 +134,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         Self::schedule_open(
             fs,
@@ -135,8 +143,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             deferred_internal_id,
             load_profile,
             &AtomicBool::new(false),
+            hw_counter,
         )?
-        .finish(fs)
+        .finish(fs, hw_counter)
     }
 
     /// Take the segment's listing snapshot without blocking, for
@@ -145,10 +154,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     pub async fn build_cached_fs_async(
         fs: &S::Fs,
         segment_path: &Path,
+        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<CachedFs<S::Fs>> {
         let mut cached_fs = CachedFs::new(fs.clone(), segment_path)?;
-        cached_fs.cache_file_info_async().await?;
-        schedule_static_files(&cached_fs, segment_path);
+        cached_fs.cache_file_info_async(hw_acc.clone()).await?;
+        schedule_static_files(&cached_fs, segment_path, &hw_acc.get_counter_cell());
         Ok(cached_fs)
     }
 
@@ -171,9 +181,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&'a LoadProfile>,
         is_stopped: &'a AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
-        let fs = build_cached_fs(fs, segment_path)?;
+        let fs = build_cached_fs(fs, segment_path, hw_counter)?;
         Self::schedule_open_with_cached_fs(
             fs,
             segment_path,
@@ -181,6 +192,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             deferred_internal_id,
             load_profile,
             is_stopped,
+            hw_counter,
         )
     }
 
@@ -193,10 +205,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&'a LoadProfile>,
         is_stopped: &'a AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let (config, payload_config) =
-            Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;
+            Self::first_preopen(&fs, segment_path, load_profile, is_stopped, hw_counter)?;
         Ok(StagedSegmentOpen {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -217,19 +230,25 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         segment_path: &Path,
         load_profile: Option<&LoadProfile>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
         let SegmentState {
             initial_version: _,
             version: _,
             config,
-        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
+        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE), hw_counter)?;
         check_process_stopped(is_stopped)?;
 
         // Payload storage
         let payload_storage_populate = load_profile
             .and_then(|profile| profile.payload_storage_placement())
             .unwrap_or_else(|| payload_populate(&config));
-        ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), payload_storage_populate)?;
+        ReadOnlyPayloadStorage::preopen(
+            fs,
+            segment_path.to_path_buf(),
+            payload_storage_populate,
+            hw_counter,
+        )?;
         check_process_stopped(is_stopped)?;
 
         // Id tracker; always loaded — every request resolves ids through it.
@@ -237,6 +256,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             segment_path,
             id_tracker_populate(&config, fs, segment_path),
+            hw_counter,
         )?;
 
         // Vector storages
@@ -252,6 +272,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &path,
                 &index_path,
                 storage_populate,
+                hw_counter,
             )?;
             check_process_stopped(is_stopped)?;
 
@@ -259,7 +280,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             // when quantization isn't configured for this vector.
             let quantized_populate =
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));
-            ReadOnlyQuantizedVectors::<S>::preopen(fs, &path, vector_config, quantized_populate)?;
+            ReadOnlyQuantizedVectors::<S>::preopen(
+                fs,
+                &path,
+                vector_config,
+                quantized_populate,
+                hw_counter,
+            )?;
             check_process_stopped(is_stopped)?;
 
             // Vector index. A cold override defers the HNSW graph load (see
@@ -267,7 +294,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             // prefetched.
             let index_populate =
                 load_profile.and_then(|profile| profile.vector_index_placement(vector_name));
-            VectorIndexReadEnum::<S>::preopen(fs, vector_config, &index_path, index_populate)?;
+            VectorIndexReadEnum::<S>::preopen(
+                fs,
+                vector_config,
+                &index_path,
+                index_populate,
+                hw_counter,
+            )?;
         }
         for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
             check_process_stopped(is_stopped)?;
@@ -276,6 +309,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 fs,
                 &path,
                 sparse_storage_populate(sparse_vector_config),
+                hw_counter,
             )?;
             check_process_stopped(is_stopped)?;
 
@@ -289,6 +323,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 sparse_vector_config,
                 &index_path,
                 index_populate,
+                hw_counter,
             )?;
         }
 
@@ -298,6 +333,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             &get_payload_index_path(segment_path),
             load_profile,
+            hw_counter,
         )?;
 
         Ok((config, payload_config))
@@ -331,12 +367,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         check_process_stopped(is_stopped)?;
         futures::executor::block_on(fs.wait_all());
         check_process_stopped(is_stopped)?;
 
-        if SegmentVersion::load_universal(&fs, segment_path)?.is_none() {
+        if SegmentVersion::load_universal(&fs, segment_path, hw_counter)?.is_none() {
             // `FileNotFound`, not a service error: the version file is written last, so
             // its absence means the segment vanished mid-open (or was never completed) —
             // a follower resolves that against the segment manifest.
@@ -357,6 +394,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             &fs,
             segment_path.to_path_buf(),
             payload_storage_populate,
+            hw_counter,
         )?));
         check_process_stopped(is_stopped)?;
 
@@ -367,6 +405,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             segment_path,
             deferred_internal_id,
             id_tracker_populate(&config, &fs, segment_path),
+            hw_counter,
         )?));
 
         // Open all vector storages up front: the payload index needs them.
@@ -386,6 +425,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &path,
                 &index_path,
                 storage_populate,
+                hw_counter,
             )?;
             let storage = opened.ok_or_else(|| {
                 OperationError::service_error(format!(
@@ -402,6 +442,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                     &fs,
                     &path,
                     sparse_storage_populate(sparse_vector_config),
+                    hw_counter,
                 )?));
             vector_storages.insert(vector_name.clone(), Arc::new(AtomicRefCell::new(storage)));
         }
@@ -415,6 +456,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             &get_payload_index_path(segment_path),
             payload_config,
             load_profile,
+            hw_counter,
         )?));
 
         let mut vector_data = HashMap::new();
@@ -432,6 +474,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 payload_index.clone(),
                 vector_storage,
                 load_profile,
+                hw_counter,
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
@@ -447,6 +490,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 payload_index.clone(),
                 vector_storage,
                 load_profile,
+                hw_counter,
             )?;
             vector_data.insert(vector_name.clone(), data);
         }
@@ -500,7 +544,11 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
     ///
     /// Checks the stop flag given to [`ReadOnlySegment::schedule_open`]
     /// between components.
-    pub fn finish(self, raw_fs: &S::Fs) -> OperationResult<ReadOnlySegment<S>> {
+    pub fn finish(
+        self,
+        raw_fs: &S::Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<ReadOnlySegment<S>> {
         let Self {
             fs,
             segment_path,
@@ -521,6 +569,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             deferred_internal_id,
             load_profile,
             is_stopped,
+            hw_counter,
         )
     }
 }
@@ -543,6 +592,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         load_profile: Option<&LoadProfile>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
@@ -562,6 +612,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
                 vector_config.multivector_config.as_ref(),
                 on_disk,
                 quantized_populate,
+                hw_counter,
             )?
         } else {
             None
@@ -586,6 +637,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
             },
             raw_fs,
             index_populate,
+            hw_counter,
         )?;
         let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 
@@ -609,6 +661,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
         load_profile: Option<&LoadProfile>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
@@ -629,6 +682,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
                 quantized_vectors: quantized_vectors.clone(),
             },
             index_populate,
+            hw_counter,
         )?;
         let vector_index = Arc::new(AtomicRefCell::new(vector_index));
 

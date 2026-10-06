@@ -45,6 +45,7 @@ use zerocopy::little_endian::U64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::bitpacking::{BitWriter, make_bitmask, packed_bits};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::generic_consts::Random;
 use crate::universal_io::{ReadBytesItem, UioResult, UniversalIoError, UniversalRead};
 
@@ -256,6 +257,7 @@ impl Reader {
         storage: &'a S,
         file_offset: u64,
         indices: &'a [usize],
+        hw_counter: &'a HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(usize, (u64, u64))>> + 'a> {
         // Each pair needs `index + 1`, so the last value is not a valid index.
         let max_index = self.decompressed_len().saturating_sub(1);
@@ -279,14 +281,16 @@ impl Reader {
                 align: 1,
             }
         });
-        Ok(storage.read_bytes_iter(items, Random)?.map(move |result| {
-            let ((position, index), chunk) = result?;
-            // `chunk` starts at `index`'s chunk, so locate `index + 1` in it.
-            let second = self.chunk_offset(index + 1) - self.chunk_offset(index);
-            let start = self.decode_chunk(index, &chunk);
-            let end = self.decode_chunk(index + 1, &chunk[second..]);
-            Ok((position, (start, end)))
-        }))
+        Ok(storage
+            .read_bytes_iter(items, Random, hw_counter)?
+            .map(move |result| {
+                let ((position, index), chunk) = result?;
+                // `chunk` starts at `index`'s chunk, so locate `index + 1` in it.
+                let second = self.chunk_offset(index + 1) - self.chunk_offset(index);
+                let start = self.decode_chunk(index, &chunk);
+                let end = self.decode_chunk(index + 1, &chunk[second..]);
+                Ok((position, (start, end)))
+            }))
     }
 
     /// Byte offset of the chunk containing the value at `index`.
@@ -364,16 +368,30 @@ mod tests {
                 // Reader::read_pairs_iter
                 let unrelated_data = [0xAA; 3]; // for `file_offset` testing
                 fs_err::write(file, [&unrelated_data[..], &compressed].concat()).unwrap();
-                let storage = MmapFs.open(file, OpenOptions::new_for_test(), ()).unwrap();
+                let storage = MmapFs
+                    .open(
+                        file,
+                        OpenOptions::new_for_test(),
+                        (),
+                        &HardwareCounterCell::new(),
+                    )
+                    .unwrap();
                 let offset = unrelated_data.len() as u64;
                 let indices = (0..expected.len()).collect::<Vec<_>>();
                 let mut out = vec![(1234, 12345); expected.len()];
-                for result in reader.read_pairs_iter(&storage, offset, &indices).unwrap() {
+                for result in reader
+                    .read_pairs_iter(&storage, offset, &indices, &HardwareCounterCell::new())
+                    .unwrap()
+                {
                     let (position, pair) = result.unwrap();
                     out[position] = pair;
                 }
                 assert_eq!(out, expected);
-                assert!(reader.read_pairs_iter(&storage, offset, &[oob]).is_err());
+                assert!(
+                    reader
+                        .read_pairs_iter(&storage, offset, &[oob], &HardwareCounterCell::new())
+                        .is_err()
+                );
             }
         }
     }

@@ -45,6 +45,7 @@ impl GeoIndex {
         path: &Path,
         memory: Memory,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Low-memory mode degrades the placement at load time (pinned falls back to the
         // pure-mmap variant). Files are shared between variants; the persisted
@@ -52,13 +53,17 @@ impl GeoIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) = OnDiskGeoIndex::open(&MmapFs, path, populate, deleted_points)?
+        let Some(on_disk_index) =
+            OnDiskGeoIndex::open(&MmapFs, path, populate, deleted_points, hw_counter)?
         else {
             return Ok(None);
         };
 
         let index = if memory.is_heap() {
-            GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+            GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         } else {
             GeoIndex::OnDisk(on_disk_index)
         };
@@ -66,8 +71,12 @@ impl GeoIndex {
         Ok(Some(index))
     }
 
-    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
-        Ok(MutableGeoIndex::open(dir, create_if_missing)?.map(GeoIndex::Mutable))
+    pub fn new_mutable(
+        dir: PathBuf,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Self>> {
+        Ok(MutableGeoIndex::open(dir, create_if_missing, hw_counter)?.map(GeoIndex::Mutable))
     }
 
     pub fn builder_mmap(
@@ -162,41 +171,47 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
+    fn values_count(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::values_count(index, idx),
-            GeoIndex::Immutable(index) => GeoIndexRead::values_count(index, idx),
-            GeoIndex::OnDisk(index) => index.values_count(idx),
+            GeoIndex::Mutable(index) => GeoIndexRead::values_count(index, idx, hw_counter),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_count(index, idx, hw_counter),
+            GeoIndex::OnDisk(index) => index.values_count(idx, hw_counter),
         }
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::get_values(index, idx),
-            GeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx),
-            GeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx),
+            GeoIndex::Mutable(index) => GeoIndexRead::get_values(index, idx, hw_counter),
+            GeoIndex::Immutable(index) => GeoIndexRead::get_values(index, idx, hw_counter),
+            GeoIndex::OnDisk(index) => GeoIndexRead::get_values(index, idx, hw_counter),
         }
     }
 
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::iterator(index, values),
-            GeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
-            GeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
+            GeoIndex::Mutable(index) => GeoIndexRead::iterator(index, values, hw_counter),
+            GeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values, hw_counter),
+            GeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values, hw_counter),
         }
     }
 
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
         match self {
-            GeoIndex::Mutable(index) => index.points_per_hash_filtered(filter),
-            GeoIndex::Immutable(index) => index.points_per_hash_filtered(filter),
-            GeoIndex::OnDisk(index) => index.points_per_hash_filtered(filter),
+            GeoIndex::Mutable(index) => index.points_per_hash_filtered(filter, hw_counter),
+            GeoIndex::Immutable(index) => index.points_per_hash_filtered(filter, hw_counter),
+            GeoIndex::OnDisk(index) => index.points_per_hash_filtered(filter, hw_counter),
         }
     }
 
@@ -224,10 +239,10 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             GeoIndex::Mutable(_) | GeoIndex::Immutable(_) => Ok(()),
-            GeoIndex::OnDisk(index) => index.populate(),
+            GeoIndex::OnDisk(index) => index.populate(hw_counter),
         }
     }
 

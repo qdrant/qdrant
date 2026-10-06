@@ -272,14 +272,18 @@ impl GeoIndexRead for InMemoryGeoIndex {
             .unwrap_or(false))
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> usize {
+    fn values_count(&self, idx: PointOffsetType, _hw_counter: &HardwareCounterCell) -> usize {
         self.point_to_values
             .get(idx as usize)
             .map(Vec::len)
             .unwrap_or_default()
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         self.point_to_values
             .get(idx as usize)
             .map(|v| Box::new(v.iter().copied()) as Box<dyn Iterator<Item = GeoPoint> + '_>)
@@ -288,6 +292,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         Ok(Box::new(
             values
@@ -300,6 +305,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
     fn points_per_hash_filtered(
         &self,
         filter: &dyn Fn(&(GeoHash, usize)) -> bool,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
         Ok(self
             .points_per_hash
@@ -362,7 +368,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
         false
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 

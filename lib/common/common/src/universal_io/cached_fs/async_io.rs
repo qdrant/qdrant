@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{CachedFs, ScheduledFile};
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, UioResult, UniversalIoError, UniversalReadFsAsync,
 };
@@ -14,6 +15,7 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
         path: PathBuf,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_acc: HwMeasurementAcc,
     ) -> UioResult<Self::File> {
         if options.writeable {
             return Err(UniversalIoError::Uninitialized {
@@ -52,13 +54,19 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
             Some(info) => extra.with_known_len(info.size),
             None => extra,
         };
-        self.fs.open_async(path, options, extra).await
+        self.fs
+            .open_async(path, options, extra, hw_acc.clone())
+            .await
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    async fn list_files_async(
+        &self,
+        prefix_path: &Path,
+        hw_acc: HwMeasurementAcc,
+    ) -> UioResult<Vec<ListedFile>> {
         match &self.files_info {
             Some(_) => Ok(self.cached_list_files(prefix_path)),
-            None => self.fs.list_files_async(prefix_path).await,
+            None => self.fs.list_files_async(prefix_path, hw_acc.clone()).await,
         }
     }
 }

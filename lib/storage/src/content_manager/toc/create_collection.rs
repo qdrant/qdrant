@@ -12,6 +12,7 @@ use collection::operations::types::{CollectionResult, VectorsConfig};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;
@@ -26,6 +27,7 @@ impl TableOfContent {
         collection_name: &str,
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         // Collection operations require multiple file operations,
         // before collection can actually be registered in the service.
@@ -237,6 +239,7 @@ impl TableOfContent {
             Some(self.update_runtime.handle().clone()),
             self.optimizer_resource_budget.clone(),
             self.storage_config.optimizers_overwrite.clone(),
+            hw_acc,
         )
         .await?;
 

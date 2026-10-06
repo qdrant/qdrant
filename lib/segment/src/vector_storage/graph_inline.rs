@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{MmapFile, MmapFs};
 
 use crate::common::flags::FlagsMode;
@@ -16,32 +17,47 @@ pub(crate) fn open_graph_inline_vector_storage(
     path: &Path,
     index_path: &Path,
     vector_config: &VectorDataConfig,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     use VectorStorageDatatype::{Float16, Float32, Turbo4, Turbo8, Uint8};
 
-    let graph = HnswGraph::open(index_path, vector_config.storage_memory())?;
+    let graph = HnswGraph::open(index_path, vector_config.storage_memory(), hw_counter)?;
     let dim = vector_config.size;
     let distance = vector_config.distance;
     let datatype = vector_config.datatype.unwrap_or_default();
     Ok(match datatype {
         Float32 => VectorStorageEnum::DenseGraphInline(
-            GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
+            GraphInlineDenseVectorStorage::open(graph, path, dim, distance, hw_counter)
+                .map(Box::new)?,
         ),
         Float16 => VectorStorageEnum::DenseGraphInlineHalf(
-            GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
+            GraphInlineDenseVectorStorage::open(graph, path, dim, distance, hw_counter)
+                .map(Box::new)?,
         ),
         Uint8 => VectorStorageEnum::DenseGraphInlineByte(
-            GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
+            GraphInlineDenseVectorStorage::open(graph, path, dim, distance, hw_counter)
+                .map(Box::new)?,
         ),
         Turbo4 | Turbo8 => VectorStorageEnum::DenseTurboGraphInline(
-            TurboVectorStorageImpl::open_graph(graph, path, dim, distance, tq_bits(datatype))
-                .map(Box::new)?,
+            TurboVectorStorageImpl::open_graph(
+                graph,
+                path,
+                dim,
+                distance,
+                tq_bits(datatype),
+                hw_counter,
+            )
+            .map(Box::new)?,
         ),
     })
 }
 
 /// Replace the temporary build storage with the final inline-graph storage.
-pub(crate) fn finalize(path: &Path, storage: VectorStorageEnum) -> OperationResult<()> {
+pub(crate) fn finalize(
+    path: &Path,
+    storage: VectorStorageEnum,
+    hw_counter: &HardwareCounterCell,
+) -> OperationResult<()> {
     let files = storage.files();
     let deleted = storage.deleted_vector_bitslice().to_bitvec();
 
@@ -63,6 +79,7 @@ pub(crate) fn finalize(path: &Path, storage: VectorStorageEnum) -> OperationResu
         &path.join(DELETED_DIR_PATH),
         FlagsMode::from_feature_flags(),
         &deleted,
+        hw_counter,
     )?
-    .flusher()()
+    .flusher(hw_counter)()
 }

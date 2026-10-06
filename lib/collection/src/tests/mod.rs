@@ -89,6 +89,7 @@ async fn test_optimization_process() {
         segments.clone(),
         || {},
         None,
+        &HardwareCounterCell::new(),
     );
 
     // We expect a total of 2 optimizations for the above segments
@@ -132,6 +133,7 @@ async fn test_optimization_process() {
         segments.clone(),
         || {},
         None,
+        &HardwareCounterCell::new(),
     );
 
     // Because we may not have completed all optimizations due to limited CPU budget, we may expect
@@ -230,6 +232,7 @@ async fn optimization_keeps_manifest_consistent_with_live_segments() {
             segments.clone(),
             || {},
             None,
+            &HardwareCounterCell::new(),
         );
         if handles.is_empty() {
             break;
@@ -292,6 +295,7 @@ async fn test_cancel_optimization() {
         segments.clone(),
         || {},
         None,
+        &HardwareCounterCell::new(),
     );
 
     sleep(Duration::from_millis(100)).await;
@@ -381,6 +385,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segment_config,
         &optimizer_thresholds,
         payload_index_schema.clone(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     assert_eq!(segments.read().len(), 6);
@@ -392,6 +397,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segment_config,
         &optimizer_thresholds,
         payload_index_schema.clone(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -408,7 +414,7 @@ async fn test_new_segment_when_all_over_capacity() {
                 segment
                     .get()
                     .read()
-                    .max_available_vectors_size_in_bytes()
+                    .max_available_vectors_size_in_bytes(&hw_counter)
                     .unwrap()
             })
             .unwrap();
@@ -437,6 +443,7 @@ async fn test_new_segment_when_all_over_capacity() {
         &segment_config,
         &optimizer_thresholds,
         payload_index_schema,
+        &hw_counter,
     )
     .unwrap();
     assert_eq!(segments.read().len(), 7);
@@ -504,6 +511,7 @@ async fn ensure_appendable_segment_registers_in_manifest() {
         &segment_config,
         &optimizer_thresholds,
         payload_index_schema,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

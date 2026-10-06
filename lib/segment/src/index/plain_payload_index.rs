@@ -91,9 +91,9 @@ impl PayloadIndexRead for PlainPayloadIndex {
     fn estimate_cardinality(
         &self,
         _query: &Filter,
-        _hw_counter: &HardwareCounterCell, // No measurements needed here.
+        hw_counter: &HardwareCounterCell, // No measurements needed here.
     ) -> OperationResult<CardinalityEstimation> {
-        let available_points = self.id_tracker.borrow().available_point_count();
+        let available_points = self.id_tracker.borrow().available_point_count(hw_counter);
         Ok(CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -120,7 +120,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
     ) -> OperationResult<Vec<PointOffsetType>> {
         let filter_context = self.filter_context(filter, hw_counter)?;
         let id_tracker = self.id_tracker.borrow();
-        let point_mappings = id_tracker.point_mappings();
+        let point_mappings = id_tracker.point_mappings(hw_counter);
         let all_points_iter = point_mappings.iter_internal_visible();
         all_points_iter
             .stop_if(is_stopped)
@@ -128,7 +128,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
             .collect()
     }
 
-    fn indexed_points(&self, _field: PayloadKeyTypeRef) -> OperationResult<usize> {
+    fn indexed_points(
+        &self,
+        _field: PayloadKeyTypeRef,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         Ok(0) // No points are indexed in the plain index
     }
 
@@ -150,6 +154,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         _field: PayloadKeyTypeRef,
         _threshold: usize,
         _f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No blocks for un-indexed payload
         Ok(())
@@ -223,7 +228,10 @@ impl PayloadIndexRead for PlainPayloadIndex {
         Ok(Vec::new())
     }
 
-    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>> {
+    fn get_telemetry_data(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PayloadIndexTelemetry>> {
         // Plain index has no field indexes to report telemetry for.
         Ok(Vec::new())
     }
@@ -253,7 +261,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         let matched: Vec<PointOffsetType> = self
             .id_tracker
             .borrow()
-            .point_mappings()
+            .point_mappings(hw_counter)
             .iter_internal_with_behavior(deferred_behavior)
             .stop_if(is_stopped)
             .try_filter(|id| filter_context.check(*id))
@@ -360,7 +368,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         unreachable!()
     }
 

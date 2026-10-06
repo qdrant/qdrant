@@ -1,6 +1,7 @@
 //! Ordered (e2i-run streaming) and random-order iteration over the mapping.
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use itertools::Itertools as _;
@@ -14,8 +15,12 @@ use crate::types::PointIdType;
 impl<S: UniversalRead> DiskMappingReader<S> {
     /// Ordered iterator over the e2i runs starting at `external_id`, yielding
     /// build-time-live points. Deletion is applied by the caller.
-    pub fn iter_from(&self, external_id: Option<PointIdType>) -> E2iIter<'_, S> {
-        E2iIter::new(self, external_id)
+    pub fn iter_from<'a>(
+        &'a self,
+        external_id: Option<PointIdType>,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> E2iIter<'a, S> {
+        E2iIter::new(self, external_id, hw_counter)
     }
 }
 
@@ -28,6 +33,7 @@ impl<S: UniversalRead> DiskMappingReader<S> {
 pub fn iter_random<'a, S: UniversalRead>(
     reader: &'a DiskMappingReader<S>,
     deleted: &'a BitSlice,
+    hw_counter: &'a HardwareCounterCell,
 ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
     let total = reader.total_point_count() as usize;
 
@@ -42,7 +48,7 @@ pub fn iter_random<'a, S: UniversalRead>(
         }
         let offset = offset as PointOffsetType;
         // Sampling iteration stays best-effort: log and skip on a storage error.
-        match reader.external_id(offset) {
+        match reader.external_id(offset, hw_counter) {
             Ok(external_id) => external_id.map(|external_id| (external_id, offset)),
             Err(err) => {
                 log::error!("disk id tracker random iteration lookup failed: {err}");
@@ -67,26 +73,33 @@ pub struct E2iIter<'a, S: UniversalRead> {
     index: u64,
     buffer: Vec<(u128, PointOffsetType)>,
     buffer_block: Option<u64>,
+    hw_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, S: UniversalRead> E2iIter<'a, S> {
-    fn new(reader: &'a DiskMappingReader<S>, external_id: Option<PointIdType>) -> Self {
+    fn new(
+        reader: &'a DiskMappingReader<S>,
+        external_id: Option<PointIdType>,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Self {
         let (phase, index) = match external_id {
             None => (Phase::Num, 0),
-            Some(PointIdType::NumId(key)) => match reader.num_start_index(key) {
+            Some(PointIdType::NumId(key)) => match reader.num_start_index(key, hw_counter) {
                 Ok(index) => (Phase::Num, index),
                 Err(err) => {
                     log::error!("disk id tracker iter_from(num) failed: {err}");
                     (Phase::Done, 0)
                 }
             },
-            Some(PointIdType::Uuid(uuid)) => match reader.uuid_start_index(uuid.as_u128()) {
-                Ok(index) => (Phase::Uuid, index),
-                Err(err) => {
-                    log::error!("disk id tracker iter_from(uuid) failed: {err}");
-                    (Phase::Done, 0)
+            Some(PointIdType::Uuid(uuid)) => {
+                match reader.uuid_start_index(uuid.as_u128(), hw_counter) {
+                    Ok(index) => (Phase::Uuid, index),
+                    Err(err) => {
+                        log::error!("disk id tracker iter_from(uuid) failed: {err}");
+                        (Phase::Done, 0)
+                    }
                 }
-            },
+            }
         };
         Self {
             reader,
@@ -94,6 +107,7 @@ impl<'a, S: UniversalRead> E2iIter<'a, S> {
             index,
             buffer: Vec::new(),
             buffer_block: None,
+            hw_counter,
         }
     }
 
@@ -101,12 +115,16 @@ impl<'a, S: UniversalRead> E2iIter<'a, S> {
     fn ensure_block(
         &mut self,
         block: u64,
-        read: impl Fn(&DiskMappingReader<S>, u64) -> OperationResult<Vec<(u128, PointOffsetType)>>,
+        read: impl Fn(
+            &DiskMappingReader<S>,
+            u64,
+            &HardwareCounterCell,
+        ) -> OperationResult<Vec<(u128, PointOffsetType)>>,
     ) -> bool {
         if self.buffer_block == Some(block) {
             return true;
         }
-        match read(self.reader, block) {
+        match read(self.reader, block, self.hw_counter) {
             Ok(entries) => {
                 self.buffer = entries;
                 self.buffer_block = Some(block);

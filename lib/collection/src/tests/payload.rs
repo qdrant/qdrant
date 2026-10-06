@@ -48,6 +48,7 @@ async fn test_payload_missing_index_check() {
         search_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

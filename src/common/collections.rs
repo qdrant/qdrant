@@ -28,6 +28,7 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{
     ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -71,6 +72,7 @@ pub async fn do_get_collection(
     auth: &Auth,
     name: &str,
     shard_selection: Option<ShardId>,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<CollectionInfo, StorageError> {
     let collection_pass =
         auth.check_collection_access(name, AccessRequirements::new(), "get_collection")?;
@@ -82,7 +84,7 @@ pub async fn do_get_collection(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    Ok(collection.info(&shard_selection).await?)
+    Ok(collection.info(&shard_selection, hw_acc).await?)
 }
 
 pub async fn do_list_collections(
@@ -216,6 +218,7 @@ pub async fn do_create_snapshot(
     toc: Arc<TableOfContent>,
     auth: &Auth,
     collection_name: &str,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = auth
         .check_collection_access(
@@ -225,7 +228,9 @@ pub async fn do_create_snapshot(
         )?
         .into_static();
 
-    let result = tokio::spawn(async move { toc.create_snapshot(&collection_pass).await }).await??;
+    let hw_acc = hw_acc.clone();
+    let result =
+        tokio::spawn(async move { toc.create_snapshot(&collection_pass, &hw_acc).await }).await??;
 
     Ok(result)
 }
@@ -250,6 +255,7 @@ pub async fn do_update_collection_cluster(
     operation: ClusterOperations,
     auth: Auth,
     wait_timeout: Option<Duration>,
+    hw_acc: &HwMeasurementAcc,
 ) -> Result<bool, StorageError> {
     let collection_pass = auth.check_collection_access(
         &collection_name,
@@ -334,6 +340,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -376,6 +383,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -440,6 +448,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -469,6 +478,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -494,6 +504,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::UpdateCollection(update_operation),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -593,6 +604,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -628,6 +640,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -670,6 +683,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -791,6 +805,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -817,6 +832,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -837,6 +853,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -888,6 +905,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -917,6 +935,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -946,6 +965,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -967,6 +987,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }
@@ -991,6 +1012,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     auth,
                     wait_timeout,
+                    hw_acc,
                 )
                 .await
         }

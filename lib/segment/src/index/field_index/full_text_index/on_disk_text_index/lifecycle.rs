@@ -28,9 +28,10 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Inverted index
-        OnDiskInvertedIndex::<S>::preopen(fs, path, populate)
+        OnDiskInvertedIndex::<S>::preopen(fs, path, populate, hw_counter)
     }
 
     pub fn open(
@@ -39,12 +40,19 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         config: TextIndexParams,
         populate: Populate,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let has_positions = config.phrase_matching == Some(true);
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let inverted_index =
-            OnDiskInvertedIndex::<S>::open(fs, path, populate, has_positions, deleted_points)?;
+        let inverted_index = OnDiskInvertedIndex::<S>::open(
+            fs,
+            path,
+            populate,
+            has_positions,
+            deleted_points,
+            hw_counter,
+        )?;
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
@@ -68,16 +76,16 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         Ok(())
     }
 
-    pub fn remove_point(&mut self, id: PointOffsetType) {
-        self.inverted_index.remove(id);
+    pub fn remove_point(&mut self, id: PointOffsetType, hw_counter: &HardwareCounterCell) {
+        self.inverted_index.remove(id, hw_counter);
     }
 
     pub fn flusher(&self) -> Flusher {
         self.inverted_index.flusher()
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.inverted_index.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.inverted_index.populate(hw_counter)?;
         Ok(())
     }
 
@@ -158,8 +166,12 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             .index_str_tokens(id, &str_tokens, doc_len, hw_counter)
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.mutable_index.remove(id);
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.mutable_index.remove(id, hw_counter);
 
         Ok(())
     }
@@ -168,7 +180,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
 impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
     type FieldIndexType = FullTextIndex;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 
@@ -181,7 +193,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         ValueIndexer::add_point(self, id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         let Self {
             path,
             mutable_index,
@@ -195,17 +207,23 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         fs::create_dir_all(path.as_path())?;
 
-        OnDiskInvertedIndex::create(path.clone(), &immutable)?;
+        OnDiskInvertedIndex::create(path.clone(), &immutable, hw_counter)?;
 
         let populate = Populate::from(!is_on_disk);
         let has_positions = config.phrase_matching.unwrap_or_default();
-        let inverted_index =
-            OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
-                .ok_or_else(|| {
-                    OperationError::service_error(
-                        "Failed to open OnDiskInvertedIndex that was just created",
-                    )
-                })?;
+        let inverted_index = OnDiskInvertedIndex::open(
+            &MmapFs,
+            path,
+            populate,
+            has_positions,
+            &deleted_points,
+            hw_counter,
+        )?
+        .ok_or_else(|| {
+            OperationError::service_error(
+                "Failed to open OnDiskInvertedIndex that was just created",
+            )
+        })?;
 
         let on_disk_index = OnDiskFullTextIndex {
             inverted_index,
@@ -215,7 +233,10 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let text_index = if is_on_disk {
             FullTextIndex::OnDisk(on_disk_index)
         } else {
-            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         };
 
         Ok(text_index)

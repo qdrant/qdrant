@@ -12,6 +12,7 @@ use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitmask::{BitmaskContent, StoredBitmask, save_bitmask};
@@ -53,6 +54,7 @@ pub(super) fn save_deleted_mask(
     legacy_file: &str,
     num_points: usize,
     empty_points: impl IntoIterator<Item = PointOffsetType>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     save_deleted_mask_format(
         dir,
@@ -60,6 +62,7 @@ pub(super) fn save_deleted_mask(
         num_points,
         empty_points,
         feature_flags().compact_bitmask,
+        hw_counter,
     )
 }
 
@@ -78,12 +81,19 @@ fn save_deleted_mask_format(
     num_points: usize,
     empty_points: impl IntoIterator<Item = PointOffsetType>,
     compact: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     if compact {
         let ones = RoaringBitmap::from_sorted_iter(empty_points).map_err(|err| {
             OperationError::service_error(format!("deleted mask offsets are not ascending: {err}"))
         })?;
-        save_bitmask(&MmapFs, &deleted_mask_path(dir), num_points as u64, ones)?;
+        save_bitmask(
+            &MmapFs,
+            &deleted_mask_path(dir),
+            num_points as u64,
+            ones,
+            hw_counter,
+        )?;
         return remove_stale_mask(&dir.join(legacy_file));
     }
 
@@ -105,8 +115,12 @@ fn save_deleted_mask_format(
             advice: AdviceSetting::Global,
         },
         (),
+        hw_counter,
     )?;
-    deleted.set_ascending_bits_batch(empty_points.into_iter().map(|idx| (u64::from(idx), true)))?;
+    deleted.set_ascending_bits_batch(
+        empty_points.into_iter().map(|idx| (u64::from(idx), true)),
+        hw_counter,
+    )?;
     deleted.flusher()()?;
     remove_stale_mask(&deleted_mask_path(dir))
 }
@@ -119,24 +133,36 @@ pub(super) fn bitor_deleted_mask<S, Fs>(
     legacy_file: &str,
     options: OpenOptions,
     deleted: &mut BitVec,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool>
 where
     S: UniversalRead,
     Fs: UniversalReadFs<File = S>,
 {
-    let compact = StoredBitmask::<S>::open(fs, deleted_mask_path(dir), options, Default::default())
-        .ok_not_found()?;
+    let compact = StoredBitmask::<S>::open(
+        fs,
+        deleted_mask_path(dir),
+        options,
+        Default::default(),
+        hw_counter,
+    )
+    .ok_not_found()?;
 
     let Some(mask) = compact else {
-        let legacy =
-            StoredBitSlice::<S>::open(fs, dir.join(legacy_file), options, Default::default())?;
+        let legacy = StoredBitSlice::<S>::open(
+            fs,
+            dir.join(legacy_file),
+            options,
+            Default::default(),
+            hw_counter,
+        )?;
         // The legacy file is padded up to whole u64 words; the padding bits are
         // always clear, so OR-ing the full slice is harmless.
-        deleted.bitor_assign(legacy.read_all()?.as_ref());
+        deleted.bitor_assign(legacy.read_all(hw_counter)?.as_ref());
         return Ok(false);
     };
 
-    match mask.read()? {
+    match mask.read(hw_counter)? {
         BitmaskContent::Dense(bits) => deleted.bitor_assign(bits.as_ref()),
         BitmaskContent::Ones(ones) => {
             for idx in ones {
@@ -172,11 +198,12 @@ pub(super) fn preopen_deleted_mask<S>(
     dir: &Path,
     legacy_file: &str,
     options: OpenOptions,
+    hw_counter: &HardwareCounterCell,
 ) where
     S: UniversalRead,
 {
-    fs.schedule_open(&deleted_mask_path(dir), Some(options), None);
-    fs.schedule_open(&dir.join(legacy_file), Some(options), None);
+    fs.schedule_open(&deleted_mask_path(dir), Some(options), None, hw_counter);
+    fs.schedule_open(&dir.join(legacy_file), Some(options), None, hw_counter);
 }
 
 #[cfg(test)]
@@ -195,9 +222,15 @@ mod tests {
 
     fn read_mask(dir: &Path, num_points: usize) -> (BitVec, bool) {
         let mut deleted = BitVec::repeat(false, num_points);
-        let compact =
-            bitor_deleted_mask::<MmapFile, _>(&MmapFs, dir, LEGACY_FILE, options(), &mut deleted)
-                .unwrap();
+        let compact = bitor_deleted_mask::<MmapFile, _>(
+            &MmapFs,
+            dir,
+            LEGACY_FILE,
+            options(),
+            &mut deleted,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         (deleted, compact)
     }
 
@@ -205,7 +238,15 @@ mod tests {
     fn compact_roundtrip_sparse() {
         let dir = TempDir::new().unwrap();
         let empty_points = [3u32, 17, 64, 9_999];
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 10_000, empty_points, true).unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            10_000,
+            empty_points,
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let (deleted, compact) = read_mask(dir.path(), 10_000);
         assert!(compact);
@@ -227,6 +268,7 @@ mod tests {
             num_points,
             (0..num_points as u32).filter(|idx| !with_values.contains(idx)),
             true,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -245,7 +287,15 @@ mod tests {
     fn flag_off_writes_legacy_format() {
         let dir = TempDir::new().unwrap();
         let empty_points = [3u32, 17, 64, 9_999];
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 10_000, empty_points, false).unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            10_000,
+            empty_points,
+            false,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         assert!(dir.path().join(LEGACY_FILE).exists());
         assert!(!deleted_mask_path(dir.path()).exists());
@@ -263,8 +313,24 @@ mod tests {
 
         // Compact first, then a legacy rebuild with different bits: the stale
         // compact file must not shadow the fresh legacy mask.
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [1u32], true).unwrap();
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [2u32], false).unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            100,
+            [1u32],
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            100,
+            [2u32],
+            false,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert!(!deleted_mask_path(dir.path()).exists());
         let (deleted, compact) = read_mask(dir.path(), 100);
         assert!(!compact);
@@ -272,7 +338,15 @@ mod tests {
         assert!(deleted[2]);
 
         // And back: a compact rebuild removes the legacy file.
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [3u32], true).unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            100,
+            [3u32],
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         assert!(!dir.path().join(LEGACY_FILE).exists());
         let (deleted, compact) = read_mask(dir.path(), 100);
         assert!(compact);
@@ -283,7 +357,15 @@ mod tests {
     #[test]
     fn merge_preserves_existing_deletions() {
         let dir = TempDir::new().unwrap();
-        save_deleted_mask_format(dir.path(), LEGACY_FILE, 100, [7u32], true).unwrap();
+        save_deleted_mask_format(
+            dir.path(),
+            LEGACY_FILE,
+            100,
+            [7u32],
+            true,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
         let mut deleted = BitVec::repeat(false, 100);
         deleted.set(42, true); // pre-existing id-tracker deletion
@@ -293,6 +375,7 @@ mod tests {
             LEGACY_FILE,
             options(),
             &mut deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         assert!(deleted[7]);
@@ -324,10 +407,11 @@ mod tests {
                 advice: AdviceSetting::Global,
             },
             (),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         legacy
-            .set_ascending_bits_batch([(5u64, true), (99, true)])
+            .set_ascending_bits_batch([(5u64, true), (99, true)], &HardwareCounterCell::new())
             .unwrap();
         legacy.flusher()().unwrap();
         drop(legacy);

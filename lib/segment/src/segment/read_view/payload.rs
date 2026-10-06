@@ -72,7 +72,7 @@ where
         deferred_behavior: DeferredBehavior,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        let internal_id = self.lookup_internal_id(point_id, deferred_behavior)?;
+        let internal_id = self.lookup_internal_id(point_id, deferred_behavior, hw_counter)?;
         self.payload_by_offset(internal_id, hw_counter)
     }
 
@@ -84,7 +84,7 @@ where
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match filter {
             None => {
-                let available = self.available_point_count_without_deferred();
+                let available = self.available_point_count_without_deferred(hw_counter);
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -97,8 +97,8 @@ where
                     .payload_index
                     .estimate_cardinality(filter, hw_counter)?;
 
-                let total_points = self.id_tracker.available_point_count();
-                let available_points = self.available_point_count_without_deferred();
+                let total_points = self.id_tracker.available_point_count(hw_counter);
+                let available_points = self.available_point_count_without_deferred(hw_counter);
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         })

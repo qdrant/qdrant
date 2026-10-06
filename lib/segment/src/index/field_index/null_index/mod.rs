@@ -100,24 +100,24 @@ impl NullIndexRead for NullIndex {
 }
 
 impl PayloadFieldIndexRead for NullIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.indexed_points_count())
     }
 
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition)
+        read_ops::filter(self, condition, hw_counter)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition)
+        read_ops::estimate_cardinality(self, condition, hw_counter)
     }
 
     fn for_each_payload_block(
@@ -125,6 +125,7 @@ impl PayloadFieldIndexRead for NullIndex {
         _threshold: usize,
         _key: crate::types::PayloadKeyType,
         _f: &mut dyn FnMut(super::PayloadBlockCondition) -> OperationResult<()>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No payload blocks
         Ok(())
@@ -150,10 +151,10 @@ impl PayloadFieldIndex for NullIndex {
         }
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> crate::common::Flusher {
         match self {
-            NullIndex::Mutable(mutable) => mutable.flusher(),
-            NullIndex::Immutable(immutable) => immutable.flusher(),
+            NullIndex::Mutable(mutable) => mutable.flusher(hw_counter),
+            NullIndex::Immutable(immutable) => immutable.flusher(hw_counter),
         }
     }
 

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::memory_usage::{ComponentMemoryUsage, MemoryReporter};
 use crate::segment::{Segment, VectorData};
 use crate::types::VectorNameBuf;
@@ -36,7 +38,7 @@ impl Segment {
     ///
     /// This method only collects file lists and RAM estimates (no I/O).
     /// The actual page-cache measurement happens at a higher layer, outside locks.
-    pub fn memory_report(&self) -> SegmentMemoryReport {
+    pub fn memory_report(&self, hw_counter: &HardwareCounterCell) -> SegmentMemoryReport {
         let Segment {
             uuid: _,
             initial_version: _,
@@ -70,13 +72,13 @@ impl Segment {
             } = vd;
 
             let report = VectorMemoryReport {
-                storage: vector_storage.borrow().memory_usage(),
-                index: vector_index.borrow().memory_usage(),
+                storage: vector_storage.borrow().memory_usage(hw_counter),
+                index: vector_index.borrow().memory_usage(hw_counter),
                 quantized: quantized_vectors
                     .borrow()
                     .deref()
                     .as_ref()
-                    .map(|q| q.memory_usage()),
+                    .map(|q| q.memory_usage(hw_counter)),
             };
 
             if sparse_names.contains_key(name) {
@@ -86,13 +88,13 @@ impl Segment {
             }
         }
 
-        let payload = payload_storage.borrow().memory_usage();
+        let payload = payload_storage.borrow().memory_usage(hw_counter);
 
         let mut payload_index_report = HashMap::new();
         for (field_name, field_indexes) in &payload_index.borrow().field_indexes {
             let mut combined = ComponentMemoryUsage::empty();
             for fi in field_indexes {
-                combined.merge(&fi.memory_usage());
+                combined.merge(&fi.memory_usage(hw_counter));
             }
             payload_index_report.insert(
                 field_name.to_string(),
@@ -105,7 +107,7 @@ impl Segment {
             sparse_vectors,
             payload,
             payload_index: payload_index_report,
-            id_tracker: id_tracker.borrow().memory_usage(),
+            id_tracker: id_tracker.borrow().memory_usage(hw_counter),
         }
     }
 }

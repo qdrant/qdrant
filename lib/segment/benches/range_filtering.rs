@@ -72,6 +72,7 @@ fn range_filtering(c: &mut Criterion) {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &hw_counter,
     )
     .unwrap();
 
@@ -96,13 +97,13 @@ fn range_filtering(c: &mut Criterion) {
     // make sure all points are indexed
     assert_eq!(
         index
-            .with_view(|v| v.indexed_points(&FLT_KEY.parse().unwrap()))
+            .with_view(|v| v.indexed_points(&FLT_KEY.parse().unwrap(), &hw_counter))
             .unwrap(),
         NUM_POINTS,
     );
     assert_eq!(
         index
-            .with_view(|v| v.indexed_points(&INT_KEY.parse().unwrap()))
+            .with_view(|v| v.indexed_points(&INT_KEY.parse().unwrap(), &hw_counter))
             .unwrap(),
         NUM_POINTS,
     );
@@ -139,7 +140,7 @@ fn range_filtering(c: &mut Criterion) {
     });
 
     // flush data
-    index.flusher()().unwrap();
+    index.flusher(&hw_counter)().unwrap();
     drop(index);
 
     // reload as IMMUTABLE index
@@ -150,6 +151,7 @@ fn range_filtering(c: &mut Criterion) {
         dir.path(),
         StorageType::NonAppendable,
         IndexLoadMode::CreateIfMissing,
+        &hw_counter,
     )
     .unwrap();
 

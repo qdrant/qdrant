@@ -33,7 +33,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId) -> SegmentId {
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy = ProxySegment::new(optimizing_segment);
+    let proxy = ProxySegment::new(optimizing_segment, &HardwareCounterCell::new());
 
     let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
     new_id
@@ -164,13 +164,13 @@ fn test_move_points_to_copy_on_write() {
 
     let read_proxy = locked_proxy.read();
 
-    let num_deleted_points_in_proxy = read_proxy.deleted_point_count();
+    let num_deleted_points_in_proxy = read_proxy.deleted_point_count(&hw_counter);
 
     let wrapped_delete = read_proxy
         .wrapped_segment
         .get_read()
         .read()
-        .deleted_point_count();
+        .deleted_point_count(&hw_counter);
 
     assert_eq!(
         num_deleted_points_in_proxy - wrapped_delete,
@@ -187,7 +187,7 @@ fn test_move_points_to_copy_on_write() {
 
     let cow_segment_read = cow_segment.read();
 
-    let cow_points: HashSet<_> = cow_segment_read.iter_points().collect();
+    let cow_points: HashSet<_> = cow_segment_read.iter_points(&hw_counter).collect();
 
     assert!(
         cow_points.contains(&1.into()),
@@ -259,13 +259,15 @@ fn test_upsert_points_in_smallest_segment() {
         for point_id in 1000..1010 {
             assert!(segment3_read.has_point(
                 point_id.into(),
-                common::types::DeferredBehavior::WithDeferred
+                common::types::DeferredBehavior::WithDeferred,
+                &hw_counter
             ));
         }
         for point_id in 0..10 {
             assert!(!segment3_read.has_point(
                 point_id.into(),
-                common::types::DeferredBehavior::WithDeferred
+                common::types::DeferredBehavior::WithDeferred,
+                &hw_counter
             ));
         }
     }
@@ -339,44 +341,32 @@ fn test_delete_all_point_versions() {
     {
         // Assert that point 123 is in both segments
         let holder = segments.read();
-        assert!(
-            holder
-                .get(sid1)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-        );
-        assert!(
-            holder
-                .get(sid2)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-        );
+        assert!(holder.get(sid1).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
 
         // Delete point 123
         delete_points(&holder, 102, &[123.into()], &hw_counter).unwrap();
 
         // Assert that point 123 is deleted from both segments
         // Note: before the bug fix the point was only deleted from segment 2
-        assert!(
-            !holder
-                .get(sid1)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-        );
-        assert!(
-            !holder
-                .get(sid2)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-        );
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
+        assert!(!holder.get(sid2).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ));
     }
 
     // Drop the last segment, only keep the first
@@ -453,9 +443,9 @@ fn test_proxy_shared_updates() {
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1, &hw_counter);
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2, &hw_counter);
 
     let mut holder = SegmentHolder::default();
 
@@ -471,29 +461,27 @@ fn test_proxy_shared_updates() {
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {
-        assert!(
-            !holder
-                .get(proxy_1_id)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
-        );
-        assert!(
-            !holder
-                .get(proxy_2_id)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
-        );
+        assert!(!holder.get(proxy_1_id).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),);
+        assert!(!holder.get(proxy_2_id).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),);
         assert!(
             holder
                 .get(write_segment_id)
                 .unwrap()
                 .get()
                 .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
+                .has_point(
+                    point_id,
+                    common::types::DeferredBehavior::WithDeferred,
+                    &hw_counter
+                ),
         );
     }
 
@@ -590,9 +578,9 @@ fn test_proxy_shared_updates_same_version() {
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
 
-    let proxy_segment_1 = ProxySegment::new(locked_segment_1);
+    let proxy_segment_1 = ProxySegment::new(locked_segment_1, &hw_counter);
 
-    let proxy_segment_2 = ProxySegment::new(locked_segment_2);
+    let proxy_segment_2 = ProxySegment::new(locked_segment_2, &hw_counter);
 
     let mut holder = SegmentHolder::default();
 
@@ -608,29 +596,27 @@ fn test_proxy_shared_updates_same_version() {
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {
-        assert!(
-            !holder
-                .get(proxy_1_id)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
-        );
-        assert!(
-            !holder
-                .get(proxy_2_id)
-                .unwrap()
-                .get()
-                .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
-        );
+        assert!(!holder.get(proxy_1_id).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),);
+        assert!(!holder.get(proxy_2_id).unwrap().get().read().has_point(
+            point_id,
+            common::types::DeferredBehavior::WithDeferred,
+            &hw_counter
+        ),);
         assert!(
             holder
                 .get(write_segment_id)
                 .unwrap()
                 .get()
                 .read()
-                .has_point(point_id, common::types::DeferredBehavior::WithDeferred),
+                .has_point(
+                    point_id,
+                    common::types::DeferredBehavior::WithDeferred,
+                    &hw_counter
+                ),
         );
     }
 

@@ -41,6 +41,7 @@ pub trait FacetIndex {
     fn for_each_value(
         &self,
         f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Call a closure on each value->point_ids mapping.
@@ -58,6 +59,7 @@ pub trait FacetIndex {
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Candidate-restricted analog of [`Self::for_each_count_per_value`]: counts
@@ -103,7 +105,7 @@ pub trait FacetIndex {
                     Ok(())
                 })
             }
-            None => self.for_each_value(f),
+            None => self.for_each_value(f, hw_counter),
         }
     }
 }
@@ -178,16 +180,23 @@ impl<'a, S: UniversalReadExt> FacetIndex for FacetIndexEnum<'a, S> {
     fn for_each_value(
         &self,
         f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::Int(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::Bool(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::KeywordReadOnly(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::UuidReadOnly(index) => FacetIndex::for_each_value(*index, f),
-            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::for_each_value(*index, f),
+            FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value(*index, f, hw_counter),
+            FacetIndexEnum::Int(index) => FacetIndex::for_each_value(*index, f, hw_counter),
+            FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value(*index, f, hw_counter),
+            FacetIndexEnum::Bool(index) => FacetIndex::for_each_value(*index, f, hw_counter),
+            FacetIndexEnum::KeywordReadOnly(index) => {
+                FacetIndex::for_each_value(*index, f, hw_counter)
+            }
+            FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_each_value(*index, f, hw_counter),
+            FacetIndexEnum::UuidReadOnly(index) => {
+                FacetIndex::for_each_value(*index, f, hw_counter)
+            }
+            FacetIndexEnum::BoolReadOnly(index) => {
+                FacetIndex::for_each_value(*index, f, hw_counter)
+            }
         }
     }
 
@@ -255,31 +264,32 @@ impl<'a, S: UniversalReadExt> FacetIndex for FacetIndexEnum<'a, S> {
         &self,
         deferred_internal_id: Option<PointOffsetType>,
         f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             FacetIndexEnum::Keyword(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::Int(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::Uuid(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::Bool(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::KeywordReadOnly(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::IntReadOnly(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::UuidReadOnly(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
             FacetIndexEnum::BoolReadOnly(index) => {
-                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f)
+                FacetIndex::for_each_count_per_value(*index, deferred_internal_id, f, hw_counter)
             }
         }
     }

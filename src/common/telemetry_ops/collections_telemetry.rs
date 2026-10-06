@@ -6,6 +6,7 @@ use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -41,12 +42,20 @@ impl CollectionsTelemetry {
         toc: &TableOfContent,
         timeout: Duration,
         is_stopped: &AtomicBool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Self> {
         let number_of_collections = toc.collections_count(access).await;
         let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
                 let toc_telemetry = toc
-                    .get_telemetry_data(detail, access, only_collections, timeout, is_stopped)
+                    .get_telemetry_data(
+                        detail,
+                        access,
+                        only_collections,
+                        timeout,
+                        is_stopped,
+                        hw_acc,
+                    )
                     .await?;
 
                 let collections: Vec<_> = toc_telemetry
@@ -58,7 +67,7 @@ impl CollectionsTelemetry {
                 (collections, toc_telemetry.snapshot_telemetry)
             } else {
                 let collections = toc
-                    .get_aggregated_telemetry_data(access, timeout, is_stopped)
+                    .get_aggregated_telemetry_data(access, timeout, is_stopped, hw_acc)
                     .await?
                     .into_iter()
                     .map(|t| CollectionTelemetryEnum::Aggregated(Box::new(t)))

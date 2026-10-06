@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use self::pipeline::MmapReadPipeline;
 use super::traits::{UniversalReadFs, UniversalWriteFs};
 use super::*;
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
@@ -33,11 +34,15 @@ impl UniversalReadFs for MmapFs {
         Ok(MmapFs)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
+    fn exists(&self, path: &Path, _hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         fs_err::exists(path).map_err(UniversalIoError::from)
     }
 
@@ -46,6 +51,7 @@ impl UniversalReadFs for MmapFs {
         path: impl AsRef<Path>,
         options: OpenOptions,
         _extra: (),
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<MmapFile> {
         MmapFile::open_inner(path, options)
     }
@@ -54,7 +60,12 @@ impl UniversalReadFs for MmapFs {
 impl UniversalWriteFs for MmapFs {
     type AppendFile = MmapFile;
 
-    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
+    fn create(
+        &self,
+        path: &Path,
+        expected_length: usize,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         local_file_ops::local_create(path, expected_length)
     }
 
@@ -62,7 +73,7 @@ impl UniversalWriteFs for MmapFs {
         local_file_ops::local_create_dir(path)
     }
 
-    fn remove(&self, path: &Path) -> UioResult<()> {
+    fn remove(&self, path: &Path, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         local_file_ops::local_remove(path)
     }
 
@@ -70,13 +81,23 @@ impl UniversalWriteFs for MmapFs {
         local_file_ops::local_remove_dir(path)
     }
 
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+    fn atomic_save(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         local_file_ops::local_atomic_save(path, bytes)
     }
 
     /// The very handle [`UniversalReadFs::open`] hands out: an [`MmapFile`]
     /// appends through a dedicated `O_APPEND` fd of its own.
-    fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<MmapFile> {
+    fn open_append(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<MmapFile> {
         MmapFile::open_inner(path, options.for_append())
     }
 }
@@ -180,7 +201,7 @@ impl UniversalRead for MmapFile {
         Self: 'a,
         U: UserData;
 
-    fn live_reload(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         let old_len = self.len as u64;
         let new_len = fs_err::File::open(self.path())
             .map_err(|err| UniversalIoError::extract_not_found(err, self.path()))?
@@ -206,6 +227,7 @@ impl UniversalRead for MmapFile {
         range: Range<u64>,
         _access_pattern: P,
         _align: usize,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
         let mmap = self.as_bytes::<P>();
         let bytes = read_bytes(mmap, range)?;
@@ -217,6 +239,7 @@ impl UniversalRead for MmapFile {
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         _access_pattern: P,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
         let bytes = self.as_bytes::<P>();
         Ok(ranges.into_iter().map(move |(user_data, range)| {
@@ -231,6 +254,7 @@ impl UniversalRead for MmapFile {
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
         _access_pattern: P,
         mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+        _hw_counter: &HardwareCounterCell,
     ) -> Result<(), E> {
         let bytes = self.as_bytes::<P>();
         for (user_data, range) in ranges {
@@ -240,12 +264,12 @@ impl UniversalRead for MmapFile {
         Ok(())
     }
 
-    fn len<T>(&self) -> UioResult<u64> {
+    fn len<T>(&self, _hw_counter: &HardwareCounterCell) -> UioResult<u64> {
         let len = self.len / size_of::<T>();
         Ok(len as u64)
     }
 
-    fn populate(&self) -> UioResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         self.mmap.lock().populate();
         Ok(())
     }
@@ -330,7 +354,12 @@ impl UniversalFlush for MmapFile {
 }
 
 impl UniversalAppend for MmapFile {
-    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
+    fn append<T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        data: &[T],
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<()> {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         if bytes.is_empty() {
             return Ok(());
@@ -352,6 +381,7 @@ impl UniversalAppend for MmapFile {
         &mut self,
         offset: ByteOffset,
         items: impl IntoIterator<Item = &'a [T]>,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         let (mut slices, total) = local_file_ops::collect_append_slices(items);
         if total == 0 {
@@ -698,12 +728,16 @@ mod tests {
             populate: Populate::No,
             advice: AdviceSetting::Global,
         };
-        let mmap = MmapFs.open(&path, options, ()).unwrap();
+        let mmap = MmapFs
+            .open(&path, options, (), &HardwareCounterCell::new())
+            .unwrap();
 
         // Fault every page through both the random and the sequential mapping.
         for bytes in [
-            mmap.read_bytes(0..LEN, Random, 1).unwrap(),
-            mmap.read_bytes(0..LEN, Sequential, 1).unwrap(),
+            mmap.read_bytes(0..LEN, Random, 1, &HardwareCounterCell::new())
+                .unwrap(),
+            mmap.read_bytes(0..LEN, Sequential, 1, &HardwareCounterCell::new())
+                .unwrap(),
         ] {
             assert_eq!(
                 bytes.iter().map(|byte| u64::from(*byte)).sum::<u64>(),

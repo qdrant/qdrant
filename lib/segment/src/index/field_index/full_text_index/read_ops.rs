@@ -50,11 +50,11 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            Self::Mutable(index) => index.values_count(point_id),
-            Self::Immutable(index) => index.values_count(point_id),
-            Self::OnDisk(index) => index.values_count(point_id),
+            Self::Mutable(index) => index.values_count(point_id, hw_counter),
+            Self::Immutable(index) => index.values_count(point_id, hw_counter),
+            Self::OnDisk(index) => index.values_count(point_id, hw_counter),
         }
     }
 
@@ -108,11 +108,11 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
         match self {
-            Self::Mutable(index) => index.values_is_empty(point_id),
-            Self::Immutable(index) => index.values_is_empty(point_id),
-            Self::OnDisk(index) => index.values_is_empty(point_id),
+            Self::Mutable(index) => index.values_is_empty(point_id, hw_counter),
+            Self::Immutable(index) => index.values_is_empty(point_id, hw_counter),
+            Self::OnDisk(index) => index.values_is_empty(point_id, hw_counter),
         }
     }
 
@@ -156,11 +156,16 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
+    fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         match self {
-            Self::Mutable(index) => index.check_match(query, point_id),
-            Self::Immutable(index) => index.check_match(query, point_id),
-            Self::OnDisk(index) => index.check_match(query, point_id),
+            Self::Mutable(index) => index.check_match(query, point_id, hw_counter),
+            Self::Immutable(index) => index.check_match(query, point_id, hw_counter),
+            Self::OnDisk(index) => index.check_match(query, point_id, hw_counter),
         }
     }
 
@@ -169,11 +174,12 @@ impl FullTextIndexRead for FullTextIndex {
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.check_match_batch(query, items, on_match),
-            Self::Immutable(index) => index.check_match_batch(query, items, on_match),
-            Self::OnDisk(index) => index.check_match_batch(query, items, on_match),
+            Self::Mutable(index) => index.check_match_batch(query, items, on_match, hw_counter),
+            Self::Immutable(index) => index.check_match_batch(query, items, on_match, hw_counter),
+            Self::OnDisk(index) => index.check_match_batch(query, items, on_match, hw_counter),
         }
     }
 
@@ -182,11 +188,18 @@ impl FullTextIndexRead for FullTextIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.for_each_payload_block_inner(threshold, key, f),
-            Self::Immutable(index) => index.for_each_payload_block_inner(threshold, key, f),
-            Self::OnDisk(index) => index.for_each_payload_block_inner(threshold, key, f),
+            Self::Mutable(index) => {
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
+            }
+            Self::Immutable(index) => {
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
+            }
+            Self::OnDisk(index) => {
+                index.for_each_payload_block_inner(threshold, key, f, hw_counter)
+            }
         }
     }
 
@@ -216,7 +229,7 @@ impl FullTextIndexRead for FullTextIndex {
 }
 
 impl PayloadFieldIndexRead for FullTextIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(FullTextIndexRead::points_count(self))
     }
 
@@ -241,8 +254,9 @@ impl PayloadFieldIndexRead for FullTextIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block(self, threshold, key, f)
+        for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -357,8 +371,9 @@ pub fn for_each_payload_block<T: FullTextIndexRead>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    index.for_each_payload_block_inner(threshold, key, f)
+    index.for_each_payload_block_inner(threshold, key, f, hw_counter)
 }
 
 /// Body for [`PayloadFieldIndexRead::condition_checker`]. Shared.
@@ -416,19 +431,22 @@ pub fn condition_checker<'a, T: FullTextIndexRead>(
     Ok(Some(to_enum(FullTextConditionChecker {
         index,
         parsed_query,
+        hw_counter,
     })))
 }
 
 pub struct FullTextConditionChecker<'a, T> {
     index: &'a T,
     parsed_query: ParsedQuery,
+    hw_counter: HardwareCounterCell,
 }
 
 impl<T: FullTextIndexRead> ConditionChecker for FullTextConditionChecker<'_, T> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.index.check_match(&self.parsed_query, point_id)
+        self.index
+            .check_match(&self.parsed_query, point_id, &self.hw_counter)
     }
 
     fn check_batched<K: CheckItem>(
@@ -442,6 +460,7 @@ impl<T: FullTextIndexRead> ConditionChecker for FullTextConditionChecker<'_, T> 
             &self.parsed_query,
             p.iter().map(|item| (item, item.point_id())),
             |item, matched| p.write(item, matched == select.is_match()),
+            &self.hw_counter,
         )?;
         Ok(p.finish())
     }

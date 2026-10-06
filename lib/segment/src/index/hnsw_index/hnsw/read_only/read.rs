@@ -23,7 +23,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuses the shared search logic implemented on the read view.
-        self.with_view(|view| view.search(vectors, filter, top, params, query_context))?
+        self.with_view(
+            |view| view.search(vectors, filter, top, params, query_context),
+            query_context.hw_counter(),
+        )?
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -52,10 +55,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
             .unwrap_or_else(|| self.graph.get().map_or(0, |graph| graph.num_points()))
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+    fn size_of_searchable_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
         self.vector_storage
             .borrow()
-            .size_of_available_vectors_in_bytes()
+            .size_of_available_vectors_in_bytes(hw_counter)
     }
 
     fn fill_idf_statistics(

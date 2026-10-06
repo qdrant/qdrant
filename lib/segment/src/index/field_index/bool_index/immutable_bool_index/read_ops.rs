@@ -24,27 +24,27 @@ impl BoolIndexRead for ImmutableBoolIndex {
         self.0.falses_flags()
     }
 
-    fn indexed_count(&self) -> OperationResult<usize> {
-        self.0.indexed_count()
+    fn indexed_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.0.indexed_count(hw_counter)
     }
 
     fn telemetry_index_type(&self) -> &'static str {
         self.0.telemetry_index_type()
     }
 
-    fn trues_count(&self) -> OperationResult<usize> {
-        self.0.trues_count()
+    fn trues_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.0.trues_count(hw_counter)
     }
 
-    fn falses_count(&self) -> OperationResult<usize> {
-        self.0.falses_count()
+    fn falses_count(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.0.falses_count(hw_counter)
     }
 }
 
 impl PayloadFieldIndexRead for ImmutableBoolIndex {
     #[inline]
-    fn count_indexed_points(&self) -> OperationResult<usize> {
-        self.indexed_count()
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
+        self.indexed_count(hw_counter)
     }
 
     #[inline]
@@ -71,8 +71,9 @@ impl PayloadFieldIndexRead for ImmutableBoolIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        read_ops::for_each_payload_block(self, threshold, key, f)
+        read_ops::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(

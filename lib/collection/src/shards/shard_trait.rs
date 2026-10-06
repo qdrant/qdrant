@@ -119,7 +119,7 @@ pub trait ShardOperation {
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
-    async fn info(&self) -> CollectionResult<CollectionInfo>;
+    async fn info(&self, hw_acc: &HwMeasurementAcc) -> CollectionResult<CollectionInfo>;
 
     async fn core_search(
         &self,

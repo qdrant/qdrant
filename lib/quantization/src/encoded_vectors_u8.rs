@@ -149,6 +149,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         method: ScalarQuantizationMethod,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self, EncodingError> {
         assert_eq!(method, ScalarQuantizationMethod::Int8);
         let actual_dim = get_actual_dim(vector_parameters);
@@ -181,7 +182,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 })?;
             }
             return Ok(EncodedVectorsU8 {
-                encoded_vectors: storage_builder.build().map_err(|e| {
+                encoded_vectors: storage_builder.build(hw_counter).map_err(|e| {
                     EncodingError::EncodingError(format!("Failed to build storage: {e}",))
                 })?,
                 metadata,
@@ -284,7 +285,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
 
         let encoded_vectors = storage_builder
-            .build()
+            .build(hw_counter)
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
         let metadata = Metadata::Int8(metadata);
@@ -319,8 +320,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let metadata: Metadata = read_json_via(fs, meta_path, hw_counter)?;
         let result = Self {
             encoded_vectors,
             metadata,
@@ -330,7 +332,11 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         // Validate the storage's vector size against the metadata once here, so the size
         // invariant the hot path in `score_bytes` relies on (it reads `actual_dim` bytes past a
         // fixed offset) also holds in release builds without a per-score check.
-        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+        validate_storage_vector_size(
+            &result.encoded_vectors,
+            result.quantized_vector_size(),
+            hw_counter,
+        )?;
 
         Ok(result)
     }
@@ -355,11 +361,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
     }
 
-    pub fn score_point_simple_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+    pub fn score_point_simple_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let query_data = self.encoded_vectors.get_vector_data(i);
-                let vector_data = self.encoded_vectors.get_vector_data(j);
+                let query_data = self.encoded_vectors.get_vector_data(i, hw_counter);
+                let vector_data = self.encoded_vectors.get_vector_data(j, hw_counter);
                 let (query_offset, q_code) = Self::parse_vec_data(&query_data);
                 let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
@@ -444,11 +455,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn score_point_sse_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+    pub fn score_point_sse_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let query_data = self.encoded_vectors.get_vector_data(i);
-                let vector_data = self.encoded_vectors.get_vector_data(j);
+                let query_data = self.encoded_vectors.get_vector_data(i, hw_counter);
+                let vector_data = self.encoded_vectors.get_vector_data(j, hw_counter);
                 let (query_offset, q_code) = Self::parse_vec_data(&query_data);
                 let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
@@ -490,11 +506,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn score_point_avx_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+    pub fn score_point_avx_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let query_data = self.encoded_vectors.get_vector_data(i);
-                let vector_data = self.encoded_vectors.get_vector_data(j);
+                let query_data = self.encoded_vectors.get_vector_data(i, hw_counter);
+                let vector_data = self.encoded_vectors.get_vector_data(j, hw_counter);
                 let (query_offset, q_code) = Self::parse_vec_data(&query_data);
                 let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
@@ -541,16 +562,24 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
-        self.encoded_vectors.get_vector_data(i)
+    pub fn get_quantized_vector(
+        &self,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.encoded_vectors.get_vector_data(i, hw_counter)
     }
 
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }
 
-    pub fn get_quantized_vector_offset_and_code(&self, i: PointOffsetType) -> (f32, Cow<'_, [u8]>) {
-        let data = self.encoded_vectors.get_vector_data(i);
+    pub fn get_quantized_vector_offset_and_code(
+        &self,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> (f32, Cow<'_, [u8]>) {
+        let data = self.encoded_vectors.get_vector_data(i, hw_counter);
         let (offset, _) = Self::parse_vec_data(&data);
         let dim = self.metadata.actual_dim();
         debug_assert!(data.len() >= ADDITIONAL_CONSTANT_SIZE + dim);
@@ -649,8 +678,10 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.encoded_vectors.for_each_batch(offsets, callback)
+        self.encoded_vectors
+            .for_each_batch(offsets, callback, hw_counter)
     }
 
     fn score(
@@ -668,7 +699,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let bytes = self.encoded_vectors.get_vector_data(i);
+        let bytes = self.encoded_vectors.get_vector_data(i, hw_counter);
         self.score_bytes(True, query, &bytes, hw_counter)
     }
 
@@ -688,12 +719,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return self.score_point_avx_internal(i, j);
+            return self.score_point_avx_internal(i, j, hw_counter);
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
-            return self.score_point_sse_internal(i, j);
+            return self.score_point_sse_internal(i, j, hw_counter);
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -701,7 +732,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             return self.score_point_neon_internal(i, j);
         }
 
-        self.score_point_simple_internal(i, j)
+        self.score_point_simple_internal(i, j, hw_counter)
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -712,10 +743,14 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
     }
 
-    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryU8> {
+    fn encode_internal_vector(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<EncodedQueryU8> {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let data = self.encoded_vectors.get_vector_data(id);
+                let data = self.encoded_vectors.get_vector_data(id, hw_counter);
                 let (vector_offset, code) = Self::parse_vec_data(&data);
                 // Remove shift from offset because encoded query should not have it, it's contained in vector data only.
                 let query_offset = vector_offset - metadata.get_shift();
@@ -740,8 +775,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         ))
     }
 
-    fn vectors_count(&self) -> usize {
-        self.encoded_vectors.vectors_count()
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.encoded_vectors.vectors_count(hw_counter)
     }
 
     fn flusher(&self) -> Flusher {

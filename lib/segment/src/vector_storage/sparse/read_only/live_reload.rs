@@ -14,9 +14,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        let futs = self.storage.live_preload(fs)?;
-        self.deleted.live_preload(fs)?;
+        let futs = self.storage.live_preload(fs, hw_counter)?;
+        self.deleted.live_preload(fs, hw_counter)?;
         Ok(futs)
     }
 
@@ -27,18 +28,19 @@ impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.storage.live_reload(fs)?;
+        self.storage.live_reload(fs, hw_counter)?;
         self.deleted.insert_all(deleted_points);
-        self.deleted.reload_appended::<S>(fs, new_points)?;
+        self.deleted
+            .reload_appended::<S>(fs, new_points, hw_counter)?;
 
         self.next_point_offset = self
             .deleted
             .as_bitslice()
             .last_one()
             .map(|i| i + 1)
-            .max(Some(self.storage.max_point_offset()? as usize))
+            .max(Some(self.storage.max_point_offset(hw_counter)? as usize))
             .unwrap_or_default();
 
         Ok(())

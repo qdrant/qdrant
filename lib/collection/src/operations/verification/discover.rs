@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
@@ -31,10 +32,11 @@ impl StrictModeVerification for DiscoverRequestBatch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         for i in self.searches.iter() {
             i.discover_request
-                .check_strict_mode(collection, strict_mode_config)
+                .check_strict_mode(collection, strict_mode_config, hw_acc)
                 .await?;
         }
 

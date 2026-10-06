@@ -44,11 +44,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
     pub fn par_open(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let path = get_payload_index_path(segment_path);
-        let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
-            .unwrap_or_default();
+        let config =
+            PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path), hw_counter)?
+                .unwrap_or_default();
 
+        let hw_acc = hw_counter.new_accumulator();
         let field_indexes = config
             .indices
             .par_iter()
@@ -64,7 +67,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
                     .types
                     .par_iter()
                     .map(|index_type| {
-                        UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
+                        UpdateOnlyFieldIndex::open(
+                            fs,
+                            &path,
+                            field,
+                            &indexed.schema,
+                            index_type,
+                            &hw_acc.get_counter_cell(),
+                        )
                     })
                     .collect::<OperationResult<Vec<_>>>()?;
 

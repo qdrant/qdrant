@@ -9,6 +9,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use tempfile::{Builder, TempDir};
@@ -43,7 +44,9 @@ fn snapshot_reconciliation_does_not_block_unrelated_lookups() {
     let shard_guard = toc.general_runtime.block_on(shard_holder.read());
 
     let apply_toc = Arc::clone(&toc);
-    let apply = std::thread::spawn(move || apply_toc.apply_collections_snapshot(snapshot));
+    let apply = std::thread::spawn(move || {
+        apply_toc.apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+    });
 
     // State application saves configuration before taking the shard holder write
     // lock. Observing the new metadata proves it reached reconciliation, while the
@@ -115,7 +118,8 @@ fn snapshot_creates_collection_with_disabled_local_replicas() {
         .aliases
         .insert("new_alias".to_string(), "new".to_string());
 
-    toc.apply_collections_snapshot(snapshot).unwrap();
+    toc.apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+        .unwrap();
 
     let collection = get_collection(&toc, "new_alias");
     let actual = toc.general_runtime.block_on(collection.state());
@@ -149,8 +153,10 @@ fn snapshot_recreates_collection_with_different_uuid_and_removes_obsolete_collec
         .aliases
         .insert("alias".to_string(), "recreated".to_string());
 
-    toc.apply_collections_snapshot(snapshot.clone()).unwrap();
-    toc.apply_collections_snapshot(snapshot).unwrap();
+    toc.apply_collections_snapshot(snapshot.clone(), &HwMeasurementAcc::new())
+        .unwrap();
+    toc.apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+        .unwrap();
 
     assert_eq!(toc.all_collections_sync(), vec!["recreated".to_string()]);
     let collection = get_collection(&toc, "alias");
@@ -168,7 +174,8 @@ fn snapshot_recreates_collection_with_incompatible_config() {
     state.shards.clear();
     let expected = state.clone();
 
-    toc.apply_collections_snapshot(snapshot).unwrap();
+    toc.apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+        .unwrap();
 
     let collection = get_collection(&toc, "recreated");
     assert_eq!(toc.general_runtime.block_on(collection.state()), expected);
@@ -194,7 +201,7 @@ fn snapshot_state_failure_removes_unpublished_collection_and_allows_retry() {
     // Fail after construction has persisted the collection config, before publication.
     FAIL_SNAPSHOT_STATE_FOR.set(Some("new"));
     let error = toc
-        .apply_collections_snapshot(snapshot.clone())
+        .apply_collections_snapshot(snapshot.clone(), &HwMeasurementAcc::new())
         .unwrap_err();
 
     assert_eq!(
@@ -207,7 +214,8 @@ fn snapshot_state_failure_removes_unpublished_collection_and_allows_retry() {
         "failed unpublished collection must be removed"
     );
 
-    toc.apply_collections_snapshot(snapshot).unwrap();
+    toc.apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+        .unwrap();
 
     let collection = get_collection(&toc, "new");
     assert_eq!(toc.general_runtime.block_on(collection.state()), state);
@@ -228,7 +236,9 @@ fn snapshot_state_failure_keeps_published_collection() {
         .metadata = Some(metadata);
 
     FAIL_SNAPSHOT_STATE_FOR.set(Some("existing"));
-    let error = toc.apply_collections_snapshot(snapshot).unwrap_err();
+    let error = toc
+        .apply_collections_snapshot(snapshot, &HwMeasurementAcc::new())
+        .unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -266,8 +276,11 @@ fn create_collection(toc: &TableOfContent, name: &str) {
     }))
     .unwrap();
     let operation = CreateCollectionOperation::new(name.to_string(), config).unwrap();
-    toc.perform_collection_meta_op_sync(CollectionMetaOperations::CreateCollection(operation))
-        .unwrap();
+    toc.perform_collection_meta_op_sync(
+        CollectionMetaOperations::CreateCollection(operation),
+        &HwMeasurementAcc::new(),
+    )
+    .unwrap();
 }
 
 fn get_collection(toc: &TableOfContent, name: &str) -> Arc<Collection> {
@@ -343,6 +356,7 @@ fn new_toc() -> (TempDir, Arc<TableOfContent>) {
             ChannelService::new(6333, false, None, None),
             0,
             Some(propose_operation_sender),
+            &HwMeasurementAcc::new(),
         )
         .unwrap(),
     );

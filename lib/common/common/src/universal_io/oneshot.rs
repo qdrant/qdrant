@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::path::Path;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::mmap::{Advice, AdviceSetting};
 use crate::universal_io::{
     CachedReadFs, OpenOptions, Populate, UioResult, UniversalRead, UniversalReadFs,
@@ -35,17 +36,31 @@ impl<S: UniversalRead> OneshotFile<S> {
     ///
     /// A one-shot file is always read in full, so the prefetch populates it —
     /// the fetch overlaps whatever runs between the schedule and the open.
-    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, path: impl AsRef<Path>) {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        hw_counter: &HardwareCounterCell,
+    ) {
         fs.schedule_open(
             path.as_ref(),
             Some(Self::open_options(Populate::PreferBackground)),
             None,
+            hw_counter,
         )
     }
 
     /// Open `path` read-only through `fs` for a single sequential read.
-    pub fn open<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: impl AsRef<Path>) -> UioResult<Self> {
-        let inner = fs.open(path, Self::open_options(Populate::No), Default::default())?;
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self> {
+        let inner = fs.open(
+            path,
+            Self::open_options(Populate::No),
+            Default::default(),
+            hw_counter,
+        )?;
         Ok(Self { inner })
     }
 

@@ -57,8 +57,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// The writer-maintained count read from the stored tracker header, as of
     /// the last [`Self::live_reload`] — see
     /// [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
-    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
-        self.view().max_point_offset()
+    pub(crate) fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
+        self.view().max_point_offset(hw_counter)
     }
 
     /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads through the
@@ -70,13 +70,14 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         fs: &Fs,
         base_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
         // schedule tracker
         let tracker_path = Tracker::<S>::tracker_file_name(base_path);
-        Tracker::<S>::preopen(fs, &tracker_path, populate);
+        Tracker::<S>::preopen(fs, &tracker_path, populate, hw_counter);
 
         // schedule pages
-        Pages::preopen(fs, base_path, populate)
+        Pages::preopen(fs, base_path, populate, hw_counter)
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.
@@ -91,13 +92,14 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         base_path: PathBuf,
         config: GridstoreConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         // A reader only reads, so open pages and tracker non-writable. This
         // lets the backend be write-enforced (e.g. `ReadOnly<MmapFile>`); the
         // writable `Gridstore` opens these same files writable instead.
-        let tracker = ReadOnlyTracker::open(fs, &base_path, populate)?;
+        let tracker = ReadOnlyTracker::open(fs, &base_path, populate, hw_counter)?;
 
-        let pages = Pages::<S>::open(fs, &base_path, false, populate)?;
+        let pages = Pages::<S>::open(fs, &base_path, false, populate, hw_counter)?;
 
         Ok(Self {
             tracker,
@@ -150,7 +152,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
-        let max_id = cmp::min(max_id, self.max_point_offset()?);
+        let max_id = cmp::min(max_id, self.max_point_offset(hw_counter.parent())?);
 
         let point_offsets = (0..max_id).map(|point_offset| ((), point_offset));
 
@@ -164,6 +166,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 callback(point_offset, value)
             },
             &hw_counter,
+            hw_counter.parent(),
         )?;
 
         Ok(())
@@ -175,6 +178,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -188,6 +192,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 Ok(true)
             },
             hw_counter_cell,
+            hw_counter,
         )?;
 
         Ok(())
@@ -199,6 +204,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -212,6 +218,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 Ok(true)
             },
             hw_counter_cell,
+            hw_counter,
         )?;
 
         Ok(())
@@ -227,9 +234,10 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
-        self.tracker.live_preload(fs);
-        self.pages.live_preload(fs, self.populate)?;
+        self.tracker.live_preload(fs, hw_counter);
+        self.pages.live_preload(fs, self.populate, hw_counter)?;
         Ok(Vec::new())
     }
 
@@ -245,9 +253,13 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     /// tracker file is mutated in place and carries no reliable
     /// cheaply-readable change signal, so there is no "nothing changed"
     /// fast path. Both refreshes are cheap for non-populated readers.
-    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
-        self.tracker.live_reload(fs)?;
-        self.pages.live_reload(fs, self.populate)?;
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
+        self.tracker.live_reload(fs, hw_counter)?;
+        self.pages.live_reload(fs, self.populate, hw_counter)?;
 
         Ok(())
     }

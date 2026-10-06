@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::progress_tracker::ProgressTracker;
 #[cfg(any(test, feature = "testing"))]
@@ -55,12 +56,17 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
     fn create_segment_builder(
         &self,
         input_segments: &[LockedSegment],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SegmentBuilder> {
-        self.optimizer.optimized_segment_builder(input_segments)
+        self.optimizer
+            .optimized_segment_builder(input_segments, hw_counter)
     }
 
-    fn create_temp_segment(&self) -> OperationResult<(LockedSegment, NewSegmentToken)> {
-        self.optimizer.temp_segment(false)
+    fn create_temp_segment(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<(LockedSegment, NewSegmentToken)> {
+        self.optimizer.temp_segment(false, hw_counter)
     }
 
     fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>> {
@@ -104,16 +110,24 @@ pub trait SegmentOptimizer: Sync {
     fn threshold_config(&self) -> &OptimizerThresholds;
 
     /// Find segments that require optimization and write them into `planner`.
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner);
+    fn plan_optimizations(
+        &self,
+        planner: &mut OptimizationPlanner,
+        hw_counter: &HardwareCounterCell,
+    );
 
     /// Wrapper around [`SegmentOptimizer::plan_optimizations`].
     /// Simplified interface and extra checks.
     #[cfg(any(test, feature = "testing"))]
-    fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
+    fn plan_optimizations_for_test(
+        &self,
+        segments: &LockedSegmentHolder,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<Vec<SegmentId>> {
         let segments = segments.read();
 
         let mut planner = OptimizationPlanner::new(0, segments.iter_original());
-        self.plan_optimizations(&mut planner);
+        self.plan_optimizations(&mut planner, hw_counter);
         let result = planner.into_scheduled_for_test();
 
         // Verify consistency: re-planning with remaining segments should match tail
@@ -124,7 +138,7 @@ pub trait SegmentOptimizer: Sync {
             }
             let mut planner =
                 OptimizationPlanner::new(i + 1, remaining.iter().map(|(&id, &seg)| (id, seg)));
-            self.plan_optimizations(&mut planner);
+            self.plan_optimizations(&mut planner, hw_counter);
             let actual = planner.into_scheduled_for_test();
             let expected = &result[i + 1..];
             if self.name() == "merge"
@@ -148,6 +162,7 @@ pub trait SegmentOptimizer: Sync {
     fn temp_segment(
         &self,
         save_version: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(LockedSegment, NewSegmentToken)> {
         let config = self.segment_optimizer_config().plain_segment_config();
         let (segment, token) = build_segment(
@@ -155,6 +170,7 @@ pub trait SegmentOptimizer: Sync {
             &config,
             self.threshold_config().deferred_internal_id,
             save_version,
+            hw_counter,
         )?;
         let segment = LockedSegment::new(segment);
         Ok((segment, token))
@@ -164,6 +180,7 @@ pub trait SegmentOptimizer: Sync {
     fn optimized_segment_builder(
         &self,
         optimizing_segments: &[LockedSegment],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<SegmentBuilder> {
         // Example:
         //
@@ -198,7 +215,8 @@ pub trait SegmentOptimizer: Sync {
             any_has_deferred |= locked_segment.has_deferred_points();
 
             for vector_name in locked_segment.vector_names() {
-                let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
+                let vector_size =
+                    locked_segment.available_vectors_size_in_bytes(&vector_name, hw_counter)?;
                 let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
                 *size += vector_size;
             }
@@ -336,6 +354,7 @@ pub trait SegmentOptimizer: Sync {
             &optimized_config,
             self.hnsw_global_config(),
             feature_flags(),
+            hw_counter,
         )
     }
 
@@ -480,6 +499,7 @@ impl<'a> OptimizationPlanner<'a> {
 pub fn plan_optimizations(
     segments: &SegmentHolder,
     optimizers: &[Arc<Optimizer>],
+    hw_counter: &HardwareCounterCell,
 ) -> Vec<(Arc<Optimizer>, Vec<SegmentId>)> {
     let mut planner = OptimizationPlanner::new(
         segments.running_optimizations.count(),
@@ -487,7 +507,7 @@ pub fn plan_optimizations(
     );
     for optimizer in optimizers {
         planner.optimizer = Some(Arc::clone(optimizer));
-        optimizer.plan_optimizations(&mut planner);
+        optimizer.plan_optimizations(&mut planner, hw_counter);
     }
     planner
         .scheduled

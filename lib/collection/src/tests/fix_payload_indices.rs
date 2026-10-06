@@ -41,6 +41,7 @@ async fn test_fix_payload_indices() {
         current_runtime.clone(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -101,11 +102,12 @@ async fn test_fix_payload_indices() {
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        &hw_acc,
     )
     .await
     .unwrap();
 
-    let info = shard.info().await.unwrap();
+    let info = shard.info(&hw_acc).await.unwrap();
     // Deleting existing payload index is not supported
     // assert!(!info
     //     .payload_schema

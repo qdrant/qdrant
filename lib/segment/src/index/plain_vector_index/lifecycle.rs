@@ -31,14 +31,14 @@ impl VectorIndex for PlainVectorIndex {
                 quantized_vectors.upsert_vector(id, vector, hw_counter)?;
             }
         } else {
-            if id as usize >= vector_storage.total_vector_count() {
-                debug_assert!(id as usize == vector_storage.total_vector_count());
+            if id as usize >= vector_storage.total_vector_count(hw_counter) {
+                debug_assert!(id as usize == vector_storage.total_vector_count(hw_counter));
                 // Vector doesn't exist in the storage
                 // Insert default vector to keep the sequence
                 let default_vector = vector_storage.default_vector();
                 vector_storage.insert_vector(id, VectorRef::from(&default_vector), hw_counter)?;
             }
-            vector_storage.delete_vector(id)?;
+            vector_storage.delete_vector(id, hw_counter)?;
         }
 
         Ok(())
@@ -62,7 +62,9 @@ impl VectorIndex for PlainVectorIndex {
         if let Some(quantized_vectors) = quantized_vectors.as_mut() {
             // Build-time quantized copies can't ingest storage-native bytes;
             // feed them the decoded vector read back from the storage.
-            let vector = vector_storage.get_vector::<Random>(id).to_owned();
+            let vector = vector_storage
+                .get_vector::<Random>(id, hw_counter)
+                .to_owned();
             quantized_vectors.upsert_vector(id, VectorRef::from(&vector), hw_counter)?;
         }
 

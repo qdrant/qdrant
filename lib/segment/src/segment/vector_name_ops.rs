@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 
 use super::Segment;
@@ -31,6 +32,7 @@ impl Segment {
         op_num: SeqNumberType,
         vector_name: &VectorName,
         config: &VectorNameConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Idempotent: if vector already exists, return false
         if self.vector_data.contains_key(vector_name) {
@@ -56,11 +58,11 @@ impl Segment {
         match config {
             VectorNameConfig::Dense(wrapper) => {
                 let internal = wrapper.dense.to_internal(false);
-                self.create_dense_vector(vector_name, &internal)
+                self.create_dense_vector(vector_name, &internal, hw_counter)
             }
             VectorNameConfig::Sparse(wrapper) => {
                 let internal = wrapper.sparse.to_internal();
-                self.create_sparse_vector(vector_name, &internal)
+                self.create_sparse_vector(vector_name, &internal, hw_counter)
             }
         }?;
 
@@ -76,6 +78,7 @@ impl Segment {
         &mut self,
         vector_name: &VectorName,
         config: &VectorDataConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let num_points = self.id_tracker.borrow().total_point_count();
 
@@ -91,7 +94,7 @@ impl Segment {
                 ..config.clone()
             };
             let index_path = get_vector_index_path(&self.segment_path, vector_name);
-            open_vector_storage(&config_for_open, &storage_path, &index_path)?
+            open_vector_storage(&config_for_open, &storage_path, &index_path, hw_counter)?
         } else {
             // Immutable segment: create empty placeholder
             new_empty_dense_vector_storage(
@@ -106,7 +109,7 @@ impl Segment {
 
         // Fill storage with deleted entries for all existing points so that
         // total_vector_count matches the segment's point count.
-        vector_storage.prefill_deleted_entries(num_points)?;
+        vector_storage.prefill_deleted_entries(num_points, hw_counter)?;
 
         let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
@@ -144,6 +147,7 @@ impl Segment {
         &mut self,
         vector_name: &VectorName,
         config: &SparseVectorDataConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let num_points = self.id_tracker.borrow().total_point_count();
 
@@ -163,7 +167,7 @@ impl Segment {
         let mut vector_storage = if self.appendable_flag {
             // Appendable: create real sparse mmap storage
             let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
-            create_sparse_vector_storage(&storage_path, &effective_config.storage_type)?
+            create_sparse_vector_storage(&storage_path, &effective_config.storage_type, hw_counter)?
         } else {
             // Immutable: empty placeholder
             new_empty_sparse_vector_storage(num_points)
@@ -171,7 +175,7 @@ impl Segment {
 
         // Fill storage with deleted entries for all existing points so that
         // total_vector_count matches the segment's point count.
-        vector_storage.prefill_deleted_entries(num_points)?;
+        vector_storage.prefill_deleted_entries(num_points, hw_counter)?;
 
         let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
         let quantized_vectors = Arc::new(AtomicRefCell::new(None));
@@ -179,16 +183,19 @@ impl Segment {
         // Create sparse vector index
         let vector_index_path = get_vector_index_path(&self.segment_path, vector_name);
         let stopped = AtomicBool::new(false);
-        let vector_index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
-            fs: &MmapFs,
-            config: effective_config.index,
-            id_tracker: self.id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            payload_index: self.payload_index.clone(),
-            path: &vector_index_path,
-            stopped: &stopped,
-            tick_progress: || (),
-        })?;
+        let vector_index = open_or_create_sparse_vector_index(
+            SparseVectorIndexOpenArgs {
+                fs: &MmapFs,
+                config: effective_config.index,
+                id_tracker: self.id_tracker.clone(),
+                vector_storage: vector_storage.clone(),
+                payload_index: self.payload_index.clone(),
+                path: &vector_index_path,
+                stopped: &stopped,
+                tick_progress: || (),
+            },
+            hw_counter,
+        )?;
 
         // Register the new storage with the payload index so `has_vector`
         // filtering sees it immediately, not just after a restart.
@@ -275,6 +282,7 @@ impl Segment {
     pub fn update_all_vector_names(
         &mut self,
         desired: &[(crate::types::VectorNameBuf, VectorNameConfig)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let version = self.version.unwrap_or(0);
 
@@ -283,7 +291,7 @@ impl Segment {
                 continue;
             }
             log::warn!("Segment is missing vector '{name}', creating it now");
-            self.create_vector_name_impl(version, name, config)?;
+            self.create_vector_name_impl(version, name, config, hw_counter)?;
         }
 
         Ok(())

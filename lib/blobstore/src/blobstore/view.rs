@@ -45,10 +45,10 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     ///
     /// In mutable mode this is the stored header count as of the last reload —
     /// see [`TrackerRead::max_point_offset`](crate::tracker::TrackerRead::max_point_offset).
-    pub fn max_point_offset(&self) -> Result<PointOffset> {
+    pub fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         match &self.variant {
-            ViewVariant::Gridstore(view) => view.max_point_offset(),
-            ViewVariant::Logstore(view) => view.max_point_offset(),
+            ViewVariant::Gridstore(view) => view.max_point_offset(hw_counter),
+            ViewVariant::Logstore(view) => view.max_point_offset(hw_counter),
         }
     }
 
@@ -66,10 +66,11 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     pub fn read_from_pages<P: AccessPattern>(
         &self,
         pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Cow<'_, [u8]>> {
         match &self.variant {
-            ViewVariant::Gridstore(view) => view.read_from_pages::<P>(pointer),
-            ViewVariant::Logstore(view) => view.read_from_pages::<P>(pointer),
+            ViewVariant::Gridstore(view) => view.read_from_pages::<P>(pointer, hw_counter),
+            ViewVariant::Logstore(view) => view.read_from_pages::<P>(pointer, hw_counter),
         }
     }
 }
@@ -95,6 +96,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -103,10 +105,10 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     {
         match &self.variant {
             ViewVariant::Gridstore(view) => {
-                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
             ViewVariant::Logstore(view) => {
-                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell, hw_counter)
             }
         }
     }

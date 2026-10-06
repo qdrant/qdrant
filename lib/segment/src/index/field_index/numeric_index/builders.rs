@@ -33,9 +33,9 @@ where
 {
     type FieldIndexType = NumericIndex<T, P>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match &mut self.0.inner {
-            NumericIndexInner::Mutable(index) => index.clear(),
+            NumericIndexInner::Mutable(index) => index.clear(hw_counter),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::OnDisk(_) => unreachable!(),
         }
@@ -50,8 +50,8 @@ where
         self.0.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.inner.flusher()()?;
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
+        self.0.inner.flusher(hw_counter)()?;
         Ok(self.0)
     }
 }
@@ -94,7 +94,7 @@ where
 {
     type FieldIndexType = NumericIndex<T, P>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 
@@ -123,7 +123,7 @@ where
         Ok(())
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         let populate = Populate::from(!self.is_on_disk);
         let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
@@ -131,12 +131,16 @@ where
             &self.path,
             populate,
             &self.deleted_points,
+            hw_counter,
         )?;
 
         let inner = if self.is_on_disk {
             NumericIndexInner::OnDisk(on_disk_index)
         } else {
-            NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(on_disk_index))
+            NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            ))
         };
 
         Ok(NumericIndex {
@@ -187,13 +191,13 @@ where
 {
     type FieldIndexType = NumericIndex<T, P>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         assert!(
             self.index.is_none(),
             "index must be initialized exactly once",
         );
         self.index.replace(
-            NumericIndex::new_mutable(self.dir.clone(), true)?
+            NumericIndex::new_mutable(self.dir.clone(), true, hw_counter)?
                 // unwrap safety: cannot fail because create_if_missing is true
                 .unwrap(),
         );
@@ -214,13 +218,16 @@ where
         index.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(
+        mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
                 "NumericIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.inner.flusher()()?;
+        index.inner.flusher(hw_counter)()?;
         Ok(index)
     }
 }

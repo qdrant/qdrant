@@ -30,6 +30,7 @@ fn write_both() -> (TempDir, TempDir) {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     for seed in 0..COUNT {
@@ -38,8 +39,13 @@ fn write_both() -> (TempDir, TempDir) {
     plain.flusher()().unwrap();
 
     for range in [0..COUNT / 2, COUNT / 2..COUNT] {
-        let mut writer =
-            UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, appended_dir.path(), DIM).unwrap();
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(
+            &MmapFs,
+            appended_dir.path(),
+            DIM,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
         append_range(&mut writer, range.start, range, DIM, &hw);
     }
 
@@ -97,6 +103,7 @@ fn directory_reads_congruently() {
             DIM,
             AdviceSetting::Global,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
     };
@@ -109,11 +116,17 @@ fn directory_reads_congruently() {
         let expected = make_vec(key, DIM);
         let key = key as VectorOffsetType;
         assert_eq!(
-            plain.get::<Random>(key).unwrap().as_ref(),
+            plain
+                .get::<Random>(key, &HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
             expected.as_slice(),
         );
         assert_eq!(
-            appended.get::<Random>(key).unwrap().as_ref(),
+            appended
+                .get::<Random>(key, &HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
             expected.as_slice(),
         );
     }
@@ -133,6 +146,7 @@ fn repairs_preallocated_chunks() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     plain.push(make_vec(0, DIM).as_slice(), &hw).unwrap();
@@ -146,7 +160,13 @@ fn repairs_preallocated_chunks() {
         "chunk must be preallocated past the single stored vector",
     );
 
-    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Appends continue after it
     append_range(&mut writer, 1, 1..3, DIM, &hw);
@@ -163,12 +183,16 @@ fn repairs_preallocated_chunks() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     assert_eq!(reader.len(), 3);
     for key in 0..3 {
         assert_eq!(
-            reader.get::<Random>(key).unwrap().as_ref(),
+            reader
+                .get::<Random>(key, &HardwareCounterCell::new())
+                .unwrap()
+                .as_ref(),
             make_vec(key, DIM).as_slice(),
         );
     }
@@ -185,7 +209,13 @@ fn replaying_an_already_applied_range_overwrites_it() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_replay").tempdir().unwrap();
 
-    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     append_range(&mut writer, 0, 0..100, DIM, &hw);
 
     // Replay offsets 50..100 with different vectors than landed the first
@@ -198,6 +228,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     // Not doubled: the watermark lands back at 100, not 150.
@@ -205,7 +236,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
     for key in 0..50 {
         assert_eq!(
             reader
-                .get::<Random>(key as VectorOffsetType)
+                .get::<Random>(key as VectorOffsetType, &HardwareCounterCell::new())
                 .unwrap()
                 .as_ref(),
             make_vec(key, DIM).as_slice(),
@@ -215,7 +246,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
     for key in 50..100 {
         assert_eq!(
             reader
-                .get::<Random>(key as VectorOffsetType)
+                .get::<Random>(key as VectorOffsetType, &HardwareCounterCell::new())
                 .unwrap()
                 .as_ref(),
             make_vec(key + 1000, DIM).as_slice(),
@@ -233,7 +264,13 @@ fn extends_across_a_gap_with_zeroes() {
     let hw = HardwareCounterCell::disposable();
     let dir = Builder::new().prefix("chunked_gap").tempdir().unwrap();
 
-    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+    let mut writer = UpdateOnlyChunkedVectors::<f32>::open(
+        &MmapFs,
+        dir.path(),
+        DIM,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     append_range(&mut writer, 0, 0..10, DIM, &hw);
     // Offsets 10..15 are skipped; the next batch picks up at 15.
     append_range(&mut writer, 15, 15..20, DIM, &hw);
@@ -244,13 +281,14 @@ fn extends_across_a_gap_with_zeroes() {
         DIM,
         AdviceSetting::Global,
         Populate::No,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     assert_eq!(reader.len(), 20);
     for key in 0..10 {
         assert_eq!(
             reader
-                .get::<Random>(key as VectorOffsetType)
+                .get::<Random>(key as VectorOffsetType, &HardwareCounterCell::new())
                 .unwrap()
                 .as_ref(),
             make_vec(key, DIM).as_slice(),
@@ -259,7 +297,7 @@ fn extends_across_a_gap_with_zeroes() {
     for key in 10..15 {
         assert_eq!(
             reader
-                .get::<Random>(key as VectorOffsetType)
+                .get::<Random>(key as VectorOffsetType, &HardwareCounterCell::new())
                 .unwrap()
                 .as_ref(),
             vec![0.0f32; DIM].as_slice(),
@@ -269,7 +307,7 @@ fn extends_across_a_gap_with_zeroes() {
     for key in 15..20 {
         assert_eq!(
             reader
-                .get::<Random>(key as VectorOffsetType)
+                .get::<Random>(key as VectorOffsetType, &HardwareCounterCell::new())
                 .unwrap()
                 .as_ref(),
             make_vec(key, DIM).as_slice(),

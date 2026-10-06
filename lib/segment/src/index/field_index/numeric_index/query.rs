@@ -40,6 +40,7 @@ use crate::types::{
 pub(super) fn range_cardinality<T, I>(
     index: &I,
     range: &RangeInterface,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<CardinalityEstimation>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -77,7 +78,7 @@ where
     let min_estimation = histogram_estimation.0;
     let max_estimation = histogram_estimation.2;
 
-    let total_values = index.total_unique_values_count()?;
+    let total_values = index.total_unique_values_count(hw_counter)?;
     // Note: max_values_per_point is never zero here because we check it above
     let expected_min = max(
         min_estimation / max_values_per_point,
@@ -119,14 +120,18 @@ where
     hw_counter
         .payload_index_io_read_counter()
         // We have to do 2 times binary search in mmap and immutable storage.
-        .incr_delta(2 * ((index.total_unique_values_count()? as f32).log2().ceil() as usize));
+        .incr_delta(
+            2 * ((index.total_unique_values_count(hw_counter)? as f32)
+                .log2()
+                .ceil() as usize),
+        );
 
     let range_size = index.values_range_size(start, end, hw_counter)?;
     if range_size == 0 {
         return Ok(0);
     }
     let avg_values_per_point =
-        index.total_unique_values_count()? as f32 / index.get_points_count() as f32;
+        index.total_unique_values_count(hw_counter)? as f32 / index.get_points_count() as f32;
     Ok((range_size as f32 / avg_values_per_point).max(1.0).round() as usize)
 }
 
@@ -212,7 +217,7 @@ where
         .range
         .as_ref()
         .map(|range| {
-            let mut cardinality = range_cardinality(index, range)?;
+            let mut cardinality = range_cardinality(index, range, hw_counter)?;
             cardinality
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -227,6 +232,7 @@ pub(super) fn for_each_payload_block<T, I>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -238,7 +244,7 @@ where
         let mut payload_conditions = Vec::new();
 
         let value_per_point =
-            index.total_unique_values_count()? as f64 / index.get_points_count() as f64;
+            index.total_unique_values_count(hw_counter)? as f64 / index.get_points_count() as f64;
         let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
         loop {
@@ -265,7 +271,8 @@ where
                         Excluded(_) | Unbounded => None,
                     },
                 };
-                let cardinality = range_cardinality(index, &RangeInterface::Float(range))?;
+                let cardinality =
+                    range_cardinality(index, &RangeInterface::Float(range), hw_counter)?;
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
@@ -448,6 +455,7 @@ impl NumericIndexValue for UuidIntType {
 pub(super) fn stream_range<'a, T, I>(
     index: &'a I,
     range: &RangeInterface,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + 'a>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -467,7 +475,9 @@ where
         return Ok(Either::Left(std::iter::empty()));
     }
 
-    Ok(Either::Right(
-        index.orderable_values_range(start_bound, end_bound)?,
-    ))
+    Ok(Either::Right(index.orderable_values_range(
+        start_bound,
+        end_bound,
+        hw_counter,
+    )?))
 }

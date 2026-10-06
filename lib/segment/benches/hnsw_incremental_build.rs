@@ -320,7 +320,8 @@ fn make_segment(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(path, all_vectors[0].len(), distance).unwrap();
+    let mut segment =
+        build_simple_segment(path, all_vectors[0].len(), distance, &hw_counter).unwrap();
     for n in sequence {
         let vector = only_default_vector(all_vectors[n]);
         segment
@@ -396,7 +397,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
     if path.join(HNSW_INDEX_CONFIG_FILE).exists() {
         log::info!("Loading cached HNSW index from {path:?}");
-        return HNSWIndex::open(open_args).unwrap();
+        return HNSWIndex::open(open_args, &HardwareCounterCell::new()).unwrap();
     }
 
     let permit_cpu_count = get_num_indexing_threads(open_args.hnsw_config.max_indexing_threads);
@@ -415,6 +416,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &HardwareCounterCell::new(),
     )
     .unwrap()
 }
@@ -480,7 +482,11 @@ fn process_search_results(
     // Convert ScoredPointOffset to ExtendedPointId
     result
         .into_iter()
-        .map(|x| id_tracker.external_id(x.idx).unwrap())
+        .map(|x| {
+            id_tracker
+                .external_id(x.idx, &HardwareCounterCell::new())
+                .unwrap()
+        })
         .collect_vec()
 }
 

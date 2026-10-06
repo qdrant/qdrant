@@ -4,6 +4,7 @@ use std::path::Path;
 
 use blobstore::config::LogstoreConfig;
 use blobstore::{Blob, Logstore};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalAppend, UniversalAppendFs};
@@ -36,6 +37,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
         config_if_create: LogstoreConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let storage = Logstore::open_or_create(
             fs,
@@ -44,6 +46,7 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
             // Appends never read back, and on a remote backend populating would
             // fetch every page of the storage per batch.
             Populate::No,
+            hw_counter,
         )?;
 
         Ok(Self {
@@ -72,12 +75,12 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
     /// Call this once per batch rather than per value: it syncs every page file
     /// of the storage, whether or not that page gained anything. A flush with
     /// nothing buffered is skipped for the same reason.
-    pub fn flush(&mut self) -> OperationResult<()> {
+    pub fn flush(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         if !self.buffered {
             return Ok(());
         }
 
-        self.storage.flusher()()?;
+        self.storage.flusher(hw_counter)()?;
         self.buffered = false;
         Ok(())
     }

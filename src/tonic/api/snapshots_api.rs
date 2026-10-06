@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use ::common::counter::hardware_accumulator::HwMeasurementAcc;
 use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
@@ -55,6 +56,7 @@ impl Snapshots for SnapshotsService {
             Arc::clone(dispatcher.toc(&auth, &pass)),
             &auth,
             &collection_name,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -120,7 +122,12 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
         let auth = extract_auth(&mut request);
 
-        let response = do_create_full_snapshot(&self.dispatcher, auth.clone()).await?;
+        let response = do_create_full_snapshot(
+            &self.dispatcher,
+            auth.clone(),
+            &HwMeasurementAcc::disposable(),
+        )
+        .await?;
 
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
@@ -195,6 +202,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             &auth,
             request.collection_name,
             request.shard_id,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 
@@ -287,6 +295,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             self.http_client.clone(),
             api_key,
             from_peer_id,
+            &HwMeasurementAcc::disposable(),
         )
         .await?;
 

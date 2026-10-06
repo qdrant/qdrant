@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -44,14 +45,20 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let compact_path = compact_versions_path(segment_path);
-        if UniversalReadFs::exists(fs, &compact_path)? {
+        if UniversalReadFs::exists(fs, &compact_path, hw_counter)? {
             let options = compact_open_options(Populate::PreferBackground);
-            fs.schedule_open(&compact_path, Some(options), None);
+            fs.schedule_open(&compact_path, Some(options), None, hw_counter);
         } else {
             let options = ReadOnlyDiskIdTracker::<S>::open_options(populate);
-            fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
+            fs.schedule_open(
+                &version_mapping_path(segment_path),
+                Some(options),
+                None,
+                hw_counter,
+            );
         }
         Ok(())
     }
@@ -62,17 +69,21 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let compact_options = compact_open_options(Populate::Blocking);
-        if let Some(versions) = compact_versions::load(fs, segment_path, compact_options)? {
+        if let Some(versions) =
+            compact_versions::load(fs, segment_path, compact_options, hw_counter)?
+        {
             return Ok(Self::Compact(versions));
         }
         let file = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
             ReadOnlyDiskIdTracker::<S>::open_options(populate),
             Default::default(),
+            hw_counter,
         )?);
-        let len = file.len()?;
+        let len = file.len(hw_counter)?;
         Ok(Self::Flat { file, len })
     }
 
@@ -83,7 +94,11 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
         }
     }
 
-    pub fn get(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    pub fn get(
+        &self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         let (file, len) = match self {
             Self::Flat { file, len } => (file, *len),
             Self::Compact(versions) => return versions.get(internal_id),
@@ -94,6 +109,7 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
         match file.read(
             ReadRange::one(u64::from(internal_id) * size_of::<SeqNumberType>() as u64),
             Random,
+            hw_counter,
         ) {
             Ok(values) => values.first().copied(),
             Err(err) => {
@@ -112,6 +128,7 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (file, len) = match self {
             Self::Flat { file, len } => (file, *len),
@@ -136,12 +153,17 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
                 };
                 (internal_id, range)
             });
-        file.read_batch(ranges, Random, |internal_id, values| {
-            if let Some(&version) = values.first() {
-                callback(internal_id, version);
-            }
-            UioResult::Ok(())
-        })?;
+        file.read_batch(
+            ranges,
+            Random,
+            |internal_id, values| {
+                if let Some(&version) = values.first() {
+                    callback(internal_id, version);
+                }
+                UioResult::Ok(())
+            },
+            hw_counter,
+        )?;
         Ok(())
     }
 
@@ -149,12 +171,15 @@ impl<S: UniversalRead> ReadOnlyVersions<S> {
     /// cleanup-on-open path, which drains the iteration anyway.
     pub fn iter(
         &self,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         let (file, len) = match self {
             Self::Flat { file, len } => (file, *len),
             Self::Compact(versions) => return Ok(Box::new(versions.iter())),
         };
-        let versions = file.read(ReadRange::new(0, len), Sequential)?.into_owned();
+        let versions = file
+            .read(ReadRange::new(0, len), Sequential, hw_counter)?
+            .into_owned();
         Ok(Box::new(versions.into_iter().enumerate().map(
             |(offset, version)| (offset as PointOffsetType, version),
         )))

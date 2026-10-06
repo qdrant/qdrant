@@ -80,11 +80,15 @@ struct Inner {
 
 impl Inner {
     /// Read the offset entry for `key`: pending overlay first, then the durable store.
-    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<MultivectorMmapOffset> {
+    fn get<P: AccessPattern>(
+        &self,
+        key: VectorOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<MultivectorMmapOffset> {
         if let Some(entry) = self.pending.get(&key) {
             return Some(*entry);
         }
-        let &[entry] = self.store.get::<P>(key)?.as_ref() else {
+        let &[entry] = self.store.get::<P>(key, hw_counter)?.as_ref() else {
             unreachable!("multi-vector offsets are stored as vectors of length 1");
         };
         Some(entry)
@@ -114,14 +118,19 @@ impl BufferedOffsets {
     pub(super) fn get<P: AccessPattern>(
         &self,
         key: VectorOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<MultivectorMmapOffset> {
-        self.inner.read().get::<P>(key)
+        self.inner.read().get::<P>(key, hw_counter)
     }
 
     /// Resolve a batch of keys to `(user_data, row_offset, count)` under a single
     /// read lock, ready to hand to `ChunkedVectors::iter_vectors`. Holding the lock
     /// once for the whole batch mirrors `Tracker::iter`.
-    pub(super) fn resolve_rows<P, U, I>(&self, keys: I) -> Vec<(U, PointOffsetType, u32)>
+    pub(super) fn resolve_rows<P, U, I>(
+        &self,
+        keys: I,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<(U, PointOffsetType, u32)>
     where
         P: AccessPattern,
         I: IntoIterator<Item = (U, PointOffsetType)>,
@@ -130,7 +139,7 @@ impl BufferedOffsets {
         keys.into_iter()
             .map(|(user_data, key)| {
                 let entry = inner
-                    .get::<P>(key as VectorOffsetType)
+                    .get::<P>(key as VectorOffsetType, hw_counter)
                     .expect("offset entry exists");
                 (user_data, entry.offset, entry.count)
             })
@@ -149,8 +158,8 @@ impl BufferedOffsets {
         self.inner.read().len
     }
 
-    pub(super) fn populate(&self) -> OperationResult<()> {
-        self.inner.read().store.populate()
+    pub(super) fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.inner.read().store.populate(hw_counter)
     }
 
     pub(super) fn clear_cache(&self) -> OperationResult<()> {
@@ -244,7 +253,15 @@ mod tests {
     }
 
     fn open_inner(dir: &std::path::Path) -> OffsetsStore {
-        ChunkedVectors::open(MmapFs, dir, 1, AdviceSetting::Global, Populate::No).unwrap()
+        ChunkedVectors::open(
+            MmapFs,
+            dir,
+            1,
+            AdviceSetting::Global,
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     }
 
     /// The core property: a write that lands *after* a flusher is created must not
@@ -275,7 +292,11 @@ mod tests {
         drop(store);
         let durable = open_inner(dir.path());
         assert_eq!(durable.len(), 2, "both points are durable");
-        let &[e1] = durable.get::<Sequential>(1).unwrap().as_ref() else {
+        let &[e1] = durable
+            .get::<Sequential>(1, &HardwareCounterCell::new())
+            .unwrap()
+            .as_ref()
+        else {
             unreachable!()
         };
         assert_eq!(
@@ -287,7 +308,10 @@ mod tests {
         // The in-memory view still reflects the latest write (read-through overlay),
         // and the relocation persists on the *next* flush.
         let store = BufferedOffsets::new(durable);
-        assert_eq!(store.get::<Sequential>(1), Some(offset(2, 3)));
+        assert_eq!(
+            store.get::<Sequential>(1, &HardwareCounterCell::new()),
+            Some(offset(2, 3))
+        );
     }
 
     /// A second flush commits what the first one deferred — no data is lost, the
@@ -303,7 +327,10 @@ mod tests {
         flush().unwrap();
 
         // Read-through sees it immediately even though it is not durable yet.
-        assert_eq!(store.get::<Sequential>(1), Some(offset(2, 3)));
+        assert_eq!(
+            store.get::<Sequential>(1, &HardwareCounterCell::new()),
+            Some(offset(2, 3))
+        );
         assert_eq!(store.len(), 2);
 
         // Next flush persists it.
@@ -312,7 +339,11 @@ mod tests {
 
         let durable = open_inner(dir.path());
         assert_eq!(durable.len(), 2);
-        let &[e1] = durable.get::<Sequential>(1).unwrap().as_ref() else {
+        let &[e1] = durable
+            .get::<Sequential>(1, &HardwareCounterCell::new())
+            .unwrap()
+            .as_ref()
+        else {
             unreachable!()
         };
         assert_eq!(e1, offset(2, 3));

@@ -40,6 +40,7 @@ pub(crate) trait LiveReload {
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>>;
 
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(

@@ -180,10 +180,14 @@ fn test_prefix_search() {
         scoring: None,
     };
 
-    let mut index =
-        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config.clone(), true)
-            .unwrap()
-            .unwrap();
+    let mut index = FullTextIndex::new_gridstore(
+        temp_dir.path().to_path_buf(),
+        config.clone(),
+        true,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -203,7 +207,7 @@ fn test_prefix_search() {
         .unwrap();
 
     for idx in res.iter().copied() {
-        assert!(index.check_match(&query, idx).unwrap());
+        assert!(index.check_match(&query, idx, &hw_counter).unwrap());
     }
 
     assert_eq!(res.len(), 3);
@@ -254,7 +258,7 @@ fn test_phrase_matching() {
         &empty_deleted,
         true,
     );
-    mmap_builder.init().unwrap();
+    mmap_builder.init(&hw_counter).unwrap();
 
     // Add some test documents with phrases
     let documents = vec![
@@ -274,7 +278,7 @@ fn test_phrase_matching() {
             .unwrap();
     }
 
-    let mmap_index = mmap_builder.finalize().unwrap();
+    let mmap_index = mmap_builder.finalize(&hw_counter).unwrap();
 
     let check_matching = |index: FullTextIndex| {
         // Test regular text matching (should match documents containing all tokens regardless of order)
@@ -282,9 +286,9 @@ fn test_phrase_matching() {
             .parse_text_query("quick brown fox", &hw_counter)
             .unwrap()
             .unwrap();
-        assert!(index.check_match(&text_query, 0).unwrap());
-        assert!(index.check_match(&text_query, 1).unwrap());
-        assert!(index.check_match(&text_query, 2).unwrap());
+        assert!(index.check_match(&text_query, 0, &hw_counter).unwrap());
+        assert!(index.check_match(&text_query, 1, &hw_counter).unwrap());
+        assert!(index.check_match(&text_query, 2, &hw_counter).unwrap());
 
         let text_results: Vec<_> = index
             .filter_query(text_query, &hw_counter)
@@ -302,8 +306,8 @@ fn test_phrase_matching() {
             .parse_phrase_query("quick brown fox", &hw_counter)
             .unwrap()
             .unwrap();
-        assert!(index.check_match(&phrase_query, 0).unwrap());
-        assert!(index.check_match(&phrase_query, 2).unwrap());
+        assert!(index.check_match(&phrase_query, 0, &hw_counter).unwrap());
+        assert!(index.check_match(&phrase_query, 2, &hw_counter).unwrap());
 
         let phrase_results: Vec<_> = index
             .filter_query(phrase_query, &hw_counter)
@@ -341,7 +345,7 @@ fn test_phrase_matching() {
             .parse_phrase_query("brown brown fox", &hw_counter)
             .unwrap()
             .unwrap();
-        assert!(index.check_match(&phrase_query, 4).unwrap());
+        assert!(index.check_match(&phrase_query, 4, &hw_counter).unwrap());
 
         // Should only match document 4
         let filter_results: Vec<_> = index
@@ -382,10 +386,14 @@ fn test_ascii_folding_in_full_text_index_word() {
     };
 
     // Index with folding enabled
-    let mut index_enabled =
-        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config_enabled.clone(), true)
-            .unwrap()
-            .unwrap();
+    let mut index_enabled = FullTextIndex::new_gridstore(
+        temp_dir.path().to_path_buf(),
+        config_enabled.clone(),
+        true,
+        &hw_counter,
+    )
+    .unwrap()
+    .unwrap();
 
     // Index with folding disabled (separate storage path)
     let temp_dir2 = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -393,6 +401,7 @@ fn test_ascii_folding_in_full_text_index_word() {
         temp_dir2.path().to_path_buf(),
         config_disabled.clone(),
         true,
+        &hw_counter,
     )
     .unwrap()
     .unwrap();
@@ -417,7 +426,11 @@ fn test_ascii_folding_in_full_text_index_word() {
         .parse_text_query("acao", &hw_counter)
         .unwrap()
         .unwrap();
-    assert!(index_enabled.check_match(&query_enabled, 0).unwrap());
+    assert!(
+        index_enabled
+            .check_match(&query_enabled, 0, &hw_counter)
+            .unwrap()
+    );
 
     let results_enabled: Vec<_> = index_enabled
         .filter_query(query_enabled, &hw_counter)
@@ -442,7 +455,11 @@ fn test_ascii_folding_in_full_text_index_word() {
         .parse_text_query("ação", &hw_counter)
         .unwrap()
         .unwrap();
-    assert!(index_enabled.check_match(&query_acento, 0).unwrap());
+    assert!(
+        index_enabled
+            .check_match(&query_acento, 0, &hw_counter)
+            .unwrap()
+    );
     let results_acento: Vec<_> = index_enabled
         .filter_query(query_acento, &hw_counter)
         .unwrap()
@@ -491,9 +508,10 @@ fn test_special_check_condition_match_text_any() {
         scoring: None,
     };
 
-    let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
-        .unwrap()
-        .unwrap();
+    let mut index =
+        FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true, &hw_counter)
+            .unwrap()
+            .unwrap();
 
     // Point 0: "goodness only" — should NOT match text_any("good cheap")
     // Point 1: "cheap hardware" — should match text_any("good cheap")
@@ -580,7 +598,7 @@ fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
 
     let empty_deleted = BitVec::new();
     let mut builder = FullTextIndex::builder_mmap(path, config, true, &empty_deleted, scoring);
-    builder.init().unwrap();
+    builder.init(&hw_counter).unwrap();
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     builder
         .add_many(0, vec!["alpha beta gamma".to_string()], &hw_counter)
@@ -593,7 +611,7 @@ fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
         )
         .unwrap();
 
-    builder.finalize().unwrap()
+    builder.finalize(&hw_counter).unwrap()
 }
 
 /// The mmap build path records lengths too, end to end: `add_many` measures,
@@ -610,7 +628,9 @@ fn mmap_builder_records_doc_len() {
     };
     assert!(on_disk.records_doc_len(), "the sidecar was written");
 
-    let immutable = ImmutableInvertedIndex::try_from(&on_disk.inverted_index).unwrap();
+    let immutable =
+        ImmutableInvertedIndex::from_on_disk(&on_disk.inverted_index, &HardwareCounterCell::new())
+            .unwrap();
     assert_eq!(
         immutable.point_to_doc_len(),
         Some([3, 7].as_slice()),
@@ -635,8 +655,14 @@ fn new_mmap_without_lengths_is_absent_under_scoring() {
     };
     let deleted = BitVec::new();
     let open = |path: &std::path::Path, scoring: bool| {
-        FullTextIndex::new_mmap(path.to_path_buf(), config(scoring), Memory::Cold, &deleted)
-            .unwrap()
+        FullTextIndex::new_mmap(
+            path.to_path_buf(),
+            config(scoring),
+            Memory::Cold,
+            &deleted,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     };
 
     let without = Builder::new().prefix("mmap_no_lengths").tempdir().unwrap();

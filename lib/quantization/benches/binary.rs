@@ -52,6 +52,7 @@ fn binary_bench(c: &mut Criterion) {
         QueryEncoding::SameAsStorage,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -101,6 +102,7 @@ fn binary_bench(c: &mut Criterion) {
         QueryEncoding::SameAsStorage,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -163,6 +165,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         QueryEncoding::Scalar8bits,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -203,7 +206,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u128 scalar query native", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let vector = encoded_u128.get_quantized_vector(i);
+                let vector = encoded_u128.get_quantized_vector(i, &HardwareCounterCell::new());
                 let vector = bytemuck::cast_slice::<u8, u128>(&vector);
                 let s = native_scorer(query, vector);
                 black_box(s);
@@ -228,6 +231,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
         QueryEncoding::Scalar8bits,
         None,
         &AtomicBool::new(false),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -261,7 +265,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u8 scalar query native", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let vector = encoded_u8.get_quantized_vector(i);
+                let vector = encoded_u8.get_quantized_vector(i, &HardwareCounterCell::new());
                 let s = native_scorer(query, &vector);
                 black_box(s);
             }

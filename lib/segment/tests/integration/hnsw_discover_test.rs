@@ -72,7 +72,8 @@ fn hnsw_discover_precision() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, distance, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -128,6 +129,7 @@ fn hnsw_discover_precision() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
@@ -191,7 +193,7 @@ fn filtered_hnsw_discover_precision() {
 
     let keyword_key = "keyword";
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -258,6 +260,7 @@ fn filtered_hnsw_discover_precision() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

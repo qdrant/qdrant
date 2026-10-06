@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::universal_io::{
     ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
@@ -146,7 +148,9 @@ fn blob_file_read_whole_uses_single_get_without_head() {
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
 
     assert_eq!(&bytes[..], DATA);
     assert_eq!(
@@ -170,8 +174,13 @@ fn owned_pipeline_tail_read_uses_single_get_without_head() {
 
     let mut pipeline = OwnedPipeline::new(file).unwrap();
     let from = 10u64;
-    pipeline.schedule_whole((), from).unwrap();
-    let (_, bytes) = pipeline.wait().unwrap().expect("exactly one read");
+    pipeline
+        .schedule_whole((), from, &HardwareCounterCell::new())
+        .unwrap();
+    let (_, bytes) = pipeline
+        .wait(&HardwareCounterCell::new())
+        .unwrap()
+        .expect("exactly one read");
 
     assert_eq!(&bytes[..], &DATA[from as usize..]);
     assert_eq!(
@@ -196,9 +205,11 @@ fn owned_pipeline_empty_tail_resolves_to_empty_read() {
 
     let mut pipeline = OwnedPipeline::new(file).unwrap();
     // Offset exactly at EOF: there is no tail to read.
-    pipeline.schedule_whole((), DATA.len() as u64).unwrap();
+    pipeline
+        .schedule_whole((), DATA.len() as u64, &HardwareCounterCell::new())
+        .unwrap();
     let (_, bytes) = pipeline
-        .wait()
+        .wait(&HardwareCounterCell::new())
         .unwrap()
         .expect("an (empty) read is scheduled");
 
@@ -238,10 +249,13 @@ fn disk_cache_read_whole_skips_remote_len() {
                 ..OpenOptions::new_for_test()
             },
             Default::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], DATA);
     assert_eq!(
         counters.whole.load(Ordering::Relaxed),
@@ -255,7 +269,11 @@ fn disk_cache_read_whole_skips_remote_len() {
     );
 
     let again = file
-        .read::<_, u8>(ReadRange::new(0, DATA.len() as u64), Sequential)
+        .read::<_, u8>(
+            ReadRange::new(0, DATA.len() as u64),
+            Sequential,
+            &HardwareCounterCell::new(),
+        )
         .expect("local read");
     assert_eq!(&again[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
@@ -290,6 +308,7 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
                 ..OpenOptions::new_for_test()
             },
             Default::default(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -305,7 +324,9 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
     );
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
@@ -335,6 +356,7 @@ fn async_prefill_open(
             ..OpenOptions::new_for_test()
         },
         extra,
+        HwMeasurementAcc::new(),
     ))
 }
 
@@ -352,7 +374,9 @@ fn disk_cache_async_prefill_streams_whole_get() {
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
 
-    let bytes = file.read_whole::<u8>().expect("read_whole");
+    let bytes = file
+        .read_whole::<u8>(&HardwareCounterCell::new())
+        .expect("read_whole");
     assert_eq!(&bytes[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
@@ -369,8 +393,14 @@ fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
         let source = CountingSource::new(DATA);
         let file = async_prefill_open(&source, tmp.path(), Some(stale_len)).unwrap();
 
-        assert_eq!(file.len::<u8>().unwrap(), DATA.len() as u64);
-        assert_eq!(&file.read_whole::<u8>().unwrap()[..], DATA);
+        assert_eq!(
+            file.len::<u8>(&HardwareCounterCell::new()).unwrap(),
+            DATA.len() as u64
+        );
+        assert_eq!(
+            &file.read_whole::<u8>(&HardwareCounterCell::new()).unwrap()[..],
+            DATA
+        );
     }
 }
 
@@ -390,7 +420,9 @@ fn disk_cache_failed_async_prefill_removes_the_mirror() {
         panic!("a prefill cut off mid-body must fail the open");
     };
     assert!(err.to_string().contains("short read"), "{err}");
-    let leftovers = MmapFs.list_files(&tmp.path().join("data.bin")).unwrap();
+    let leftovers = MmapFs
+        .list_files(&tmp.path().join("data.bin"), &HardwareCounterCell::new())
+        .unwrap();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 
@@ -415,7 +447,7 @@ async fn blob_file_read_from_into_async_tail_and_empty() {
     // Tail read from a positive offset
     let from = 10u64;
     let sink = file
-        .read_from_into_async(from, |_| Ok(TestSink::default()))
+        .read_from_into_async(from, |_| Ok(TestSink::default()), HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -426,7 +458,11 @@ async fn blob_file_read_from_into_async_tail_and_empty() {
 
     // Empty tail at EOF
     let sink = file
-        .read_from_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
+        .read_from_into_async(
+            DATA.len() as u64,
+            |_| Ok(TestSink::default()),
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 

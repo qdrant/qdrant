@@ -8,6 +8,7 @@
 //! [`read_ops`] (retrieval + scoring), [`live_reload`] (picking up a writer's
 //! deletions).
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
@@ -40,7 +41,12 @@ impl<B: TurboVectorBlob> std::fmt::Debug for ReadOnlyImmutableTurboVectorStorage
         f.debug_struct("ReadOnlyImmutableTurboVectorStorage")
             .field("dim", &self.dim)
             .field("distance", &self.distance)
-            .field("total_vector_count", &self.storage.vectors_count())
+            .field(
+                "total_vector_count",
+                &self
+                    .storage
+                    .vectors_count(&HardwareCounterCell::disposable()),
+            )
             .field("deleted_count", &self.deleted.count())
             .finish_non_exhaustive()
     }

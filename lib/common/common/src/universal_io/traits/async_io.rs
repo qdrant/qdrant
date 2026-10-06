@@ -2,6 +2,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use super::{UniversalRead, UniversalReadFs};
+use crate::counter::hardware_accumulator::HwMeasurementAcc;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
@@ -21,6 +22,7 @@ pub trait UniversalReadAsync: UniversalRead {
         range: Range<u64>,
         access_pattern: P,
         align: usize,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
 
     /// Read the file from byte `from` to its end into a sink: `init` receives the total length
@@ -32,6 +34,7 @@ pub trait UniversalReadAsync: UniversalRead {
         &self,
         from: u64,
         init: I,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<W>> + Send
     where
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
@@ -46,16 +49,23 @@ pub trait ChunkSink {
 
 /// [`UniversalReadAsync::read_from_into_async`] for files that read the tail with a single
 /// [`UniversalReadAsync::read_bytes_async`].
-pub(crate) async fn read_from_via_read_bytes<F, W, I>(file: &F, from: u64, init: I) -> UioResult<W>
+pub(crate) async fn read_from_via_read_bytes<F, W, I>(
+    file: &F,
+    from: u64,
+    init: I,
+    hw_acc: HwMeasurementAcc,
+) -> UioResult<W>
 where
     F: UniversalReadAsync + Sync,
     I: FnOnce(u64) -> UioResult<W>,
     W: ChunkSink,
 {
-    let len = file.len::<u8>()?;
+    let len = file.len::<u8>(&hw_acc.get_counter_cell())?;
     let mut sink = init(len)?;
     if from < len {
-        let bytes = file.read_bytes_async(from..len, Sequential, 1).await?;
+        let bytes = file
+            .read_bytes_async(from..len, Sequential, 1, hw_acc)
+            .await?;
         sink.write_chunk(from, &bytes)?;
     }
     Ok(sink)
@@ -79,12 +89,14 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         path: PathBuf,
         options: OpenOptions,
         extra: Self::OpenExtra,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
 
     /// List files matching `prefix_path` asynchronously.
     fn list_files_async<'a>(
         &'a self,
         prefix_path: &'a Path,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
 }
 
@@ -107,7 +119,12 @@ pub trait UniversalWriteFsAsync: Send + Sync {
         &self,
         path: PathBuf,
         bytes: Vec<u8>,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Future<Output = UioResult<()>> + Send + '_;
 
-    fn remove_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;
+    fn remove_async(
+        &self,
+        path: PathBuf,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Future<Output = UioResult<()>> + Send + '_;
 }

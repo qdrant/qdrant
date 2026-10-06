@@ -25,8 +25,12 @@ use crate::vector_storage::{MultiTQVectorStorageRead, TurboMultiScoring, VectorO
 
 impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
     /// Offset record for `key`, if the point exists.
-    fn get_offset<P: AccessPattern>(&self, key: PointOffsetType) -> Option<MultivectorMmapOffset> {
-        let record = self.offsets.get::<P>(key as VectorOffsetType)?;
+    fn get_offset<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<MultivectorMmapOffset> {
+        let record = self.offsets.get::<P>(key as VectorOffsetType, hw_counter)?;
         let &[offset] = record.as_ref() else {
             debug_assert!(
                 false,
@@ -57,10 +61,14 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
     }
 
     /// Decode the full multivector behind an offset record.
-    fn dequantize_multi(&self, offset: MultivectorMmapOffset) -> CowVector<'_> {
+    fn dequantize_multi(
+        &self,
+        offset: MultivectorMmapOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
         let records = self
             .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
+            .get_many::<Random>(offset.offset, offset.count as usize, hw_counter)
             .expect("Multivector not found");
         self.dequantize_records(&records)
     }
@@ -83,26 +91,33 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, &[u8]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let offset_keys = keys
             .into_iter()
             .map(|(user_data, key)| ((user_data, key), key, 1));
 
         let mut ranges = Vec::with_capacity(offset_keys.size_hint().0);
-        self.offsets
-            .for_each_vector::<P, _>(offset_keys, |(user_data, key), record| {
+        self.offsets.for_each_vector::<P, _>(
+            offset_keys,
+            |(user_data, key), record| {
                 let &[offset] = record.as_ref() else {
                     unreachable!("multi-vector offsets are stored as vectors of length 1");
                 };
                 ranges.push(((user_data, key), offset.offset, offset.count));
                 Ok(())
-            })?;
+            },
+            hw_counter,
+        )?;
 
-        self.storage
-            .for_each_many::<P, _>(ranges.into_iter(), |(user_data, key), records| {
+        self.storage.for_each_many::<P, _>(
+            ranges.into_iter(),
+            |(user_data, key), records| {
                 callback(user_data, key, records.as_ref());
                 Ok(())
-            })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -119,16 +134,25 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         self.storage.is_on_disk()
     }
 
-    fn total_vector_count(&self) -> usize {
+    fn total_vector_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.offsets.len()
     }
 
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    fn get_vector<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> CowVector<'_> {
+        self.get_vector_opt::<P>(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        Some(self.dequantize_multi(self.get_offset::<P>(key)?))
+    fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector<'_>> {
+        Some(self.dequantize_multi(self.get_offset::<P>(key, hw_counter)?, hw_counter))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
@@ -143,11 +167,12 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         self.deleted.as_bitslice()
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
-            let total_size = self.storage.vectors_count() * self.quantizer.quantized_size();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+    fn size_of_available_vectors_in_bytes(&self, hw_counter: &HardwareCounterCell) -> usize {
+        if self.total_vector_count(hw_counter) > 0 {
+            let total_size =
+                self.storage.vectors_count(hw_counter) * self.quantizer.quantized_size();
+            (total_size as u128 * self.available_vector_count(hw_counter) as u128
+                / self.total_vector_count(hw_counter) as u128) as usize
         } else {
             0
         }
@@ -157,10 +182,15 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
-            callback(user_data, key, self.dequantize_records(records));
-        })
+        self.for_each_record_range::<P, _>(
+            keys,
+            |user_data, key, records| {
+                callback(user_data, key, self.dequantize_records(records));
+            },
+            hw_counter,
+        )
         .expect("read TQ multivectors");
     }
 
@@ -168,10 +198,15 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
-            callback(user_data, key, records.to_vec());
-        })
+        self.for_each_record_range::<P, _>(
+            keys,
+            |user_data, key, records| {
+                callback(user_data, key, records.to_vec());
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -188,11 +223,15 @@ impl<S: UniversalRead> MultiTQVectorStorageRead for ReadOnlyChunkedMultiTurboVec
         &self.multi_vector_config
     }
 
-    fn get_multi_tq<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_offset::<P>(key)
+    fn get_multi_tq<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.get_offset::<P>(key, hw_counter)
             .and_then(|offset| {
                 self.storage
-                    .get_many::<P>(offset.offset, offset.count as usize)
+                    .get_many::<P>(offset.offset, offset.count as usize, hw_counter)
             })
             .expect("Multivector not found")
     }
@@ -228,14 +267,14 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         key: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
+        let Some(offset) = self.get_offset::<Random>(key, hw_counter) else {
             log::error!("Multivector not found");
             return ScoreType::NEG_INFINITY;
         };
 
         let records = self
             .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
+            .get_many::<Random>(offset.offset, offset.count as usize, hw_counter)
             .expect("Multivector not found");
 
         hw_counter
@@ -253,8 +292,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let (Some(offset_a), Some(offset_b)) = (
-            self.get_offset::<Random>(point_a),
-            self.get_offset::<Random>(point_b),
+            self.get_offset::<Random>(point_a, hw_counter),
+            self.get_offset::<Random>(point_b, hw_counter),
         ) else {
             log::error!("Multivector not found");
             return ScoreType::NEG_INFINITY;
@@ -262,12 +301,12 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
 
         let records_a = self
             .storage
-            .get_many::<Random>(offset_a.offset, offset_a.count as usize)
+            .get_many::<Random>(offset_a.offset, offset_a.count as usize, hw_counter)
             .expect("Multivector not found");
 
         let records_b = self
             .storage
-            .get_many::<Random>(offset_b.offset, offset_b.count as usize)
+            .get_many::<Random>(offset_b.offset, offset_b.count as usize, hw_counter)
             .expect("Multivector not found");
 
         hw_counter
@@ -310,7 +349,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, &[u8]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.for_each_record_range::<P, _>(keys, callback)
+        self.for_each_record_range::<P, _>(keys, callback, hw_counter)
     }
 }

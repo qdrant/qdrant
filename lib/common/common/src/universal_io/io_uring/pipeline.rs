@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::ops::Range;
 
 use super::{IoUringFile, IoUringReadRuntime, KERNEL_PAGE_SIZE};
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
@@ -38,6 +39,7 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
         file: &'file IoUringFile,
         range: Range<u64>,
         align: usize,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
         // IoUringPipeline is bound by 'file lifetime, so it can never outlive file
         // or hold fd longer than file is valid
@@ -61,18 +63,19 @@ impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
         user_data: U,
         file: &'file Self::File,
         from: u64,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<()> {
-        let eof = file.len::<u8>()?;
+        let eof = file.len::<u8>(hw_counter)?;
 
         if from >= eof {
             return Ok(());
         }
 
         let align = if file.direct_io { KERNEL_PAGE_SIZE } else { 1 };
-        self.schedule::<Sequential>(user_data, file, from..eof, align)
+        self.schedule::<Sequential>(user_data, file, from..eof, align, hw_counter)
     }
 
-    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
+    fn wait(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<Option<(U, ACow<'file>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();

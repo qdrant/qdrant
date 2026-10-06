@@ -69,11 +69,13 @@ async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_di
     install_restore_local_replica_before_flag_hook(shard_flag.clone(), reached_tx, release_rx);
 
     let cancel = cancel::CancellationToken::new();
+    let hw_acc = HwMeasurementAcc::new();
     let restore = target_replica_set.restore_local_replica_from(
         &source_shard_path,
         RecoveryType::Full,
         target_collection_dir.path(),
         cancel.clone(),
+        &hw_acc,
     );
     tokio::pin!(restore);
 
@@ -173,6 +175,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                     RecoveryType::Full,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    &HwMeasurementAcc::new(),
                 )
                 .await
                 .unwrap()
@@ -200,6 +203,7 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
                     RecoveryType::Full,
                     &collection_path,
                     cancel::CancellationToken::new(),
+                    &HwMeasurementAcc::new(),
                 )
                 .await
                 .unwrap();
@@ -248,7 +252,9 @@ async fn new_shard_snapshot() -> (TempDir, std::path::PathBuf) {
         .unwrap();
 
     let replica_set = new_shard_replica_set(&collection_dir, TEST_SOURCE_SHARD_ID).await;
-    replica_set.force_flush_local_for_test().await;
+    replica_set
+        .force_flush_local_for_test(&HwMeasurementAcc::new())
+        .await;
     replica_set.stop_gracefully().await;
 
     let replica_path = collection_dir.path().join(TEST_SOURCE_SHARD_ID.to_string());
@@ -368,6 +374,7 @@ async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> S
         search_runtime,
         ResourceBudget::default(),
         Some(ReplicaState::Active),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap()

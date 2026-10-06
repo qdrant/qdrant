@@ -56,6 +56,7 @@ fn test_building_new_segment() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -94,19 +95,22 @@ fn test_building_new_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
-        merged_segment.available_point_count(),
+        merged_segment.iter_points(&hw_counter).count(),
+        merged_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        merged_segment.available_point_count(),
+        merged_segment.available_point_count(&hw_counter),
         segment1
-            .iter_points()
-            .chain(segment2.iter_points())
+            .iter_points(&hw_counter)
+            .chain(segment2.iter_points(&hw_counter))
             .unique()
             .count(),
     );
 
-    assert_eq!(merged_segment.point_version(3.into()), Some(100));
+    assert_eq!(
+        merged_segment.point_version(3.into(), &hw_counter),
+        Some(100)
+    );
 }
 
 #[test]
@@ -137,6 +141,7 @@ fn test_building_new_defragmented_segment() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -175,19 +180,22 @@ fn test_building_new_defragmented_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
-        merged_segment.available_point_count(),
+        merged_segment.iter_points(&hw_counter).count(),
+        merged_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        merged_segment.available_point_count(),
+        merged_segment.available_point_count(&hw_counter),
         segment1
-            .iter_points()
-            .chain(segment2.iter_points())
+            .iter_points(&hw_counter)
+            .chain(segment2.iter_points(&hw_counter))
             .unique()
             .count(),
     );
 
-    assert_eq!(merged_segment.point_version(3.into()), Some(100));
+    assert_eq!(
+        merged_segment.point_version(3.into(), &hw_counter),
+        Some(100)
+    );
 
     if let Err(err) = check_points_defragmented(&merged_segment, &defragment_key) {
         panic!("{err}");
@@ -210,8 +218,8 @@ fn check_points_defragmented(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for internal_id in id_tracker.point_mappings().iter_internal() {
-        let external_id = id_tracker.external_id(internal_id).unwrap();
+    for internal_id in id_tracker.point_mappings(&hw_counter).iter_internal() {
+        let external_id = id_tracker.external_id(internal_id, &hw_counter).unwrap();
         let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
 
@@ -264,6 +272,7 @@ fn test_building_new_sparse_segment() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -301,19 +310,22 @@ fn test_building_new_sparse_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
-        merged_segment.available_point_count(),
+        merged_segment.iter_points(&hw_counter).count(),
+        merged_segment.available_point_count(&hw_counter),
     );
     assert_eq!(
-        merged_segment.available_point_count(),
+        merged_segment.available_point_count(&hw_counter),
         segment1
-            .iter_points()
-            .chain(segment2.iter_points())
+            .iter_points(&hw_counter)
+            .chain(segment2.iter_points(&hw_counter))
             .unique()
             .count(),
     );
 
-    assert_eq!(merged_segment.point_version(3.into()), Some(100));
+    assert_eq!(
+        merged_segment.point_version(3.into(), &hw_counter),
+        Some(100)
+    );
 }
 
 #[test]
@@ -329,6 +341,7 @@ fn test_build_not_ready_defers_version_file() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -360,7 +373,11 @@ fn test_build_not_ready_defers_version_file() {
 
     // A restart (or snapshot recovery) must not pick this segment up before it is marked
     // ready; `normalize_segment_dir` discards it, same as any other half-built segment.
-    assert!(normalize_segment_dir(&segment_path).unwrap().is_none());
+    assert!(
+        normalize_segment_dir(&segment_path, &hw_counter)
+            .unwrap()
+            .is_none()
+    );
     assert!(!segment_path.exists());
 }
 
@@ -382,6 +399,7 @@ fn test_building_new_segment_bug_5614() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -419,8 +437,14 @@ fn test_building_new_segment_bug_5614() {
     let merged_segment: Segment = builder.build_for_test(dir.path());
 
     // Assert correct point versions - must have latest
-    assert_eq!(merged_segment.point_version(100.into()), Some(124));
-    assert_eq!(merged_segment.point_version(101.into()), Some(124));
+    assert_eq!(
+        merged_segment.point_version(100.into(), &hw_counter),
+        Some(124)
+    );
+    assert_eq!(
+        merged_segment.point_version(101.into(), &hw_counter),
+        Some(124)
+    );
 
     // Assert correct vectors still belong to the point
     // This was broken before <https://github.com/qdrant/qdrant/pull/5543>
@@ -476,6 +500,7 @@ fn hnsw_segment_builder(source: &Segment, temp_dir: &Path) -> SegmentBuilder {
         &segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
     builder
@@ -740,6 +765,7 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -782,7 +808,8 @@ fn build_source_with_extra_vector(
     drop(template);
 
     let source_dir2 = Builder::new().prefix("segment_source2").tempdir().unwrap();
-    let (mut source, _) = build_segment(source_dir2.path(), &source_config, None, true).unwrap();
+    let (mut source, _) =
+        build_segment(source_dir2.path(), &source_config, None, true, hw_counter).unwrap();
     for i in 0..3u64 {
         let vectors = NamedVectors::from_pairs([
             (DEFAULT_VECTOR_NAME.to_owned(), vec![0.5, 0.5, 0.5, 0.5]),
@@ -818,6 +845,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -849,6 +877,7 @@ fn test_segment_builder_drops_deleted_source_vector_name() {
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -888,6 +917,7 @@ fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -917,6 +947,7 @@ fn test_building_new_segment_with_mmap_payload() {
         4,
         Distance::Dot,
         PayloadStorageType::Mmap,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -942,6 +973,7 @@ fn test_building_new_segment_with_mmap_payload() {
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
 
@@ -985,6 +1017,7 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
         &segment.segment_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &hw_counter,
     )
     .unwrap();
     builder.update(&[&segment], &stopped, &hw_counter).unwrap();
@@ -1005,7 +1038,7 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
     built_segment
         .set_full_payload(101, 1.into(), &payload, &hw_counter)
         .unwrap();
-    built_segment.flush(true).unwrap();
+    built_segment.flush(true, &hw_counter).unwrap();
     assert!(
         built_segment
             .segment_path

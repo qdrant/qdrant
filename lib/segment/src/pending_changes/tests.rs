@@ -50,7 +50,7 @@ fn delete_change(point_id: u64, version: SeqNumberType) -> PendingChange {
 /// Build a segment with points 1..=5 at versions 1..=5, flushed to disk.
 fn build_segment(path: &Path) -> Segment {
     let hw_counter = HardwareCounterCell::new();
-    let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(path, 4, Distance::Dot, &hw_counter).unwrap();
     for point_id in 1..=5u64 {
         segment
             .upsert_point(
@@ -61,7 +61,7 @@ fn build_segment(path: &Path) -> Segment {
             )
             .unwrap();
     }
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     segment
 }
 
@@ -485,13 +485,21 @@ fn test_recover_pending_changes() {
     drop(pending_changes);
 
     // The segment itself never saw the operations
-    assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(segment.has_point(
+        2.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &hw_counter
+    ));
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(recovered.replayed, 2);
     assert_eq!(recovered.ready_at, segment_version + 2);
 
-    assert!(!segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(!segment.has_point(
+        2.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &hw_counter
+    ));
     assert!(segment.get_indexed_fields().contains_key(&field("color")));
     assert_eq!(segment.version(), segment_version + 2);
     // Recovery does not flush; the log files must survive until the segment durably persists
@@ -503,7 +511,7 @@ fn test_recover_pending_changes() {
     );
 
     // Once the segment durably persists past `ready_at`, the log files are safe to remove
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     assert_eq!(segment.persistent_version(), segment_version + 2);
     for path in &recovered.log_files {
         fs::remove_file(path).unwrap();
@@ -547,7 +555,11 @@ fn test_recover_ignore_leaves_log_untouched() {
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Ignore).unwrap();
     assert_eq!(recovered.replayed, 0);
     assert!(recovered.log_files.is_empty());
-    assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(segment.has_point(
+        2.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
     assert_eq!(segment.version(), segment_version);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), log_len);
     // The ignored log still holds changes missing in the segment files, so it is packed into
@@ -560,12 +572,16 @@ fn test_recover_ignore_leaves_log_untouched() {
     // A later replaying load still recovers the change
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(recovered.replayed, 1);
-    assert!(!segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(!segment.has_point(
+        2.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
     assert_eq!(recovered.log_files, vec![log_path.clone()]);
     // The log file removal is deferred to the caller, not done here
     assert!(log_path.is_file());
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     fs::remove_file(&log_path).unwrap();
     assert!(!log_path.is_file());
     assert!(segment.visible_pending_changes_log_files().is_empty());
@@ -595,19 +611,19 @@ fn test_recover_stale_log_is_noop() {
     segment
         .delete_point(op_version, 3.into(), &hw_counter)
         .unwrap();
-    let point_count = segment.available_point_count();
+    let point_count = segment.available_point_count(&hw_counter);
 
     // Replaying the stale log must not change anything; the file is left for the caller to
     // remove once the segment is durable past `ready_at`
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
-    assert_eq!(segment.available_point_count(), point_count);
+    assert_eq!(segment.available_point_count(&hw_counter), point_count);
     assert_eq!(segment.version(), op_version);
     assert_eq!(
         list_pending_changes_log_files(&segment_dir),
         recovered.log_files,
     );
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     for path in &recovered.log_files {
         fs::remove_file(path).unwrap();
     }
@@ -656,14 +672,22 @@ fn test_recover_multiple_levels_in_order() {
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
     assert_eq!(recovered.replayed, 4);
 
-    assert!(!segment.has_point(1.into(), common::types::DeferredBehavior::VisibleOnly));
-    assert!(!segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
+    assert!(!segment.has_point(
+        1.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
+    assert!(!segment.has_point(
+        2.into(),
+        common::types::DeferredBehavior::VisibleOnly,
+        &HardwareCounterCell::new()
+    ));
     // The outer (newer) index create must win over the inner delete
     assert!(segment.get_indexed_fields().contains_key(&field("color")));
     assert_eq!(segment.version(), segment_version + 4);
     assert_eq!(recovered.ready_at, segment_version + 4);
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     for path in &recovered.log_files {
         fs::remove_file(path).unwrap();
     }
@@ -711,7 +735,7 @@ fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
     assert!(segment.get_indexed_fields().contains_key(&field("size")));
     assert_eq!(segment.version(), segment_version + 2);
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     for path in &recovered.log_files {
         fs::remove_file(path).unwrap();
     }
@@ -751,7 +775,7 @@ fn test_recover_vector_name_changes() {
         segment.vector_names(),
     );
 
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     for path in &recovered.log_files {
         fs::remove_file(path).unwrap();
     }
@@ -837,7 +861,7 @@ fn test_recover_superseding_vector_name_change() {
     let mut segment = build_segment(dir.path());
 
     segment
-        .create_vector_name(6, "v2", &dense_config(4, Distance::Dot))
+        .create_vector_name(6, "v2", &dense_config(4, Distance::Dot), &hw_counter)
         .unwrap();
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![1.0f32; 4].into());
@@ -845,7 +869,7 @@ fn test_recover_superseding_vector_name_change() {
     segment
         .upsert_point(7, 1.into(), vectors, &hw_counter)
         .unwrap();
-    segment.flush(true).unwrap();
+    segment.flush(true, &hw_counter).unwrap();
     assert!(
         segment
             .vector("v2", 1.into(), &hw_counter)
@@ -1106,8 +1130,16 @@ fn test_proxy_changes_propagate_in_version_order() {
     assert_eq!(indexed_fields.get(&field("count")), Some(&integer_schema()));
     assert!(has_vector_name(&segment, "first"));
     assert!(has_vector_name(&segment, "second"));
-    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
-    assert!(segment.has_point(2.into(), DeferredBehavior::WithDeferred));
+    assert!(!segment.has_point(
+        1.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
+    assert!(segment.has_point(
+        2.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 }
 
 /// Propagation stops with a cancellation error when asked to.
@@ -1265,7 +1297,11 @@ fn test_proxy_changes_propagate_in_two_passes() {
     applied.propagate(&mut segment, &never_stopped).unwrap();
     assert_eq!(segment.version(), 20);
     assert!(has_vector_name(&segment, "extra"));
-    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
+    assert!(!segment.has_point(
+        1.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 
     // Changes keep arriving on the proxy after the first pass
     pending_changes.register_index_change(
@@ -1294,7 +1330,19 @@ fn test_proxy_changes_propagate_in_two_passes() {
         segment.get_indexed_fields().get(&field("color")),
         Some(&keyword_schema()),
     );
-    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
-    assert!(!segment.has_point(2.into(), DeferredBehavior::WithDeferred));
-    assert!(segment.has_point(3.into(), DeferredBehavior::WithDeferred));
+    assert!(!segment.has_point(
+        1.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
+    assert!(!segment.has_point(
+        2.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
+    assert!(segment.has_point(
+        3.into(),
+        DeferredBehavior::WithDeferred,
+        &HardwareCounterCell::new()
+    ));
 }

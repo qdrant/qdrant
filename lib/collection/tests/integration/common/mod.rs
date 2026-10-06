@@ -19,6 +19,7 @@ use collection::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
@@ -215,6 +216,7 @@ pub async fn new_local_collection(
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await;
 
@@ -250,6 +252,7 @@ pub async fn load_local_collection(
         None,
         ResourceBudget::default(),
         None,
+        &HwMeasurementAcc::new(),
     )
     .await
 }

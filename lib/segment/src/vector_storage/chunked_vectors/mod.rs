@@ -101,6 +101,7 @@ mod tests {
                     dim,
                     AdviceSetting::Global,
                     Populate::Blocking,
+                    &hw_counter,
                 )
                 .unwrap();
 
@@ -115,10 +116,14 @@ mod tests {
                 .collect::<Vec<_>>();
             let mut vectors_buffer = Vec::with_capacity(batch_size);
             chunked_mmap
-                .for_each_in_batch(&batch_ids, |i, vec| {
-                    assert_eq!(i, vectors_buffer.len());
-                    vectors_buffer.push(vec.to_vec());
-                })
+                .for_each_in_batch(
+                    &batch_ids,
+                    |i, vec| {
+                        assert_eq!(i, vectors_buffer.len());
+                        vectors_buffer.push(vec.to_vec());
+                    },
+                    &hw_counter,
+                )
                 .unwrap();
 
             for (i, (vec, loaded_vec)) in zip(
@@ -171,6 +176,7 @@ mod tests {
             dim,
             AdviceSetting::Global,
             Populate::Blocking,
+            &hw_counter,
         )
         .unwrap();
 
@@ -189,13 +195,15 @@ mod tests {
         assert_eq!(chunked_mmap.chunks.len(), 2);
         assert_eq!(chunked_mmap.len(), start + count);
 
-        let read = chunked_mmap.get_many::<Random>(start, count).unwrap();
+        let read = chunked_mmap
+            .get_many::<Random>(start, count, &hw_counter)
+            .unwrap();
         assert!(matches!(read, Cow::Owned(_)), "straddling read must copy");
         assert_eq!(read.as_ref(), run.as_slice());
 
         // The parts are readable on their own too, borrowed from their chunk
         for (i, vector) in run.chunks_exact(dim).enumerate() {
-            let one = chunked_mmap.get::<Random>(start + i).unwrap();
+            let one = chunked_mmap.get::<Random>(start + i, &hw_counter).unwrap();
             assert!(matches!(one, Cow::Borrowed(_)));
             assert_eq!(one.as_ref(), vector);
         }
@@ -216,6 +224,7 @@ mod tests {
             dim,
             AdviceSetting::Global,
             Populate::Blocking,
+            &hw_counter,
         )
         .unwrap();
 
@@ -254,6 +263,7 @@ mod tests {
                     read[i] = Some(vectors.to_vec());
                     Ok(())
                 },
+                &hw_counter,
             )
             .unwrap();
 

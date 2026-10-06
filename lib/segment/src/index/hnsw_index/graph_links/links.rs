@@ -12,6 +12,7 @@ use std::fmt::Debug;
 use std::io::Cursor;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
 use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
@@ -86,12 +87,18 @@ impl GraphLinks {
         path: &Path,
         format: GraphLinksFormat,
         residency: GraphLinksResidency,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         Fs: UniversalReadFs,
         Fs::File: 'static,
     {
-        let storage = fs.open(path, Self::open_options(residency), Default::default())?;
+        let storage = fs.open(
+            path,
+            Self::open_options(residency),
+            Default::default(),
+            hw_counter,
+        )?;
 
         let is_in_ram_or_mmap = Fs::File::kind().is_in_ram_or_mmap();
         let read_into_ram = match residency {
@@ -101,27 +108,30 @@ impl GraphLinks {
         };
 
         let owner = if read_into_ram {
-            let bytes = storage.read_whole::<u8>()?.into_owned();
+            let bytes = storage.read_whole::<u8>(hw_counter)?.into_owned();
             storage.clear_ram_cache()?;
             GraphLinksEnum::Ram(bytes)
         } else {
             GraphLinksEnum::Universal(Box::new(storage))
         };
 
-        Self::try_new(owner, |x| GraphLinksView::load(x.as_bytes()?, format))
+        Self::try_new(owner, |x| {
+            GraphLinksView::load(x.as_bytes(hw_counter)?, format)
+        })
     }
 
     pub fn new_from_edges(
         edges: Vec<Vec<Vec<PointOffsetType>>>,
         format_param: GraphLinksFormatParam<'_>,
         hnsw_m: HnswM,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let mut cursor = Cursor::new(Vec::<u8>::new());
-        serialize_graph_links(edges, format_param, hnsw_m, &mut cursor)?;
+        serialize_graph_links(edges, format_param, hnsw_m, &mut cursor, hw_counter)?;
         let mut bytes = cursor.into_inner();
         bytes.shrink_to_fit();
         Self::try_new(GraphLinksEnum::Ram(bytes), |x| {
-            GraphLinksView::load(x.as_bytes()?, format_param.as_format())
+            GraphLinksView::load(x.as_bytes(hw_counter)?, format_param.as_format())
         })
     }
 
@@ -129,8 +139,8 @@ impl GraphLinks {
         self.borrow_dependent()
     }
 
-    pub fn as_bytes(&self) -> OperationResult<&[u8]> {
-        self.borrow_owner().as_bytes()
+    pub fn as_bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&[u8]> {
+        self.borrow_owner().as_bytes(hw_counter)
     }
 
     /// Heap RAM held by the serialized links, in bytes.
@@ -233,9 +243,9 @@ impl GraphLinks {
 
     /// Populate the disk cache with data, if applicable.
     /// This is a blocking operation.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self.borrow_owner() {
-            GraphLinksEnum::Universal(storage) => storage.populate(),
+            GraphLinksEnum::Universal(storage) => storage.populate(hw_counter),
             GraphLinksEnum::Ram(_) => Ok(()),
         }
     }
@@ -263,18 +273,18 @@ pub(super) trait GraphLinksStorage: Debug + Send + Sync {
     /// The backing storage must be borrowable (i.e. mmap-backed): backends
     /// that materialize the whole file into an owned buffer on read are not
     /// supported here.
-    fn bytes(&self) -> OperationResult<&[u8]>;
+    fn bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&[u8]>;
 
     /// Populate the OS page cache for the backing file, if applicable.
-    fn populate(&self) -> OperationResult<()>;
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Hint to the OS that the backing pages can be reclaimed, if applicable.
     fn clear_cache(&self) -> OperationResult<()>;
 }
 
 impl<S: UniversalRead> GraphLinksStorage for S {
-    fn bytes(&self) -> OperationResult<&[u8]> {
-        match self.read_whole::<u8>()? {
+    fn bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&[u8]> {
+        match self.read_whole::<u8>(hw_counter)? {
             Cow::Borrowed(bytes) => Ok(bytes),
             Cow::Owned(_) => Err(OperationError::service_error(
                 "Universal graph links storage must be borrowable (mmap-backed)",
@@ -282,8 +292,8 @@ impl<S: UniversalRead> GraphLinksStorage for S {
         }
     }
 
-    fn populate(&self) -> OperationResult<()> {
-        UniversalRead::populate(self)?;
+    fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        UniversalRead::populate(self, hw_counter)?;
         Ok(())
     }
 
@@ -302,10 +312,10 @@ pub(super) enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    pub(super) fn as_bytes(&self) -> OperationResult<&[u8]> {
+    pub(super) fn as_bytes(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&[u8]> {
         match self {
             GraphLinksEnum::Ram(data) => Ok(data.as_slice()),
-            GraphLinksEnum::Universal(storage) => storage.bytes(),
+            GraphLinksEnum::Universal(storage) => storage.bytes(hw_counter),
         }
     }
 }

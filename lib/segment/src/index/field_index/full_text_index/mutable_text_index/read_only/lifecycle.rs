@@ -17,10 +17,14 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// will read.
     ///
     /// Returns whether the on-disk directory exists.
-    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: PathBuf) -> OperationResult<bool> {
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         // Blobstore reader
         Ok(
-            BlobstoreReader::<Vec<u8>, S>::preopen(fs, dir, Populate::PreferBackground)
+            BlobstoreReader::<Vec<u8>, S>::preopen(fs, dir, Populate::PreferBackground, hw_counter)
                 .ok_not_found()?
                 .is_some(),
         )
@@ -47,9 +51,11 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         path: PathBuf,
         config: TextIndexParams,
         scoring: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
-            BlobstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
+            BlobstoreReader::<Vec<u8>, S>::open(fs, path, Populate::Blocking, hw_counter)
+                .ok_not_found()?
         else {
             // Files don't exist, cannot load
             return Ok(None);
@@ -64,7 +70,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
 
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset(&hw_counter)?,
                 |idx, value: Vec<u8>| {
                     let doc = FullTextIndex::deserialize_document(&value)?;
                     if scoring && doc.doc_len.is_none() {

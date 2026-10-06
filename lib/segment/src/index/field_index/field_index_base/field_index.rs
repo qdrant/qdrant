@@ -93,8 +93,8 @@ impl FieldIndex {
         }
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.get_payload_field_index().flusher()
+    pub fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        self.get_payload_field_index().flusher(hw_counter)
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -148,18 +148,24 @@ impl FieldIndex {
         }
     }
 
-    pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(index) => index.mut_inner().remove_point(point_id),
-            FieldIndex::DatetimeIndex(index) => index.mut_inner().remove_point(point_id),
-            FieldIndex::IntMapIndex(index) => index.remove_point(point_id),
-            FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
-            FieldIndex::FloatIndex(index) => index.mut_inner().remove_point(point_id),
-            FieldIndex::GeoIndex(index) => index.remove_point(point_id),
-            FieldIndex::BoolIndex(index) => index.remove_point(point_id),
-            FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
-            FieldIndex::UuidIndex(index) => index.remove_point(point_id),
-            FieldIndex::UuidMapIndex(index) => index.remove_point(point_id),
+            FieldIndex::IntIndex(index) => index.mut_inner().remove_point(point_id, hw_counter),
+            FieldIndex::DatetimeIndex(index) => {
+                index.mut_inner().remove_point(point_id, hw_counter)
+            }
+            FieldIndex::IntMapIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::KeywordIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::FloatIndex(index) => index.mut_inner().remove_point(point_id, hw_counter),
+            FieldIndex::GeoIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::BoolIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::FullTextIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::UuidIndex(index) => index.remove_point(point_id, hw_counter),
+            FieldIndex::UuidMapIndex(index) => index.remove_point(point_id, hw_counter),
             FieldIndex::NullIndex(index) => index.remove_point(point_id),
         }
     }
@@ -199,18 +205,18 @@ impl FieldIndex {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(index) => index.populate(),
-            FieldIndex::DatetimeIndex(index) => index.populate(),
-            FieldIndex::IntMapIndex(index) => index.populate(),
-            FieldIndex::KeywordIndex(index) => index.populate(),
-            FieldIndex::FloatIndex(index) => index.populate(),
-            FieldIndex::GeoIndex(index) => index.populate(),
+            FieldIndex::IntIndex(index) => index.populate(hw_counter),
+            FieldIndex::DatetimeIndex(index) => index.populate(hw_counter),
+            FieldIndex::IntMapIndex(index) => index.populate(hw_counter),
+            FieldIndex::KeywordIndex(index) => index.populate(hw_counter),
+            FieldIndex::FloatIndex(index) => index.populate(hw_counter),
+            FieldIndex::GeoIndex(index) => index.populate(hw_counter),
             FieldIndex::BoolIndex(index) => index.populate(),
-            FieldIndex::FullTextIndex(index) => index.populate(),
-            FieldIndex::UuidIndex(index) => index.populate(),
-            FieldIndex::UuidMapIndex(index) => index.populate(),
+            FieldIndex::FullTextIndex(index) => index.populate(hw_counter),
+            FieldIndex::UuidIndex(index) => index.populate(hw_counter),
+            FieldIndex::UuidMapIndex(index) => index.populate(hw_counter),
             FieldIndex::NullIndex(index) => index.populate(),
         }
     }

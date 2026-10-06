@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
@@ -58,6 +59,7 @@ fn test_snapshot_all() {
         SnapshotFormat::Regular,
         None,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -138,6 +140,7 @@ fn test_snapshot_includes_segment_manifest() {
         SnapshotFormat::Regular,
         None,
         None,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -225,6 +228,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
         AdaptiveSearchHandle::current_for_tests(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -271,7 +275,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     let confirmed = shard
         .segments()
         .read()
-        .flush_all(FlushMode::Sync, true)
+        .flush_all(FlushMode::Sync, true, &hw_acc.get_counter_cell())
         .unwrap();
     assert!(
         confirmed >= delete_op_num,
@@ -345,6 +349,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
         AdaptiveSearchHandle::current_for_tests(),
         ResourceBudget::default(),
         config.optimizer_config.clone(),
+        &HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
@@ -402,6 +407,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
                 clocks,
                 shard_path,
                 applied_seq_handler,
+                &HardwareCounterCell::new(),
             )
         })
     };

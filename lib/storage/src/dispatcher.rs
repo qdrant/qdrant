@@ -7,7 +7,7 @@ use collection::common::fetch_vectors::CollectionName;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::counter::hardware_accumulator::HwSharedDrain;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
@@ -74,6 +74,7 @@ impl Dispatcher {
         operation: CollectionMetaOperations,
         auth: Auth,
         wait_timeout: Option<Duration>,
+        hw_acc: &HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         auth.check_collection_meta_operation(&operation)?;
 
@@ -272,8 +273,11 @@ impl Dispatcher {
             Ok(res)
         } else {
             let toc = self.toc.clone();
-            tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
-                .await?
+            let hw_acc = hw_acc.clone();
+            tokio::task::spawn(
+                async move { toc.perform_collection_meta_op(operation, &hw_acc).await },
+            )
+            .await?
         }
     }
 

@@ -28,8 +28,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
-        MapIndex::flusher(self)
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        MapIndex::flusher(self, hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -42,7 +42,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 }
 
 impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -67,8 +67,9 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -85,7 +86,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<IntPayloadT
 where
     Vec<<IntPayloadType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(MapIndexRead::get_indexed_points(self))
     }
 
@@ -110,8 +111,9 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        for_each_payload_block_impl(self, threshold, key, f)
+        for_each_payload_block_impl(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -220,20 +222,24 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
-    index.for_each_value(|value| {
-        let count = index
-            // Only used in HNSW building so no measurement needed here.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
-        if count >= threshold {
-            f(PayloadBlockCondition {
-                condition: FieldCondition::new_match(key.clone(), (*value).into()),
-                cardinality: count,
-            })?;
-        }
-        Ok(())
-    })
+    index.for_each_value(
+        |value| {
+            let count = index
+                // Only used in HNSW building so no measurement needed here.
+                .get_count_for_value(value, &HardwareCounterCell::disposable())
+                .unwrap_or(0);
+            if count >= threshold {
+                f(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), (*value).into()),
+                    cardinality: count,
+                })?;
+            }
+            Ok(())
+        },
+        hw_counter,
+    )
 }
 
 fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(

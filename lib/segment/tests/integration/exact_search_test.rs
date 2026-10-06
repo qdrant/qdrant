@@ -53,7 +53,7 @@ fn exact_search_test() {
     let hw_counter = HardwareCounterCell::new();
     let is_stopped = AtomicBool::new(false);
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rng, dim);
@@ -100,10 +100,15 @@ fn exact_search_test() {
     let mut blocks = Vec::new();
     borrowed_payload_index
         .with_view(|v| {
-            v.for_each_payload_block(&JsonPath::new(int_key), indexing_threshold, &mut |block| {
-                blocks.push(block);
-                Ok(())
-            })
+            v.for_each_payload_block(
+                &JsonPath::new(int_key),
+                indexing_threshold,
+                &mut |block| {
+                    blocks.push(block);
+                    Ok(())
+                },
+                &hw_counter,
+            )
         })
         .unwrap();
     for block in &blocks {
@@ -164,6 +169,7 @@ fn exact_search_test() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

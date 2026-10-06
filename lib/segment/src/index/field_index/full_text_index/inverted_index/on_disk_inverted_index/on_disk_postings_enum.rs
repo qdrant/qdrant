@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(test)]
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
@@ -13,10 +14,10 @@ pub enum OnDiskPostingsEnum<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> OnDiskPostingsEnum<S> {
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
-            OnDiskPostingsEnum::Ids(postings) => postings.populate(),
-            OnDiskPostingsEnum::WithPositions(postings) => postings.populate(),
+            OnDiskPostingsEnum::Ids(postings) => postings.populate(hw_counter),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.populate(hw_counter),
         }
     }
 
@@ -34,10 +35,16 @@ impl<S: UniversalRead> OnDiskPostingsEnum<S> {
         }
     }
 
-    pub fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+    pub fn posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<usize>> {
         match self {
-            OnDiskPostingsEnum::Ids(postings) => postings.posting_len(token_id),
-            OnDiskPostingsEnum::WithPositions(postings) => postings.posting_len(token_id),
+            OnDiskPostingsEnum::Ids(postings) => postings.posting_len(token_id, hw_counter),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                postings.posting_len(token_id, hw_counter)
+            }
         }
     }
 
@@ -45,17 +52,18 @@ impl<S: UniversalRead> OnDiskPostingsEnum<S> {
     pub fn iter_ids<'a>(
         &'a self,
         token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         // Collect ids upfront so the borrowed `RawPostingList` bytes don't have
         // to outlive this call. Acceptable because UniversalPostings is on disk.
         let ids: Vec<PointOffsetType> = match self {
             OnDiskPostingsEnum::Ids(postings) => {
-                let raw = postings.get(token_id).unwrap()?;
+                let raw = postings.get(token_id, hw_counter).unwrap()?;
                 let view = raw.as_view::<()>().unwrap();
                 view.into_iter().map(|elem| elem.id).collect()
             }
             OnDiskPostingsEnum::WithPositions(postings) => {
-                let raw = postings.get(token_id).unwrap()?;
+                let raw = postings.get(token_id, hw_counter).unwrap()?;
                 let view = raw.as_view::<Positions>().unwrap();
                 view.into_iter().map(|elem| elem.id).collect()
             }

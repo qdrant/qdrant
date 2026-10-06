@@ -25,7 +25,7 @@ pub trait PayloadFieldIndexRead {
     /// Fallible: an index whose backing data is materialized on demand (the
     /// read-only bool index) has to read it to count. See
     /// [`RoaringFlagsRead::get_bitmap`](crate::common::flags::roaring_flags::RoaringFlagsRead::get_bitmap).
-    fn count_indexed_points(&self) -> OperationResult<usize>;
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize>;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
@@ -50,6 +50,7 @@ pub trait PayloadFieldIndexRead {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Convert a field condition into a per-point checker closure, if this
@@ -87,7 +88,7 @@ pub trait PayloadFieldIndex: PayloadFieldIndexRead {
     fn wipe(self) -> OperationResult<()>;
 
     /// Return function that flushes all pending updates to disk.
-    fn flusher(&self) -> Flusher;
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
 

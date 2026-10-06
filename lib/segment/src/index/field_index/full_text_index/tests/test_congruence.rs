@@ -65,9 +65,9 @@ impl IndexBuilder {
 
     fn finalize(self) -> OperationResult<FullTextIndex> {
         match self {
-            IndexBuilder::Mutable(builder) => builder.finalize(),
-            IndexBuilder::OnDisk(builder) => builder.finalize(),
-            IndexBuilder::Immutable(builder) => builder.finalize(),
+            IndexBuilder::Mutable(builder) => builder.finalize(&HardwareCounterCell::new()),
+            IndexBuilder::OnDisk(builder) => builder.finalize(&HardwareCounterCell::new()),
+            IndexBuilder::Immutable(builder) => builder.finalize(&HardwareCounterCell::new()),
         }
     }
 }
@@ -107,9 +107,9 @@ fn create_builder(
         )),
     };
     match &mut builder {
-        IndexBuilder::Mutable(builder) => builder.init().unwrap(),
-        IndexBuilder::OnDisk(builder) => builder.init().unwrap(),
-        IndexBuilder::Immutable(builder) => builder.init().unwrap(),
+        IndexBuilder::Mutable(builder) => builder.init(&HardwareCounterCell::new()).unwrap(),
+        IndexBuilder::OnDisk(builder) => builder.init(&HardwareCounterCell::new()).unwrap(),
+        IndexBuilder::Immutable(builder) => builder.init(&HardwareCounterCell::new()).unwrap(),
     }
     (builder, temp_dir, db)
 }
@@ -136,7 +136,7 @@ fn reopen_index(
     // are responsible for the cumulative deletion mask.
     let mut deleted = BitVec::repeat(false, num_points);
     for point_id in 0..num_points as PointOffsetType {
-        if index.values_is_empty(point_id) {
+        if index.values_is_empty(point_id, &HardwareCounterCell::new()) {
             deleted.set(point_id as usize, true);
         }
     }
@@ -146,11 +146,14 @@ fn reopen_index(
 
     // Reopen based on index type
     match index_type {
-        IndexType::Mutable => {
-            FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, false)
-                .unwrap()
-                .expect("Failed to reopen MutableGridstore index")
-        }
+        IndexType::Mutable => FullTextIndex::new_gridstore(
+            temp_dir.path().to_path_buf(),
+            config,
+            false,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .expect("Failed to reopen MutableGridstore index"),
         IndexType::OnDisk => {
             // Reopen with is_on_disk = true (mmap directly)
             FullTextIndex::new_mmap(
@@ -158,6 +161,7 @@ fn reopen_index(
                 config,
                 Memory::Cold,
                 &deleted,
+                &HardwareCounterCell::new(),
             )
             .unwrap()
             .expect("Failed to reopen ImmMmap index")
@@ -170,6 +174,7 @@ fn reopen_index(
                 config,
                 Memory::Pinned,
                 &deleted,
+                &HardwareCounterCell::new(),
             )
             .unwrap()
             .expect("Failed to reopen ImmRamMmap index")
@@ -210,13 +215,17 @@ fn build_random_index(
 
     // Delete some points before loading into a different format
     if deleted {
-        index.remove_point(20).unwrap();
-        index.remove_point(21).unwrap();
-        index.remove_point(22).unwrap();
-        index.remove_point(200).unwrap();
-        index.remove_point(250).unwrap();
+        index.remove_point(20, &HardwareCounterCell::new()).unwrap();
+        index.remove_point(21, &HardwareCounterCell::new()).unwrap();
+        index.remove_point(22, &HardwareCounterCell::new()).unwrap();
+        index
+            .remove_point(200, &HardwareCounterCell::new())
+            .unwrap();
+        index
+            .remove_point(250, &HardwareCounterCell::new())
+            .unwrap();
 
-        index.flusher()().expect("failed to flush deletions");
+        index.flusher(&HardwareCounterCell::new())().expect("failed to flush deletions");
     }
 
     // Reopen the index if requested
@@ -293,11 +302,11 @@ fn test_congruence(
     // Delete some points after loading
     if deleted {
         for (index, _type) in indices.iter_mut() {
-            index.remove_point(10).unwrap();
-            index.remove_point(11).unwrap();
-            index.remove_point(12).unwrap();
-            index.remove_point(100).unwrap();
-            index.remove_point(150).unwrap();
+            index.remove_point(10, &hw_counter).unwrap();
+            index.remove_point(11, &hw_counter).unwrap();
+            index.remove_point(12, &hw_counter).unwrap();
+            index.remove_point(100, &hw_counter).unwrap();
+            index.remove_point(150, &hw_counter).unwrap();
         }
     }
 
@@ -326,12 +335,12 @@ fn test_congruence(
         assert_eq!(index_a.points_count(), index_b.points_count());
         for point_id in 0..POINT_COUNT as PointOffsetType {
             assert_eq!(
-                index_a.values_count(point_id),
-                index_b.values_count(point_id),
+                index_a.values_count(point_id, &hw_counter),
+                index_b.values_count(point_id, &hw_counter),
             );
             assert_eq!(
-                index_a.values_is_empty(point_id),
-                index_b.values_is_empty(point_id),
+                index_a.values_is_empty(point_id, &hw_counter),
+                index_b.values_is_empty(point_id, &hw_counter),
             );
         }
 
@@ -393,8 +402,12 @@ fn test_congruence(
 
             for point_id in 0..POINT_COUNT as PointOffsetType {
                 assert_eq!(
-                    index_a.check_match(&parsed_query_a, point_id).unwrap(),
-                    index_b.check_match(&parsed_query_b, point_id).unwrap(),
+                    index_a
+                        .check_match(&parsed_query_a, point_id, &hw_counter)
+                        .unwrap(),
+                    index_b
+                        .check_match(&parsed_query_b, point_id, &hw_counter)
+                        .unwrap(),
                 );
             }
 
@@ -440,8 +453,12 @@ fn test_congruence(
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
-                        index_a.check_match(&parsed_query_a, point_id).unwrap(),
-                        index_b.check_match(&parsed_query_b, point_id).unwrap(),
+                        index_a
+                            .check_match(&parsed_query_a, point_id, &hw_counter)
+                            .unwrap(),
+                        index_b
+                            .check_match(&parsed_query_b, point_id, &hw_counter)
+                            .unwrap(),
                     );
                 }
 
@@ -463,17 +480,27 @@ fn test_congruence(
             for threshold in 1..=10 {
                 let mut count_a = 0;
                 index_a
-                    .for_each_payload_block(threshold, JsonPath::new(FIELD_NAME), &mut |_| {
-                        count_a += 1;
-                        Ok(())
-                    })
+                    .for_each_payload_block(
+                        threshold,
+                        JsonPath::new(FIELD_NAME),
+                        &mut |_| {
+                            count_a += 1;
+                            Ok(())
+                        },
+                        &hw_counter,
+                    )
                     .unwrap();
                 let mut count_b = 0;
                 index_b
-                    .for_each_payload_block(threshold, JsonPath::new(FIELD_NAME), &mut |_| {
-                        count_b += 1;
-                        Ok(())
-                    })
+                    .for_each_payload_block(
+                        threshold,
+                        JsonPath::new(FIELD_NAME),
+                        &mut |_| {
+                            count_b += 1;
+                            Ok(())
+                        },
+                        &hw_counter,
+                    )
                     .unwrap();
                 assert_eq!(count_a, count_b);
             }
@@ -533,7 +560,11 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 
             let parsed_query = parse_query(phrase, phrase_matching, index);
 
-            assert!(index.check_match(&parsed_query, *exp_id).unwrap());
+            assert!(
+                index
+                    .check_match(&parsed_query, *exp_id, &hw_counter)
+                    .unwrap()
+            );
 
             let result = index
                 .filter_query(parsed_query, &hw_counter)
@@ -594,11 +625,31 @@ fn test_phrase_matching_respects_array_boundaries(
     );
 
     // Also verify via check_match
-    assert!(!index.check_match(&qb, 1).unwrap());
-    assert!(index.check_match(&qb, 2).unwrap());
-    assert!(!index.check_match(&qb, 3).unwrap());
-    assert!(index.check_match(&qb, 4).unwrap());
-    assert!(!index.check_match(&qb, 5).unwrap());
+    assert!(
+        !index
+            .check_match(&qb, 1, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .check_match(&qb, 2, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .check_match(&qb, 3, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .check_match(&qb, 4, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .check_match(&qb, 5, &HardwareCounterCell::new())
+            .unwrap()
+    );
 
     // "quick blue" should match only ID 5 (phrase within one element)
     let qbl = index.parse_phrase_query("quick blue", &hw).unwrap();
@@ -613,11 +664,31 @@ fn test_phrase_matching_respects_array_boundaries(
         "\"quick blue\" must NOT match ID 3 (words in separate array elements)"
     );
 
-    assert!(!index.check_match(&qbl, 1).unwrap());
-    assert!(!index.check_match(&qbl, 2).unwrap());
-    assert!(!index.check_match(&qbl, 3).unwrap());
-    assert!(!index.check_match(&qbl, 4).unwrap());
-    assert!(index.check_match(&qbl, 5).unwrap());
+    assert!(
+        !index
+            .check_match(&qbl, 1, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .check_match(&qbl, 2, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .check_match(&qbl, 3, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        !index
+            .check_match(&qbl, 4, &HardwareCounterCell::new())
+            .unwrap()
+    );
+    assert!(
+        index
+            .check_match(&qbl, 5, &HardwareCounterCell::new())
+            .unwrap()
+    );
 }
 
 /// Single-element arrays and plain strings should still work normally.
@@ -676,7 +747,7 @@ fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matchi
 
     for (index, _temp_dir, index_type) in &built {
         assert!(
-            index.values_is_empty(1),
+            index.values_is_empty(1, &hw_counter),
             "{index_type:?} indexed a token for a punctuation-only value",
         );
         assert_eq!(
@@ -708,9 +779,9 @@ fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase
     let mut index = builder.finalize().unwrap();
     assert_eq!(index.points_count(), 1);
 
-    index.remove_point(1).unwrap();
+    index.remove_point(1, &hw_counter).unwrap();
     assert_eq!(index.points_count(), 1, "the empty value was never counted");
 
-    index.remove_point(0).unwrap();
+    index.remove_point(0, &hw_counter).unwrap();
     assert_eq!(index.points_count(), 0);
 }

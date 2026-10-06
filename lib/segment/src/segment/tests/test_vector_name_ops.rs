@@ -82,6 +82,7 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
         },
         None,
         true,
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -94,7 +95,10 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
             .unwrap();
     }
 
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     segment
 }
 
@@ -119,6 +123,7 @@ fn build_immutable_segment_with_data(
         &target_config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -127,7 +132,10 @@ fn build_immutable_segment_with_data(
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
     segment
 }
 
@@ -141,12 +149,20 @@ fn test_create_dense_vector_on_appendable_segment() {
     let mut segment = build_appendable_segment_with_data(dir.path());
     let hw = hw();
 
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     // Create a new dense vector
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim))
+        .create_vector_name(
+            100,
+            "v2",
+            &dense_vector_name_config(new_dim),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert!(result);
 
@@ -161,7 +177,10 @@ fn test_create_dense_vector_on_appendable_segment() {
         .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
         .unwrap();
 
-    assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS + 1
+    );
 
     // The new point has both vectors
     let all_vecs = segment
@@ -184,7 +203,12 @@ fn test_create_sparse_vector_on_appendable_segment() {
     let hw = hw();
 
     let result = segment
-        .create_vector_name(100, "sparse1", &sparse_vector_name_config())
+        .create_vector_name(
+            100,
+            "sparse1",
+            &sparse_vector_name_config(),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert!(result);
     assert!(
@@ -218,20 +242,34 @@ fn test_create_dense_vector_on_immutable_segment() {
     let hw = hw();
 
     assert!(!segment.appendable_flag);
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     // Create a new dense vector on immutable segment -> empty placeholder
     let new_dim = 8;
     let result = segment
-        .create_vector_name(100, "v2", &dense_vector_name_config(new_dim))
+        .create_vector_name(
+            100,
+            "v2",
+            &dense_vector_name_config(new_dim),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert!(result);
     assert!(segment.segment_config.vector_data.contains_key("v2"));
 
     // Empty placeholder: all existing points have the vector deleted
     let storage = segment.vector_data["v2"].vector_storage.borrow();
-    assert_eq!(storage.total_vector_count(), NUM_POINTS);
-    assert_eq!(storage.available_vector_count(), 0);
+    assert_eq!(
+        storage.total_vector_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
+    assert_eq!(
+        storage.available_vector_count(&HardwareCounterCell::new()),
+        0
+    );
     assert_eq!(storage.deleted_vector_count(), NUM_POINTS);
     drop(storage);
 
@@ -259,12 +297,20 @@ fn test_create_sparse_vector_on_immutable_segment() {
     let hw = hw();
 
     assert!(!segment.appendable_flag);
-    assert_eq!(segment.available_point_count(), NUM_POINTS);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
 
     // Create a sparse vector on immutable segment with MutableRam config.
     // The implementation should upgrade to a non-appendable index type (Mmap).
     let result = segment
-        .create_vector_name(100, "sp", &sparse_vector_name_config())
+        .create_vector_name(
+            100,
+            "sp",
+            &sparse_vector_name_config(),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
     assert!(result);
     assert!(segment.segment_config.sparse_vector_data.contains_key("sp"));
@@ -280,8 +326,14 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
     // Empty placeholder: all existing points have the vector deleted
     let storage = segment.vector_data["sp"].vector_storage.borrow();
-    assert_eq!(storage.total_vector_count(), NUM_POINTS);
-    assert_eq!(storage.available_vector_count(), 0);
+    assert_eq!(
+        storage.total_vector_count(&HardwareCounterCell::new()),
+        NUM_POINTS
+    );
+    assert_eq!(
+        storage.available_vector_count(&HardwareCounterCell::new()),
+        0
+    );
     assert_eq!(storage.deleted_vector_count(), NUM_POINTS);
     drop(storage);
 
@@ -312,9 +364,17 @@ fn test_create_vector_idempotent() {
 
     let config = dense_vector_name_config(8);
 
-    assert!(segment.create_vector_name(100, "v2", &config).unwrap());
+    assert!(
+        segment
+            .create_vector_name(100, "v2", &config, &HardwareCounterCell::new())
+            .unwrap()
+    );
     // Second call returns false (already exists)
-    assert!(!segment.create_vector_name(101, "v2", &config).unwrap());
+    assert!(
+        !segment
+            .create_vector_name(101, "v2", &config, &HardwareCounterCell::new())
+            .unwrap()
+    );
 }
 
 #[test]
@@ -338,7 +398,12 @@ fn test_delete_dense_vector_with_data() {
     // Create vector and insert data
     let new_dim = 8;
     segment
-        .create_vector_name(100, "to_delete", &dense_vector_name_config(new_dim))
+        .create_vector_name(
+            100,
+            "to_delete",
+            &dense_vector_name_config(new_dim),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     let mut vectors = NamedVectors::default();
@@ -361,7 +426,10 @@ fn test_delete_dense_vector_with_data() {
     assert!(!segment.segment_config.vector_data.contains_key("to_delete"));
 
     // Original points and the default vector are still intact
-    assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
+    assert_eq!(
+        segment.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS + 1
+    );
     for i in 1..=NUM_POINTS as u64 {
         let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
         assert!(default_vec.is_some());
@@ -375,7 +443,12 @@ fn test_delete_sparse_vector_with_data() {
     let hw = hw();
 
     segment
-        .create_vector_name(100, "sp", &sparse_vector_name_config())
+        .create_vector_name(
+            100,
+            "sp",
+            &sparse_vector_name_config(),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     // Insert a point with sparse data
@@ -411,7 +484,12 @@ fn test_persistence_after_create_with_data() {
 
     let new_dim = 6;
     segment
-        .create_vector_name(100, "persisted", &dense_vector_name_config(new_dim))
+        .create_vector_name(
+            100,
+            "persisted",
+            &dense_vector_name_config(new_dim),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     // Insert data into the new vector
@@ -425,15 +503,26 @@ fn test_persistence_after_create_with_data() {
     // Save, drop, reload
     let segment_path = segment.data_path();
     let segment_uuid = segment.uuid;
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
+    let loaded = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &stopped,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     // Config persisted
     assert_eq!(loaded.segment_config.vector_data["persisted"].size, new_dim);
-    assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);
+    assert_eq!(
+        loaded.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS + 1
+    );
 
     // Data persisted - vector is readable
     let vec = loaded
@@ -490,12 +579,14 @@ fn check_recreate_does_not_resurrect(
     let new_point = (NUM_POINTS as u64 + 1).into();
 
     // Create "v2", write a point carrying v2 data, then persist it to disk.
-    segment.create_vector_name(100, "v2", &config).unwrap();
+    segment
+        .create_vector_name(100, "v2", &config, &HardwareCounterCell::new())
+        .unwrap();
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![9.0f32; DIM].into());
     vectors.insert("v2".to_owned(), build_value());
     segment.upsert_point(101, new_point, vectors, &hw).unwrap();
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
 
     // Snapshot the on-disk storage/index, so we can restore them after the
     // delete — simulating an in-flight flush writing them back behind the
@@ -519,7 +610,9 @@ fn check_recreate_does_not_resurrect(
     }
 
     // Recreate the same name — must produce an empty vector, not reopen stale data.
-    segment.create_vector_name(103, "v2", &config).unwrap();
+    segment
+        .create_vector_name(103, "v2", &config, &HardwareCounterCell::new())
+        .unwrap();
 
     let v2 = segment.vector("v2", new_point, &hw).unwrap();
     assert!(
@@ -529,11 +622,19 @@ fn check_recreate_does_not_resurrect(
 
     // The clean slate must also survive a reload.
     let segment_uuid = segment.uuid;
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
+    let loaded = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &stopped,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
     let v2 = loaded.vector("v2", new_point, &hw).unwrap();
     assert!(
         v2.is_none(),
@@ -563,7 +664,12 @@ fn test_persistence_after_delete_with_data() {
 
     let new_dim = 8;
     segment
-        .create_vector_name(100, "temp", &dense_vector_name_config(new_dim))
+        .create_vector_name(
+            100,
+            "temp",
+            &dense_vector_name_config(new_dim),
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     // Insert data, then delete the vector
@@ -579,14 +685,25 @@ fn test_persistence_after_delete_with_data() {
     // Save, drop, reload
     let segment_path = segment.data_path();
     let segment_uuid = segment.uuid;
-    segment.flush(true).unwrap();
+    segment.flush(true, &HardwareCounterCell::new()).unwrap();
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
+    let loaded = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &stopped,
+        false,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     assert!(!loaded.segment_config.vector_data.contains_key("temp"));
-    assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);
+    assert_eq!(
+        loaded.available_point_count(&HardwareCounterCell::new()),
+        NUM_POINTS + 1
+    );
 
     // Original data still intact
     for i in 1..=NUM_POINTS as u64 {

@@ -21,10 +21,14 @@ pub struct UpdateOnlyBoolIndex {
 
 impl UpdateOnlyBoolIndex {
     /// Open the index at `dir` for writing, reading both masks into memory.
-    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, dir: &Path) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        dir: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         Ok(Self {
-            trues: UpdateOnlyStoredFlags::open(fs, &dir.join(TRUES_DIRNAME))?,
-            falses: UpdateOnlyStoredFlags::open(fs, &dir.join(FALSES_DIRNAME))?,
+            trues: UpdateOnlyStoredFlags::open(fs, &dir.join(TRUES_DIRNAME), hw_counter)?,
+            falses: UpdateOnlyStoredFlags::open(fs, &dir.join(FALSES_DIRNAME), hw_counter)?,
         })
     }
 

@@ -29,19 +29,19 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
-            ReadOnlyFieldIndex::IntIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::IntMapIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::KeywordIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::FloatIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::BoolIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::GeoIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::UuidIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::FullTextIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
-            ReadOnlyFieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+            ReadOnlyFieldIndex::IntIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::IntMapIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::KeywordIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::FloatIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::BoolIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::GeoIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::UuidIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::FullTextIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(hw_counter),
+            ReadOnlyFieldIndex::NullIndex(idx) => idx.count_indexed_points(hw_counter),
         }
     }
 
@@ -98,19 +98,42 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            ReadOnlyFieldIndex::IntIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::IntMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::KeywordIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::FloatIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::BoolIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::GeoIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::UuidIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::FullTextIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            ReadOnlyFieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            ReadOnlyFieldIndex::IntIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::DatetimeIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::IntMapIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::KeywordIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::FloatIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::BoolIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::GeoIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::UuidIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::FullTextIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::UuidMapIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            ReadOnlyFieldIndex::NullIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
         }
     }
 
@@ -179,14 +202,17 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
-    fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PayloadIndexTelemetry> {
         Ok(match self {
             ReadOnlyFieldIndex::IntIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::DatetimeIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::IntMapIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::KeywordIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::FloatIndex(idx) => idx.get_telemetry_data(),
-            ReadOnlyFieldIndex::BoolIndex(idx) => idx.get_telemetry_data()?,
+            ReadOnlyFieldIndex::BoolIndex(idx) => idx.get_telemetry_data(hw_counter)?,
             ReadOnlyFieldIndex::GeoIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::UuidIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.get_telemetry_data(),
@@ -195,55 +221,87 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
         })
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize> {
+    fn values_count(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         Ok(match self {
             ReadOnlyFieldIndex::IntIndex(idx) => {
-                NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
+                NumericIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
             ReadOnlyFieldIndex::DatetimeIndex(idx) => {
-                NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
+                NumericIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
             ReadOnlyFieldIndex::IntMapIndex(idx) => {
-                MapIndexRead::values_count(idx, point_id).unwrap_or(0)
+                MapIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
             ReadOnlyFieldIndex::KeywordIndex(idx) => {
-                MapIndexRead::values_count(idx, point_id).unwrap_or(0)
+                MapIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
             ReadOnlyFieldIndex::FloatIndex(idx) => {
-                NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
+                NumericIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
-            ReadOnlyFieldIndex::BoolIndex(idx) => BoolIndexRead::values_count(idx, point_id)?,
-            ReadOnlyFieldIndex::GeoIndex(idx) => GeoIndexRead::values_count(idx, point_id),
+            ReadOnlyFieldIndex::BoolIndex(idx) => {
+                BoolIndexRead::values_count(idx, point_id, hw_counter)?
+            }
+            ReadOnlyFieldIndex::GeoIndex(idx) => {
+                GeoIndexRead::values_count(idx, point_id, hw_counter)
+            }
             ReadOnlyFieldIndex::UuidIndex(idx) => {
-                NumericIndexRead::values_count(idx, point_id).unwrap_or(0)
+                NumericIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
             ReadOnlyFieldIndex::FullTextIndex(idx) => {
-                FullTextIndexRead::values_count(idx, point_id)
+                FullTextIndexRead::values_count(idx, point_id, hw_counter)
             }
             ReadOnlyFieldIndex::UuidMapIndex(idx) => {
-                MapIndexRead::values_count(idx, point_id).unwrap_or(0)
+                MapIndexRead::values_count(idx, point_id, hw_counter).unwrap_or(0)
             }
-            ReadOnlyFieldIndex::NullIndex(idx) => NullIndexRead::values_count(idx, point_id)?,
+            ReadOnlyFieldIndex::NullIndex(idx) => {
+                NullIndexRead::values_count(idx, point_id, hw_counter)?
+            }
         })
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(match self {
-            ReadOnlyFieldIndex::IntIndex(idx) => NumericIndexRead::values_is_empty(idx, point_id),
+            ReadOnlyFieldIndex::IntIndex(idx) => {
+                NumericIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
             ReadOnlyFieldIndex::DatetimeIndex(idx) => {
-                NumericIndexRead::values_is_empty(idx, point_id)
+                NumericIndexRead::values_is_empty(idx, point_id, hw_counter)
             }
-            ReadOnlyFieldIndex::IntMapIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::KeywordIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::FloatIndex(idx) => NumericIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::BoolIndex(idx) => BoolIndexRead::values_is_empty(idx, point_id)?,
-            ReadOnlyFieldIndex::GeoIndex(idx) => GeoIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::UuidIndex(idx) => NumericIndexRead::values_is_empty(idx, point_id),
+            ReadOnlyFieldIndex::IntMapIndex(idx) => {
+                MapIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
+            ReadOnlyFieldIndex::KeywordIndex(idx) => {
+                MapIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
+            ReadOnlyFieldIndex::FloatIndex(idx) => {
+                NumericIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
+            ReadOnlyFieldIndex::BoolIndex(idx) => {
+                BoolIndexRead::values_is_empty(idx, point_id, hw_counter)?
+            }
+            ReadOnlyFieldIndex::GeoIndex(idx) => {
+                GeoIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
+            ReadOnlyFieldIndex::UuidIndex(idx) => {
+                NumericIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
             ReadOnlyFieldIndex::FullTextIndex(idx) => {
-                FullTextIndexRead::values_is_empty(idx, point_id)
+                FullTextIndexRead::values_is_empty(idx, point_id, hw_counter)
             }
-            ReadOnlyFieldIndex::UuidMapIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
-            ReadOnlyFieldIndex::NullIndex(idx) => NullIndexRead::values_is_empty(idx, point_id)?,
+            ReadOnlyFieldIndex::UuidMapIndex(idx) => {
+                MapIndexRead::values_is_empty(idx, point_id, hw_counter)
+            }
+            ReadOnlyFieldIndex::NullIndex(idx) => {
+                NullIndexRead::values_is_empty(idx, point_id, hw_counter)?
+            }
         })
     }
 

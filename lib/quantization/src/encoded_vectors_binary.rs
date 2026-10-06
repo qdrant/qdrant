@@ -430,6 +430,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         &mut self.encoded_vectors
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
@@ -438,6 +439,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         query_encoding: QueryEncoding,
         meta_path: Option<&Path>,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
@@ -474,7 +476,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         }
 
         let encoded_vectors = storage_builder
-            .build()
+            .build(hw_counter)
             .map_err(|e| EncodingError::EncodingError(format!("Failed to build storage: {e}",)))?;
 
         let metadata = Metadata {
@@ -523,8 +525,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let metadata: Metadata = read_json_via(fs, meta_path, hw_counter)?;
         Ok(Self {
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
@@ -710,8 +713,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         fs: &Fs,
         encoded_vectors: TStorage,
         meta_path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let metadata: Metadata = read_json_via(fs, meta_path, hw_counter)?;
         let result = Self {
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
@@ -722,7 +726,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // Validate the storage's vector size against the metadata once here, so the size
         // invariant the scoring hot path relies on (it XORs the stored vector against an
         // equally-sized query) also holds in release builds without a per-score check.
-        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+        validate_storage_vector_size(
+            &result.encoded_vectors,
+            result.quantized_vector_size(),
+            hw_counter,
+        )?;
 
         Ok(result)
     }
@@ -866,8 +874,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
-        self.encoded_vectors.get_vector_data(i as _)
+    pub fn get_quantized_vector(
+        &self,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Cow<'_, [u8]> {
+        self.encoded_vectors.get_vector_data(i as _, hw_counter)
     }
 
     pub fn layout(&self) -> Layout {
@@ -922,8 +934,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     ) {
-        self.encoded_vectors.for_each_batch(offsets, callback)
+        self.encoded_vectors
+            .for_each_batch(offsets, callback, hw_counter)
     }
 
     fn score(
@@ -941,7 +955,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         i: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data = self.encoded_vectors.get_vector_data(i);
+        let vector_data = self.encoded_vectors.get_vector_data(i, hw_counter);
 
         self.score_bytes(True, query, &vector_data, hw_counter)
     }
@@ -952,8 +966,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         j: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_1 = self.encoded_vectors.get_vector_data(i);
-        let vector_data_2 = self.encoded_vectors.get_vector_data(j);
+        let vector_data_1 = self.encoded_vectors.get_vector_data(i, hw_counter);
+        let vector_data_2 = self.encoded_vectors.get_vector_data(j, hw_counter);
 
         hw_counter
             .vector_io_read()
@@ -980,12 +994,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     fn encode_internal_vector(
         &self,
         id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
         #[expect(deprecated, reason = "legacy code")]
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
             // TODO Safety
             encoded_vector: unsafe {
-                transmute_from_u8_to_slice(&self.encoded_vectors.get_vector_data(id)).to_vec()
+                transmute_from_u8_to_slice(&self.encoded_vectors.get_vector_data(id, hw_counter))
+                    .to_vec()
             },
         }))
     }
@@ -1005,8 +1021,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         )
     }
 
-    fn vectors_count(&self) -> usize {
-        self.encoded_vectors.vectors_count()
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.encoded_vectors.vectors_count(hw_counter)
     }
 
     fn flusher(&self) -> Flusher {

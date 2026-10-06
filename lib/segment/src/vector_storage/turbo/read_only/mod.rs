@@ -25,6 +25,7 @@
 //! - [`read_ops`]: retrieval and scoring trait impls,
 //! - [`live_reload`]: picking up a writer's appends and deletions.
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::UniversalRead;
 use quantization::EncodedStorageWrite;
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -61,7 +62,12 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedTurboVectorStorage<S> 
         f.debug_struct("ReadOnlyChunkedTurboVectorStorage")
             .field("dim", &self.dim)
             .field("distance", &self.distance)
-            .field("total_vector_count", &self.storage.vectors_count())
+            .field(
+                "total_vector_count",
+                &self
+                    .storage
+                    .vectors_count(&HardwareCounterCell::disposable()),
+            )
             .field("deleted_count", &self.deleted.count())
             .finish_non_exhaustive()
     }
@@ -100,12 +106,13 @@ mod tests {
             Distance::Dot,
             TQBits::Bits4,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         writer
             .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
             .unwrap();
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedTurboVectorStorage::<MmapFile>::open(
             &MmapFs,
@@ -114,14 +121,17 @@ mod tests {
             Distance::Dot,
             TQBits::Bits4,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
         writer
             .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
             .unwrap();
-        writer.delete_vector(1).unwrap();
-        writer.flusher()().unwrap();
+        writer
+            .delete_vector(1, &HardwareCounterCell::new())
+            .unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = vec![1];
@@ -134,7 +144,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 2);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 2);
         assert!(reader.is_deleted_vector(1));
     }
 
@@ -156,6 +166,7 @@ mod tests {
             Distance::Dot,
             TQBits::Bits4,
             false,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
         for id in 0..3u32 {
@@ -163,7 +174,7 @@ mod tests {
                 .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
                 .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let mut reader = ReadOnlyChunkedTurboVectorStorage::<MmapFile>::open(
             &MmapFs,
@@ -172,6 +183,7 @@ mod tests {
             Distance::Dot,
             TQBits::Bits4,
             Populate::No,
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 
@@ -182,9 +194,11 @@ mod tests {
         }
         let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
         for &id in &deleted_appended {
-            writer.delete_vector(id).unwrap();
+            writer
+                .delete_vector(id, &HardwareCounterCell::new())
+                .unwrap();
         }
-        writer.flusher()().unwrap();
+        writer.flusher(&HardwareCounterCell::new())().unwrap();
 
         let deleted_ids: Vec<PointOffsetType> = vec![];
         let new_ids: Vec<PointOffsetType> = (3..8).collect();
@@ -197,7 +211,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(reader.total_vector_count(), 8);
+        assert_eq!(reader.total_vector_count(&HardwareCounterCell::new()), 8);
         for id in 3..8 {
             assert_eq!(
                 reader.is_deleted_vector(id),

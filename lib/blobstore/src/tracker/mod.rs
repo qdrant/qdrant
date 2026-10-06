@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
@@ -163,8 +164,9 @@ fn decode_slot(slot: OptionalPointer) -> Option<ValuePointer> {
 fn read_slot<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offset: PointOffset,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<Option<ValuePointer>> {
-    Ok(read_raw_slot::<P, _>(storage, point_offset)?.and_then(decode_slot))
+    Ok(read_raw_slot::<P, _>(storage, point_offset, hw_counter)?.and_then(decode_slot))
 }
 
 /// Read the slot for `point_offset` directly from `storage` without decoding it, `None` if it
@@ -172,16 +174,20 @@ fn read_slot<P: AccessPattern, S: UniversalRead>(
 fn read_raw_slot<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offset: PointOffset,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<Option<OptionalPointer>> {
     let start_offset =
         size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
     let end_offset = start_offset + size_of::<OptionalPointer>();
-    let storage_len = storage.len::<u8>()?;
+    let storage_len = storage.len::<u8>(hw_counter)?;
     if end_offset as u64 > storage_len {
         return Ok(None);
     }
-    let slot =
-        storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
+    let slot = storage.read::<_, OptionalPointer>(
+        ReadRange::one(start_offset as u64),
+        P::default(),
+        hw_counter,
+    )?[0];
     Ok(Some(slot))
 }
 
@@ -192,11 +198,12 @@ fn read_raw_slot<P: AccessPattern, S: UniversalRead>(
 fn read_slots<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offsets: Range<PointOffset>,
+    hw_counter: &HardwareCounterCell,
 ) -> Result<Vec<Option<ValuePointer>>> {
     let slot_size = size_of::<OptionalPointer>() as u64;
     let start_offset =
         size_of::<TrackerHeader>() as u64 + u64::from(point_offsets.start) * slot_size;
-    let stored_slots = storage.len::<u8>()?.saturating_sub(start_offset) / slot_size;
+    let stored_slots = storage.len::<u8>(hw_counter)?.saturating_sub(start_offset) / slot_size;
     let length = (point_offsets.len() as u64).min(stored_slots);
 
     let mut pointers = Vec::with_capacity(point_offsets.len());
@@ -205,7 +212,7 @@ fn read_slots<P: AccessPattern, S: UniversalRead>(
             byte_offset: start_offset,
             length,
         };
-        let slots = storage.read::<_, OptionalPointer>(range, P::default())?;
+        let slots = storage.read::<_, OptionalPointer>(range, P::default(), hw_counter)?;
         pointers.extend(slots.iter().copied().map(decode_slot));
     }
     pointers.resize(point_offsets.len(), None);
@@ -407,13 +414,19 @@ impl<S> Tracker<S> {
 
 // Read operations -- only require UniversalRead
 impl<S: UniversalRead> Tracker<S> {
-    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, tracker_path: &Path, populate: Populate) {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        tracker_path: &Path,
+        populate: Populate,
+        hw_counter: &HardwareCounterCell,
+    ) {
         // Default a lazy open to partially populating the header.
         let populate = populate.or_partial(0..size_of::<TrackerHeader>() as u64);
         fs.schedule_open(
             tracker_path,
             Some(tracker_open_options(populate, false)),
             None,
+            hw_counter,
         );
     }
 
@@ -424,12 +437,13 @@ impl<S: UniversalRead> Tracker<S> {
         dir: &Path,
         populate: Populate,
         writeable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
 
-        let storage = Self::open_storage(fs, &path, populate, writeable)?;
+        let storage = Self::open_storage(fs, &path, populate, writeable, hw_counter)?;
 
-        let header: TrackerHeader = Self::read_header(&storage)?;
+        let header: TrackerHeader = Self::read_header(&storage, hw_counter)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
@@ -441,8 +455,8 @@ impl<S: UniversalRead> Tracker<S> {
         })
     }
 
-    fn read_header(storage: &S) -> Result<TrackerHeader> {
-        let header = storage.read(ReadRange::one(0), Random)?[0];
+    fn read_header(storage: &S, hw_counter: &HardwareCounterCell) -> Result<TrackerHeader> {
+        let header = storage.read(ReadRange::one(0), Random, hw_counter)?[0];
         Ok(header)
     }
 
@@ -451,11 +465,13 @@ impl<S: UniversalRead> Tracker<S> {
         path: &Path,
         populate: Populate,
         writeable: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<S> {
         let storage = match fs.open(
             path,
             tracker_open_options(populate, writeable),
             Default::default(),
+            hw_counter,
         ) {
             Err(UniversalIoError::NotFound { .. }) => {
                 // If config exists and storage doesn't,
@@ -471,46 +487,59 @@ impl<S: UniversalRead> Tracker<S> {
     }
 
     /// Get the raw value at the given point offset
-    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        read_slot::<Random, _>(&self.storage, point_offset)
+    fn get_raw(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
+        read_slot::<Random, _>(&self.storage, point_offset, hw_counter)
     }
 
-    pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
-        Ok(self.get::<Random>(point_offset)?.is_some())
+    pub fn has_pointer(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<bool> {
+        Ok(self.get::<Random>(point_offset, hw_counter)?.is_some())
     }
 
-    pub fn populate(&self) -> Result<()> {
-        self.storage.populate().map_err(Into::into)
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> Result<()> {
+        self.storage.populate(hw_counter).map_err(Into::into)
     }
 }
 
 impl<S: UniversalRead> TrackerRead for Tracker<S> {
     /// Exact for the writable tracker: maintained in memory alongside the
     /// header (see [`Tracker::pointer_count`]).
-    fn max_point_offset(&self) -> Result<PointOffset> {
+    fn max_point_offset(&self, _hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
         Ok(self.next_pointer_offset)
     }
 
-    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+    fn get<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
         match self.pending_updates.get(&point_offset) {
             // Pending update exists but is empty, should not happen, fall back to real data
             Some(pending) if pending.is_empty() => {
                 debug_assert!(false, "pending updates must not be empty");
-                read_slot::<P, _>(&self.storage, point_offset)
+                read_slot::<P, _>(&self.storage, point_offset, hw_counter)
             }
             // Use set from pending updates
             Some(pending) => Ok(pending.current),
             // No pending update, use real data
-            None => read_slot::<P, _>(&self.storage, point_offset),
+            None => read_slot::<P, _>(&self.storage, point_offset, hw_counter),
         }
     }
 
     fn get_range<P: AccessPattern>(
         &self,
         point_offsets: Range<PointOffset>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Option<ValuePointer>>> {
         let start = point_offsets.start;
-        let mut pointers = read_slots::<P, _>(&self.storage, point_offsets)?;
+        let mut pointers = read_slots::<P, _>(&self.storage, point_offsets, hw_counter)?;
 
         // Pending updates take precedence over the persisted slots, see `get`
         for (index, pointer) in pointers.iter_mut().enumerate() {
@@ -523,12 +552,21 @@ impl<S: UniversalRead> TrackerRead for Tracker<S> {
         Ok(pointers)
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    fn iter<'a, U, I>(
+        &'a self,
+        point_offsets: I,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
     {
-        Iter::new(point_offsets, &self.storage, &self.pending_updates)
+        Iter::new(
+            point_offsets,
+            &self.storage,
+            &self.pending_updates,
+            hw_counter,
+        )
     }
 }
 
@@ -545,6 +583,7 @@ where
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         size_hint: Option<usize>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
         let path = Self::tracker_file_name(dir);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
@@ -557,6 +596,7 @@ where
             &path,
             tracker_open_options(Populate::No, true),
             Default::default(),
+            hw_counter,
         )?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
@@ -588,7 +628,7 @@ where
     /// have torn during a flush. The file is then durably persisted and the journal removed.
     ///
     /// Must be called when opening, before anything else writes.
-    pub fn replay_journal(&mut self) -> Result<()> {
+    pub fn replay_journal(&mut self, hw_counter: &HardwareCounterCell) -> Result<()> {
         let Some(journal) = self.journal.clone() else {
             return Ok(());
         };
@@ -599,9 +639,9 @@ where
         for Record { point_offset, slot } in records {
             // Only write slots that differ, replaying the journal left behind by a clean
             // shutdown doesn't rewrite the file
-            let current = read_raw_slot::<Random, _>(&self.storage, point_offset)?;
+            let current = read_raw_slot::<Random, _>(&self.storage, point_offset, hw_counter)?;
             if current.unwrap_or_else(OptionalPointer::none) != slot {
-                self.persist_pointer(point_offset, slot.to_option())?;
+                self.persist_pointer(point_offset, slot.to_option(), hw_counter)?;
             }
             self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
         }
@@ -624,6 +664,7 @@ where
     pub fn write_pending(
         &mut self,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<ValuePointer>> {
         let mut old_pointers = Vec::new();
 
@@ -632,14 +673,14 @@ where
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
-                    if let Some(old_pointer) = self.get_raw(point_offset)? {
+                    if let Some(old_pointer) = self.get_raw(point_offset, hw_counter)? {
                         old_pointers.push(old_pointer);
                     }
 
-                    self.persist_pointer(point_offset, Some(new_pointer))?;
+                    self.persist_pointer(point_offset, Some(new_pointer), hw_counter)?;
                 }
                 // Write to empty the pointer
-                None => self.persist_pointer(point_offset, None)?,
+                None => self.persist_pointer(point_offset, None, hw_counter)?,
             }
 
             // Mark all old pointers for removal to free its blocks
@@ -683,8 +724,9 @@ where
         &mut self,
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
-        let storage_len = self.storage.len::<u8>()? as usize;
+        let storage_len = self.storage.len::<u8>(hw_counter)? as usize;
         if pointer.is_none() && point_offset as usize >= storage_len {
             return Ok(());
         }
@@ -698,7 +740,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage.live_reload()?;
+            self.storage.live_reload(hw_counter)?;
         }
 
         let pointer = OptionalPointer::from(pointer);
@@ -721,8 +763,12 @@ where
     }
 
     /// Unset the value at the given point offset and return its previous value
-    pub fn unset(&mut self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        let pointer_opt = self.get::<Random>(point_offset)?;
+    pub fn unset(
+        &mut self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<ValuePointer>> {
+        let pointer_opt = self.get::<Random>(point_offset, hw_counter)?;
 
         if let Some(pointer) = pointer_opt {
             self.pending_updates

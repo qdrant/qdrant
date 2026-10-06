@@ -51,17 +51,21 @@ impl<TStorage: TurboMultiScoring> QueryScorer for TurboMultiQueryScorer<'_, TSto
         let hw_counter = &self.hardware_counter;
 
         self.storage
-            .for_each_record_range::<Random, _>(keys, |idx, _id, records| {
-                hw_counter.vector_io_read().incr_delta(records.len());
+            .for_each_record_range::<Random, _>(
+                keys,
+                |idx, _id, records| {
+                    hw_counter.vector_io_read().incr_delta(records.len());
 
-                hw_counter
-                    .cpu_counter()
-                    .incr_delta(records.len() * self.query.len());
+                    hw_counter
+                        .cpu_counter()
+                        .incr_delta(records.len() * self.query.len());
 
-                scores[idx] = self
-                    .storage
-                    .score_records_max_similarity(&self.query, records);
-            })
+                    scores[idx] = self
+                        .storage
+                        .score_records_max_similarity(&self.query, records);
+                },
+                hw_counter,
+            )
             .expect("Failed to score stored batch");
     }
 

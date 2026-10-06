@@ -41,7 +41,11 @@ pub struct InvertedIndexRam {
 }
 
 impl<S: UniversalWrite> InvertedIndexReadWrite<S> for InvertedIndexRam {
-    fn open_rw_impl(_fs: &<S as UniversalRead>::Fs, _path: &Path) -> UioResult<Self> {
+    fn open_rw_impl(
+        _fs: &<S as UniversalRead>::Fs,
+        _path: &Path,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Self> {
         panic!("InvertedIndexRam is never persisted, so can't to be loaded");
     }
 

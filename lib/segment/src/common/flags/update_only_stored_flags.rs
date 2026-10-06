@@ -37,8 +37,12 @@ impl UpdateOnlyStoredFlags {
     /// marker that they exist at all.
     ///
     /// Errors when the directory holds flags of the dynamic mode.
-    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, directory: &Path) -> OperationResult<Self> {
-        if FlagsMode::detect(fs, directory)? == Some(FlagsMode::Dynamic) {
+    pub fn open<Fs: UniversalWriteFs>(
+        fs: &Fs,
+        directory: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
+        if FlagsMode::detect(fs, directory, hw_counter)? == Some(FlagsMode::Dynamic) {
             return Err(OperationError::service_error(format!(
                 "flags in {} are in the dynamic mode, which the update-only writer does not \
                  support; rebuild the segment to migrate its flags",
@@ -46,7 +50,7 @@ impl UpdateOnlyStoredFlags {
             )));
         }
 
-        let mask = open_or_create_compact_mask(fs, directory, Populate::Blocking)?;
+        let mask = open_or_create_compact_mask(fs, directory, Populate::Blocking, hw_counter)?;
 
         Ok(Self {
             path: directory.join(COMPACT_FLAGS_FILE),
@@ -72,7 +76,7 @@ impl UpdateOnlyStoredFlags {
         fs: &Fs,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let bytes_written = self.mask.save(fs, &self.path)?;
+        let bytes_written = self.mask.save(fs, &self.path, hw_counter)?;
         hw_counter
             .payload_index_io_write_counter()
             .incr_delta(bytes_written);
@@ -101,7 +105,7 @@ mod tests_mod {
     use crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags;
 
     fn open(dir: &std::path::Path) -> UpdateOnlyStoredFlags {
-        UpdateOnlyStoredFlags::open(&Fs::default(), dir).unwrap()
+        UpdateOnlyStoredFlags::open(&Fs::default(), dir, &HardwareCounterCell::new()).unwrap()
     }
 
     fn flush(flags: &mut UpdateOnlyStoredFlags) {
@@ -113,7 +117,13 @@ mod tests_mod {
     /// Reader for what the writer left behind, through the type the writable
     /// segment side uses on the same directory.
     fn read_back(dir: &std::path::Path) -> CompactStoredFlags<S> {
-        CompactStoredFlags::open(Fs::default(), dir, Populate::Blocking).unwrap()
+        CompactStoredFlags::open(
+            Fs::default(),
+            dir,
+            Populate::Blocking,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -124,7 +134,7 @@ mod tests_mod {
         let _flags = open(dir.path());
         assert!(dir.path().join(COMPACT_FLAGS_FILE).exists());
         assert_eq!(
-            FlagsMode::detect(&Fs::default(), dir.path()).unwrap(),
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
             Some(FlagsMode::Compact),
         );
     }
@@ -200,10 +210,15 @@ mod tests_mod {
         // leave the directory in the compact mode.
         let dir = TempDir::new().unwrap();
         {
-            let writable: CompactStoredFlags<S> =
-                CompactStoredFlags::open(Fs::default(), dir.path(), Populate::Blocking).unwrap();
+            let writable: CompactStoredFlags<S> = CompactStoredFlags::open(
+                Fs::default(),
+                dir.path(),
+                Populate::Blocking,
+                &HardwareCounterCell::new(),
+            )
+            .unwrap();
             writable.set(2, true);
-            writable.flusher()().unwrap();
+            writable.flusher(&HardwareCounterCell::new())().unwrap();
         }
         {
             let mut flags = open(dir.path());
@@ -211,7 +226,7 @@ mod tests_mod {
             flush(&mut flags);
         }
         assert_eq!(
-            FlagsMode::detect(&Fs::default(), dir.path()).unwrap(),
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
             Some(FlagsMode::Compact),
         );
         let reader = read_back(dir.path());
@@ -223,9 +238,16 @@ mod tests_mod {
     #[test]
     fn refuses_dynamic_directory() {
         let dir = TempDir::new().unwrap();
-        DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
+        DynamicStoredFlags::<S>::open(
+            &Fs::default(),
+            dir.path(),
+            Populate::No,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap();
 
-        let result = UpdateOnlyStoredFlags::open(&Fs::default(), dir.path());
+        let result =
+            UpdateOnlyStoredFlags::open(&Fs::default(), dir.path(), &HardwareCounterCell::new());
         let message = result
             .err()
             .expect("dynamic flags must be refused")
@@ -237,7 +259,7 @@ mod tests_mod {
 
         // The refused directory is left untouched: still cleanly dynamic.
         assert_eq!(
-            FlagsMode::detect(&Fs::default(), dir.path()).unwrap(),
+            FlagsMode::detect(&Fs::default(), dir.path(), &HardwareCounterCell::new()).unwrap(),
             Some(FlagsMode::Dynamic),
         );
     }

@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::{EncodedVectorsPQ, encoded_vectors_pq};
 
 use super::super::{QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType};
@@ -26,6 +27,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
             return Err(OperationError::service_error(
@@ -54,6 +56,7 @@ impl QuantizedVectors {
                 max_threads,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?))
         } else {
             let storage_builder = QuantizedStorageBuilder::new(
@@ -70,6 +73,7 @@ impl QuantizedVectors {
                 max_threads,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?))
         }
     }
@@ -88,6 +92,7 @@ impl QuantizedVectors {
         on_disk_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
             return Err(OperationError::service_error(
@@ -117,6 +122,7 @@ impl QuantizedVectors {
                 max_threads,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?;
             let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
             Ok(QuantizedVectorStorage::PQRamMulti(
@@ -142,9 +148,14 @@ impl QuantizedVectors {
                 max_threads,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?;
-            let offsets =
-                MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
+            let offsets = MultivectorOffsetsStorageMmap::create(
+                &offsets_path,
+                offsets,
+                vectors_count,
+                hw_counter,
+            )?;
             Ok(QuantizedVectorStorage::PQMmapMulti(
                 QuantizedMultivectorStorage::new(
                     vector_parameters.dim,

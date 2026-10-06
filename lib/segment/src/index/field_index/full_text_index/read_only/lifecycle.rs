@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
@@ -19,8 +20,9 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn preopen_appendable(
         fs: &impl CachedReadFs<File = S>,
         dir: PathBuf,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        ReadOnlyAppendableFullTextIndex::preopen(fs, dir)
+        ReadOnlyAppendableFullTextIndex::preopen(fs, dir, hw_counter)
     }
 
     /// Read-only mirror of [`FullTextIndex::new_gridstore`][1]: open the
@@ -38,9 +40,13 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         config: TextIndexParams,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config, scoring)?.map(Self::Appendable))
+        Ok(
+            ReadOnlyAppendableFullTextIndex::open(fs, dir, config, scoring, hw_counter)?
+                .map(Self::Appendable),
+        )
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
@@ -50,6 +56,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         is_on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -59,7 +66,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             false => Populate::PreferBackground,
         };
 
-        OnDiskFullTextIndex::preopen(fs, path, populate)
+        OnDiskFullTextIndex::preopen(fs, path, populate, hw_counter)
     }
 
     /// Read-only mirror of [`FullTextIndex::new_mmap`][1]: open the immutable
@@ -80,6 +87,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         config: TextIndexParams,
         is_on_disk: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let effective_is_on_disk =
             is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
@@ -92,7 +100,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         // `None` drops the field until the writer has, which is already what
         // happens for any other missing file. Opening it instead would answer
         // `None` per point here and real lengths on the writer.
-        if scoring && !has_doc_len_sidecar(fs, &path)? {
+        if scoring && !has_doc_len_sidecar(fs, &path, hw_counter)? {
             log::info!(
                 "Text index at {path} records no document lengths, not opened read-only",
                 path = path.display(),
@@ -101,7 +109,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         }
 
         let Some(on_disk_index) =
-            OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
+            OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points, hw_counter)?
         else {
             return Ok(None);
         };
@@ -116,7 +124,10 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         let index = if effective_is_on_disk {
             Self::OnDisk(on_disk_index)
         } else {
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(
+                on_disk_index,
+                hw_counter,
+            )?)
         };
 
         Ok(Some(index))

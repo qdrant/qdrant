@@ -82,7 +82,7 @@ where
         let (optimized_filter, _) = self.optimize_filter(
             filter,
             payload_provider,
-            self.available_point_count(),
+            self.available_point_count(hw_counter),
             deferred_behavior,
             hw_counter,
         )?;
@@ -105,14 +105,14 @@ where
                 self.estimate_nested_cardinality(nested.filter(), &full_path, hw_counter)?
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                let available_points = self.available_point_count();
+                let available_points = self.available_point_count(hw_counter);
                 let condition = FieldCondition::new_is_empty(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)?
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
-                let available_points = self.available_point_count();
+                let available_points = self.available_point_count(hw_counter);
                 let condition = FieldCondition::new_is_null(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)?
@@ -125,6 +125,7 @@ where
                     point_ids.iter().copied(),
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
+                    hw_counter,
                 )?;
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
@@ -140,7 +141,7 @@ where
             Condition::HasVector(has_vectors) => {
                 if let Some(vector_storage) = self.vector_storages.get(&has_vectors.has_vector) {
                     let vector_storage = vector_storage.borrow();
-                    let vectors = vector_storage.available_vector_count();
+                    let vectors = vector_storage.available_vector_count(hw_counter);
                     CardinalityEstimation::exact(vectors).with_primary_clause(
                         PrimaryCondition::HasVector(has_vectors.has_vector.clone()),
                     )
@@ -150,10 +151,12 @@ where
             }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path, hw_counter)?
-                .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
+                .unwrap_or_else(|| {
+                    CardinalityEstimation::unknown(self.available_point_count(hw_counter))
+                }),
 
             Condition::Slice(slice_condition) => {
-                let available_points = self.available_point_count();
+                let available_points = self.available_point_count(hw_counter);
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: 0,
@@ -162,9 +165,9 @@ where
                 }
             }
 
-            Condition::CustomIdChecker(cond) => {
-                cond.0.estimate_cardinality(self.available_point_count())
-            }
+            Condition::CustomIdChecker(cond) => cond
+                .0
+                .estimate_cardinality(self.available_point_count(hw_counter)),
         })
     }
 }

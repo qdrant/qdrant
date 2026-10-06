@@ -29,7 +29,7 @@ fn sparse_vectors_round_trip() {
     let first = sparse(&[1, 5], &[1.0, 2.0]);
     let second = sparse(&[3], &[3.0]);
 
-    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), &hw_counter).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -44,7 +44,7 @@ fn sparse_vectors_round_trip() {
         .unwrap();
     drop(writer);
 
-    let storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+    let storage = MmapSparseVectorStorage::open_or_create(dir.path(), &hw_counter).unwrap();
     assert_eq!(storage.get_sparse::<Random>(0).unwrap(), first);
     assert_eq!(storage.get_sparse::<Random>(2).unwrap(), second);
     assert!(storage.is_deleted_vector(1));
@@ -61,7 +61,7 @@ fn batches_resume() {
     let first = sparse(&[1], &[1.0]);
     let second = sparse(&[2], &[2.0]);
 
-    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), &hw_counter).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -72,7 +72,7 @@ fn batches_resume() {
         .unwrap();
     drop(writer);
 
-    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    let mut writer = Writer::open(&MmapFs, dir.path(), &hw_counter).unwrap();
     writer
         .append_many(
             &MmapFs,
@@ -83,7 +83,7 @@ fn batches_resume() {
         .unwrap();
     drop(writer);
 
-    let storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
+    let storage = MmapSparseVectorStorage::open_or_create(dir.path(), &hw_counter).unwrap();
     assert_eq!(storage.get_sparse::<Random>(0).unwrap(), first);
     assert_eq!(storage.get_sparse::<Random>(1).unwrap(), second);
 }

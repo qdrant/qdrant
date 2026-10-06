@@ -60,8 +60,9 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 pub(in super::super) fn has_doc_len_sidecar(
     fs: &impl UniversalReadFs,
     path: &Path,
+    hw_counter: &HardwareCounterCell,
 ) -> UioResult<bool> {
-    fs.exists(&path.join(POINT_TO_DOC_LEN_FILE))
+    fs.exists(&path.join(POINT_TO_DOC_LEN_FILE), hw_counter)
 }
 
 /// Mmap-backed immutable full-text inverted index.
@@ -120,7 +121,11 @@ impl<S: UniversalRead> Storage<S> {
 }
 
 impl OnDiskInvertedIndex<MmapFile> {
-    pub fn create(path: PathBuf, inverted_index: &ImmutableInvertedIndex) -> OperationResult<()> {
+    pub fn create(
+        path: PathBuf,
+        inverted_index: &ImmutableInvertedIndex,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
             vocab,
@@ -162,6 +167,7 @@ impl OnDiskInvertedIndex<MmapFile> {
                 .enumerate()
                 .filter(|(_, count)| **count == 0)
                 .map(|(idx, _)| idx as PointOffsetType),
+            hw_counter,
         )?;
 
         // The actual values go in the slice
@@ -205,10 +211,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Postings.
         let postings_path = path.join(POSTINGS_FILE);
-        if !fs.exists(&postings_path)? {
+        if !fs.exists(&postings_path, hw_counter)? {
             return Ok(false);
         }
         fs.schedule_open(
@@ -218,6 +225,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 AdviceSetting::Advice(Advice::Normal),
             )),
             None,
+            hw_counter,
         );
 
         // Vocabulary
@@ -225,6 +233,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             fs,
             &path.join(VOCAB_FILE),
             Self::open_options(populate, AdviceSetting::Global),
+            hw_counter,
         );
 
         // Point to tokens count
@@ -232,6 +241,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             &path.join(POINT_TO_TOKENS_COUNT_FILE),
             Some(Self::open_options(populate, AdviceSetting::Global)),
             None,
+            hw_counter,
         );
 
         // Scheduled unconditionally: the scheduler records a missing path as a
@@ -240,6 +250,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             &path.join(POINT_TO_DOC_LEN_FILE),
             Some(Self::open_options(populate, AdviceSetting::Global)),
             None,
+            hw_counter,
         );
 
         // "No tokens" mask
@@ -248,6 +259,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             path,
             DELETED_POINTS_FILE,
             Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
+            hw_counter,
         );
 
         Ok(true)
@@ -259,6 +271,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         populate: Populate,
         has_positions: bool,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
@@ -274,6 +287,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 &postings_path,
                 postings_open_options,
                 Default::default(),
+                hw_counter,
             )?
             .map(OnDiskPostingsEnum::Ids),
             true => OnDiskPostings::<Positions, S>::open(
@@ -281,6 +295,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 &postings_path,
                 postings_open_options,
                 Default::default(),
+                hw_counter,
             )?
             .map(OnDiskPostingsEnum::WithPositions),
         }) else {
@@ -292,12 +307,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             &vocab_path,
             Self::open_options(populate, AdviceSetting::Global),
             Default::default(),
+            hw_counter,
         )?;
 
         let point_to_tokens_count = TypedStorage::<S, usize>::new(fs.open(
             &point_to_tokens_count_path,
             Self::open_options(populate, AdviceSetting::Global),
             Default::default(),
+            hw_counter,
         )?);
 
         // Absent unless this index records lengths. What that means is the
@@ -307,6 +324,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 &point_to_doc_len_path,
                 Self::open_options(populate, AdviceSetting::Global),
                 Default::default(),
+                hw_counter,
             )
             .ok_not_found()?
             .map(TypedStorage::<S, u32>::new);
@@ -317,7 +335,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // live (the id-tracker is the source of truth for deletions, and a
         // shorter mask just means it doesn't yet know about those higher
         // offsets).
-        let total_count = point_to_tokens_count.len()? as usize;
+        let total_count = point_to_tokens_count.len(hw_counter)? as usize;
 
         // A sidecar that does not cover exactly the index's points can only
         // come from a partially copied or stale file set, and is not trusted to
@@ -327,7 +345,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // `SortedBlockIndex::open` treats a stale block index.
         let point_to_doc_len = match point_to_doc_len {
             Some(storage) => {
-                let sidecar_count = storage.len()? as usize;
+                let sidecar_count = storage.len(hw_counter)? as usize;
                 if sidecar_count == total_count {
                     Some(storage)
                 } else {
@@ -350,6 +368,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             DELETED_POINTS_FILE,
             Self::open_options(populate, AdviceSetting::Global),
             &mut deleted,
+            hw_counter,
         )?;
 
         let deleted = DeletedBitVec::new(deleted);
@@ -371,10 +390,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     pub(super) fn for_each_vocab(
         &self,
         mut f: impl FnMut(&str, TokenId) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage
             .vocab
-            .for_each_entry(|k, v| f(k, unwrap_token(v)))
+            .for_each_entry(|k, v| f(k, unwrap_token(v)), hw_counter)
     }
 
     /// Whether this index has document lengths on disk.
@@ -392,7 +412,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     /// Pre-collected upfront because [`UniversalPostings`] exposes posting
     /// views via a `FnOnce` callback. Acceptable since this index lives
     /// on disk.
-    pub fn filter_has_all(&self, tokens: TokenSet) -> OperationResult<Vec<PointOffsetType>> {
+    pub fn filter_has_all(
+        &self,
+        tokens: TokenSet,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         // in case of mmap immutable index, deleted points are still in the postings
         let filter = move |idx| self.is_active(idx);
 
@@ -400,28 +424,39 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
             filter: impl Fn(PointOffsetType) -> bool,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<Vec<PointOffsetType>> {
-            postings.with_all_or_none_postings(tokens.tokens(), |posting_readers| {
-                // Empty query, or a missing token -> no matches
-                let Some(posting_readers) = posting_readers.filter(|r| !r.is_empty()) else {
-                    return Ok(Vec::new());
-                };
-                let posting_readers = posting_readers
-                    .into_iter()
-                    .map(|(_token_id, posting_list_view)| posting_list_view)
-                    .collect();
-                Ok(intersect_compressed_postings_iterator(posting_readers, filter).collect())
-            })
+            postings.with_all_or_none_postings(
+                tokens.tokens(),
+                |posting_readers| {
+                    // Empty query, or a missing token -> no matches
+                    let Some(posting_readers) = posting_readers.filter(|r| !r.is_empty()) else {
+                        return Ok(Vec::new());
+                    };
+                    let posting_readers = posting_readers
+                        .into_iter()
+                        .map(|(_token_id, posting_list_view)| posting_list_view)
+                        .collect();
+                    Ok(intersect_compressed_postings_iterator(posting_readers, filter).collect())
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => intersection(postings, tokens, filter),
-            OnDiskPostingsEnum::WithPositions(postings) => intersection(postings, tokens, filter),
+            OnDiskPostingsEnum::Ids(postings) => intersection(postings, tokens, filter, hw_counter),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                intersection(postings, tokens, filter, hw_counter)
+            }
         }
     }
 
     /// Iterate over point ids whose documents contain at least one of the given tokens
-    fn filter_has_any(&self, tokens: TokenSet) -> OperationResult<Vec<PointOffsetType>> {
+    fn filter_has_any(
+        &self,
+        tokens: TokenSet,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         // in case of immutable index, deleted documents are still in the postings
         let is_active = move |idx| self.is_active(idx);
 
@@ -429,22 +464,29 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
             is_active: impl Fn(PointOffsetType) -> bool,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<Vec<PointOffsetType>> {
-            postings.with_existing_postings(tokens.tokens(), |posting_readers| {
-                if posting_readers.is_empty() {
-                    return Ok(Vec::new());
-                }
-                let posting_readers = posting_readers
-                    .into_iter()
-                    .map(|(_token_id, posting_list_view)| posting_list_view)
-                    .collect();
-                Ok(merge_compressed_postings_iterator(posting_readers, is_active).collect())
-            })
+            postings.with_existing_postings(
+                tokens.tokens(),
+                |posting_readers| {
+                    if posting_readers.is_empty() {
+                        return Ok(Vec::new());
+                    }
+                    let posting_readers = posting_readers
+                        .into_iter()
+                        .map(|(_token_id, posting_list_view)| posting_list_view)
+                        .collect();
+                    Ok(merge_compressed_postings_iterator(posting_readers, is_active).collect())
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => merge(postings, tokens, is_active),
-            OnDiskPostingsEnum::WithPositions(postings) => merge(postings, tokens, is_active),
+            OnDiskPostingsEnum::Ids(postings) => merge(postings, tokens, is_active, hw_counter),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                merge(postings, tokens, is_active, hw_counter)
+            }
         }
     }
 
@@ -452,6 +494,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         &self,
         tokens: &TokenSet,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // check non-empty query
         if tokens.is_empty() {
@@ -459,7 +502,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         }
 
         // check presence of the document
-        if self.values_is_empty(point_id) {
+        if self.values_is_empty(point_id, hw_counter) {
             return Ok(false);
         }
 
@@ -467,32 +510,44 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings: &OnDiskPostings<V, S>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<bool> {
-            postings.with_all_or_none_postings(tokens.tokens(), |all_postings| {
-                // Some token has no posting list -> no match
-                Ok(all_postings.is_some_and(|all_postings| {
-                    all_postings
-                        .into_iter()
-                        .all(|(_token_id, posting)| posting.visitor().contains(point_id))
-                }))
-            })
+            postings.with_all_or_none_postings(
+                tokens.tokens(),
+                |all_postings| {
+                    // Some token has no posting list -> no match
+                    Ok(all_postings.is_some_and(|all_postings| {
+                        all_postings
+                            .into_iter()
+                            .all(|(_token_id, posting)| posting.visitor().contains(point_id))
+                    }))
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => check_intersection(postings, tokens, point_id),
+            OnDiskPostingsEnum::Ids(postings) => {
+                check_intersection(postings, tokens, point_id, hw_counter)
+            }
             OnDiskPostingsEnum::WithPositions(postings) => {
-                check_intersection(postings, tokens, point_id)
+                check_intersection(postings, tokens, point_id, hw_counter)
             }
         }
     }
 
-    fn check_has_any(&self, tokens: &TokenSet, point_id: PointOffsetType) -> OperationResult<bool> {
+    fn check_has_any(
+        &self,
+        tokens: &TokenSet,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         if tokens.is_empty() {
             return Ok(false);
         }
 
         // check presence of the document
-        if self.values_is_empty(point_id) {
+        if self.values_is_empty(point_id, hw_counter) {
             return Ok(false);
         }
 
@@ -500,22 +555,33 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings: &OnDiskPostings<V, S>,
             tokens: &TokenSet,
             point_id: PointOffsetType,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<bool> {
-            postings.with_existing_postings(tokens.tokens(), |all_postings| {
-                Ok(all_postings
-                    .into_iter()
-                    .any(|(_token_id, posting)| posting.visitor().contains(point_id)))
-            })
+            postings.with_existing_postings(
+                tokens.tokens(),
+                |all_postings| {
+                    Ok(all_postings
+                        .into_iter()
+                        .any(|(_token_id, posting)| posting.visitor().contains(point_id)))
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => check_any(postings, tokens, point_id),
-            OnDiskPostingsEnum::WithPositions(postings) => check_any(postings, tokens, point_id),
+            OnDiskPostingsEnum::Ids(postings) => check_any(postings, tokens, point_id, hw_counter),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                check_any(postings, tokens, point_id, hw_counter)
+            }
         }
     }
 
     /// Iterate over point ids whose documents contain all given tokens in the same order they are provided
-    pub fn filter_has_phrase(&self, phrase: Document) -> OperationResult<Vec<PointOffsetType>> {
+    pub fn filter_has_phrase(
+        &self,
+        phrase: Document,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         // in case of mmap immutable index, deleted points are still in the postings
         let is_active = move |idx| self.is_active(idx);
 
@@ -525,18 +591,22 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 // not fetch the same posting list twice, otherwise positions get
                 // added twice in `phrase_in_all_postings`.
                 let unique_tokens = phrase.to_token_set();
-                postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
-                    // Some token has no posting list -> no matches
-                    let Some(selected_postings) = selected_postings else {
-                        return Ok(Vec::new());
-                    };
-                    Ok(intersect_compressed_postings_phrase_iterator(
-                        phrase,
-                        selected_postings,
-                        is_active,
-                    )
-                    .collect())
-                })
+                postings.with_all_or_none_postings(
+                    unique_tokens.tokens(),
+                    |selected_postings| {
+                        // Some token has no posting list -> no matches
+                        let Some(selected_postings) = selected_postings else {
+                            return Ok(Vec::new());
+                        };
+                        Ok(intersect_compressed_postings_phrase_iterator(
+                            phrase,
+                            selected_postings,
+                            is_active,
+                        )
+                        .collect())
+                    },
+                    hw_counter,
+                )
             }
             // cannot do phrase matching if there's no positional information
             OnDiskPostingsEnum::Ids(_postings) => Ok(Vec::new()),
@@ -547,6 +617,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         &self,
         phrase: &Document,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // in case of mmap immutable index, deleted points are still in the postings
         if !self.is_active(point_id) {
@@ -556,12 +627,16 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         match &self.storage.postings {
             OnDiskPostingsEnum::WithPositions(postings) => {
                 let unique_tokens = phrase.to_token_set();
-                postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
-                    // Some token has no posting list -> no match
-                    Ok(selected_postings.is_some_and(|selected_postings| {
-                        check_compressed_postings_phrase(phrase, point_id, selected_postings)
-                    }))
-                })
+                postings.with_all_or_none_postings(
+                    unique_tokens.tokens(),
+                    |selected_postings| {
+                        // Some token has no posting list -> no match
+                        Ok(selected_postings.is_some_and(|selected_postings| {
+                            check_compressed_postings_phrase(phrase, point_id, selected_postings)
+                        }))
+                    },
+                    hw_counter,
+                )
             }
             // cannot do phrase matching if there's no positional information
             OnDiskPostingsEnum::Ids(_postings) => Ok(false),
@@ -574,11 +649,18 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         query: &ParsedQuery,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match query {
-            ParsedQuery::AllTokens(tokens) => self.check_has_subset_batch(tokens, items, on_match),
-            ParsedQuery::AnyTokens(tokens) => self.check_has_any_batch(tokens, items, on_match),
-            ParsedQuery::Phrase(phrase) => self.check_has_phrase_batch(phrase, items, on_match),
+            ParsedQuery::AllTokens(tokens) => {
+                self.check_has_subset_batch(tokens, items, on_match, hw_counter)
+            }
+            ParsedQuery::AnyTokens(tokens) => {
+                self.check_has_any_batch(tokens, items, on_match, hw_counter)
+            }
+            ParsedQuery::Phrase(phrase) => {
+                self.check_has_phrase_batch(phrase, items, on_match, hw_counter)
+            }
         }
     }
 
@@ -587,6 +669,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         tokens: &TokenSet,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         mut on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // An empty query matches nothing. Guard it here: the `all()` below would
         // otherwise be vacuously true.
@@ -603,6 +686,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             tokens: &TokenSet,
             items: I,
             on_match: &mut M,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<()>
         where
             V: ZerocopyPostingValue,
@@ -613,28 +697,34 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         {
             // `None` (some token has no posting list) means nothing matches, so
             // every item reports `false`.
-            postings.with_all_or_none_postings(tokens.tokens(), |maybe_postings| {
-                let mut visitors = maybe_postings.map(|postings| {
-                    postings
-                        .into_iter()
-                        .map(|(_, posting)| posting.visitor())
-                        .collect::<Vec<_>>()
-                });
-                for (tag, point_id) in items {
-                    let matched = visitors.as_mut().is_some_and(|visitors| {
-                        index.is_active(point_id)
-                            && visitors.iter_mut().all(|v| v.contains(point_id))
+            postings.with_all_or_none_postings(
+                tokens.tokens(),
+                |maybe_postings| {
+                    let mut visitors = maybe_postings.map(|postings| {
+                        postings
+                            .into_iter()
+                            .map(|(_, posting)| posting.visitor())
+                            .collect::<Vec<_>>()
                     });
-                    on_match(tag, matched);
-                }
-                Ok(())
-            })
+                    for (tag, point_id) in items {
+                        let matched = visitors.as_mut().is_some_and(|visitors| {
+                            index.is_active(point_id)
+                                && visitors.iter_mut().all(|v| v.contains(point_id))
+                        });
+                        on_match(tag, matched);
+                    }
+                    Ok(())
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => run(self, postings, tokens, items, &mut on_match),
+            OnDiskPostingsEnum::Ids(postings) => {
+                run(self, postings, tokens, items, &mut on_match, hw_counter)
+            }
             OnDiskPostingsEnum::WithPositions(postings) => {
-                run(self, postings, tokens, items, &mut on_match)
+                run(self, postings, tokens, items, &mut on_match, hw_counter)
             }
         }
     }
@@ -644,6 +734,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         tokens: &TokenSet,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         mut on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if tokens.is_empty() {
             // No tokens means nothing matches; report every item as a non-match.
@@ -659,6 +750,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             tokens: &TokenSet,
             items: I,
             on_match: &mut M,
+            hw_counter: &HardwareCounterCell,
         ) -> OperationResult<()>
         where
             V: ZerocopyPostingValue,
@@ -667,26 +759,30 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             I: Iterator<Item = (U, PointOffsetType)>,
             M: FnMut(U, bool),
         {
-            postings.with_existing_postings(tokens.tokens(), |all_postings| {
-                let mut visitors: Vec<_> = all_postings
-                    .into_iter()
-                    .map(|(_, posting)| posting.visitor())
-                    .collect();
-                for (tag, point_id) in items {
-                    let matched = index.is_active(point_id)
-                        && visitors.iter_mut().any(|v| v.contains(point_id));
-                    on_match(tag, matched);
-                }
-                Ok(())
-            })
+            postings.with_existing_postings(
+                tokens.tokens(),
+                |all_postings| {
+                    let mut visitors: Vec<_> = all_postings
+                        .into_iter()
+                        .map(|(_, posting)| posting.visitor())
+                        .collect();
+                    for (tag, point_id) in items {
+                        let matched = index.is_active(point_id)
+                            && visitors.iter_mut().any(|v| v.contains(point_id));
+                        on_match(tag, matched);
+                    }
+                    Ok(())
+                },
+                hw_counter,
+            )
         }
 
         match &self.storage.postings {
             OnDiskPostingsEnum::Ids(postings) => {
-                check_any(self, postings, tokens, items, &mut on_match)
+                check_any(self, postings, tokens, items, &mut on_match, hw_counter)
             }
             OnDiskPostingsEnum::WithPositions(postings) => {
-                check_any(self, postings, tokens, items, &mut on_match)
+                check_any(self, postings, tokens, items, &mut on_match, hw_counter)
             }
         }
     }
@@ -696,6 +792,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         phrase: &Document,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         mut on_match: impl FnMut(U, bool),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Phrase matching needs positional information; without it nothing matches.
         let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
@@ -708,19 +805,23 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         let unique_tokens = phrase.to_token_set();
         // `None` (some token has no posting list) means nothing matches, so every
         // item reports `false`.
-        postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
-            for (tag, point_id) in items {
-                let matched = selected_postings.as_ref().is_some_and(|selected| {
-                    // `PostingListView` is a set of slice refs, so the per-point
-                    // clone only copies references; the postings were loaded once
-                    // above.
-                    self.is_active(point_id)
-                        && check_compressed_postings_phrase(phrase, point_id, selected.clone())
-                });
-                on_match(tag, matched);
-            }
-            Ok(())
-        })
+        postings.with_all_or_none_postings(
+            unique_tokens.tokens(),
+            |selected_postings| {
+                for (tag, point_id) in items {
+                    let matched = selected_postings.as_ref().is_some_and(|selected| {
+                        // `PostingListView` is a set of slice refs, so the per-point
+                        // clone only copies references; the postings were loaded once
+                        // above.
+                        self.is_active(point_id)
+                            && check_compressed_postings_phrase(phrase, point_id, selected.clone())
+                    });
+                    on_match(tag, matched);
+                }
+                Ok(())
+            },
+            hw_counter,
+        )
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -761,12 +862,12 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.postings.populate()?;
-        self.storage.vocab.populate()?;
-        self.storage.point_to_tokens_count.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.postings.populate(hw_counter)?;
+        self.storage.vocab.populate(hw_counter)?;
+        self.storage.point_to_tokens_count.populate(hw_counter)?;
         if let Some(point_to_doc_len) = &self.storage.point_to_doc_len {
-            point_to_doc_len.populate()?;
+            point_to_doc_len.populate(hw_counter)?;
         }
         Ok(())
     }
@@ -828,19 +929,19 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         ))
     }
 
-    fn remove(&mut self, idx: PointOffsetType) -> bool {
+    fn remove(&mut self, idx: PointOffsetType, _hw_counter: &HardwareCounterCell) -> bool {
         self.storage.deleted_points.mark_deleted(idx)
     }
 
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let ids = match query {
-            ParsedQuery::AllTokens(tokens) => self.filter_has_all(tokens)?,
-            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase)?,
-            ParsedQuery::AnyTokens(tokens) => self.filter_has_any(tokens)?,
+            ParsedQuery::AllTokens(tokens) => self.filter_has_all(tokens, hw_counter)?,
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase(phrase, hw_counter)?,
+            ParsedQuery::AnyTokens(tokens) => self.filter_has_any(tokens, hw_counter)?,
         };
         Ok(Box::new(ids.into_iter()))
     }
@@ -862,33 +963,37 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
         // A term without a posting list contributes nothing, so only the
         // existing ones are read, and handed back in the query's term order.
-        postings.with_existing_postings(&token_ids, |views| {
-            let mut by_term = vec![None; terms.len()];
-            for (token_id, view) in views {
-                let term = terms
-                    .iter()
-                    .position(|term| term.token_id == token_id)
-                    .expect("a returned posting list belongs to a requested term");
-                by_term[term] = Some(view);
-            }
-            let mut cursors = PositionalCursors::new(by_term);
-            // Deleted points stay in these postings and are masked here, as
-            // the filter path does.
-            let is_active =
-                |point_id: PointOffsetType| self.is_active(point_id) && accept(point_id);
-            score_top_k::<_, ON_DISK_BLOCK>(
-                query,
-                &mut cursors,
-                |point_ids, lengths| {
-                    self.doc_len_batch(point_ids, hw_counter, |index, doc_len| {
-                        lengths[index] = doc_len;
-                    })
-                },
-                is_active,
-                limit,
-                is_stopped,
-            )
-        })
+        postings.with_existing_postings(
+            &token_ids,
+            |views| {
+                let mut by_term = vec![None; terms.len()];
+                for (token_id, view) in views {
+                    let term = terms
+                        .iter()
+                        .position(|term| term.token_id == token_id)
+                        .expect("a returned posting list belongs to a requested term");
+                    by_term[term] = Some(view);
+                }
+                let mut cursors = PositionalCursors::new(by_term);
+                // Deleted points stay in these postings and are masked here, as
+                // the filter path does.
+                let is_active =
+                    |point_id: PointOffsetType| self.is_active(point_id) && accept(point_id);
+                score_top_k::<_, ON_DISK_BLOCK>(
+                    query,
+                    &mut cursors,
+                    |point_ids, lengths| {
+                        self.doc_len_batch(point_ids, hw_counter, |index, doc_len| {
+                            lengths[index] = doc_len;
+                        })
+                    },
+                    is_active,
+                    limit,
+                    is_stopped,
+                )
+            },
+            hw_counter,
+        )
     }
 
     fn get_posting_len(
@@ -901,51 +1006,59 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(READ_ENTRY_OVERHEAD);
-        self.storage.postings.posting_len(token_id)
+        self.storage.postings.posting_len(token_id, hw_counter)
     }
 
     fn for_each_vocab_with_postings_len(
         &self,
         mut f: impl FnMut(&str, usize) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.for_each_vocab(|token, token_id| {
-            // Drop tokens with no posting list silently (same as the in-memory variants).
-            if let Some(posting_len) = self.storage.postings.posting_len(token_id)? {
-                f(token, posting_len)?;
-            }
-            Ok(())
-        })
+        self.for_each_vocab(
+            |token, token_id| {
+                // Drop tokens with no posting list silently (same as the in-memory variants).
+                if let Some(posting_len) =
+                    self.storage.postings.posting_len(token_id, hw_counter)?
+                {
+                    f(token, posting_len)?;
+                }
+                Ok(())
+            },
+            hw_counter,
+        )
     }
 
     fn check_match(
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match parsed_query {
-            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id),
-            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id),
-            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id),
+            ParsedQuery::AllTokens(tokens) => self.check_has_subset(tokens, point_id, hw_counter),
+            ParsedQuery::Phrase(phrase) => self.check_has_phrase(phrase, point_id, hw_counter),
+            ParsedQuery::AnyTokens(tokens) => self.check_has_any(tokens, point_id, hw_counter),
         }
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+    fn values_is_empty(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> bool {
         if !self.storage.deleted_points.is_active(point_id) {
             return true;
         }
         // If the read fails or the point does not exist, treat as empty.
-        read_point_to_tokens_count(&self.storage.point_to_tokens_count, point_id)
+        read_point_to_tokens_count(&self.storage.point_to_tokens_count, point_id, hw_counter)
             .map(|count| count == 0)
             .unwrap_or(true)
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> usize {
+    fn values_count(&self, point_id: PointOffsetType, hw_counter: &HardwareCounterCell) -> usize {
         if !self.storage.deleted_points.is_active(point_id) {
             return 0;
         }
 
         // If the read fails or the point does not exist, treat as 0.
-        read_point_to_tokens_count(&self.storage.point_to_tokens_count, point_id).unwrap_or(0)
+        read_point_to_tokens_count(&self.storage.point_to_tokens_count, point_id, hw_counter)
+            .unwrap_or(0)
     }
 
     fn points_count(&self) -> usize {
@@ -988,10 +1101,15 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             .incr_delta(reads.len() * size_of::<u32>());
         // A failed read is an error rather than a missing value: `None` means
         // "no length recorded", which is the distinction the sidecar keeps.
-        storage.read_batch(reads, Random, |index, doc_len: &[u32]| {
-            f(index, doc_len.first().copied());
-            Ok::<_, OperationError>(())
-        })
+        storage.read_batch(
+            reads,
+            Random,
+            |index, doc_len: &[u32]| {
+                f(index, doc_len.first().copied());
+                Ok::<_, OperationError>(())
+            },
+            hw_counter,
+        )
     }
 
     /// The build-time total from the postings header: deletions since the
@@ -1012,16 +1130,18 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.storage
-            .vocab
-            .for_each_entry_in_iter(tokens, |user_data, token_ids| {
+        self.storage.vocab.for_each_entry_in_iter(
+            tokens,
+            |user_data, token_ids| {
                 hw_counter.payload_index_io_read_counter().incr_delta(
                     READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
                 );
 
                 f(user_data, token_ids.map(unwrap_token));
                 Ok(())
-            })
+            },
+            hw_counter,
+        )
     }
 }
 
@@ -1041,8 +1161,11 @@ fn unwrap_token(token_ids: &[TokenId]) -> TokenId {
 fn read_point_to_tokens_count<S: UniversalRead>(
     storage: &TypedStorage<S, usize>,
     point_id: PointOffsetType,
+    hw_counter: &HardwareCounterCell,
 ) -> Option<usize> {
     let byte_offset = u64::from(point_id).checked_mul(size_of::<usize>() as u64)?;
-    let cow = storage.read(ReadRange::one(byte_offset), Random).ok()?;
+    let cow = storage
+        .read(ReadRange::one(byte_offset), Random, hw_counter)
+        .ok()?;
     cow.first().copied()
 }

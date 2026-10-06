@@ -85,6 +85,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
         config: &VectorDataConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         match config.storage_type {
             VectorStorageType::ChunkedMmap | VectorStorageType::InRamChunkedMmap => {}
@@ -102,15 +103,15 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
         let dim = config.size;
         let datatype = config.datatype.unwrap_or_default();
         let storage = match (config.multivector_config.is_some(), datatype) {
-            (false, VectorStorageDatatype::Float32) => {
-                Self::Dense(Box::new(UpdateOnlyDenseVectorStorage::open(fs, path, dim)?))
-            }
-            (false, VectorStorageDatatype::Uint8) => {
-                Self::DenseByte(Box::new(UpdateOnlyDenseVectorStorage::open(fs, path, dim)?))
-            }
-            (false, VectorStorageDatatype::Float16) => {
-                Self::DenseHalf(Box::new(UpdateOnlyDenseVectorStorage::open(fs, path, dim)?))
-            }
+            (false, VectorStorageDatatype::Float32) => Self::Dense(Box::new(
+                UpdateOnlyDenseVectorStorage::open(fs, path, dim, hw_counter)?,
+            )),
+            (false, VectorStorageDatatype::Uint8) => Self::DenseByte(Box::new(
+                UpdateOnlyDenseVectorStorage::open(fs, path, dim, hw_counter)?,
+            )),
+            (false, VectorStorageDatatype::Float16) => Self::DenseHalf(Box::new(
+                UpdateOnlyDenseVectorStorage::open(fs, path, dim, hw_counter)?,
+            )),
             (false, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
                 Self::Turbo(Box::new(UpdateOnlyTurboVectorStorage::open(
                     fs,
@@ -118,16 +119,17 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
                     dim,
                     config.distance,
                     tq_bits(datatype),
+                    hw_counter,
                 )?))
             }
             (true, VectorStorageDatatype::Float32) => Self::MultiDense(Box::new(
-                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim)?,
+                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim, hw_counter)?,
             )),
             (true, VectorStorageDatatype::Uint8) => Self::MultiDenseByte(Box::new(
-                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim)?,
+                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim, hw_counter)?,
             )),
             (true, VectorStorageDatatype::Float16) => Self::MultiDenseHalf(Box::new(
-                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim)?,
+                UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim, hw_counter)?,
             )),
             (true, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
                 Self::MultiTurbo(Box::new(UpdateOnlyMultiTurboVectorStorage::open(
@@ -136,6 +138,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
                     dim,
                     config.distance,
                     tq_bits(datatype),
+                    hw_counter,
                 )?))
             }
         };
@@ -149,9 +152,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
     pub fn open_sparse(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         Ok(Self::Sparse(Box::new(UpdateOnlySparseVectorStorage::open(
-            fs, path,
+            fs, path, hw_counter,
         )?)))
     }
 

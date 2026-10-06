@@ -81,6 +81,7 @@ fn test_filtering_context_consistency() {
         dir.path(),
         StorageType::Appendable,
         IndexLoadMode::CreateIfMissing,
+        &hw_counter,
     )
     .unwrap();
 

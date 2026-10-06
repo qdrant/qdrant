@@ -47,9 +47,10 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
         fs: &Fs,
         base_path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<()> {
-        TrackerEnum::<S>::preopen(fs, base_path, populate)?;
-        AppendOnlyPages::<S>::preopen(fs, base_path, populate)
+        TrackerEnum::<S>::preopen(fs, base_path, populate, hw_counter)?;
+        AppendOnlyPages::<S>::preopen(fs, base_path, populate, hw_counter)
     }
 
     /// Open an existing read-only storage at the given path, with the already read config.
@@ -62,9 +63,10 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
         base_path: PathBuf,
         config: LogstoreConfig,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Self> {
-        let tracker = TrackerEnum::open_read_only(fs, &base_path, populate)?;
-        let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
+        let tracker = TrackerEnum::open_read_only(fs, &base_path, populate, hw_counter)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, false, populate, hw_counter)?;
 
         Ok(Self {
             config,
@@ -87,11 +89,12 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
         match &self.tracker {
             TrackerEnum::AppendOnly(tracker) => {
-                let mut futs = vec![tracker.live_preload(fs)?];
-                futs.extend(self.pages.live_preload(fs, self.populate)?);
+                let mut futs = vec![tracker.live_preload(fs, hw_counter)?];
+                futs.extend(self.pages.live_preload(fs, self.populate, hw_counter)?);
                 Ok(futs)
             }
             // Nothing changes on disk, see `live_reload`
@@ -113,7 +116,11 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     ///   counted.
     ///
     /// A storage with a compacted tracker is complete and never changes, reloading it is a no-op.
-    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<()> {
         let tracker = match &mut self.tracker {
             TrackerEnum::AppendOnly(tracker) => tracker,
             TrackerEnum::Compacted(_) => return Ok(()),
@@ -123,9 +130,9 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
         // readers. Observe the tracker first, so that the mappings counted here are backed by
         // page data that the page reload below is guaranteed to see. Observing the pages first
         // would let the tracker name value data appended after the pages were read.
-        let reload = tracker.reload_count()?;
+        let reload = tracker.reload_count(hw_counter)?;
 
-        self.pages.live_reload(fs, self.populate)?;
+        self.pages.live_reload(fs, self.populate, hw_counter)?;
 
         // Publish the mappings last: until this point a failure above is harmless, as pages
         // running ahead of the tracker is the safe direction — the extra value data is simply
@@ -157,8 +164,8 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         LogstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
-    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
-        self.tracker.max_point_offset()
+    pub(crate) fn max_point_offset(&self, hw_counter: &HardwareCounterCell) -> Result<PointOffset> {
+        self.tracker.max_point_offset(hw_counter)
     }
 
     pub(crate) fn get_value<P: AccessPattern>(
@@ -196,7 +203,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
-        let max_id = max_id.min(self.max_point_offset()?);
+        let max_id = max_id.min(self.max_point_offset(hw_counter.parent())?);
         let view = self.view();
 
         // Iterate in batches to bound the size of the tracker reads
@@ -221,6 +228,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -234,6 +242,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 Ok(true)
             },
             hw_counter_cell,
+            hw_counter,
         )?;
 
         Ok(())
@@ -245,6 +254,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
         hw_counter_cell: &CounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -258,6 +268,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 Ok(true)
             },
             hw_counter_cell,
+            hw_counter,
         )?;
 
         Ok(())

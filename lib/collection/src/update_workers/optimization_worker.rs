@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
@@ -59,6 +60,8 @@ impl UpdateWorkers {
         update_tracker: UpdateTracker,
         optimization_finished_sender: watch::Sender<()>,
     ) {
+        // 🤖 Internal operation
+        let hw_acc = &HwMeasurementAcc::disposable();
         let Some(some_optimizer) = optimizers.first() else {
             debug_assert!(false, "No optimizers configured");
             log::error!("No optimizers configured, optimization worker will not run");
@@ -116,6 +119,7 @@ impl UpdateWorkers {
                 some_optimizer.segment_optimizer_config(),
                 some_optimizer.threshold_config(),
                 payload_index_schema.clone(),
+                &hw_acc.get_counter_cell(),
             );
             if let Err(err) = result {
                 log::error!("Failed to ensure there are appendable segments with capacity: {err}");
@@ -202,6 +206,7 @@ impl UpdateWorkers {
                 sender.clone(),
                 optimization_finished_sender.clone(),
                 limit,
+                hw_acc,
             )
             .await;
             let mut handles = optimization_handles.lock().await;
@@ -251,7 +256,9 @@ impl UpdateWorkers {
         sender: Sender<OptimizerSignal>,
         optimization_finished_sender: watch::Sender<()>,
         limit: usize,
+        hw_acc: &HwMeasurementAcc,
     ) -> Vec<StoppableTaskHandle<bool>> {
+        let hw_acc = hw_acc.clone();
         // Planning takes the segment holder read lock and builds the optimization plan
         // synchronously - keep it off the async worker.
         let new_handles = tokio::task::spawn_blocking(move || {
@@ -273,6 +280,7 @@ impl UpdateWorkers {
                     let _ = sender.try_send(OptimizerSignal::Nop);
                 },
                 Some(limit),
+                &hw_acc.get_counter_cell(),
             )
         })
         .await;
@@ -291,6 +299,7 @@ impl UpdateWorkers {
     /// Checks conditions for all optimizers until there is no suggested segment
     /// Starts a task for each optimization
     /// Returns handles for started tasks
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
@@ -299,6 +308,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         callback: F,
         limit: Option<usize>,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
         F: Fn() + Send + Clone + Sync + 'static,
@@ -306,7 +316,7 @@ impl UpdateWorkers {
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        let scheduled = plan_optimizations(&segments.read(), &optimizers);
+        let scheduled = plan_optimizations(&segments.read(), &optimizers, hw_counter);
         for (optimizer, segments_to_merge) in scheduled {
             // Return early if we reached the optimization job limit
             if limit.is_some_and(|extra| handles.len() >= extra) {
@@ -333,7 +343,7 @@ impl UpdateWorkers {
                         Some(TrackerSegmentInfo {
                             id,
                             uuid: segment.segment_uuid(),
-                            points_count: segment.available_point_count(),
+                            points_count: segment.available_point_count(hw_counter),
                         })
                     })
                     .collect_vec()
@@ -472,10 +482,12 @@ impl UpdateWorkers {
         segment_config: &SegmentOptimizerConfig,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let no_segment_with_capacity = !segments
-            .read()
-            .has_appendable_segment_with_capacity(thresholds_config.max_segment_size_bytes());
+        let no_segment_with_capacity = !segments.read().has_appendable_segment_with_capacity(
+            thresholds_config.max_segment_size_bytes(),
+            hw_counter,
+        );
 
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
@@ -488,6 +500,7 @@ impl UpdateWorkers {
                 payload_index_schema,
                 thresholds_config.deferred_internal_id,
                 true,
+                hw_counter,
             )?;
             segments_guard.sync_segment_manifest(Some(token))?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);

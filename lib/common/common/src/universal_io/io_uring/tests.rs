@@ -22,6 +22,7 @@ fn test_file<T: bytemuck::Pod>(path: &Path, data: &[T], direct_io: bool) -> UioR
         IoUringOpenExtra {
             prevent_caching: direct_io,
         },
+        &HardwareCounterCell::new(),
     )
 }
 
@@ -47,15 +48,23 @@ fn test_io_uring_read() -> UioResult<()> {
     // 2. Read data back and verify it matches what was written
 
     // Read all elements
-    let full = file.read(read_range::<u64>(0, data.len()), Sequential)?;
+    let full = file.read(
+        read_range::<u64>(0, data.len()),
+        Sequential,
+        &HardwareCounterCell::new(),
+    )?;
     assert_eq!(full.as_ref(), &data);
 
     // Read a sub-range (elements 10..30)
-    let sub = file.read(read_range::<u64>(10, 20), Sequential)?;
+    let sub = file.read(
+        read_range::<u64>(10, 20),
+        Sequential,
+        &HardwareCounterCell::new(),
+    )?;
     assert_eq!(sub.as_ref(), &data[10..30]);
 
     // Verify len()
-    let len = file.len()?;
+    let len = file.len(&HardwareCounterCell::new())?;
     assert_eq!(len, 128);
 
     Ok(())
@@ -87,10 +96,15 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     // --- read_batch (callback API) ---
     let mut batch_results = Vec::new();
 
-    file.read_batch(ranges.into_iter().enumerate(), Sequential, |idx, items| {
-        batch_results.push((idx, items.to_vec()));
-        UioResult::Ok(())
-    })?;
+    file.read_batch(
+        ranges.into_iter().enumerate(),
+        Sequential,
+        |idx, items| {
+            batch_results.push((idx, items.to_vec()));
+            UioResult::Ok(())
+        },
+        &HardwareCounterCell::new(),
+    )?;
 
     batch_results.sort_by_key(|&(idx, _)| idx);
 
@@ -103,7 +117,8 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     }
 
     // --- read_iter (iterator API) ---
-    let read_iter = file.read_iter(ranges.into_iter().enumerate(), Sequential)?;
+    let hw_counter = HardwareCounterCell::new();
+    let read_iter = file.read_iter(ranges.into_iter().enumerate(), Sequential, &hw_counter)?;
 
     let mut iter_results: Vec<_> = read_iter.collect::<UioResult<Vec<_>>>()?;
     iter_results.sort_by_key(|&(idx, _)| idx);
@@ -120,7 +135,7 @@ fn test_io_uring_read_batch_read_iter() -> UioResult<()> {
     let many_ranges = (0..64).map(|i| read_range::<u64>(i, 1)).enumerate();
 
     let mut count = 0;
-    for record in file.read_iter(many_ranges, Sequential)? {
+    for record in file.read_iter(many_ranges, Sequential, &HardwareCounterCell::new())? {
         let (idx, items) = record?;
 
         assert_eq!(
@@ -160,8 +175,10 @@ fn test_io_uring_read_iter_concurrent() -> UioResult<()> {
     let ranges_a = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
     let ranges_b = (0..NUM_RANGES).map(|i| read_range::<u64>((i * CHUNK) as usize, CHUNK as usize));
 
-    let iter_a = file_a.read_iter(ranges_a.enumerate(), Sequential)?;
-    let iter_b = file_b.read_iter(ranges_b.enumerate(), Sequential)?;
+    let hw_counter = HardwareCounterCell::new();
+    let iter_a = file_a.read_iter(ranges_a.enumerate(), Sequential, &hw_counter)?;
+    let hw_counter = HardwareCounterCell::new();
+    let iter_b = file_b.read_iter(ranges_b.enumerate(), Sequential, &hw_counter)?;
 
     // Zip alternates next() calls between the two iterators on the same
     // thread-local io_uring ring. With in-flight operations left across
@@ -267,7 +284,8 @@ fn test_io_uring_eintr_handling() -> UioResult<()> {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
 
-            let Ok(iter) = file.read_iter(ranges, Sequential) else {
+            let hw_counter = HardwareCounterCell::new();
+            let Ok(iter) = file.read_iter(ranges, Sequential, &hw_counter) else {
                 return 1;
             };
 
@@ -333,7 +351,12 @@ fn test_io_uring_direct_io() -> UioResult<()> {
         let end = start + expected.len();
 
         let range = start as u64..end as u64;
-        let bytes = file.read_bytes(range, Sequential, KERNEL_PAGE_SIZE)?;
+        let bytes = file.read_bytes(
+            range,
+            Sequential,
+            KERNEL_PAGE_SIZE,
+            &HardwareCounterCell::new(),
+        )?;
 
         assert_eq!(bytes.as_ref(), expected, "O_DIRECT block {idx} mismatch");
     }
@@ -346,11 +369,17 @@ fn test_io_uring_direct_io() -> UioResult<()> {
         let end = start + expected.len();
 
         let range = start as u64..end as u64;
-        pipeline.schedule::<Sequential>((idx, expected), &file, range, KERNEL_PAGE_SIZE)?;
+        pipeline.schedule::<Sequential>(
+            (idx, expected),
+            &file,
+            range,
+            KERNEL_PAGE_SIZE,
+            &HardwareCounterCell::new(),
+        )?;
     }
 
     let mut count = 0;
-    while let Some(((idx, expected), bytes)) = pipeline.wait()? {
+    while let Some(((idx, expected), bytes)) = pipeline.wait(&HardwareCounterCell::new())? {
         assert_eq!(
             bytes.as_ref(),
             expected,

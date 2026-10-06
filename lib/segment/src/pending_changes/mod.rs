@@ -398,7 +398,7 @@ where
                     // stale storage. Clear it first so the new schema actually takes effect.
                     segment.delete_vector_name(*version, vector_name)?;
                 }
-                segment.create_vector_name(*version, vector_name, config)?;
+                segment.create_vector_name(*version, vector_name, config, &hw_counter)?;
             }
         },
     }

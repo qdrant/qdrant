@@ -26,19 +26,19 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl PayloadFieldIndexRead for FieldIndex {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         match self {
-            FieldIndex::IntIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::DatetimeIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::IntMapIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::KeywordIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::FloatIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::GeoIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::BoolIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::FullTextIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::UuidIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
-            FieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::IntIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::DatetimeIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::IntMapIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::KeywordIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::FloatIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::GeoIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::BoolIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::FullTextIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::UuidIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(hw_counter),
+            FieldIndex::NullIndex(idx) => idx.count_indexed_points(hw_counter),
         }
     }
 
@@ -87,19 +87,32 @@ impl PayloadFieldIndexRead for FieldIndex {
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::DatetimeIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::IntMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::KeywordIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::FloatIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::GeoIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::BoolIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::FullTextIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::UuidIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
-            FieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::IntIndex(idx) => idx.for_each_payload_block(threshold, key, f, hw_counter),
+            FieldIndex::DatetimeIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::IntMapIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::KeywordIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::FloatIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::GeoIndex(idx) => idx.for_each_payload_block(threshold, key, f, hw_counter),
+            FieldIndex::BoolIndex(idx) => idx.for_each_payload_block(threshold, key, f, hw_counter),
+            FieldIndex::FullTextIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::UuidIndex(idx) => idx.for_each_payload_block(threshold, key, f, hw_counter),
+            FieldIndex::UuidMapIndex(idx) => {
+                idx.for_each_payload_block(threshold, key, f, hw_counter)
+            }
+            FieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f, hw_counter),
         }
     }
 
@@ -168,7 +181,10 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
-    fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
+    fn get_telemetry_data(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<PayloadIndexTelemetry> {
         Ok(match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
             FieldIndex::DatetimeIndex(index) => index.get_telemetry_data(),
@@ -176,7 +192,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
-            FieldIndex::BoolIndex(index) => index.get_telemetry_data()?,
+            FieldIndex::BoolIndex(index) => index.get_telemetry_data(hw_counter)?,
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
@@ -184,35 +200,43 @@ impl FieldIndexRead for FieldIndex {
         })
     }
 
-    fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize> {
+    fn values_count(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         Ok(match self {
-            FieldIndex::IntIndex(index) => index.values_count(point_id),
-            FieldIndex::DatetimeIndex(index) => index.values_count(point_id),
-            FieldIndex::IntMapIndex(index) => index.values_count(point_id),
-            FieldIndex::KeywordIndex(index) => index.values_count(point_id),
-            FieldIndex::FloatIndex(index) => index.values_count(point_id),
-            FieldIndex::GeoIndex(index) => index.values_count(point_id),
-            FieldIndex::BoolIndex(index) => index.values_count(point_id)?,
-            FieldIndex::FullTextIndex(index) => index.values_count(point_id),
-            FieldIndex::UuidIndex(index) => index.values_count(point_id),
-            FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
-            FieldIndex::NullIndex(index) => index.values_count(point_id)?,
+            FieldIndex::IntIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::DatetimeIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::IntMapIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::KeywordIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::FloatIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::GeoIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::BoolIndex(index) => index.values_count(point_id, hw_counter)?,
+            FieldIndex::FullTextIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::UuidIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::UuidMapIndex(index) => index.values_count(point_id, hw_counter),
+            FieldIndex::NullIndex(index) => index.values_count(point_id, hw_counter)?,
         })
     }
 
-    fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+    fn values_is_empty(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
         Ok(match self {
-            FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::DatetimeIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::BoolIndex(index) => index.values_is_empty(point_id)?,
-            FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::NullIndex(index) => index.values_is_empty(point_id)?,
+            FieldIndex::IntIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::DatetimeIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::FloatIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::GeoIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::BoolIndex(index) => index.values_is_empty(point_id, hw_counter)?,
+            FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::UuidIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id, hw_counter),
+            FieldIndex::NullIndex(index) => index.values_is_empty(point_id, hw_counter)?,
         })
     }
 

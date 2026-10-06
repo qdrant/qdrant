@@ -115,7 +115,7 @@ mod tests {
 
         let segment_points_to_delete = original_segment
             .read()
-            .iter_points()
+            .iter_points(&hw_counter)
             .enumerate()
             .filter_map(|(i, point_id)| (i % 2 == 0).then_some(point_id))
             .collect_vec();
@@ -130,14 +130,14 @@ mod tests {
 
         let segment_points_to_assign1 = original_segment
             .read()
-            .iter_points()
+            .iter_points(&hw_counter)
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
 
         let segment_points_to_assign2 = original_segment
             .read()
-            .iter_points()
+            .iter_points(&hw_counter)
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
@@ -192,7 +192,8 @@ mod tests {
             Default::default(),
         );
 
-        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            vacuum_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
 
         // Check that only one segment is selected for optimization
@@ -214,15 +215,17 @@ mod tests {
 
         // Check new segment have proper amount of points
         assert_eq!(
-            segment_guard.available_point_count(),
+            segment_guard.available_point_count(&hw_counter),
             200 - segment_points_to_delete.len(),
         );
 
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
-            assert!(
-                segment_guard.has_point(point_id, common::types::DeferredBehavior::WithDeferred)
-            );
+            assert!(segment_guard.has_point(
+                point_id,
+                common::types::DeferredBehavior::WithDeferred,
+                &hw_counter
+            ));
             let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
@@ -243,7 +246,7 @@ mod tests {
         drop(holder_guard);
         locked_holder
             .read()
-            .flush_all(FlushMode::Sync, true)
+            .flush_all(FlushMode::Sync, true, &hw_counter)
             .expect("failed to flush segment holder");
 
         // Check old segment data is removed from disk
@@ -368,7 +371,8 @@ mod tests {
             .0;
 
         // Vacuum optimizer should not optimize yet, no points/vectors have been deleted
-        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            vacuum_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Delete some points and vectors
@@ -382,7 +386,7 @@ mod tests {
 
             // Delete 10% of points
             let segment_points_to_delete = segment
-                .iter_points()
+                .iter_points(&hw_counter)
                 .enumerate()
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
@@ -398,8 +402,8 @@ mod tests {
 
                 let vector1_vecs_to_delete = id_tracker
                     .borrow()
-                    .point_mappings()
-                    .iter_external()
+                    .point_mappings(&hw_counter)
+                    .iter_external(&hw_counter)
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
                     .collect_vec();
@@ -409,9 +413,10 @@ mod tests {
                         .internal_id_with_behavior(
                             point_id,
                             common::types::DeferredBehavior::VisibleOnly,
+                            &hw_counter,
                         )
                         .unwrap();
-                    vector1_storage.delete_vector(id).unwrap();
+                    vector1_storage.delete_vector(id, &hw_counter).unwrap();
                 }
             }
 
@@ -423,8 +428,8 @@ mod tests {
 
                 let vector2_vecs_to_delete = id_tracker
                     .borrow()
-                    .point_mappings()
-                    .iter_external()
+                    .point_mappings(&hw_counter)
+                    .iter_external(&hw_counter)
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))
                     .collect_vec();
@@ -434,9 +439,10 @@ mod tests {
                         .internal_id_with_behavior(
                             point_id,
                             common::types::DeferredBehavior::VisibleOnly,
+                            &hw_counter,
                         )
                         .unwrap();
-                    vector2_storage.delete_vector(id).unwrap();
+                    vector2_storage.delete_vector(id, &hw_counter).unwrap();
                 }
             }
         }
@@ -459,7 +465,8 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
-        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize =
+            vacuum_optimizer.plan_optimizations_for_test(&locked_holder, &hw_counter);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed =
@@ -484,11 +491,11 @@ mod tests {
                     let vector_index = vector_data.vector_index.borrow();
                     let vector_storage = vector_data.vector_storage.borrow();
 
-                    assert!(vector_storage.available_vector_count() > 0);
+                    assert!(vector_storage.available_vector_count(&hw_counter) > 0);
                     assert!(vector_storage.deleted_vector_count() > 0);
                     assert_eq!(
                         vector_index.indexed_vector_count(),
-                        vector_storage.available_vector_count(),
+                        vector_storage.available_vector_count(&hw_counter),
                     );
                 });
             });

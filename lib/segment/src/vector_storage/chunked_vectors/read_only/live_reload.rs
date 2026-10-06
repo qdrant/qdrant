@@ -18,11 +18,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         // Status is the change signal, let reload skip reloading if this didn't change.
-        fs.reschedule_open(&status_file(&self.directory), None, None);
+        fs.reschedule_open(&status_file(&self.directory), None, None, hw_counter);
 
-        let num_files = list_chunk_files(fs, &self.directory)?.len();
+        let num_files = list_chunk_files(fs, &self.directory, hw_counter)?.len();
 
         // `len` marks max committed vector. First chunk that can have changed:
         // the one the next append lands in.
@@ -33,6 +34,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 &chunk_name(&self.directory, last_chunk),
                 Some(chunk_open_options(self.advice, self.populate, false)),
                 None,
+                hw_counter,
             );
             last_chunk + 1
         } else {
@@ -45,6 +47,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 &chunk_name(&self.directory, chunk_id),
                 Some(chunk_open_options(self.advice, self.populate, false)),
                 None,
+                hw_counter,
             );
         }
         Ok(Vec::new())
@@ -58,9 +61,10 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let Some(new_len) = read_status_len(fs, &status_file(&self.directory)).ok_unchanged()?
+        let Some(new_len) =
+            read_status_len(fs, &status_file(&self.directory), hw_counter).ok_unchanged()?
         else {
             return Ok(());
         };
@@ -86,6 +90,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
                 &chunk_name(&self.directory, last_chunk),
                 chunk_open_options(self.advice, self.populate, false),
                 Default::default(),
+                hw_counter,
             )
             .ok_unchanged()?
             {
@@ -104,6 +109,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
             self.advice,
             self.populate,
             false,
+            hw_counter,
         )?;
 
         self.chunks.truncate(fresh_from);

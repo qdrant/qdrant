@@ -14,6 +14,7 @@ impl<S: UniversalRead> LiveReload for ImmutableFullTextIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         Ok(Vec::new())
     }
@@ -23,10 +24,10 @@ impl<S: UniversalRead> LiveReload for ImmutableFullTextIndex<S> {
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for deleted_point in deleted_points {
-            self.remove_point(*deleted_point);
+            self.remove_point(*deleted_point, hw_counter);
         }
 
         Ok(())

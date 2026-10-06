@@ -3,6 +3,8 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use common::types::PointOffsetType;
@@ -55,6 +57,7 @@ impl LocalShard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let segments = self.segments.clone();
         let wal = self.wal.wal.clone();
@@ -114,6 +117,7 @@ impl LocalShard {
             (None, None)
         };
 
+        let hw_acc = hw_acc.clone();
         let future = async move {
             if let Some(plunger_notify) = plunger_notify {
                 // Plunging is enough as `snapshot_all_segments` will flush all to disk
@@ -173,6 +177,7 @@ impl LocalShard {
                     format,
                     manifest.as_ref(),
                     Some(&applied_seq_handler),
+                    &hw_acc.get_counter_cell(),
                 )?;
 
                 // Staging delay: widen the window between snapshotting the segments and archiving
@@ -364,6 +369,7 @@ pub fn snapshot_all_segments(
     format: SnapshotFormat,
     manifest: Option<&SnapshotManifest>,
     applied_seq_handler: Option<&AppliedSeqHandler>,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
@@ -397,6 +403,7 @@ pub fn snapshot_all_segments(
             read_segment.take_snapshot(temp_dir, tar, format, segment_manifest_ref)?;
             Ok(())
         },
+        hw_counter,
     )
 }
 
@@ -425,6 +432,7 @@ pub fn snapshot_all_segments(
 /// sourced from it.
 ///
 /// Before snapshotting all segments are forcefully flushed to ensure all data is persisted.
+#[expect(clippy::too_many_arguments)]
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
     applied_up_to: Option<SeqNumberType>,
@@ -433,6 +441,7 @@ pub fn proxy_all_segments_and_apply<F>(
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     deferred_internal_id: Option<PointOffsetType>,
     mut operation: F,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()>
 where
     F: FnMut(&RwLock<dyn StorageSegmentEntry>) -> OperationResult<()>,
@@ -453,7 +462,7 @@ where
     // Flush all pending changes of each segment, now wrapped segments won't change anymore.
     // Segment snapshots rely on this: they don't pack the pending changes logs of unwrapped
     // proxies, whose changes this persists into the wrapped segments.
-    segments_lock.flush_all_up_to(FlushMode::Sync, true, applied_up_to)?;
+    segments_lock.flush_all_up_to(FlushMode::Sync, true, applied_up_to, hw_counter)?;
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
@@ -518,6 +527,7 @@ where
         segments_lock,
         &remaining_proxy_ids,
         tmp_segment_id,
+        hw_counter,
     )?;
 
     result

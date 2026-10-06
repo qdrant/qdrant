@@ -14,6 +14,7 @@ use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
@@ -79,15 +80,26 @@ where
         fs: &S::Fs,
         in_memory_tracker: InMemoryIdTracker,
         path: &Path,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
         let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
-        let id_tracker = Self::new(fs, path, &internal_to_version, compressed_mappings)?;
+        let id_tracker = Self::new(
+            fs,
+            path,
+            &internal_to_version,
+            compressed_mappings,
+            hw_counter,
+        )?;
 
         Ok(id_tracker)
     }
 
-    pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+    pub fn open(
+        fs: &S::Fs,
+        segment_path: &Path,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -98,10 +110,11 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
 
         let mut deleted_bitvec = BitVec::new();
-        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all(hw_counter)?.as_ref());
 
         let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
 
@@ -115,13 +128,14 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
 
-        let internal_to_version_slice = internal_to_version_file.read_whole()?;
+        let internal_to_version_slice = internal_to_version_file.read_whole(hw_counter)?;
 
         let internal_to_version = CompressedVersions::from_slice(&internal_to_version_slice);
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner, hw_counter)?;
 
         let reader = BufReader::new(File::open(mappings_path(segment_path))?);
         let mappings = load_mapping(reader, Some(deleted_bitvec))?;
@@ -140,6 +154,7 @@ where
         path: &Path,
         internal_to_version: &[SeqNumberType],
         mappings: CompressedPointMappings,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = deleted_path(path);
@@ -164,13 +179,15 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
 
         // Set bits for deleted points from the mappings,
-        deleted_storage.write_bitslice(mappings.deleted())?;
+        deleted_storage.write_bitslice(mappings.deleted(), hw_counter)?;
         // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
         deleted_storage.set_ascending_bits_batch(
             (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
+            hw_counter,
         )?;
 
         deleted_storage.flusher()()?;
@@ -203,16 +220,17 @@ where
                 advice: AdviceSetting::Global,
             },
             Default::default(),
+            hw_counter,
         )?;
         internal_to_version_file.write(0, internal_to_version)?;
 
         let internal_to_version =
-            CompressedVersions::from_slice(&internal_to_version_file.read_whole()?);
+            CompressedVersions::from_slice(&internal_to_version_file.read_whole(hw_counter)?);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
         let internal_to_version_wrapper =
-            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner)?;
+            SliceBufferedUpdateWrapper::new(internal_to_version_file.inner, hw_counter)?;
 
         // Write mappings to disk.
         let file = File::create(mappings_path(path))?;
@@ -224,7 +242,7 @@ where
         let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
-        deleted_wrapper.flusher()()?;
+        deleted_wrapper.flusher(hw_counter)()?;
         internal_to_version_wrapper.flusher()()?;
 
         Ok(Self {
@@ -238,7 +256,11 @@ where
 }
 
 impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTracker<S> {
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id)
     }
 
@@ -246,20 +268,26 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_internal_versions_batch(self, internal_ids, callback)
+        default_internal_versions_batch(self, internal_ids, callback, hw_counter)
     }
 
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
         _deferred_behavior: common::types::DeferredBehavior,
+        _hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType> {
         // Immutable mappings never carry deferred heads; behavior is moot.
         self.mappings.internal_id(&external_id)
     }
 
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
     }
 
@@ -267,13 +295,17 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_external_ids_batch(self, internal_ids, callback)
+        default_external_ids_batch(self, internal_ids, callback, hw_counter)
     }
 
     type Backend = S;
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+    fn point_mappings(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Compressed(&self.mappings)
     }
 
@@ -281,19 +313,19 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         self.mappings.total_point_count()
     }
 
-    fn available_point_count(&self) -> usize {
+    fn available_point_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.mappings.available_point_count()
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.total_point_count() - self.available_point_count(hw_counter)
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self, _hw_counter: &HardwareCounterCell) -> &BitSlice {
         self.mappings.deleted()
     }
 
-    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_point(&self, key: PointOffsetType, _hw_counter: &HardwareCounterCell) -> bool {
         self.mappings.is_deleted_point(key)
     }
 
@@ -303,6 +335,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
 
     fn iter_internal_versions(
         &self,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         Ok(Box::new(self.internal_to_version.iter()))
     }
@@ -313,6 +346,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let has_version = self.internal_to_version.has(internal_id);
         debug_assert!(
@@ -335,36 +369,44 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         panic!("Trying to call a mutating function (`set_link`) of an immutable id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
 
         if let Some(internal_id) = internal_id {
             self.deleted_wrapper.set(internal_id as usize, true);
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         }
 
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
 
         self.deleted_wrapper.set(internal_id as usize, true);
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
 
         Ok(())
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        self.deleted_wrapper.flusher(hw_counter)
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         let flusher = self.internal_to_version_wrapper.flusher();
         Box::new(move || flusher().map_err(OperationError::from))
     }

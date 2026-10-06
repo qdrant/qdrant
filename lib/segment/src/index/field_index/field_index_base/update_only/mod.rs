@@ -69,43 +69,67 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
         field: &JsonPath,
         schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let index_type = &index_type.index_type;
         let dir = &index_type.storage_dir(dir, field);
 
         let index = match index_type {
-            PayloadIndexType::IntIndex => {
-                Self::IntIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
-            PayloadIndexType::DatetimeIndex => {
-                Self::DatetimeIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
-            PayloadIndexType::FloatIndex => {
-                Self::FloatIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
-            PayloadIndexType::IntMapIndex => {
-                Self::IntMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
-            PayloadIndexType::KeywordIndex => {
-                Self::KeywordIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
+            PayloadIndexType::IntIndex => Self::IntIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                Default::default(),
+                hw_counter,
+            )?),
+            PayloadIndexType::DatetimeIndex => Self::DatetimeIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                Default::default(),
+                hw_counter,
+            )?),
+            PayloadIndexType::FloatIndex => Self::FloatIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                Default::default(),
+                hw_counter,
+            )?),
+            PayloadIndexType::IntMapIndex => Self::IntMapIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                Default::default(),
+                hw_counter,
+            )?),
+            PayloadIndexType::KeywordIndex => Self::KeywordIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                Default::default(),
+                hw_counter,
+            )?),
             // The `UuidIndex` discriminant is historically map-backed
-            PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => {
-                Self::UuidMapIndex(UpdateOnlyValueIndex::open(fs, dir, Default::default())?)
-            }
-            PayloadIndexType::GeoIndex => {
-                Self::GeoIndex(UpdateOnlyValueIndex::open(fs, dir, UpdateOnlyGeoKind)?)
-            }
+            PayloadIndexType::UuidIndex | PayloadIndexType::UuidMapIndex => Self::UuidMapIndex(
+                UpdateOnlyValueIndex::open(fs, dir, Default::default(), hw_counter)?,
+            ),
+            PayloadIndexType::GeoIndex => Self::GeoIndex(UpdateOnlyValueIndex::open(
+                fs,
+                dir,
+                UpdateOnlyGeoKind,
+                hw_counter,
+            )?),
             PayloadIndexType::FullTextIndex => {
                 let config = TextIndexParams::try_from(schema)?;
                 Self::FullTextIndex(UpdateOnlyValueIndex::open(
                     fs,
                     dir,
                     UpdateOnlyTextKind::new(&config),
+                    hw_counter,
                 )?)
             }
-            PayloadIndexType::BoolIndex => Self::BoolIndex(UpdateOnlyBoolIndex::open(fs, dir)?),
-            PayloadIndexType::NullIndex => Self::NullIndex(UpdateOnlyNullIndex::open(fs, dir)?),
+            PayloadIndexType::BoolIndex => {
+                Self::BoolIndex(UpdateOnlyBoolIndex::open(fs, dir, hw_counter)?)
+            }
+            PayloadIndexType::NullIndex => {
+                Self::NullIndex(UpdateOnlyNullIndex::open(fs, dir, hw_counter)?)
+            }
         };
 
         Ok(index)
@@ -145,14 +169,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::IntIndex(index) => index.flush(),
-            Self::DatetimeIndex(index) => index.flush(),
-            Self::FloatIndex(index) => index.flush(),
-            Self::IntMapIndex(index) => index.flush(),
-            Self::KeywordIndex(index) => index.flush(),
-            Self::UuidMapIndex(index) => index.flush(),
-            Self::GeoIndex(index) => index.flush(),
-            Self::FullTextIndex(index) => index.flush(),
+            Self::IntIndex(index) => index.flush(hw_counter),
+            Self::DatetimeIndex(index) => index.flush(hw_counter),
+            Self::FloatIndex(index) => index.flush(hw_counter),
+            Self::IntMapIndex(index) => index.flush(hw_counter),
+            Self::KeywordIndex(index) => index.flush(hw_counter),
+            Self::UuidMapIndex(index) => index.flush(hw_counter),
+            Self::GeoIndex(index) => index.flush(hw_counter),
+            Self::FullTextIndex(index) => index.flush(hw_counter),
             Self::BoolIndex(index) => index.flush(fs, hw_counter),
             Self::NullIndex(index) => index.flush(fs, hw_counter),
         }

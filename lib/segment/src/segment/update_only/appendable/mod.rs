@@ -114,17 +114,27 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
         pool: &rayon::ThreadPool,
         segment_path: &Path,
         config: &SegmentConfig,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let mut payload_storage = None;
         let mut payload_indexes = None;
         let mut dense_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
         let mut sparse_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
+        let hw_acc = hw_counter.new_accumulator();
         pool.scope(|s| {
             s.spawn(|_| {
-                payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
+                payload_storage = Some(UpdateOnlyPayloadStorage::open(
+                    fs,
+                    segment_path,
+                    &hw_acc.get_counter_cell(),
+                ));
             });
             s.spawn(|_| {
-                payload_indexes = Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
+                payload_indexes = Some(UpdateOnlyStructPayloadIndex::par_open(
+                    fs,
+                    segment_path,
+                    &hw_acc.get_counter_cell(),
+                ));
             });
 
             s.spawn(|_| {
@@ -135,12 +145,20 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
                         let path = get_vector_storage_path(segment_path, vector_name);
 
                         let (original, quantized) = rayon::join(
-                            || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
+                            || {
+                                UpdateOnlyVectorStorage::<Fs::File>::open(
+                                    fs,
+                                    &path,
+                                    vector_config,
+                                    &hw_acc.get_counter_cell(),
+                                )
+                            },
                             || {
                                 UpdateOnlyQuantizedVectors::<Fs>::open(
                                     fs.clone(),
                                     &path,
                                     vector_config,
+                                    &hw_acc.get_counter_cell(),
                                 )
                             },
                         );
@@ -161,7 +179,11 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
                     .map(|(vector_name, _config)| {
                         let path = get_vector_storage_path(segment_path, vector_name);
                         let components = VectorComponents {
-                            storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                            storage: UpdateOnlyVectorStorage::open_sparse(
+                                fs,
+                                &path,
+                                &hw_acc.get_counter_cell(),
+                            )?,
                             quantized: None,
                         };
                         Ok((vector_name.clone(), components))
@@ -193,6 +215,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         segment_path: &Path,
         config: &SegmentConfig,
         state: AppendableIdTrackerState,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         let AppendableIdTrackerState {
             max_claimed_internal_id,
@@ -206,6 +229,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             max_claimed_internal_id,
             pending_inserts,
             mappings_end,
+            hw_counter,
         )?;
 
         let fs = CachedFs::new(fs, segment_path)?;
@@ -224,6 +248,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     fn store_components(
         &mut self,
         pool: &rayon::ThreadPool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(&CachedFs<Fs>, &mut StoreComponents<CachedFs<Fs>>)> {
         if self.store.is_none() {
             self.store = Some(StoreComponents::open(
@@ -231,6 +256,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                 pool,
                 &self.segment_path,
                 &self.config,
+                hw_counter,
             )?);
         }
         Ok((&self.fs, self.store.as_mut().expect("just opened")))
@@ -265,16 +291,18 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let points = &*points;
 
         // Ensure fresh new view of the files
-        self.fs.cache_file_info()?;
+        self.fs.cache_file_info(hw_counter)?;
 
         let operations: Vec<MappingOperation> = points
             .iter()
             .map(|point| MappingOperation::Insert(point.id))
             .collect();
-        let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
+        let inserted = self
+            .id_tracker
+            .insert_operations(&self.fs, &operations, hw_counter)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
 
-        let (fs, store) = self.store_components(pool)?;
+        let (fs, store) = self.store_components(pool, hw_counter)?;
 
         // One cell per task, off the accumulator: the cell itself is not Sync
         let hw_acc = hw_counter.new_accumulator();
@@ -330,7 +358,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
         let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
         self.id_tracker
-            .set_internal_versions(&self.fs, &slots, &versions)?;
+            .set_internal_versions(&self.fs, &slots, &versions, hw_counter)?;
 
         self.fs.rotate_cache_file_info();
         Ok(slots)
@@ -347,10 +375,12 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.id_tracker.delete_points(
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),
+            hw_counter,
         )
     }
 }

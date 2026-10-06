@@ -12,6 +12,7 @@ mod vectors;
 
 use std::collections::HashMap;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -69,24 +70,29 @@ where
     TPS: PayloadStorageRead,
     TVD: VectorDataRead,
 {
-    pub fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+    pub fn point_version(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         // Feeds version-dedup (paired with `point_is_deferred`), which must see
         // the latest version — including a deferred head that out-versions the
         // shadowed active.
         self.id_tracker
-            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
-            .and_then(|internal_id| self.id_tracker.internal_version(internal_id))
+            .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred, hw_counter)
+            .and_then(|internal_id| self.id_tracker.internal_version(internal_id, hw_counter))
     }
 
     pub fn read_range(
         &self,
         from: Option<PointIdType>,
         to: Option<PointIdType>,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         let iterator = self
             .id_tracker
-            .point_mappings()
-            .iter_from(from)
+            .point_mappings(hw_counter)
+            .iter_from(from, hw_counter)
             .map(|x| x.0);
         match to {
             None => iterator.collect(),

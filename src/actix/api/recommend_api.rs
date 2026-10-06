@@ -48,6 +48,7 @@ async fn recommend_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -145,6 +146,7 @@ async fn recommend_batch_points(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {
@@ -207,6 +209,7 @@ async fn recommend_point_groups(
         &collection.collection_name,
         &dispatcher,
         &auth,
+        &HwMeasurementAcc::disposable(),
     )
     .await
     {

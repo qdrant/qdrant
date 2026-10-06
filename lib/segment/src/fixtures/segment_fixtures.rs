@@ -17,7 +17,8 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
 
     let mut rnd_gen = rand::rng();
 
-    let mut segment = build_simple_segment(path, dim, distance).unwrap();
+    let mut segment =
+        build_simple_segment(path, dim, distance, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

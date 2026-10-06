@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use tokio::sync::RwLockWriteGuard;
 
@@ -72,6 +73,7 @@ impl Collection {
         _consensus: Box<dyn ShardTransferConsensus>,
         _on_finish: T,
         _on_error: F,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()>
     where
         T: Future<Output = ()> + Send + 'static,
@@ -99,6 +101,7 @@ impl Collection {
                         resharding_key.shard_key.clone(),
                         &[resharding_key.peer_id],
                         Some(ReplicaState::Resharding),
+                        hw_acc,
                     )
                     .await?;
 

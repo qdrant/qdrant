@@ -102,7 +102,7 @@ fn hnsw_quantized_search_test(
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance, &hw_counter).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_test_vector(&mut rng, dim, distance);
@@ -138,6 +138,7 @@ fn hnsw_quantized_search_test(
             quantized_data_path,
             4,
             &stopped,
+            &hw_counter,
         )
         .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
@@ -186,6 +187,7 @@ fn hnsw_quantized_search_test(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
@@ -929,7 +931,7 @@ fn build_quantized_hnsw_for_compare(
     let quantized_dir = Builder::new().prefix("quantized_dir").tempdir().unwrap();
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_simple_segment(segment_dir.path(), dim, distance).unwrap();
+    let mut segment = build_simple_segment(segment_dir.path(), dim, distance, &hw_counter).unwrap();
     let mut op_num: u64 = 0;
     for (n, vector) in vectors.iter().enumerate() {
         let idx = (n as u64).into();
@@ -965,6 +967,7 @@ fn build_quantized_hnsw_for_compare(
             quantized_dir.path(),
             4,
             stopped,
+            &hw_counter,
         )
         .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
@@ -1006,6 +1009,7 @@ fn build_quantized_hnsw_for_compare(
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 
@@ -1145,6 +1149,7 @@ fn test_build_hnsw_using_quantization() {
         &config,
         &HnswGlobalConfig::default(),
         FeatureFlags::default(),
+        &HardwareCounterCell::new(),
     )
     .unwrap();
 

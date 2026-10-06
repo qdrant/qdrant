@@ -60,5 +60,5 @@ fn smoke_view_over_in_memory_backends() {
     assert!(result.is_empty(), "no points in tracker");
 
     // `available_point_count` (inherent helper) reflects the empty tracker.
-    assert_eq!(view.available_point_count(), 0);
+    assert_eq!(view.available_point_count(&hw_counter), 0);
 }

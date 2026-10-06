@@ -39,12 +39,19 @@ pub(super) fn upload_and_build_main_graph(
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(Option<GpuVectorStorage>, Option<GraphLayersBuilder>)> {
     if !(build_main_graph || has_additional_links) {
         return Ok((None, None));
     }
     let timer = std::time::Instant::now();
-    let gpu_vectors = create_gpu_vectors(gpu_device, vector_storage, quantized_vectors, stopped)?;
+    let gpu_vectors = create_gpu_vectors(
+        gpu_device,
+        vector_storage,
+        quantized_vectors,
+        stopped,
+        hw_counter,
+    )?;
     if !build_main_graph {
         return Ok((gpu_vectors, None));
     }
@@ -57,6 +64,7 @@ pub(super) fn upload_and_build_main_graph(
         deleted_bitslice,
         entry_points_num,
         stopped,
+        hw_counter,
     )?;
     if gpu_graph.is_some() {
         log::debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
@@ -74,7 +82,9 @@ fn build_main_graph_on_gpu(
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
+    let deleted_point_bitslice = id_tracker.deleted_point_bitslice(hw_counter);
     let points_scorer_builder = |vector_id| {
         let hardware_counter = HardwareCounterCell::disposable();
         FilteredScorer::new_internal(
@@ -82,7 +92,7 @@ fn build_main_graph_on_gpu(
             vector_storage,
             quantized_vectors.as_ref(),
             None,
-            id_tracker.deleted_point_bitslice(),
+            deleted_point_bitslice,
             hardware_counter,
         )
     };
@@ -104,7 +114,7 @@ fn build_main_graph_on_gpu(
         gpu_insert_context.as_mut(),
         graph_layers_builder,
         id_tracker
-            .point_mappings()
+            .point_mappings(hw_counter)
             .iter_internal_excluding(deleted_bitslice),
         entry_points_num,
         points_scorer_builder,
@@ -122,7 +132,9 @@ pub(super) fn build_filtered_graph_on_gpu(
     block_filter_list: &VisitedListHandle,
     points_to_index: &[PointOffsetType],
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
+    let deleted_point_bitslice = id_tracker.deleted_point_bitslice(hw_counter);
     build_graph_on_gpu(
         gpu_insert_context,
         graph_layers_builder,
@@ -140,7 +152,7 @@ pub(super) fn build_filtered_graph_on_gpu(
                 vector_storage,
                 quantized_vectors.as_ref(),
                 Some(block_condition_checker),
-                id_tracker.deleted_point_bitslice(),
+                deleted_point_bitslice,
                 hardware_counter,
             )
         },
@@ -189,9 +201,10 @@ fn create_gpu_vectors(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<GpuVectorStorage>> {
     use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
-    if vector_storage.total_vector_count() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+    if vector_storage.total_vector_count(hw_counter) < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
         return Ok(None);
     }
 
@@ -202,6 +215,7 @@ fn create_gpu_vectors(
             quantized_vectors.as_ref(),
             get_gpu_force_half_precision(),
             stopped,
+            hw_counter,
         );
 
         // GPU construction does not return an error. If it fails, it will fall back to CPU.

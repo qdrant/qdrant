@@ -220,7 +220,7 @@ mod tests {
         builder
             .add_point(2, &[&99.into(), &55.into()], &hw_counter)
             .unwrap();
-        let numeric_index = builder.finalize().unwrap();
+        let numeric_index = builder.finalize(&hw_counter).unwrap();
         let numeric_index = FieldIndex::IntIndex(numeric_index);
 
         // Create a field index for a geo point.
@@ -234,7 +234,7 @@ mod tests {
         builder
             .add_point(2, &[&json!({"lat": 15.5, "lon": 25.5})], &hw_counter)
             .unwrap();
-        let geo_index = builder.finalize().unwrap();
+        let geo_index = builder.finalize(&hw_counter).unwrap();
         let geo_index = FieldIndex::GeoIndex(geo_index);
 
         // Create a field index for datetime
@@ -252,7 +252,7 @@ mod tests {
             )
             .unwrap();
         builder.add_point(2, &[], &hw_counter).unwrap();
-        let datetime_index = builder.finalize().unwrap();
+        let datetime_index = builder.finalize(&hw_counter).unwrap();
         let datetime_index = FieldIndex::DatetimeIndex(datetime_index);
 
         let mut indices = AHashMap::new();

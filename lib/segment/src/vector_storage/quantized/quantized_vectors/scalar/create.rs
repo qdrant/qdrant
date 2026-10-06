@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::encoded_vectors_u8;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
 
@@ -26,6 +27,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
             return Err(OperationError::service_error(
@@ -54,6 +56,7 @@ impl QuantizedVectors {
                 encoding,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?))
         } else {
             let storage_builder = QuantizedStorageBuilder::new(
@@ -71,6 +74,7 @@ impl QuantizedVectors {
                     encoding,
                     Some(meta_path.as_path()),
                     stopped,
+                    hw_counter,
                 )?,
             ))
         }
@@ -89,6 +93,7 @@ impl QuantizedVectors {
         path: &Path,
         on_disk_vector_storage: bool,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
             return Err(OperationError::service_error(
@@ -118,6 +123,7 @@ impl QuantizedVectors {
                 encoding,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?;
             let offsets = MultivectorOffsetsStorageRam::create(&offsets_path, offsets)?;
             Ok(QuantizedVectorStorage::ScalarRamMulti(
@@ -143,9 +149,14 @@ impl QuantizedVectors {
                 encoding,
                 Some(meta_path.as_path()),
                 stopped,
+                hw_counter,
             )?;
-            let offsets =
-                MultivectorOffsetsStorageMmap::create(&offsets_path, offsets, vectors_count)?;
+            let offsets = MultivectorOffsetsStorageMmap::create(
+                &offsets_path,
+                offsets,
+                vectors_count,
+                hw_counter,
+            )?;
             Ok(QuantizedVectorStorage::ScalarMmapMulti(
                 QuantizedMultivectorStorage::new(
                     vector_parameters.dim,

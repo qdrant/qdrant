@@ -3,6 +3,7 @@
 //! ([`DiskMappingsRef`]). Deleted points are never returned from either.
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -22,25 +23,35 @@ pub trait DiskMappingsSource {
     /// Per-point deletion check. Must stay lazy — implementations must not
     /// materialize the full deleted set here. Out-of-range offsets count as
     /// deleted; storage errors propagate.
-    fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool>;
+    fn point_deleted(
+        &self,
+        offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 
     /// The whole deleted set as a slice; may materialize it lazily, so its
     /// storage error propagates here.
-    fn deleted_bitslice(&self) -> OperationResult<&BitSlice>;
+    fn deleted_bitslice(&self, hw_counter: &HardwareCounterCell) -> OperationResult<&BitSlice>;
 
     /// A borrowed `(reader, deleted)` view for ordered/random iteration. Fails if
     /// the deleted set cannot be materialized.
-    fn mappings_ref(&self) -> OperationResult<DiskMappingsRef<'_, Self::Backend>> {
+    fn mappings_ref(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<DiskMappingsRef<'_, Self::Backend>> {
         Ok(DiskMappingsRef::new(
             self.mapping_reader(),
-            self.deleted_bitslice()?,
+            self.deleted_bitslice(hw_counter)?,
         ))
     }
 
     /// Like [`mappings_ref`](Self::mappings_ref), but infallible: on a
     /// deleted-set load error, logs and falls back to an empty deleted set.
-    fn mappings_ref_lossy(&self) -> DiskMappingsRef<'_, Self::Backend> {
-        self.mappings_ref().unwrap_or_else(|err| {
+    fn mappings_ref_lossy(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> DiskMappingsRef<'_, Self::Backend> {
+        self.mappings_ref(hw_counter).unwrap_or_else(|err| {
             log::error!("disk id tracker deleted set load failed: {err}");
             DiskMappingsRef::new(self.mapping_reader(), BitSlice::empty())
         })
@@ -50,20 +61,25 @@ pub trait DiskMappingsSource {
     fn resolve_internal(
         &self,
         external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PointOffsetType>> {
-        let Some(offset) = self.mapping_reader().lookup(external_id)? else {
+        let Some(offset) = self.mapping_reader().lookup(external_id, hw_counter)? else {
             return Ok(None);
         };
         // The immutable runs still carry points deleted after build; re-check.
-        Ok((!self.point_deleted(offset)?).then_some(offset))
+        Ok((!self.point_deleted(offset, hw_counter)?).then_some(offset))
     }
 
     /// Internal→external, excluding deleted points. Storage errors propagate.
-    fn resolve_external(&self, offset: PointOffsetType) -> OperationResult<Option<PointIdType>> {
-        if self.point_deleted(offset)? {
+    fn resolve_external(
+        &self,
+        offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<PointIdType>> {
+        if self.point_deleted(offset, hw_counter)? {
             Ok(None)
         } else {
-            self.mapping_reader().external_id(offset)
+            self.mapping_reader().external_id(offset, hw_counter)
         }
     }
 
@@ -81,6 +97,7 @@ pub trait DiskMappingsSource {
         &self,
         external_ids: impl IntoIterator<Item = PointIdType>,
         on_live: impl FnMut(PointIdType, PointOffsetType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 }
 
@@ -112,9 +129,12 @@ impl<'a, S: UniversalRead> DiskMappingsRef<'a, S> {
         self.reader.total_point_count() as usize
     }
 
-    pub fn iter_external(self) -> impl Iterator<Item = PointIdType> + 'a {
+    pub fn iter_external(
+        self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointIdType> + 'a {
         self.reader
-            .iter_from(None)
+            .iter_from(None, hw_counter)
             .filter(live_filter(self.deleted))
             .map(|(external_id, _)| external_id)
     }
@@ -128,14 +148,18 @@ impl<'a, S: UniversalRead> DiskMappingsRef<'a, S> {
     pub fn iter_from(
         self,
         external_id: Option<PointIdType>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
         self.reader
-            .iter_from(external_id)
+            .iter_from(external_id, hw_counter)
             .filter(live_filter(self.deleted))
     }
 
-    pub fn iter_random(self) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
-        reader::iter_random(self.reader, self.deleted)
+    pub fn iter_random(
+        self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (PointIdType, PointOffsetType)> + 'a {
+        reader::iter_random(self.reader, self.deleted, hw_counter)
     }
 }
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use fs_err as fs;
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::{
@@ -100,11 +101,15 @@ impl UniversalReadFs for BlockCacheFs {
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(
+        &self,
+        prefix_path: &Path,
+        _hw_counter: &HardwareCounterCell,
+    ) -> UioResult<Vec<ListedFile>> {
         local_file_ops::local_list_files(prefix_path)
     }
 
-    fn exists(&self, path: &Path) -> UioResult<bool> {
+    fn exists(&self, path: &Path, _hw_counter: &HardwareCounterCell) -> UioResult<bool> {
         fs::exists(path).map_err(UniversalIoError::from)
     }
 
@@ -113,6 +118,7 @@ impl UniversalReadFs for BlockCacheFs {
         path: impl AsRef<Path>,
         options: OpenOptions,
         _extra: (),
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<CachedSlice> {
         let OpenOptions {
             writeable,
@@ -141,7 +147,7 @@ impl UniversalRead for CachedSlice {
         Self: 'a,
         U: UserData;
 
-    fn live_reload(&mut self) -> UioResult<()> {
+    fn live_reload(&mut self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         // TODO: revise if this is the best way to reopen
         *self = CachedSlice::open(&self.controller, &self.path)
             .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
@@ -153,17 +159,18 @@ impl UniversalRead for CachedSlice {
         range: Range<u64>,
         _access_pattern: P,
         align: usize,
+        _hw_counter: &HardwareCounterCell,
     ) -> UioResult<ACow<'_>> {
         let start = usize::try_from(range.start).expect("range.start is within usize");
         let end = usize::try_from(range.end).expect("range.end is within usize");
         Ok(self.get_range_bytes(start..end, align)?)
     }
 
-    fn len<T>(&self) -> UioResult<u64> {
+    fn len<T>(&self, _hw_counter: &HardwareCounterCell) -> UioResult<u64> {
         Ok(Self::len::<T>(self) as u64)
     }
 
-    fn populate(&self) -> UioResult<()> {
+    fn populate(&self, _hw_counter: &HardwareCounterCell) -> UioResult<()> {
         Ok(self.populate()?)
     }
 

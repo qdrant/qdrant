@@ -43,8 +43,8 @@ where
         }
     }
 
-    fn flusher(&self) -> Flusher {
-        NumericIndexInner::flusher(self)
+    fn flusher(&self, hw_counter: &HardwareCounterCell) -> Flusher {
+        NumericIndexInner::flusher(self, hw_counter)
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -60,7 +60,7 @@ impl<T: NumericIndexValue> PayloadFieldIndexRead for NumericIndexInner<T>
 where
     Vec<T>: Blob,
 {
-    fn count_indexed_points(&self) -> OperationResult<usize> {
+    fn count_indexed_points(&self, _hw_counter: &HardwareCounterCell) -> OperationResult<usize> {
         Ok(self.get_points_count())
     }
 
@@ -85,8 +85,9 @@ where
         threshold: usize,
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        query::for_each_payload_block(self, threshold, key, f)
+        query::for_each_payload_block(self, threshold, key, f, hw_counter)
     }
 
     fn condition_checker<'a>(
@@ -106,7 +107,8 @@ where
     fn stream_range(
         &self,
         range: &RangeInterface,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        query::stream_range(self, range)
+        query::stream_range(self, range, hw_counter)
     }
 }

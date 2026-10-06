@@ -97,7 +97,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
+    fn load_all_fields(
+        &mut self,
+        create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         let mut indices = std::mem::take(&mut self.config.indices);
@@ -106,7 +110,7 @@ impl StructPayloadIndex {
         for (field, payload_schema) in indices.iter_mut() {
             let started = Instant::now();
             let (field_index, dirty) =
-                self.load_from_db(field, payload_schema, create_if_missing)?;
+                self.load_from_db(field, payload_schema, create_if_missing, hw_counter)?;
             log_load_timing(&self.path, &format!("field `{field}`"), started);
             field_indexes.insert(field.clone(), field_index);
             is_dirty |= dirty;
@@ -129,9 +133,10 @@ impl StructPayloadIndex {
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<FieldIndex>, bool)> {
         let id_tracker_borrow = self.id_tracker.borrow();
-        let deleted_points = id_tracker_borrow.deleted_point_bitslice();
+        let deleted_points = id_tracker_borrow.deleted_point_bitslice(hw_counter);
         let mut rebuild = false;
         let mut load_error = None;
         let mut is_dirty = false;
@@ -143,6 +148,7 @@ impl StructPayloadIndex {
                 &payload_schema.schema,
                 create_if_missing,
                 deleted_points,
+                hw_counter,
             )?;
 
             if let Some(mut indexes) = indexes {
@@ -159,6 +165,7 @@ impl StructPayloadIndex {
                     create_if_missing,
                     &id_tracker_borrow,
                     selector.default_mutability(),
+                    hw_counter,
                 )? {
                     indexes.push(null_index);
                 }
@@ -186,6 +193,7 @@ impl StructPayloadIndex {
                         create_if_missing,
                         &id_tracker_borrow,
                         deleted_points,
+                        hw_counter,
                     )
                 })
                 // Interrupt loading indices if one fails to load
@@ -227,7 +235,7 @@ impl StructPayloadIndex {
             // index. Safe here: the segment is still being opened, so no flush
             // pipeline capture of these storages can exist yet.
             for index in &indexes {
-                index.flusher()()?;
+                index.flusher(hw_counter)()?;
             }
 
             // Persist exact payload index types of newly built indices
@@ -245,6 +253,7 @@ impl StructPayloadIndex {
         path: &Path,
         storage_type: StorageType,
         load_mode: IndexLoadMode,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -271,7 +280,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields(load_mode == IndexLoadMode::CreateIfMissing)?;
+        index.load_all_fields(load_mode == IndexLoadMode::CreateIfMissing, hw_counter)?;
 
         Ok(index)
     }
@@ -301,8 +310,8 @@ impl StructPayloadIndex {
     /// Number of available points
     ///
     /// - excludes soft deleted points
-    pub fn available_point_count(&self) -> usize {
-        self.id_tracker.borrow().available_point_count()
+    pub fn available_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.id_tracker.borrow().available_point_count(hw_counter)
     }
 
     pub fn config(&self) -> &PayloadConfig {
@@ -357,10 +366,10 @@ impl StructPayloadIndex {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                index.populate()?;
+                index.populate(hw_counter)?;
             }
         }
         Ok(())

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use common::bitvec::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
@@ -171,7 +172,11 @@ impl MutableIdTracker {
 }
 
 impl IdTrackerRead for MutableIdTracker {
-    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+    fn internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
     }
 
@@ -179,20 +184,26 @@ impl IdTrackerRead for MutableIdTracker {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, SeqNumberType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_internal_versions_batch(self, internal_ids, callback)
+        default_internal_versions_batch(self, internal_ids, callback, hw_counter)
     }
 
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
         deferred_behavior: common::types::DeferredBehavior,
+        _hw_counter: &HardwareCounterCell,
     ) -> Option<PointOffsetType> {
         self.mappings
             .internal_id_with_behavior(&external_id, deferred_behavior)
     }
 
-    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+    fn external_id(
+        &self,
+        internal_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> Option<PointIdType> {
         self.mappings.external_id(internal_id)
     }
 
@@ -200,13 +211,17 @@ impl IdTrackerRead for MutableIdTracker {
         &self,
         internal_ids: impl IntoIterator<Item = PointOffsetType>,
         callback: impl FnMut(PointOffsetType, PointIdType),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        default_external_ids_batch(self, internal_ids, callback)
+        default_external_ids_batch(self, internal_ids, callback, hw_counter)
     }
 
     type Backend = common::universal_io::MmapFile;
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+    fn point_mappings(
+        &self,
+        _hw_counter: &HardwareCounterCell,
+    ) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
 
@@ -214,24 +229,25 @@ impl IdTrackerRead for MutableIdTracker {
         self.mappings.total_point_count()
     }
 
-    fn available_point_count(&self) -> usize {
+    fn available_point_count(&self, _hw_counter: &HardwareCounterCell) -> usize {
         self.mappings.available_point_count()
     }
 
-    fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+    fn deleted_point_count(&self, hw_counter: &HardwareCounterCell) -> usize {
+        self.total_point_count() - self.available_point_count(hw_counter)
     }
 
-    fn is_deleted_point(&self, key: PointOffsetType) -> bool {
+    fn is_deleted_point(&self, key: PointOffsetType, _hw_counter: &HardwareCounterCell) -> bool {
         self.mappings.is_deleted_point(key)
     }
 
-    fn deleted_point_bitslice(&self) -> &BitSlice {
+    fn deleted_point_bitslice(&self, _hw_counter: &HardwareCounterCell) -> &BitSlice {
         self.mappings.deleted()
     }
 
     fn iter_internal_versions(
         &self,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
         Ok(Box::new(
             self.internal_to_version
@@ -259,6 +275,7 @@ impl IdTracker for MutableIdTracker {
         &mut self,
         internal_id: PointOffsetType,
         version: SeqNumberType,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if internal_id as usize >= self.internal_to_version.len() {
             #[cfg(debug_assertions)]
@@ -290,18 +307,26 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
             .push(MappingChange::Delete(external_id));
         if let Some(internal_id) = internal_id {
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
             self.pending_mappings
@@ -309,7 +334,7 @@ impl IdTracker for MutableIdTracker {
                 .push(MappingChange::Delete(external_id));
         }
 
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION, hw_counter)?;
 
         Ok(())
     }
@@ -317,7 +342,7 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         let mappings_path = mappings_path(&self.segment_path);
 
         let changes = {
@@ -370,7 +395,7 @@ impl IdTracker for MutableIdTracker {
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self, _hw_counter: &HardwareCounterCell) -> Flusher {
         let changes = {
             let changes_guard = self.pending_versions.lock();
             if changes_guard.is_empty() {

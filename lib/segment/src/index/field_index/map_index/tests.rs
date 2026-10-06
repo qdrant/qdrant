@@ -81,7 +81,7 @@ fn save_map_index_with<N>(
     match index_type {
         IndexType::MutableGridstore => {
             let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf(), prefix_index);
-            builder.init().unwrap();
+            builder.init(&hw_counter).unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
@@ -89,12 +89,12 @@ fn save_map_index_with<N>(
                     .add_point(idx as PointOffsetType, &values, &hw_counter)
                     .unwrap();
             }
-            builder.finalize().unwrap();
+            builder.finalize(&hw_counter).unwrap();
         }
         IndexType::Mmap | IndexType::RamMmap => {
             let mut builder =
                 MapIndex::<N>::builder_immutable(path, false, &empty_deleted(), prefix_index);
-            builder.init().unwrap();
+            builder.init(&hw_counter).unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
@@ -102,7 +102,7 @@ fn save_map_index_with<N>(
                     .add_point(idx as PointOffsetType, &values, &hw_counter)
                     .unwrap();
             }
-            builder.finalize().unwrap();
+            builder.finalize(&hw_counter).unwrap();
         }
     }
 }
@@ -131,17 +131,30 @@ where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     let index = match index_type {
-        IndexType::MutableGridstore => {
-            MapIndex::<N>::new_mutable(path.to_path_buf(), true, prefix_index)
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::Mmap => MapIndex::<N>::new_immutable(path, Memory::Cold, &empty_deleted())
-            .unwrap()
-            .unwrap(),
-        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, Memory::Pinned, &empty_deleted())
-            .unwrap()
-            .unwrap(),
+        IndexType::MutableGridstore => MapIndex::<N>::new_mutable(
+            path.to_path_buf(),
+            true,
+            prefix_index,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
+        IndexType::Mmap => MapIndex::<N>::new_immutable(
+            path,
+            Memory::Cold,
+            &empty_deleted(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
+        IndexType::RamMmap => MapIndex::<N>::new_immutable(
+            path,
+            Memory::Pinned,
+            &empty_deleted(),
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
     };
     let hw_counter = HardwareCounterCell::new();
     for (idx, values) in data.iter().enumerate() {
@@ -164,7 +177,7 @@ fn test_uuid_payload_index() {
     let mut builder =
         MapIndex::<UuidIntType>::builder_immutable(temp_dir.path(), false, &empty_deleted(), false);
 
-    builder.init().unwrap();
+    builder.init(&HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -176,13 +189,18 @@ fn test_uuid_payload_index() {
             .unwrap();
     }
 
-    let index = builder.finalize().unwrap();
+    let index = builder.finalize(&hw_counter).unwrap();
 
     index
-        .for_each_payload_block(50, PayloadKeyType::new("test_uuid"), &mut |block| {
-            black_box(block);
-            Ok(())
-        })
+        .for_each_payload_block(
+            50,
+            PayloadKeyType::new("test_uuid"),
+            &mut |block| {
+                black_box(block);
+                Ok(())
+            },
+            &hw_counter,
+        )
         .unwrap();
 }
 
@@ -197,7 +215,7 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
         &empty_deleted(),
         false,
     );
-    builder.init().unwrap();
+    builder.init(&HardwareCounterCell::new()).unwrap();
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
@@ -211,7 +229,7 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
             .unwrap();
     }
 
-    let index = builder.finalize().unwrap();
+    let index = builder.finalize(&hw_counter).unwrap();
     let hw_counter = HardwareCounterCell::new();
     for (idx, values) in data.into_iter().enumerate().rev() {
         // values themselves don't promise any particular order
@@ -379,31 +397,40 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
     {
         save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
         let mut index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
-        index.remove_point(1).unwrap();
-        index.remove_point(2).unwrap();
-        index.remove_point(5).unwrap();
-        index.flusher()().unwrap();
+        index.remove_point(1, &HardwareCounterCell::new()).unwrap();
+        index.remove_point(2, &HardwareCounterCell::new()).unwrap();
+        index.remove_point(5, &HardwareCounterCell::new()).unwrap();
+        index.flusher(&HardwareCounterCell::new())().unwrap();
         assert_eq!(index.get_indexed_points(), 3);
         drop(index);
     }
 
     let deleted = deleted_with(&[1, 2, 5]);
     let new_index = match index_type {
-        IndexType::MutableGridstore => {
-            MapIndex::<IntPayloadType>::new_mutable(temp_dir.path().to_path_buf(), true, false)
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
-                .unwrap()
-                .unwrap()
-        }
-        IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::MutableGridstore => MapIndex::<IntPayloadType>::new_mutable(
+            temp_dir.path().to_path_buf(),
+            true,
+            false,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
+        IndexType::Mmap => MapIndex::<IntPayloadType>::new_immutable(
+            temp_dir.path(),
+            Memory::Cold,
+            &deleted,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
+        IndexType::RamMmap => MapIndex::<IntPayloadType>::new_immutable(
+            temp_dir.path(),
+            Memory::Pinned,
+            &deleted,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
     };
 
     assert_eq!(new_index.get_indexed_points(), 3);
@@ -411,14 +438,14 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
     let hw_counter = HardwareCounterCell::new();
     for id in [1u32, 2, 5] {
         assert_eq!(
-            new_index.values_count(id),
+            new_index.values_count(id, &hw_counter),
             0,
             "deleted point {id} should have no values after reload",
         );
     }
     for id in [0u32, 3, 4] {
         assert!(
-            new_index.values_count(id) > 0,
+            new_index.values_count(id, &hw_counter) > 0,
             "live point {id} should have values after reload",
         );
     }
@@ -461,15 +488,19 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     short_deleted.set(1, true);
 
     let new_index = match index_type {
-        IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &short_deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::Mmap => MapIndex::<IntPayloadType>::new_immutable(
+            temp_dir.path(),
+            Memory::Cold,
+            &short_deleted,
+            &HardwareCounterCell::new(),
+        )
+        .unwrap()
+        .unwrap(),
         IndexType::RamMmap => MapIndex::<IntPayloadType>::new_immutable(
             temp_dir.path(),
             Memory::Pinned,
             &short_deleted,
+            &HardwareCounterCell::new(),
         )
         .unwrap()
         .unwrap(),
@@ -478,19 +509,26 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
     let hw_counter = HardwareCounterCell::new();
 
-    assert!(new_index.values_count(0) > 0, "id 0 should be live");
-    assert_eq!(new_index.values_count(1), 0, "id 1 deleted via bitslice");
+    assert!(
+        new_index.values_count(0, &hw_counter) > 0,
+        "id 0 should be live"
+    );
     assert_eq!(
-        new_index.values_count(2),
+        new_index.values_count(1, &hw_counter),
+        0,
+        "id 1 deleted via bitslice"
+    );
+    assert_eq!(
+        new_index.values_count(2, &hw_counter),
         0,
         "id 2 deleted via build-time empty"
     );
     assert!(
-        new_index.values_count(3) > 0,
+        new_index.values_count(3, &hw_counter) > 0,
         "id 3 should be live (beyond bitslice)"
     );
     assert!(
-        new_index.values_count(4) > 0,
+        new_index.values_count(4, &hw_counter) > 0,
         "id 4 should be live (beyond bitslice)"
     );
 
@@ -574,9 +612,14 @@ fn test_for_values_map_on_disk_deleted() {
 
     // Load the on-disk variant with points 0 and 2 marked deleted.
     let deleted = deleted_with(&[0, 2]);
-    let index = MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
-        .unwrap()
-        .unwrap();
+    let index = MapIndex::<IntPayloadType>::new_immutable(
+        temp_dir.path(),
+        Memory::Cold,
+        &deleted,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(matches!(index, MapIndex::OnDisk(_)));
 
     let result = collect_for_values_map(&index, &[1, 2, 3, 4, 5]);
@@ -914,7 +957,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
 
     // Delete two points, one of which held the only "http://" value.
     for deleted in [1, 3] {
-        index.remove_point(deleted).unwrap();
+        index.remove_point(deleted, &hw_counter).unwrap();
         data[deleted as usize].clear();
     }
 
@@ -962,21 +1005,26 @@ fn test_str_prefix_payload_blocks() {
     let mut prefix_blocks = Vec::new();
     let mut value_blocks = Vec::new();
     index
-        .for_each_payload_block(3, JsonPath::new("test"), &mut |block| {
-            match block.condition.r#match.as_ref().unwrap() {
-                Match::Prefix(prefix) => {
-                    prefix_blocks.push((prefix.prefix.clone(), block.cardinality));
+        .for_each_payload_block(
+            3,
+            JsonPath::new("test"),
+            &mut |block| {
+                match block.condition.r#match.as_ref().unwrap() {
+                    Match::Prefix(prefix) => {
+                        prefix_blocks.push((prefix.prefix.clone(), block.cardinality));
+                    }
+                    Match::Value(_)
+                    | Match::Text(_)
+                    | Match::TextAny(_)
+                    | Match::Phrase(_)
+                    | Match::Substring(_)
+                    | Match::Any(_)
+                    | Match::Except(_) => value_blocks.push(block.cardinality),
                 }
-                Match::Value(_)
-                | Match::Text(_)
-                | Match::TextAny(_)
-                | Match::Phrase(_)
-                | Match::Substring(_)
-                | Match::Any(_)
-                | Match::Except(_) => value_blocks.push(block.cardinality),
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     // Heavy branching nodes are "https://" (12), "https://qdrant.tech/" (8)
@@ -1006,7 +1054,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
 
     let mut builder =
         MapIndex::<str>::builder_immutable(temp_dir.path(), false, &empty_deleted(), with_prefix);
-    builder.init().unwrap();
+    builder.init(&hw_counter).unwrap();
     for (idx, values) in data.iter().enumerate() {
         let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();
         let values: Vec<_> = values.iter().collect();
@@ -1014,7 +1062,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
             .add_point(idx as PointOffsetType, &values, &hw_counter)
             .unwrap();
     }
-    let index = builder.finalize().unwrap();
+    let index = builder.finalize(&hw_counter).unwrap();
 
     let tracks_file = |files: &[std::path::PathBuf]| {
         files

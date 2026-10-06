@@ -59,7 +59,7 @@ where
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has.
                 numeric_index
-                    .get_ordering_values(internal_id)
+                    .get_ordering_values(internal_id, hw_counter)
                     // But only those which start from `start_from`.
                     .filter(|value| match order_by.direction() {
                         Direction::Asc => value >= &start_from,
@@ -69,7 +69,7 @@ where
             })
             .filter_map(|(value, internal_id)| {
                 self.id_tracker
-                    .external_id(internal_id)
+                    .external_id(internal_id, hw_counter)
                     .map(|external_id| (value, external_id))
             });
 
@@ -110,7 +110,7 @@ where
             })?;
 
         let range_iter = numeric_index
-            .stream_range(&order_by.as_range())?
+            .stream_range(&order_by.as_range(), hw_counter)?
             // We can't early-stop the iterator for deferred points because the items are sorted
             // lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
@@ -138,7 +138,7 @@ where
         filtered_iter.stop_if(is_stopped).process_results(|it| {
             it.filter_map(|(value, internal_id)| {
                 self.id_tracker
-                    .external_id(internal_id)
+                    .external_id(internal_id, hw_counter)
                     .map(|external_id| (value, external_id))
             })
             .take(limit.unwrap_or(usize::MAX))

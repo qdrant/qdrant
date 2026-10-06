@@ -14,6 +14,7 @@ impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         Ok(Vec::new())
     }
@@ -23,13 +24,13 @@ impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Immutable on-disk state: only the in-memory deletion bitmap is
         // patched (mirrors the other immutable leaves). `fs` / `new_points`
         // are unused because nothing is appended after build.
         for deleted_point in deleted_points {
-            self.remove_point(*deleted_point);
+            self.remove_point(*deleted_point, hw_counter);
         }
 
         Ok(())

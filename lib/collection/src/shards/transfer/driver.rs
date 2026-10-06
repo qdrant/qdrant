@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
@@ -42,6 +43,7 @@ pub async fn transfer_shard(
     snapshots_path: &Path,
     temp_dir: &Path,
     fallback_method: ShardTransferMethod,
+    hw_acc: &HwMeasurementAcc,
 ) -> CollectionResult<bool> {
     // The remote might target a different shard ID depending on the shard transfer type
     let local_shard_id = transfer_config.shard_id;
@@ -99,6 +101,7 @@ pub async fn transfer_shard(
                 snapshots_path,
                 &collection_id,
                 temp_dir,
+                hw_acc,
             )
             .await?;
         }
@@ -206,11 +209,13 @@ pub fn spawn_transfer_task<T, F>(
     fallback_method: ShardTransferMethod,
     on_finish: T,
     on_error: F,
+    hw_acc: &HwMeasurementAcc,
 ) -> CancellableAsyncTaskHandle<bool>
 where
     T: Future<Output = ()> + Send + 'static,
     F: Future<Output = ()> + Send + 'static,
 {
+    let hw_acc = hw_acc.clone();
     spawn_async_cancellable(move |cancel| async move {
         // A driver spawned while this peer has no consensus leader acts on a view of consensus
         // that may be stale. On startup, committed but unapplied entries are replayed before this
@@ -250,6 +255,7 @@ where
                     &snapshots_path,
                     &temp_dir,
                     fallback_method,
+                    &hw_acc,
                 )
                 .await
             };

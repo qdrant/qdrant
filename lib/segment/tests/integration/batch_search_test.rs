@@ -42,7 +42,8 @@ fn test_batch_and_single_request_equivalency() {
 
     let int_key = "int";
 
-    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+    let mut segment =
+        build_simple_segment(dir.path(), dim, distance, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -176,6 +177,7 @@ fn test_batch_and_single_request_equivalency() {
             inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
+        &hw_counter,
     )
     .unwrap();
 

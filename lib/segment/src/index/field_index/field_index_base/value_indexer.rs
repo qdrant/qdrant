@@ -62,10 +62,14 @@ pub trait ValueIndexer {
         payload: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.remove_point(id)?;
+        self.remove_point(id, hw_counter)?;
         self.add_many(id, Self::flatten_values(payload), hw_counter)
     }
 
     /// remove a point from the index
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>;
+    fn remove_point(
+        &mut self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 }

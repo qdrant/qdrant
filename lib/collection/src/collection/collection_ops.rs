@@ -329,7 +329,7 @@ impl Collection {
     /// recreation has already been applied and persisted by the time we get here, so there is no
     /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
     /// (see `LocalShard::on_optimizer_config_update`).
-    pub fn recreate_optimizers_background(&self) {
+    pub fn recreate_optimizers_background(&self, hw_acc: &HwMeasurementAcc) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
         // into a queued re-run handled by the task that is already running.
         if !self.recreate_optimizers_state.request() {
@@ -339,6 +339,7 @@ impl Collection {
         let shards_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
         let recreate_state = self.recreate_optimizers_state.clone();
+        let _hw_acc = hw_acc.clone();
         tokio::task::spawn(async move {
             loop {
                 // Run the recreation as a child task, so a panic is contained (surfaced as a
@@ -417,13 +418,14 @@ impl Collection {
     pub async fn info(
         &self,
         shard_selection: &ShardSelectorInternal,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CollectionInfo> {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| shard.info(shard_selection.is_shard_id()))
+            .map(|(shard, _shard_key)| shard.info(shard_selection.is_shard_id(), hw_acc))
             .collect();
 
         let mut info = match requests.try_next().await? {
@@ -559,12 +561,13 @@ impl Collection {
     pub async fn optimizations(
         &self,
         options: OptimizationsRequestOptions,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<OptimizationsResponse> {
         let shards_holder = self.shards_holder.read().await;
 
         let futures: Vec<_> = shards_holder
             .all_shards()
-            .map(|shard| shard.optimizations(options))
+            .map(|shard| shard.optimizations(options, hw_acc))
             .collect();
 
         let shard_responses = future::try_join_all(futures).await?;

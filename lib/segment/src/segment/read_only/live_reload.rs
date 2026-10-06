@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -20,6 +21,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     pub async fn live_preload(
         &self,
         is_stopped: &AtomicBool,
+        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<PointOffsetType>> {
         let Self {
             uuid: _,
@@ -40,7 +42,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // anchoring max_committed_id and live-reloading held handles in place.
         let probe = id_tracker
             .borrow()
-            .probe_committed(reload_fs.inner())
+            .probe_committed(reload_fs.inner(), &hw_acc)
             .await?;
         let max_committed_id = probe.max_committed_id();
 
@@ -51,17 +53,27 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         // 3. Take directory listing snapshot now that max_committed_id is anchored.
-        reload_fs.cache_file_info_async().await?;
+        reload_fs.cache_file_info_async(hw_acc.clone()).await?;
 
         check_process_stopped(is_stopped)?;
 
         let fs = &*reload_fs;
 
-        let mut preloads = id_tracker.borrow().live_preload(fs)?;
-        preloads.extend(payload_storage.borrow().live_preload(fs)?);
-        preloads.extend(payload_index.borrow().live_preload(fs)?);
+        let mut preloads = id_tracker
+            .borrow()
+            .live_preload(fs, &hw_acc.get_counter_cell())?;
+        preloads.extend(
+            payload_storage
+                .borrow()
+                .live_preload(fs, &hw_acc.get_counter_cell())?,
+        );
+        preloads.extend(
+            payload_index
+                .borrow()
+                .live_preload(fs, &hw_acc.get_counter_cell())?,
+        );
         for vector_data in vector_data.values() {
-            preloads.extend(vector_data.live_preload(fs)?);
+            preloads.extend(vector_data.live_preload(fs, &hw_acc.get_counter_cell())?);
         }
 
         futures::join!(fs.wait_all(), join_all(preloads));
@@ -102,7 +114,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
         // accumulated delta survives an error and is replayed on the next call.
-        let fresh = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+        let fresh = id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id, hw_counter)?;
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
 
@@ -146,6 +160,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
     fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
         let Self {
             vector_index,
@@ -153,10 +168,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
             quantized_vectors,
         } = self;
 
-        let mut futs = vector_storage.borrow().live_preload(fs)?;
-        futs.extend(vector_index.borrow().live_preload(fs)?);
+        let mut futs = vector_storage.borrow().live_preload(fs, hw_counter)?;
+        futs.extend(vector_index.borrow().live_preload(fs, hw_counter)?);
         if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
-            futs.extend(quantized_vectors.live_preload(fs)?);
+            futs.extend(quantized_vectors.live_preload(fs, hw_counter)?);
         }
         Ok(futs)
     }

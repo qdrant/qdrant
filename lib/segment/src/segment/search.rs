@@ -1,4 +1,5 @@
 #[cfg(feature = "testing")]
+#[cfg(feature = "testing")]
 use super::Segment;
 #[cfg(feature = "testing")]
 use crate::common::operation_error::OperationResult;

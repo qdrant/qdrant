@@ -29,20 +29,24 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
-        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
+        let probe = futures::executor::block_on(
+            id_tracker
+                .borrow()
+                .probe_committed(fs.inner(), &hw_counter.new_accumulator()),
+        )?;
         if probe.is_unchanged() {
             return Ok(());
         }
         let max_committed_id = probe.max_committed_id();
 
         // Prepare new LIST snapshot
-        fs.cache_file_info()?;
+        fs.cache_file_info(hw_counter)?;
 
         // Live preload: schedule everything
-        let mut futs = id_tracker.borrow().live_preload(fs)?;
-        futs.extend(payload_storage.borrow_mut().live_preload(fs)?);
+        let mut futs = id_tracker.borrow().live_preload(fs, hw_counter)?;
+        futs.extend(payload_storage.borrow_mut().live_preload(fs, hw_counter)?);
         for vector_storage in vector_data.values() {
-            futs.extend(vector_storage.borrow_mut().live_preload(fs)?);
+            futs.extend(vector_storage.borrow_mut().live_preload(fs, hw_counter)?);
         }
 
         // Wait for preload
@@ -51,7 +55,9 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+        let delta = id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id, hw_counter)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };

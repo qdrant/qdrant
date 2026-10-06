@@ -9,6 +9,7 @@
 
 use std::borrow::Cow;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::encoded_storage::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -164,21 +165,35 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     query: &EncodedQueryTQ,
     ids: &[PointOffsetType],
     scores: &mut [ScoreType],
+    hw_counter: &HardwareCounterCell,
 ) {
     debug_assert_eq!(ids.len(), scores.len());
 
     if !TStorage::prefers_run_scoring(ids) {
-        storage.for_each_batch(ids, |idx, bytes| {
-            scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
-        });
+        storage.for_each_batch(
+            ids,
+            |idx, bytes| {
+                scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
+            },
+            hw_counter,
+        );
         return;
     }
 
     // The record size every Turbo datatype storage is created with.
     let stride = quantizer.quantized_size();
-    storage.for_each_run(ids, |first, count, bytes| {
-        quantizer.score_precomputed_batch(query, &bytes, stride, &mut scores[first..first + count]);
-    });
+    storage.for_each_run(
+        ids,
+        |first, count, bytes| {
+            quantizer.score_precomputed_batch(
+                query,
+                &bytes,
+                stride,
+                &mut scores[first..first + count],
+            );
+        },
+        hw_counter,
+    );
 
     if invert_score(distance) {
         for score in scores {

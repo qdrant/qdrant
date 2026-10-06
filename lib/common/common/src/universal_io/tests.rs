@@ -5,6 +5,7 @@ use std::path::Path;
 
 use super::conformance::{open_options, run_append_conformance};
 use super::*;
+use crate::counter::hardware_counter::HardwareCounterCell;
 
 /// Appending grows the underlying regular file itself, preserving existing
 /// content — verified with plain fs reads, on both local backends.
@@ -19,9 +20,15 @@ fn append_grows_regular_file() {
         fs_err::write(path, b"existing ").unwrap();
 
         let mut file = fs
-            .open(path, open_options(true), Fs::OpenExtra::default())
+            .open(
+                path,
+                open_options(true),
+                Fs::OpenExtra::default(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
-        file.append(9, b"appended".as_slice()).unwrap();
+        file.append(9, b"appended".as_slice(), &HardwareCounterCell::new())
+            .unwrap();
 
         assert_eq!(fs_err::read(path).unwrap(), b"existing appended".as_slice());
     }
@@ -38,7 +45,7 @@ fn append_grows_regular_file() {
 #[test]
 fn mmap_append_conformance() {
     let dir = tempfile::tempdir().unwrap();
-    run_append_conformance(&MmapFs, dir.path());
+    run_append_conformance(&MmapFs, dir.path(), &HardwareCounterCell::new());
 }
 
 #[cfg(target_os = "linux")]
@@ -46,7 +53,7 @@ fn mmap_append_conformance() {
 fn io_uring_append_conformance() {
     let dir = tempfile::tempdir().unwrap();
     let fs = IoUringFs::from_context(Default::default()).unwrap();
-    run_append_conformance(&fs, dir.path());
+    run_append_conformance(&fs, dir.path(), &HardwareCounterCell::new());
 }
 
 /// The durability flusher is reachable through `TypedStorage` for
@@ -64,10 +71,17 @@ fn typed_storage_forwards_flusher_for_append_only_storages() {
 fn mmap_append_requires_writeable() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("read_only.dat");
-    MmapFs.create(&path, 0).unwrap();
+    MmapFs
+        .create(&path, 0, &HardwareCounterCell::new())
+        .unwrap();
 
-    let mut file = MmapFs.open(&path, open_options(false), ()).unwrap();
-    assert!(file.append(0, b"x".as_slice()).is_err());
+    let mut file = MmapFs
+        .open(&path, open_options(false), (), &HardwareCounterCell::new())
+        .unwrap();
+    assert!(
+        file.append(0, b"x".as_slice(), &HardwareCounterCell::new())
+            .is_err()
+    );
 }
 
 /// Append is the only growth path: positioned writes beyond the end-of-file
@@ -81,11 +95,17 @@ fn write_beyond_eof_still_errors() {
         Fs::File: UniversalAppend + UniversalWrite,
         Fs::OpenExtra: Default,
     {
-        fs.create(path, 0).unwrap();
+        fs.create(path, 0, &HardwareCounterCell::new()).unwrap();
         let mut file = fs
-            .open(path, open_options(true), Fs::OpenExtra::default())
+            .open(
+                path,
+                open_options(true),
+                Fs::OpenExtra::default(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
-        file.append(0, b"abc".as_slice()).unwrap();
+        file.append(0, b"abc".as_slice(), &HardwareCounterCell::new())
+            .unwrap();
 
         // Within bounds: fine.
         file.write(0, b"xyz".as_slice()).unwrap();
@@ -117,18 +137,25 @@ fn io_uring_append_rejects_direct_io() {
     let path = dir.path().join("direct.dat");
 
     let fs = IoUringFs::from_context(Default::default()).unwrap();
-    fs.create(&path, 0).unwrap();
+    fs.create(&path, 0, &HardwareCounterCell::new()).unwrap();
 
     let extra = IoUringOpenExtra {
         prevent_caching: true,
     };
     // Some filesystems (e.g. tmpfs) reject `O_DIRECT` opens altogether;
     // nothing to test there.
-    let Ok(mut file) = fs.open(&path, open_options(true), extra) else {
+    let Ok(mut file) = fs.open(
+        &path,
+        open_options(true),
+        extra,
+        &HardwareCounterCell::new(),
+    ) else {
         return;
     };
 
-    let err = file.append(0, b"x".as_slice()).unwrap_err();
+    let err = file
+        .append(0, b"x".as_slice(), &HardwareCounterCell::new())
+        .unwrap_err();
     let UniversalIoError::Io(err) = err else {
         panic!("expected io error, got {err:?}");
     };

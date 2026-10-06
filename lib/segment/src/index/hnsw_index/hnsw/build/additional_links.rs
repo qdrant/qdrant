@@ -81,8 +81,9 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     pool: &ThreadPool,
     rng: &mut R,
     stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let total_vector_count = vector_storage.total_vector_count();
+    let total_vector_count = vector_storage.total_vector_count(hw_counter);
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
     progress_additional_links.start();
@@ -94,7 +95,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
 
     // Estimate connectivity of the main graph
     let all_points = id_tracker
-        .point_mappings()
+        .point_mappings(hw_counter)
         .iter_internal_excluding(deleted_bitslice)
         .collect::<Vec<_>>();
 
@@ -223,13 +224,19 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 &mut block_filter_list,
                 &mut indexed_vectors_set,
                 &counter,
+                hw_counter,
             )?;
             graph_layers_builder.merge_from_other(additional_graph);
             Ok(())
         };
 
         payload_index.with_view(|v| {
-            v.for_each_payload_block(&field, config.full_scan_threshold, &mut process_block)
+            v.for_each_payload_block(
+                &field,
+                config.full_scan_threshold,
+                &mut process_block,
+                hw_counter,
+            )
         })?;
     }
     Ok(indexed_vectors_set.count_ones())
@@ -278,6 +285,7 @@ fn build_filtered_graph(
     block_filter_list: &mut VisitedListHandle,
     indexed_vectors_set: &mut BitVec,
     counter: &AtomicU64,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     block_filter_list.next_iteration();
 
@@ -299,12 +307,14 @@ fn build_filtered_graph(
             block_filter_list,
             &points_to_index,
             stopped,
+            hw_counter,
         )?
     {
         *graph_layers_builder = gpu_constructed_graph;
         return Ok(());
     }
 
+    let deleted_point_bitslice = id_tracker.deleted_point_bitslice(hw_counter);
     let insert_points = |block_point_id| {
         check_process_stopped(stopped)?;
 
@@ -321,7 +331,7 @@ fn build_filtered_graph(
             vector_storage,
             quantized_vectors.as_ref(),
             Some(block_condition_checker),
-            id_tracker.deleted_point_bitslice(),
+            deleted_point_bitslice,
             internal_hardware_counter,
         )?;
 

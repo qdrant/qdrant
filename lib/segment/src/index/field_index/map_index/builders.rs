@@ -30,9 +30,9 @@ where
 {
     type FieldIndexType = MapIndex<N>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match &mut self.0 {
-            MapIndex::Mutable(index) => index.clear(),
+            MapIndex::Mutable(index) => index.clear(hw_counter),
             MapIndex::Immutable(_) => unreachable!(),
             MapIndex::OnDisk(_) => unreachable!(),
         }
@@ -47,7 +47,7 @@ where
         self.0.add_point(id, values, hw_counter)
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, _hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         Ok(self.0)
     }
 }
@@ -69,7 +69,7 @@ where
 {
     type FieldIndexType = MapIndex<N>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, _hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         Ok(())
     }
 
@@ -112,7 +112,7 @@ where
         Ok(())
     }
 
-    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(self, hw_counter: &HardwareCounterCell) -> OperationResult<Self::FieldIndexType> {
         let populate = Populate::from(!self.is_on_disk);
         let on_disk_index = OnDiskMapIndex::build(
             &MmapFs,
@@ -122,6 +122,7 @@ where
             populate,
             &self.deleted_points,
             self.prefix_index,
+            hw_counter,
         )?;
 
         let index = if self.is_on_disk {
@@ -172,15 +173,16 @@ where
 {
     type FieldIndexType = MapIndex<N>;
 
-    fn init(&mut self) -> OperationResult<()> {
+    fn init(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         assert!(
             self.index.is_none(),
             "index must be initialized exactly once",
         );
         self.index.replace(
-            MapIndex::new_mutable(self.dir.clone(), true, self.prefix_index)?.ok_or_else(|| {
-                OperationError::service_error("Failed to create mutable map index")
-            })?,
+            MapIndex::new_mutable(self.dir.clone(), true, self.prefix_index, hw_counter)?
+                .ok_or_else(|| {
+                    OperationError::service_error("Failed to create mutable map index")
+                })?,
         );
         Ok(())
     }
@@ -199,13 +201,16 @@ where
         index.add_point(id, payload, hw_counter)
     }
 
-    fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {
+    fn finalize(
+        mut self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Self::FieldIndexType> {
         let Some(index) = self.index.take() else {
             return Err(OperationError::service_error(
                 "MapIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flusher(hw_counter)()?;
         Ok(index)
     }
 }

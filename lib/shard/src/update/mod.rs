@@ -297,6 +297,7 @@ pub fn process_vector_name_operation(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     vector_name_operation: &VectorNameOperations,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match vector_name_operation {
         VectorNameOperations::CreateVectorName(create_data) => {
@@ -307,7 +308,7 @@ pub fn process_vector_name_operation(
 
             segments.apply_segments(|write_segment| {
                 write_segment.with_upgraded(|segment| {
-                    segment.create_vector_name(op_num, vector_name, config)
+                    segment.create_vector_name(op_num, vector_name, config, hw_counter)
                 })
             })
         }

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_null_index::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME};
@@ -19,9 +20,12 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let has_values = ReadOnlyFlags::<S>::preopen(fs, &path.join(HAS_VALUES_DIRNAME), populate)?;
-        let is_null = ReadOnlyFlags::<S>::preopen(fs, &path.join(IS_NULL_DIRNAME), populate)?;
+        let has_values =
+            ReadOnlyFlags::<S>::preopen(fs, &path.join(HAS_VALUES_DIRNAME), populate, hw_counter)?;
+        let is_null =
+            ReadOnlyFlags::<S>::preopen(fs, &path.join(IS_NULL_DIRNAME), populate, hw_counter)?;
         Ok(has_values || is_null)
     }
 
@@ -45,11 +49,13 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         total_point_count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let has_values_flags = ReadOnlyFlags::<S>::open(fs, &path.join(HAS_VALUES_DIRNAME))?;
-        let is_null_flags = ReadOnlyFlags::<S>::open(fs, &path.join(IS_NULL_DIRNAME))?;
+        let has_values_flags =
+            ReadOnlyFlags::<S>::open(fs, &path.join(HAS_VALUES_DIRNAME), hw_counter)?;
+        let is_null_flags = ReadOnlyFlags::<S>::open(fs, &path.join(IS_NULL_DIRNAME), hw_counter)?;
 
         match (has_values_flags, is_null_flags) {
             // Neither directory exists: the index isn't present on disk.

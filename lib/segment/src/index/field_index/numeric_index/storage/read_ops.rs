@@ -40,27 +40,38 @@ where
         }
     }
 
-    fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+    fn get_values(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
-            NumericIndexInner::Mutable(index) => index.get_values(idx),
-            NumericIndexInner::Immutable(index) => index.get_values(idx),
-            NumericIndexInner::OnDisk(index) => index.get_values(idx),
+            NumericIndexInner::Mutable(index) => index.get_values(idx, hw_counter),
+            NumericIndexInner::Immutable(index) => index.get_values(idx, hw_counter),
+            NumericIndexInner::OnDisk(index) => index.get_values(idx, hw_counter),
         }
     }
 
-    fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+    fn values_count(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         match self {
-            NumericIndexInner::Mutable(index) => index.values_count(idx),
-            NumericIndexInner::Immutable(index) => index.values_count(idx),
-            NumericIndexInner::OnDisk(index) => index.values_count(idx),
+            NumericIndexInner::Mutable(index) => index.values_count(idx, hw_counter),
+            NumericIndexInner::Immutable(index) => index.values_count(idx, hw_counter),
+            NumericIndexInner::OnDisk(index) => index.values_count(idx, hw_counter),
         }
     }
 
-    fn total_unique_values_count(&self) -> OperationResult<usize> {
+    fn total_unique_values_count(
+        &self,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<usize> {
         match self {
-            NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
-            NumericIndexInner::OnDisk(index) => index.total_unique_values_count(),
+            NumericIndexInner::Mutable(index) => index.total_unique_values_count(hw_counter),
+            NumericIndexInner::Immutable(index) => index.total_unique_values_count(hw_counter),
+            NumericIndexInner::OnDisk(index) => index.total_unique_values_count(hw_counter),
         }
     }
 
@@ -88,16 +99,17 @@ where
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let boxed: Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> = match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
             NumericIndexInner::OnDisk(index) => {
-                Box::new(index.orderable_values_range(start_bound, end_bound)?)
+                Box::new(index.orderable_values_range(start_bound, end_bound, hw_counter)?)
             }
         };
         Ok(boxed)

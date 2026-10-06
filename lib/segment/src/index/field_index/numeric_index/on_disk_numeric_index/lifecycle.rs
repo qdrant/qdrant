@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, DeletedBitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::mmap::{AdviceSetting, MmapSlice};
 use common::types::PointOffsetType;
@@ -43,6 +44,7 @@ where
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -82,9 +84,10 @@ where
                 .enumerate()
                 .filter(|(_, values)| values.is_empty())
                 .map(|(idx, _)| idx as PointOffsetType),
+            hw_counter,
         )?;
 
-        Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
+        Self::open(fs, path, populate, deleted_points, hw_counter)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalNumericIndex after building it")
         })
     }
@@ -106,26 +109,32 @@ where
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         populate: Populate,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         // Config
         let config_path = path.join(CONFIG_PATH);
-        if !fs.exists(&config_path)? {
+        if !fs.exists(&config_path, hw_counter)? {
             return Ok(false);
         }
-        fs.schedule_open(&config_path, None, None);
+        fs.schedule_open(&config_path, None, None, hw_counter);
 
         // Histogram
-        Histogram::<T>::preopen(fs, path);
+        Histogram::<T>::preopen(fs, path, hw_counter);
 
         // Value pairs
         let pairs_path = path.join(PAIRS_PATH);
-        fs.schedule_open(&pairs_path, Some(Self::open_options(populate)), None);
+        fs.schedule_open(
+            &pairs_path,
+            Some(Self::open_options(populate)),
+            None,
+            hw_counter,
+        );
 
         // Block index over the value pairs; optional, absent on old segments
-        fs.schedule_open(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None);
+        fs.schedule_open(&path.join(PAIRS_BLOCK_INDEX_PATH), None, None, hw_counter);
 
         // Point to values
-        OnDiskPointToValues::<T, S>::preopen(fs, path, populate);
+        OnDiskPointToValues::<T, S>::preopen(fs, path, populate, hw_counter);
 
         // "No values" mask
         preopen_deleted_mask(
@@ -133,6 +142,7 @@ where
             path,
             DELETED_PATH,
             Self::open_options(Populate::PreferBackground),
+            hw_counter,
         );
 
         Ok(true)
@@ -144,32 +154,36 @@ where
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Self>> {
         let pairs_path = path.join(PAIRS_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         let Some(config) =
-            read_json_via::<_, UniversalNumericIndexConfig>(fs, &config_path).ok_not_found()?
+            read_json_via::<_, UniversalNumericIndexConfig>(fs, &config_path, hw_counter)
+                .ok_not_found()?
         else {
             // If config doesn't exist, assume the index doesn't exist on disk
             return Ok(None);
         };
 
-        let histogram = Histogram::<T>::open(fs, path)?;
+        let histogram = Histogram::<T>::open(fs, path, hw_counter)?;
 
         let pairs = TypedStorage::new(fs.open(
             &pairs_path,
             Self::open_options(populate),
             Default::default(),
+            hw_counter,
         )?);
 
         let pairs_block_index = SortedBlockIndex::open(
             fs,
             &path.join(PAIRS_BLOCK_INDEX_PATH),
-            pairs.len()? as usize,
+            pairs.len(hw_counter)? as usize,
+            hw_counter,
         )?;
 
-        let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
+        let point_to_values = OnDiskPointToValues::open(fs, path, populate, hw_counter)?;
         let mut deleted = deleted_points.to_owned();
 
         // `deleted` length must match `point_to_values.len()` because it only
@@ -184,6 +198,7 @@ where
             DELETED_PATH,
             Self::open_options(Populate::Auto),
             &mut deleted,
+            hw_counter,
         )?;
 
         Ok(Some(Self {
@@ -262,9 +277,9 @@ where
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.storage.pairs.populate()?;
-        self.storage.point_to_values.populate()?;
+    pub fn populate(&self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.pairs.populate(hw_counter)?;
+        self.storage.point_to_values.populate(hw_counter)?;
         Ok(())
     }
 

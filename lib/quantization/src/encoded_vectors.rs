@@ -53,6 +53,7 @@ pub trait EncodedVectors: Sized {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
+        hw_counter: &HardwareCounterCell,
     );
 
     fn score(
@@ -84,9 +85,13 @@ pub trait EncodedVectors: Sized {
         hw_counter: &HardwareCounterCell,
     ) {
         debug_assert_eq!(offsets.len(), scores.len());
-        self.for_each_batch(offsets, |i, vector| {
-            scores[i] = self.score(query, &vector, hw_counter);
-        });
+        self.for_each_batch(
+            offsets,
+            |i, vector| {
+                scores[i] = self.score(query, &vector, hw_counter);
+            },
+            hw_counter,
+        );
     }
 
     fn score_internal(
@@ -101,7 +106,11 @@ pub trait EncodedVectors: Sized {
 
     /// Construct a query from stored vector, so it can be used for scoring.
     /// Some implementations may not support this, in which case they should return `None`.
-    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
+    fn encode_internal_vector(
+        &self,
+        id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<Self::EncodedQuery>;
 
     fn upsert_vector(
         &mut self,
@@ -110,7 +119,7 @@ pub trait EncodedVectors: Sized {
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
 
-    fn vectors_count(&self) -> usize;
+    fn vectors_count(&self, hw_counter: &HardwareCounterCell) -> usize;
 
     fn flusher(&self) -> Flusher;
 

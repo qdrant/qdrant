@@ -34,13 +34,17 @@ fn test_iterator() {
     id_tracker.set_link(177.into(), 8).unwrap();
     id_tracker.set_link(118.into(), 9).unwrap();
 
-    let id_tracker =
-        ImmutableIdTracker::<MmapFile>::from_in_memory_tracker(&MmapFs, id_tracker, dir.path())
-            .unwrap();
+    let id_tracker = ImmutableIdTracker::<MmapFile>::from_in_memory_tracker(
+        &MmapFs,
+        id_tracker,
+        dir.path(),
+        &HardwareCounterCell::new(),
+    )
+    .unwrap();
 
     let first_four = id_tracker
-        .point_mappings()
-        .iter_from(None)
+        .point_mappings(&HardwareCounterCell::new())
+        .iter_from(None, &HardwareCounterCell::new())
         .take(4)
         .collect_vec();
 
@@ -48,8 +52,8 @@ fn test_iterator() {
     assert_eq!(first_four[0].0, 100.into());
 
     let last = id_tracker
-        .point_mappings()
-        .iter_from(Some(first_four[3].0))
+        .point_mappings(&HardwareCounterCell::new())
+        .iter_from(Some(first_four[3].0), &HardwareCounterCell::new())
         .collect_vec();
     assert_eq!(last.len(), 7);
 }
@@ -76,8 +80,8 @@ fn test_mixed_types_iterator() {
     let id_tracker = make_immutable_tracker(dir.path());
 
     let sorted_from_tracker = id_tracker
-        .point_mappings()
-        .iter_from(None)
+        .point_mappings(&HardwareCounterCell::new())
+        .iter_from(None, &HardwareCounterCell::new())
         .map(|(k, _)| k)
         .collect_vec();
 
@@ -95,7 +99,9 @@ fn test_load_store() {
         (id_tracker.mappings, id_tracker.internal_to_version)
     };
 
-    let mut loaded_id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    let mut loaded_id_tracker =
+        ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path(), &HardwareCounterCell::new())
+            .unwrap();
 
     // We may extend the length of deleted bitvec as memory maps need to be aligned to
     // a multiple of `usize-width`.
@@ -113,7 +119,9 @@ fn test_load_store() {
 
     assert_eq!(old_mappings, loaded_id_tracker.mappings);
 
-    loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+    loaded_id_tracker
+        .drop(PointIdType::NumId(180), &HardwareCounterCell::new())
+        .unwrap();
 }
 
 /// Mutates an ID tracker and stores it to disk. Tests whether loading results in the exact same
@@ -135,7 +143,9 @@ fn test_store_load_mutated() {
             }
 
             if index % 3 == 0 {
-                id_tracker.drop(*point).unwrap();
+                id_tracker
+                    .drop(*point, &HardwareCounterCell::new())
+                    .unwrap();
                 dropped_points.insert(*point);
                 continue;
             }
@@ -143,25 +153,34 @@ fn test_store_load_mutated() {
             if index % 5 == 0 {
                 let new_version = rng.next_u64();
                 id_tracker
-                    .set_internal_version(index as PointOffsetType, new_version)
+                    .set_internal_version(
+                        index as PointOffsetType,
+                        new_version,
+                        &HardwareCounterCell::new(),
+                    )
                     .unwrap();
                 custom_version.insert(index as PointOffsetType, new_version);
             }
         }
 
-        id_tracker.mapping_flusher()().unwrap();
-        id_tracker.versions_flusher()().unwrap();
+        id_tracker.mapping_flusher(&HardwareCounterCell::new())().unwrap();
+        id_tracker.versions_flusher(&HardwareCounterCell::new())().unwrap();
 
         (dropped_points, custom_version)
     };
 
-    let id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    let id_tracker =
+        ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path(), &HardwareCounterCell::new())
+            .unwrap();
     for (index, point) in TEST_POINTS.iter().enumerate() {
         let internal_id = index as PointOffsetType;
 
         if dropped_points.contains(point) {
-            assert!(id_tracker.is_deleted_point(internal_id));
-            assert_eq!(id_tracker.external_id(internal_id), None);
+            assert!(id_tracker.is_deleted_point(internal_id, &HardwareCounterCell::new()));
+            assert_eq!(
+                id_tracker.external_id(internal_id, &HardwareCounterCell::new()),
+                None
+            );
             assert!(id_tracker.mappings.internal_id(point).is_none());
 
             continue;
@@ -180,7 +199,7 @@ fn test_store_load_mutated() {
 
         // Check that unmodified points still haven't changed.
         assert_eq!(
-            id_tracker.external_id(index as PointOffsetType),
+            id_tracker.external_id(index as PointOffsetType, &HardwareCounterCell::new()),
             Some(*point)
         );
     }
@@ -190,8 +209,15 @@ fn test_store_load_mutated() {
 fn test_all_points_have_version() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let id_tracker = make_immutable_tracker(dir.path());
-    for i in id_tracker.point_mappings().iter_internal() {
-        assert!(id_tracker.internal_version(i).is_some());
+    for i in id_tracker
+        .point_mappings(&HardwareCounterCell::new())
+        .iter_internal()
+    {
+        assert!(
+            id_tracker
+                .internal_version(i, &HardwareCounterCell::new())
+                .is_some()
+        );
     }
 }
 
@@ -200,45 +226,51 @@ fn test_point_deletion_correctness() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut id_tracker = make_immutable_tracker(dir.path());
 
-    let deleted_points = id_tracker.total_point_count() - id_tracker.available_point_count();
+    let deleted_points = id_tracker.total_point_count()
+        - id_tracker.available_point_count(&HardwareCounterCell::new());
 
     let point_to_delete = PointIdType::NumId(100);
 
     assert!(
         id_tracker
-            .point_mappings()
-            .iter_external()
+            .point_mappings(&HardwareCounterCell::new())
+            .iter_external(&HardwareCounterCell::new())
             .contains(&point_to_delete)
     );
 
     assert_eq!(
         id_tracker.internal_id_with_behavior(
             point_to_delete,
-            common::types::DeferredBehavior::VisibleOnly
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
         ),
         Some(0)
     );
 
-    id_tracker.drop(point_to_delete).unwrap();
+    id_tracker
+        .drop(point_to_delete, &HardwareCounterCell::new())
+        .unwrap();
 
     let point_exists = id_tracker
         .internal_id_with_behavior(
             point_to_delete,
             common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new(),
         )
         .is_some()
         && id_tracker
-            .point_mappings()
-            .iter_external()
+            .point_mappings(&HardwareCounterCell::new())
+            .iter_external(&HardwareCounterCell::new())
             .contains(&point_to_delete)
         && id_tracker
-            .point_mappings()
-            .iter_from(None)
+            .point_mappings(&HardwareCounterCell::new())
+            .iter_from(None, &HardwareCounterCell::new())
             .any(|i| i.0 == point_to_delete);
 
     assert!(!point_exists);
 
-    let new_deleted_points = id_tracker.total_point_count() - id_tracker.available_point_count();
+    let new_deleted_points = id_tracker.total_point_count()
+        - id_tracker.available_point_count(&HardwareCounterCell::new());
 
     assert_eq!(new_deleted_points, deleted_points + 1);
 }
@@ -255,21 +287,27 @@ fn test_point_deletion_persists_reload() {
             .internal_id_with_behavior(
                 point_to_delete,
                 common::types::DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new(),
             )
             .expect("Point to delete exists.");
-        assert!(!id_tracker.is_deleted_point(intetrnal_id));
-        id_tracker.drop(point_to_delete).unwrap();
-        id_tracker.mapping_flusher()().unwrap();
-        id_tracker.versions_flusher()().unwrap();
+        assert!(!id_tracker.is_deleted_point(intetrnal_id, &HardwareCounterCell::new()));
+        id_tracker
+            .drop(point_to_delete, &HardwareCounterCell::new())
+            .unwrap();
+        id_tracker.mapping_flusher(&HardwareCounterCell::new())().unwrap();
+        id_tracker.versions_flusher(&HardwareCounterCell::new())().unwrap();
         id_tracker.mappings
     };
 
     // Point should still be gone
-    let id_tracker = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path()).unwrap();
+    let id_tracker =
+        ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path(), &HardwareCounterCell::new())
+            .unwrap();
     assert_eq!(
         id_tracker.internal_id_with_behavior(
             point_to_delete,
-            common::types::DeferredBehavior::VisibleOnly
+            common::types::DeferredBehavior::VisibleOnly,
+            &HardwareCounterCell::new()
         ),
         None
     );
@@ -367,7 +405,7 @@ fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
         let internal_id = id_tracker.total_point_count() as PointOffsetType;
         id_tracker.set_link(*value, internal_id).unwrap();
         id_tracker
-            .set_internal_version(internal_id, DEFAULT_VERSION)
+            .set_internal_version(internal_id, DEFAULT_VERSION, &HardwareCounterCell::new())
             .unwrap()
     }
 
@@ -376,7 +414,13 @@ fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
 
 fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker<MmapFile> {
     let id_tracker = make_in_memory_tracker_from_memory();
-    ImmutableIdTracker::from_in_memory_tracker(&MmapFs, id_tracker, path).unwrap()
+    ImmutableIdTracker::from_in_memory_tracker(
+        &MmapFs,
+        id_tracker,
+        path,
+        &HardwareCounterCell::new(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -390,8 +434,8 @@ fn test_id_tracker_equal() {
     let immutable_id_tracker = make_immutable_tracker(immutable_id_tracker_dir.path());
 
     assert_eq!(
-        in_memory_id_tracker.available_point_count(),
-        immutable_id_tracker.available_point_count()
+        in_memory_id_tracker.available_point_count(&HardwareCounterCell::new()),
+        immutable_id_tracker.available_point_count(&HardwareCounterCell::new())
     );
     assert_eq!(
         in_memory_id_tracker.total_point_count(),
@@ -402,24 +446,30 @@ fn test_id_tracker_equal() {
         let internal = internal as PointOffsetType;
 
         assert_eq!(
-            in_memory_id_tracker
-                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly),
-            immutable_id_tracker
-                .internal_id_with_behavior(*external, common::types::DeferredBehavior::VisibleOnly)
+            in_memory_id_tracker.internal_id_with_behavior(
+                *external,
+                common::types::DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new()
+            ),
+            immutable_id_tracker.internal_id_with_behavior(
+                *external,
+                common::types::DeferredBehavior::VisibleOnly,
+                &HardwareCounterCell::new()
+            )
         );
 
         assert_eq!(
             in_memory_id_tracker
-                .internal_version(internal)
+                .internal_version(internal, &HardwareCounterCell::new())
                 .unwrap_or_default(),
             immutable_id_tracker
-                .internal_version(internal)
+                .internal_version(internal, &HardwareCounterCell::new())
                 .unwrap_or_default()
         );
 
         assert_eq!(
-            in_memory_id_tracker.external_id(internal),
-            immutable_id_tracker.external_id(internal)
+            in_memory_id_tracker.external_id(internal, &HardwareCounterCell::new()),
+            immutable_id_tracker.external_id(internal, &HardwareCounterCell::new())
         );
     }
 }

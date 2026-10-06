@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
@@ -57,9 +58,13 @@ impl VacuumOptimizer {
     /// Calculate littered ratio for segment on point level
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
-    fn littered_ratio_segment(&self, segment: &Segment) -> Option<f64> {
+    fn littered_ratio_segment(
+        &self,
+        segment: &Segment,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<f64> {
         let littered_ratio =
-            segment.deleted_point_count() as f64 / segment.total_point_count() as f64;
+            segment.deleted_point_count(hw_counter) as f64 / segment.total_point_count() as f64;
         let is_big = segment.total_point_count() >= self.min_vectors_number;
         let is_littered = littered_ratio > self.deleted_threshold;
 
@@ -75,7 +80,11 @@ impl VacuumOptimizer {
     /// of deleted vectors versus the number of indexed vectors.
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
-    fn littered_vectors_index_ratio(&self, segment: &Segment) -> Option<f64> {
+    fn littered_vectors_index_ratio(
+        &self,
+        segment: &Segment,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<f64> {
         // Segment must have any index
         let segment_config = segment.config();
         if !segment_config.is_any_vector_indexed() {
@@ -94,8 +103,8 @@ impl VacuumOptimizer {
                 let vector_index = vector_data.vector_index.borrow();
                 let vector_storage = vector_data.vector_storage.borrow();
                 let indexed_vector_count = vector_index.indexed_vector_count();
-                let deleted_from_index =
-                    indexed_vector_count.saturating_sub(vector_storage.available_vector_count());
+                let deleted_from_index = indexed_vector_count
+                    .saturating_sub(vector_storage.available_vector_count(hw_counter));
                 let deleted_ratio = if indexed_vector_count != 0 {
                     deleted_from_index as f64 / indexed_vector_count as f64
                 } else {
@@ -135,14 +144,19 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self.thresholds_config
     }
 
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+    fn plan_optimizations(
+        &self,
+        planner: &mut OptimizationPlanner,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let to_optimize = planner
             .remaining()
             .iter()
             .filter_map(|(&segment_id, segment)| {
                 let segment = segment.read();
-                let littered_ratio_segment = self.littered_ratio_segment(&segment);
-                let littered_ratio_vectors = self.littered_vectors_index_ratio(&segment);
+                let littered_ratio_segment = self.littered_ratio_segment(&segment, hw_counter);
+                let littered_ratio_vectors =
+                    self.littered_vectors_index_ratio(&segment, hw_counter);
                 let worst_ratio = std::iter::chain(littered_ratio_segment, littered_ratio_vectors)
                     .max_by_key(|ratio| OrderedFloat(*ratio));
                 worst_ratio.map(|ratio| (segment_id, ratio))

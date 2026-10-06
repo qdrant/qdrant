@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::vec::BitVec;
 use common::bitvec::BitSliceExt;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -215,13 +216,14 @@ impl GraphLayersBuilder {
         path: &Path,
         format_param: GraphLinksFormatParam,
         on_disk: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format_param.as_format());
 
         let edges = Self::links_layers_to_edges(self.links_layers);
         // Save memory by serializing directly to disk, then re-loading as mmap.
         atomic_save(&links_path, |writer| {
-            serialize_graph_links(edges, format_param, self.hnsw_m, writer)
+            serialize_graph_links(edges, format_param, self.hnsw_m, writer, hw_counter)
         })?;
         // Keep the links cold (lazily on disk) when configured so; otherwise
         // pre-populate the page cache (cheap: the pages were just written).
@@ -232,8 +234,13 @@ impl GraphLayersBuilder {
         } else {
             GraphLinksResidency::Cached
         };
-        let links =
-            GraphLinks::load_universal(&MmapFs, &links_path, format_param.as_format(), residency)?;
+        let links = GraphLinks::load_universal(
+            &MmapFs,
+            &links_path,
+            format_param.as_format(),
+            residency,
+            hw_counter,
+        )?;
 
         let entry_points = self.entry_points.into_inner();
 
@@ -255,11 +262,16 @@ impl GraphLayersBuilder {
     }
 
     #[cfg(feature = "testing")]
-    pub fn into_graph_layers_ram(self, format_param: GraphLinksFormatParam<'_>) -> GraphLayers {
+    pub fn into_graph_layers_ram(
+        self,
+        format_param: GraphLinksFormatParam<'_>,
+        hw_counter: &HardwareCounterCell,
+    ) -> GraphLayers {
         let edges = Self::links_layers_to_edges(self.links_layers);
         GraphLayers {
             hnsw_m: self.hnsw_m,
-            links: GraphLinks::new_from_edges(edges, format_param, self.hnsw_m).unwrap(),
+            links: GraphLinks::new_from_edges(edges, format_param, self.hnsw_m, hw_counter)
+                .unwrap(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
             residency: GraphLinksResidency::Pinned,
@@ -789,13 +801,18 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+        for idx in 0..vector_holder
+            .storage()
+            .total_vector_count(&HardwareCounterCell::new())
+            as PointOffsetType
+        {
             let score = scorer.score_point(idx);
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(
             format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+            &HardwareCounterCell::new(),
         );
 
         let mut scorer = vector_holder.scorer(query);
@@ -902,13 +919,18 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
+        for idx in 0..vector_holder
+            .storage()
+            .total_vector_count(&HardwareCounterCell::new())
+            as PointOffsetType
+        {
             let score = scorer.score_point(idx);
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
         let graph = graph_layers_builder.into_graph_layers_ram(
             format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+            &HardwareCounterCell::new(),
         );
 
         let mut scorer = vector_holder.scorer(query);
@@ -956,6 +978,7 @@ mod tests {
         }
         let graph_layers = graph_layers_builder.into_graph_layers_ram(
             format.with_param_for_tests(vector_holder.graph_links_vectors().as_ref()),
+            &HardwareCounterCell::new(),
         );
 
         let num_points = graph_layers.links.num_points();

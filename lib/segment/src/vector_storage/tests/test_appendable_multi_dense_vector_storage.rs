@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hardware_counter::{ForkingHwCounter, HardwareCounterCell};
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -62,7 +62,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     }
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType);
+        let stored_vec = storage.get_vector::<Random>(i as PointOffsetType, &hw_counter);
         let multi_dense: TypedMultiDenseVectorRef<_> = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(multi_dense.to_owned(), vec.clone());
     }
@@ -96,14 +96,18 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => unreachable!(),
             VectorStorageEnum::MultiDenseVolatile(v) => {
-                for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
+                for (orig, vec) in orig_iter.zip(
+                    v.iterate_inner_vectors(ForkingHwCounter::new(&HardwareCounterCell::new())),
+                ) {
                     assert_eq!(orig, vec.as_ref());
                 }
             }
             VectorStorageEnum::MultiDenseVolatileByte(_)
             | VectorStorageEnum::MultiDenseVolatileHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
+                for (orig, vec) in orig_iter.zip(
+                    v.iterate_inner_vectors(ForkingHwCounter::new(&HardwareCounterCell::new())),
+                ) {
                     assert_eq!(orig, vec.as_ref());
                 }
             }
@@ -122,7 +126,9 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            let was_deleted = storage.delete_vector(i as PointOffsetType).unwrap();
+            let was_deleted = storage
+                .delete_vector(i as PointOffsetType, &hw_counter)
+                .unwrap();
             assert!(was_deleted, "deleting a live vector must return true");
         });
     assert_eq!(
@@ -135,7 +141,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -150,11 +156,15 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
 
     // Delete 1, redelete 2
     assert!(
-        storage.delete_vector(1 as PointOffsetType).unwrap(),
+        storage
+            .delete_vector(1 as PointOffsetType, &hw_counter)
+            .unwrap(),
         "deleting a live vector must return true"
     );
     assert!(
-        !storage.delete_vector(2 as PointOffsetType).unwrap(),
+        !storage
+            .delete_vector(2 as PointOffsetType, &hw_counter)
+            .unwrap(),
         "redeleting a deleted vector must return false"
     );
     assert_eq!(
@@ -168,7 +178,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -181,8 +191,16 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     assert_eq!(closest[1].idx, 0);
 
     // Delete all
-    assert!(storage.delete_vector(0 as PointOffsetType).unwrap());
-    assert!(storage.delete_vector(4 as PointOffsetType).unwrap());
+    assert!(
+        storage
+            .delete_vector(0 as PointOffsetType, &hw_counter)
+            .unwrap()
+    );
+    assert!(
+        storage
+            .delete_vector(4 as PointOffsetType, &hw_counter)
+            .unwrap()
+    );
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -194,7 +212,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -230,11 +248,19 @@ fn do_test_update_from_delete_points(
                     .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
                 if delete_mask[i] {
-                    storage2.delete_vector(i as PointOffsetType).unwrap();
+                    storage2
+                        .delete_vector(i as PointOffsetType, &hw_counter)
+                        .unwrap();
                 }
             });
         }
-        merge_from_single_source(storage, &storage2, points.len() as PointOffsetType).unwrap();
+        merge_from_single_source(
+            storage,
+            &storage2,
+            points.len() as PointOffsetType,
+            &hw_counter,
+        )
+        .unwrap();
     }
 
     assert_eq!(
@@ -250,7 +276,7 @@ fn do_test_update_from_delete_points(
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(&hw_counter),
         5,
     );
     let closest = searcher
@@ -264,9 +290,15 @@ fn do_test_update_from_delete_points(
     assert_eq!(closest[2].idx, 0);
 
     // Delete all
-    storage.delete_vector(0 as PointOffsetType).unwrap();
-    storage.delete_vector(1 as PointOffsetType).unwrap();
-    storage.delete_vector(4 as PointOffsetType).unwrap();
+    storage
+        .delete_vector(0 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(1 as PointOffsetType, &hw_counter)
+        .unwrap();
+    storage
+        .delete_vector(4 as PointOffsetType, &hw_counter)
+        .unwrap();
     assert_eq!(
         storage.deleted_vector_count(),
         5,
@@ -288,6 +320,7 @@ fn create_vector_storage(
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
                 false,
+                &HardwareCounterCell::new(),
             )
             .unwrap()
         }
@@ -303,13 +336,13 @@ fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiD
     let total_vector_count = {
         let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
         do_test_delete_points(vec_dim, vec_count, &mut storage);
-        let count = storage.total_vector_count();
-        storage.flusher()().unwrap();
+        let count = storage.total_vector_count(&HardwareCounterCell::new());
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
         count
     };
     let storage = create_vector_storage(storage_type, vec_dim, dir.path());
     assert_eq!(
-        storage.total_vector_count(),
+        storage.total_vector_count(&HardwareCounterCell::new()),
         total_vector_count,
         "total vector count must be the same"
     );
@@ -317,7 +350,7 @@ fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiD
     for id in 0..total_vector_count {
         assert!(
             storage
-                .get_vector_opt::<Random>(id as PointOffsetType)
+                .get_vector_opt::<Random>(id as PointOffsetType, &HardwareCounterCell::new())
                 .is_some()
         );
     }
@@ -334,13 +367,13 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
     let total_vector_count = {
         let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
         do_test_update_from_delete_points(vec_dim, vec_count, &mut storage);
-        let count = storage.total_vector_count();
-        storage.flusher()().unwrap();
+        let count = storage.total_vector_count(&HardwareCounterCell::new());
+        storage.flusher(&HardwareCounterCell::new())().unwrap();
         count
     };
     let storage = create_vector_storage(storage_type, vec_dim, dir.path());
     assert_eq!(
-        storage.total_vector_count(),
+        storage.total_vector_count(&HardwareCounterCell::new()),
         total_vector_count,
         "total vector count must be the same"
     );
@@ -348,7 +381,7 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
     for id in 0..total_vector_count {
         assert!(
             storage
-                .get_vector_opt::<Random>(id as PointOffsetType)
+                .get_vector_opt::<Random>(id as PointOffsetType, &HardwareCounterCell::new())
                 .is_some()
         );
     }
@@ -375,7 +408,7 @@ fn test_large_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorage
         .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
         .unwrap();
 
-    let stored = storage.get_vector::<Random>(0);
+    let stored = storage.get_vector::<Random>(0, &hw_counter);
     assert_eq!(stored.as_vec_ref(), VectorRef::from(&multivec));
 }
 
@@ -391,10 +424,10 @@ fn test_delete_points_in_volatile_multi_dense_vector_storage() {
     do_test_delete_points(vec_dim, vec_count, &mut storage);
 
     // retrieve all vectors from storage
-    for id in 0..storage.total_vector_count() {
+    for id in 0..storage.total_vector_count(&HardwareCounterCell::new()) {
         assert!(
             storage
-                .get_vector_opt::<Random>(id as PointOffsetType)
+                .get_vector_opt::<Random>(id as PointOffsetType, &HardwareCounterCell::new())
                 .is_some()
         );
     }
@@ -412,10 +445,10 @@ fn test_update_from_delete_points_volatile_multi_dense_vector_storage() {
     do_test_update_from_delete_points(vec_dim, vec_count, &mut storage);
 
     // retrieve all vectors from storage
-    for id in 0..storage.total_vector_count() {
+    for id in 0..storage.total_vector_count(&HardwareCounterCell::new()) {
         assert!(
             storage
-                .get_vector_opt::<Random>(id as PointOffsetType)
+                .get_vector_opt::<Random>(id as PointOffsetType, &HardwareCounterCell::new())
                 .is_some()
         );
     }
@@ -444,6 +477,6 @@ fn test_large_volatile_multi_dense_vector_storage() {
         .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
         .unwrap();
 
-    let stored = storage.get_vector::<Random>(0);
+    let stored = storage.get_vector::<Random>(0, &hw_counter);
     assert_eq!(stored.as_vec_ref(), VectorRef::from(&multivec));
 }

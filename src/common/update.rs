@@ -162,46 +162,47 @@ impl StrictModeVerification for UpdateOperation {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         match self {
             UpdateOperation::Upsert(op) => {
                 op.upsert
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::Delete(op) => {
                 op.delete
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::SetPayload(op) => {
                 op.set_payload
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::OverwritePayload(op) => {
                 op.overwrite_payload
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::DeletePayload(op) => {
                 op.delete_payload
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::ClearPayload(op) => {
                 op.clear_payload
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::UpdateVectors(op) => {
                 op.update_vectors
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
             UpdateOperation::DeleteVectors(op) => {
                 op.delete_vectors
-                    .check_strict_mode(collection, strict_mode_config)
+                    .check_strict_mode(collection, strict_mode_config, hw_acc)
                     .await
             }
         }
@@ -217,9 +218,10 @@ impl StrictModeVerification for CreateFieldIndex {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
+        hw_acc: &HwMeasurementAcc,
     ) -> CollectionResult<()> {
         if let Some(max_payload_index_count) = strict_mode_config.max_payload_index_count {
-            let collection_info = collection.info(&ShardSelectorInternal::All).await?;
+            let collection_info = collection.info(&ShardSelectorInternal::All, hw_acc).await?;
             if collection_info.payload_schema.len() >= max_payload_index_count {
                 return Err(CollectionError::strict_mode(
                     format!(
@@ -933,6 +935,7 @@ pub async fn do_create_index(
         &collection_name,
         &dispatcher,
         &auth,
+        &hw_measurement_acc,
     )
     .await?;
 
@@ -961,7 +964,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, auth, params.timeout)
+        .submit_collection_meta_op(consensus_op, auth, params.timeout, &hw_measurement_acc)
         .await?;
 
     do_create_index_internal(
@@ -1033,6 +1036,7 @@ pub async fn do_delete_index(
             auth,
             // Use per-request timeout from params if provided
             params.timeout,
+            &hw_measurement_acc,
         )
         .await?;
 
@@ -1103,6 +1107,7 @@ pub async fn do_create_vector_name(
         &collection_name,
         &dispatcher,
         &auth,
+        &hw_measurement_acc,
     )
     .await?;
     shard::quota::global().check_update()?;
@@ -1120,6 +1125,7 @@ pub async fn do_create_vector_name(
             CollectionMetaOperations::CreateNamedVector(consensus_op),
             auth,
             params.timeout,
+            &hw_measurement_acc,
         )
         .await?;
 
@@ -1188,6 +1194,7 @@ pub async fn do_delete_vector_name(
             CollectionMetaOperations::DeleteNamedVector(consensus_op),
             auth,
             params.timeout,
+            &hw_measurement_acc,
         )
         .await?;
 

@@ -2,6 +2,7 @@ use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
@@ -203,7 +204,11 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         &self.thresholds_config
     }
 
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+    fn plan_optimizations(
+        &self,
+        planner: &mut OptimizationPlanner,
+        hw_counter: &HardwareCounterCell,
+    ) {
         let to_optimize = planner
             .remaining()
             .iter()
@@ -211,7 +216,7 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
                 let segment = segment.read();
                 self.has_config_mismatch(&*segment).then(|| {
                     let vector_size = segment
-                        .max_available_vectors_size_in_bytes()
+                        .max_available_vectors_size_in_bytes(hw_counter)
                         .unwrap_or_default();
                     (segment_id, vector_size)
                 })

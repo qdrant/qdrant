@@ -156,11 +156,11 @@ fn sparse_vector_index_fallback_plain_search() {
 /// Checks that the sparse vector index is consistent with the underlying storage
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
-    let point_count = borrowed_vector_storage.available_vector_count();
+    let point_count = borrowed_vector_storage.available_vector_count(&HardwareCounterCell::new());
     let hw_counter = HardwareCounterCell::disposable();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
-        let vector = borrowed_vector_storage.get_vector::<Random>(id);
+        let vector = borrowed_vector_storage.get_vector::<Random>(id, &hw_counter);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
         let remapped_vector = sparse_vector_index
             .indices_tracker()
@@ -225,16 +225,19 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            fs: &MmapFs,
-            config: sparse_index_config,
-            id_tracker: sparse_vector_ram_index.id_tracker().clone(),
-            vector_storage: sparse_vector_ram_index.vector_storage().clone(),
-            payload_index: sparse_vector_ram_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                fs: &MmapFs,
+                config: sparse_index_config,
+                id_tracker: sparse_vector_ram_index.id_tracker().clone(),
+                vector_storage: sparse_vector_ram_index.vector_storage().clone(),
+                payload_index: sparse_vector_ram_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
+            },
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     assert_eq!(
@@ -252,16 +255,19 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            fs: &MmapFs,
-            config: sparse_index_config,
-            id_tracker: sparse_vector_ram_index.id_tracker().clone(),
-            vector_storage: sparse_vector_ram_index.vector_storage().clone(),
-            payload_index: sparse_vector_ram_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                fs: &MmapFs,
+                config: sparse_index_config,
+                id_tracker: sparse_vector_ram_index.id_tracker().clone(),
+                vector_storage: sparse_vector_ram_index.vector_storage().clone(),
+                payload_index: sparse_vector_ram_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
+            },
+            &HardwareCounterCell::new(),
+        )
         .unwrap();
 
     assert_eq!(
@@ -309,14 +315,14 @@ fn sparse_vector_index_ram_deleted_points_search() {
         sparse_vector_index
             .id_tracker()
             .borrow()
-            .available_point_count(),
+            .available_point_count(&HardwareCounterCell::new()),
         sparse_vector_index.indexed_vector_count()
     );
     assert_eq!(
         sparse_vector_index
             .id_tracker()
             .borrow()
-            .deleted_point_count(),
+            .deleted_point_count(&HardwareCounterCell::new()),
         0
     );
 
@@ -333,25 +339,25 @@ fn sparse_vector_index_ram_deleted_points_search() {
     let deleted_external = sparse_vector_index
         .id_tracker()
         .borrow_mut()
-        .external_id(deleted_idx)
+        .external_id(deleted_idx, &HardwareCounterCell::new())
         .unwrap();
     sparse_vector_index
         .id_tracker()
         .borrow_mut()
-        .drop(deleted_external)
+        .drop(deleted_external, &HardwareCounterCell::new())
         .unwrap();
 
     assert!(
         sparse_vector_index
             .id_tracker()
             .borrow()
-            .is_deleted_point(deleted_idx),
+            .is_deleted_point(deleted_idx, &HardwareCounterCell::new()),
     );
     assert_eq!(
         sparse_vector_index
             .id_tracker()
             .borrow()
-            .deleted_point_count(),
+            .deleted_point_count(&HardwareCounterCell::new()),
         1
     );
 
@@ -423,7 +429,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
-    assert_eq!(field_index[0].count_indexed_points().unwrap(), 0);
+    assert_eq!(field_index[0].count_indexed_points(&hw_counter).unwrap(), 0);
     drop(payload_index);
 
     // add payload on the first half of the points
@@ -443,7 +449,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
     assert_eq!(
-        field_index[0].count_indexed_points().unwrap(),
+        field_index[0].count_indexed_points(&hw_counter).unwrap(),
         half_indexed_count
     );
     drop(payload_index);
@@ -568,7 +574,7 @@ fn handling_empty_sparse_vectors() {
         sparse_vector_index
             .vector_storage()
             .borrow()
-            .available_vector_count(),
+            .available_vector_count(&hw_counter),
         NUM_VECTORS,
     );
 
@@ -614,7 +620,8 @@ fn sparse_vector_index_persistence_test() {
         payload_storage_type: Default::default(),
         id_tracker_memory: None,
     };
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -627,7 +634,7 @@ fn sparse_vector_index_persistence_test() {
             .upsert_point(n as SeqNumberType, idx, named_vector, &hw_counter)
             .unwrap();
     }
-    segment.flush(false).unwrap();
+    segment.flush(false, &hw_counter).unwrap();
 
     let search_vector = random_sparse_vector(&mut rnd, dim);
     let query_vector: QueryVector = search_vector.into();
@@ -651,7 +658,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path, Uuid::nil(), None, &stopped, false).unwrap();
+    let segment = load_segment(&path, Uuid::nil(), None, &stopped, false, &hw_counter).unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,
@@ -689,23 +696,26 @@ fn check_persistence<TInvertedIndex: InvertedIndexReadWrite<MmapFile>>(
         .unwrap();
 
     let open_index = || -> SparseVectorIndex<TInvertedIndex> {
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            fs: &MmapFs,
-            config: SparseIndexConfig {
-                memory: None,
-                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-                index_type: SparseIndexType::Mmap,
-                datatype: Some(VectorStorageDatatype::Float32),
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                fs: &MmapFs,
+                config: SparseIndexConfig {
+                    memory: None,
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::Mmap,
+                    datatype: Some(VectorStorageDatatype::Float32),
+                },
+                id_tracker: segment.id_tracker.clone(),
+                vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
+                    .vector_storage
+                    .clone(),
+                payload_index: segment.payload_index.clone(),
+                path: inverted_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
             },
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
-                .vector_storage
-                .clone(),
-            payload_index: segment.payload_index.clone(),
-            path: inverted_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+            &HardwareCounterCell::new(),
+        )
         .unwrap()
     };
 
@@ -725,6 +735,7 @@ fn check_persistence<TInvertedIndex: InvertedIndexReadWrite<MmapFile>>(
                 .internal_id_with_behavior(
                     search_1.id,
                     common::types::DeferredBehavior::VisibleOnly,
+                    &HardwareCounterCell::new(),
                 )
                 .unwrap();
             assert_eq!(id_1, search_2.idx);
@@ -793,7 +804,8 @@ fn sparse_vector_test_large_index() {
         payload_storage_type: Default::default(),
         id_tracker_memory: None,
     };
-    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) =
+        build_segment(dir.path(), &config, None, true, &HardwareCounterCell::new()).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
