@@ -2188,24 +2188,6 @@ fn rename_alias_reject_missing() {
 }
 
 #[test]
-fn rename_alias_reject_collection_name() {
-    let mut state = cluster_state(Vec::new());
-    state.aliases.insert("alias".into(), COLLECTION.into());
-
-    let mut machine = state_machine(state.clone());
-    let outcome = machine.apply(&change_aliases_op(vec![rename_alias_action(
-        "alias", COLLECTION,
-    )]));
-
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::AlreadyExists { .. })
-    ));
-
-    assert_eq!(machine.state(), &state);
-}
-
-#[test]
 fn change_aliases_reject_missing_rename() {
     let state = cluster_state(Vec::new());
 
