@@ -1,5 +1,7 @@
 //! What a resolving read-only id tracker knows about the moves of its segment.
 
+use std::collections::HashMap;
+
 use ahash::AHashMap;
 use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
@@ -35,7 +37,8 @@ impl MoveResolution {
 ///
 /// Records name slots on both sides. The source side is kept per local slot, until that slot is
 /// deleted in the view. The target side is kept until its local slot settles, then folded into a
-/// compact per-source index, which the shard hands to the source segments as masks.
+/// compact per-source index, which the shard hands to the source segments as masks, until each
+/// source has deleted the slot for good.
 #[derive(Debug, Default)]
 pub struct PointMoves {
     /// Local slots a moved-out record names, with the target of the last record naming them. The
@@ -44,7 +47,8 @@ pub struct PointMoves {
     moved_out: AHashMap<PointOffsetType, SlotRef>,
     /// Moved-in pairs whose local slot has not settled in this view yet: `(local slot, source)`.
     moved_in_unsettled: Vec<(PointOffsetType, SlotRef)>,
-    /// Per source segment, the source slots of moved-in pairs whose local slot has settled.
+    /// Per source segment, the source slots of moved-in pairs whose local slot has settled, until
+    /// the source deleted them for good, see [`Self::prune_settled`].
     moved_in_settled: AHashMap<Uuid, RoaringBitmap>,
 }
 
@@ -112,6 +116,17 @@ impl PointMoves {
     /// Per source segment, the source slots of settled moved-in records.
     pub fn settled_moved_in(&self) -> &AHashMap<Uuid, RoaringBitmap> {
         &self.moved_in_settled
+    }
+
+    /// Forget the settled moved-in pairs whose source slot `retired` names, per source segment: the
+    /// source deleted those slots for good, so masking them again would delete nothing.
+    pub fn prune_settled(&mut self, retired: &HashMap<Uuid, RoaringBitmap>) {
+        self.moved_in_settled.retain(|source, slots| {
+            if let Some(retired) = retired.get(source) {
+                *slots -= retired;
+            }
+            !slots.is_empty()
+        });
     }
 
     /// Forget the moved-out records of `slots`, which are deleted in the view: they cannot decide
