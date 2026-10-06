@@ -105,6 +105,7 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         LocalSegmentEnumerator::new(path),
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap()
@@ -211,6 +212,7 @@ fn follower_with_load_profile_serves_reads() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         Some(scroll_request.load_profile()),
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -399,6 +401,7 @@ fn provided_config_overrides_tunables_at_open() {
         LocalSegmentEnumerator::new(dir.path()),
         Some(provided),
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -482,6 +485,7 @@ fn follower_uses_injected_enumerator() {
         },
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -614,6 +618,7 @@ fn open_rejects_a_cancelled_flag() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         None,
+        Default::default(),
         &stopped,
     ));
     assert!(stopped.load(Ordering::Relaxed));
@@ -685,6 +690,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
         },
         None,
         None,
+        Default::default(),
         &stopped,
     )
     .unwrap();

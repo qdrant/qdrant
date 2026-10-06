@@ -26,7 +26,7 @@ pub use delete_only::DeleteOnlyEdgeShard;
 pub use edge_shard::EdgeShard;
 pub use read_only::{
     LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,
-    SegmentEnumerator,
+    ReadOnlyEdgeShardPools, SegmentEnumerator,
 };
 pub use read_view::{
     EdgeShardRead, EdgeShardReadWithCancellation, Group, ReadSegmentHandle, SearchMatrixResponse,

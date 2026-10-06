@@ -412,6 +412,7 @@ mod store {
             LocalSegmentEnumerator::new(dir.path()),
             None,
             Some(LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(threshold_kb))),
+            Default::default(),
             &AtomicBool::new(false),
         )
         .unwrap();

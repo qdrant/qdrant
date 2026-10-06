@@ -163,7 +163,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
                 .collect()
         };
         let loaded = load_segments_parallel::<S>(
-            &self.search_pool,
+            &self.load_pool,
             &self.fs,
             new_segments,
             self.load_profile.as_ref(),
@@ -224,8 +224,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         check_process_stopped(is_stopped)?;
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
-        let results =
-            reload_segments_parallel(&self.search_pool, survivors, hw_counter, is_stopped)?;
+        let results = reload_segments_parallel(&self.load_pool, survivors, hw_counter, is_stopped)?;
 
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;

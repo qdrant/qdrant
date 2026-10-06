@@ -78,6 +78,8 @@ pub struct EdgeConfig {
     /// (search, scroll, count, facet, ...) in parallel and loads segments in parallel. `None` (the
     /// default) derives the count from the number of CPUs, matching the core search runtime — see
     /// [`EdgeConfig::search_thread_count`].
+    /// Unless pools are supplied externally, read-only followers create a separate load pool
+    /// with this thread count for open and live reload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_search_threads: Option<usize>,
     /// Pin every thread of this shard's search pool to the given CPU core: bounds the shard's
