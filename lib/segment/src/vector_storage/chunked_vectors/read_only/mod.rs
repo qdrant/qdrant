@@ -49,6 +49,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;
 
@@ -57,6 +58,11 @@ mod tests {
     use super::super::update_only::UpdateOnlyChunkedVectors;
     use super::*;
     use crate::common::live_reload::LiveReload;
+
+    /// The offsets an id tracker delta publishes for `range`.
+    fn published(range: std::ops::Range<PointOffsetType>) -> Vec<PointOffsetType> {
+        range.collect()
+    }
 
     /// A read-only view picks up writer-appended vectors after `live_reload`.
     #[test]
@@ -82,7 +88,9 @@ mod tests {
         append_range(&mut writer, 100, 100..250, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
-        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+        let new = published(100..250);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&MmapFs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 250);
         let got = reader.get::<Random>(100).unwrap();
@@ -127,7 +135,9 @@ mod tests {
         }
 
         let empty = SortedSlice::new(&[]).unwrap();
-        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+        let new = published(100..250);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cached_fs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 250);
         let got = reader.get::<Random>(100).unwrap();
@@ -173,7 +183,9 @@ mod tests {
         // Second cycle: chunk 0 is rescheduled and unchanged -> sentinel.
         cached_fs.cache_file_info().unwrap();
         LiveReload::live_preload(&reader, &cached_fs).unwrap();
-        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+        let new = published(4096..4196);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cached_fs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 4196);
         for offset in [0, 4095, 4096, 4195] {
@@ -225,7 +237,9 @@ mod tests {
         LiveReload::live_preload(&reader, &cached_fs).unwrap();
 
         let empty = SortedSlice::new(&[]).unwrap();
-        reader.live_reload(&cached_fs, &empty, &empty, &hw).unwrap();
+        let new = published(100..150);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cached_fs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 150);
         assert_eq!(reader.chunks.len(), 1, "removed trailing chunk is dropped");
@@ -293,7 +307,9 @@ mod tests {
         append_range(&mut writer, 100, 100..150, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
-        reader.live_reload(&cache_fs, &empty, &empty, &hw).unwrap();
+        let new = published(100..150);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cache_fs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 150);
         for offset in [0, 99, 100, 149] {
@@ -303,6 +319,202 @@ mod tests {
                 "vector {offset} mismatch after reload",
             );
         }
+    }
+
+    type CachedDiskCacheFs =
+        common::universal_io::CachedFs<common::universal_io::DiskCacheFs<MmapFile>>;
+    type DiskCacheReader = ReadOnlyChunkedVectors<f32, common::universal_io::DiskCache<MmapFile>>;
+
+    /// A writer on a "remote" directory and a reader mirroring it through a
+    /// disk cache behind `CachedFs`. The reader opens at 100 vectors, the
+    /// listing snapshot is taken at 150, and the writer is at 200 by the time
+    /// the reload runs: the status file reports 200, the listed chunk 150.
+    fn status_newer_than_snapshot(
+        dim: usize,
+    ) -> (
+        tempfile::TempDir,
+        UpdateOnlyChunkedVectors<f32>,
+        CachedDiskCacheFs,
+        DiskCacheReader,
+    ) {
+        use std::sync::Arc;
+
+        use common::universal_io::{
+            CachedFs, CachedReadFs, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+            UniversalReadFs,
+        };
+
+        let tmp = Builder::new().prefix("chunked_race").tempdir().unwrap();
+        let remote_root = tmp.path().join("remote");
+        let local_root = tmp.path().join("local");
+        let dir = remote_root.join("vectors");
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
+
+        let hw = HardwareCounterCell::new();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, dim).unwrap();
+        append_range(&mut writer, 0, 0..100, dim, &hw);
+
+        let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+            config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+            remote: Default::default(),
+        })
+        .unwrap();
+
+        let mut cached_fs = CachedFs::new(cache_fs, &dir).unwrap();
+        cached_fs.cache_file_info().unwrap();
+
+        let reader = ReadOnlyChunkedVectors::open(
+            &cached_fs,
+            &dir,
+            dim,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        assert_eq!(reader.len(), 100);
+
+        append_range(&mut writer, 100, 100..150, dim, &hw);
+        cached_fs.rotate_cache_file_info();
+        cached_fs.cache_file_info().unwrap();
+        append_range(&mut writer, 150, 150..200, dim, &hw);
+
+        (tmp, writer, cached_fs, reader)
+    }
+
+    fn assert_vectors(reader: &DiskCacheReader, offsets: &[usize], dim: usize) {
+        for &offset in offsets {
+            assert_eq!(
+                reader
+                    .get::<Random>(offset)
+                    .unwrap_or_else(|| panic!("vector should exist at offset {offset}"))
+                    .as_ref(),
+                make_vec(offset, dim).as_slice(),
+                "vector {offset} mismatch after reload",
+            );
+        }
+    }
+
+    /// The slot-indexed reload sizes from the id tracker delta, which is capped
+    /// at the same listing snapshot as the chunks, so a status file served
+    /// newer than that snapshot cannot make the view claim vectors its chunk
+    /// handles do not hold.
+    #[test]
+    fn live_reload_sizes_from_published_points_not_newer_status() {
+        use common::universal_io::CachedReadFs;
+
+        const DIM: usize = 32;
+        let hw = HardwareCounterCell::new();
+        let (_tmp, _writer, mut cached_fs, mut reader) = status_newer_than_snapshot(DIM);
+        let empty = SortedSlice::new(&[]).unwrap();
+
+        // The snapshot publishes up to 150.
+        let futs = LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        futures::executor::block_on(futures::future::join(
+            futures::future::join_all(futs),
+            cached_fs.wait_all(),
+        ));
+        let new = published(100..150);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cached_fs, &empty, &new, &hw).unwrap();
+
+        assert_eq!(reader.len(), 150);
+        assert_vectors(&reader, &[0, 99, 100, 149], DIM);
+
+        // The next snapshot sees the rest.
+        cached_fs.rotate_cache_file_info();
+        cached_fs.cache_file_info().unwrap();
+        let futs = LiveReload::live_preload(&reader, &cached_fs).unwrap();
+        futures::executor::block_on(futures::future::join(
+            futures::future::join_all(futs),
+            cached_fs.wait_all(),
+        ));
+        let new = published(150..200);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&cached_fs, &empty, &new, &hw).unwrap();
+
+        assert_eq!(reader.len(), 200);
+        assert_vectors(&reader, &[149, 150, 199], DIM);
+    }
+
+    /// `open` caps the status file at the chunk lengths too.
+    #[test]
+    fn open_caps_newer_status_at_chunk_capacity() {
+        use std::sync::Arc;
+
+        use common::universal_io::{
+            CachedFs, CachedReadFs, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+            UniversalReadFs,
+        };
+
+        const DIM: usize = 32;
+        let tmp = Builder::new()
+            .prefix("chunked_open_race")
+            .tempdir()
+            .unwrap();
+        let remote_root = tmp.path().join("remote");
+        let local_root = tmp.path().join("local");
+        let dir = remote_root.join("vectors");
+        fs_err::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&local_root).unwrap();
+
+        let hw = HardwareCounterCell::new();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+            config: Arc::new(DiskCacheConfig::new(remote_root, local_root).unwrap()),
+            remote: Default::default(),
+        })
+        .unwrap();
+        let mut cached_fs = CachedFs::new(cache_fs, &dir).unwrap();
+        cached_fs.cache_file_info().unwrap();
+
+        append_range(&mut writer, 100, 100..150, DIM, &hw);
+
+        let reader =
+            DiskCacheReader::open(&cached_fs, &dir, DIM, AdviceSetting::Global, Populate::No)
+                .unwrap();
+
+        assert_eq!(reader.len(), 100);
+        assert_vectors(&reader, &[0, 99], DIM);
+    }
+
+    /// A published offset the chunks do not hold means the writer broke its
+    /// ordering: the reload fails and the view keeps its previous state.
+    #[test]
+    fn live_reload_fails_when_published_points_exceed_chunks() {
+        const DIM: usize = 32;
+        let dir = Builder::new()
+            .prefix("chunked_reload_short")
+            .tempdir()
+            .unwrap();
+        let hw = HardwareCounterCell::new();
+
+        let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
+        append_range(&mut writer, 0, 0..100, DIM, &hw);
+
+        let mut reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        let empty = SortedSlice::new(&[]).unwrap();
+        let new = published(100..150);
+        let new = SortedSlice::new(&new).unwrap();
+        assert!(reader.live_reload(&MmapFs, &empty, &new, &hw).is_err());
+
+        assert_eq!(reader.len(), 100);
+        assert_eq!(
+            reader.get::<Random>(99).as_deref(),
+            Some(make_vec(99, DIM).as_slice()),
+        );
     }
 
     /// `live_reload` re-opens the last held chunk (the only one that can have
@@ -335,7 +547,9 @@ mod tests {
         append_range(&mut writer, 4000, 4000..9000, DIM, &hw);
 
         let empty = SortedSlice::new(&[]).unwrap();
-        reader.live_reload(&MmapFs, &empty, &empty, &hw).unwrap();
+        let new = published(4000..9000);
+        let new = SortedSlice::new(&new).unwrap();
+        reader.live_reload(&MmapFs, &empty, &new, &hw).unwrap();
 
         assert_eq!(reader.len(), 9000);
         assert_eq!(reader.chunks.len(), 3, "two new chunk files adopted");
@@ -389,7 +603,9 @@ mod tests {
         fs_err::set_permissions(&chunk_file, std::fs::Permissions::from_mode(0o000)).unwrap();
 
         let empty = SortedSlice::new(&[]).unwrap();
-        let reloaded = reader.live_reload(&MmapFs, &empty, &empty, &hw);
+        let new = published(100..150);
+        let new = SortedSlice::new(&new).unwrap();
+        let reloaded = reader.live_reload(&MmapFs, &empty, &new, &hw);
 
         // Restore before asserting, so a failure leaves the tempdir removable.
         fs_err::set_permissions(&chunk_file, std::fs::Permissions::from_mode(0o644)).unwrap();

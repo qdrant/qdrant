@@ -30,3 +30,17 @@ impl<S: UniversalRead> LiveReload for QuantizedChunkedStorageRead<S> {
             .live_reload(fs, deleted_points, new_points, hw_counter)
     }
 }
+
+impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
+    /// Grow to `new_len` quantized records; see
+    /// [`ReadOnlyChunkedVectors::live_reload_to`].
+    ///
+    /// [`ReadOnlyChunkedVectors::live_reload_to`]: crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors::live_reload_to
+    pub fn live_reload_to<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        new_len: usize,
+    ) -> OperationResult<()> {
+        self.data.live_reload_to(fs, new_len)
+    }
+}

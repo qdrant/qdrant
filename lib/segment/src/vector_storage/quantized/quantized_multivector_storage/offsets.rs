@@ -404,6 +404,12 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    pub fn get_offset_opt(&self, idx: PointOffsetType) -> Option<MultivectorOffset> {
+        self.data
+            .get::<Random>(idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first().copied())
+    }
+
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// `populate` warms the parked chunks for the `cached` memory placement;
@@ -443,10 +449,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
 
 impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedRead<S> {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self.data
-            .get::<Random>(idx as VectorOffsetType)
-            .and_then(|offsets| offsets.first().copied())
-            .unwrap_or_default()
+        self.get_offset_opt(idx).unwrap_or_default()
     }
 
     fn for_each_offset(
