@@ -8,6 +8,7 @@ use common::universal_io::{
 };
 use futures::lock::Mutex;
 
+use super::moves::AppendableMoves;
 use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
@@ -15,6 +16,9 @@ use crate::id_tracker::mutable_id_tracker::versions_storage::{
     VERSION_ELEMENT_SIZE, versions_path,
 };
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::point_moves::{
+    Hold, MoveResolution, PointMovesMode, PointMovesView, read_point_moves_tail,
+};
 use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
@@ -82,11 +86,37 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         deferred_internal_id: Option<PointOffsetType>,
         max_committed_offset: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
+        Self::open_with_moves(
+            fs,
+            fs,
+            segment_path,
+            deferred_internal_id,
+            max_committed_offset,
+            PointMovesMode::Ignore,
+        )
+    }
+
+    /// [`open_capped`](Self::open_capped) with point moves handled per `moves`. With
+    /// [`PointMovesMode::Resolve`] the move log is read through `raw_fs` after the mappings log, so
+    /// every delete of a move finds its record, and the deletes no record names apply at once.
+    pub fn open_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &impl UniversalReadFs<File = S>,
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
+        moves: PointMovesMode,
+    ) -> OperationResult<Self> {
+        let segment_path = segment_path.into();
+        let moves = moves
+            .is_resolve()
+            .then(|| Box::new(AppendableMoves::new(PointMovesView::new(&segment_path))));
+
         // The bootstrap below opens through the raw fs passed here, bypassing
         // any prefetch pool. Later reloads open through the fs their caller
         // provides instead (typically a caching wrapper with a fresh snapshot).
         let mut tracker = Self {
-            segment_path: segment_path.into(),
+            segment_path,
             internal_to_version: Vec::new(),
             mappings: PointMappings::new(
                 Default::default(),
@@ -104,12 +134,32 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 mappings: None,
                 versions: None,
             }),
+            moves,
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
         tracker.live_reload(fs, max_committed_offset)?;
         tracker.publish_staged();
+
+        // Classify the held deletes against the whole log, read after the mappings, and apply the
+        // plain ones: nothing but a move can make them wait.
+        if let Some((path, start)) = tracker.point_moves_tail_to_read() {
+            let tail = read_point_moves_tail(raw_fs, &path, start)?;
+            tracker.ingest_point_moves_tail(start, &tail);
+        }
+        if let Some(moves) = &tracker.moves {
+            let plain = moves
+                .held
+                .iter()
+                .filter(|held| held.hold == Hold::Plain)
+                .map(|held| held.key())
+                .collect();
+            tracker.apply_point_moves(&MoveResolution {
+                plain,
+                superseded: Vec::new(),
+            });
+        }
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
