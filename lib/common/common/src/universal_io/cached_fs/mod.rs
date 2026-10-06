@@ -202,6 +202,22 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
             .collect()
     }
 
+    pub(crate) fn cached_select_files<P: AsRef<Path>>(&self, paths: &[P]) -> Vec<ListedFile> {
+        paths
+            .iter()
+            .filter_map(|p| {
+                let path = p.as_ref();
+                let info = self.file_info(path)?;
+                Some(ListedFile {
+                    path: path.to_path_buf(),
+                    size: info.size,
+                    last_modified: info.last_modified,
+                    etag: info.etag.clone(),
+                })
+            })
+            .collect()
+    }
+
     fn apply_file_info(&mut self, list: Vec<ListedFile>) {
         let files_info: HashMap<_, _> = list
             .into_iter()
@@ -231,6 +247,16 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
     /// Async counterpart of [`CachedReadFs::cache_file_info`].
     pub async fn cache_file_info_async(&mut self) -> UioResult<()> {
         let list = self.fs.list_files_async(&self.prefix_path).await?;
+        self.apply_file_info(list);
+        Ok(())
+    }
+
+    /// Selectively populate the file info cache for `paths` instead of listing the whole prefix.
+    pub async fn select_cache_file_info_async<P: AsRef<Path> + Send + Sync>(
+        &mut self,
+        paths: &[P],
+    ) -> UioResult<()> {
+        let list = self.fs.select_files_async(paths).await?;
         self.apply_file_info(list);
         Ok(())
     }

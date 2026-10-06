@@ -105,6 +105,13 @@ where
     async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.list_files_async(prefix_path).await
     }
+
+    async fn select_files_async<P: AsRef<Path> + Send + Sync>(
+        &self,
+        paths: &[P],
+    ) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.select_files_async(paths).await
+    }
 }
 
 /// Fills a fresh mirror from a whole-file read, owning it until the read completes. Dropped

@@ -37,6 +37,14 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
         self.spawn(self.list_files_traced(prefix_path))
     }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A, P> {
+        let paths: Vec<PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        self.spawn(self.select_files_traced(paths))
+    }
 }
 
 impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {

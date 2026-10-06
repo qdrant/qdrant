@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, UioResult, UniversalKind};
+use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::BoxStream;
 
 /// Read-capable blob backend (S3, GCS, …). One impl per backend.
@@ -90,6 +90,27 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     fn is_empty(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
         let len = self.len(path);
         async move { Ok(len.await? == 0) }
+    }
+
+    /// Fetch metadata for a single object at `path`, returning `None` if it does not exist.
+    fn file_info(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<Option<ListedFile>>> + Send + 'static {
+        let len_fut = self.len(path);
+        let path = path.to_path_buf();
+        async move {
+            match len_fut.await {
+                Ok(size) => Ok(Some(ListedFile {
+                    path,
+                    size,
+                    last_modified: None,
+                    etag: None,
+                })),
+                Err(UniversalIoError::NotFound { .. }) => Ok(None),
+                Err(err) => Err(err),
+            }
+        }
     }
 
     fn kind() -> UniversalKind;

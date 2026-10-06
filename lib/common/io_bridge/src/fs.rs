@@ -94,6 +94,60 @@ impl<A: AsyncRead + Clone> BlobFs<A> {
             result
         }
     }
+
+    /// Traced, latency-logged SELECT, not yet bound to any executor.
+    /// Issues HEAD queries concurrently across all requested paths.
+    pub(crate) fn select_files_traced(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        let stats = self.stats.clone();
+        async move {
+            if paths.is_empty() {
+                return Ok(Vec::new());
+            }
+            let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+            let start_time = enabled.then(std::time::Instant::now);
+            let num_requested = paths.len();
+            let futures: Vec<_> = paths
+                .into_iter()
+                .map(|path| {
+                    let inner = inner.clone();
+                    let mut observer = stats.request(Op::Len, &path, 0..0);
+                    async move {
+                        observer.start();
+                        let result = inner.file_info(&path).await;
+                        match &result {
+                            Ok(Some(info)) => {
+                                observer.set_end(info.size);
+                                observer.set(uio_trace::Outcome::Ok);
+                            }
+                            Ok(None) => observer.set(uio_trace::Outcome::NotFound),
+                            Err(err) => observer.set_err(err),
+                        }
+                        result
+                    }
+                })
+                .collect();
+            let results = futures::future::try_join_all(futures).await?;
+            let files: Vec<ListedFile> = results.into_iter().flatten().collect();
+            if let Some(start_time) = start_time {
+                log::trace!(
+                    target: crate::LATENCY_LOG_TARGET,
+                    "select_files({num_requested} paths) took {:?} and returned {} files",
+                    start_time.elapsed(),
+                    files.len(),
+                );
+            }
+            Ok(files)
+        }
+    }
+
+    pub fn select_files<P: AsRef<Path>>(&self, paths: &[P]) -> UioResult<Vec<ListedFile>> {
+        let paths: Vec<PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        self.runtime.block_on(self.select_files_traced(paths))
+    }
 }
 
 impl<A: AsyncWrite + Clone> BlobFs<A> {
