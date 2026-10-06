@@ -65,6 +65,7 @@ async fn fixture() -> Collection {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

@@ -1035,6 +1035,7 @@ mod tests {
             strict_mode_config: None,
             uuid: None,
             metadata: None,
+            created_at: None,
         };
 
         let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();

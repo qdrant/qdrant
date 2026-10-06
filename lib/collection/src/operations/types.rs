@@ -16,6 +16,7 @@ use api::rest::{
     BaseGroupRequest, LookupLocation, RecommendStrategy, SearchGroupsRequestInternal,
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
+use chrono::{DateTime, Utc};
 use common::ext::OptionExt;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
@@ -195,6 +196,8 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            // Reported on `CollectionInfo`
+            created_at: _,
             metadata,
         } = config;
 
@@ -237,6 +240,10 @@ pub struct CollectionInfo {
     /// Update queue info
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_queue: Option<UpdateQueueInfo>,
+    /// Time of the collection creation.
+    /// Absent for collections created before Qdrant started recording it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionInfo {
@@ -248,6 +255,7 @@ impl CollectionInfo {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
             warnings: collection_config.get_warnings(),
+            created_at: collection_config.created_at,
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -278,6 +286,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             status: status.into(),
             optimizer_status,
             warnings: config.get_warnings(),
+            created_at: config.created_at,
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,

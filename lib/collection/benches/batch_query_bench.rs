@@ -69,6 +69,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();

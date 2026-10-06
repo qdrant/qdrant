@@ -328,6 +328,7 @@ impl NodeContext {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         } = op.clone();
 
         let defaults = self.collection_defaults.as_ref();
@@ -402,6 +403,7 @@ impl NodeContext {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         })
     }
 }
