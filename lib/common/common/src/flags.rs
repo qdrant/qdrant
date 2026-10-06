@@ -92,9 +92,15 @@ pub struct FeatureFlags {
     /// Existing `GraphInline` segments are always readable, regardless of this flag.
     pub combined_vector_storage: bool,
 
+    /// In the serverless update-only writer, record every copy-on-write move of a point in the
+    /// move logs (`id_tracker.moves`) of both the source and the target segment. Only gates
+    /// writing: a reader that does not resolve moves never opens the logs.
+    pub record_point_moves: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
-    /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
+    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
+    /// [`Self::record_point_moves`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -118,6 +124,7 @@ impl Default for FeatureFlags {
             transfer_raw_payloads: false,
             persist_proxy_segments: false,
             combined_vector_storage: true,
+            record_point_moves: false,
             serverless_compatible: false,
         }
     }
@@ -156,6 +163,8 @@ impl FeatureFlags {
             transfer_raw_payloads: false,
             persist_proxy_segments: true,
             combined_vector_storage: true,
+            // Deliberately not enabled by `all`: only the serverless writer uses it.
+            record_point_moves: false,
             serverless_compatible: false,
         }
     }
@@ -175,6 +184,7 @@ impl FeatureFlags {
             self.append_only_storages = true;
             self.compact_logstore_tracker = true;
             self.persist_proxy_segments = true;
+            self.record_point_moves = true;
         }
 
         // Append-only storages cannot rewrite slots.

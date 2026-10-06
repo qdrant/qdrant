@@ -18,6 +18,7 @@ use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
 use crate::id_tracker::mutable_id_tracker::update_only::{
     MappingOperation, UpdateOnlyAppendableIdTracker,
 };
+use crate::id_tracker::point_moves::{Retirement, SlotRef, moved_in_entries};
 use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
 use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
 use crate::segment_constructor::get_vector_storage_path;
@@ -231,15 +232,24 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// Append `points` to fresh slots in this segment and update the id tracker.
     /// Writes component data in parallel before making points visible by publishing versions.
     ///
+    /// `moved_from` is empty, or holds for each point the copies elsewhere it replaces: those are
+    /// recorded as moved-in records in the segment's move log, in parallel with the data. A record
+    /// counts for followers only once its slot is published, so writing it first is safe. A point
+    /// landing at or past `deferred_cutoff` moves nothing yet: it stays invisible until a rebuild,
+    /// and the copies it replaces keep serving.
+    ///
     /// Returns the slot each point landed in, in the order of `points`.
     pub fn store_points(
         &mut self,
         pool: &ThreadPool,
         points: &mut [FullyQualifiedPoint],
+        moved_from: &[Vec<SlotRef>],
+        deferred_cutoff: Option<PointOffsetType>,
     ) -> OperationResult<Vec<PointOffsetType>> {
         if points.is_empty() {
             return Ok(Vec::new());
         }
+        debug_assert!(moved_from.is_empty() || moved_from.len() == points.len());
 
         // Cosine scores with a plain dot product, so a stored vector has to be
         // unit length. `stored_vectors` are storage-native bytes, preprocessed
@@ -264,8 +274,25 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             .collect();
         let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
         let (_, start_slot) = *inserted.first().expect("one slot per insert");
+        let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
+        let moves = moved_in_entries(
+            slots
+                .iter()
+                .zip(moved_from)
+                .filter(|(slot, _)| deferred_cutoff.is_none_or(|cutoff| **slot < cutoff))
+                .map(|(&slot, sources)| (slot, sources.as_slice())),
+        );
 
-        let (fs, store) = self.store_components(pool)?;
+        self.store_components(pool)?;
+        let Self {
+            id_tracker,
+            fs,
+            segment_path: _,
+            config: _,
+            store,
+        } = self;
+        let fs = &*fs;
+        let store = store.as_mut().expect("just opened");
 
         let slot_payloads = || {
             inserted
@@ -278,6 +305,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let mut vectors_res = Ok(());
         let mut payload_res = Ok(());
         let mut indexes_res = Ok(());
+        let mut moves_res = Ok(());
         hw::parallel(|hw_acc| {
             pool.scope(|s| {
                 s.spawn(|_| {
@@ -306,13 +334,21 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                     let _hw = hw_acc.enter_guard();
                     indexes_res = store.payload_indexes.par_append_many(fs, slot_payloads());
                 });
+
+                if !moves.is_empty() {
+                    s.spawn(|_| {
+                        moves_res = id_tracker.record_moves(fs, &moves);
+                    });
+                }
             });
         });
-        vectors_res.and(payload_res).and(indexes_res)?;
+        vectors_res
+            .and(payload_res)
+            .and(indexes_res)
+            .and(moves_res)?;
 
         // Publish: covering the slots with their versions is what makes the
         // points visible, so everything above must already be durable.
-        let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
         let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
         self.id_tracker
             .set_internal_versions(&self.fs, &slots, &versions)?;
@@ -337,5 +373,12 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),
         )
+    }
+
+    /// [`tombstone_points`](Self::tombstone_points), recording the moves among `retirements` in the
+    /// segment's move log before the tombstones. The same caveat applies: only for points the batch
+    /// does not store here again.
+    pub fn retire_points(&mut self, retirements: &[Retirement]) -> OperationResult<()> {
+        self.id_tracker.retire_points(&self.fs, retirements)
     }
 }
