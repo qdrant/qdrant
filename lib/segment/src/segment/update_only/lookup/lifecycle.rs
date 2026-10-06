@@ -29,14 +29,14 @@ use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 /// flags).
 ///
 /// [`preopen`]: LookupSegment::preopen
-const WRITER_POPULATE: Populate = Populate::No;
+pub(in crate::segment::update_only) const WRITER_POPULATE: Populate = Populate::No;
 
 /// Build the per-segment [`CachedFs`] an open runs over. Preloads statically
 /// known files.
 ///
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
 /// config the writer never opens.
-fn build_cached_fs<Fs: UniversalReadFsAsync>(
+pub(in crate::segment::update_only) fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {

@@ -28,6 +28,7 @@ mod apply;
 mod batch;
 mod holder;
 mod lifecycle;
+pub(crate) mod locate;
 mod preview;
 #[cfg(test)]
 mod tests;
