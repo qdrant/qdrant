@@ -70,7 +70,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<usize> {
-        Ok(self.outdated(newer)?.values().map(Vec::len).sum())
+        Ok(self.find_outdated(newer)?.values().map(Vec::len).sum())
     }
 
     /// Delete every copy of a point when all its copies here are older than
@@ -87,7 +87,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         newer: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<usize> {
         let mut deleted = 0;
-        for (uuid, points) in self.outdated(newer)? {
+        for (uuid, points) in self.find_outdated(newer)? {
             let segment = &self.segments[&uuid];
             UpdateOnlySegmentEnum::open(
                 self.fs.clone(),
@@ -106,7 +106,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// A point's copies here are outdated when all of them are older than the
     /// point's version in `newer`. Returns, per segment, the `(point id,
     /// internal id)` pairs to tombstone there.
-    fn outdated(
+    fn find_outdated(
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>> {
