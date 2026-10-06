@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
+use crate::universal_io::error::IsNotFound;
 use crate::universal_io::{ListedFile, UioResult, UniversalIoError};
 
 /// `writev(2)`-family syscalls accept at most this many iovecs per call
@@ -148,5 +149,30 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         }
     }
 
+    Ok(results)
+}
+
+pub fn local_select_files<P: AsRef<Path>>(paths: &[P]) -> UioResult<Vec<ListedFile>> {
+    let mut results = Vec::with_capacity(paths.len());
+    for p in paths {
+        let path = p.as_ref();
+        match fs_err::metadata(path) {
+            Ok(metadata) if metadata.is_file() => {
+                results.push(ListedFile {
+                    path: path.to_path_buf(),
+                    size: metadata.len(),
+                    last_modified: metadata.modified().ok(),
+                    etag: None,
+                });
+            }
+            Ok(_) => {}
+            Err(err) => {
+                let err = UniversalIoError::extract_not_found(err, path);
+                if !err.is_not_found() {
+                    return Err(err);
+                }
+            }
+        }
+    }
     Ok(results)
 }
