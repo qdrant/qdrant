@@ -16,6 +16,7 @@ use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
 use crate::id_tracker::immutable_id_tracker::mappings_storage::{load_mapping, mappings_path};
 use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_path;
+use crate::id_tracker::point_moves::{Hold, PointMovesMode, SlotMoves};
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
@@ -80,19 +81,64 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
     ) -> OperationResult<Option<Self>> {
+        Self::try_open_with_moves(fs, fs, segment_path, PointMovesMode::Ignore)
+    }
+
+    /// [`try_open`](Self::try_open) with point moves handled per `moves`. With
+    /// [`PointMovesMode::Resolve`] the move log is read through `raw_fs` after the mask, and the
+    /// tombstones it names are held back, see [`SlotMoves::open`].
+    pub fn try_open_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        moves: PointMovesMode,
+    ) -> OperationResult<Option<Self>> {
         if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
             return Ok(None);
         }
-        Ok(Some(Self::open(fs, segment_path)?))
+        Ok(Some(Self::open_with_moves(
+            fs,
+            raw_fs,
+            segment_path,
+            moves,
+        )?))
     }
 
     pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
+        Self::open_with_moves(fs, fs, segment_path, PointMovesMode::Ignore)
+    }
+
+    /// [`open`](Self::open) with point moves handled per `moves`, see
+    /// [`try_open_with_moves`](Self::try_open_with_moves).
+    pub fn open_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        raw_fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        moves: PointMovesMode,
+    ) -> OperationResult<Self> {
         let options = Self::open_options();
 
         let deleted =
             StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
+
+        let moves = match moves {
+            PointMovesMode::Ignore => None,
+            PointMovesMode::Resolve => {
+                let mut moves = SlotMoves::open(raw_fs, segment_path)?;
+                let named: Vec<_> = moves
+                    .state
+                    .moved_out_slots()
+                    .filter(|&slot| deleted_bitvec.get(slot as usize).is_some_and(|bit| *bit))
+                    .collect();
+                for slot in named {
+                    deleted_bitvec.set(slot as usize, false);
+                    moves.held.insert(slot, Hold::Move);
+                }
+                Some(Box::new(moves))
+            }
+        };
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
@@ -112,6 +158,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             deleted,
             internal_to_version,
             mappings,
+            moves,
         })
     }
 }
