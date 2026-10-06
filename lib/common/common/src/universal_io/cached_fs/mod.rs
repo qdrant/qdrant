@@ -51,6 +51,26 @@ impl FileInfo {
     }
 }
 
+impl From<&ListedFile> for FileInfo {
+    fn from(file: &ListedFile) -> Self {
+        Self {
+            size: file.size,
+            last_modified: file.last_modified,
+            etag: file.etag.clone(),
+        }
+    }
+}
+
+impl From<ListedFile> for FileInfo {
+    fn from(file: ListedFile) -> Self {
+        Self {
+            size: file.size,
+            last_modified: file.last_modified,
+            etag: file.etag,
+        }
+    }
+}
+
 /// Filesystem wrapper that snapshots the file listing and serves read-only
 /// opens from explicitly prefetched handles. The only [`CachedReadFs`]
 /// implementation.
@@ -239,7 +259,17 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
             .collect();
 
         self.files_info = Some(files_info);
-        self.files_prefetched.lock().clear();
+    }
+
+    /// Set or remove file info in the snapshot depending on whether `file_info` is `Some`.
+    pub fn set_file_info(&mut self, path: PathBuf, file_info: Option<FileInfo>) {
+        if let Some(info) = file_info {
+            self.files_info
+                .get_or_insert_with(HashMap::new)
+                .insert(path, info);
+        } else {
+            self.files_info.as_mut().and_then(|info| info.remove(&path));
+        }
     }
 }
 
