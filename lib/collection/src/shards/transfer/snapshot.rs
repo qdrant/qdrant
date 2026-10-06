@@ -172,15 +172,25 @@ pub(super) async fn transfer_snapshot(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
     );
 
-    let shard_holder_read = shard_holder.read().await;
-    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
-
-    let transferring_shard = shard_holder_read.get_shard(shard_id);
-    let Some(replica_set) = transferring_shard else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} cannot be queue proxied because it does not exist"
-        )));
+    // Acquire the read lock only long enough to extract the cloned `replica_set`
+    // `Arc`, then drop the guard. The transfer below holds the read lock across
+    // `recover_shard_snapshot_from_url` (minutes for large shards), the
+    // consensus op that follows, and the `wait_for_state` poll — and the
+    // shards-holder `tokio::sync::RwLock` is write-preferring, so once any
+    // consensus-driven writer (e.g. an `UpdateCollection` apply through
+    // `update_strict_mode_config`) queues behind it, every collection reader
+    // is fenced for the whole transfer window. See #10858.
+    let replica_set = {
+        let shard_holder_read = shard_holder.read().await;
+        let Some(replica_set) = shard_holder_read.get_shard(shard_id).cloned() else {
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be queue proxied because it does not exist"
+            )));
+        };
+        replica_set
     };
+
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
     // Queue proxy local shard
     progress.lock().set_stage(TransferStage::Proxifying);
@@ -207,16 +217,23 @@ pub(super) async fn transfer_snapshot(
             "/collections/{encoded_collection_name}/shards/{shard_id}/snapshot",
         ));
     } else {
-        // Create shard snapshot
+        // Create shard snapshot. The future returned by `create_shard_snapshot`
+        // captures everything it needs by clone, so we only hold the read lock
+        // for the (microsecond-scale) setup call — the long-running snapshot
+        // creation itself runs lock-free.
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-        let snapshot_description = shard_holder_read
+        let snapshot_creator = shard_holder
+            .read()
+            .await
             .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-            .await?
             .await?;
+        let snapshot_description = snapshot_creator.await?;
 
         // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
+        let snapshot_temp_path = shard_holder
+            .read()
+            .await
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
             .await
             .map_err(|err| {
