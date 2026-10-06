@@ -1,4 +1,3 @@
-use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -390,7 +389,11 @@ impl UpdateWorkers {
             let tracker_handle = tracker.handle();
 
             let handle = spawn_stoppable(move |stopped| {
-                let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                // At low priority, as HNSW building already is: the rest of an
+                // optimization (copying and merging segments, building payload
+                // indexes, encoding quantized vectors) otherwise competes with
+                // search for the same cores at equal priority.
+                let result = common::cpu::run_with_low_priority("optimization", || {
                     optimizer.as_ref().optimize(
                         segments.clone(),
                         segments_to_merge,
@@ -405,7 +408,7 @@ impl UpdateWorkers {
                             optimizers_log.lock().register(tracker);
                         }),
                     )
-                }));
+                });
                 let is_optimized;
                 let status;
                 let reported_error;
