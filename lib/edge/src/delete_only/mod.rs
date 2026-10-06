@@ -35,7 +35,7 @@ pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
 impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// Open the id trackers of the listed segments. Writes nothing: opening an
     /// appendable writer would drop slots claimed by an in-flight batch, so
-    /// writers are opened in [`retire_superseded`](Self::retire_superseded).
+    /// writers are opened in [`delete_outdated`](Self::delete_outdated).
     pub fn open(fs: Fs, enumerator: impl SegmentEnumerator) -> OperationResult<Self> {
         let pool = build_segment_pool(
             "edge-delete",
@@ -54,39 +54,41 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         Ok(Self { fs, segments, pool })
     }
 
-    /// How many copies [`retire_superseded`](Self::retire_superseded) would
-    /// delete, based on the last read.
-    pub fn superseded_count(
-        &self,
-        newer: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<usize> {
-        Ok(self.superseded(newer)?.values().map(Vec::len).sum())
-    }
-
-    /// Reload the trackers, then delete every copy of a point when all its
-    /// copies here are older than its version in `newer`. If any copy is at
-    /// least that new, it is a deferred head and all copies stay. Returns the
-    /// number of copies deleted.
-    ///
-    /// Call under the shard's write lock. On error, some segments may already
-    /// be written; reopen and retry.
-    pub fn retire_superseded(
-        &mut self,
-        newer: &HashMap<PointIdType, SeqNumberType>,
-    ) -> OperationResult<usize> {
+    /// Reload the id trackers to pick up changes written since the last open
+    /// or reload.
+    pub fn live_reload(&mut self) -> OperationResult<()> {
         self.pool.install(|| {
             self.segments
                 .par_iter_mut()
                 .try_for_each(|(_, segment)| segment.live_reload())
-        })?;
+        })
+    }
 
-        let superseded = self.superseded(newer)?;
-        let mut retired = 0;
-        for (uuid, points) in superseded {
-            let segment = self
-                .segments
-                .get_mut(&uuid)
-                .expect("superseded copies come from opened segments");
+    /// How many copies [`delete_outdated`](Self::delete_outdated) would
+    /// delete, based on the last read.
+    pub fn count_outdated(
+        &self,
+        newer: &HashMap<PointIdType, SeqNumberType>,
+    ) -> OperationResult<usize> {
+        Ok(self.outdated(newer)?.values().map(Vec::len).sum())
+    }
+
+    /// Delete every copy of a point when all its copies here are older than
+    /// its version in `newer`. If any copy is at least that new, it is a
+    /// deferred head and all copies stay. Returns the number of copies
+    /// deleted.
+    ///
+    /// The writers resume from the trackers' last read, so call
+    /// [`live_reload`](Self::live_reload) first, under the shard's write lock,
+    /// and again before any later call. On error, some segments may already
+    /// be written.
+    pub fn delete_outdated(
+        &mut self,
+        newer: &HashMap<PointIdType, SeqNumberType>,
+    ) -> OperationResult<usize> {
+        let mut deleted = 0;
+        for (uuid, points) in self.outdated(newer)? {
+            let segment = &self.segments[&uuid];
             UpdateOnlySegmentEnum::open(
                 self.fs.clone(),
                 &segment.segment_path,
@@ -94,11 +96,9 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 segment.writer_state(),
             )?
             .tombstone_points(&points)?;
-            // So a later call starts from this write.
-            segment.live_reload()?;
-            retired += points.len();
+            deleted += points.len();
         }
-        Ok(retired)
+        Ok(deleted)
     }
 
     /// Find the outdated copies of the points in `newer`.
@@ -106,7 +106,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// A point's copies here are outdated when all of them are older than the
     /// point's version in `newer`. Returns, per segment, the `(point id,
     /// internal id)` pairs to tombstone there.
-    fn superseded(
+    fn outdated(
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>> {
