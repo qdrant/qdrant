@@ -75,7 +75,7 @@ where
                                 uuid,
                                 None,
                                 load_profile,
-                                PointMovesMode::Apply,
+                                PointMovesMode::for_follower(),
                                 is_stopped,
                             )
                         })
@@ -261,7 +261,16 @@ where
 {
     let uuid = segment.uuid;
     log::warn!("live_reload of segment {uuid} failed, reopening it: {reload_err}");
-    match ReadOnlySegment::open(fs, &segment.segment_path, uuid, None, load_profile) {
+    // In the follower's point moves mode, like the first open: when it resolves moves, the deletes
+    // of moves must stay held in the reopened segment too
+    match ReadOnlySegment::open_with_moves(
+        fs,
+        &segment.segment_path,
+        uuid,
+        None,
+        load_profile,
+        PointMovesMode::for_follower(),
+    ) {
         Ok(reopened) => {
             *segment = reopened;
             Ok(())

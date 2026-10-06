@@ -2318,6 +2318,7 @@ name = "edge"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "atomic_refcell",
  "bm25",
  "common",
  "core_affinity",
@@ -2329,6 +2330,7 @@ dependencies = [
  "parking_lot",
  "rand 0.10.3",
  "rayon",
+ "roaring",
  "segment",
  "serde",
  "serde_json",

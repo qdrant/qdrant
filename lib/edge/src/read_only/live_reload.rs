@@ -7,6 +7,7 @@ use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::id_tracker::point_moves::PointMovesMode;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
@@ -108,8 +109,21 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         // cannot spin this loop forever.
         const MAX_ATTEMPTS: usize = 3;
 
+        // With the feature flag, reloads keep the move records they read, and point moves are
+        // resolved after each attempt, once all its new data is installed
+        let resolve_point_moves = PointMovesMode::for_follower().is_resolve();
         for _ in 0..MAX_ATTEMPTS {
-            match self.live_reload_attempt(is_stopped)? {
+            let attempt = self.live_reload_attempt(is_stopped);
+            // Even after a failed attempt: a segment that keeps failing must not keep the old
+            // copies of every other segment
+            let resolved = if resolve_point_moves {
+                self.resolve_point_moves(attempt.is_ok(), is_stopped)
+            } else {
+                Ok(())
+            };
+            let outcome = attempt?;
+            resolved?;
+            match outcome {
                 LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
                 LiveReloadOutcome::ManifestChanged => {}
             }

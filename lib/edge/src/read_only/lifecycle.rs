@@ -8,6 +8,7 @@ use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
+use segment::id_tracker::point_moves::PointMovesMode;
 use segment::index::UniversalReadExt;
 
 use crate::EdgeConfig;
@@ -183,12 +184,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             path: path.to_path_buf(),
             fs,
             config: RwLock::new(Arc::new(provided_config.clone())),
-            segments: RwLock::new(ReadOnlySegmentHolder::default()),
+            // Resolving point moves decides when superseded segments go
+            segments: RwLock::new(ReadOnlySegmentHolder::new(
+                PointMovesMode::for_follower().is_resolve(),
+            )),
             enumerator: Box::new(enumerator),
             search_pool,
             load_pool,
             load_profile,
             live_reload_lock: Default::default(),
+            gone_segments: Default::default(),
         };
         shard.live_reload_cancellable(is_stopped)?;
 
