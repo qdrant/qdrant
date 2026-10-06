@@ -19,6 +19,9 @@ mod format;
 mod view;
 mod writer;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
