@@ -67,11 +67,11 @@ type TQRamMulti = QuantizedMultivectorStorage<
 
 // Chunked (appendable) on-disk format, opened read-only. Only Binary and TurboQuant
 // quantization produce this layout; Scalar/PQ are always immutable.
-type BinaryChunkedMulti<S> = QuantizedMultivectorStorage<
+pub(super) type BinaryChunkedMulti<S> = QuantizedMultivectorStorage<
     EncodedVectorsBin<u8, QuantizedChunkedStorageRead<S>>,
     MultivectorOffsetsStorageChunkedRead<S>,
 >;
-type TQChunkedMulti<S> = QuantizedMultivectorStorage<
+pub(super) type TQChunkedMulti<S> = QuantizedMultivectorStorage<
     EncodedVectorsTQ<QuantizedChunkedStorageRead<S>>,
     MultivectorOffsetsStorageChunkedRead<S>,
 >;
