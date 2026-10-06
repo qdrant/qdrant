@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
+use segment::id_tracker::point_moves::{Retirement, SlotRef};
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
@@ -68,6 +69,8 @@ pub struct PointApplyRecord {
     /// invisible until a rebuild indexes it, so these keep serving readers
     /// until the rebuild's deduplication retires them.
     pub shadowed: Vec<(Uuid, PointOffsetType)>,
+    /// Where a stored point landed: the write target and its fresh slot.
+    pub stored_at: Option<(Uuid, PointOffsetType)>,
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -143,11 +146,15 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
         // Index into `outcome.points` of each point in `to_store`.
         let mut stored_records: Vec<usize> = Vec::new();
-        let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        // Per segment: the point, the slot it vacates, and the index into `to_store` of the copy
+        // replacing it, if the batch stores one.
+        let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType, Option<usize>)>> =
+            AHashMap::new();
         // Other segments' copies of stored points, keyed by the point's index
         // in `to_store`: retired only once the store tells whether the new
         // copy is deferred.
         let mut stored_retirements: Vec<(usize, Uuid, PointOffsetType)> = Vec::new();
+        let record_moves = common::flags::feature_flags().record_point_moves;
         let write_target_uuid = segments.write_target_uuid();
         let deferred_cutoff = match (write_target_uuid, self.deferred_threshold_kb) {
             (Some(uuid), Some(threshold_kb)) => segment_deferred_internal_id(
@@ -196,6 +203,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 tombstoned: Vec::new(),
                 superseded: None,
                 shadowed: Vec::new(),
+                stored_at: None,
             };
 
             if kind.retires_slots() {
@@ -218,7 +226,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     to_tombstone
                         .entry(segment)
                         .or_default()
-                        .push((id, internal_id));
+                        .push((id, internal_id, None));
                     record.tombstoned.push((segment, internal_id));
                 }
             }
@@ -238,22 +246,39 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         // returns.
         let mut written: Vec<Uuid> = Vec::new();
         let mut tombstone_start = None;
+        let mut new_slots: Vec<PointOffsetType> = Vec::new();
         if !to_store.is_empty() {
             let uuid = write_target_uuid.ok_or_else(|| {
                 OperationError::service_error("No appendable segment exists, expected exactly one")
             })?;
             let writer = get_writer(&mut self.writers, uuid)?;
 
+            // Per stored point, the copies elsewhere it replaces, recorded as a move on both sides
+            // when point moves are recorded at all
+            let mut moved_from: Vec<Vec<SlotRef>> = vec![Vec::new(); to_store.len()];
+            if record_moves {
+                for &(store_index, segment, internal_id) in &stored_retirements {
+                    moved_from[store_index].push(SlotRef {
+                        segment,
+                        slot: internal_id,
+                    });
+                }
+            }
+
             let instant = std::time::Instant::now();
-            let new_slots = writer
+            new_slots = writer
                 .as_appendable_mut()
                 .ok_or_else(|| {
                     OperationError::service_error(format!(
                         "Write target {uuid} was opened as delete-only, it cannot store points",
                     ))
                 })?
-                .store_points(&self.pool, &mut to_store)?;
+                .store_points(&self.pool, &mut to_store, &moved_from, deferred_cutoff)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
+
+            for (store_index, &record_index) in stored_records.iter().enumerate() {
+                outcome.points[record_index].stored_at = Some((uuid, new_slots[store_index]));
+            }
 
             // A copy stored past the cutoff is deferred: retiring the point's
             // other copies would leave readers that hide deferred points with
@@ -266,10 +291,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 if is_deferred {
                     record.shadowed.push((segment, internal_id));
                 } else {
-                    to_tombstone
-                        .entry(segment)
-                        .or_default()
-                        .push((record.id, internal_id));
+                    to_tombstone.entry(segment).or_default().push((
+                        record.id,
+                        internal_id,
+                        Some(store_index),
+                    ));
                     record.tombstoned.push((segment, internal_id));
                 }
             }
@@ -279,16 +305,57 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
+                let points: Vec<(PointIdType, PointOffsetType)> = points
+                    .into_iter()
+                    .map(|(id, internal_id, _)| (id, internal_id))
+                    .collect();
                 writer.tombstone_points(&points)?;
             }
             written.push(uuid);
         }
 
+        // Every other segment retires its copies after the store too. A copy the batch moved gets
+        // a moved-out record, appended before its tombstone, so a follower that reads the
+        // tombstone can also read where the point went. Segments are independent, so they run in
+        // parallel.
         let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
-        for (uuid, points) in to_tombstone {
-            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
-            written.push(uuid);
+        let mut retirements: Vec<(Uuid, Vec<Retirement>)> = to_tombstone
+            .into_iter()
+            .map(|(segment, points)| {
+                let retirements = points
+                    .into_iter()
+                    .map(|(id, slot, store_index)| Retirement {
+                        id,
+                        slot,
+                        moved_to: store_index.filter(|_| record_moves).map(|index| SlotRef {
+                            segment: write_target_uuid.expect("stored points have a target"),
+                            slot: new_slots[index],
+                        }),
+                    })
+                    .collect();
+                (segment, retirements)
+            })
+            .collect();
+        retirements.sort_unstable_by_key(|(segment, _)| *segment);
+        for (uuid, _) in &retirements {
+            // Fails early when the inventory changed under the batch
+            get_writer(&mut self.writers, *uuid)?;
+            written.push(*uuid);
         }
+        let mut jobs: Vec<(&mut UpdateOnlySegmentEnum<Fs>, Vec<Retirement>)> = Vec::new();
+        let mut writers: AHashMap<Uuid, &mut UpdateOnlySegmentEnum<Fs>> = self
+            .writers
+            .iter_mut()
+            .map(|(uuid, writer)| (*uuid, writer))
+            .collect();
+        for (uuid, retirements) in retirements {
+            let writer = writers.remove(&uuid).expect("checked above");
+            jobs.push((writer, retirements));
+        }
+        self.pool.install(|| {
+            jobs.into_par_iter()
+                .try_for_each(|(writer, retirements)| writer.retire_points(&retirements))
+        })?;
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());
 
         let instant = std::time::Instant::now();

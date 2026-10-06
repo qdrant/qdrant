@@ -70,6 +70,7 @@ fn log_apply_record(record: &PointApplyRecord) {
         tombstoned,
         superseded,
         shadowed,
+        stored_at,
     } = record;
 
     let slot = |(segment, internal_id): &(Uuid, _)| format!("segment {segment} slot {internal_id}");
@@ -81,12 +82,16 @@ fn log_apply_record(record: &PointApplyRecord) {
             if let Some(superseded) = superseded {
                 retired.push(format!("{} (superseded in place)", slot(superseded)));
             }
+            let stored = stored_at
+                .as_ref()
+                .map(|stored_at| format!(" into {}", slot(stored_at)))
+                .unwrap_or_default();
             if retired.is_empty() && shadowed.is_empty() {
-                log::info!("point {id}: created — no previous copy in any segment");
+                log::info!("point {id}: created{stored} — no previous copy in any segment");
             }
             if !retired.is_empty() {
                 log::info!(
-                    "point {id}: overwritten — old copies deleted from {}",
+                    "point {id}: overwritten{stored} — old copies deleted from {}",
                     retired.join(", "),
                 );
             }
