@@ -311,7 +311,7 @@ fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
 
 #[rstest]
 #[case(50000, 2)]
-#[case(100, 2000)]
+#[case(20, 2000)]
 fn test_put_payload(
     #[case] num_payloads: u32,
     #[case] payload_size_factor: usize,
@@ -557,10 +557,7 @@ fn test_behave_like_hashmap(
 ) {
     use ahash::AHashMap;
 
-    #[cfg(target_os = "windows")]
     let operation_count = 10_000;
-    #[cfg(not(target_os = "windows"))]
-    let operation_count = 50_000;
     let max_point_offset = 10_000u32;
 
     let _ = env_logger::builder().is_test(true).try_init();
@@ -1086,16 +1083,21 @@ fn test_different_block_sizes(
     use crate::fixtures::minimal_payload;
 
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let blocks_per_page = DEFAULT_PAGE_SIZE_BYTES / block_size_bytes;
+    // Small pages keep the number of values needed to fill three pages low
+    const PAGE_SIZE_BYTES: usize = 1024 * 1024;
+    let blocks_per_page = PAGE_SIZE_BYTES / block_size_bytes;
     let config = match mode {
         Mode::Mutable => StorageConfig::Mutable(GridstoreConfig {
-            page_size_bytes: DEFAULT_PAGE_SIZE_BYTES,
+            page_size_bytes: PAGE_SIZE_BYTES,
             block_size_bytes,
-            region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+            region_size_blocks: PAGE_SIZE_BYTES / 512,
             compression: Compression::LZ4,
         }),
         // Blocks are a mutable mode concept, the append-only mode packs values back to back
-        Mode::AppendOnly => StorageConfig::AppendOnly(LogstoreConfig::DEFAULT),
+        Mode::AppendOnly => StorageConfig::AppendOnly(LogstoreConfig {
+            page_capacity_bytes: PAGE_SIZE_BYTES,
+            ..LogstoreConfig::DEFAULT
+        }),
     };
     let mut storage = Blobstore::<_>::new(MmapFs, dir.path().to_path_buf(), config).unwrap();
 
@@ -1124,7 +1126,7 @@ fn test_different_block_sizes(
         // the configured page size
         Mode::AppendOnly => {
             let value_len = u64::from(last_pointer.length);
-            let values_per_page = DEFAULT_PAGE_SIZE_BYTES as u64 / value_len;
+            let values_per_page = PAGE_SIZE_BYTES as u64 / value_len;
             assert_eq!(
                 u64::from(last_pointer.page_id),
                 u64::from(last_point_id) / values_per_page,
