@@ -16,11 +16,14 @@ mod enumerate;
 mod holder;
 mod lifecycle;
 mod live_reload;
+mod live_reload_moves;
 mod load;
+mod moves;
 mod shard_read;
 #[cfg(test)]
 pub(crate) mod tests;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -28,6 +31,7 @@ pub use live_reload::LiveReloadOutcome;
 use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
+use uuid::Uuid;
 
 use crate::EdgeConfig;
 pub use crate::read_only::enumerate::{
@@ -81,6 +85,10 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.
     live_reload_lock: Mutex<()>,
+    /// Move targets confirmed gone: absent from the manifest, and their directory removed. Such a
+    /// target was superseded, so the moves into it count as settled once every listed segment is
+    /// loaded.
+    gone_segments: Mutex<HashSet<Uuid>>,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {

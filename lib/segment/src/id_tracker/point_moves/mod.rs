@@ -58,6 +58,15 @@ pub enum PointMovesMode {
 }
 
 impl PointMovesMode {
+    /// The mode for a read-only follower, per the `resolve_point_moves` feature flag.
+    pub fn for_follower() -> Self {
+        if common::flags::feature_flags().resolve_point_moves {
+            Self::Resolve
+        } else {
+            Self::Ignore
+        }
+    }
+
     pub fn is_resolve(self) -> bool {
         self == Self::Resolve
     }
