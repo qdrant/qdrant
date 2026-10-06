@@ -17,6 +17,7 @@ use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
+use crate::id_tracker::point_moves::PointMovesMode;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
 use crate::index::payload_config::PayloadConfig;
@@ -157,13 +158,35 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
-        Self::schedule_open(
+        Self::open_with_moves(
             fs,
             segment_path,
             uuid,
             deferred_internal_id,
             load_profile,
-            &AtomicBool::new(false),
+            PointMovesMode::Ignore,
+        )
+    }
+
+    /// [`open`](Self::open), with the id tracker resolving point moves per `point_moves`, see
+    /// [`point_moves`](crate::id_tracker::point_moves).
+    pub fn open_with_moves(
+        fs: &S::Fs,
+        segment_path: &Path,
+        uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&LoadProfile>,
+        point_moves: PointMovesMode,
+    ) -> OperationResult<Self> {
+        let is_stopped = AtomicBool::new(false);
+        Self::schedule_open_with_cached_fs(
+            build_cached_fs(fs, segment_path)?,
+            segment_path,
+            uuid,
+            deferred_internal_id,
+            load_profile,
+            point_moves,
+            &is_stopped,
         )?
         .finish(fs)
     }
@@ -196,18 +219,24 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             uuid,
             deferred_internal_id,
             load_profile,
+            PointMovesMode::Ignore,
             is_stopped,
         )
     }
 
     /// [`schedule_open`](Self::schedule_open) over a snapshot already taken by
     /// [`build_cached_fs_async`].
+    ///
+    /// `point_moves` decides whether the id tracker resolves point moves, see
+    /// [`point_moves`](crate::id_tracker::point_moves); [`schedule_open`](Self::schedule_open)
+    /// never does.
     pub fn schedule_open_with_cached_fs<'a>(
         fs: CachedFs<S::Fs>,
         segment_path: &Path,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&'a LoadProfile>,
+        point_moves: PointMovesMode,
         is_stopped: &'a AtomicBool,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
@@ -221,6 +250,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             config,
             payload_config,
             load_profile,
+            point_moves,
             is_stopped,
         })
     }
@@ -346,6 +376,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
+        point_moves: PointMovesMode,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         check_process_stopped(is_stopped)?;
@@ -380,13 +411,17 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         // per-file `exists` round-trips — important for object-storage backends).
         let max_committed_offset =
             ReadOnlyIdTrackerEnum::<S>::max_committed_offset(&fs, segment_path);
-        let id_tracker = Arc::new(AtomicRefCell::new(ReadOnlyIdTrackerEnum::detect_and_load(
-            &fs,
-            segment_path,
-            deferred_internal_id,
-            max_committed_offset,
-            id_tracker_populate(&config, &fs, segment_path),
-        )?));
+        let id_tracker = Arc::new(AtomicRefCell::new(
+            ReadOnlyIdTrackerEnum::detect_and_load_with_moves(
+                &fs,
+                raw_fs,
+                segment_path,
+                deferred_internal_id,
+                max_committed_offset,
+                id_tracker_populate(&config, &fs, segment_path),
+                point_moves,
+            )?,
+        ));
 
         // Open all vector storages up front: the payload index needs them.
         let mut vector_storages: HashMap<
@@ -504,6 +539,7 @@ pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
     config: SegmentConfig,
     payload_config: PayloadConfig,
     load_profile: Option<&'a LoadProfile>,
+    point_moves: PointMovesMode,
     is_stopped: &'a AtomicBool,
 }
 
@@ -528,6 +564,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             config,
             payload_config,
             load_profile,
+            point_moves,
             is_stopped,
         } = self;
         ReadOnlySegment::open_via(
@@ -539,6 +576,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             uuid,
             deferred_internal_id,
             load_profile,
+            point_moves,
             is_stopped,
         )
     }
