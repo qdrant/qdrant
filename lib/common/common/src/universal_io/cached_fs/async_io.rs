@@ -61,4 +61,14 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
             None => self.fs.list_files_async(prefix_path).await,
         }
     }
+
+    async fn select_files_async<P: AsRef<Path> + Send + Sync>(
+        &self,
+        paths: &[P],
+    ) -> UioResult<Vec<ListedFile>> {
+        match &self.files_info {
+            Some(_) => Ok(self.cached_select_files(paths)),
+            None => self.fs.select_files_async(paths).await,
+        }
+    }
 }

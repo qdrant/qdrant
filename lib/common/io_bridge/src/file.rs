@@ -263,7 +263,7 @@ mod tests {
     use bytes::Bytes;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{
-        ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs,
+        ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs, UniversalReadFsAsync,
     };
     use futures::stream::{BoxStream, StreamExt};
 
@@ -760,5 +760,118 @@ mod tests {
                 .unwrap()
                 .contains("append: started=1")
         );
+    }
+
+    #[derive(Clone, Default)]
+    struct MultiMockSource {
+        files: Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<u8>>>>,
+        head_calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl MultiMockSource {
+        fn insert(&self, path: impl Into<PathBuf>, data: Vec<u8>) {
+            self.files.lock().unwrap().insert(path.into(), data);
+        }
+    }
+
+    impl AsyncRead for MultiMockSource {
+        type Config = ();
+
+        fn open(_config: &()) -> UioResult<Self> {
+            Ok(Self::default())
+        }
+
+        fn list_files(
+            &self,
+            _prefix: &Path,
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
+        }
+
+        fn exists(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
+            let exists = self.files.lock().unwrap().contains_key(path);
+            std::future::ready(Ok(exists))
+        }
+
+        fn read_range(
+            &self,
+            _path: &Path,
+            _range: Range<u64>,
+        ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+        {
+            std::future::ready(Err(UniversalIoError::uninitialized("read_range")))
+        }
+
+        fn read_from(
+            &self,
+            _path: &Path,
+            _from: u64,
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+            std::future::ready(Err(UniversalIoError::uninitialized("read_from")))
+        }
+
+        fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
+            self.head_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let result = match self.files.lock().unwrap().get(path) {
+                Some(data) => Ok(data.len() as u64),
+                None => Err(UniversalIoError::NotFound { path: path.into() }),
+            };
+            std::future::ready(result)
+        }
+
+        fn kind() -> UniversalKind {
+            UniversalKind::S3
+        }
+    }
+
+    #[tokio::test]
+    async fn test_select_files_async() {
+        let source = MultiMockSource::default();
+        source.insert(Path::new("file1.dat"), b"hello".to_vec());
+        source.insert(Path::new("file2.dat"), b"world".to_vec());
+        let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
+        let stats = fs.stats();
+
+        let paths = [
+            Path::new("file1.dat"),
+            Path::new("file2.dat"),
+            Path::new("missing.dat"),
+        ];
+
+        let selected = fs.select_files_async(&paths).await.unwrap();
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].path, Path::new("file1.dat"));
+        assert_eq!(selected[0].size, 5);
+        assert_eq!(selected[1].path, Path::new("file2.dat"));
+        assert_eq!(selected[1].size, 5);
+
+        assert_eq!(
+            source.head_calls.load(std::sync::atomic::Ordering::Relaxed),
+            3
+        );
+
+        let snapshot = stats.snapshot();
+        let len_stats = snapshot.op(Op::Len);
+        assert_eq!(len_stats.started, 3);
+        assert_eq!(len_stats.completed, 2);
+        assert_eq!(len_stats.not_found, 1);
+        assert_eq!(len_stats.errors, 0);
+
+        // Test empty selection
+        let empty = fs.select_files_async::<&Path>(&[]).await.unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_select_files_sync() {
+        let source = MultiMockSource::default();
+        source.insert(Path::new("file1.dat"), b"hello".to_vec());
+        let fs = BlobFs::new(source, BridgeRuntime::global());
+
+        let paths = [Path::new("file1.dat"), Path::new("missing.dat")];
+        let sync_selected = fs.select_files(&paths).unwrap();
+        assert_eq!(sync_selected.len(), 1);
+        assert_eq!(sync_selected[0].path, Path::new("file1.dat"));
     }
 }

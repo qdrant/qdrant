@@ -1332,6 +1332,13 @@ mod tests_async {
         async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
             self.0.list_files_async(prefix_path).await
         }
+
+        async fn select_files_async<P: AsRef<Path> + Send + Sync>(
+            &self,
+            paths: &[P],
+        ) -> UioResult<Vec<ListedFile>> {
+            self.0.select_files_async(paths).await
+        }
     }
 
     impl UniversalRead for AsyncOnlyRemote {

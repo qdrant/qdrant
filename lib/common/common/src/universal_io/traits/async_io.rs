@@ -86,6 +86,15 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
+
+    /// Select specific files asynchronously.
+    ///
+    /// Returns the same output format as [`Self::list_files_async`], but for an explicit
+    /// list of candidate files. Files that do not exist are omitted from the result.
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self, P>;
 }
 
 /// The async whole-file write surface, mirroring the same operations on

@@ -46,6 +46,13 @@ where
         // The remote is the source of truth; mirrors are ephemeral.
         self.blob_fs.list_files_async(prefix_path)
     }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A, P> {
+        self.blob_fs.select_files_async(paths)
+    }
 }
 
 impl<A: AsyncAppend + Clone> UniversalReadAsync for CachedBlobFile<A>
