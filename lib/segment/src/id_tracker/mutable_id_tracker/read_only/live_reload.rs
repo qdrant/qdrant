@@ -263,7 +263,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // The mappings file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then there is nothing to read.
         let mappings_file = &mut self.files.get_mut().mappings;
-        if !preloaded {
+        if mappings_file.is_none() || !preloaded {
             match mappings_file.as_mut() {
                 Some(file) => {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose
@@ -329,7 +329,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // The versions file is absent until the writer flushes the first point; open it lazily once
         // it appears. Until then no version is committed.
         let versions_file = &mut self.files.get_mut().versions;
-        if !preloaded {
+        if versions_file.is_none() || !preloaded {
             match versions_file.as_mut() {
                 Some(versions_file) => {
                     // Refresh the handle to observe data appended by the writer. A lazily-opened handle whose

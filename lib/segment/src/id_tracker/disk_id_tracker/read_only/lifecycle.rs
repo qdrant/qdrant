@@ -1,10 +1,11 @@
 //! Opening and preopening (prefetch scheduling) of the read-only tracker.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyDiskIdTracker;
@@ -14,6 +15,19 @@ use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
+    /// No commit mark: the format is fully committed once present.
+    pub fn commit_mark_path(_segment_path: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    /// No commit mark, so no bound: see [`Self::commit_mark_path`].
+    pub fn max_committed_offset(
+        _fs: &impl CachedReadFs,
+        _segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        None
+    }
+
     /// An `Auto` populate preloads, as search reads versions per result.
     pub(super) fn open_options(populate: Populate) -> OpenOptions {
         let populate = match populate {

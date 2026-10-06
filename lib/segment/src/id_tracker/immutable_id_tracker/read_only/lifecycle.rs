@@ -1,10 +1,11 @@
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
@@ -18,6 +19,19 @@ use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_p
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
+    /// No commit mark: the format is fully committed once present.
+    pub fn commit_mark_path(_segment_path: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    /// No commit mark, so no bound: see [`Self::commit_mark_path`].
+    pub fn max_committed_offset(
+        _fs: &impl CachedReadFs,
+        _segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        None
+    }
+
     pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,

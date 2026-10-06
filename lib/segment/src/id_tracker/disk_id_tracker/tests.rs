@@ -234,6 +234,7 @@ fn detect_and_load_selects_disk_format() {
         &MmapFs,
         disk_dir.path(),
         None,
+        None,
         Populate::No,
     )
     .unwrap();
@@ -249,6 +250,7 @@ fn detect_and_load_selects_disk_format() {
         &MmapFs,
         imm_dir.path(),
         None,
+        None,
         Populate::No,
     )
     .unwrap();
@@ -259,6 +261,7 @@ fn detect_and_load_selects_disk_format() {
     let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
         &MmapFs,
         empty_dir.path(),
+        None,
         None,
         Populate::No,
     )
