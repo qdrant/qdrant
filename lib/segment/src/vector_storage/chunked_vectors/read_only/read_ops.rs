@@ -11,7 +11,9 @@ use common::universal_io::{ReadPipeline, ReadRange, TypedStorage, UniversalRead,
 use super::ReadOnlyChunkedVectors;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::chunked_vectors::config::RunPart;
-use crate::vector_storage::common::{PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
+use crate::vector_storage::common::{
+    PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE, for_each_with_prefetch,
+};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{VectorOffset, VectorOffsetType};
 
@@ -168,6 +170,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         // them is more cache friendly, than fetching and scoring in a single loop.
 
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
+        let storage_bytes = self.len() * self.dim() * size_of::<T>();
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let force_sequential = is_read_with_prefetch_efficient(keys);
@@ -182,9 +185,13 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
-            for (vector_idx, vec) in vectors.iter().enumerate() {
-                callback(batch_offset + vector_idx, vec.as_ref());
-            }
+            for_each_with_prefetch(
+                vectors,
+                force_sequential,
+                storage_bytes,
+                |vec| bytemuck::cast_slice(vec.as_ref()),
+                |vector_idx, vec| callback(batch_offset + vector_idx, vec.as_ref()),
+            );
         }
 
         Ok(())

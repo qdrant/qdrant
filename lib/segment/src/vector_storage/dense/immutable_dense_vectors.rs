@@ -15,11 +15,12 @@ use common::universal_io::{
     TypedStorage, UioResult, UniversalRead, UniversalReadFs,
 };
 use fs_err::{File, OpenOptions};
+use zerocopy::IntoBytes as _;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::common::{VECTOR_READ_BATCH_SIZE, for_each_with_prefetch};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
 const HEADER_SIZE: usize = 4;
@@ -151,8 +152,11 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
 
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
 
+        let storage_bytes = self.num_vectors * self.dim * size_of::<T>();
+
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
-            let vectors = if is_read_with_prefetch_efficient(keys) {
+            let sequential = is_read_with_prefetch_efficient(keys);
+            let vectors = if sequential {
                 let iter = keys
                     .iter()
                     .map(|&point_offset| self.get_vector::<Sequential>(point_offset));
@@ -168,9 +172,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
-            for (vector_idx, vec) in vectors.iter().enumerate() {
-                f(batch_offset + vector_idx, vec);
-            }
+            for_each_with_prefetch(
+                vectors,
+                sequential,
+                storage_bytes,
+                |vec| vec.as_bytes(),
+                |vector_idx, vec| f(batch_offset + vector_idx, vec),
+            );
         }
 
         Ok(())
