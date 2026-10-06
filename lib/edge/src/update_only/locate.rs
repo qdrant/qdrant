@@ -1,5 +1,5 @@
-//! Locating a point's copies across a shard's segments, shared by the
-//! update-only and the delete-only shard.
+//! Finding a point's copies across segments. Used by the update-only and
+//! delete-only shards.
 
 use ahash::AHashMap;
 use common::types::PointOffsetType;
@@ -9,7 +9,7 @@ use segment::segment::update_only::{LookupSegment, TrackerLookup};
 use segment::types::{PointIdType, SeqNumberType};
 use uuid::Uuid;
 
-/// A segment opened for writing, as far as locating points goes.
+/// What locating points needs from a segment.
 pub(crate) trait LocateSegment {
     fn locate_points(
         &self,
@@ -98,7 +98,7 @@ pub(crate) struct PointLocations {
     pub(crate) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-/// The copies of `ids` that segment `uuid` holds.
+/// Copies of `ids` in segment `uuid`.
 pub(crate) fn locate_in(
     uuid: Uuid,
     segment: &impl LocateSegment,
@@ -130,7 +130,7 @@ pub(crate) fn locate_in(
         .collect())
 }
 
-/// Group the per-segment copies by point, marking the newest.
+/// Group copies by point and mark the newest.
 pub(crate) fn merge_locations(
     per_segment: Vec<Vec<(PointIdType, PointLocation)>>,
 ) -> AHashMap<PointIdType, PointLocations> {

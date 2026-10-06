@@ -48,9 +48,8 @@ pub enum WriterIdTrackerState {
 }
 
 impl WriterIdTrackerState {
-    /// The state a writer resumes from, as `id_tracker` last read the
-    /// segment. The deleted mask is handed over only when already in memory —
-    /// the disk-resident tracker deliberately avoids materializing it.
+    /// Writer state taken from `id_tracker`'s last read. The deleted mask is
+    /// passed only if already in memory.
     pub(crate) fn of<S: UniversalRead>(id_tracker: &ReadOnlyIdTrackerEnum<S>) -> Self {
         match id_tracker {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {

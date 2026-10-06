@@ -1,7 +1,5 @@
-//! A shard whose points 1 to 300 sit in an immutable segment, with newer copies
-//! of points 1 to 3 written to the appendable alone — the state a writer
-//! leaves for deferred points — and the delete-only shard retiring the older
-//! copies once those newer versions are published.
+//! Fixture: points 1-300 in an immutable segment, plus newer copies of 1-3 in
+//! the appendable only, as a writer leaves deferred points.
 
 use std::collections::HashMap;
 
@@ -21,10 +19,10 @@ use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator}
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 
-/// The version the newer copies of points 1 to 3 carry.
+/// Version of the newer copies of points 1-3.
 const NEWER: SeqNumberType = 100;
 
-/// The segments `inner` lists, narrowed to `keep`.
+/// `inner`, limited to `keep`.
 struct Only {
     inner: LocalSegmentEnumerator,
     keep: Vec<Uuid>,
@@ -127,8 +125,7 @@ fn a_newer_head_keeps_the_older_copies() {
     assert_eq!(shard.retire_superseded(&newer(NEWER - 1)).unwrap(), 0);
 }
 
-/// A delete landing between the open and the retire must survive it, not be
-/// overwritten by the deleted mask the open read.
+/// A delete made after `open` must not be undone by the retire.
 #[cfg_attr(
     windows,
     ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \

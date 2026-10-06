@@ -1,10 +1,8 @@
-//! Delete-only shard: retires the copies of points that a rebuild published
-//! newer versions of, over the segments outside that rebuild.
+//! Delete-only shard: removes old copies of points after a rebuild publishes
+//! newer ones.
 //!
-//! With deferred points the writer keeps a point's older copies visible while
-//! its newer copy waits to be indexed. Once a rebuild publishes the newer copy
-//! in a segment of its own, the older ones are duplicates. Only the id
-//! trackers are opened: retiring a point never reads its payload or vectors.
+//! While a point's newer copy is deferred, its older copies stay visible. Once
+//! a rebuild publishes the newer copy, the older ones are duplicates.
 
 #[cfg(test)]
 mod tests;
@@ -26,7 +24,8 @@ use crate::read_only::{ListedSegment, SegmentEnumerator};
 use crate::read_view::build_segment_pool;
 use crate::update_only::locate::{locate_in, merge_locations};
 
-/// Retires superseded copies of points across the segments it was opened on.
+/// Deletes outdated point copies in the segments it was opened on. Opens id
+/// trackers only.
 pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
     fs: Fs,
     segments: HashMap<Uuid, TrackerLookup<Fs>>,
@@ -34,10 +33,9 @@ pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
 }
 
 impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
-    /// Open the id tracker of every segment `enumerator` lists. Nothing is
-    /// written: writers are resumed only in
-    /// [`retire_superseded`](Self::retire_superseded), because resuming an
-    /// appendable writer retires the slots an in-flight batch has claimed.
+    /// Open the id trackers of the listed segments. Writes nothing: opening an
+    /// appendable writer would drop slots claimed by an in-flight batch, so
+    /// writers are opened in [`retire_superseded`](Self::retire_superseded).
     pub fn open(fs: Fs, enumerator: impl SegmentEnumerator) -> OperationResult<Self> {
         let pool = build_segment_pool(
             "edge-delete",
@@ -57,7 +55,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     }
 
     /// How many copies [`retire_superseded`](Self::retire_superseded) would
-    /// retire, against the trackers as last read.
+    /// delete, based on the last read.
     pub fn superseded_count(
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,
@@ -65,15 +63,13 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         Ok(self.superseded(newer)?.values().map(Vec::len).sum())
     }
 
-    /// Refresh every tracker, then retire each point's copies whose newest is
-    /// older than the point's version in `newer`. A point with a copy here at
-    /// or past that version keeps all of them: that newer copy is a deferred
-    /// head, and the older ones serve until it is indexed. Returns how many
-    /// copies were retired.
+    /// Reload the trackers, then delete every copy of a point when all its
+    /// copies here are older than its version in `newer`. If any copy is at
+    /// least that new, it is a deferred head and all copies stay. Returns the
+    /// number of copies deleted.
     ///
-    /// Must run under the shard's write lock: the writers resume from the
-    /// state this call reads. On error some segments may already be written;
-    /// a retry against a freshly opened shard finds only what is left.
+    /// Call under the shard's write lock. On error, some segments may already
+    /// be written; reopen and retry.
     pub fn retire_superseded(
         &mut self,
         newer: &HashMap<PointIdType, SeqNumberType>,
@@ -98,14 +94,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 segment.writer_state(),
             )?
             .tombstone_points(&points)?;
-            // So that a later call resumes from what this one wrote.
+            // So a later call starts from this write.
             segment.live_reload()?;
             retired += points.len();
         }
         Ok(retired)
     }
 
-    /// The copies to retire, grouped by segment.
+    /// Copies to delete, by segment.
     fn superseded(
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,

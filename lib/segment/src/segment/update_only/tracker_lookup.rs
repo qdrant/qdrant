@@ -1,5 +1,4 @@
-//! A segment opened to retire points: the id tracker alone, since a delete
-//! never reads the payload or the vectors.
+//! A segment opened with its id tracker only.
 
 use std::path::{Path, PathBuf};
 
@@ -18,22 +17,19 @@ use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
 use crate::types::{PointIdType, SegmentConfig, SegmentState, SeqNumberType};
 
-/// The id-tracker half of a [`LookupSegment`](super::LookupSegment): enough to
-/// locate points, compare their versions and resume a writer that retires
-/// them, without opening any storage.
+/// A [`LookupSegment`](super::LookupSegment) without storages: enough to find
+/// points and delete them.
 pub struct TrackerLookup<Fs: UniversalReadFsAsync> {
     fs: CachedFs<Fs>,
     pub segment_path: PathBuf,
     id_tracker: ReadOnlyIdTrackerEnum<Fs::File>,
-    /// What [`UpdateOnlySegmentEnum::open`](super::UpdateOnlySegmentEnum::open)
-    /// is given; an appendable writer that only retires never uses it.
+    /// Passed to the writer; unused when it only deletes.
     pub segment_config: SegmentConfig,
     pub appendable: bool,
 }
 
 impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
-    /// Open the id tracker of the segment at `segment_path`, prefetching its
-    /// files with the state and version files in one round.
+    /// Open the segment's id tracker, prefetching all its files at once.
     pub fn open(fs: Fs, segment_path: &Path) -> OperationResult<Self> {
         let mut fs = build_cached_fs(fs, segment_path)?;
         let SegmentState {
@@ -84,8 +80,7 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
         WriterIdTrackerState::of(&self.id_tracker)
     }
 
-    /// Catch the id tracker up with what was written since the open or the
-    /// previous reload.
+    /// Pick up changes written since the last open or reload.
     pub fn live_reload(&mut self) -> OperationResult<()> {
         let Self { fs, id_tracker, .. } = self;
         fs.cache_file_info()?;
@@ -99,8 +94,7 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
     }
 }
 
-/// Deferred heads are included, so a point shadowed by an optimization in
-/// progress resolves to its latest slot.
+/// Includes deferred points, so each id resolves to its latest slot.
 pub(super) fn locate_points<S: UniversalRead>(
     id_tracker: &ReadOnlyIdTrackerEnum<S>,
     point_ids: impl IntoIterator<Item = PointIdType>,
@@ -109,8 +103,7 @@ pub(super) fn locate_points<S: UniversalRead>(
     id_tracker.resolve_external_ids(point_ids, DeferredBehavior::WithDeferred, callback)
 }
 
-/// A slot the tracker has no version for is absent from the map; it counts as
-/// `0`, the version an unwritten point compares as.
+/// Slots without a version are left out; treat them as version 0.
 pub(super) fn point_versions<S: UniversalRead>(
     id_tracker: &ReadOnlyIdTrackerEnum<S>,
     internal_ids: &[PointOffsetType],
