@@ -13,6 +13,7 @@
 //! logic.
 
 mod enumerate;
+mod epochs;
 mod holder;
 mod lifecycle;
 mod live_reload;
@@ -38,6 +39,8 @@ pub use crate::read_only::enumerate::{
     ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, SegmentEnumerator,
     SegmentListing, UnusableSegmentState,
 };
+pub use crate::read_only::epochs::ReadEpochGuard;
+use crate::read_only::epochs::ReadEpochs;
 use crate::read_only::holder::ReadOnlySegmentHolder;
 
 /// Optional caller-owned pools for a read-only follower. Pools can be shared across shards;
@@ -85,6 +88,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.
     live_reload_lock: Mutex<()>,
+    /// Epochs of the reads in flight: a reload masks a moved point's old copy only once no read is
+    /// left that may have missed its new copy, see [`epochs`](crate::read_only::epochs).
+    read_epochs: ReadEpochs,
     /// Move targets confirmed gone: absent from the manifest, and their directory removed. Such a
     /// target was superseded, so the moves into it count as settled once every listed segment is
     /// loaded.

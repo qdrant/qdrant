@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
@@ -34,6 +35,10 @@ type HeldSegment<S> = (Uuid, Arc<RwLock<ReadOnlySegment<S>>>);
 /// A held segment, and the deletes resolution applies to it.
 type SegmentDeletes<S> = (Uuid, Arc<RwLock<ReadOnlySegment<S>>>, MoveResolution);
 
+/// How long resolution waits for the reads of the previous epoch before it masks superseded
+/// copies. Past it, masks and releases wait for the next pass, which is stale but never missing.
+const READ_EPOCH_WAIT: Duration = Duration::from_secs(5);
+
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Resolve point moves across every held segment, after a live_reload attempt installed its new
     /// data. `all_reloaded` tells whether that attempt reloaded every listed segment without error.
@@ -45,7 +50,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// 3. read the end of the move logs, for held deletes no record names yet;
     /// 4. decide every segment's deletes;
     /// 5. drop the superseded segments the drop rule allows;
-    /// 6. apply every segment's deletes.
+    /// 6. start a new read epoch, and wait for the reads of the previous one to finish;
+    /// 7. apply every segment's deletes.
     ///
     /// Completes as much as possible before reporting the first error.
     pub(super) fn resolve_point_moves(
@@ -136,14 +142,34 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             self.derive_config_after_drop();
         }
 
-        // 6. Apply the deletes of every segment, each under its own lock, in parallel
+        // 6. Masking a copy, or releasing a held delete, is only safe once no read is left that may
+        //    have missed the new copy: one that visited its target before the reload installed
+        //    it. Plain deletes depend on no other segment. If the wait times out, masks and
+        //    releases wait for the next pass, which is stale but never missing.
+        let masks_pending = resolutions
+            .values()
+            .any(|resolution| !resolution.superseded.is_empty());
+        let waited = !masks_pending
+            || self
+                .read_epochs
+                .advance_and_wait(READ_EPOCH_WAIT, is_stopped);
+        if !waited {
+            log::debug!("reads of the previous epoch still running, masks wait for the next pass");
+        }
+
+        // 7. Apply the deletes of every segment, each under its own lock, in parallel
         let deletes: Vec<SegmentDeletes<S>> = {
             let holder = self.segments.read();
             resolutions
                 .into_iter()
                 .filter_map(|(uuid, resolution)| {
+                    let resolution = if waited {
+                        resolution
+                    } else {
+                        resolution.without_superseded()
+                    };
                     let segment = holder.segment_arc(&uuid)?;
-                    Some((uuid, segment, resolution))
+                    (!resolution.is_empty()).then_some((uuid, segment, resolution))
                 })
                 .collect()
         };

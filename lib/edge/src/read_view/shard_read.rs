@@ -34,6 +34,12 @@ pub(crate) trait ReadViewProvider {
     /// Snapshot the current segments in retrieval order (non-appendable first, then appendable).
     fn read_segments(&self) -> Vec<Self::Handle>;
 
+    /// Join the shard's current read epoch, if it has them: the read holds the guard for its whole
+    /// lifetime, see `read_only::epochs`. Taken before the segment snapshot.
+    fn read_epoch(&self) -> Option<super::ReadEpochToken> {
+        None
+    }
+
     /// Snapshot the current config.
     fn config_snapshot(&self) -> Arc<EdgeConfig>;
 
@@ -153,9 +159,13 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
 /// Build a one-shot read snapshot for a shard. Private so it is not part of the trait's surface —
 /// the snapshot is an implementation detail of the blanket [`EdgeShardRead`] impl.
 pub(super) fn view<T: ReadViewProvider + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
+    // The epoch first: a read that snapshots the segments before a pass's installs must hold the
+    // epoch that pass waits out before it masks
+    let epoch = shard.read_epoch();
     EdgeReadView::new(
         shard.read_segments(),
         shard.config_snapshot(),
         shard.search_pool(),
     )
+    .with_epoch(epoch)
 }
