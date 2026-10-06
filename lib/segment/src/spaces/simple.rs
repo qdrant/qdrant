@@ -3,6 +3,8 @@ use common::types::ScoreType;
 use super::metric::{Metric, MetricPostProcessing};
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
+#[cfg(target_arch = "x86_64")]
+use super::simple_avx512::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -41,6 +43,9 @@ impl Metric<VectorElementType> for EuclidMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
+            if is_x86_feature_detected!("avx512f") && v1.len() >= MIN_DIM_SIZE_AVX {
+                return unsafe { euclid_similarity_avx512(v1, v2) };
+            }
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
                 && v1.len() >= MIN_DIM_SIZE_AVX
@@ -85,6 +90,9 @@ impl Metric<VectorElementType> for ManhattanMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
+            if is_x86_feature_detected!("avx512f") && v1.len() >= MIN_DIM_SIZE_AVX {
+                return unsafe { manhattan_similarity_avx512(v1, v2) };
+            }
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
                 && v1.len() >= MIN_DIM_SIZE_AVX
@@ -129,6 +137,9 @@ impl Metric<VectorElementType> for DotProductMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
+            if is_x86_feature_detected!("avx512f") && v1.len() >= MIN_DIM_SIZE_AVX {
+                return unsafe { dot_similarity_avx512(v1, v2) };
+            }
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
                 && v1.len() >= MIN_DIM_SIZE_AVX
