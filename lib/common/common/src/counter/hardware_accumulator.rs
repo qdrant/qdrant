@@ -17,6 +17,8 @@ pub struct HwSharedDrain {
     pub(crate) payload_index_io_write_counter: AtomicUsize,
     pub(crate) vector_io_read_counter: AtomicUsize,
     pub(crate) vector_io_write_counter: AtomicUsize,
+    pub(crate) object_store_read_requests_counter: AtomicUsize,
+    pub(crate) object_store_write_requests_counter: AtomicUsize,
 }
 
 impl HwSharedDrain {
@@ -48,6 +50,16 @@ impl HwSharedDrain {
         self.vector_io_read_counter.load(Ordering::Relaxed)
     }
 
+    pub fn get_object_store_read_requests(&self) -> usize {
+        self.object_store_read_requests_counter
+            .load(Ordering::Relaxed)
+    }
+
+    pub fn get_object_store_write_requests(&self) -> usize {
+        self.object_store_write_requests_counter
+            .load(Ordering::Relaxed)
+    }
+
     /// Accumulates all values from `src` into this HwSharedDrain.
     fn accumulate_from_hw_data(&self, src: HardwareData) {
         let HwSharedDrain {
@@ -58,6 +70,8 @@ impl HwSharedDrain {
             payload_index_io_write_counter,
             vector_io_read_counter,
             vector_io_write_counter,
+            object_store_read_requests_counter,
+            object_store_write_requests_counter,
         } = self;
 
         cpu_counter.fetch_add(src.cpu, Ordering::Relaxed);
@@ -67,6 +81,10 @@ impl HwSharedDrain {
         payload_index_io_write_counter.fetch_add(src.payload_index_io_write, Ordering::Relaxed);
         vector_io_read_counter.fetch_add(src.vector_io_read, Ordering::Relaxed);
         vector_io_write_counter.fetch_add(src.vector_io_write, Ordering::Relaxed);
+        object_store_read_requests_counter
+            .fetch_add(src.object_store_read_requests, Ordering::Relaxed);
+        object_store_write_requests_counter
+            .fetch_add(src.object_store_write_requests, Ordering::Relaxed);
     }
 }
 
@@ -80,6 +98,8 @@ impl Default for HwSharedDrain {
             payload_index_io_write_counter: AtomicUsize::new(0),
             vector_io_read_counter: AtomicUsize::new(0),
             vector_io_write_counter: AtomicUsize::new(0),
+            object_store_read_requests_counter: AtomicUsize::new(0),
+            object_store_write_requests_counter: AtomicUsize::new(0),
         }
     }
 }
@@ -188,6 +208,14 @@ impl HwMeasurementAcc {
         self.request_drain.get_vector_io_write()
     }
 
+    pub fn get_object_store_read_requests(&self) -> usize {
+        self.request_drain.get_object_store_read_requests()
+    }
+
+    pub fn get_object_store_write_requests(&self) -> usize {
+        self.request_drain.get_object_store_write_requests()
+    }
+
     pub fn hw_data(&self) -> HardwareData {
         let HwSharedDrain {
             cpu_counter,
@@ -197,6 +225,8 @@ impl HwMeasurementAcc {
             payload_index_io_write_counter,
             vector_io_read_counter,
             vector_io_write_counter,
+            object_store_read_requests_counter,
+            object_store_write_requests_counter,
         } = self.request_drain.as_ref();
 
         HardwareData {
@@ -207,6 +237,9 @@ impl HwMeasurementAcc {
             vector_io_write: vector_io_write_counter.load(Ordering::Relaxed),
             payload_index_io_read: payload_index_io_read_counter.load(Ordering::Relaxed),
             payload_index_io_write: payload_index_io_write_counter.load(Ordering::Relaxed),
+            object_store_read_requests: object_store_read_requests_counter.load(Ordering::Relaxed),
+            object_store_write_requests: object_store_write_requests_counter
+                .load(Ordering::Relaxed),
         }
     }
 }

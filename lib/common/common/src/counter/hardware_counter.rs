@@ -19,6 +19,8 @@ pub struct HardwareCounterCell {
     pub(super) payload_index_io_write_counter: CounterCell,
     pub(super) vector_io_read_counter: CounterCell,
     pub(super) vector_io_write_counter: CounterCell,
+    pub(super) object_store_read_requests_counter: CounterCell,
+    pub(super) object_store_write_requests_counter: CounterCell,
     pub(super) accumulator: Option<HwMeasurementAcc>,
 }
 
@@ -27,13 +29,15 @@ impl std::fmt::Display for HardwareCounterCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "HardwareCounterCell {{ cpu: {}, payload_io_read: {}, payload_io_write: {}, payload_index_io_read: {}, vector_io_read: {}, vector_io_write: {} }}",
+            "HardwareCounterCell {{ cpu: {}, payload_io_read: {}, payload_io_write: {}, payload_index_io_read: {}, vector_io_read: {}, vector_io_write: {}, object_store_read_requests: {}, object_store_write_requests: {} }}",
             self.cpu_counter.get(),
             self.payload_io_read_counter.get(),
             self.payload_io_write_counter.get(),
             self.payload_index_io_read_counter.get(),
             self.vector_io_read_counter.get(),
-            self.vector_io_write_counter.get()
+            self.vector_io_write_counter.get(),
+            self.object_store_read_requests_counter.get(),
+            self.object_store_write_requests_counter.get(),
         )
     }
 }
@@ -51,6 +55,8 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
+            object_store_read_requests_counter: CounterCell::new(),
+            object_store_write_requests_counter: CounterCell::new(),
             accumulator: Some(HwMeasurementAcc::new()),
         }
     }
@@ -69,6 +75,8 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
+            object_store_read_requests_counter: CounterCell::new(),
+            object_store_write_requests_counter: CounterCell::new(),
             accumulator: None,
         }
     }
@@ -84,6 +92,8 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
+            object_store_read_requests_counter: CounterCell::new(),
+            object_store_write_requests_counter: CounterCell::new(),
             accumulator: Some(accumulator),
         }
     }
@@ -112,6 +122,8 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
+            object_store_read_requests_counter: CounterCell::new(),
+            object_store_write_requests_counter: CounterCell::new(),
             accumulator: self.accumulator.clone(),
         }
     }
@@ -161,6 +173,16 @@ impl HardwareCounterCell {
         &self.vector_io_write_counter
     }
 
+    #[inline]
+    pub fn object_store_read_requests_counter(&self) -> &CounterCell {
+        &self.object_store_read_requests_counter
+    }
+
+    #[inline]
+    pub fn object_store_write_requests_counter(&self) -> &CounterCell {
+        &self.object_store_write_requests_counter
+    }
+
     /// Returns a copy of the current measurements made by this counter. Ignores all values from the parent accumulator.
     pub fn get_hw_data(&self) -> HardwareData {
         let HardwareCounterCell {
@@ -173,6 +195,8 @@ impl HardwareCounterCell {
             payload_index_io_write_counter,
             vector_io_read_counter,
             vector_io_write_counter,
+            object_store_read_requests_counter,
+            object_store_write_requests_counter,
             accumulator: _,
         } = self;
 
@@ -184,6 +208,8 @@ impl HardwareCounterCell {
             payload_index_io_write: payload_index_io_write_counter.get(),
             vector_io_read: vector_io_read_counter.get() * vector_io_read_multiplier,
             vector_io_write: vector_io_write_counter.get(),
+            object_store_read_requests: object_store_read_requests_counter.get(),
+            object_store_write_requests: object_store_write_requests_counter.get(),
         }
     }
 

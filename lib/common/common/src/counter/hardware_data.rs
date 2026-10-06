@@ -10,6 +10,8 @@ pub struct HardwareData {
     pub vector_io_write: usize,
     pub payload_index_io_read: usize,
     pub payload_index_io_write: usize,
+    pub object_store_read_requests: usize,
+    pub object_store_write_requests: usize,
 }
 
 impl Add for HardwareData {
@@ -24,6 +26,10 @@ impl Add for HardwareData {
             vector_io_write: self.vector_io_write + rhs.vector_io_write,
             payload_index_io_read: self.payload_index_io_read + rhs.payload_index_io_read,
             payload_index_io_write: self.payload_index_io_write + rhs.payload_index_io_write,
+            object_store_read_requests: self.object_store_read_requests
+                + rhs.object_store_read_requests,
+            object_store_write_requests: self.object_store_write_requests
+                + rhs.object_store_write_requests,
         }
     }
 }
