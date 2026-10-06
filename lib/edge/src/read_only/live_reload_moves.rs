@@ -22,7 +22,8 @@ use crate::read_only::enumerate::SegmentListing;
 use crate::read_only::live_reload::LiveReloadOutcome;
 use crate::read_only::load::{LoadedSegments, load_segments_parallel, reload_segments_parallel};
 use crate::read_only::moves::{
-    Trackers, UnheldTargets, is_segment_gone, read_move_log_tails, resolve_moves, unknown_targets,
+    Resolution, Trackers, UnheldTargets, is_segment_gone, read_move_log_tails, resolve_moves,
+    unknown_targets,
 };
 
 /// A held segment, and the deletes a pass applies to it.
@@ -367,14 +368,42 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             }
         }
 
-        let gone = self.gone_segments.lock();
-        resolve_moves(
-            &trackers,
-            &UnheldTargets {
-                listing,
-                replacements_loaded,
-                gone: &gone,
-            },
-        )
+        let Resolution { deletes, retired } = {
+            let gone = self.gone_segments.lock();
+            resolve_moves(
+                &trackers,
+                &UnheldTargets {
+                    listing,
+                    replacements_loaded,
+                    gone: &gone,
+                },
+            )
+        };
+
+        // Forget the settled moved-in records whose masks an earlier pass applied, so a segment
+        // only keeps the records of moves still in flight
+        if !retired.is_empty() {
+            let retired_of = |source: &Uuid| retired.get(source);
+            for (_, segment) in held {
+                // Only segments that points moved into have such records, the others are not
+                // locked for writing
+                let names_retired = segment
+                    .read()
+                    .id_tracker
+                    .borrow()
+                    .settled_moved_in()
+                    .is_some_and(|settled| {
+                        settled.keys().any(|source| retired.contains_key(source))
+                    });
+                if names_retired {
+                    segment.write().prune_settled_moved_in(retired_of);
+                }
+            }
+            for (_, segment) in loaded.iter_mut() {
+                segment.prune_settled_moved_in(retired_of);
+            }
+        }
+
+        deletes
     }
 }

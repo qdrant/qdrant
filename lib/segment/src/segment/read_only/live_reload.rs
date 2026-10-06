@@ -5,6 +5,8 @@ use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs, UniversalReadFsAsync};
 use futures::future::{BoxFuture, join_all};
+use roaring::RoaringBitmap;
+use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -165,6 +167,14 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         self.id_tracker
             .borrow_mut()
             .ingest_point_moves_tail(start, bytes);
+    }
+
+    /// Forget the settled moved-in records whose source slot `retired` names, per source segment.
+    pub fn prune_settled_moved_in<'a>(
+        &mut self,
+        retired: impl Fn(&Uuid) -> Option<&'a RoaringBitmap>,
+    ) {
+        self.id_tracker.borrow_mut().prune_settled_moved_in(retired);
     }
 
     /// Delete what `resolution` names, in the id tracker and in every component.
