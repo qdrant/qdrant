@@ -41,7 +41,7 @@ jobs:
 
         # Authenticate on registries
         echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
@@ -49,16 +49,15 @@ jobs:
         DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}"
         DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}"
         TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
-        GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+        GHCR_TAG="ghcr.io/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
-        # Pull, retag and push to GitHub packages
         docker buildx build --sbom=true --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
-        docker pull $DOCKERHUB_TAG
-        docker tag $DOCKERHUB_TAG $GITHUB_TAG
-        docker push $GITHUB_TAG
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
+        SOURCE_IMAGE="${DOCKERHUB_TAG}@${DIGEST}"
+        docker buildx imagetools create --tag $GHCR_TAG $SOURCE_IMAGE
+
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "$SOURCE_IMAGE"
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
@@ -66,16 +65,15 @@ jobs:
         DOCKERHUB_TAG_MINOR_UNPRIVILEGED="qdrant/qdrant:${MINOR_VERSION}-unprivileged"
         DOCKERHUB_TAG_MAJOR_UNPRIVILEGED="qdrant/qdrant:${MAJOR_VERSION}-unprivileged"
         TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MINOR_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MAJOR_UNPRIVILEGED}"
-        GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+        GHCR_TAG_UNPRIVILEGED="ghcr.io/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
 
-        # Pull, retag and push to GitHub packages
         docker buildx build --sbom=true --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
-        docker pull $DOCKERHUB_TAG_UNPRIVILEGED
-        docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
-        docker push $GITHUB_TAG_UNPRIVILEGED
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
-        cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
+        SOURCE_IMAGE_UNPRIVILEGED="${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
+        docker buildx imagetools create --tag $GHCR_TAG_UNPRIVILEGED $SOURCE_IMAGE_UNPRIVILEGED
+
+        cosign sign --new-bundle-format=false --use-signing-config=false --yes "$SOURCE_IMAGE_UNPRIVILEGED"
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
