@@ -104,8 +104,8 @@ pub struct FeatureFlags {
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
-    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
-    /// [`Self::record_point_moves`].
+    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`],
+    /// [`Self::record_point_moves`] and [`Self::resolve_point_moves`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -192,6 +192,7 @@ impl FeatureFlags {
             self.compact_logstore_tracker = true;
             self.persist_proxy_segments = true;
             self.record_point_moves = true;
+            self.resolve_point_moves = true;
         }
 
         // Append-only storages cannot rewrite slots.
