@@ -101,7 +101,11 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         Ok(retired)
     }
 
-    /// Copies to delete, by segment.
+    /// Find the outdated copies of the points in `newer`.
+    ///
+    /// A point's copies here are outdated when all of them are older than the
+    /// point's version in `newer`. Returns, per segment, the `(point id,
+    /// internal id)` pairs to tombstone there.
     fn superseded(
         &self,
         newer: &HashMap<PointIdType, SeqNumberType>,

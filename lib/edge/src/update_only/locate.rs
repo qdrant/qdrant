@@ -98,7 +98,8 @@ pub(crate) struct PointLocations {
     pub(crate) slots: Vec<(Uuid, PointOffsetType)>,
 }
 
-/// Copies of `ids` in segment `uuid`.
+/// Find which of `ids` segment `uuid` holds, with each copy's internal id and
+/// version.
 pub(crate) fn locate_in(
     uuid: Uuid,
     segment: &impl LocateSegment,

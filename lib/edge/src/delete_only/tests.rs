@@ -22,7 +22,7 @@ use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 /// Version of the newer copies of points 1-3.
 const NEWER: SeqNumberType = 100;
 
-/// `inner`, limited to `keep`.
+/// Segment enumerator that lists only the `keep` segments of `inner`.
 struct Only {
     inner: LocalSegmentEnumerator,
     keep: Vec<Uuid>,

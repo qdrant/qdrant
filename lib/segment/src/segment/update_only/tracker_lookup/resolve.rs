@@ -27,7 +27,9 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
     }
 }
 
-/// Includes deferred points, so each id resolves to its latest slot.
+/// Resolve external ids to internal ids, calling `callback` for each id the
+/// tracker holds. Includes deferred points, so each id resolves to its latest
+/// slot.
 pub(in crate::segment::update_only) fn locate_points<S: UniversalRead>(
     id_tracker: &ReadOnlyIdTrackerEnum<S>,
     point_ids: impl IntoIterator<Item = PointIdType>,
@@ -36,7 +38,8 @@ pub(in crate::segment::update_only) fn locate_points<S: UniversalRead>(
     id_tracker.resolve_external_ids(point_ids, DeferredBehavior::WithDeferred, callback)
 }
 
-/// Slots without a version are left out; treat them as version 0.
+/// Versions of the given internal ids. Ids without a stored version are
+/// missing from the map and count as version 0.
 pub(in crate::segment::update_only) fn point_versions<S: UniversalRead>(
     id_tracker: &ReadOnlyIdTrackerEnum<S>,
     internal_ids: &[PointOffsetType],
