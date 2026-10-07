@@ -29,6 +29,51 @@ pub struct LiveReloadResult {
     pub deleted: Vec<PointOffsetType>,
 }
 
+/// Delta read by a live reload, whose inserts readers cannot reach until [`Self::commit`].
+///
+/// Commit once every component has ingested the delta, so the tracker never exposes an offset a
+/// component cannot serve. Dropping it instead leaves the inserts pending, and the next reload
+/// reports them again.
+#[must_use = "reported inserts stay invisible to readers until committed"]
+#[derive(Debug)]
+pub struct StagedReload {
+    delta: LiveReloadResult,
+    /// Exclusive offset bound of the pending inserts to link, `None` if the tracker never links.
+    commit_bound: Option<PointOffsetType>,
+}
+
+impl StagedReload {
+    /// A reload of a tracker that never reports inserts, so there is nothing to commit.
+    pub(crate) fn without_inserts(delta: LiveReloadResult) -> Self {
+        debug_assert!(delta.inserted.is_empty());
+        Self {
+            delta,
+            commit_bound: None,
+        }
+    }
+
+    pub fn delta(&self) -> &LiveReloadResult {
+        &self.delta
+    }
+
+    /// Make the reported inserts visible to readers of `tracker`, the one that staged them.
+    pub(crate) fn commit(self, tracker: &mut impl CommitReload) {
+        let Self {
+            delta: _,
+            commit_bound,
+        } = self;
+        if let Some(commit_bound) = commit_bound {
+            tracker.commit_reload(commit_bound);
+        }
+    }
+}
+
+/// Trackers whose [`StagedReload`] links inserts on commit. Only reachable through
+/// [`StagedReload::commit`].
+pub(crate) trait CommitReload {
+    fn commit_reload(&mut self, commit_bound: PointOffsetType);
+}
+
 /// What [`ReadOnlyAppendableIdTracker::probe_committed`] learned about the tracker files before
 /// the directory listing snapshot is taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,24 +119,24 @@ impl LiveReloadResult {
         self.inserted.is_empty() && self.deleted.is_empty()
     }
 
-    /// Fold a freshly-read delta into this not-yet-applied one, keeping both lists
-    /// sorted ascending and deduplicated.
+    /// Fold a freshly-read delta into this attempted but not yet applied one.
     ///
-    /// Used to retain unapplied changes across a failed reload: the next reload
-    /// folds in the tracker's new delta and replays the union, so no change is
-    /// dropped. Offsets are monotonic (a deleted offset is never reused), so the
-    /// only cross-conflict is an offset that was inserted (but not yet applied)
-    /// and then deleted — it is ultimately gone, so it is dropped from `inserted`
-    /// and kept in `deleted`. That way a component which already ingested it
-    /// during the failed attempt drops it when the union is replayed.
-    pub fn merge(&mut self, other: LiveReloadResult) {
-        let LiveReloadResult { inserted, deleted } = other;
+    /// Used to retain unapplied changes across a failed reload. Deletes are drained from the
+    /// tracker, so the union of both is kept. Inserts are not committed until every component
+    /// applied them, so `fresh` reports them again; an attempted insert missing from `fresh` was
+    /// deleted or re-linked elsewhere in the meantime, and is moved to `deleted` so a component that
+    /// already ingested it drops it. Both lists stay sorted ascending and deduplicated.
+    pub fn reconcile(&mut self, fresh: &LiveReloadResult) {
+        let LiveReloadResult { inserted, deleted } = fresh;
 
-        self.inserted.extend(inserted);
-        self.inserted.sort_unstable();
-        self.inserted.dedup();
+        let attempted_inserted = std::mem::replace(&mut self.inserted, inserted.clone());
 
-        self.deleted.extend(deleted);
+        self.deleted.extend_from_slice(deleted);
+        self.deleted.extend(
+            attempted_inserted
+                .into_iter()
+                .filter(|offset| self.inserted.binary_search(offset).is_err()),
+        );
         self.deleted.sort_unstable();
         self.deleted.dedup();
 
@@ -189,11 +234,14 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// withheld (its data may be partial) and reported on a later reload once its version lands.
     /// Deletes are driven by the mapping and need no version, a deleted point's version is
     /// considered gone.
+    ///
+    /// Deletes apply immediately, but reported inserts stay invisible to readers until the returned
+    /// [`StagedReload`] is committed; reloading again before that reports them again.
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
         max_committed_id: Option<PointOffsetType>,
-    ) -> OperationResult<LiveReloadResult> {
+    ) -> OperationResult<StagedReload> {
         let preloaded = max_committed_id.is_some();
 
         // Append versions flushed since the last reload (mappings are flushed before versions).
@@ -228,14 +276,16 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
         }
 
-        let drained = self
+        // Committed inserts stay pending until the staged reload is committed.
+        let committed_inserts = self
             .pending_inserts
-            .extract_if(|_, &mut internal_id| internal_id < committed);
+            .iter()
+            .filter(|(_, internal_id)| **internal_id < committed);
         let mut inserted = Vec::new();
-        for (external_id, internal_id) in drained {
+        for (external_id, &internal_id) in committed_inserts {
             // An upsert re-links an existing external id to a new offset; the previously-committed
-            // offset it displaces is now dead and must be reported as deleted.
-            if let Some(previous) = self.mappings.set_link(external_id, internal_id)
+            // offset it displaces is dead once linked and must be reported as deleted.
+            if let Some(previous) = self.mappings.peek_link(external_id, internal_id)
                 && previous != internal_id
             {
                 deleted.push(previous);
@@ -243,12 +293,15 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             inserted.push(internal_id);
         }
 
-        // `extract_if` drains in arbitrary hash order; both result lists are sorted ascending.
+        // `pending_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
         deleted.sort_unstable();
         deleted.dedup();
 
-        Ok(LiveReloadResult { inserted, deleted })
+        Ok(StagedReload {
+            delta: LiveReloadResult { inserted, deleted },
+            commit_bound: Some(committed),
+        })
     }
 
     /// Read mapping changes appended after the last consumed offset, advancing `mappings_read_to`.
@@ -378,5 +431,16 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         }
 
         Ok(internal_to_version.len())
+    }
+}
+
+impl<S: UniversalRead> CommitReload for ReadOnlyAppendableIdTracker<S> {
+    fn commit_reload(&mut self, commit_bound: PointOffsetType) {
+        let drained = self
+            .pending_inserts
+            .extract_if(|_, &mut internal_id| internal_id < commit_bound);
+        for (external_id, internal_id) in drained {
+            self.mappings.set_link(external_id, internal_id);
+        }
     }
 }

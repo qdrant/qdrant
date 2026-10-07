@@ -50,7 +50,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+        let staged = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+        let delta = staged.delta();
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };
@@ -65,6 +66,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 .live_reload(fs, &deleted, &inserted)?;
         }
 
+        staged.commit(&mut *id_tracker.borrow_mut());
         fs.rotate_cache_file_info();
         Ok(())
     }

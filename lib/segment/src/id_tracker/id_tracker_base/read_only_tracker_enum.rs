@@ -12,7 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
+    CommitReload, ReadOnlyAppendableIdTracker, StagedReload, TrackerProbe,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -142,11 +142,26 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         &mut self,
         fs: &Fs,
         max_committed_id: Option<PointOffsetType>,
-    ) -> OperationResult<LiveReloadResult> {
+    ) -> OperationResult<StagedReload> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
-            Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
-            Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
+            Self::Immutable(id_tracker) => id_tracker
+                .live_reload(fs)
+                .map(StagedReload::without_inserts),
+            Self::DiskResident(id_tracker) => id_tracker
+                .live_reload(fs)
+                .map(StagedReload::without_inserts),
+        }
+    }
+}
+
+impl<S: UniversalRead> CommitReload for ReadOnlyIdTrackerEnum<S> {
+    fn commit_reload(&mut self, commit_bound: PointOffsetType) {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.commit_reload(commit_bound),
+            Self::Immutable(_) | Self::DiskResident(_) => {
+                debug_assert!(false, "staged reload committed to the wrong tracker kind");
+            }
         }
     }
 }

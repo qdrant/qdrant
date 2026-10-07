@@ -107,7 +107,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
-        tracker.live_reload(fs, max_committed_offset)?;
+        tracker
+            .live_reload(fs, max_committed_offset)?
+            .commit(&mut tracker);
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
@@ -139,7 +141,12 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// Each is a point this view withholds because its data may be half-written. A writer resuming
     /// from this view retires them.
     pub fn pending_inserts(&self) -> impl Iterator<Item = PointIdType> + '_ {
-        self.pending_inserts.keys().copied()
+        // Covered but not yet committed inserts are fully written, they must not be retired.
+        let committed = self.internal_to_version.len() as PointOffsetType;
+        self.pending_inserts
+            .iter()
+            .filter(move |(_, internal_id)| **internal_id >= committed)
+            .map(|(external_id, _)| *external_id)
     }
 
     /// Open the file at `path` read-only, returning `None` if it does not exist.
