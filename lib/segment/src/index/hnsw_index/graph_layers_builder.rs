@@ -382,6 +382,47 @@ impl GraphLayersBuilder {
             .merge_from_other(other.entry_points.into_inner());
     }
 
+    /// Like [`Self::merge_from_other`], for a builder that only linked `points` to each other
+    /// (one payload block): moves those points' links into `self` and resets them in `other`,
+    /// so `other` can build the next block.
+    ///
+    /// Costs O(`points`) instead of O(segment), and keeps `other`'s allocation.
+    pub fn merge_block_from(&mut self, other: &mut GraphLayersBuilder, points: &[PointOffsetType]) {
+        self.max_level.fetch_max(
+            *other.max_level.get_mut(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        *other.max_level.get_mut() = 0;
+        let mut visited_list = self.visited_pool.get(self.num_points());
+        for &point_id in points {
+            let other_layers = &mut other.links_layers[point_id as usize];
+            let current_layers = &mut self.links_layers[point_id as usize];
+            for (level, other_links) in other_layers.iter_mut().enumerate() {
+                let other_links =
+                    std::mem::replace(other_links.get_mut(), LinksContainer::with_capacity(0));
+                if current_layers.len() <= level {
+                    current_layers.push(RwLock::new(other_links));
+                    continue;
+                }
+                visited_list.next_iteration();
+                let current_links = current_layers[level].get_mut();
+                current_links.iter().for_each(|x| {
+                    visited_list.check_and_update_visited(x);
+                });
+                for other_link in other_links.into_vec() {
+                    if !visited_list.check_and_update_visited(other_link) {
+                        current_links.push(other_link);
+                    }
+                }
+            }
+            other.ready_list.set(point_id as usize, false);
+        }
+        let other_entry_points = other.entry_points.get_mut().take();
+        self.entry_points
+            .get_mut()
+            .merge_from_other(other_entry_points);
+    }
+
     fn num_points(&self) -> usize {
         self.links_layers.len()
     }
@@ -624,11 +665,96 @@ mod tests {
     use super::*;
     use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_links::{GraphLinksFormat, normalize_links};
-    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
+    use crate::index::hnsw_index::tests::{
+        create_graph_layer_builder_fixture, create_graph_layer_fixture,
+    };
     use crate::types::Distance;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorageRead as _};
 
     const M: usize = 8;
+
+    /// Building blocks in one reused builder and merging with `merge_block_from` must give
+    /// exactly the graph that a fresh builder per block and `merge_from_other` give.
+    #[test]
+    fn test_merge_block_from_matches_merge_from_other() {
+        let num_points = 1000;
+        let dim = 16;
+        let distance = Distance::Cosine;
+        let (vector_holder, mut expected) = create_graph_layer_builder_fixture(
+            num_points,
+            M,
+            dim,
+            true,
+            false,
+            distance,
+            &mut SmallRng::seed_from_u64(42),
+        );
+        let (_, mut actual) = create_graph_layer_builder_fixture(
+            num_points,
+            M,
+            dim,
+            true,
+            false,
+            distance,
+            &mut SmallRng::seed_from_u64(42),
+        );
+
+        // Overlapping blocks, as a multi-valued payload field produces.
+        let blocks: Vec<Vec<PointOffsetType>> = vec![
+            (0..num_points as PointOffsetType).step_by(3).collect(),
+            (1..num_points as PointOffsetType).step_by(3).collect(),
+            (0..300).collect(),
+            (500..num_points as PointOffsetType).step_by(2).collect(),
+        ];
+        let block_builder =
+            || GraphLayersBuilder::new_with_params(num_points, HnswM::new2(M), 16, 1, true, false);
+
+        let mut reused = block_builder();
+        for block in &blocks {
+            let fresh = block_builder();
+            for &point_id in block {
+                fresh.link_new_point(point_id, vector_holder.internal_scorer(point_id));
+                reused.link_new_point(point_id, vector_holder.internal_scorer(point_id));
+            }
+            expected.merge_from_other(fresh);
+            actual.merge_block_from(&mut reused, block);
+
+            for point_id in 0..num_points {
+                assert!(
+                    reused.links_layers[point_id]
+                        .iter()
+                        .all(|links| links.read().links().is_empty()),
+                    "point {point_id} still has links in the reused builder"
+                );
+                assert!(!reused.ready_list[point_id]);
+            }
+        }
+
+        for point_id in 0..num_points {
+            let expected_layers = &expected.links_layers[point_id];
+            let actual_layers = &actual.links_layers[point_id];
+            assert_eq!(expected_layers.len(), actual_layers.len());
+            for (level, (e, a)) in expected_layers.iter().zip(actual_layers).enumerate() {
+                assert_eq!(
+                    e.read().links(),
+                    a.read().links(),
+                    "links of point {point_id} on level {level} differ"
+                );
+            }
+        }
+        assert_eq!(
+            expected
+                .entry_points
+                .lock()
+                .get_entry_point(|_| true)
+                .map(|e| e.point_id),
+            actual
+                .entry_points
+                .lock()
+                .get_entry_point(|_| true)
+                .map(|e| e.point_id),
+        );
+    }
 
     #[test]
     fn get_random_layer_handles_zero_sample() {
