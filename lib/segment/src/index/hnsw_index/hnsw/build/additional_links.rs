@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use common::bitvec::{BitSliceExt as _, BitVec};
@@ -28,7 +29,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::json_path::JsonPath;
 use crate::types::Condition::Field;
-use crate::types::{FieldCondition, Filter};
+use crate::types::{FieldCondition, Filter, PayloadFieldSchema, PayloadKeyType};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -47,7 +48,7 @@ pub(super) fn additional_links_fields(
         return None;
     }
     let progress_additional_links = progress.subtask("additional_links");
-    let fields = fields
+    let fields = in_build_order(fields)
         .into_iter()
         .filter_map(|(field, payload_schema)| {
             let subtask_name = format!("{}:{field}", payload_schema.name());
@@ -60,6 +61,19 @@ pub(super) fn additional_links_fields(
         })
         .collect::<Vec<_>>();
     Some((progress_additional_links, fields))
+}
+
+/// Indexed fields in the order their additional links are built.
+///
+/// The order matters: every field after the first skips blocks the graph built so far already
+/// connects well, so it decides which blocks get built. `indexed_fields` is a `HashMap`, whose
+/// iteration order changes from one map to the next, so sort to make builds reproducible.
+fn in_build_order(
+    fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
+) -> Vec<(PayloadKeyType, PayloadFieldSchema)> {
+    let mut fields = fields.into_iter().collect::<Vec<_>>();
+    fields.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    fields
 }
 
 /// Build per-payload-block subgraphs for every field in `indexed_fields` and merge them
@@ -366,4 +380,26 @@ fn build_filtered_graph(
         })?;
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::PayloadSchemaType;
+
+    #[test]
+    fn test_fields_are_built_in_sorted_order() {
+        let names: Vec<String> = (0..20).map(|i| format!("field_{i:02}")).collect();
+        let fields: HashMap<PayloadKeyType, PayloadFieldSchema> = names
+            .iter()
+            .rev()
+            .map(|name| (JsonPath::new(name), PayloadSchemaType::Keyword.into()))
+            .collect();
+
+        let ordered: Vec<String> = in_build_order(fields)
+            .into_iter()
+            .map(|(field, _)| field.to_string())
+            .collect();
+        assert_eq!(ordered, names);
+    }
 }
