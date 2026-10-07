@@ -5,8 +5,8 @@ use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, TextQueryInternal, VectorInputInternal,
-    VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, TextQueryInternal, TextQueryParams,
+    VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -297,8 +297,16 @@ fn convert_query_with_inferred(
         Variant::Rrf(rrf) => Query::Fusion(FusionInternal::try_from(rrf)?),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
-        Variant::Text(grpc::TextQuery { query, k, b }) => {
-            Query::Text(TextQueryInternal::new(query, k, b))
+        Variant::Text(grpc::TextQuery { query, params }) => {
+            let params = params.map(|params| match params {
+                grpc::text_query::Params::Bm25(grpc::Bm25Params { k, b }) => {
+                    TextQueryParams::bm25(k, b)
+                }
+            });
+            Query::Text(TextQueryInternal {
+                text: query,
+                params,
+            })
         }
         Variant::NearestWithMmr(grpc::NearestInputWithMmr { nearest, mmr }) => {
             let nearest =

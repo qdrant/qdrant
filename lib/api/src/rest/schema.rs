@@ -728,10 +728,10 @@ pub struct TextQuery {
     pub text: TextInterface,
 }
 
-/// The text to search for, or the text with BM25 parameters.
+/// The text to search for, or the text with scorer parameters.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[serde(expecting = "Expected a string, or an object with a query and optional k and b")]
+#[serde(expecting = "Expected a string, or an object with a query and optional bm25 parameters")]
 pub enum TextInterface {
     Query(String),
     Struct(TextQueryInput),
@@ -751,6 +751,16 @@ impl Validate for TextInterface {
 pub struct TextQueryInput {
     /// Text to search for, tokenized by the field's text index.
     pub query: String,
+    /// BM25 parameters, for a field scored with BM25.
+    /// Parameters must match the `scoring` type of the field's text index.
+    /// If absent, the scorer runs with its defaults.
+    #[validate(nested)]
+    pub bm25: Option<Bm25Params>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Bm25Params {
     /// Term frequency saturation. Default is 1.2.
     #[validate(range(min = 0.0))]
     pub k: Option<f32>,

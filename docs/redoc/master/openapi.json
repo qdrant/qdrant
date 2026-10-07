@@ -15939,7 +15939,7 @@
         }
       },
       "TextInterface": {
-        "description": "The text to search for, or the text with BM25 parameters.",
+        "description": "The text to search for, or the text with scorer parameters.",
         "anyOf": [
           {
             "type": "string"
@@ -15959,6 +15959,22 @@
             "description": "Text to search for, tokenized by the field's text index.",
             "type": "string"
           },
+          "bm25": {
+            "description": "BM25 parameters, for a field scored with BM25. Parameters must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Bm25Params"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "Bm25Params": {
+        "type": "object",
+        "properties": {
           "k": {
             "description": "Term frequency saturation. Default is 1.2.",
             "type": "number",
