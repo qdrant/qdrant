@@ -5,8 +5,8 @@ use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
 use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
-use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
+use segment::utils::scored_point_ties::ScoredPointTies;
 use serde_json::Value;
 
 use super::{AggregatorError, Group};
@@ -193,15 +193,25 @@ impl GroupsAggregator {
         for group_key in best_groups {
             let mut group = self.groups.remove(&group_key).unwrap();
             let scored_points_iter = group.drain().map(|(_, hit)| hit);
-            let hits = match self.order {
-                Some(Order::LargeBetter) => {
-                    peek_top_largest_iterable(scored_points_iter, self.max_group_size)
-                }
-                Some(Order::SmallBetter) => {
-                    peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
-                }
-                None => scored_points_iter.take(self.max_group_size).collect(),
-            };
+            // Collect into a Vec so we can sort with a comparator that breaks
+            // ties by id, matching the flat `/points/query` endpoint's
+            // deterministic behavior. `peek_top_*` would use the default
+            // `ScoredPoint` Ord (score-only) and the heap would tie-break by
+            // insertion order, producing different `group_size` truncations
+            // across identical requests on a frozen collection when ties are
+            // present. Sorting here makes the result depend only on (score, id),
+            // not on hash/heap order.
+            let mut hits: Vec<ScoredPoint> = scored_points_iter.collect();
+            hits.sort_unstable_by(|a, b| match self.order {
+                Some(Order::LargeBetter) => ScoredPointTies(b).cmp(&ScoredPointTies(a)),
+                Some(Order::SmallBetter) => ScoredPointTies(a).cmp(&ScoredPointTies(b)),
+                // No query → no score ordering. The flat endpoint orders points
+                // by id ascending in this case; do the same here so that
+                // `query/groups` matches `/points/query` and the
+                // `group_size` truncation is deterministic.
+                None => a.id.cmp(&b.id),
+            });
+            hits.truncate(self.max_group_size);
             groups.push(Group {
                 hits,
                 key: group_key,
@@ -270,6 +280,68 @@ mod unit_tests {
         assert_eq!(result[1].hits.len(), 2);
         assert_eq!(result[1].hits[0].id, 2.into());
         assert_eq!(result[1].hits[1].id, 3.into());
+    }
+
+    /// Regression for issue #10371: when `query/groups` is called without a
+    /// query (no score ordering), the per-group `group_size` truncation must
+    /// be deterministic across identical requests on a frozen collection.
+    /// The flat `/points/query` endpoint honors this by ordering points by
+    /// id when no query is given; this test pins the same contract on
+    /// `GroupsAggregator::distill`.
+    #[test]
+    fn test_distill_no_order_orders_by_id_ascending() {
+        // Three points with the same group_by value. The hash map iteration
+        // order is non-deterministic, so the original `take(group_size)`
+        // could pick any 2 of the 3 points. The fix sorts by id before
+        // truncating, so the result is deterministic.
+        let scored_points = vec![
+            point(7, 0.0, json!("a")),
+            point(3, 0.0, json!("a")),
+            point(5, 0.0, json!("a")),
+        ];
+
+        let mut aggregator = GroupsAggregator::new(1, 2, "docId".parse().unwrap(), None);
+        for point in &scored_points {
+            aggregator.add_point(point).unwrap();
+        }
+
+        let result = aggregator.distill();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].hits.len(), 2);
+        // Ascending id order: [3, 5]. Pre-fix, this could be `[7, 5]` or any
+        // other pair depending on hash iteration order.
+        assert_eq!(result[0].hits[0].id, 3.into());
+        assert_eq!(result[0].hits[1].id, 5.into());
+    }
+
+    /// Regression for issue #10371: when `query/groups` is called with a
+    /// score-based order, ties on score must also break by id so the
+    /// `group_size` truncation is deterministic across identical requests.
+    #[test]
+    fn test_distill_large_better_score_ties_break_by_id() {
+        // Four points with the same group_by value and identical scores.
+        // Pre-fix, ties were broken by heap order, which is non-deterministic.
+        // Post-fix, ties break by id descending (matching the `ScoredPointTies`
+        // comparator used by the flat `/points/query` endpoint).
+        let scored_points = vec![
+            point(2, 0.99, json!("a")),
+            point(8, 0.99, json!("a")),
+            point(5, 0.99, json!("a")),
+            point(1, 0.99, json!("a")),
+        ];
+
+        let mut aggregator =
+            GroupsAggregator::new(1, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
+        for point in &scored_points {
+            aggregator.add_point(point).unwrap();
+        }
+
+        let result = aggregator.distill();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].hits.len(), 2);
+        // Highest score, ties broken by id descending: [8, 5].
+        assert_eq!(result[0].hits[0].id, 8.into());
+        assert_eq!(result[0].hits[1].id, 5.into());
     }
 
     struct Case {
