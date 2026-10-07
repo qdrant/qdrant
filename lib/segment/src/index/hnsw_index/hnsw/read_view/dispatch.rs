@@ -1,5 +1,5 @@
 use common::condition_checker::ConditionChecker;
-use common::types::ScoredPointOffset;
+use common::types::{DeferredBehavior, ScoredPointOffset};
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
@@ -158,6 +158,22 @@ where
                     );
                 }
 
+                // Count matches exactly
+                const COUNT_WALK_FACTOR: usize = 32;
+                let threshold = self.config.full_scan_threshold;
+                let walk_is_cheap = query_cardinality.max <= COUNT_WALK_FACTOR * threshold;
+                let sampling_might_err = query_cardinality.exp <= 2 * threshold;
+                if walk_is_cheap && sampling_might_err {
+                    return self.search_counted(
+                        vectors,
+                        query_filter,
+                        &query_cardinality,
+                        top,
+                        params,
+                        query_context,
+                    );
+                }
+
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality.
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
@@ -199,6 +215,43 @@ where
                 }
             }
         }
+    }
+
+    /// Plain search if at most `full_scan_threshold` points match, graph search otherwise.
+    fn search_counted(
+        &self,
+        vectors: &[&QueryVector],
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let threshold = self.config.full_scan_threshold;
+        let hw_counter = query_context.hardware_counter();
+        let matches: Vec<_> = self
+            .payload_index
+            .iter_filtered_points(
+                filter,
+                query_cardinality,
+                &hw_counter,
+                &query_context.is_stopped(),
+                DeferredBehavior::WithDeferred,
+            )?
+            .take(threshold + 1)
+            .collect();
+        if matches.len() > threshold {
+            return self.search_vectors_with_graph_filtered(
+                vectors,
+                filter,
+                query_cardinality,
+                top,
+                params,
+                query_context,
+            );
+        }
+        let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
+        self.search_plain_batched(vectors, matches.into_iter(), top, params, query_context)
     }
 
     /// Filtered graph search, timed under the counter of the algorithm it runs.
