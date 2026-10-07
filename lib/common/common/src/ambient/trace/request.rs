@@ -21,8 +21,9 @@ struct Active {
 }
 
 impl IoRequest {
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn new(op: Op, path: &Path, range: Range<u64>) -> Self {
-        Self(with_sink(|sink, parent| Active {
+        Self(with_sink("IoRequest::new()", |sink, parent| Active {
             sink: sink.clone(),
             parent,
             started: None,

@@ -1,6 +1,7 @@
 //! Scary unsafe implementation details for the [`crate::ambient`] module.
 
 use std::cell::Cell;
+use std::panic::Location;
 use std::ptr::NonNull;
 
 use strum::EnumCount;
@@ -10,9 +11,11 @@ use super::context::{AmbientContext, Node};
 use super::hw::{HardwareData, HwMetric};
 
 #[inline]
+#[cfg_attr(debug_assertions, track_caller)]
 pub(super) fn bump(metric: HwMetric, delta: usize) {
+    let caller = Location::caller();
     SLOT.with(|slot| {
-        _ = slot.target(); // trigger `debug_assertions`
+        _ = slot.target("HwMetric::bump()", caller); // trigger `debug_assertions`
         let counter = &slot.counters[metric as usize];
         counter.set(counter.get().wrapping_add(delta));
     });
@@ -44,13 +47,15 @@ pub(super) fn measure<R>(ctx: &AmbientContext, f: impl FnOnce() -> R) -> R {
 }
 
 /// Run `f` on the context of the current scope, measured or not.
-pub(super) fn with_context<R>(f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
-    borrow(Target::current().node(), f)
+#[cfg_attr(debug_assertions, track_caller)]
+pub(super) fn with_context<R>(what: &str, f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    borrow(Target::current(what).node(), f)
 }
 
 /// Run `f` on the context of the current scope, if measured.
-pub(super) fn with_measured<R>(f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
-    borrow(Target::current().measured(), f)
+#[cfg_attr(debug_assertions, track_caller)]
+pub(super) fn with_measured<R>(what: &str, f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    borrow(Target::current(what).measured(), f)
 }
 
 fn borrow<R>(node: Option<NonNull<Node>>, f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
@@ -79,12 +84,14 @@ struct Slot {
 
 impl Slot {
     /// The target, checked to be set: outside of any scope is a misuse.
-    fn target(&self) -> Target {
+    fn target(&self, what: &str, caller: &'static Location<'static>) -> Target {
         let target = self.target.get();
-        #[cfg(debug_assertions)]
-        match target {
-            Target::Unset => unset(),
-            Target::Unmeasured(_) | Target::Measured(_) => (),
+        cfg_select! {
+            debug_assertions => match target {
+                Target::Unset => super::missing_scope::panic_outside_of_any_scope(what, caller),
+                Target::Unmeasured(_) | Target::Measured(_) => (),
+            },
+            _ => _ = (what, caller),
         }
         target
     }
@@ -98,19 +105,11 @@ impl Slot {
     }
 }
 
-#[cfg(debug_assertions)]
-#[cold]
-fn unset() -> ! {
-    panic!(
-        "outside of any ambient scope: a spawned/stolen job forgot to enter its context, \
-         or code inside ambient::parallel() didn't enter the provided one",
-    );
-}
-
 impl Handoff {
     /// The current scope, to enter it elsewhere.
+    #[cfg_attr(debug_assertions, track_caller)]
     pub(super) fn current() -> Self {
-        Target::current().to_handoff()
+        Target::current("ambient::current()").to_handoff()
     }
 
     /// [`Self::current`] without the misuse check: outside of any scope is unmeasured.
@@ -133,8 +132,10 @@ enum Target {
 
 impl Target {
     /// The slot of this thread, checked to be set: outside of any scope is a misuse.
-    fn current() -> Self {
-        SLOT.with(Slot::target)
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn current(what: &str) -> Self {
+        let caller = Location::caller();
+        SLOT.with(|slot| slot.target(what, caller))
     }
 
     fn current_unchecked() -> Self {
