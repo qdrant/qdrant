@@ -746,10 +746,8 @@ impl Validate for TextInterface {
     }
 }
 
-// Unknown fields are refused: a misspelled or misplaced parameter would
-// otherwise score with the defaults without a word.
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub struct TextQueryInput {
     /// Text to search for, tokenized by the field's text index.
     pub query: String,
@@ -761,7 +759,7 @@ pub struct TextQueryInput {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub struct Bm25Params {
     /// Term frequency saturation. Default is 1.2.
     #[validate(range(min = 0.0))]
