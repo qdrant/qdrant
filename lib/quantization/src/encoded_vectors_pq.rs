@@ -370,21 +370,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
         selected_vectors.sort_unstable();
 
+        // One pass over `data` for the whole sample. Taking each chunk's subset
+        // straight from `data` walked it again for every chunk, up to the last
+        // sampled vector: 384 passes over the storage for a 1536-d collection at
+        // x16 compression, to gather the same vectors each time.
+        let sample = gather_sample(data, &selected_vectors, vector_parameters.dim);
+
         // find centroids for each chunk
         for range in vector_division.iter() {
-            // take data subset using indexes from
-            let mut data_subset = Vec::with_capacity(sample_size * range.len());
-            let mut selected_index: usize = 0;
-            for (vector_index, vector_data) in data.clone().enumerate() {
-                let vector_data = vector_data.as_ref();
-                if vector_index == selected_vectors[selected_index] {
-                    data_subset.extend_from_slice(&vector_data[range.clone()]);
-                    selected_index += 1;
-                    if selected_index == sample_size {
-                        break;
-                    }
-                }
-            }
+            let data_subset = chunk_subset(&sample, vector_parameters.dim, range.clone());
 
             let centroids = kmeans(
                 &data_subset,
@@ -679,4 +673,72 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
 pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, chunk_size: usize) -> usize {
     (0..vector_parameters.dim).step_by(chunk_size).count()
+}
+
+/// The vectors at `selected` (ascending indexes into `data`), concatenated.
+fn gather_sample<'a>(
+    data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
+    selected: &[usize],
+    dim: usize,
+) -> Vec<f32> {
+    let mut sample = Vec::with_capacity(selected.len() * dim);
+    let mut selected = selected.iter().peekable();
+    if selected.peek().is_none() {
+        return sample;
+    }
+    for (vector_index, vector_data) in data.enumerate() {
+        if selected.next_if_eq(&&vector_index).is_some() {
+            sample.extend_from_slice(vector_data.as_ref());
+            if selected.peek().is_none() {
+                break;
+            }
+        }
+    }
+    sample
+}
+
+/// One chunk's components of every vector in `sample`, concatenated.
+fn chunk_subset(sample: &[f32], dim: usize, range: Range<usize>) -> Vec<f32> {
+    let mut subset = Vec::with_capacity(sample.len() / dim * range.len());
+    for vector in sample.chunks_exact(dim) {
+        subset.extend_from_slice(&vector[range.clone()]);
+    }
+    subset
+}
+
+#[cfg(test)]
+mod sample_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    /// The subsets are what the per-chunk walk produced: the sampled vectors'
+    /// components for that chunk, in sample order.
+    #[test]
+    fn test_chunk_subsets_match_the_per_chunk_walk() {
+        let dim = 12;
+        let data: Vec<Vec<f32>> = (0..50)
+            .map(|i| (0..dim).map(|j| (i * dim + j) as f32).collect())
+            .collect();
+        let selected = [1, 4, 5, 17, 49];
+        let sample = gather_sample(data.iter(), &selected, dim);
+        for range in [0..4, 4..8, 8..12, 3..7] {
+            let want: Vec<f32> = selected
+                .iter()
+                .flat_map(|&i| data[i][range.clone()].iter().copied())
+                .collect();
+            assert_eq!(chunk_subset(&sample, dim, range.clone()), want, "{range:?}");
+        }
+    }
+
+    /// `data` is walked once, and no further than the last sampled vector.
+    #[test]
+    fn test_gather_sample_reads_data_once() {
+        let reads = Cell::new(0);
+        let data: Vec<Vec<f32>> = (0..100).map(|i| vec![i as f32; 4]).collect();
+        let counted = data.iter().inspect(|_| reads.set(reads.get() + 1));
+        let sample = gather_sample(counted, &[3, 40, 60], 4);
+        assert_eq!(sample.len(), 12);
+        assert_eq!(reads.get(), 61);
+    }
 }
