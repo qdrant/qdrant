@@ -52,17 +52,16 @@ impl Encoder {
 /// segment's quantization config supports it.
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
-pub struct UpdateOnlyQuantizedVectors<Fs: UniversalAppendFs> {
+pub struct UpdateOnlyQuantizedVectors {
     encoder: Encoder,
     vectors: UpdateOnlyChunkedVectors<u8>,
-    fs: Fs,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
     distance: Distance,
     datatype: VectorStorageDatatype,
 }
 
-impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
+impl UpdateOnlyQuantizedVectors {
     /// Reopen the quantized overlay persisted at `path`, if one is there.
     ///
     /// This never creates anything: whether a vector gets a quantized overlay is a decision made
@@ -70,8 +69,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
     /// absence. Returns `None` when nothing was persisted, e.g. quantization was never configured
     /// for this vector, or the configured method didn't support incremental appends (Scalar,
     /// Product — see [`QuantizationConfig::supports_appendable`]) at creation time.
-    pub fn open(
-        fs: Fs,
+    pub fn open<Fs: UniversalAppendFs>(
+        fs: &Fs,
         path: &Path,
         vector_config: &VectorDataConfig,
     ) -> OperationResult<Option<Self>> {
@@ -91,12 +90,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         if !fs.exists(&config_path)? {
             return Ok(None);
         }
-        let config: QuantizedVectorsConfig = read_json_via(&fs, &config_path)?;
+        let config: QuantizedVectorsConfig = read_json_via(fs, &config_path)?;
         Self::open_existing(fs, config, path, vector_config.distance, datatype).map(Some)
     }
 
-    fn open_existing(
-        fs: Fs,
+    fn open_existing<Fs: UniversalAppendFs>(
+        fs: &Fs,
         config: QuantizedVectorsConfig,
         path: &Path,
         distance: Distance,
@@ -106,9 +105,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
 
         let encoder = match &config.quantization_config {
-            QuantizationConfig::Binary(_) => Encoder::Binary(EncoderBin::load(&fs, &meta_path)?),
+            QuantizationConfig::Binary(_) => Encoder::Binary(EncoderBin::load(fs, &meta_path)?),
             QuantizationConfig::Turbo(_) => {
-                Encoder::Turbo(Box::new(EncoderTQ::load(&fs, &meta_path)?))
+                Encoder::Turbo(Box::new(EncoderTQ::load(fs, &meta_path)?))
             }
             QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
                 return Err(OperationError::service_error(
@@ -118,12 +117,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
             }
         };
         let vectors =
-            UpdateOnlyChunkedVectors::open(&fs, &data_path, config.quantized_vector_size(false))?;
+            UpdateOnlyChunkedVectors::open(fs, &data_path, config.quantized_vector_size(false))?;
 
         Ok(Self {
             encoder,
             vectors,
-            fs,
             config,
             distance,
             datatype,
@@ -135,8 +133,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
     ///
     /// Every point takes a row (a missing vector as an all-zero placeholder), keeping row `k` in
     /// lockstep with slot `k` of the raw storage this overlay shadows.
-    pub fn append_many<'a>(
+    pub fn append_many<'a, Fs: UniversalAppendFs>(
         &mut self,
+        fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
         hw_counter: &HardwareCounterCell,
@@ -157,7 +156,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
             .map(|vector| self.encoder.encode(vector))
             .collect();
         self.vectors.append_many(
-            &self.fs,
+            fs,
             start_slot as VectorOffsetType,
             rows.iter().map(Vec::as_slice),
             hw_counter,
