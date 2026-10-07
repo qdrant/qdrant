@@ -57,16 +57,19 @@ where
         })
         .collect();
     let ctx = trace::Context::current();
+    let handoff = ambient::current();
     let staged_opens = Mutex::new(Vec::new());
     // Keep polling all listings on the caller while workers stage each ready segment.
     // An in-place scope leaves every pool worker available, including in a single-thread pool.
     pool.in_place_scope(|scope| {
         let ctx = &ctx;
+        let handoff = &handoff;
         let staged_opens = &staged_opens;
         futures::executor::block_on(async {
             while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
                 check_process_stopped(is_stopped)?;
                 scope.spawn(move |_| {
+                    let _scope = handoff.enter_guard();
                     let staged_open = ctx.enter(|| {
                         cached_fs.and_then(|cached_fs| {
                             ReadOnlySegment::<S>::schedule_open_with_cached_fs(
@@ -110,21 +113,26 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    let loaded = pool.install(|| {
-        staged
-            .into_par_iter()
-            .filter_map(|(uuid, staged)| match ctx.enter(|| staged.finish(fs)) {
-                Ok(segment) => Some(Ok((uuid, segment))),
-                Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
-                Err(err) => {
-                    log::log!(
-                        skip_level(&err),
-                        "read-only open: skipping unloadable segment {uuid}: {err}"
-                    );
-                    None
-                }
-            })
-            .collect::<OperationResult<Vec<_>>>()
+    let loaded = ambient::parallel(|handoff| {
+        pool.install(|| {
+            staged
+                .into_par_iter()
+                .filter_map(|(uuid, staged)| {
+                    let _scope = handoff.enter_guard();
+                    match ctx.enter(|| staged.finish(fs)) {
+                        Ok(segment) => Some(Ok((uuid, segment))),
+                        Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
+                        Err(err) => {
+                            log::log!(
+                                skip_level(&err),
+                                "read-only open: skipping unloadable segment {uuid}: {err}"
+                            );
+                            None
+                        }
+                    }
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)

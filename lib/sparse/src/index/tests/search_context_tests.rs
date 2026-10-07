@@ -374,7 +374,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -409,7 +409,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -449,7 +449,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -487,7 +487,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {

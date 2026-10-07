@@ -174,6 +174,7 @@ mod tests {
     use std::assert_matches;
 
     use ahash::AHashMap;
+    use common::ambient;
 
     use super::*;
 
@@ -208,6 +209,7 @@ mod tests {
 
     #[test]
     fn pipeline_schedule_and_wait_round_trip() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -221,6 +223,7 @@ mod tests {
 
     #[test]
     fn pipeline_out_of_order_completion_preserves_user_data() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -247,6 +250,7 @@ mod tests {
     #[test]
     #[expect(unreachable_code, reason = "panic diverges before the typed tail")]
     fn pipeline_panicking_future_yields_error_not_hang() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -264,6 +268,7 @@ mod tests {
     /// runtimes execute work in parallel and the pipeline accepts both replies.
     #[test]
     fn pipeline_collects_replies_from_multiple_runtimes() {
+        let _scope = ambient::test_guard();
         let rt_a = BridgeRuntime::new().expect("rt_a");
         let rt_b = BridgeRuntime::new().expect("rt_b");
         let (tx, rx) = PipelineInner::<u32>::default_channel();
