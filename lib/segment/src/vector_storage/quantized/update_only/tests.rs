@@ -97,7 +97,7 @@ fn some_vectors(n: usize) -> Vec<Vec<f32>> {
 fn create_empty_overlay(
     config: &QuantizationConfig,
     path: &std::path::Path,
-) -> UpdateOnlyQuantizedVectors<MmapFs> {
+) -> UpdateOnlyQuantizedVectors {
     let storage_type = QuantizedVectorsStorageType::Mutable;
     let vector_parameters =
         QuantizedVectors::construct_vector_parameters(config, Distance::Dot, DIM, 0, storage_type);
@@ -176,7 +176,7 @@ fn create_empty_overlay(
         .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
         .unwrap();
 
-    UpdateOnlyQuantizedVectors::open(MmapFs, path, &dense_vector_config())
+    UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config())
         .unwrap()
         .expect("overlay was just created")
 }
@@ -196,16 +196,20 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
     let split = vectors.len() / 2;
     let mut writer = create_empty_overlay(config, path);
     writer
-        .append_many(0, as_batch(&vectors[..split]), &hw_counter)
+        .append_many(&MmapFs, 0, as_batch(&vectors[..split]), &hw_counter)
         .unwrap();
     drop(writer);
 
-    let mut writer =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, path, &dense_vector_config())
-            .unwrap()
-            .expect("overlay was already created by the first writer");
+    let mut writer = UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config())
+        .unwrap()
+        .expect("overlay was already created by the first writer");
     writer
-        .append_many(split as u32, as_batch(&vectors[split..]), &hw_counter)
+        .append_many(
+            &MmapFs,
+            split as u32,
+            as_batch(&vectors[split..]),
+            &hw_counter,
+        )
         .unwrap();
     drop(writer);
 }
@@ -370,8 +374,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
 fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
     let overlay =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+        UpdateOnlyQuantizedVectors::open(&MmapFs, dir.path(), &dense_vector_config()).unwrap();
     assert!(overlay.is_none());
 }
 
@@ -388,6 +391,7 @@ fn reopening_a_nonempty_overlay_works() {
     let vector = some_vectors(1).remove(0);
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
             &hw_counter,
@@ -396,7 +400,6 @@ fn reopening_a_nonempty_overlay_works() {
     drop(writer);
 
     let reopened =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+        UpdateOnlyQuantizedVectors::open(&MmapFs, dir.path(), &dense_vector_config()).unwrap();
     assert!(reopened.is_some());
 }

@@ -56,7 +56,7 @@ struct VectorComponents<Fs: UniversalAppendFs> {
     storage: UpdateOnlyVectorStorage<Fs::File>,
     /// Quantized overlay — only for dense, non-multivector vectors whose
     /// quantization method supports incremental appends.
-    quantized: Option<UpdateOnlyQuantizedVectors<Fs>>,
+    quantized: Option<UpdateOnlyQuantizedVectors>,
 }
 
 impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
@@ -100,7 +100,7 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
                 s.spawn(|_| {
                     let hw_counter = hw_acc.get_counter_cell();
                     quantized_res =
-                        quantized.append_many(start_slot, vectors.iter().copied(), &hw_counter);
+                        quantized.append_many(fs, start_slot, vectors.iter().copied(), &hw_counter);
                 });
             }
         });
@@ -136,13 +136,7 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
 
                         let (original, quantized) = rayon::join(
                             || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
-                            || {
-                                UpdateOnlyQuantizedVectors::<Fs>::open(
-                                    fs.clone(),
-                                    &path,
-                                    vector_config,
-                                )
-                            },
+                            || UpdateOnlyQuantizedVectors::open(fs, &path, vector_config),
                         );
 
                         let components = VectorComponents {
