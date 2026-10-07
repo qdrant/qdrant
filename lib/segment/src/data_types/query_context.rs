@@ -245,7 +245,7 @@ impl QueryContext {
 #[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX, Handoff::measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, Handoff::Measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
     }
 }
 

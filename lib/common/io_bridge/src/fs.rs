@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::ambient::AmbientFutureExt as _;
 use common::ambient::trace::{self, Op};
 use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
@@ -65,7 +66,8 @@ impl<A: AsyncRead> BlobFs<A> {
         F: Future<Output = UioResult<T>> + Send + 'static,
     {
         let handle = self.runtime.handle().clone();
-        async move { handle.spawn(trace::Context::current().wrap(op)).await? }
+        let op = op.in_current_ambient();
+        async move { handle.spawn(op).await? }
     }
 }
 
