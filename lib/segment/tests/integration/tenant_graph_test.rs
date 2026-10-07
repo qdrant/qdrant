@@ -22,15 +22,20 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Match,
-    PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
+    AcornSearchParams, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    Match, PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
 #[rstest]
-#[case::graph(0)]
-#[case::count(4)]
-fn test_tenant_graph_with_second_condition(#[case] full_scan_threshold: usize) {
+#[case::graph(0, false, Route::Graph)]
+#[case::count(4, false, Route::Plain)] // 🤖 4 KiB / 32 B per vector = 128 points
+#[case::acorn(0, true, Route::Acorn)]
+fn test_tenant_graph_with_second_condition(
+    #[case] full_scan_threshold: usize,
+    #[case] acorn: bool,
+    #[case] route: Route,
+) {
     let stopped = AtomicBool::new(false);
     let dim = 8;
     let num_vectors = 4_000;
@@ -130,6 +135,10 @@ fn test_tenant_graph_with_second_condition(#[case] full_scan_threshold: usize) {
     };
     let params = SearchParams {
         hnsw_ef: Some(64),
+        acorn: Some(AcornSearchParams {
+            enable: acorn,
+            max_selectivity: None,
+        }),
         ..Default::default()
     };
     let exact_params = SearchParams {
@@ -151,17 +160,29 @@ fn test_tenant_graph_with_second_condition(#[case] full_scan_threshold: usize) {
         };
         let result = search(&params);
         assert_eq!(result[0].len(), top);
-        if full_scan_threshold > 0 {
+        if route == Route::Plain {
             assert_eq!(result, search(&exact_params));
         }
     }
 
     let telemetry = hnsw_index.get_telemetry_data(TelemetryDetail::default());
-    let (graph, plain) = if full_scan_threshold > 0 {
-        (0, attempts)
-    } else {
-        (attempts, 0)
+    let routes = (
+        telemetry.filtered_small_cardinality.count,
+        telemetry.filtered_large_cardinality.count,
+        telemetry.filtered_acorn.count,
+    );
+    let expected = match route {
+        Route::Plain => (attempts, 0, 0),
+        Route::Graph => (0, attempts, 0),
+        Route::Acorn => (0, 0, attempts),
     };
-    assert_eq!(telemetry.filtered_large_cardinality.count, graph);
-    assert_eq!(telemetry.filtered_small_cardinality.count, plain);
+    assert_eq!(routes, expected);
+}
+
+/// 🤖 Which search path the planner picks.
+#[derive(Clone, Copy, PartialEq)]
+enum Route {
+    Plain,
+    Graph,
+    Acorn,
 }
