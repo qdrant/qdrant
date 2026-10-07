@@ -15970,7 +15970,8 @@
               }
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "Bm25Params": {
         "type": "object",
@@ -15990,7 +15991,8 @@
             "minimum": 0,
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "SearchParams": {
         "description": "Additional parameters of the search",

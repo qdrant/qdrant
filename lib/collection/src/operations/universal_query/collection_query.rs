@@ -172,7 +172,8 @@ impl Query {
             Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
             Query::Text(TextQueryInternal { text, params }) => {
-                // `check_text_queries` matched the parameters with the field's scorer
+                // `check_text_queries` matched the parameters with the field's scorer,
+                // which can only be BM25 for now
                 let params = match params {
                     None => Bm25Params::default(),
                     Some(TextQueryParams::Bm25(params)) => params,
@@ -897,9 +898,9 @@ fn check_text_query(
         }
     };
     // Exhaustive on both sides: a new scoring type or parameter variant must
-    // say which pairs match
+    // say which pairs match, and how a query without parameters scores
     let params = match (scoring, params) {
-        (_, None) => return Ok(()),
+        (TextScoringType::Bm25, None) => return Ok(()),
         (TextScoringType::Bm25, Some(TextQueryParams::Bm25(params))) => params,
     };
     let Bm25Params { k1, b } = *params;

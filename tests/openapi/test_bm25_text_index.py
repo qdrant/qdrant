@@ -258,6 +258,22 @@ def test_out_of_range_parameters_are_refused(collection_name, params):
     assert response.status_code == 422, response.text
 
 
+@pytest.mark.parametrize("body", [
+    {"query": "alpha", "k": 2.0},  # parameters outside `bm25`
+    {"query": "alpha", "bm25": {"k1": 2.0}},  # misspelled parameter
+])
+def test_unknown_fields_are_refused(collection_name, body):
+    # Ignoring them would score with the defaults; outside the schema, so
+    # sent without client-side validation.
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}/points/query",
+        json={"query": {"text": body}, "using": FIELD},
+        headers=qdrant_host_headers(),
+    )
+    assert response.status_code == 400, response.text
+    assert "Format error in JSON body" in response.json()["status"]["error"]
+
+
 def test_a_vector_of_the_same_name_does_not_interfere(collection_name):
     # A text query resolves `using` against payload fields only.
     shared = f"{collection_name}_shared"
