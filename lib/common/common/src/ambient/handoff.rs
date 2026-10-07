@@ -5,6 +5,7 @@ use crate::cpu_utilization::CpuUtilization;
 use crate::reason::Reason;
 
 /// The current scope, to enter it on another thread or task.
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn current() -> Handoff {
     Handoff::current()
 }
