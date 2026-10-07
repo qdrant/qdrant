@@ -38,6 +38,16 @@ impl EntryPoints {
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
+    /// Move every entry point out, leaving this list empty with the same capacity.
+    pub fn take(&mut self) -> EntryPoints {
+        let taken = EntryPoints {
+            entry_points: std::mem::take(&mut self.entry_points),
+            extra_entry_points: self.extra_entry_points.clone(),
+        };
+        self.extra_entry_points.retain(|_| false);
+        taken
+    }
+
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications

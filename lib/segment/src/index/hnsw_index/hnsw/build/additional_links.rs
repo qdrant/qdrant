@@ -137,6 +137,12 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     let visited_pool = VisitedPool::new();
     let mut block_filter_list = visited_pool.get(total_vector_count);
 
+    // One builder serves every block. It is sized for the whole segment, so allocating it
+    // per block, and merging it back by scanning every point, would cost O(segment) on a
+    // single thread for each block. `merge_block_from` moves out only the block's links and
+    // leaves the builder empty for the next block.
+    let mut block_graph: Option<GraphLayersBuilder> = None;
+
     for (index_pos, (field_progress, field)) in indexed_fields.into_iter().enumerate() {
         field_progress.start();
 
@@ -200,17 +206,18 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 trace!("graph connectivity: {graph_connectivity} for {field}");
             }
 
-            // ToDo: reuse graph layer for same payload
-            let mut additional_graph = GraphLayersBuilder::new_with_params(
-                total_vector_count,
-                payload_m,
-                config.ef_construct,
-                1,
-                HNSW_USE_HEURISTIC,
-                false,
-            );
+            let additional_graph = block_graph.get_or_insert_with(|| {
+                GraphLayersBuilder::new_with_params(
+                    total_vector_count,
+                    payload_m,
+                    config.ef_construct,
+                    1,
+                    HNSW_USE_HEURISTIC,
+                    false,
+                )
+            });
 
-            build_filtered_graph(
+            let gpu_constructed_graph = build_filtered_graph(
                 id_tracker,
                 vector_storage,
                 quantized_vectors,
@@ -218,13 +225,16 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 payload_index,
                 pool,
                 stopped,
-                &mut additional_graph,
-                points_to_index,
+                additional_graph,
+                &points_to_index,
                 &mut block_filter_list,
                 &mut indexed_vectors_set,
                 &counter,
             )?;
-            graph_layers_builder.merge_from_other(additional_graph);
+            match gpu_constructed_graph {
+                Some(gpu_graph) => graph_layers_builder.merge_from_other(gpu_graph),
+                None => graph_layers_builder.merge_block_from(additional_graph, &points_to_index),
+            }
             Ok(())
         };
 
@@ -262,6 +272,10 @@ fn condition_points(
     })
 }
 
+/// Insert `points_to_index` into `graph_layers_builder`, linking them only to each other.
+///
+/// Returns the graph instead when it was built on the GPU; `graph_layers_builder` is then
+/// left untouched.
 #[allow(clippy::too_many_arguments)]
 #[allow(unused_variables)]
 #[allow(clippy::needless_pass_by_ref_mut)]
@@ -273,12 +287,12 @@ fn build_filtered_graph(
     payload_index: &StructPayloadIndex,
     pool: &ThreadPool,
     stopped: &AtomicBool,
-    graph_layers_builder: &mut GraphLayersBuilder,
-    points_to_index: Vec<PointOffsetType>,
+    graph_layers_builder: &GraphLayersBuilder,
+    points_to_index: &[PointOffsetType],
     block_filter_list: &mut VisitedListHandle,
     indexed_vectors_set: &mut BitVec,
     counter: &AtomicU64,
-) -> OperationResult<()> {
+) -> OperationResult<Option<GraphLayersBuilder>> {
     block_filter_list.next_iteration();
 
     for block_point_id in points_to_index.iter().copied() {
@@ -297,12 +311,11 @@ fn build_filtered_graph(
             gpu_insert_context.as_mut(),
             graph_layers_builder,
             block_filter_list,
-            &points_to_index,
+            points_to_index,
             stopped,
         )?
     {
-        *graph_layers_builder = gpu_constructed_graph;
-        return Ok(());
+        return Ok(Some(gpu_constructed_graph));
     }
 
     let insert_points = |block_point_id| {
@@ -345,12 +358,12 @@ fn build_filtered_graph(
     // it is less likely that they will compete for the same locks
     if points_to_index.len() > first_points {
         pool.install(|| {
-            points_to_index
-                .into_par_iter()
-                .skip(first_points)
+            points_to_index[first_points..]
+                .par_iter()
+                .copied()
                 .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .try_for_each(insert_points)
         })?;
     }
-    Ok(())
+    Ok(None)
 }
